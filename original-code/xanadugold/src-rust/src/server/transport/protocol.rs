@@ -247,16 +247,6 @@ pub enum OperationCode {
 
     ProvenanceAncestry,
 
-    CompoundResolve,
-    CompoundGetEdition,
-    CompoundSetEdition,
-    CompoundResolveWork,
-    CompoundResolveRecursive,
-    CompoundRebuild,
-    CompoundInsertElement,
-    CompoundRemoveElement,
-    CompoundMoveElement,
-
     AdminRecorderCreate,
     AdminRecorderRecord,
     AdminRecorderList,
@@ -508,8 +498,6 @@ impl OperationCode {
 
             0x0805 => Some(OperationCode::ProvenanceAncestry),
 
-            0x0806 => Some(OperationCode::CompoundResolve),
-
             0x0601 => Some(OperationCode::ServerStats),
 
             0x0901 => Some(OperationCode::BlobUpload),
@@ -620,15 +608,6 @@ impl OperationCode {
             0x1C09 => Some(OperationCode::CrdtAwarenessGet),
 
             0x1C0B => Some(OperationCode::CrdtRegisterAuthor),
-
-            0x1D01 => Some(OperationCode::CompoundGetEdition),
-            0x1D02 => Some(OperationCode::CompoundSetEdition),
-            0x1D03 => Some(OperationCode::CompoundResolveWork),
-            0x1D04 => Some(OperationCode::CompoundResolveRecursive),
-            0x1D05 => Some(OperationCode::CompoundRebuild),
-            0x1D06 => Some(OperationCode::CompoundInsertElement),
-            0x1D07 => Some(OperationCode::CompoundRemoveElement),
-            0x1D08 => Some(OperationCode::CompoundMoveElement),
 
             0x1E01 => Some(OperationCode::ResolveInlineTransclusions),
             0x1E02 => Some(OperationCode::MigrateCompoundToInline),
@@ -851,7 +830,6 @@ impl OperationCode {
             OperationCode::VersionTracePosition => 0x1004,
 
             OperationCode::ProvenanceAncestry => 0x0805,
-            OperationCode::CompoundResolve => 0x0806,
 
             OperationCode::AdminRecorderCreate => 0x1101,
             OperationCode::AdminRecorderRecord => 0x1102,
@@ -916,15 +894,6 @@ impl OperationCode {
             OperationCode::CrdtAwarenessGet => 0x1C09,
 
             OperationCode::CrdtRegisterAuthor => 0x1C0B,
-
-            OperationCode::CompoundGetEdition => 0x1D01,
-            OperationCode::CompoundSetEdition => 0x1D02,
-            OperationCode::CompoundResolveWork => 0x1D03,
-            OperationCode::CompoundResolveRecursive => 0x1D04,
-            OperationCode::CompoundRebuild => 0x1D05,
-            OperationCode::CompoundInsertElement => 0x1D06,
-            OperationCode::CompoundRemoveElement => 0x1D07,
-            OperationCode::CompoundMoveElement => 0x1D08,
 
             OperationCode::ResolveInlineTransclusions => 0x1E01,
             OperationCode::MigrateCompoundToInline => 0x1E02,
@@ -1606,40 +1575,6 @@ pub enum WireRequest {
         work_id: BeId,
     },
 
-    CompoundResolve {
-        compound: CompoundEditionPayload,
-    },
-    CompoundGetEdition {
-        work_id: BeId,
-    },
-    CompoundSetEdition {
-        work_id: BeId,
-        compound: CompoundEditionPayload,
-    },
-    CompoundResolveWork {
-        work_id: BeId,
-    },
-    CompoundResolveRecursive {
-        work_id: BeId,
-    },
-    CompoundRebuild {
-        work_id: BeId,
-    },
-    CompoundInsertElement {
-        work_id: BeId,
-        index: usize,
-        element: CompoundElementPayload,
-    },
-    CompoundRemoveElement {
-        work_id: BeId,
-        index: usize,
-    },
-    CompoundMoveElement {
-        work_id: BeId,
-        from: usize,
-        to: usize,
-    },
-
     AdminRecorderCreate {
         kind: String,
         direct_only: Option<bool>,
@@ -2244,33 +2179,6 @@ pub enum ResponseValue {
     },
     TransclusionChainResult {
         chain: Vec<AgainHopPayload>,
-    },
-    CompoundResolveResult {
-        text: String,
-    },
-    CompoundGetEditionResult {
-        compound: Option<CompoundEditionPayload>,
-    },
-    CompoundSetEditionResult {
-        ok: bool,
-    },
-    CompoundResolveWorkResult {
-        elements: Vec<ResolvedElementPayload>,
-        flat_text: String,
-        span_ranges: Vec<SpanRangePayload>,
-        source_titles: HashMap<BeId, String>,
-    },
-    CompoundRebuildResult {
-        compound: Option<CompoundEditionPayload>,
-    },
-    CompoundInsertElementResult {
-        element_count: usize,
-    },
-    CompoundRemoveElementResult {
-        element_count: usize,
-    },
-    CompoundMoveElementResult {
-        element_count: usize,
     },
     ElementInsertResult {
         revision: u64,
@@ -3067,129 +2975,6 @@ pub struct WorkGhostInfoPayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archived_at: Option<u64>,
     pub lifecycle_history: Vec<WorkLifecycleEventPayload>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CompoundEditionPayload {
-    pub elements: Vec<CompoundElementPayload>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum CompoundElementPayload {
-    Text {
-        content: String,
-    },
-    Span {
-        source_work_id: BeId,
-        char_start: usize,
-        char_end: usize,
-    },
-}
-
-impl CompoundElementPayload {
-    pub fn to_compound_element(&self) -> crate::edition::compound::CompoundElement {
-        use crate::edition::compound::CompoundElement;
-        match self {
-            CompoundElementPayload::Text { content } => CompoundElement::text(content),
-            CompoundElementPayload::Span {
-                source_work_id,
-                char_start,
-                char_end,
-            } => CompoundElement::span(*source_work_id, *char_start, *char_end),
-        }
-    }
-}
-
-impl CompoundEditionPayload {
-    pub fn from_compound(compound: &crate::edition::compound::CompoundEdition) -> Self {
-        CompoundEditionPayload {
-            elements: compound
-                .elements()
-                .iter()
-                .map(|e| match e {
-                    crate::edition::compound::CompoundElement::Text { content } => {
-                        CompoundElementPayload::Text {
-                            content: content.clone(),
-                        }
-                    }
-                    crate::edition::compound::CompoundElement::Span { span } => {
-                        CompoundElementPayload::Span {
-                            source_work_id: span.source_work_id(),
-                            char_start: span.char_start(),
-                            char_end: span.char_end(),
-                        }
-                    }
-                })
-                .collect(),
-        }
-    }
-
-    pub fn to_compound(&self) -> crate::edition::compound::CompoundEdition {
-        use crate::edition::compound::{CompoundEdition, CompoundElement};
-        let elements: Vec<CompoundElement> = self
-            .elements
-            .iter()
-            .map(|e| match e {
-                CompoundElementPayload::Text { content } => CompoundElement::text(content),
-                CompoundElementPayload::Span {
-                    source_work_id,
-                    char_start,
-                    char_end,
-                } => CompoundElement::span(*source_work_id, *char_start, *char_end),
-            })
-            .collect();
-        CompoundEdition::new(elements)
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ResolvedElementPayload {
-    Text {
-        content: String,
-        flat_start: usize,
-        flat_end: usize,
-    },
-    Span {
-        source_work_id: BeId,
-        content: String,
-        flat_start: usize,
-        flat_end: usize,
-        original_char_start: usize,
-        original_char_end: usize,
-    },
-}
-
-impl ResolvedElementPayload {
-    pub fn from_resolved(elem: &crate::edition::compound::ResolvedElement) -> Self {
-        match elem {
-            crate::edition::compound::ResolvedElement::Text {
-                content,
-                flat_start,
-                flat_end,
-            } => ResolvedElementPayload::Text {
-                content: content.clone(),
-                flat_start: *flat_start,
-                flat_end: *flat_end,
-            },
-            crate::edition::compound::ResolvedElement::Span {
-                source_work_id,
-                content,
-                flat_start,
-                flat_end,
-                original_char_start,
-                original_char_end,
-            } => ResolvedElementPayload::Span {
-                source_work_id: *source_work_id,
-                content: content.clone(),
-                flat_start: *flat_start,
-                flat_end: *flat_end,
-                original_char_start: *original_char_start,
-                original_char_end: *original_char_end,
-            },
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

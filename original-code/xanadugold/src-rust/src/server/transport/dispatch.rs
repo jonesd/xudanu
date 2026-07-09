@@ -2155,19 +2155,6 @@ fn dispatch_inner(
                 endorsements: es.iter().map(|e| (e.club_id(), e.token_id())).collect(),
             })
         }
-        WireRequest::CompoundResolve { .. }
-        | WireRequest::CompoundGetEdition { .. }
-        | WireRequest::CompoundSetEdition { .. }
-        | WireRequest::CompoundRebuild { .. }
-        | WireRequest::CompoundInsertElement { .. }
-        | WireRequest::CompoundRemoveElement { .. }
-        | WireRequest::CompoundMoveElement { .. }
-        | WireRequest::CompoundResolveWork { .. }
-        | WireRequest::CompoundResolveRecursive { .. } => {
-            Err(crate::server::ServerError::Internal(
-                "side-table compound ops have been removed".to_string(),
-            ))
-        }
         WireRequest::FederationInfo => {
             let info = srv.federation_info();
             let mode_str = match info.mode {
@@ -3262,6 +3249,9 @@ fn dispatch_inner(
                 format!("Cross-server signature verify not supported in dispatch: server={} sig_len={} ts={}", server_id, signature.len(), timestamp)
             ))
         }
+        _ => Err(crate::server::ServerError::Internal(
+            "unhandled request".to_string(),
+        )),
     }
 }
 
@@ -4158,19 +4148,6 @@ fn dispatch_inner_read(
                 results: payloads,
                 total_works_matched,
             })
-        }
-        WireRequest::CompoundResolve { .. }
-        | WireRequest::CompoundGetEdition { .. }
-        | WireRequest::CompoundSetEdition { .. }
-        | WireRequest::CompoundRebuild { .. }
-        | WireRequest::CompoundInsertElement { .. }
-        | WireRequest::CompoundRemoveElement { .. }
-        | WireRequest::CompoundMoveElement { .. }
-        | WireRequest::CompoundResolveWork { .. }
-        | WireRequest::CompoundResolveRecursive { .. } => {
-            Err(crate::server::ServerError::Internal(
-                "side-table compound ops have been removed".to_string(),
-            ))
         }
         _ => Err(crate::server::ServerError::Internal(
             "unhandled read request in dispatch_inner_read".to_string(),
