@@ -15155,12 +15155,24 @@ mod tests_find_text {
 
 #[cfg(test)]
 mod tests {
-    const TEST_OWNER_CREDENTIAL: &[u8] = b"xudanu-test-owner";
-    const TEST_OTHER_CREDENTIAL: &[u8] = b"xudanu-test-other";
-    const TEST_MEMBER_CREDENTIAL: &[u8] = b"xudanu-test-member";
-    const TEST_ALT_CREDENTIAL: &[u8] = b"xudanu-test-alt";
-    const TEST_ADMIN_CREDENTIAL: &[u8] = b"xudanu-test-admin";
-    const TEST_CLUB_PASSWORD: &[u8] = b"xudanu-test-club-pass";
+    fn test_owner_credential() -> &'static [u8] {
+        b"xudanu-test-owner"
+    }
+    fn test_other_credential() -> &'static [u8] {
+        b"xudanu-test-other"
+    }
+    fn test_member_credential() -> &'static [u8] {
+        b"xudanu-test-member"
+    }
+    fn test_alt_credential() -> &'static [u8] {
+        b"xudanu-test-alt"
+    }
+    fn test_admin_credential() -> &'static [u8] {
+        b"xudanu-test-admin"
+    }
+    fn test_club_password() -> &'static [u8] {
+        b"xudanu-test-club-pass"
+    }
     use super::*;
     use crate::edition::RangeElement;
     use crate::server::crdt_manager::{AwarenessState, CursorPosition};
@@ -17626,14 +17638,14 @@ mod tests {
             .create_club(sid, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid, owner_club, TEST_CLUB_PASSWORD)
+            .club_set_password(sid, owner_club, test_club_password())
             .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
         server
             .authenticate(
                 sid,
                 &*lock,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
         let work_id = server
@@ -17658,14 +17670,14 @@ mod tests {
             .create_club(sid, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid, owner_club, TEST_CLUB_PASSWORD)
+            .club_set_password(sid, owner_club, test_club_password())
             .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
         server
             .authenticate(
                 sid,
                 &*lock,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
         let work_id = server
@@ -17693,14 +17705,14 @@ mod tests {
             .create_club(sid, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid, owner_club, TEST_CLUB_PASSWORD)
+            .club_set_password(sid, owner_club, test_club_password())
             .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
         server
             .authenticate(
                 sid,
                 &*lock,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
         let work_id = server
@@ -17719,14 +17731,14 @@ mod tests {
             .create_club(sid1, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid1, owner_club, TEST_CLUB_PASSWORD)
+            .club_set_password(sid1, owner_club, test_club_password())
             .unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
         server
             .authenticate(
                 sid1,
                 &*lock,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
         let work_id = server
@@ -17748,14 +17760,14 @@ mod tests {
             .create_club(sid1, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid1, owner_club, TEST_CLUB_PASSWORD)
+            .club_set_password(sid1, owner_club, test_club_password())
             .unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
         server
             .authenticate(
                 sid1,
                 &*lock,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
         let work_id = server
@@ -17778,14 +17790,14 @@ mod tests {
             .create_club(sid1, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid1, owner_club, TEST_CLUB_PASSWORD)
+            .club_set_password(sid1, owner_club, test_club_password())
             .unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
         server
             .authenticate(
                 sid1,
                 &*lock,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
         let work_id = server
@@ -17821,14 +17833,14 @@ mod tests {
             .create_club(sid, Edition::from_text("snap club"))
             .unwrap();
         server
-            .club_set_password(sid, club_id, TEST_CLUB_PASSWORD)
+            .club_set_password(sid, club_id, test_club_password())
             .unwrap();
         let lock = server.login(sid, club_id).unwrap();
         server
             .authenticate(
                 sid,
                 &*lock,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
         let custom_club = server
@@ -17856,14 +17868,14 @@ mod tests {
             .create_club(sid, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid, owner_club, TEST_CLUB_PASSWORD)
+            .club_set_password(sid, owner_club, test_club_password())
             .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
         server
             .authenticate(
                 sid,
                 &*lock,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
         let work_id = server
@@ -17888,14 +17900,14 @@ mod tests {
             .create_club(sid1, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid1, owner_club, TEST_CLUB_PASSWORD)
+            .club_set_password(sid1, owner_club, test_club_password())
             .unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
         server
             .authenticate(
                 sid1,
                 &*lock,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
         let work_id = server
@@ -17918,14 +17930,14 @@ mod tests {
             .create_club(sid, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid, owner_club, TEST_CLUB_PASSWORD)
+            .club_set_password(sid, owner_club, test_club_password())
             .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
         server
             .authenticate(
                 sid,
                 &*lock,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
         let work_id = server.create_work(sid, Edition::from_text("mine")).unwrap();
@@ -17943,14 +17955,14 @@ mod tests {
             .create_club(sid1, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid1, owner_club, TEST_CLUB_PASSWORD)
+            .club_set_password(sid1, owner_club, test_club_password())
             .unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
         server
             .authenticate(
                 sid1,
                 &*lock,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
         let work_id = server
@@ -17973,14 +17985,14 @@ mod tests {
             .create_club(sid1, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid1, club1, TEST_CLUB_PASSWORD)
+            .club_set_password(sid1, club1, test_club_password())
             .unwrap();
         let lock = server.login(sid1, club1).unwrap();
         server
             .authenticate(
                 sid1,
                 &*lock,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
         let work_id = server
@@ -17993,14 +18005,14 @@ mod tests {
             .create_club(sid2, Edition::from_text("editor club"))
             .unwrap();
         server
-            .club_set_password(sid2, club2, TEST_CLUB_PASSWORD)
+            .club_set_password(sid2, club2, test_club_password())
             .unwrap();
         let lock2 = server.login(sid2, club2).unwrap();
         server
             .authenticate(
                 sid2,
                 &*lock2,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
 
@@ -18028,14 +18040,14 @@ mod tests {
             .create_club(sid, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid, owner_club, TEST_CLUB_PASSWORD)
+            .club_set_password(sid, owner_club, test_club_password())
             .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
         server
             .authenticate(
                 sid,
                 &*lock,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
 
@@ -18070,14 +18082,14 @@ mod tests {
             .create_club(sid1, Edition::from_text("club1"))
             .unwrap();
         server
-            .club_set_password(sid1, club1, TEST_CLUB_PASSWORD)
+            .club_set_password(sid1, club1, test_club_password())
             .unwrap();
         let lock1 = server.login(sid1, club1).unwrap();
         server
             .authenticate(
                 sid1,
                 &*lock1,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
 
@@ -18087,14 +18099,14 @@ mod tests {
             .create_club(sid2, Edition::from_text("club2"))
             .unwrap();
         server
-            .club_set_password(sid2, club2, TEST_CLUB_PASSWORD)
+            .club_set_password(sid2, club2, test_club_password())
             .unwrap();
         let lock2 = server.login(sid2, club2).unwrap();
         server
             .authenticate(
                 sid2,
                 &*lock2,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
 
@@ -18117,14 +18129,14 @@ mod tests {
             .create_club(sid, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid, owner_club, TEST_CLUB_PASSWORD)
+            .club_set_password(sid, owner_club, test_club_password())
             .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
         server
             .authenticate(
                 sid,
                 &*lock,
-                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
+                &LockCredential::Password(test_club_password().to_vec()),
             )
             .unwrap();
         let work_id = server.create_work(sid, Edition::from_text("gone")).unwrap();
@@ -18710,7 +18722,7 @@ mod tests {
     #[test]
     fn crdt_open_session_checks_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
         let edit_club = server
             .create_named_club(owner_sid, "priv_edit", Edition::empty())
             .unwrap();
@@ -18720,8 +18732,9 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let (user_club, _user_sid) = ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
-        let intruder_sid = ac_login_as(&mut server, user_club, TEST_OTHER_CREDENTIAL);
+        let (user_club, _user_sid) =
+            ac_create_user(&mut server, "stranger", test_other_credential());
+        let intruder_sid = ac_login_as(&mut server, user_club, test_other_credential());
         let result = server.crdt_open_session(intruder_sid, work_id);
         assert!(result.is_err(), "non-member should not open CRDT session");
     }
@@ -18729,7 +18742,7 @@ mod tests {
     #[test]
     fn crdt_open_session_allows_member() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
         let edit_club = server
             .create_named_club(owner_sid, "priv_edit", Edition::empty())
             .unwrap();
@@ -18739,11 +18752,11 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let (user_club, _user_sid) = ac_create_user(&mut server, "member", TEST_OTHER_CREDENTIAL);
+        let (user_club, _user_sid) = ac_create_user(&mut server, "member", test_other_credential());
         server
             .club_add_member(owner_sid, edit_club, user_club)
             .unwrap();
-        let member_sid = ac_login_as(&mut server, user_club, TEST_OTHER_CREDENTIAL);
+        let member_sid = ac_login_as(&mut server, user_club, test_other_credential());
         let result = server.crdt_open_session(member_sid, work_id);
         assert!(result.is_ok(), "member should open CRDT session");
     }
@@ -18751,7 +18764,7 @@ mod tests {
     #[test]
     fn crdt_apply_text_delta_checks_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
         let edit_club = server
             .create_named_club(owner_sid, "priv_edit", Edition::empty())
             .unwrap();
@@ -18764,10 +18777,11 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let owner_sid2 = ac_login_as(&mut server, owner_club, TEST_OWNER_CREDENTIAL);
+        let owner_sid2 = ac_login_as(&mut server, owner_club, test_owner_credential());
         let _ = server.crdt_open_session(owner_sid2, work_id).unwrap();
-        let (user_club, _user_sid) = ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
-        let intruder_sid = ac_login_as(&mut server, user_club, TEST_OTHER_CREDENTIAL);
+        let (user_club, _user_sid) =
+            ac_create_user(&mut server, "stranger", test_other_credential());
+        let intruder_sid = ac_login_as(&mut server, user_club, test_other_credential());
         let ops = vec![TextDeltaOp::Insert {
             text: "hacked".to_string(),
         }];
@@ -18778,7 +18792,7 @@ mod tests {
     #[test]
     fn crdt_apply_update_checks_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
         let edit_club = server
             .create_named_club(owner_sid, "priv_edit", Edition::empty())
             .unwrap();
@@ -18791,10 +18805,11 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let owner_sid2 = ac_login_as(&mut server, owner_club, TEST_OWNER_CREDENTIAL);
+        let owner_sid2 = ac_login_as(&mut server, owner_club, test_owner_credential());
         let _ = server.crdt_open_session(owner_sid2, work_id).unwrap();
-        let (user_club, _user_sid) = ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
-        let intruder_sid = ac_login_as(&mut server, user_club, TEST_OTHER_CREDENTIAL);
+        let (user_club, _user_sid) =
+            ac_create_user(&mut server, "stranger", test_other_credential());
+        let intruder_sid = ac_login_as(&mut server, user_club, test_other_credential());
         let result = server.crdt_apply_update(intruder_sid, work_id, vec![1, 2, 3]);
         assert!(result.is_err(), "non-member should not apply update");
     }
@@ -18847,7 +18862,7 @@ mod tests {
     #[test]
     fn work_set_edit_club_requires_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
         let edit_club = server
             .create_named_club(owner_sid, "edit_gate", Edition::empty())
             .unwrap();
@@ -18858,8 +18873,8 @@ mod tests {
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
         let (stranger_club, _stranger_sid) =
-            ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
-        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
+            ac_create_user(&mut server, "stranger", test_other_credential());
+        let stranger_sid = ac_login_as(&mut server, stranger_club, test_other_credential());
         let result =
             server.work_set_edit_club(stranger_sid, work_id, Some(server.public_club_id()));
         assert!(result.is_err(), "stranger should not change edit club");
@@ -18868,7 +18883,7 @@ mod tests {
     #[test]
     fn work_set_read_club_requires_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
         let edit_club = server
             .create_named_club(owner_sid, "read_gate", Edition::empty())
             .unwrap();
@@ -18879,8 +18894,8 @@ mod tests {
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
         let (stranger_club, _stranger_sid) =
-            ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
-        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
+            ac_create_user(&mut server, "stranger", test_other_credential());
+        let stranger_sid = ac_login_as(&mut server, stranger_club, test_other_credential());
         let result =
             server.work_set_read_club(stranger_sid, work_id, Some(server.public_club_id()));
         assert!(result.is_err(), "stranger should not change read club");
@@ -18889,13 +18904,13 @@ mod tests {
     #[test]
     fn work_publish_requires_owner() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
         let work_id = server
             .create_work(owner_sid, Edition::from_text("mine"))
             .unwrap();
         let (stranger_club, _stranger_sid) =
-            ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
-        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
+            ac_create_user(&mut server, "stranger", test_other_credential());
+        let stranger_sid = ac_login_as(&mut server, stranger_club, test_other_credential());
         let result = server.work_publish(stranger_sid, work_id);
         assert!(result.is_err(), "non-owner should not publish");
     }
@@ -18903,14 +18918,14 @@ mod tests {
     #[test]
     fn work_unpublish_requires_owner() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
         let work_id = server
             .create_work(owner_sid, Edition::from_text("mine"))
             .unwrap();
         server.work_publish(owner_sid, work_id).unwrap();
         let (stranger_club, _stranger_sid) =
-            ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
-        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
+            ac_create_user(&mut server, "stranger", test_other_credential());
+        let stranger_sid = ac_login_as(&mut server, stranger_club, test_other_credential());
         let result = server.work_unpublish(stranger_sid, work_id);
         assert!(result.is_err(), "non-owner should not unpublish");
     }
@@ -18918,13 +18933,13 @@ mod tests {
     #[test]
     fn work_irrevocably_unpublish_requires_owner() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
         let work_id = server
             .create_work(owner_sid, Edition::from_text("mine"))
             .unwrap();
         let (stranger_club, _stranger_sid) =
-            ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
-        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
+            ac_create_user(&mut server, "stranger", test_other_credential());
+        let stranger_sid = ac_login_as(&mut server, stranger_club, test_other_credential());
         let result = server.work_irrevocably_unpublish(stranger_sid, work_id);
         assert!(
             result.is_err(),
@@ -18935,7 +18950,7 @@ mod tests {
     #[test]
     fn work_sponsor_requires_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
         let edit_club = server
             .create_named_club(owner_sid, "sponsor_gate", Edition::empty())
             .unwrap();
@@ -18946,8 +18961,8 @@ mod tests {
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
         let (stranger_club, _stranger_sid) =
-            ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
-        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
+            ac_create_user(&mut server, "stranger", test_other_credential());
+        let stranger_sid = ac_login_as(&mut server, stranger_club, test_other_credential());
         let result = server.work_sponsor(stranger_sid, work_id, server.public_club_id());
         assert!(
             result.is_err(),
@@ -18958,7 +18973,8 @@ mod tests {
     #[test]
     fn sponsor_multiple_clubs_independent() {
         let (mut server, _pub_sid) = ac_setup();
-        let (_owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (_owner_club, owner_sid) =
+            ac_create_user(&mut server, "owner", test_owner_credential());
         let work_id = server
             .create_work(owner_sid, Edition::from_text("multi-sponsor"))
             .unwrap();
@@ -19000,7 +19016,8 @@ mod tests {
     #[test]
     fn sponsor_is_idempotent() {
         let (mut server, _pub_sid) = ac_setup();
-        let (_owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (_owner_club, owner_sid) =
+            ac_create_user(&mut server, "owner", test_owner_credential());
         let work_id = server
             .create_work(owner_sid, Edition::from_text("dedup"))
             .unwrap();
@@ -19027,7 +19044,7 @@ mod tests {
     #[test]
     fn sponsors_publicly_queryable() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
         let work_id = server
             .create_work(owner_sid, Edition::from_text("public sponsor"))
             .unwrap();
@@ -19511,7 +19528,7 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let (user_club, user_sid) = ac_create_user(&mut server, "invitee", TEST_ALT_CREDENTIAL);
+        let (user_club, user_sid) = ac_create_user(&mut server, "invitee", test_alt_credential());
         assert!(
             !server.work_can_revise(user_sid, work_id).unwrap(),
             "before invite, user cannot edit"
@@ -19519,7 +19536,7 @@ mod tests {
         server
             .club_add_member(owner_sid, edit_club, user_club)
             .unwrap();
-        let user_sid2 = ac_login_as(&mut server, user_club, TEST_ALT_CREDENTIAL);
+        let user_sid2 = ac_login_as(&mut server, user_club, test_alt_credential());
         assert!(
             server.work_can_revise(user_sid2, work_id).unwrap(),
             "after invite, user can edit"
@@ -19538,16 +19555,16 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let (user_club, _user_sid) = ac_create_user(&mut server, "tempuser", TEST_ALT_CREDENTIAL);
+        let (user_club, _user_sid) = ac_create_user(&mut server, "tempuser", test_alt_credential());
         server
             .club_add_member(owner_sid, edit_club, user_club)
             .unwrap();
-        let user_sid2 = ac_login_as(&mut server, user_club, TEST_ALT_CREDENTIAL);
+        let user_sid2 = ac_login_as(&mut server, user_club, test_alt_credential());
         assert!(server.work_can_revise(user_sid2, work_id).unwrap());
         server
             .club_remove_member(owner_sid, edit_club, user_club)
             .unwrap();
-        let user_sid3 = ac_login_as(&mut server, user_club, TEST_ALT_CREDENTIAL);
+        let user_sid3 = ac_login_as(&mut server, user_club, test_alt_credential());
         assert!(
             !server.work_can_revise(user_sid3, work_id).unwrap(),
             "removed member should not edit"
@@ -19557,7 +19574,7 @@ mod tests {
     #[test]
     fn read_club_restricts_visibility() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
         let read_club = server
             .create_named_club(owner_sid, "secret_readers", Edition::empty())
             .unwrap();
@@ -19568,8 +19585,8 @@ mod tests {
             .work_set_read_club(owner_sid, work_id, Some(read_club))
             .unwrap();
         let (stranger_club, _stranger_sid) =
-            ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
-        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
+            ac_create_user(&mut server, "stranger", test_other_credential());
+        let stranger_sid = ac_login_as(&mut server, stranger_club, test_other_credential());
         let can_read = server.work_can_read(stranger_sid, work_id).unwrap();
         assert!(
             !can_read,
@@ -19592,15 +19609,15 @@ mod tests {
     #[test]
     fn unpublish_restricts_to_owner() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
         let work_id = server
             .create_work(owner_sid, Edition::from_text("my doc"))
             .unwrap();
         server.work_publish(owner_sid, work_id).unwrap();
         server.work_unpublish(owner_sid, work_id).unwrap();
         let (stranger_club, _stranger_sid) =
-            ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
-        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
+            ac_create_user(&mut server, "stranger", test_other_credential());
+        let stranger_sid = ac_login_as(&mut server, stranger_club, test_other_credential());
         assert!(
             !server.work_can_read(stranger_sid, work_id).unwrap(),
             "unpublished work should not be readable by strangers"
@@ -19610,7 +19627,7 @@ mod tests {
     #[test]
     fn history_club_requires_owner_to_set() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
         let work_id = server
             .create_work(owner_sid, Edition::from_text("v1"))
             .unwrap();
@@ -19623,8 +19640,8 @@ mod tests {
         assert_eq!(server.work_history_club(work_id).unwrap(), Some(owner_club));
 
         // Stranger cannot set history_club (not owner)
-        let (stranger_club, _) = ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
-        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
+        let (stranger_club, _) = ac_create_user(&mut server, "stranger", test_other_credential());
+        let stranger_sid = ac_login_as(&mut server, stranger_club, test_other_credential());
         let err = server
             .work_set_history_club(stranger_sid, work_id, Some(stranger_club))
             .unwrap_err();
@@ -19638,7 +19655,7 @@ mod tests {
     #[test]
     fn history_club_gates_revision_access() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
         let work_id = server
             .create_work(owner_sid, Edition::from_text("v1"))
             .unwrap();
@@ -19667,8 +19684,8 @@ mod tests {
         );
 
         // Stranger can read the work (published) but NOT its history
-        let (stranger_club, _) = ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
-        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
+        let (stranger_club, _) = ac_create_user(&mut server, "stranger", test_other_credential());
+        let stranger_sid = ac_login_as(&mut server, stranger_club, test_other_credential());
         assert!(
             server.work_can_read(stranger_sid, work_id).unwrap(),
             "published work should be readable by strangers"
@@ -19686,7 +19703,7 @@ mod tests {
     #[test]
     fn history_club_none_falls_back_to_read() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
         let work_id = server
             .create_work(owner_sid, Edition::from_text("v1"))
             .unwrap();
@@ -19696,8 +19713,8 @@ mod tests {
         assert_eq!(server.work_history_club(work_id).unwrap(), None);
 
         // Stranger can read → can also read history (backward-compatible)
-        let (stranger_club, _) = ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
-        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
+        let (stranger_club, _) = ac_create_user(&mut server, "stranger", test_other_credential());
+        let stranger_sid = ac_login_as(&mut server, stranger_club, test_other_credential());
         assert!(
             server.work_can_read(stranger_sid, work_id).unwrap(),
             "published work should be readable"
@@ -19857,13 +19874,14 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let (user_club, _user_sid) = ac_create_user(&mut server, "crdt_user", TEST_ALT_CREDENTIAL);
-        let user_sid = ac_login_as(&mut server, user_club, TEST_ALT_CREDENTIAL);
+        let (user_club, _user_sid) =
+            ac_create_user(&mut server, "crdt_user", test_alt_credential());
+        let user_sid = ac_login_as(&mut server, user_club, test_alt_credential());
         assert!(server.crdt_open_session(user_sid, work_id).is_err());
         server
             .club_add_member(owner_sid, edit_club, user_club)
             .unwrap();
-        let user_sid2 = ac_login_as(&mut server, user_club, TEST_ALT_CREDENTIAL);
+        let user_sid2 = ac_login_as(&mut server, user_club, test_alt_credential());
         assert!(server.crdt_open_session(user_sid2, work_id).is_ok());
     }
 
@@ -19879,11 +19897,11 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let (user_club, _user_sid) = ac_create_user(&mut server, "revokee", TEST_ALT_CREDENTIAL);
+        let (user_club, _user_sid) = ac_create_user(&mut server, "revokee", test_alt_credential());
         server
             .club_add_member(owner_sid, edit_club, user_club)
             .unwrap();
-        let user_sid = ac_login_as(&mut server, user_club, TEST_ALT_CREDENTIAL);
+        let user_sid = ac_login_as(&mut server, user_club, test_alt_credential());
         let _r = server.crdt_open_session(user_sid, work_id).unwrap();
         server
             .crdt_apply_text_delta(
