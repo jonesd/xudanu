@@ -689,6 +689,7 @@ export function CollaborativeEditor({
   const redoStack = useRef<UndoEntry[]>([]);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isUndoRedoing = useRef(false);
+  const lastInputTime = useRef(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [showBoilerplate, setShowBoilerplate] = useState(false);
@@ -783,6 +784,10 @@ export function CollaborativeEditor({
     if (!el) return;
     if (isUndoRedoing.current) return;
 
+    const now = Date.now();
+    const recentlyTyped = now - lastInputTime.current < 500;
+    if (recentlyTyped) return;
+
     if (hasInlineTransclusions && inlineResolvedText) {
       const hasTransclusionSpans = el.querySelector(".inline-transclusion") !== null;
       const currentFull = getTextContent(el);
@@ -795,9 +800,14 @@ export function CollaborativeEditor({
           if (undoStack.current.length > MAX_UNDO) undoStack.current.shift();
         }
         redoStack.current = [];
-        buildTransclusionDom(el, inlineResolvedText, compoundSpanRanges, compoundSourceTitles);
-        lastText.current = getEditableText(el);
       }
+      try {
+        buildTransclusionDom(el, inlineResolvedText, compoundSpanRanges, compoundSourceTitles);
+      } catch (e) {
+        console.error("[editor] buildTransclusionDom threw, falling back:", e);
+        el.textContent = inlineResolvedText;
+      }
+      lastText.current = getEditableText(el);
       return;
     }
 
@@ -820,22 +830,27 @@ export function CollaborativeEditor({
     lastMarksRef.current = marksKey;
     if (currentText !== displayText || marksChanged) {
       const savedCursor = getCursorOffset(el);
-      if (displayText.length > LARGE_DOC_THRESHOLD) {
-        chunkedSetTextContent(el, displayText);
-      } else if (displayText === "") {
-        el.innerHTML = "<br>";
-      } else if (styleMarks.length > 0) {
-        el.innerHTML = buildStyledText(displayText, styleMarks);
-        if (displayText.endsWith("\n")) {
-          el.appendChild(document.createTextNode("\u200B"));
+      try {
+        if (displayText.length > LARGE_DOC_THRESHOLD) {
+          chunkedSetTextContent(el, displayText);
+        } else if (displayText === "") {
+          el.innerHTML = "<br>";
+        } else if (styleMarks.length > 0) {
+          el.innerHTML = buildStyledText(displayText, styleMarks);
+          if (displayText.endsWith("\n")) {
+            el.appendChild(document.createTextNode("\u200B"));
+          }
+        } else {
+          el.textContent = displayText;
+          if (displayText.endsWith("\n")) {
+            el.appendChild(document.createTextNode("\u200B"));
+          }
         }
-      } else {
+        setCursorOffset(el, savedCursor);
+      } catch (e) {
+        console.error("[editor] DOM rebuild failed, falling back to plain text:", e);
         el.textContent = displayText;
-        if (displayText.endsWith("\n")) {
-          el.appendChild(document.createTextNode("\u200B"));
-        }
       }
-      setCursorOffset(el, savedCursor);
     }
     lastText.current = displayText;
   }, [displayText, inlineResolvedText, hasInlineTransclusions, compoundSpanRanges, compoundSourceTitles]);
@@ -1028,6 +1043,7 @@ export function CollaborativeEditor({
     if (isComposing.current || !editable) return;
     const el = editorRef.current;
     if (!el) return;
+    lastInputTime.current = Date.now();
     let newText = hasInlineTransclusions ? getEditableText(el) : getTextContent(el);
     if (newText === "\n" && !el.querySelector("DIV") && !el.querySelector("P")) {
       newText = "";
@@ -1702,8 +1718,19 @@ function buildTransclusionDom(
   spanRanges: SpanRangePayload[],
   sourceTitles?: Record<number, string>,
 ) {
-  el.textContent = "";
-  if (spanRanges.length === 0) {
+  if (!resolvedText || resolvedText.length === 0) {
+    el.innerHTML = "<br>";
+    return;
+  }
+
+  const validRanges = spanRanges.filter(
+    (sr) =>
+      sr.flat_start >= 0 &&
+      sr.flat_end <= resolvedText.length &&
+      sr.flat_end > sr.flat_start,
+  );
+
+  if (validRanges.length === 0) {
     el.textContent = resolvedText;
     if (resolvedText.endsWith("\n")) {
       el.appendChild(document.createTextNode("\u200B"));
@@ -1711,29 +1738,42 @@ function buildTransclusionDom(
     return;
   }
 
-  const sorted = [...spanRanges].sort((a, b) => a.flat_start - b.flat_start);
-  let pos = 0;
+  const savedCursor = getCursorOffset(el);
+  el.textContent = "";
 
-  for (const sr of sorted) {
-    if (sr.flat_start > pos) {
-      el.appendChild(document.createTextNode(resolvedText.slice(pos, sr.flat_start)));
+  try {
+    const sorted = [...validRanges].sort((a, b) => a.flat_start - b.flat_start);
+    let pos = 0;
+
+    for (const sr of sorted) {
+      if (sr.flat_start > pos) {
+        el.appendChild(document.createTextNode(resolvedText.slice(pos, sr.flat_start)));
+      }
+      const content = resolvedText.slice(sr.flat_start, sr.flat_end);
+      const title = sourceTitles?.[sr.source_work_id] || sr.source_work_id.toString(16);
+      const span = document.createElement("span");
+      span.className = "inline-transclusion";
+      span.setAttribute("contenteditable", "false");
+      span.textContent = content;
+      span.title = `Transclusion from: ${title} (click to navigate)`;
+      (span as HTMLElement).dataset.sourceWorkId = String(sr.source_work_id);
+      el.appendChild(span);
+      pos = sr.flat_end;
     }
-    const content = resolvedText.slice(sr.flat_start, sr.flat_end);
-    const title = sourceTitles?.[sr.source_work_id] || sr.source_work_id.toString(16);
-    const span = document.createElement("span");
-    span.className = "inline-transclusion";
-    span.setAttribute("contenteditable", "false");
-    span.textContent = content;
-    span.title = `Transclusion from: ${title} (click to navigate)`;
-    (span as HTMLElement).dataset.sourceWorkId = String(sr.source_work_id);
-    el.appendChild(span);
-    pos = sr.flat_end;
+
+    if (pos < resolvedText.length) {
+      el.appendChild(document.createTextNode(resolvedText.slice(pos)));
+    }
+    if (resolvedText.endsWith("\n")) {
+      el.appendChild(document.createTextNode("\u200B"));
+    }
+  } catch (e) {
+    console.error("[buildTransclusionDom] failed, falling back to plain text:", e);
+    el.textContent = resolvedText;
+    if (resolvedText.endsWith("\n")) {
+      el.appendChild(document.createTextNode("\u200B"));
+    }
   }
 
-  if (pos < resolvedText.length) {
-    el.appendChild(document.createTextNode(resolvedText.slice(pos)));
-  }
-  if (resolvedText.endsWith("\n")) {
-    el.appendChild(document.createTextNode("\u200B"));
-  }
+  setCursorOffset(el, savedCursor);
 }
