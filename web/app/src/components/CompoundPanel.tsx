@@ -1,5 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { CrdtSyncClient, CompoundElementPayload, WorkListEntry, SpanRangePayload } from "../api/crdt_sync";
+import type { CrdtSyncClient, WorkListEntry, SpanRangePayload } from "../api/crdt_sync";
+
+interface CompoundElement {
+  source_work_id: number;
+  char_start: number;
+  char_end: number;
+}
 
 interface CompoundPanelProps {
   client: CrdtSyncClient | null;
@@ -9,9 +15,6 @@ interface CompoundPanelProps {
   spanRanges: SpanRangePayload[];
   works?: WorkListEntry[];
   onReload: () => void;
-  onInsertElement: (index: number, element: CompoundElementPayload) => Promise<number | null>;
-  onRemoveElement: (index: number) => Promise<number | null>;
-  onMoveElement: (from: number, to: number) => Promise<number | null>;
   onRemoveTransclusion?: (sourceWorkId: number, charStart: number, charEnd: number) => Promise<boolean>;
   onPullFromWork?: (sourceWorkId: number, charStart: number, charEnd: number, text: string) => Promise<void>;
 }
@@ -24,11 +27,10 @@ export function CompoundPanel({
   spanRanges,
   works = [],
   onReload,
-  onMoveElement,
   onRemoveTransclusion,
   onPullFromWork,
 }: CompoundPanelProps) {
-  const [elements, setElements] = useState<CompoundElementPayload[]>([]);
+  const [elements, setElements] = useState<CompoundElement[]>([]);
   const [resolvedText, setResolvedText] = useState("");
   const [expanded, setExpanded] = useState(true);
   const [pullOpen, setPullOpen] = useState(false);
@@ -44,20 +46,14 @@ export function CompoundPanel({
     try {
       const result = await client.resolveInlineTransclusions(workBeId);
       if (result.spanRanges && result.spanRanges.length > 0) {
-        const inlineElements: CompoundElementPayload[] = result.spanRanges.map((sr) => ({
-          type: "span" as const,
+        const inlineElements: CompoundElement[] = result.spanRanges.map((sr) => ({
           source_work_id: sr.source_work_id,
           char_start: sr.char_start,
           char_end: sr.char_end,
         }));
         setElements(inlineElements);
       } else {
-        const edition = await client.compoundGetEdition(workBeId);
-        if (edition && edition.elements) {
-          setElements(edition.elements);
-        } else {
-          setElements([]);
-        }
+        setElements([]);
       }
       setResolvedText(result.text || "");
     } catch {
@@ -72,26 +68,12 @@ export function CompoundPanel({
   const handleRemove = useCallback(async (index: number) => {
     const elem = elements[index];
     if (!elem) return;
-    if (elem.type === "span" && onRemoveTransclusion) {
+    if (onRemoveTransclusion) {
       await onRemoveTransclusion(elem.source_work_id, elem.char_start, elem.char_end);
     }
     await loadElements();
     onReload();
   }, [onRemoveTransclusion, elements, loadElements, onReload]);
-
-  const handleMoveUp = useCallback(async (index: number) => {
-    if (index === 0) return;
-    await onMoveElement(index, index - 1);
-    await loadElements();
-    onReload();
-  }, [onMoveElement, loadElements, onReload]);
-
-  const handleMoveDown = useCallback(async (index: number) => {
-    if (index >= elements.length - 1) return;
-    await onMoveElement(index, index + 1);
-    await loadElements();
-    onReload();
-  }, [onMoveElement, loadElements, onReload, elements.length]);
 
   const handleSelectSource = useCallback(async (workId: number) => {
     if (!client) return;
@@ -166,19 +148,14 @@ export function CompoundPanel({
           {elements.map((elem, i) => (
             <div key={i} className="compound-element-row">
               <span className="compound-element-index">{i}</span>
-              {elem.type === "text" ? (
-                <span className="compound-element-text" title={elem.content}>
-                  {"\""}{elem.content.slice(0, 60)}{elem.content.length > 60 ? "\u2026" : ""}{"\""}
+              <span className="compound-element-span">
+                <span className="compound-source-badge">
+                  {sourceTitles[elem.source_work_id] || `work-${elem.source_work_id.toString(16).slice(-4)}`}
                 </span>
-              ) : (
-                <span className="compound-element-span">
-                  <span className="compound-source-badge">
-                    {sourceTitles[elem.source_work_id] || `work-${elem.source_work_id.toString(16).slice(-4)}`}
-                  </span>
-                  <span className="compound-span-range">
-                    [{elem.char_start}:{elem.char_end}]
-                  </span>
-                  {(() => {
+                <span className="compound-span-range">
+                  [{elem.char_start}:{elem.char_end}]
+                </span>
+                {(() => {
                     const sr = spanRanges.find((s) =>
                       s.source_work_id === elem.source_work_id &&
                       s.char_start === elem.char_start &&
@@ -193,12 +170,9 @@ export function CompoundPanel({
                       </span>
                     );
                   })()}
-                </span>
-              )}
+              </span>
               {canEdit && (
                 <span className="compound-element-actions">
-                  <button type="button" className="compound-btn" onClick={() => handleMoveUp(i)} disabled={i === 0} title="Move up">{"\u2191"}</button>
-                  <button type="button" className="compound-btn" onClick={() => handleMoveDown(i)} disabled={i === elements.length - 1} title="Move down">{"\u2193"}</button>
                   <button type="button" className="compound-btn compound-btn-del" onClick={() => handleRemove(i)} title="Remove">{"\u00D7"}</button>
                 </span>
               )}

@@ -8,10 +8,10 @@ function mkClient(): CrdtSyncClient {
   client.resolveInlineTransclusions = vi.fn().mockResolvedValue({
     text: "Hello world",
     spanRanges: [
-      { source_work_id: 2, char_start: 0, char_end: 5, flat_start: 0, flat_end: 5 },
+      { source_work_id: 2, char_start: 0, char_end: 5, flat_start: 0, flat_end: 5, content_len: 5 },
     ],
+    sourceTitles: { 2: "Canon" },
   });
-  client.compoundGetEdition = vi.fn().mockResolvedValue({ elements: [] });
   return client;
 }
 
@@ -32,9 +32,6 @@ describe("CompoundPanel", () => {
         sourceTitles={{}}
         spanRanges={[]}
         onReload={vi.fn()}
-        onInsertElement={vi.fn()}
-        onRemoveElement={vi.fn()}
-        onMoveElement={vi.fn()}
       />,
     );
     await waitFor(() => {
@@ -53,9 +50,6 @@ describe("CompoundPanel", () => {
         sourceTitles={{}}
         spanRanges={[]}
         onReload={vi.fn()}
-        onInsertElement={vi.fn()}
-        onRemoveElement={vi.fn()}
-        onMoveElement={vi.fn()}
       />,
     );
     await waitFor(() => {
@@ -73,9 +67,6 @@ describe("CompoundPanel", () => {
         sourceTitles={mkSourceTitles()}
         spanRanges={mkSpanRanges()}
         onReload={vi.fn()}
-        onInsertElement={vi.fn()}
-        onRemoveElement={vi.fn()}
-        onMoveElement={vi.fn()}
       />,
     );
     await waitFor(() => {
@@ -93,9 +84,6 @@ describe("CompoundPanel", () => {
         sourceTitles={mkSourceTitles()}
         spanRanges={mkSpanRanges()}
         onReload={vi.fn()}
-        onInsertElement={vi.fn()}
-        onRemoveElement={vi.fn()}
-        onMoveElement={vi.fn()}
       />,
     );
     await waitFor(() => {
@@ -113,9 +101,6 @@ describe("CompoundPanel", () => {
         sourceTitles={mkSourceTitles()}
         spanRanges={mkSpanRanges()}
         onReload={vi.fn()}
-        onInsertElement={vi.fn()}
-        onRemoveElement={vi.fn()}
-        onMoveElement={vi.fn()}
       />,
     );
     await waitFor(() => {
@@ -133,9 +118,6 @@ describe("CompoundPanel", () => {
         sourceTitles={mkSourceTitles()}
         spanRanges={mkSpanRanges()}
         onReload={vi.fn()}
-        onInsertElement={vi.fn()}
-        onRemoveElement={vi.fn()}
-        onMoveElement={vi.fn()}
       />,
     );
     await waitFor(() => {
@@ -153,15 +135,10 @@ describe("CompoundPanel", () => {
         sourceTitles={mkSourceTitles()}
         spanRanges={mkSpanRanges()}
         onReload={vi.fn()}
-        onInsertElement={vi.fn()}
-        onRemoveElement={vi.fn()}
-        onMoveElement={vi.fn()}
       />,
     );
     await waitFor(() => {
       expect(screen.getByTitle("Remove")).toBeTruthy();
-      expect(screen.getByTitle("Move up")).toBeTruthy();
-      expect(screen.getByTitle("Move down")).toBeTruthy();
     });
   });
 
@@ -175,9 +152,6 @@ describe("CompoundPanel", () => {
         sourceTitles={mkSourceTitles()}
         spanRanges={mkSpanRanges()}
         onReload={vi.fn()}
-        onInsertElement={vi.fn()}
-        onRemoveElement={vi.fn()}
-        onMoveElement={vi.fn()}
       />,
     );
     await waitFor(() => {
@@ -198,9 +172,6 @@ describe("CompoundPanel", () => {
         sourceTitles={mkSourceTitles()}
         spanRanges={mkSpanRanges()}
         onReload={onReload}
-        onInsertElement={vi.fn()}
-        onRemoveElement={vi.fn()}
-        onMoveElement={vi.fn()}
         onRemoveTransclusion={onRemoveTransclusion}
       />,
     );
@@ -223,9 +194,6 @@ describe("CompoundPanel", () => {
         sourceTitles={mkSourceTitles()}
         spanRanges={mkSpanRanges()}
         onReload={vi.fn()}
-        onInsertElement={vi.fn()}
-        onRemoveElement={vi.fn()}
-        onMoveElement={vi.fn()}
       />,
     );
     await waitFor(() => {
