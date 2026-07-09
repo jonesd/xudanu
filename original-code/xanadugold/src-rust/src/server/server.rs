@@ -8,6 +8,48 @@ use super::error::ServerError;
 use super::keymaster::KeyMaster;
 use super::session::{Session, SessionId};
 use super::wait_barrier::{ConsequenceTracker, OperationGuard, WriteBarrier, WriteGuard};
+
+#[derive(Debug, Clone)]
+pub enum CrossServerResolution {
+    Cached {
+        text: String,
+        hash: [u8; 32],
+    },
+    Fetched {
+        text: String,
+        hash: [u8; 32],
+        origin_server_id: u64,
+    },
+}
+
+impl CrossServerResolution {
+    pub fn text(&self) -> &str {
+        match self {
+            CrossServerResolution::Cached { text, .. } => text,
+            CrossServerResolution::Fetched { text, .. } => text,
+        }
+    }
+
+    pub fn hash(&self) -> &[u8; 32] {
+        match self {
+            CrossServerResolution::Cached { hash, .. } => hash,
+            CrossServerResolution::Fetched { hash, .. } => hash,
+        }
+    }
+
+    pub fn was_fetched(&self) -> bool {
+        matches!(self, CrossServerResolution::Fetched { .. })
+    }
+
+    pub fn origin_server_id(&self) -> Option<u64> {
+        match self {
+            CrossServerResolution::Cached { .. } => None,
+            CrossServerResolution::Fetched {
+                origin_server_id, ..
+            } => Some(*origin_server_id),
+        }
+    }
+}
 use crate::edition::backfollow::BackfollowEngine;
 use crate::edition::blob_store::{BlobMeta, BlobStore};
 use crate::edition::links::{HyperLink, HyperRef};
@@ -245,6 +287,7 @@ pub struct Server {
     consequence_tracker: Arc<ConsequenceTracker>,
     write_barrier: Arc<WriteBarrier>,
     starred_works: HashMap<BeId, HashSet<BeId>>,
+    user_pins: HashMap<BeId, HashSet<String>>,
     trails: HashMap<BeId, TrailState>,
     trail_counter: BeId,
     compound_editions: HashMap<BeId, crate::edition::compound::CompoundEdition>,
@@ -256,6 +299,11 @@ pub struct Server {
     /// Cleared by an explicit admin action once the root cause is fixed.
     restore_errors: Vec<String>,
     trusted_server_registry: Option<crate::crypto::server_identity::TrustedServerRegistry>,
+    server_name: String,
+    server_description: String,
+    server_namespace_id: u64,
+    public_address: Option<String>,
+    server_directory: crate::server::server_directory::ServerDirectory,
 }
 
 #[derive(Debug, Clone)]
@@ -361,6 +409,7 @@ pub(crate) struct CheckpointPayload {
     reconcile_counter: u64,
     federation_snapshot: Option<crate::server::federation::FederationSnapshot>,
     starred_works: HashMap<BeId, HashSet<BeId>>,
+    user_pins: HashMap<BeId, HashSet<String>>,
     trails: Vec<crate::persist::manifest::TrailManifestEntry>,
     trail_counter: BeId,
     compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
@@ -512,25 +561,31 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         clubs: all_club_refs,
         standalone_editions: all_edition_refs,
         links_hash,
-        links: payload.links,
+        links: Vec::new(),
         link_counter: payload.link_counter,
-        admin: payload.admin_entry,
+        links_chunk_hash: None,
+        admin: payload.admin_entry.clone(),
         reconcile_store: payload.reconcile_store,
         reconcile_counter: payload.reconcile_counter,
         federation: payload.federation_snapshot,
+        federation_chunk_hash: None,
         content_address_hash,
         content_address: None,
+        content_address_chunk_hash: None,
         blob_metas_hash,
         blob_metas: Vec::new(),
+        blob_metas_chunk_hash: None,
         key_history: payload.key_history,
         historical_authors_hash,
         historical_authors: None,
+        historical_authors_chunk_hash: None,
         annotations_hash,
         fossil_snapshots_hash,
         starred_works: payload.starred_works,
         trails: payload.trails,
         trail_counter: payload.trail_counter,
         compound_editions: payload.compound_editions,
+        social_chunk_hash: None,
     };
 
     let dual_path = payload
@@ -727,6 +782,7 @@ impl Server {
             consequence_tracker: Arc::new(ConsequenceTracker::new()),
             write_barrier: Arc::new(WriteBarrier::new()),
             starred_works: HashMap::new(),
+            user_pins: HashMap::new(),
             trails: HashMap::new(),
             trail_counter: 10_000,
             compound_editions: HashMap::new(),
@@ -734,6 +790,11 @@ impl Server {
             wal: crate::persist::wal::WalLog::disabled(),
             restore_errors: Vec::new(),
             trusted_server_registry: None,
+            server_name: "Xudanu Server".to_string(),
+            server_description: String::new(),
+            server_namespace_id: 0,
+            public_address: None,
+            server_directory: crate::server::server_directory::ServerDirectory::new(),
             // TODO: Annotations use a simple HashMap for pragmatic first implementation.
             // Migrate to Ent/AssertionStore (src/ent/content.rs) for proper versioning,
             // transclusion survival, and materialize_annotation_indexed support.
@@ -850,6 +911,319 @@ impl Server {
         &self,
     ) -> Option<&crate::crypto::server_identity::TrustedServerRegistry> {
         self.trusted_server_registry.as_ref()
+    }
+
+    pub fn server_name(&self) -> &str {
+        &self.server_name
+    }
+
+    pub fn set_server_name(&mut self, name: String) {
+        self.server_name = name;
+    }
+
+    pub fn server_description(&self) -> &str {
+        &self.server_description
+    }
+
+    pub fn set_server_description(&mut self, desc: String) {
+        self.server_description = desc;
+    }
+
+    pub fn server_namespace_id(&self) -> u64 {
+        if self.server_namespace_id == 0 {
+            let vk = self.server_keypair.signing_verifying_key().to_bytes();
+            let hash = blake3::hash(&vk);
+            let bytes = hash.as_bytes();
+            u64::from_be_bytes([
+                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+            ])
+        } else {
+            self.server_namespace_id
+        }
+    }
+
+    pub fn set_server_namespace_id(&mut self, id: u64) {
+        self.server_namespace_id = id;
+    }
+
+    pub fn public_address(&self) -> Option<&str> {
+        self.public_address.as_deref()
+    }
+
+    pub fn set_public_address(&mut self, addr: Option<String>) {
+        self.public_address = addr;
+    }
+
+    pub fn server_tumbler_prefix(&self) -> String {
+        if let Some(ref addr) = self.public_address {
+            format!("\"{}\"", addr)
+        } else {
+            self.server_namespace_id().to_string()
+        }
+    }
+
+    pub fn total_revision_count(&self) -> u64 {
+        self.works
+            .values()
+            .map(|ws| ws.work.revision_count() as u64)
+            .sum()
+    }
+
+    pub fn well_known_identity(&self) -> serde_json::Value {
+        let vk_bytes = self.server_keypair.signing_verifying_key().to_bytes();
+        let vk_hex: String = vk_bytes.iter().map(|b| format!("{:02x}", b)).collect();
+        serde_json::json!({
+            "protocol_version": 1,
+            "server_id": self.server_namespace_id(),
+            "public_address": self.public_address,
+            "tumbler_prefix": self.server_tumbler_prefix(),
+            "address": "",
+            "verifying_key_ed25519": vk_hex,
+            "name": self.server_name,
+            "description": self.server_description,
+            "public_content": true,
+            "started_at": self.start_time,
+            "stats": {
+                "work_count": self.work_count(),
+                "revision_count": self.total_revision_count(),
+            }
+        })
+    }
+
+    pub fn server_directory(&self) -> &crate::server::server_directory::ServerDirectory {
+        &self.server_directory
+    }
+
+    pub fn server_directory_add(
+        &mut self,
+        address: &str,
+        port: Option<u16>,
+    ) -> Result<crate::server::server_directory::DirectoryEntry, ServerError> {
+        let url = if let Some(p) = port {
+            if address.starts_with("http") {
+                format!(
+                    "{}/.well-known/xudanu-server.json",
+                    address.trim_end_matches('/')
+                )
+            } else {
+                format!("http://{}:{}/.well-known/xudanu-server.json", address, p)
+            }
+        } else if address.starts_with("http") {
+            format!(
+                "{}/.well-known/xudanu-server.json",
+                address.trim_end_matches('/')
+            )
+        } else {
+            format!("http://{}:8080/.well-known/xudanu-server.json", address)
+        };
+
+        tracing::info!("Fetching server identity from {}", url);
+
+        let response_text = http_get_json(&url, 10).map_err(|e| {
+            ServerError::Internal(format!("Failed to fetch server identity: {}", e))
+        })?;
+
+        let identity: serde_json::Value = serde_json::from_str(&response_text)
+            .map_err(|e| ServerError::Internal(format!("Invalid identity JSON: {}", e)))?;
+
+        let server_id = identity["server_id"]
+            .as_u64()
+            .ok_or_else(|| ServerError::Internal("Missing server_id".into()))?;
+        let verifying_key = identity["verifying_key_ed25519"]
+            .as_str()
+            .ok_or_else(|| ServerError::Internal("Missing verifying_key".into()))?
+            .to_string();
+        let name = identity["name"].as_str().unwrap_or("Unknown").to_string();
+        let description = identity["description"].as_str().unwrap_or("").to_string();
+
+        let entry = crate::server::server_directory::DirectoryEntry {
+            server_id,
+            address: address.to_string(),
+            port,
+            verifying_key,
+            name,
+            description,
+            trusted: false,
+            discovered: "manual".to_string(),
+            referred_by: None,
+            last_seen: Some(Self::current_timestamp_secs()),
+        };
+
+        tracing::info!(
+            server_id,
+            name = entry.name.as_str(),
+            "Added server to directory"
+        );
+
+        self.server_directory.add(entry.clone());
+        Ok(entry)
+    }
+
+    pub fn server_directory_remove(&mut self, server_id: u64) -> bool {
+        self.server_directory.remove(server_id)
+    }
+
+    pub fn server_directory_add_manual(
+        &mut self,
+        server_id: u64,
+        address: String,
+        verifying_key: String,
+        name: String,
+    ) {
+        let entry = crate::server::server_directory::DirectoryEntry {
+            server_id,
+            address,
+            port: None,
+            verifying_key,
+            name,
+            description: String::new(),
+            trusted: false,
+            discovered: "manual".to_string(),
+            referred_by: None,
+            last_seen: Some(Self::current_timestamp_secs()),
+        };
+        self.server_directory.add(entry);
+    }
+
+    pub fn server_directory_set_trust(&mut self, server_id: u64, trusted: bool) -> bool {
+        self.server_directory.set_trust(server_id, trusted)
+    }
+
+    pub fn server_directory_set_port(&mut self, server_id: u64, port: Option<u16>) -> bool {
+        if let Some(entry) = self.server_directory.get_mut(server_id) {
+            entry.port = port;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn server_directory_save(&self) -> Result<(), ServerError> {
+        if let Some(dir) = &self.data_dir {
+            let path = dir.join("server_directory.json");
+            self.server_directory
+                .save_to_file(&path)
+                .map_err(|e| ServerError::Internal(format!("Failed to save directory: {}", e)))?;
+        }
+        Ok(())
+    }
+
+    pub fn server_directory_load(&mut self) -> Result<(), ServerError> {
+        if let Some(dir) = &self.data_dir {
+            let path = dir.join("server_directory.json");
+            match crate::server::server_directory::ServerDirectory::load_from_file(&path) {
+                Ok(d) => {
+                    self.server_directory = d;
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load server directory: {}", e);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn resolve_cross_server_ref(
+        &mut self,
+        tumbler: &str,
+        expected_hash: [u8; 32],
+    ) -> Result<CrossServerResolution, ServerError> {
+        use crate::edition::links::{parse_tumbler_server, tumbler_local_path};
+
+        if self.blob_store.exists(&expected_hash).unwrap_or(false) {
+            let data = self
+                .blob_store
+                .retrieve(&expected_hash)
+                .map_err(|e| ServerError::Internal(format!("cache read failed: {}", e)))?;
+            return Ok(CrossServerResolution::Cached {
+                text: String::from_utf8_lossy(&data).to_string(),
+                hash: expected_hash,
+            });
+        }
+
+        let (server_id, server_address) = parse_tumbler_server(tumbler);
+        let local_path = tumbler_local_path(tumbler);
+        let work_id_hex = local_path
+            .split('.')
+            .next()
+            .ok_or_else(|| ServerError::Internal("tumbler missing work component".into()))?;
+
+        let (base_url, server_label) = if let Some(ref addr) = server_address {
+            let url = if addr.starts_with("http") {
+                addr.clone()
+            } else if addr.contains(':') {
+                format!("http://{}", addr)
+            } else {
+                format!("https://{}", addr)
+            };
+            (url, addr.clone())
+        } else {
+            if server_id == 0 || server_id == self.server_namespace_id() {
+                return Err(ServerError::Internal(
+                    "tumbler does not reference a remote server".into(),
+                ));
+            }
+            let url = self
+                .server_directory
+                .resolve_address(server_id)
+                .ok_or_else(|| {
+                    ServerError::Internal(format!(
+                        "server {} not in directory — add it first",
+                        server_id
+                    ))
+                })?;
+            (url, server_id.to_string())
+        };
+
+        let url = format!(
+            "{}/api/public/work/{}",
+            base_url.trim_end_matches('/'),
+            work_id_hex
+        );
+
+        tracing::info!("Fetching cross-server content from {}", url);
+
+        let response_text = http_get_json(&url, 15).map_err(|e| {
+            ServerError::Internal(format!("fetch from {} failed: {}", server_label, e))
+        })?;
+
+        let body: serde_json::Value = serde_json::from_str(&response_text)
+            .map_err(|e| ServerError::Internal(format!("invalid JSON from server: {}", e)))?;
+
+        let text = body["text"]
+            .as_str()
+            .ok_or_else(|| ServerError::Internal("response missing 'text' field".into()))?
+            .to_string();
+
+        let content_hash = {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(text.as_bytes());
+            let computed: [u8; 32] = hasher.finalize().into();
+            computed
+        };
+
+        if content_hash != expected_hash {
+            tracing::warn!(
+                expected = crate::crypto::keys::hex_encode(&expected_hash),
+                got = crate::crypto::keys::hex_encode(&content_hash),
+                "cross-server content hash mismatch"
+            );
+            return Err(ServerError::Internal(
+                "content hash mismatch — possible tampering".into(),
+            ));
+        }
+
+        let _ = self
+            .blob_store
+            .store(text.as_bytes(), "text/plain".to_string());
+
+        let origin_server_id = body["server_namespace_id"].as_u64().unwrap_or(server_id);
+
+        Ok(CrossServerResolution::Fetched {
+            text,
+            hash: content_hash,
+            origin_server_id,
+        })
     }
 
     pub fn verify_server_identity(
@@ -1521,7 +1895,6 @@ impl Server {
         self.backfollow
             .update_work_with_parent(work_be_id, work_be_id, &old_edition, &new_work);
         self.trigger_planted_recorders(work_be_id);
-        self.mark_compound_dirty(work_be_id);
         if needs_span_migration {
             let text_delta_ops: Vec<crate::server::transport::protocol::TextDeltaOp> = text_delta
                 .iter()
@@ -3744,6 +4117,98 @@ impl Server {
         self.works.len()
     }
 
+    pub fn public_work_edition(&self, work_be_id: BeId) -> Result<serde_json::Value, ServerError> {
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+
+        if ws.work.read_club() != Some(self.system_clubs.public_club) {
+            return Err(ServerError::WorkNotFound(work_be_id));
+        }
+
+        let edition = ws.work.current_edition();
+        let text = edition.to_text();
+        let revision = ws.work.revision_count();
+        let title = ws.title().to_string();
+
+        let content_hash = {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(text.as_bytes());
+            hasher.finalize().to_hex().to_string()
+        };
+
+        let span_provenance: Vec<serde_json::Value> = edition
+            .span_provenance
+            .iter()
+            .map(|sp| {
+                serde_json::json!({
+                    "start": sp.start,
+                    "end": sp.end,
+                    "author_public_key": sp.provenance.author_public_key.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+                    "signature": sp.provenance.signature.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+                    "timestamp": sp.provenance.timestamp,
+                    "server_id": sp.provenance.server_id.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+                })
+            })
+            .collect();
+
+        Ok(serde_json::json!({
+            "work_id": format!("{:04x}", work_be_id),
+            "title": title,
+            "revision": revision,
+            "text": text,
+            "char_count": text.chars().count(),
+            "content_hash_blake3": content_hash,
+            "span_provenance": span_provenance,
+            "server_namespace_id": self.server_namespace_id(),
+        }))
+    }
+
+    pub fn public_work_range(
+        &self,
+        work_be_id: BeId,
+        start: usize,
+        end: usize,
+    ) -> Result<serde_json::Value, ServerError> {
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+
+        if ws.work.read_club() != Some(self.system_clubs.public_club) {
+            return Err(ServerError::WorkNotFound(work_be_id));
+        }
+
+        let text = ws.work.current_edition().to_text();
+        let chars: Vec<char> = text.chars().collect();
+        let start = start.min(chars.len());
+        let end = end.min(chars.len());
+        if start >= end {
+            return Ok(serde_json::json!({
+                "work_id": format!("{:04x}", work_be_id),
+                "text": "",
+                "range": [start, end],
+            }));
+        }
+
+        let range_text: String = chars[start..end].iter().collect();
+        let content_hash = {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(range_text.as_bytes());
+            hasher.finalize().to_hex().to_string()
+        };
+
+        Ok(serde_json::json!({
+            "work_id": format!("{:04x}", work_be_id),
+            "title": ws.title(),
+            "text": range_text,
+            "range": [start, end],
+            "content_hash_blake3": content_hash,
+            "server_namespace_id": self.server_namespace_id(),
+        }))
+    }
+
     #[cfg(feature = "server")]
     pub fn is_work_dirty(&self, work_id: BeId) -> Option<bool> {
         self.works.get(&work_id).map(|ws| ws.chunk_ref.is_none())
@@ -3905,7 +4370,6 @@ impl Server {
                 .apply_text_delta(work_be_id, session_id, ops)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-            self.migrate_compound_spans_for_delta(work_be_id, ops);
             self.migrate_link_spans_for_delta(work_be_id, ops);
 
             let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result
@@ -4561,6 +5025,61 @@ impl Server {
         }
     }
 
+    pub fn set_connection_pin(
+        &mut self,
+        session_id: SessionId,
+        key: &str,
+    ) -> Result<(), ServerError> {
+        self.ensure_authenticated(session_id)?;
+        let club_id = self
+            .resolve_author_club(session_id)
+            .ok_or(ServerError::NotAuthorized)?;
+        self.user_pins
+            .entry(club_id)
+            .or_default()
+            .insert(key.to_string());
+        if let Err(e) = self.wal.append_pin(club_id, key.to_string()) {
+            tracing::warn!("WAL write failed for pin: {}", e);
+        }
+        self.auto_checkpoint();
+        Ok(())
+    }
+
+    pub fn unset_connection_pin(
+        &mut self,
+        session_id: SessionId,
+        key: &str,
+    ) -> Result<(), ServerError> {
+        self.ensure_authenticated(session_id)?;
+        let club_id = self
+            .resolve_author_club(session_id)
+            .ok_or(ServerError::NotAuthorized)?;
+        if let Some(set) = self.user_pins.get_mut(&club_id) {
+            set.remove(key);
+        }
+        if let Err(e) = self.wal.append_unpin(club_id, key.to_string()) {
+            tracing::warn!("WAL write failed for unpin: {}", e);
+        }
+        self.auto_checkpoint();
+        Ok(())
+    }
+
+    pub fn connection_pins_for_session(&self, session_id: SessionId) -> HashSet<String> {
+        self.resolve_author_club(session_id)
+            .and_then(|cid| self.user_pins.get(&cid).cloned())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn wal_replay_pin(&mut self, club_id: BeId, key: String) {
+        self.user_pins.entry(club_id).or_default().insert(key);
+    }
+
+    pub(crate) fn wal_replay_unpin(&mut self, club_id: BeId, key: String) {
+        if let Some(set) = self.user_pins.get_mut(&club_id) {
+            set.remove(&key);
+        }
+    }
+
     pub(crate) fn wal_replay_trail_create(
         &mut self,
         owner_club: BeId,
@@ -4878,6 +5397,7 @@ impl Server {
         ) {
             tracing::warn!("WAL write failed for trail_create: {}", e);
         }
+        self.auto_checkpoint();
         Ok(trail_id)
     }
 
@@ -4898,6 +5418,7 @@ impl Server {
         if let Err(e) = self.wal.append_trail_delete(trail_id) {
             tracing::warn!("WAL write failed for trail_delete: {}", e);
         }
+        self.auto_checkpoint();
         Ok(())
     }
 
@@ -4924,6 +5445,7 @@ impl Server {
         if let Err(e) = self.wal.append_trail_rename(trail_id, &old_name, &name) {
             tracing::warn!("WAL write failed for trail_rename: {}", e);
         }
+        self.auto_checkpoint();
         Ok(())
     }
 
@@ -4961,6 +5483,7 @@ impl Server {
         {
             tracing::warn!("WAL write failed for trail_add_stop: {}", e);
         }
+        self.auto_checkpoint();
         Ok(())
     }
 
@@ -4993,6 +5516,7 @@ impl Server {
         if let Err(e) = self.wal.append_trail_remove_stop(trail_id, work_id) {
             tracing::warn!("WAL write failed for trail_remove_stop: {}", e);
         }
+        self.auto_checkpoint();
         Ok(())
     }
 
@@ -5030,6 +5554,7 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        self.auto_checkpoint();
         Ok(())
     }
 
@@ -5105,6 +5630,7 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        self.auto_checkpoint();
         Ok(())
     }
 
@@ -5126,6 +5652,7 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        self.auto_checkpoint();
         Ok(())
     }
 
@@ -6010,7 +6537,105 @@ impl Server {
         self.operation_counter = manifest.operation_counter;
         self.system_clubs = manifest.system_clubs;
         self.link_counter = manifest.link_counter;
-        self.starred_works = manifest.starred_works;
+        self.starred_works = if let Some(hash) = manifest.social_chunk_hash {
+            {
+                let hex_str: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
+                let p = chunk_store
+                    .base_dir()
+                    .join("chunks")
+                    .join(&hex_str[..2])
+                    .join(format!("{}.xchunk", hex_str));
+                let legacy = chunk_store
+                    .base_dir()
+                    .join("chunks")
+                    .join(&hex_str[..2])
+                    .join(&hex_str);
+            }
+            let raw = chunk_store.read_chunk(&hash);
+            match raw {
+                Ok(data) => {
+                    let untagged = crate::persist::chunk_store::untag_chunk_data(&data);
+                    match untagged {
+                        Ok((_, json)) => {
+                            let parsed: Result<crate::persist::manifest::SocialSection, _> =
+                                serde_json::from_slice(json);
+                            match parsed {
+                                Ok(social) => {
+                                    self.trail_counter = social.trail_counter;
+                                    for t in social.trails {
+                                        self.trails.insert(
+                                            t.trail_id,
+                                            TrailState {
+                                                trail_id: t.trail_id,
+                                                owner_club: t.owner_club,
+                                                name: t.name,
+                                                introduction: t.introduction,
+                                                categories: t.categories,
+                                                published: t.published,
+                                                stops: t
+                                                    .stops
+                                                    .into_iter()
+                                                    .map(|s| TrailStop {
+                                                        work_id: s.work_id,
+                                                        char_start: s.char_start,
+                                                        char_end: s.char_end,
+                                                        note: s.note,
+                                                    })
+                                                    .collect(),
+                                                created_at: t.created_at,
+                                                updated_at: t.updated_at,
+                                            },
+                                        );
+                                    }
+                                    self.compound_editions =
+                                        social.compound_editions.into_iter().collect();
+                                    self.user_pins = social.user_pins;
+                                    social.starred_works
+                                }
+                                Err(e) => {
+                                    tracing::warn!("social chunk parse error: {}", e);
+                                    std::collections::HashMap::new()
+                                }
+                            }
+                        }
+                        Err(_) => std::collections::HashMap::new(),
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("social chunk read error: {}", e);
+                    std::collections::HashMap::new()
+                }
+            }
+        } else {
+            self.trail_counter = manifest.trail_counter;
+            for t in manifest.trails {
+                self.trails.insert(
+                    t.trail_id,
+                    TrailState {
+                        trail_id: t.trail_id,
+                        owner_club: t.owner_club,
+                        name: t.name,
+                        introduction: t.introduction,
+                        categories: t.categories,
+                        published: t.published,
+                        stops: t
+                            .stops
+                            .into_iter()
+                            .map(|s| TrailStop {
+                                work_id: s.work_id,
+                                char_start: s.char_start,
+                                char_end: s.char_end,
+                                note: s.note,
+                            })
+                            .collect(),
+                        created_at: t.created_at,
+                        updated_at: t.updated_at,
+                    },
+                );
+            }
+            self.compound_editions = manifest.compound_editions.into_iter().collect();
+            manifest.starred_works
+        };
         {
             let total: usize = self.starred_works.values().map(|s| s.len()).sum();
             tracing::info!(
@@ -6018,36 +6643,62 @@ impl Server {
                 self.starred_works.len(),
                 total
             );
-        }
-        self.trail_counter = manifest.trail_counter;
-        for t in manifest.trails {
-            self.trails.insert(
-                t.trail_id,
-                TrailState {
-                    trail_id: t.trail_id,
-                    owner_club: t.owner_club,
-                    name: t.name,
-                    introduction: t.introduction,
-                    categories: t.categories,
-                    published: t.published,
-                    stops: t
-                        .stops
-                        .into_iter()
-                        .map(|s| TrailStop {
-                            work_id: s.work_id,
-                            char_start: s.char_start,
-                            char_end: s.char_end,
-                            note: s.note,
-                        })
-                        .collect(),
-                    created_at: t.created_at,
-                    updated_at: t.updated_at,
-                },
+            let pin_total: usize = self.user_pins.values().map(|s| s.len()).sum();
+            tracing::info!(
+                "[restore] user_pins: {} clubs, {} total pins",
+                self.user_pins.len(),
+                pin_total
             );
         }
-        self.compound_editions = manifest.compound_editions.into_iter().collect();
-        self.reconcile_store = manifest.reconcile_store;
-        self.reconcile_counter = manifest.reconcile_counter;
+        self.reconcile_store = if let Some(hash) = manifest.federation_chunk_hash {
+            match chunk_store.read_chunk(&hash) {
+                Ok(data) => match crate::persist::chunk_store::untag_chunk_data(&data) {
+                    Ok((_, json)) => {
+                        match serde_json::from_slice::<crate::persist::manifest::FederationSection>(
+                            json,
+                        ) {
+                            Ok(fed) => {
+                                self.reconcile_counter = fed.reconcile_counter;
+                                self.federation = fed
+                                    .federation
+                                    .as_ref()
+                                    .map(|fs| {
+                                        crate::server::federation::FederationState::from_snapshot(
+                                            fs,
+                                        )
+                                    })
+                                    .unwrap_or_else(|| {
+                                        crate::server::federation::FederationState::disabled()
+                                    });
+                                fed.reconcile_store
+                            }
+                            Err(e) => {
+                                tracing::warn!("federation chunk parse error: {}", e);
+                                self.federation =
+                                    crate::server::federation::FederationState::disabled();
+                                crate::server::federation::ReconcileStore::new()
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        self.federation = crate::server::federation::FederationState::disabled();
+                        crate::server::federation::ReconcileStore::new()
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!("federation chunk read error: {}", e);
+                    self.federation = crate::server::federation::FederationState::disabled();
+                    crate::server::federation::ReconcileStore::new()
+                }
+            }
+        } else {
+            self.federation = manifest
+                .federation
+                .as_ref()
+                .map(|fs| crate::server::federation::FederationState::from_snapshot(fs))
+                .unwrap_or_else(|| crate::server::federation::FederationState::disabled());
+            manifest.reconcile_store
+        };
         self.content_address = if let Some(hash) = manifest.content_address_hash {
             match chunk_store.read_chunk(&hash) {
                 Ok(data) => match crate::persist::chunk_store::untag_chunk_data(&data) {
@@ -6311,12 +6962,6 @@ impl Server {
                 .push(link.link_id);
         }
 
-        self.federation = manifest
-            .federation
-            .as_ref()
-            .map(|fs| crate::server::federation::FederationState::from_snapshot(fs))
-            .unwrap_or_else(crate::server::federation::FederationState::disabled);
-
         self.chunk_store = Some(Arc::new(chunk_store));
         self.data_dir = Some(data_dir.to_path_buf());
         self.checkpoint_path = Some(manifest_path);
@@ -6331,6 +6976,8 @@ impl Server {
             };
         self.wal = crate::persist::wal::WalLog::open(data_dir)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+        let _ = self.server_directory_load();
 
         let wal_path = data_dir.join("wal.log");
         if wal_path.exists() {
@@ -7755,9 +8402,7 @@ impl Server {
                 is_private,
             )
             .map_err(|e| ServerError::Internal(e.to_string()))?;
-        if let Err(e) = self.checkpoint_to_store() {
-            tracing::error!("annotation checkpoint failed: {}", e);
-        }
+        self.auto_checkpoint();
         Ok(())
     }
 
@@ -7775,9 +8420,7 @@ impl Server {
         self.otree_crdt
             .annotation_delete(work_id, annotation_id)
             .map_err(|e| ServerError::Internal(e.to_string()))?;
-        if let Err(e) = self.checkpoint_to_store() {
-            tracing::error!("annotation delete checkpoint failed: {}", e);
-        }
+        self.auto_checkpoint();
         Ok(())
     }
 
@@ -8702,38 +9345,6 @@ impl Server {
         positions
     }
 
-    pub fn resolve_compound_to_text(
-        &self,
-        compound: &crate::edition::compound::CompoundEdition,
-    ) -> Result<String, ServerError> {
-        let mut result = String::new();
-        for element in compound.elements() {
-            match element {
-                crate::edition::compound::CompoundElement::Text { content } => {
-                    result.push_str(content);
-                }
-                crate::edition::compound::CompoundElement::Span { span } => {
-                    let text = self.work_text(span.source_work_id())?;
-                    let char_count = text.chars().count();
-                    let start = span.char_start().min(char_count);
-                    let end = span.char_end().min(char_count);
-                    let byte_start = text
-                        .char_indices()
-                        .nth(start)
-                        .map(|(i, _)| i)
-                        .unwrap_or(text.len());
-                    let byte_end = text
-                        .char_indices()
-                        .nth(end)
-                        .map(|(i, _)| i)
-                        .unwrap_or(text.len());
-                    result.push_str(&text[byte_start..byte_end]);
-                }
-            }
-        }
-        Ok(result)
-    }
-
     fn work_text(&self, work_id: u64) -> Result<String, ServerError> {
         if let Ok(text) = self.otree_crdt.current_text(work_id) {
             return Ok(text);
@@ -8748,13 +9359,6 @@ impl Server {
         Ok(text)
     }
 
-    pub fn get_compound_edition(
-        &self,
-        work_id: BeId,
-    ) -> Option<&crate::edition::compound::CompoundEdition> {
-        self.compound_editions.get(&work_id)
-    }
-
     pub fn compound_edition_work_ids(&self) -> Vec<BeId> {
         self.compound_editions.keys().copied().collect()
     }
@@ -8763,22 +9367,12 @@ impl Server {
         &mut self,
         work_id: BeId,
         compound: crate::edition::compound::CompoundEdition,
-        session_id: SessionId,
+        _session_id: SessionId,
     ) -> Result<(), ServerError> {
         if !self.works.contains_key(&work_id) {
             return Err(ServerError::WorkNotFound(work_id));
         }
-        self.compound_editions.insert(work_id, compound.clone());
-        let compound_json = serde_json::to_string(&compound)
-            .map_err(|_| ServerError::Internal("compound serde failed".into()))?;
-        let _ = self.wal.append(
-            "set_compound_edition",
-            serde_json::json!({
-                "work_id": work_id,
-                "compound": compound_json,
-            }),
-        );
-        let _ = session_id;
+        self.compound_editions.insert(work_id, compound);
         Ok(())
     }
 
@@ -8787,10 +9381,31 @@ impl Server {
         session_id: SessionId,
         work_id: BeId,
         position: i64,
-        element: RangeElement,
+        mut element: RangeElement,
     ) -> Result<u64, ServerError> {
         self.ensure_session(session_id)?;
         let char_position = position.max(0) as usize;
+
+        if let crate::edition::RangeElement::Transclusion {
+            source_work_id,
+            char_start,
+            char_end,
+            ..
+        } = &element
+        {
+            let placed_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let placed_by = self.resolve_author_club(session_id);
+            element = crate::edition::RangeElement::transclusion_with_meta(
+                *source_work_id,
+                *char_start,
+                *char_end,
+                placed_at,
+                placed_by,
+            );
+        }
 
         let new_edition = {
             let ws = self
@@ -8911,6 +9526,7 @@ impl Server {
                         source_work_id: sid,
                         char_start: cs,
                         char_end: ce,
+                        ..
                     } = &carrier.element
                     {
                         if *sid == source_work_id && *cs == char_start && *ce == char_end {
@@ -8999,211 +9615,8 @@ impl Server {
         Ok(migrated_count)
     }
 
-    pub fn compound_insert_element(
-        &mut self,
-        work_id: BeId,
-        index: usize,
-        element: crate::edition::compound::CompoundElement,
-        session_id: SessionId,
-    ) -> Result<usize, ServerError> {
-        if !self.works.contains_key(&work_id) {
-            return Err(ServerError::WorkNotFound(work_id));
-        }
-        let compound = self
-            .compound_editions
-            .entry(work_id)
-            .or_insert_with(crate::edition::compound::CompoundEdition::empty);
-        compound.insert(index, element.clone());
-        let count = compound.len();
-        let element_json = serde_json::to_string(&element)
-            .map_err(|_| ServerError::Internal("compound element serde failed".into()))?;
-        let _ = self.wal.append(
-            "compound_insert_element",
-            serde_json::json!({
-                "work_id": work_id,
-                "index": index,
-                "element": element_json,
-            }),
-        );
-        let _ = session_id;
-        Ok(count)
-    }
-
-    pub fn compound_remove_element(
-        &mut self,
-        work_id: BeId,
-        index: usize,
-        session_id: SessionId,
-    ) -> Result<usize, ServerError> {
-        if !self.works.contains_key(&work_id) {
-            return Err(ServerError::WorkNotFound(work_id));
-        }
-        let compound = self
-            .compound_editions
-            .get_mut(&work_id)
-            .ok_or(ServerError::Internal("no compound edition for work".into()))?;
-        compound.remove(index);
-        let count = compound.len();
-        let _ = self.wal.append(
-            "compound_remove_element",
-            serde_json::json!({
-                "work_id": work_id,
-                "index": index,
-            }),
-        );
-        let _ = session_id;
-        Ok(count)
-    }
-
-    pub fn compound_move_element(
-        &mut self,
-        work_id: BeId,
-        from: usize,
-        to: usize,
-        session_id: SessionId,
-    ) -> Result<usize, ServerError> {
-        if !self.works.contains_key(&work_id) {
-            return Err(ServerError::WorkNotFound(work_id));
-        }
-        let compound = self
-            .compound_editions
-            .get_mut(&work_id)
-            .ok_or(ServerError::Internal("no compound edition for work".into()))?;
-        compound.move_element(from, to);
-        let count = compound.len();
-        let _ = self.wal.append(
-            "compound_move_element",
-            serde_json::json!({
-                "work_id": work_id,
-                "from": from,
-                "to": to,
-            }),
-        );
-        let _ = session_id;
-        Ok(count)
-    }
-    ///
-    /// Walks the work's current edition entries, grouping consecutive elements
-    /// by their `source_work_id` provenance. For each group, searches for the
-    /// group's text in the source work to determine the correct span range,
-    /// producing a `CompoundElement::Span`. Runs without provenance become
-    /// `CompoundElement::Text`.
-    ///
-    /// This repairs compounds that were corrupted (text-only, no spans) by
-    /// the work-switch bug fixed in commit 4c2219c6.
-    pub fn compound_rebuild(
-        &mut self,
-        work_id: BeId,
-        session_id: SessionId,
-    ) -> Result<crate::edition::compound::CompoundEdition, ServerError> {
-        self.ensure_session(session_id)?;
-
-        let edition = {
-            let ws = self
-                .works
-                .get(&work_id)
-                .ok_or(ServerError::WorkNotFound(work_id))?;
-            ws.work.current_edition().clone()
-        };
-
-        let entries = edition.all_entries();
-        let mut elements: Vec<crate::edition::compound::CompoundElement> = Vec::new();
-
-        let mut text_buf = String::new();
-        let mut span_source: Option<BeId> = None;
-        let mut span_text = String::new();
-
-        let flush_text =
-            |buf: &mut String, elems: &mut Vec<crate::edition::compound::CompoundElement>| {
-                if !buf.is_empty() {
-                    elems.push(crate::edition::compound::CompoundElement::text(
-                        buf.as_str(),
-                    ));
-                    buf.clear();
-                }
-            };
-
-        for (_, c) in &entries {
-            let src = c.provenance.as_ref().and_then(|p| p.source_work_id);
-
-            if let Some(sid) = src {
-                if span_source != Some(sid) {
-                    flush_text(&mut text_buf, &mut elements);
-                    if let Some(old_sid) = span_source.take() {
-                        self.emit_span(&mut elements, old_sid, &span_text);
-                        span_text.clear();
-                    }
-                    span_source = Some(sid);
-                }
-                if let Some(t) = c.element.as_text() {
-                    span_text.push_str(t);
-                }
-            } else {
-                if let Some(old_sid) = span_source.take() {
-                    flush_text(&mut text_buf, &mut elements);
-                    self.emit_span(&mut elements, old_sid, &span_text);
-                    span_text.clear();
-                }
-                if let Some(t) = c.element.as_text() {
-                    text_buf.push_str(t);
-                }
-            }
-        }
-
-        if let Some(sid) = span_source.take() {
-            flush_text(&mut text_buf, &mut elements);
-            self.emit_span(&mut elements, sid, &span_text);
-        }
-        flush_text(&mut text_buf, &mut elements);
-
-        let compound = crate::edition::compound::CompoundEdition::new(elements);
-        self.set_compound_edition(work_id, compound.clone(), session_id)?;
-        Ok(compound)
-    }
-
-    fn emit_span(
-        &self,
-        elements: &mut Vec<crate::edition::compound::CompoundElement>,
-        source_work_id: BeId,
-        text: &str,
-    ) {
-        if text.is_empty() {
-            return;
-        }
-        let positions = self.find_excerpt_positions(source_work_id, text);
-        if let Some(&(char_start, char_end)) = positions.first() {
-            elements.push(crate::edition::compound::CompoundElement::span(
-                source_work_id,
-                char_start,
-                char_end,
-            ));
-        } else {
-            elements.push(crate::edition::compound::CompoundElement::text(text));
-        }
-    }
-
-    pub fn resolve_compound_edition(
-        &self,
-        work_id: BeId,
-    ) -> Result<crate::edition::compound::ResolvedCompoundEdition, ServerError> {
-        let compound = self
-            .compound_editions
-            .get(&work_id)
-            .ok_or(ServerError::WorkNotFound(work_id))?;
-        compound
-            .resolve(|src_id| {
-                self.work_text(src_id).map_err(|_| {
-                    crate::edition::compound::ResolveError::SourceNotFound { work_id: src_id }
-                })
-            })
-            .map_err(|e| match e {
-                crate::edition::compound::ResolveError::SourceNotFound { work_id } => {
-                    ServerError::WorkNotFound(work_id)
-                }
-                crate::edition::compound::ResolveError::SourceFetchFailed { work_id } => {
-                    ServerError::WorkNotFound(work_id)
-                }
-            })
+    pub fn compound_source_title(&self, work_id: BeId) -> Option<String> {
+        self.works.get(&work_id).map(|ws| ws.cached_title.clone())
     }
 
     pub fn resolve_inline_transclusions(
@@ -9277,11 +9690,15 @@ impl Server {
                 source_work_id,
                 char_start,
                 char_end,
+                placed_at,
+                placed_by,
             } = &carrier.element
             {
                 let src_id = *source_work_id;
                 let c_start = *char_start;
                 let c_end = *char_end;
+                let p_at = *placed_at;
+                let p_by = *placed_by;
 
                 let src_text = self.resolve_inline_recursive(
                     src_id,
@@ -9307,6 +9724,8 @@ impl Server {
                     content_len,
                     otree_position: crdt_offset,
                     resolved_content: content.clone(),
+                    placed_at: p_at,
+                    placed_by: p_by,
                 });
 
                 if !source_titles.contains_key(&src_id) {
@@ -9393,6 +9812,7 @@ impl Server {
                         source_work_id: sid,
                         char_start,
                         char_end,
+                        ..
                     } = &new_carrier.element
                     {
                         if *sid == source_work_id {
@@ -9413,146 +9833,6 @@ impl Server {
                 ws.mark_dirty();
             }
         }
-    }
-
-    const COMPOUND_MAX_DEPTH: usize = 32;
-
-    fn resolve_text_recursive(
-        &self,
-        work_id: BeId,
-        cache: &std::cell::RefCell<HashMap<BeId, String>>,
-        stack: &std::cell::RefCell<Vec<BeId>>,
-    ) -> Result<String, ServerError> {
-        {
-            let cache_ref = cache.borrow();
-            if let Some(cached) = cache_ref.get(&work_id) {
-                return Ok(cached.clone());
-            }
-        }
-
-        {
-            let stack_ref = stack.borrow();
-            if stack_ref.len() >= Self::COMPOUND_MAX_DEPTH {
-                return self.work_text(work_id);
-            }
-            if stack_ref.contains(&work_id) {
-                return self.work_text(work_id);
-            }
-        }
-
-        if let Some(compound) = self.compound_editions.get(&work_id).cloned() {
-            stack.borrow_mut().push(work_id);
-
-            let mut flat_text = String::new();
-            for elem in compound.elements() {
-                match elem {
-                    crate::edition::compound::CompoundElement::Text { content } => {
-                        flat_text.push_str(content);
-                    }
-                    crate::edition::compound::CompoundElement::Span { span } => {
-                        let source_text =
-                            self.resolve_text_recursive(span.source_work_id(), cache, stack)?;
-                        let chars: Vec<char> = source_text.chars().collect();
-                        let start = span.char_start().min(chars.len());
-                        let end = span.char_end().min(chars.len());
-                        flat_text.extend(&chars[start..end]);
-                    }
-                }
-            }
-
-            stack.borrow_mut().pop();
-            cache.borrow_mut().insert(work_id, flat_text.clone());
-            Ok(flat_text)
-        } else {
-            let text = self.work_text(work_id)?;
-            cache.borrow_mut().insert(work_id, text.clone());
-            Ok(text)
-        }
-    }
-
-    pub fn resolve_compound_recursive(
-        &self,
-        work_id: BeId,
-    ) -> Result<crate::edition::compound::ResolvedCompoundEdition, ServerError> {
-        let compound = self
-            .compound_editions
-            .get(&work_id)
-            .ok_or(ServerError::WorkNotFound(work_id))?;
-
-        let cache = std::cell::RefCell::new(HashMap::new());
-        let stack = std::cell::RefCell::new(Vec::new());
-
-        compound
-            .resolve(|src_id| {
-                self.resolve_text_recursive(src_id, &cache, &stack)
-                    .map_err(|_| crate::edition::compound::ResolveError::SourceNotFound {
-                        work_id: src_id,
-                    })
-            })
-            .map_err(|e| match e {
-                crate::edition::compound::ResolveError::SourceNotFound { work_id } => {
-                    ServerError::WorkNotFound(work_id)
-                }
-                crate::edition::compound::ResolveError::SourceFetchFailed { work_id } => {
-                    ServerError::WorkNotFound(work_id)
-                }
-            })
-    }
-
-    pub fn compound_source_title(&self, work_id: BeId) -> Option<String> {
-        self.works.get(&work_id).map(|ws| ws.cached_title.clone())
-    }
-
-    pub fn works_with_compound_referencing(&self, source_work_id: BeId) -> Vec<BeId> {
-        self.compound_editions
-            .iter()
-            .filter_map(|(wid, compound)| {
-                if compound
-                    .referenced_works()
-                    .contains(&(source_work_id as u64))
-                {
-                    Some(*wid)
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
-    fn mark_compound_dirty(&mut self, revised_work_id: BeId) {
-        let affected: Vec<BeId> = self.works_with_compound_referencing(revised_work_id);
-        for wid in affected {
-            self.compound_dirty.insert(wid);
-        }
-    }
-
-    pub fn migrate_compound_spans_for_delta(
-        &mut self,
-        source_work_id: BeId,
-        ops: &[crate::server::transport::protocol::TextDeltaOp],
-    ) {
-        let delta_ops: Vec<crate::edition::compound::DeltaOp> = ops
-            .iter()
-            .map(|op| match op {
-                crate::server::transport::protocol::TextDeltaOp::Retain { count } => {
-                    crate::edition::compound::DeltaOp::Retain(*count as usize)
-                }
-                crate::server::transport::protocol::TextDeltaOp::Insert { text } => {
-                    crate::edition::compound::DeltaOp::Insert(text.chars().count())
-                }
-                crate::server::transport::protocol::TextDeltaOp::Delete { count } => {
-                    crate::edition::compound::DeltaOp::Delete(*count as usize)
-                }
-            })
-            .collect();
-
-        let affected: Vec<BeId> = self.works_with_compound_referencing(source_work_id);
-        for wid in affected {
-            if let Some(compound) = self.compound_editions.get_mut(&wid) {
-                compound.migrate_spans_for_delta(source_work_id, &delta_ops);
-            }
-        }
-        self.mark_compound_dirty(source_work_id);
     }
 
     pub fn migrate_link_spans_for_delta(
@@ -9617,26 +9897,11 @@ impl Server {
         }
     }
 
-    pub fn compound_dirty_works(&self) -> Vec<BeId> {
-        self.compound_dirty.iter().copied().collect()
-    }
-
-    pub fn is_compound_dirty(&self, work_id: BeId) -> bool {
-        self.compound_dirty.contains(&work_id)
-    }
-
-    pub fn clear_compound_dirty(&mut self, work_id: BeId) {
-        self.compound_dirty.remove(&work_id);
-    }
-
     pub fn compound_subscribers_for_source(
         &self,
         source_work_id: BeId,
     ) -> Vec<(BeId, Vec<SessionId>)> {
-        let mut affected: std::collections::HashSet<BeId> = self
-            .works_with_compound_referencing(source_work_id)
-            .into_iter()
-            .collect();
+        let mut affected: std::collections::HashSet<BeId> = std::collections::HashSet::new();
 
         for (wid, ws) in &self.works {
             let has_inline = ws
@@ -10071,6 +10336,14 @@ impl Server {
     pub fn blob_stats(&self) -> (u64, u64) {
         let stats = self.blob_store.stats();
         (stats.total_blobs, stats.total_bytes)
+    }
+
+    pub fn cache_cross_server_content(&mut self, text: &str) -> [u8; 32] {
+        let meta = self
+            .blob_store
+            .store(text.as_bytes(), "text/plain".to_string())
+            .expect("failed to cache content");
+        meta.content_hash
     }
 
     pub fn blob_apply_overlay(
@@ -13156,6 +13429,7 @@ pub(crate) mod persist_snapshot {
         historical_authors: Option<crate::server::historical_author::HistoricalAuthorRegistry>,
         #[serde(default)]
         starred_works: HashMap<BeId, HashSet<BeId>>,
+        user_pins: HashMap<BeId, HashSet<String>>,
         #[serde(default)]
         trails: Vec<TrailSnapshot>,
         #[serde(default)]
@@ -13334,6 +13608,7 @@ pub(crate) mod persist_snapshot {
                 key_history,
                 historical_authors: Some(self.historical_authors.clone()),
                 starred_works: self.starred_works.clone(),
+                user_pins: self.user_pins.clone(),
                 trails: self
                     .trails
                     .values()
@@ -13437,6 +13712,7 @@ pub(crate) mod persist_snapshot {
                 source_patterns: crate::server::source_matcher::builtin_patterns(),
                 pending_attributions: Vec::new(),
                 starred_works: snapshot.starred_works.clone(),
+                user_pins: snapshot.user_pins.clone(),
                 trails: snapshot
                     .trails
                     .iter()
@@ -13474,6 +13750,11 @@ pub(crate) mod persist_snapshot {
                 wal: crate::persist::wal::WalLog::disabled(),
                 restore_errors: Vec::new(),
                 trusted_server_registry: None,
+                server_name: "Xudanu Server".to_string(),
+                server_description: String::new(),
+                server_namespace_id: 0,
+                public_address: None,
+                server_directory: crate::server::server_directory::ServerDirectory::new(),
             };
             for club_snap in &snapshot.clubs {
                 let work = club_snap
@@ -13873,6 +14154,7 @@ pub(crate) mod persist_snapshot {
                 reconcile_counter: self.reconcile_counter,
                 federation_snapshot: Some(federation_snapshot),
                 starred_works: self.starred_works.clone(),
+                user_pins: self.user_pins.clone(),
                 trails,
                 trail_counter: self.trail_counter,
                 compound_editions,
@@ -14110,8 +14392,9 @@ pub(crate) mod persist_snapshot {
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     Some(hash)
                 },
-                links: links.clone(),
+                links: Vec::new(),
                 link_counter: self.link_counter,
+                links_chunk_hash: None,
                 admin: crate::persist::manifest::AdminEntry {
                     accepting_connections: self.admin.is_accepting_connections(),
                     shutdown_requested: self.admin.is_shutdown_requested(),
@@ -14134,6 +14417,7 @@ pub(crate) mod persist_snapshot {
                 reconcile_store: self.reconcile_store.clone(),
                 reconcile_counter: self.reconcile_counter,
                 federation: Some(self.federation.to_snapshot()),
+                federation_chunk_hash: None,
                 content_address_hash: {
                     let ca_data = serde_json::to_vec(&self.content_address)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
@@ -14147,6 +14431,7 @@ pub(crate) mod persist_snapshot {
                     Some(hash)
                 },
                 content_address: None,
+                content_address_chunk_hash: None,
                 blob_metas_hash: {
                     let bm_data = serde_json::to_vec(&blob_metas)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
@@ -14160,6 +14445,7 @@ pub(crate) mod persist_snapshot {
                     Some(hash)
                 },
                 blob_metas: Vec::new(),
+                blob_metas_chunk_hash: None,
                 key_history,
                 historical_authors_hash: {
                     let ha_data = serde_json::to_vec(&self.historical_authors)
@@ -14174,6 +14460,7 @@ pub(crate) mod persist_snapshot {
                     Some(hash)
                 },
                 historical_authors: None,
+                historical_authors_chunk_hash: None,
                 annotations_hash: {
                     let all_anns = self.otree_crdt.all_annotations();
                     let total: usize = all_anns.iter().map(|(_, a)| a.len()).sum();
@@ -14259,7 +14546,66 @@ pub(crate) mod persist_snapshot {
                     .iter()
                     .map(|(id, c)| (*id, c.clone()))
                     .collect(),
+                social_chunk_hash: None,
             };
+
+            // ── Migrate large sections to chunks before writing manifest ──
+            // Write social section (starred_works + trails + compound_editions) as a chunk
+            let social = crate::persist::manifest::SocialSection {
+                starred_works: manifest.starred_works.clone(),
+                user_pins: self.user_pins.clone(),
+                trails: manifest.trails.clone(),
+                trail_counter: manifest.trail_counter,
+                compound_editions: manifest.compound_editions.clone(),
+            };
+            if !social.starred_works.is_empty()
+                || !social.user_pins.is_empty()
+                || !social.trails.is_empty()
+                || !social.compound_editions.is_empty()
+            {
+                let social_json = serde_json::to_vec(&social)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                let tagged = crate::persist::chunk_store::tag_chunk_data(
+                    crate::persist::chunk_store::CHUNK_FORMAT_JSON,
+                    &social_json,
+                );
+                let hash = chunk_store
+                    .write_chunk(&tagged)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                {
+                    let hex_str: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
+                    let chunk_path = std::path::Path::new(chunk_store.base_dir())
+                        .join("chunks")
+                        .join(&hex_str[..2])
+                        .join(format!("{}.xchunk", hex_str));
+                }
+                let read_back = chunk_store.read_chunk(&hash);
+                manifest.social_chunk_hash = Some(hash);
+                manifest.starred_works.clear();
+                manifest.trails.clear();
+                manifest.compound_editions.clear();
+            }
+
+            // Write federation section (reconcile_store + federation snapshot) as a chunk
+            if !manifest.reconcile_store.is_empty() || manifest.federation.is_some() {
+                let fed = crate::persist::manifest::FederationSection {
+                    reconcile_store: manifest.reconcile_store.clone(),
+                    reconcile_counter: manifest.reconcile_counter,
+                    federation: manifest.federation.clone(),
+                };
+                let fed_json = serde_json::to_vec(&fed)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                let tagged = crate::persist::chunk_store::tag_chunk_data(
+                    crate::persist::chunk_store::CHUNK_FORMAT_JSON,
+                    &fed_json,
+                );
+                let hash = chunk_store
+                    .write_chunk(&tagged)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                manifest.federation_chunk_hash = Some(hash);
+                manifest.reconcile_store = crate::server::federation::ReconcileStore::new();
+                manifest.federation = None;
+            }
 
             let data_dir = match self.data_dir.as_ref() {
                 Some(d) => d.as_path(),
@@ -14392,13 +14738,19 @@ pub(crate) mod persist_snapshot {
                 };
                 // CHECKLIST: every Option<[u8; 32]> field in Manifest must be
                 // inserted into `referenced` here, or the GC will delete the
-                // chunk. Current fields (as of 2026-06):
+                // chunk. Current fields (as of v0.9.0):
                 //   - historical_authors_hash
                 //   - blob_metas_hash
                 //   - content_address_hash
                 //   - links_hash
                 //   - annotations_hash
                 //   - fossil_snapshots_hash
+                //   - links_chunk_hash (v0.9.0 manifest refactor)
+                //   - federation_chunk_hash (v0.9.0 manifest refactor)
+                //   - content_address_chunk_hash (v0.9.0 manifest refactor)
+                //   - blob_metas_chunk_hash (v0.9.0 manifest refactor)
+                //   - historical_authors_chunk_hash (v0.9.0 manifest refactor)
+                //   - social_chunk_hash (v0.9.0 manifest refactor)
                 if let Some(hash) = manifest.historical_authors_hash {
                     referenced.insert(hash);
                 }
@@ -14415,6 +14767,24 @@ pub(crate) mod persist_snapshot {
                     referenced.insert(hash);
                 }
                 if let Some(hash) = manifest.fossil_snapshots_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.links_chunk_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.federation_chunk_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.content_address_chunk_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.blob_metas_chunk_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.historical_authors_chunk_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.social_chunk_hash {
                     referenced.insert(hash);
                 }
             }
@@ -22162,6 +22532,107 @@ mod tests {
 
     #[test]
     #[cfg(feature = "server")]
+    fn cross_server_ref_persistence_round_trip() {
+        use crate::edition::links::{CrossServerRef, HyperLink, HyperRef};
+
+        let dir = TempDir::new("csr_persist");
+        let data_dir = dir.snapshot_path().parent().unwrap().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let link_id;
+        let origin_work_id;
+        let dest_work_id;
+
+        let test_hash = [0xabu8; 32];
+        let test_key = [0xcdu8; 32];
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            origin_work_id = server
+                .create_work(sid, Edition::from_text("local origin"))
+                .unwrap();
+            dest_work_id = server
+                .create_work(sid, Edition::from_text("local dest"))
+                .unwrap();
+
+            let csr = CrossServerRef::new(
+                "\"remote.example.com\".5.3.10.7",
+                test_hash,
+                "remote_author",
+                test_key,
+            )
+            .with_mime_type("text/markdown")
+            .with_byte_size(4096)
+            .with_server_sig(vec![0x01, 0x02, 0x03, 0x04])
+            .with_fetched_at(1700000000)
+            .with_excerpt("remote excerpt text");
+
+            let origin_ref = HyperRef::single(
+                Some(Edition::from_text("local excerpt")),
+                Some(origin_work_id),
+                None,
+                None,
+            )
+            .with_span(Some(10), Some(25));
+            let dest_ref =
+                HyperRef::single(None, Some(dest_work_id), None, None).with_cross_server_ref(csr);
+
+            let link = HyperLink::make(vec![1], origin_ref, dest_ref);
+            link_id = server.create_link_with_hyperlink(sid, link).unwrap();
+
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let ls = server
+                .links
+                .get(&link_id)
+                .expect("link must survive restore");
+
+            let d_ref = ls.link.end_at("RightEnd").expect("RightEnd must exist");
+            assert!(
+                d_ref.is_cross_server(),
+                "cross_server_ref must survive restore"
+            );
+
+            let csr = d_ref
+                .cross_server_ref()
+                .expect("cross_server_ref must be present after restore");
+            assert_eq!(csr.tumbler(), "\"remote.example.com\".5.3.10.7");
+            assert_eq!(csr.origin_server_id(), 0);
+            assert_eq!(
+                csr.origin_server_address(),
+                Some("remote.example.com"),
+                "origin_server_address must survive"
+            );
+            assert_eq!(
+                csr.content_hash(),
+                &test_hash,
+                "content_hash must survive restore"
+            );
+            assert_eq!(
+                csr.origin_author_key(),
+                &test_key,
+                "origin_author_key must survive restore"
+            );
+            assert_eq!(csr.origin_author(), "remote_author");
+            assert_eq!(csr.mime_type(), "text/markdown");
+            assert_eq!(csr.byte_size(), 4096);
+            assert_eq!(csr.origin_server_sig(), &[0x01, 0x02, 0x03, 0x04]);
+            assert_eq!(csr.fetched_at(), 1700000000);
+            assert_eq!(csr.excerpt(), "remote excerpt text");
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
     fn link_snapshot_round_trip_preserves_all_fields() {
         use crate::edition::links::{HyperLink, HyperRef, Path, ProvenanceHop};
 
@@ -24345,1488 +24816,175 @@ mod tests {
         let _ = std::fs::remove_dir_all(&data_dir);
     }
 
-    fn compound_test_setup() -> (Server, SessionId, BeId, BeId) {
-        let (mut server, sid) = setup_logged_in_server();
-        let source_a = server
-            .create_work(sid, Edition::from_text("Hello World"))
-            .unwrap();
-        let doc_b = server
-            .create_work(sid, Edition::from_text("Start. End."))
-            .unwrap();
-        (server, sid, source_a, doc_b)
-    }
-
     #[test]
-    fn compound_set_and_get_edition() {
-        let (mut server, sid, source_a, doc_b) = compound_test_setup();
-        assert!(server.get_compound_edition(doc_b).is_none());
-
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("Start. "),
-            crate::edition::compound::CompoundElement::span(source_a, 0, 5),
-            crate::edition::compound::CompoundElement::text(" End."),
-        ]);
-        server
-            .set_compound_edition(doc_b, compound.clone(), sid)
-            .unwrap();
-
-        let retrieved = server.get_compound_edition(doc_b).unwrap();
-        assert_eq!(retrieved.elements().len(), 3);
-        assert_eq!(retrieved.span_count(), 1);
-        assert_eq!(retrieved.referenced_works(), vec![source_a]);
-    }
-
-    #[test]
-    fn compound_resolve_work_returns_resolved_text() {
-        let (mut server, sid, source_a, doc_b) = compound_test_setup();
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("Start. "),
-            crate::edition::compound::CompoundElement::span(source_a, 0, 5),
-            crate::edition::compound::CompoundElement::text(" End."),
-        ]);
-        server.set_compound_edition(doc_b, compound, sid).unwrap();
-
-        let resolved = server.resolve_compound_edition(doc_b).unwrap();
-        assert_eq!(resolved.flat_text(), "Start. Hello End.");
-        assert_eq!(resolved.span_ranges().len(), 1);
-        assert_eq!(resolved.span_ranges()[0].source_work_id, source_a);
-        assert_eq!(resolved.span_ranges()[0].flat_start, 7);
-        assert_eq!(resolved.span_ranges()[0].flat_end, 12);
-    }
-
-    #[test]
-    fn compound_resolve_updates_after_source_revision() {
-        let (mut server, sid, source_a, doc_b) = compound_test_setup();
-
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("Intro: "),
-            crate::edition::compound::CompoundElement::span(source_a, 0, 5),
-            crate::edition::compound::CompoundElement::text(". Done."),
-        ]);
-        server.set_compound_edition(doc_b, compound, sid).unwrap();
-
-        let resolved1 = server.resolve_compound_edition(doc_b).unwrap();
-        assert_eq!(resolved1.flat_text(), "Intro: Hello. Done.");
-
-        server.work_grab(sid, source_a).unwrap();
-        server
-            .work_revise(sid, source_a, Edition::from_text("Greetings World"))
-            .unwrap();
-
-        let resolved2 = server.resolve_compound_edition(doc_b).unwrap();
-        assert_eq!(
-            resolved2.flat_text(),
-            "Intro: Greet. Done.",
-            "compound should reflect source revision"
-        );
-    }
-
-    #[test]
-    fn compound_resolve_multiple_sources() {
-        let (mut server, sid, _source_a, _doc_b) = compound_test_setup();
-        let src1 = server.create_work(sid, Edition::from_text("AAA")).unwrap();
-        let src2 = server.create_work(sid, Edition::from_text("BBB")).unwrap();
-        let doc = server
-            .create_work(sid, Edition::from_text("placeholder"))
-            .unwrap();
-
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::span(src1, 0, 3),
-            crate::edition::compound::CompoundElement::text("-"),
-            crate::edition::compound::CompoundElement::span(src2, 0, 3),
-        ]);
-        server.set_compound_edition(doc, compound, sid).unwrap();
-
-        let resolved = server.resolve_compound_edition(doc).unwrap();
-        assert_eq!(resolved.flat_text(), "AAA-BBB");
-        assert_eq!(resolved.span_ranges().len(), 2);
-        assert_eq!(resolved.span_ranges()[0].source_work_id, src1);
-        assert_eq!(resolved.span_ranges()[1].source_work_id, src2);
-    }
-
-    #[test]
-    fn compound_resolve_work_not_found() {
-        let (server, _sid, _source_a, _doc_b) = compound_test_setup();
-        let result = server.resolve_compound_edition(999_999);
-        assert!(matches!(result, Err(ServerError::WorkNotFound(_))));
-    }
-
-    #[test]
-    fn compound_resolve_source_deleted_returns_error() {
-        let (mut server, sid, source_a, doc_b) = compound_test_setup();
-
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::span(source_a, 0, 5),
-        ]);
-        server.set_compound_edition(doc_b, compound, sid).unwrap();
-
-        server.works.remove(&source_a);
-
-        let result = server.resolve_compound_edition(doc_b);
-        assert!(
-            result.is_err(),
-            "resolution should fail when source work is gone"
-        );
-    }
-
-    #[test]
-    fn compound_resolve_unicode_source() {
-        let (mut server, sid, _source_a, _doc_b) = compound_test_setup();
-        let unicode_src = server
-            .create_work(sid, Edition::from_text("日本語のテスト"))
-            .unwrap();
-        let doc = server.create_work(sid, Edition::from_text("x")).unwrap();
-
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("Text: "),
-            crate::edition::compound::CompoundElement::span(unicode_src, 0, 3),
-            crate::edition::compound::CompoundElement::text("!"),
-        ]);
-        server.set_compound_edition(doc, compound, sid).unwrap();
-
-        let resolved = server.resolve_compound_edition(doc).unwrap();
-        assert_eq!(resolved.flat_text(), "Text: 日本語!");
-    }
-
-    #[test]
-    fn compound_set_on_nonexistent_work_fails() {
-        let (mut server, sid, _source_a, _doc_b) = compound_test_setup();
-        let compound = crate::edition::compound::CompoundEdition::empty();
-        let result = server.set_compound_edition(999_999, compound, sid);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn compound_referencing_works_reverse_lookup() {
-        let (mut server, sid, source_a, doc_b) = compound_test_setup();
-        let doc_c = server
-            .create_work(sid, Edition::from_text("doc-c"))
-            .unwrap();
-
-        let compound_b = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::span(source_a, 0, 3),
-        ]);
-        server.set_compound_edition(doc_b, compound_b, sid).unwrap();
-
-        let compound_c = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("prefix"),
-            crate::edition::compound::CompoundElement::span(source_a, 2, 5),
-        ]);
-        server.set_compound_edition(doc_c, compound_c, sid).unwrap();
-
-        let referencing = server.works_with_compound_referencing(source_a);
-        assert_eq!(referencing.len(), 2);
-        assert!(referencing.contains(&doc_b));
-        assert!(referencing.contains(&doc_c));
-    }
-
-    #[test]
-    fn compound_persistence_survives_snapshot_roundtrip() {
-        let (mut server, sid, source_a, doc_b) = compound_test_setup();
-
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("Hello "),
-            crate::edition::compound::CompoundElement::span(source_a, 0, 5),
-        ]);
-        server.set_compound_edition(doc_b, compound, sid).unwrap();
-
-        let snapshot = server.to_snapshot();
-        let restored = Server::from_snapshot(&snapshot);
-
-        let retrieved = restored.get_compound_edition(doc_b);
-        assert!(
-            retrieved.is_some(),
-            "compound should survive snapshot roundtrip"
-        );
-        assert_eq!(retrieved.unwrap().elements().len(), 2);
-    }
-
-    #[test]
-    fn compound_resolve_clamps_span_beyond_source_length() {
-        let (mut server, sid, _source_a, _doc_b) = compound_test_setup();
-        let short_src = server.create_work(sid, Edition::from_text("hi")).unwrap();
-        let doc = server.create_work(sid, Edition::from_text("x")).unwrap();
-
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::span(short_src, 0, 100),
-        ]);
-        server.set_compound_edition(doc, compound, sid).unwrap();
-
-        let resolved = server.resolve_compound_edition(doc).unwrap();
-        assert_eq!(
-            resolved.flat_text(),
-            "hi",
-            "span should clamp to source length"
-        );
-    }
-
-    #[test]
-    fn compound_resolve_empty_compound() {
-        let (mut server, sid, _source_a, doc_b) = compound_test_setup();
-        server
-            .set_compound_edition(
-                doc_b,
-                crate::edition::compound::CompoundEdition::empty(),
-                sid,
-            )
-            .unwrap();
-
-        let resolved = server.resolve_compound_edition(doc_b).unwrap();
-        assert!(resolved.flat_text().is_empty());
-        assert!(resolved.elements().is_empty());
-    }
-
-    #[test]
-    fn compound_resolve_text_only_compound() {
-        let (mut server, sid, _source_a, doc_b) = compound_test_setup();
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("just "),
-            crate::edition::compound::CompoundElement::text("text"),
-        ]);
-        server.set_compound_edition(doc_b, compound, sid).unwrap();
-
-        let resolved = server.resolve_compound_edition(doc_b).unwrap();
-        assert_eq!(resolved.flat_text(), "just text");
-        assert_eq!(resolved.span_ranges().len(), 0);
-        assert_eq!(resolved.elements().len(), 2);
-    }
-
-    #[test]
-    fn compound_source_title_lookup() {
-        let (mut server, sid, _source_a, _doc_b) = compound_test_setup();
-        let src = server
-            .create_work(sid, Edition::from_text("content"))
-            .unwrap();
-        server.set_work_title(src, "My Source Doc".to_string());
-
-        let title = server.compound_source_title(src);
-        assert_eq!(title.as_deref(), Some("My Source Doc"));
-    }
-
-    #[test]
-    fn compound_dirty_tracking_on_revision() {
-        let (mut server, sid, source_a, doc_b) = compound_test_setup();
-
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("intro: "),
-            crate::edition::compound::CompoundElement::span(source_a, 0, 5),
-        ]);
-        server.set_compound_edition(doc_b, compound, sid).unwrap();
-
-        assert!(
-            !server.is_compound_dirty(doc_b),
-            "compound should not be dirty before revision"
-        );
-
-        server.work_grab(sid, source_a).unwrap();
-        server
-            .work_revise(sid, source_a, Edition::from_text("Changed"))
-            .unwrap();
-
-        assert!(
-            server.is_compound_dirty(doc_b),
-            "compound doc should be dirty after source revised"
-        );
-
-        server.clear_compound_dirty(doc_b);
-        assert!(
-            !server.is_compound_dirty(doc_b),
-            "compound should not be dirty after clear"
-        );
-    }
-
-    #[test]
-    fn compound_dirty_only_affects_referencing_docs() {
-        let (mut server, sid, _source_a, _doc_b) = compound_test_setup();
-        let src1 = server.create_work(sid, Edition::from_text("src1")).unwrap();
-        let src2 = server.create_work(sid, Edition::from_text("src2")).unwrap();
-        let doc1 = server.create_work(sid, Edition::from_text("d1")).unwrap();
-        let doc2 = server.create_work(sid, Edition::from_text("d2")).unwrap();
-
-        server
-            .set_compound_edition(
-                doc1,
-                crate::edition::compound::CompoundEdition::new(vec![
-                    crate::edition::compound::CompoundElement::span(src1, 0, 4),
-                ]),
-                sid,
-            )
-            .unwrap();
-        server
-            .set_compound_edition(
-                doc2,
-                crate::edition::compound::CompoundEdition::new(vec![
-                    crate::edition::compound::CompoundElement::span(src2, 0, 4),
-                ]),
-                sid,
-            )
-            .unwrap();
-
-        server.work_grab(sid, src1).unwrap();
-        server
-            .work_revise(sid, src1, Edition::from_text("modified"))
-            .unwrap();
-
-        assert!(server.is_compound_dirty(doc1));
-        assert!(
-            !server.is_compound_dirty(doc2),
-            "doc2 references src2, should not be dirty when src1 changes"
-        );
-    }
-
-    #[test]
-    fn compound_resolution_reflects_multiple_revisions() {
-        let (mut server, sid, source_a, doc_b) = compound_test_setup();
-
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::span(source_a, 0, 5),
-        ]);
-        server.set_compound_edition(doc_b, compound, sid).unwrap();
-
-        let r1 = server.resolve_compound_edition(doc_b).unwrap();
-        assert_eq!(r1.flat_text(), "Hello");
-
-        server.work_grab(sid, source_a).unwrap();
-        server
-            .work_revise(sid, source_a, Edition::from_text("First"))
-            .unwrap();
-        let r2 = server.resolve_compound_edition(doc_b).unwrap();
-        assert_eq!(r2.flat_text(), "First");
-
-        server
-            .work_revise(sid, source_a, Edition::from_text("Second revision"))
-            .unwrap();
-        let r3 = server.resolve_compound_edition(doc_b).unwrap();
-        assert_eq!(r3.flat_text(), "Secon", "span [0,5) of 'Second revision'");
-    }
-
-    fn setup_two_session_server() -> (Server, SessionId, SessionId) {
-        let mut server = Server::new();
-        let sid_a = server.connect();
-        server.login_public(sid_a).unwrap();
-        let sid_b = server.connect();
-        server.login_public(sid_b).unwrap();
-        (server, sid_a, sid_b)
-    }
-
-    #[test]
-    fn compound_cross_session_edit_source_visible_to_other() {
-        let (mut server, sid_a, sid_b) = setup_two_session_server();
-
-        let source = server
-            .create_work(sid_a, Edition::from_text("Original Source Text"))
-            .unwrap();
-
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("Quote: "),
-            crate::edition::compound::CompoundElement::span(source, 0, 8),
-            crate::edition::compound::CompoundElement::text("."),
-        ]);
-        let doc_b = server
-            .create_work(sid_b, Edition::from_text("placeholder"))
-            .unwrap();
-        server.set_compound_edition(doc_b, compound, sid_b).unwrap();
-
-        let resolved_before = server.resolve_compound_edition(doc_b).unwrap();
-        assert_eq!(resolved_before.flat_text(), "Quote: Original.");
-
-        server.work_grab(sid_a, source).unwrap();
-        server
-            .work_revise(sid_a, source, Edition::from_text("CHANGED!"))
-            .unwrap();
-
-        let resolved_after = server.resolve_compound_edition(doc_b).unwrap();
-        assert_eq!(
-            resolved_after.flat_text(),
-            "Quote: CHANGED!.",
-            "session B's compound should reflect session A's edit"
-        );
-
-        assert!(
-            server.is_compound_dirty(doc_b),
-            "compound should be marked dirty after source revised by other session"
-        );
-    }
-
-    #[test]
-    fn compound_concurrent_both_sessions_set_compound_different_docs() {
-        let (mut server, sid_a, sid_b) = setup_two_session_server();
-
-        let src = server
-            .create_work(sid_a, Edition::from_text("Shared Source"))
-            .unwrap();
-
-        let doc_a = server
-            .create_work(sid_a, Edition::from_text("doc-a"))
-            .unwrap();
-        let doc_b = server
-            .create_work(sid_b, Edition::from_text("doc-b"))
-            .unwrap();
-
-        let compound_a = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::span(src, 0, 6),
-        ]);
-        server
-            .set_compound_edition(doc_a, compound_a, sid_a)
-            .unwrap();
-
-        let compound_b = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("ref: "),
-            crate::edition::compound::CompoundElement::span(src, 7, 13),
-        ]);
-        server
-            .set_compound_edition(doc_b, compound_b, sid_b)
-            .unwrap();
-
-        let ra = server.resolve_compound_edition(doc_a).unwrap();
-        assert_eq!(ra.flat_text(), "Shared");
-        let rb = server.resolve_compound_edition(doc_b).unwrap();
-        assert_eq!(rb.flat_text(), "ref: Source");
-
-        server.work_grab(sid_a, src).unwrap();
-        server
-            .work_revise(sid_a, src, Edition::from_text("Updated Content"))
-            .unwrap();
-
-        assert!(server.is_compound_dirty(doc_a));
-        assert!(server.is_compound_dirty(doc_b));
-
-        let ra2 = server.resolve_compound_edition(doc_a).unwrap();
-        assert_eq!(ra2.flat_text(), "Update");
-        let rb2 = server.resolve_compound_edition(doc_b).unwrap();
-        assert_eq!(
-            rb2.flat_text(),
-            "ref:  Conte",
-            "span [7,13) of 'Updated Content' = ' Conte' (pos 7 is space)"
-        );
-    }
-
-    #[test]
-    fn compound_session_b_resolves_then_source_changes_then_resolves_again() {
-        let (mut server, sid_a, sid_b) = setup_two_session_server();
-
-        let source = server
-            .create_work(sid_a, Edition::from_text("Version 1 text here"))
-            .unwrap();
-        let doc = server.create_work(sid_b, Edition::from_text("x")).unwrap();
-
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::span(source, 0, 9),
-        ]);
-        server.set_compound_edition(doc, compound, sid_b).unwrap();
-
-        let r1 = server.resolve_compound_edition(doc).unwrap();
-        assert_eq!(r1.flat_text(), "Version 1");
-
-        server.work_grab(sid_a, source).unwrap();
-        server
-            .work_revise(sid_a, source, Edition::from_text("Version 2 is different"))
-            .unwrap();
-
-        assert!(
-            server.is_compound_dirty(doc),
-            "dirty flag should be set after source revision"
-        );
-        server.clear_compound_dirty(doc);
-        assert!(!server.is_compound_dirty(doc));
-
-        let r2 = server.resolve_compound_edition(doc).unwrap();
-        assert_eq!(r2.flat_text(), "Version 2");
-
-        assert!(
-            !server.is_compound_dirty(doc),
-            "resolving should not set dirty; only source revision sets it"
-        );
-    }
-
-    #[test]
-    fn compound_cross_session_rapid_alternating_revisions() {
-        let (mut server, sid_a, _sid_b) = setup_two_session_server();
-
-        let source = server.create_work(sid_a, Edition::from_text("T0")).unwrap();
-        let doc = server.create_work(sid_a, Edition::from_text("x")).unwrap();
-
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::span(source, 0, 2),
-        ]);
-        server.set_compound_edition(doc, compound, sid_a).unwrap();
-
-        server.work_grab(sid_a, source).unwrap();
-
-        for i in 1..=5 {
-            let new_text = format!("T{}", i);
-            server
-                .work_revise(sid_a, source, Edition::from_text(&new_text))
-                .unwrap();
-
-            let resolved = server.resolve_compound_edition(doc).unwrap();
+    #[cfg(feature = "server")]
+    fn pin_persistence_round_trip() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_pin_persist_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let sid_a;
+        let club_a;
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            sid_a = server.connect();
+            server.login_public(sid_a).unwrap();
+            club_a = server.resolve_author_club(sid_a).unwrap();
+
+            server.set_connection_pin(sid_a, "link-42").unwrap();
+            server.set_connection_pin(sid_a, "backlink-99").unwrap();
+            server.set_connection_pin(sid_a, "transcl-5-10-20").unwrap();
+
+            let pins = server.connection_pins_for_session(sid_a);
+            assert_eq!(pins.len(), 3, "should have 3 pins before checkpoint");
+            assert!(pins.contains("link-42"));
+            assert!(pins.contains("backlink-99"));
+            assert!(pins.contains("transcl-5-10-20"));
+
+            server.checkpoint_to_store().unwrap();
+
+            let pins_after = server.connection_pins_for_session(sid_a);
             assert_eq!(
-                resolved.flat_text(),
-                &new_text,
-                "iteration {} should reflect revision",
-                i
+                pins_after.len(),
+                3,
+                "pins must survive in memory after checkpoint"
             );
-            assert!(server.is_compound_dirty(doc), "dirty after iteration {}", i);
-            server.clear_compound_dirty(doc);
-        }
-    }
-
-    #[test]
-    fn compound_cross_session_chained_transclusion() {
-        let (mut server, sid_a, sid_b) = setup_two_session_server();
-
-        let root = server
-            .create_work(sid_a, Edition::from_text("Root Content ABC"))
-            .unwrap();
-        let mid = server
-            .create_work(sid_a, Edition::from_text("placeholder"))
-            .unwrap();
-
-        let mid_compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("Mid: "),
-            crate::edition::compound::CompoundElement::span(root, 0, 12),
-        ]);
-        server
-            .set_compound_edition(mid, mid_compound, sid_a)
-            .unwrap();
-
-        let doc = server.create_work(sid_b, Edition::from_text("x")).unwrap();
-
-        let doc_compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("Doc: ["),
-            crate::edition::compound::CompoundElement::span(mid, 0, 5),
-            crate::edition::compound::CompoundElement::text("] end"),
-        ]);
-        server
-            .set_compound_edition(doc, doc_compound, sid_b)
-            .unwrap();
-
-        // doc's span reads mid's O-tree text (not recursively resolving mid's compound).
-        // mid's O-tree text is "placeholder", so span(0,5) = "place"
-        let resolved = server.resolve_compound_edition(doc).unwrap();
-        assert_eq!(
-            resolved.flat_text(),
-            "Doc: [place] end",
-            "doc spans into mid's raw O-tree text, not recursively through compound"
-        );
-
-        // When we resolve mid directly, it DOES expand root's content via compound
-        let resolved_mid = server.resolve_compound_edition(mid).unwrap();
-        assert_eq!(resolved_mid.flat_text(), "Mid: Root Content");
-
-        server.work_grab(sid_a, root).unwrap();
-        server
-            .work_revise(sid_a, root, Edition::from_text("NEWROOTCONTENT"))
-            .unwrap();
-
-        assert!(
-            server.is_compound_dirty(mid),
-            "mid is dirty because root changed"
-        );
-        assert!(
-            !server.is_compound_dirty(doc),
-            "doc references mid's O-tree text, not root — should not be dirty"
-        );
-
-        let resolved2 = server.resolve_compound_edition(mid).unwrap();
-        assert_eq!(resolved2.flat_text(), "Mid: NEWROOTCONTE");
-
-        let resolved3 = server.resolve_compound_edition(doc).unwrap();
-        assert_eq!(
-            resolved3.flat_text(),
-            "Doc: [place] end",
-            "doc unchanged because mid's O-tree text is still 'placeholder'"
-        );
-    }
-
-    #[test]
-    fn compound_cross_session_read_permission_dispatch_layer() {
-        let (mut server, sid_a, sid_b) = setup_two_session_server();
-
-        let source = server
-            .create_work(sid_a, Edition::from_text("Secret Content"))
-            .unwrap();
-        let doc = server.create_work(sid_b, Edition::from_text("x")).unwrap();
-
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::span(source, 0, 6),
-        ]);
-        server.set_compound_edition(doc, compound, sid_b).unwrap();
-
-        let result = server.resolve_compound_edition(doc);
-        assert!(result.is_ok(), "both public sessions can read");
-
-        server
-            .work_set_read_club(sid_a, source, Some(server.empty_club_id()))
-            .unwrap();
-
-        let resolve_result = server.resolve_compound_edition(doc);
-        assert!(
-            resolve_result.is_ok(),
-            "resolve_compound_edition uses work_text which does not check permissions; \
-             dispatch layer enforces read access"
-        );
-        assert_eq!(
-            resolve_result.unwrap().flat_text(),
-            "Secret",
-            "server-level resolve succeeds; permission enforced at wire protocol layer"
-        );
-    }
-
-    #[test]
-    fn compound_dirty_works_list_tracks_all_affected() {
-        let (mut server, sid_a, _sid_b) = setup_two_session_server();
-
-        let source = server
-            .create_work(sid_a, Edition::from_text("Source"))
-            .unwrap();
-        let doc1 = server.create_work(sid_a, Edition::from_text("d1")).unwrap();
-        let doc2 = server.create_work(sid_a, Edition::from_text("d2")).unwrap();
-        let doc3 = server.create_work(sid_a, Edition::from_text("d3")).unwrap();
-
-        for doc in [&doc1, &doc2, &doc3] {
-            server
-                .set_compound_edition(
-                    *doc,
-                    crate::edition::compound::CompoundEdition::new(vec![
-                        crate::edition::compound::CompoundElement::span(source, 0, 3),
-                    ]),
-                    sid_a,
-                )
-                .unwrap();
         }
 
-        assert!(server.compound_dirty_works().is_empty());
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
 
-        server.work_grab(sid_a, source).unwrap();
-        server
-            .work_revise(sid_a, source, Edition::from_text("Modified"))
-            .unwrap();
-
-        let dirty = server.compound_dirty_works();
-        assert_eq!(dirty.len(), 3, "all 3 compound docs should be dirty");
-        assert!(dirty.contains(&doc1));
-        assert!(dirty.contains(&doc2));
-        assert!(dirty.contains(&doc3));
-    }
-
-    fn make_compound_work(
-        server: &mut Server,
-        sid: SessionId,
-        placeholder: &str,
-        compound: crate::edition::compound::CompoundEdition,
-    ) -> BeId {
-        let wid = server
-            .create_work(sid, Edition::from_text(placeholder))
-            .unwrap();
-        server.set_compound_edition(wid, compound, sid).unwrap();
-        wid
-    }
-
-    fn span_el(src: u64, s: usize, e: usize) -> crate::edition::compound::CompoundElement {
-        crate::edition::compound::CompoundElement::span(src, s, e)
-    }
-
-    fn text_el(s: &str) -> crate::edition::compound::CompoundElement {
-        crate::edition::compound::CompoundElement::text(s)
-    }
-
-    #[test]
-    fn compound_recursive_simple_chain() {
-        let (mut server, sid, _) = setup_two_session_server();
-
-        let root = server.create_work(sid, Edition::from_text("ROOT")).unwrap();
-        let mid = make_compound_work(
-            &mut server,
-            sid,
-            "mid-otree",
-            crate::edition::compound::CompoundEdition::new(vec![
-                text_el("mid:"),
-                span_el(root, 0, 4),
-            ]),
-        );
-        let doc = make_compound_work(
-            &mut server,
-            sid,
-            "doc-otree",
-            crate::edition::compound::CompoundEdition::new(vec![
-                text_el("doc["),
-                span_el(mid, 0, 4),
-                text_el("]"),
-            ]),
-        );
-
-        let resolved = server.resolve_compound_recursive(doc).unwrap();
-        assert_eq!(
-            resolved.flat_text(),
-            "doc[mid:]",
-            "recursive: span(mid,0,4) of mid's resolved 'mid:ROOT' = 'mid:'"
-        );
-
-        let non_recursive = server.resolve_compound_edition(doc).unwrap();
-        assert_eq!(
-            non_recursive.flat_text(),
-            "doc[mid-]",
-            "non-recursive: span(mid,0,4) of mid's O-tree 'mid-otree' = 'mid-'"
-        );
-    }
-
-    #[test]
-    fn compound_recursive_direct_cycle() {
-        let (mut server, sid, _) = setup_two_session_server();
-
-        let a = make_compound_work(
-            &mut server,
-            sid,
-            "raw-a",
-            crate::edition::compound::CompoundEdition::new(vec![
-                text_el("A["),
-                span_el(0, 0, 3),
-                text_el("]"),
-            ]),
-        );
-        let b = make_compound_work(
-            &mut server,
-            sid,
-            "raw-b",
-            crate::edition::compound::CompoundEdition::new(vec![
-                text_el("B["),
-                span_el(a, 0, 3),
-                text_el("]"),
-            ]),
-        );
-
-        server
-            .set_compound_edition(
-                a,
-                crate::edition::compound::CompoundEdition::new(vec![
-                    text_el("A["),
-                    span_el(b, 0, 3),
-                    text_el("]"),
-                ]),
-                sid,
-            )
-            .unwrap();
-
-        let resolved = server.resolve_compound_recursive(a).unwrap();
-        assert!(
-            !resolved.flat_text().is_empty(),
-            "cycle should resolve gracefully without hanging"
-        );
-        assert!(
-            resolved.flat_text().contains("A["),
-            "should contain A's own text"
-        );
-    }
-
-    #[test]
-    fn compound_recursive_self_cycle() {
-        let (mut server, sid, _) = setup_two_session_server();
-
-        let a = make_compound_work(
-            &mut server,
-            sid,
-            "self-raw",
-            crate::edition::compound::CompoundEdition::new(vec![
-                text_el("A["),
-                span_el(0, 0, 3),
-                text_el("]"),
-            ]),
-        );
-
-        server
-            .set_compound_edition(
-                a,
-                crate::edition::compound::CompoundEdition::new(vec![
-                    text_el("prefix "),
-                    span_el(a, 0, 4),
-                    text_el(" suffix"),
-                ]),
-                sid,
-            )
-            .unwrap();
-
-        let resolved = server.resolve_compound_recursive(a).unwrap();
-        assert!(
-            !resolved.flat_text().is_empty(),
-            "self-cycle should not hang"
-        );
-        assert!(
-            resolved.flat_text().contains("prefix"),
-            "should contain A's own text"
-        );
-    }
-
-    #[test]
-    fn compound_recursive_diamond() {
-        let (mut server, sid, _) = setup_two_session_server();
-
-        let d = server
-            .create_work(sid, Edition::from_text("DIAMOND"))
-            .unwrap();
-        let b = make_compound_work(
-            &mut server,
-            sid,
-            "b-raw",
-            crate::edition::compound::CompoundEdition::new(vec![text_el("b:"), span_el(d, 0, 7)]),
-        );
-        let c = make_compound_work(
-            &mut server,
-            sid,
-            "c-raw",
-            crate::edition::compound::CompoundEdition::new(vec![text_el("c:"), span_el(d, 0, 7)]),
-        );
-        let a = make_compound_work(
-            &mut server,
-            sid,
-            "a-raw",
-            crate::edition::compound::CompoundEdition::new(vec![
-                span_el(b, 0, 2),
-                text_el("-"),
-                span_el(c, 0, 2),
-            ]),
-        );
-
-        let resolved = server.resolve_compound_recursive(a).unwrap();
-        assert_eq!(
-            resolved.flat_text(),
-            "b:-c:",
-            "diamond: both paths resolve D, memoization ensures consistency"
-        );
-    }
-
-    #[test]
-    fn compound_recursive_depth_limit() {
-        let (mut server, sid, _) = setup_two_session_server();
-
-        let base = server.create_work(sid, Edition::from_text("BASE")).unwrap();
-        let mut prev = base;
-
-        for i in 0..50 {
-            let placeholder = format!("level{}", i);
-            let wrapper = make_compound_work(
-                &mut server,
-                sid,
-                &placeholder,
-                crate::edition::compound::CompoundEdition::new(vec![
-                    text_el(&format!("L{}:", i)),
-                    span_el(prev, 0, 4),
-                ]),
+            let pins = server.user_pins.get(&club_a);
+            assert!(
+                pins.is_some(),
+                "user_pins must survive checkpoint/restore in chunk store"
             );
-            prev = wrapper;
+            let pins = pins.unwrap();
+            assert_eq!(pins.len(), 3, "3 pins must survive restore");
+            assert!(pins.contains("link-42"));
+            assert!(pins.contains("backlink-99"));
+            assert!(pins.contains("transcl-5-10-20"));
         }
 
-        let resolved = server.resolve_compound_recursive(prev).unwrap();
-        assert!(
-            !resolved.flat_text().is_empty(),
-            "deep nesting should not cause stack overflow or hang"
-        );
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 
     #[test]
-    fn compound_recursive_mixed_compound_and_plain() {
-        let (mut server, sid, _) = setup_two_session_server();
+    #[cfg(feature = "server")]
+    fn wal_replays_pin_after_crash() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_wal_pin_replay_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
 
-        let plain = server
-            .create_work(sid, Edition::from_text("PLAIN"))
-            .unwrap();
-        let comp = make_compound_work(
-            &mut server,
-            sid,
-            "comp-raw",
-            crate::edition::compound::CompoundEdition::new(vec![
-                text_el("comp:"),
-                span_el(plain, 0, 5),
-            ]),
-        );
-        let doc = make_compound_work(
-            &mut server,
-            sid,
-            "doc-raw",
-            crate::edition::compound::CompoundEdition::new(vec![
-                text_el("["),
-                span_el(comp, 0, 5),
-                text_el("|"),
-                span_el(plain, 0, 3),
-                text_el("]"),
-            ]),
-        );
+        let club_a;
 
-        let resolved = server.resolve_compound_recursive(doc).unwrap();
-        assert_eq!(
-            resolved.flat_text(),
-            "[comp:|PLA]",
-            "mix of compound and plain sources resolves correctly"
-        );
-    }
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            club_a = server.resolve_author_club(sid).unwrap();
 
-    #[test]
-    fn compound_recursive_live_update_propagates() {
-        let (mut server, sid_a, _sid_b) = setup_two_session_server();
+            server.checkpoint_to_store().unwrap();
+            assert_eq!(server.wal.seq(), 0, "WAL empty after checkpoint");
 
-        let root = server
-            .create_work(sid_a, Edition::from_text("v1text"))
-            .unwrap();
-        let mid = make_compound_work(
-            &mut server,
-            sid_a,
-            "mid-raw",
-            crate::edition::compound::CompoundEdition::new(vec![
-                text_el("["),
-                span_el(root, 0, 2),
-                text_el("]"),
-            ]),
-        );
-        let doc = make_compound_work(
-            &mut server,
-            sid_a,
-            "doc-raw",
-            crate::edition::compound::CompoundEdition::new(vec![
-                text_el("<"),
-                span_el(mid, 0, 3),
-                text_el(">"),
-            ]),
-        );
-
-        let r1 = server.resolve_compound_recursive(doc).unwrap();
-        assert_eq!(r1.flat_text(), "<[v1>");
-
-        server.work_grab(sid_a, root).unwrap();
-        server
-            .work_revise(sid_a, root, Edition::from_text("v2text"))
-            .unwrap();
-
-        let r2 = server.resolve_compound_recursive(doc).unwrap();
-        assert_eq!(
-            r2.flat_text(),
-            "<[v2>",
-            "recursive resolution propagates live edits through the chain"
-        );
-    }
-
-    #[test]
-    fn compound_recursive_vs_non_recursive_comparison() {
-        let (mut server, sid, _) = setup_two_session_server();
-
-        let src = server.create_work(sid, Edition::from_text("SRC")).unwrap();
-        let mid = make_compound_work(
-            &mut server,
-            sid,
-            "mid-otree-text",
-            crate::edition::compound::CompoundEdition::new(vec![text_el("M:"), span_el(src, 0, 3)]),
-        );
-        let doc = make_compound_work(
-            &mut server,
-            sid,
-            "doc-otree-text",
-            crate::edition::compound::CompoundEdition::new(vec![span_el(mid, 0, 2)]),
-        );
-
-        let non_recur = server.resolve_compound_edition(doc).unwrap();
-        assert_eq!(
-            non_recur.flat_text(),
-            "mi",
-            "non-recursive reads mid's O-tree: 'mid-otree-text'[0:2]"
-        );
-
-        let recur = server.resolve_compound_recursive(doc).unwrap();
-        assert_eq!(
-            recur.flat_text(),
-            "M:",
-            "recursive reads mid's compound resolution: 'M:SRC'[0:2]"
-        );
-    }
-
-    #[test]
-    fn pending_content_notifications_capped() {
-        let (mut server, _sid) = setup_logged_in_server();
-
-        let fossil_id: crate::edition::RecorderId = 999;
-        for i in 0..(MAX_PENDING_NOTIFICATIONS + 500) {
-            server
-                .pending_content_notifications
-                .push(ContentNotification {
-                    fossil_id,
-                    edition_be_id: 1000 + i as u64,
-                    is_direct: true,
-                    work_be_id: None,
-                    title: None,
-                });
+            server.set_connection_pin(sid, "link-100").unwrap();
+            server.set_connection_pin(sid, "backlink-200").unwrap();
+            assert_eq!(server.wal.seq(), 2, "WAL should have 2 entries for 2 pins");
         }
-        assert!(
-            server.pending_content_notifications.len() >= MAX_PENDING_NOTIFICATIONS + 500,
-            "precondition: vec should be overfilled"
-        );
 
-        server.cap_pending_notifications_for_test();
-        assert!(
-            server.pending_content_notifications.len() <= MAX_PENDING_NOTIFICATIONS,
-            "notifications should be capped at MAX, got {}",
-            server.pending_content_notifications.len()
-        );
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let pins = server
+                .user_pins
+                .get(&club_a)
+                .expect("pins must survive crash via WAL replay");
+            assert_eq!(pins.len(), 2, "2 pins must survive WAL replay");
+            assert!(pins.contains("link-100"));
+            assert!(pins.contains("backlink-200"));
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 
     #[test]
-    fn revision_authors_bounded_after_many_revisions() {
+    #[cfg(feature = "server")]
+    fn pin_unpin_round_trip() {
         let (mut server, sid) = setup_logged_in_server();
-        let edition = crate::edition::Edition::from_text("initial");
-        let work_id = server.create_work(sid, edition).unwrap();
-        let author_club = server.resolve_author_club(sid);
+        let club = server.resolve_author_club(sid).unwrap();
 
-        for i in 0..(MAX_REVISION_AUTHORS + 200) {
-            let edition = crate::edition::Edition::from_text(&format!("rev {}", i));
-            server
-                .revise_work(work_id, sid, edition, author_club)
-                .unwrap();
-        }
+        server.set_connection_pin(sid, "link-1").unwrap();
+        server.set_connection_pin(sid, "link-2").unwrap();
+        server.set_connection_pin(sid, "link-3").unwrap();
 
-        let ws = server.works.get(&work_id).expect("work should exist");
-        assert!(
-            ws.revision_authors.len() <= MAX_REVISION_AUTHORS,
-            "revision_authors should be bounded at {}, got {}",
-            MAX_REVISION_AUTHORS,
-            ws.revision_authors.len()
-        );
+        let pins = server.connection_pins_for_session(sid);
+        assert_eq!(pins.len(), 3);
+
+        server.unset_connection_pin(sid, "link-2").unwrap();
+
+        let pins = server.connection_pins_for_session(sid);
+        assert_eq!(pins.len(), 2, "unpin should remove 1");
+        assert!(pins.contains("link-1"));
+        assert!(!pins.contains("link-2"));
+        assert!(pins.contains("link-3"));
+
+        server.set_connection_pin(sid, "link-1").unwrap();
+        let pins = server.connection_pins_for_session(sid);
+        assert_eq!(pins.len(), 2, "re-pinning existing key is idempotent");
     }
 
     #[test]
-    fn prune_disconnected_sessions_removes_old_disconnected() {
+    #[cfg(feature = "server")]
+    fn pin_isolated_per_user() {
         let mut server = Server::new();
-        let active1 = server.connect();
-        let active2 = server.connect();
-        let disconnected = server.connect();
-        server.disconnect(disconnected).unwrap();
-
-        assert_eq!(server.sessions.len(), 3);
-        assert_eq!(server.session_count(), 2);
-
-        let pruned = server.prune_disconnected_sessions();
-        assert_eq!(pruned, 0, "within grace period, nothing pruned");
-        assert_eq!(server.sessions.len(), 3);
-
-        let old = server.connect();
-        server.disconnect(old).unwrap();
-        let old_session = server.sessions.get_mut(&old).unwrap();
-        old_session.ended_at =
-            Some(std::time::Instant::now() - std::time::Duration::from_secs(120));
-
-        let pruned = server.prune_disconnected_sessions();
-        assert_eq!(pruned, 1, "old disconnected session pruned");
-        assert!(!server.sessions.contains_key(&old));
-        assert!(server.sessions.contains_key(&active1));
-        assert!(server.sessions.contains_key(&active2));
-        assert!(server.sessions.contains_key(&disconnected));
-    }
-
-    #[test]
-    fn disconnected_session_identity_resolves_anonymous() {
-        let mut server = Server::new();
-        let sid = server.connect();
-        server.login_public(sid).unwrap();
-        server.disconnect(sid).unwrap();
-
-        let (name, club_id, _) = server.identity_for_session(sid);
-        assert!(
-            !name.is_empty(),
-            "identity_for_session should still resolve for disconnected session"
-        );
-        assert!(
-            club_id.is_some(),
-            "club_id should be preserved while in grace period"
-        );
-    }
-
-    #[test]
-    fn prune_does_not_affect_attribution_history() {
-        let (mut server, sid) = setup_logged_in_server();
-        let edition = crate::edition::Edition::from_text("attribution test");
-        let work_id = server.create_work(sid, edition).unwrap();
-        let author_club = server.resolve_author_club(sid);
-
-        let edition2 = crate::edition::Edition::from_text("attribution test v2");
-        server
-            .revise_work(work_id, sid, edition2, author_club)
-            .unwrap();
-
-        server.disconnect(sid).unwrap();
-
-        let old_session = server.sessions.get_mut(&sid).unwrap();
-        old_session.ended_at =
-            Some(std::time::Instant::now() - std::time::Duration::from_secs(120));
-        let pruned = server.prune_disconnected_sessions();
-        assert_eq!(pruned, 1);
-
-        let ws = server.works.get(&work_id).unwrap();
-        assert!(
-            ws.last_revision_author.is_some(),
-            "attribution history should survive session pruning"
-        );
-        let rev = ws.work.revision_count();
-        assert!(
-            ws.revision_authors.contains_key(&rev),
-            "revision_authors should survive session pruning"
-        );
-    }
-
-    #[test]
-    fn compound_rebuild_from_provenance_stamped_entries() {
-        let (mut server, sid) = setup_logged_in_server();
-        let source = server
-            .create_work(sid, Edition::from_text("Hello World"))
-            .unwrap();
-        let doc = server
-            .create_work(sid, Edition::from_text("prefix Hello suffix"))
-            .unwrap();
-
-        server.work_grab(sid, doc).unwrap();
-
-        let author_club = server.resolve_author_club(sid);
-        let elem_prov = crate::edition::provenance::ElementProvenance {
-            author_public_key: [0u8; 32],
-            author_display_name: "TestAuthor".to_string(),
-            author_club_id: author_club.unwrap_or(0),
-            timestamp: 1000,
-            author_type: crate::edition::provenance::AuthorType::Human,
-            llm_model: None,
-            historical_author_id: None,
-            source_work_id: Some(source),
-            transcluded_by: None,
-            derived_by: None,
-        };
-
-        let edition = server.work(doc).unwrap().current_edition().clone();
-        let entries = edition.all_entries();
-        let mut new_entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> =
-            Vec::with_capacity(entries.len());
-        let mut cum = 0usize;
-        for (pos, c) in &entries {
-            let text = c.element.as_text().unwrap_or("");
-            if cum >= 7 && cum < 12 {
-                let mut carrier = (**c).clone();
-                carrier.provenance = Some(elem_prov.clone());
-                new_entries.push((*pos, Arc::new(carrier)));
-            } else {
-                new_entries.push((*pos, c.clone()));
-            }
-            cum += c.char_len();
-        }
-        let new_edition = crate::edition::Edition::from_entries(new_entries);
-        server
-            .revise_work(doc, sid, new_edition, author_club)
-            .unwrap();
-
-        let compound = server.compound_rebuild(doc, sid).unwrap();
-        let elements = compound.elements();
-        assert!(
-            elements.len() >= 2,
-            "rebuild should produce text + span elements, got {} elements",
-            elements.len()
-        );
-
-        let has_span = elements.iter().any(|e| match e {
-            crate::edition::compound::CompoundElement::Span { span } => {
-                span.source_work_id() == source
-            }
-            _ => false,
-        });
-        assert!(has_span, "rebuild should produce a span pointing to source");
-
-        let resolved = server.resolve_compound_edition(doc).unwrap();
-        assert_eq!(
-            resolved.flat_text(),
-            "prefix Hello suffix",
-            "resolved text should match original"
-        );
-    }
-
-    #[test]
-    fn compound_rebuild_text_only_works() {
-        let (mut server, sid) = setup_logged_in_server();
-        let doc = server
-            .create_work(sid, Edition::from_text("plain text no transclusion"))
-            .unwrap();
-
-        let compound = server.compound_rebuild(doc, sid).unwrap();
-        let elements = compound.elements();
-        assert!(
-            elements
-                .iter()
-                .all(|e| matches!(e, crate::edition::compound::CompoundElement::Text { .. })),
-            "text-only work should produce only text elements"
-        );
-
-        let resolved = server.resolve_compound_edition(doc).unwrap();
-        assert_eq!(resolved.flat_text(), "plain text no transclusion");
-        assert_eq!(resolved.span_ranges().len(), 0);
-    }
-
-    #[test]
-    fn compound_rebuild_repairs_corrupted_compound() {
-        let (mut server, sid) = setup_logged_in_server();
-        let source_a = server
-            .create_work(sid, Edition::from_text("Hello World"))
-            .unwrap();
-        let doc_b = server
-            .create_work(sid, Edition::from_text("Start. Hello End."))
-            .unwrap();
-
-        let corrupted = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("Start. Hello End."),
-        ]);
-        server.set_compound_edition(doc_b, corrupted, sid).unwrap();
-
-        let before = server.get_compound_edition(doc_b).unwrap();
-        assert_eq!(
-            before.elements().len(),
-            1,
-            "compound should be corrupted (text-only)"
-        );
-
-        server.work_grab(sid, doc_b).unwrap();
-        let author_club = server.resolve_author_club(sid);
-        let elem_prov = crate::edition::provenance::ElementProvenance {
-            author_public_key: [0u8; 32],
-            author_display_name: "TestAuthor".to_string(),
-            author_club_id: author_club.unwrap_or(0),
-            timestamp: 1000,
-            author_type: crate::edition::provenance::AuthorType::Human,
-            llm_model: None,
-            historical_author_id: None,
-            source_work_id: Some(source_a),
-            transcluded_by: None,
-            derived_by: None,
-        };
-        let edition = server.work(doc_b).unwrap().current_edition().clone();
-        let entries = edition.all_entries();
-        let mut new_entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> =
-            Vec::with_capacity(entries.len());
-        let mut cum = 0usize;
-        for (pos, c) in &entries {
-            if cum >= 7 && cum < 12 {
-                let mut carrier = (**c).clone();
-                carrier.provenance = Some(elem_prov.clone());
-                new_entries.push((*pos, Arc::new(carrier)));
-            } else {
-                new_entries.push((*pos, c.clone()));
-            }
-            cum += c.char_len();
-        }
-        let new_edition = crate::edition::Edition::from_entries(new_entries);
-        server
-            .revise_work(doc_b, sid, new_edition, author_club)
-            .unwrap();
-
-        let compound = server.compound_rebuild(doc_b, sid).unwrap();
-        let has_span = compound.elements().iter().any(|e| match e {
-            crate::edition::compound::CompoundElement::Span { span } => {
-                span.source_work_id() == source_a
-            }
-            _ => false,
-        });
-        assert!(
-            has_span,
-            "rebuild should repair corrupted compound by adding spans from provenance"
-        );
-    }
-
-    #[test]
-    fn compound_insert_element_creates_compound_if_absent() {
-        let (mut server, sid, source_a, doc_b) = compound_test_setup();
-        assert!(server.get_compound_edition(doc_b).is_none());
-
-        let count = server
-            .compound_insert_element(
-                doc_b,
-                0,
-                crate::edition::compound::CompoundElement::span(source_a, 0, 5),
-                sid,
-            )
-            .unwrap();
-        assert_eq!(count, 1);
-
-        let compound = server.get_compound_edition(doc_b).unwrap();
-        assert_eq!(compound.len(), 1);
-        assert_eq!(compound.span_count(), 1);
-    }
-
-    #[test]
-    fn compound_insert_element_at_various_positions() {
-        let (mut server, sid, source_a, doc_b) = compound_test_setup();
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("A"),
-            crate::edition::compound::CompoundElement::text("C"),
-        ]);
-        server.set_compound_edition(doc_b, compound, sid).unwrap();
 
         server
-            .compound_insert_element(
-                doc_b,
-                1,
-                crate::edition::compound::CompoundElement::text("B"),
-                sid,
-            )
-            .unwrap();
-
-        let compound = server.get_compound_edition(doc_b).unwrap();
-        assert_eq!(compound.len(), 3);
-        let texts: Vec<&str> = compound
-            .elements()
-            .iter()
-            .filter_map(|e| e.text_content())
-            .collect();
-        assert_eq!(texts, vec!["A", "B", "C"]);
-    }
-
-    #[test]
-    fn compound_insert_element_appends_when_index_out_of_range() {
-        let (mut server, sid, _source_a, doc_b) = compound_test_setup();
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("first"),
-        ]);
-        server.set_compound_edition(doc_b, compound, sid).unwrap();
-
-        let count = server
-            .compound_insert_element(
-                doc_b,
-                99,
-                crate::edition::compound::CompoundElement::text("second"),
-                sid,
-            )
-            .unwrap();
-        assert_eq!(count, 2);
-
-        let compound = server.get_compound_edition(doc_b).unwrap();
-        assert_eq!(compound.len(), 2);
-    }
-
-    #[test]
-    fn compound_remove_element() {
-        let (mut server, sid, source_a, doc_b) = compound_test_setup();
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("keep"),
-            crate::edition::compound::CompoundElement::span(source_a, 0, 3),
-            crate::edition::compound::CompoundElement::text("remove me"),
-        ]);
-        server.set_compound_edition(doc_b, compound, sid).unwrap();
-
-        let count = server.compound_remove_element(doc_b, 2, sid).unwrap();
-        assert_eq!(count, 2);
-
-        let compound = server.get_compound_edition(doc_b).unwrap();
-        assert_eq!(compound.len(), 2);
-        let texts: Vec<&str> = compound
-            .elements()
-            .iter()
-            .filter_map(|e| e.text_content())
-            .collect();
-        assert_eq!(texts, vec!["keep"]);
-    }
-
-    #[test]
-    fn compound_remove_element_out_of_range_noop() {
-        let (mut server, sid, _source_a, doc_b) = compound_test_setup();
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("only"),
-        ]);
-        server.set_compound_edition(doc_b, compound, sid).unwrap();
-
-        let count = server.compound_remove_element(doc_b, 99, sid).unwrap();
-        assert_eq!(count, 1, "remove out of range should not change length");
-    }
-
-    #[test]
-    fn compound_move_element_forward() {
-        let (mut server, sid, _source_a, doc_b) = compound_test_setup();
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("A"),
-            crate::edition::compound::CompoundElement::text("B"),
-            crate::edition::compound::CompoundElement::text("C"),
-        ]);
-        server.set_compound_edition(doc_b, compound, sid).unwrap();
-
-        server.compound_move_element(doc_b, 0, 2, sid).unwrap();
-
-        let compound = server.get_compound_edition(doc_b).unwrap();
-        let texts: Vec<&str> = compound
-            .elements()
-            .iter()
-            .filter_map(|e| e.text_content())
-            .collect();
-        assert_eq!(texts, vec!["B", "C", "A"]);
-    }
-
-    #[test]
-    fn compound_move_element_backward() {
-        let (mut server, sid, _source_a, doc_b) = compound_test_setup();
-        let compound = crate::edition::compound::CompoundEdition::new(vec![
-            crate::edition::compound::CompoundElement::text("A"),
-            crate::edition::compound::CompoundElement::text("B"),
-            crate::edition::compound::CompoundElement::text("C"),
-        ]);
-        server.set_compound_edition(doc_b, compound, sid).unwrap();
-
-        server.compound_move_element(doc_b, 2, 0, sid).unwrap();
-
-        let compound = server.get_compound_edition(doc_b).unwrap();
-        let texts: Vec<&str> = compound
-            .elements()
-            .iter()
-            .filter_map(|e| e.text_content())
-            .collect();
-        assert_eq!(texts, vec!["C", "A", "B"]);
-    }
-
-    #[test]
-    fn compound_incremental_ops_then_resolve() {
-        let (mut server, sid, source_a, doc_b) = compound_test_setup();
-
+            .user_pins
+            .entry(1001)
+            .or_default()
+            .insert("link-42".to_string());
         server
-            .compound_insert_element(
-                doc_b,
-                0,
-                crate::edition::compound::CompoundElement::text("Intro: "),
-                sid,
-            )
-            .unwrap();
+            .user_pins
+            .entry(1001)
+            .or_default()
+            .insert("link-43".to_string());
         server
-            .compound_insert_element(
-                doc_b,
-                1,
-                crate::edition::compound::CompoundElement::span(source_a, 0, 5),
-                sid,
-            )
-            .unwrap();
-        server
-            .compound_insert_element(
-                doc_b,
-                2,
-                crate::edition::compound::CompoundElement::text(" Done."),
-                sid,
-            )
-            .unwrap();
+            .user_pins
+            .entry(1002)
+            .or_default()
+            .insert("link-99".to_string());
 
-        let resolved = server.resolve_compound_edition(doc_b).unwrap();
-        assert_eq!(resolved.flat_text(), "Intro: Hello Done.");
-        assert_eq!(resolved.span_ranges().len(), 1);
-    }
+        let pins_a = server.user_pins.get(&1001).unwrap();
+        let pins_b = server.user_pins.get(&1002).unwrap();
+        assert_eq!(pins_a.len(), 2, "club 1001 has 2 pins");
+        assert_eq!(pins_b.len(), 1, "club 1002 has 1 pin");
+        assert!(pins_a.contains("link-42"));
+        assert!(pins_a.contains("link-43"));
+        assert!(!pins_a.contains("link-99"));
+        assert!(pins_b.contains("link-99"));
+        assert!(!pins_b.contains("link-42"));
 
-    #[test]
-    fn compound_insert_on_nonexistent_work_fails() {
-        let (mut server, sid, _source_a, _doc_b) = compound_test_setup();
-        let result = server.compound_insert_element(
-            999_999,
-            0,
-            crate::edition::compound::CompoundElement::text("x"),
-            sid,
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn compound_remove_on_nonexistent_work_fails() {
-        let (mut server, sid, _source_a, _doc_b) = compound_test_setup();
-        let result = server.compound_remove_element(999_999, 0, sid);
-        assert!(result.is_err());
+        let no_pins = server.user_pins.get(&9999);
+        assert!(no_pins.is_none(), "unknown club has no pins");
     }
 
     #[test]
@@ -26695,6 +25853,7 @@ mod tests {
             provenance_chain: Vec::new(),
             start_position: Some(5),
             end_position: Some(20),
+            cross_server_ref: None,
         };
 
         let hr = payload.to_hyper_ref(100);
@@ -28464,4 +27623,166 @@ mod tests {
             "chain should end at source"
         );
     }
+}
+
+fn http_get_json(url: &str, timeout_secs: u64) -> Result<String, String> {
+    let is_https = url.starts_with("https://");
+
+    let no_scheme = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .unwrap_or(url);
+
+    let (host_port, path) = no_scheme
+        .split_once('/')
+        .map(|(h, p)| (h, format!("/{}", p)))
+        .unwrap_or((no_scheme, "/".to_string()));
+
+    let default_port = if is_https { 443 } else { 80 };
+    let (host, port) = if let Some((h, p)) = host_port.rsplit_once(':') {
+        (h, p.parse::<u16>().unwrap_or(default_port))
+    } else {
+        (host_port, default_port)
+    };
+
+    if is_https {
+        http_get_json_https(host, port, &path, timeout_secs)
+    } else {
+        http_get_json_http(host, port, &path, timeout_secs)
+    }
+}
+
+fn http_get_json_https(
+    host: &str,
+    port: u16,
+    path: &str,
+    timeout_secs: u64,
+) -> Result<String, String> {
+    use std::sync::Arc;
+
+    let mut root_cert_store = rustls::RootCertStore::empty();
+    root_cert_store.extend(::webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+    let config = rustls::client::ClientConfig::builder()
+        .with_root_certificates(root_cert_store)
+        .with_no_client_auth();
+
+    let mut connector =
+        std::net::TcpStream::connect((host, port)).map_err(|e| format!("connect failed: {}", e))?;
+
+    connector
+        .set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
+        .ok();
+    connector
+        .set_write_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
+        .ok();
+
+    let server_name = rustls::pki_types::ServerName::try_from(host.to_string())
+        .map_err(|e| format!("invalid hostname: {}", e))?;
+
+    let config = Arc::new(config);
+    let mut client = rustls::client::ClientConnection::new(config, server_name)
+        .map_err(|e| format!("TLS setup failed: {}", e))?;
+
+    let mut tls_stream = rustls::Stream::new(&mut client, &mut connector);
+
+    use std::io::Write;
+    let request = format!(
+        "GET {} HTTP/1.0\r\nHost: {}\r\nConnection: close\r\nAccept: application/json\r\n\r\n",
+        path, host
+    );
+
+    tls_stream
+        .write_all(request.as_bytes())
+        .map_err(|e| format!("TLS write failed: {}", e))?;
+
+    let mut all = Vec::new();
+    use std::io::Read;
+    let mut buf = [0u8; 8192];
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    loop {
+        if std::time::Instant::now() > deadline {
+            break;
+        }
+        match tls_stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => all.extend_from_slice(&buf[..n]),
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        }
+    }
+
+    let response_str = String::from_utf8_lossy(&all);
+    let status_line = response_str.lines().next().unwrap_or("");
+    if !status_line.contains("200") {
+        return Err(format!("HTTP error: {}", status_line));
+    }
+
+    let body_start = response_str.find("\r\n\r\n").ok_or("no body separator")?;
+    Ok(response_str[body_start + 4..].to_string())
+}
+
+fn http_get_json_http(
+    host: &str,
+    port: u16,
+    path: &str,
+    timeout_secs: u64,
+) -> Result<String, String> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+
+    let mut stream =
+        TcpStream::connect((host, port)).map_err(|e| format!("connect failed: {}", e))?;
+
+    let request = format!(
+        "GET {} HTTP/1.0\r\nHost: {}\r\nAccept: application/json\r\n\r\n",
+        path, host
+    );
+
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| format!("write failed: {}", e))?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(timeout_secs)))
+        .ok();
+
+    let mut all = Vec::new();
+    let mut buf = [0u8; 8192];
+    let deadline = std::time::Instant::now() + Duration::from_secs(timeout_secs);
+    loop {
+        if std::time::Instant::now() > deadline {
+            break;
+        }
+        match stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                all.extend_from_slice(&buf[..n]);
+                let s = String::from_utf8_lossy(&all);
+                if let Some(body_start) = s.find("\r\n\r\n") {
+                    let body = &s[body_start + 4..];
+                    if body.trim_end().ends_with('}') {
+                        break;
+                    }
+                }
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        }
+    }
+
+    let response_str = String::from_utf8_lossy(&all);
+    let status_line = response_str.lines().next().unwrap_or("");
+    if !status_line.contains("200") {
+        return Err(format!("HTTP error: {}", status_line));
+    }
+
+    let body_start = response_str.find("\r\n\r\n").ok_or("no body separator")?;
+    Ok(response_str[body_start + 4..].to_string())
 }
