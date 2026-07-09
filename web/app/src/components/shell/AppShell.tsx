@@ -855,7 +855,7 @@ export function AppShell() {
                 inlineResolvedText={hasInlineTransclusions ? compound.resolvedText : undefined}
                 onUndoLastTransclusion={compound.undoLastInsert}
                 recentChanges={crdt.recentChanges}
-                showAttributionColors={editable}
+                showAttributionColors={showProvenance}
                 fontSize={docPrefs.fontSize}
                 lineHeight={docPrefs.lineHeight}
                 annotations={crdt.annotations}
