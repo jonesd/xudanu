@@ -224,6 +224,9 @@ function drawOverlay(
   const textNode = editor.firstChild;
   const singleNode = textNode && textNode.nodeType === Node.TEXT_NODE && textNode === editor.lastChild;
 
+  const viewportTop = container.scrollTop - 50;
+  const viewportBottom = container.scrollTop + rect.height + 50;
+
   for (const span of showAttribution ? spans : []) {
     const key = bytesToHex(span.author_public_key);
     const style = colorMap.get(key);
@@ -253,8 +256,9 @@ function drawOverlay(
     const isHistorical = style.authorType === "historical";
     const isUnsigned = !span.signature_valid;
     for (const r of rangeRects) {
-      const x = r.left - rect.left;
       const y = r.top - rect.top;
+      if (y + r.height < viewportTop || y > viewportBottom) continue;
+      const x = r.left - rect.left;
       if (isUnsigned) {
         ctx.fillStyle = "#f8514922";
         ctx.fillRect(x, y, r.width, r.height);
@@ -874,11 +878,21 @@ export function CollaborativeEditor({
     if (!container) return;
 
     let rafId = 0;
+    let lastDraw = 0;
     const redraw = () => {
+      if (document.hidden) return;
+      const now = performance.now();
+      if (now - lastDraw < 80) {
+        cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(() => {
+          lastDraw = performance.now();
+          hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight);
+        });
+        return;
+      }
       cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight);
-      });
+      lastDraw = now;
+      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight);
     };
 
     hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight);

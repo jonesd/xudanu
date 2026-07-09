@@ -118,7 +118,7 @@ export function AppShell() {
       const now = Date.now();
       const isTyping = now - lastTypingRef.current < 3000;
       if (!isTyping && !document.hidden) loadWorks();
-    }, 5000);
+    }, 30000);
     return () => clearInterval(interval);
   }, [connected, loadWorks]);
 
