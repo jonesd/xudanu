@@ -29,8 +29,8 @@ interface LinkCreatorProps {
   onSelectTextInOtherDoc: () => void;
 }
 
-type Step = "target" | "type" | "remote" | "done";
-type TargetMode = "whole-work" | "other-doc-text" | "same-doc" | "remote" | null;
+type Step = "target" | "type" | "remote" | "web" | "done";
+type TargetMode = "whole-work" | "other-doc-text" | "same-doc" | "remote" | "web" | null;
 
 export function LinkCreator({
   open,
@@ -52,6 +52,7 @@ export function LinkCreator({
   const [remoteHash, setRemoteHash] = useState("");
   const [remoteAuthor, setRemoteAuthor] = useState("");
   const [remoteAuthorKey, setRemoteAuthorKey] = useState("");
+  const [webUrl, setWebUrl] = useState("");
 
   const otherWorks = useMemo(
     () => works.filter((w) => w.work_id !== source?.workId),
@@ -71,6 +72,7 @@ export function LinkCreator({
     setRemoteHash("");
     setRemoteAuthor("");
     setRemoteAuthorKey("");
+    setWebUrl("");
   };
 
   const handleClose = () => {
@@ -88,6 +90,8 @@ export function LinkCreator({
       onSelectTextInOtherDoc();
     } else if (mode === "remote") {
       setStep("remote");
+    } else if (mode === "web") {
+      setStep("web");
     }
   };
 
@@ -163,6 +167,34 @@ export function LinkCreator({
     }
   };
 
+  const handleCreateWebLink = async () => {
+    if (!clientRef.current || !source) return;
+    const url = webUrl.trim();
+    if (!url || !/^https?:\/\//.test(url)) {
+      setError("Enter a valid URL (starting with http:// or https://)");
+      return;
+    }
+    setCreating(true);
+    setError(null);
+    try {
+      const linkId = await clientRef.current.linkCreate(
+        source.workId,
+        source.workId,
+        { excerpt: source.text, start: source.start, end: source.end },
+        { excerpt: url, start: 0, end: 0 },
+      );
+      await clientRef.current.linkSetTypes(linkId, [6]);
+      setStep("done");
+      setTimeout(() => {
+        onLinkCreated();
+        handleClose();
+      }, 800);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create web link");
+      setCreating(false);
+    }
+  };
+
   const sourcePreview = source.text.length > 120 ? source.text.slice(0, 120) + "\u2026" : source.text;
 
   return (
@@ -232,6 +264,17 @@ export function LinkCreator({
                 <div className="link-target-text">
                   <div className="link-target-name">Link to a remote server</div>
                   <div className="link-target-desc">Connect to content on another Xudanu server</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                className="link-target-option"
+                onClick={() => handleChooseTarget("web")}
+              >
+                <div className="link-target-icon">{"\u2197"}</div>
+                <div className="link-target-text">
+                  <div className="link-target-name">Link to a website</div>
+                  <div className="link-target-desc">One-way web link to an external URL</div>
                 </div>
               </button>
             </div>
@@ -381,6 +424,48 @@ export function LinkCreator({
                 onClick={handleCreateRemote}
               >
                 {creating ? "Creating\u2026" : "Create Remote Link"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === "web" && (
+          <div className="link-creator-body">
+            <div className="link-creator-step-title">
+              Web link
+              <button
+                type="button"
+                className="link-back-btn"
+                onClick={() => { setStep("target"); }}
+              >
+                {"\u2190"} back
+              </button>
+            </div>
+            <div className="link-remote-form">
+              <label className="link-form-label">
+                URL
+                <input
+                  type="url"
+                  className="link-form-input"
+                  placeholder="https://example.com/article"
+                  value={webUrl}
+                  onChange={(e) => setWebUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); handleCreateWebLink(); }
+                  }}
+                />
+              </label>
+              <div className="link-form-hint">
+                One-way link to an external website. Opens in a new tab when clicked.
+              </div>
+              {error && <div className="link-creator-error">{error}</div>}
+              <button
+                type="button"
+                className="link-create-submit"
+                disabled={creating || !webUrl.trim()}
+                onClick={handleCreateWebLink}
+              >
+                {creating ? "Creating\u2026" : "Create Web Link"}
               </button>
             </div>
           </div>
