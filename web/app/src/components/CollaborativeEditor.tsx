@@ -1712,7 +1712,19 @@ function getEditableText(el: HTMLElement): string {
   return result.replace(/\u200B/g, "");
 }
 
-function buildTransclusionDom(
+export function validateSpanRanges(
+  spanRanges: SpanRangePayload[],
+  textLength: number,
+): SpanRangePayload[] {
+  return spanRanges.filter(
+    (sr) =>
+      sr.flat_start >= 0 &&
+      sr.flat_end <= textLength &&
+      sr.flat_end > sr.flat_start,
+  );
+}
+
+export function buildTransclusionDom(
   el: HTMLElement,
   resolvedText: string,
   spanRanges: SpanRangePayload[],
@@ -1723,12 +1735,7 @@ function buildTransclusionDom(
     return;
   }
 
-  const validRanges = spanRanges.filter(
-    (sr) =>
-      sr.flat_start >= 0 &&
-      sr.flat_end <= resolvedText.length &&
-      sr.flat_end > sr.flat_start,
-  );
+  const validRanges = validateSpanRanges(spanRanges, resolvedText.length);
 
   if (validRanges.length === 0) {
     el.textContent = resolvedText;
