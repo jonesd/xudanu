@@ -467,7 +467,6 @@ fn dispatch_inner(
                     &ops,
                     author.as_ref(),
                 );
-                srv.migrate_compound_spans_for_delta(work_id, &ops);
                 srv.migrate_link_spans_for_delta(work_id, &ops);
                 srv.migrate_inline_transclusions_for_delta(work_id, &ops);
                 let compound_subs = srv.compound_subscribers_for_source(work_id);
@@ -1905,136 +1904,6 @@ fn dispatch_inner(
             let hops = srv.enrich_provenance_hops(&chain);
             Ok(ResponseValue::ProvenanceAncestryResult { chain: hops })
         }
-        WireRequest::CompoundResolve { compound } => {
-            let edition = compound.to_compound();
-            for work_id in edition.referenced_works() {
-                srv.ensure_can_read(session_id, work_id)?;
-            }
-            let text = srv.resolve_compound_to_text(&edition)?;
-            Ok(ResponseValue::CompoundResolveResult { text })
-        }
-        WireRequest::CompoundGetEdition { work_id } => {
-            srv.ensure_can_read(session_id, work_id)?;
-            let payload = srv
-                .get_compound_edition(work_id)
-                .map(|c| CompoundEditionPayload::from_compound(c));
-            Ok(ResponseValue::CompoundGetEditionResult { compound: payload })
-        }
-        WireRequest::CompoundSetEdition { work_id, compound } => {
-            srv.ensure_can_edit(session_id, work_id)?;
-            let edition = compound.to_compound();
-            srv.set_compound_edition(work_id, edition, session_id)?;
-            Ok(ResponseValue::CompoundSetEditionResult { ok: true })
-        }
-        WireRequest::CompoundRebuild { work_id } => {
-            srv.ensure_can_edit(session_id, work_id)?;
-            let compound = srv.compound_rebuild(work_id, session_id)?;
-            Ok(ResponseValue::CompoundRebuildResult {
-                compound: Some(CompoundEditionPayload::from_compound(&compound)),
-            })
-        }
-        WireRequest::CompoundInsertElement {
-            work_id,
-            index,
-            element,
-        } => {
-            srv.ensure_can_edit(session_id, work_id)?;
-            let elem = element.to_compound_element();
-            let count = srv.compound_insert_element(work_id, index, elem, session_id)?;
-            Ok(ResponseValue::CompoundInsertElementResult {
-                element_count: count,
-            })
-        }
-        WireRequest::CompoundRemoveElement { work_id, index } => {
-            srv.ensure_can_edit(session_id, work_id)?;
-            let count = srv.compound_remove_element(work_id, index, session_id)?;
-            Ok(ResponseValue::CompoundRemoveElementResult {
-                element_count: count,
-            })
-        }
-        WireRequest::CompoundMoveElement { work_id, from, to } => {
-            srv.ensure_can_edit(session_id, work_id)?;
-            let count = srv.compound_move_element(work_id, from, to, session_id)?;
-            Ok(ResponseValue::CompoundMoveElementResult {
-                element_count: count,
-            })
-        }
-        WireRequest::CompoundResolveWork { work_id } => {
-            srv.ensure_can_read(session_id, work_id)?;
-            let resolved = srv.resolve_compound_edition(work_id)?;
-
-            for elem in resolved.elements() {
-                if let crate::edition::compound::ResolvedElement::Span { source_work_id, .. } = elem
-                {
-                    srv.ensure_can_read(session_id, *source_work_id)?;
-                }
-            }
-
-            let elements: Vec<ResolvedElementPayload> = resolved
-                .elements()
-                .iter()
-                .map(ResolvedElementPayload::from_resolved)
-                .collect();
-            let span_ranges: Vec<SpanRangePayload> = resolved
-                .span_ranges()
-                .iter()
-                .map(SpanRangePayload::from_span_range)
-                .collect();
-
-            let mut source_titles: HashMap<BeId, String> = HashMap::new();
-            for sr in resolved.span_ranges() {
-                if !source_titles.contains_key(&sr.source_work_id) {
-                    if let Some(title) = srv.compound_source_title(sr.source_work_id) {
-                        source_titles.insert(sr.source_work_id, title);
-                    }
-                }
-            }
-
-            Ok(ResponseValue::CompoundResolveWorkResult {
-                elements,
-                flat_text: resolved.flat_text().to_string(),
-                span_ranges,
-                source_titles,
-            })
-        }
-        WireRequest::CompoundResolveRecursive { work_id } => {
-            srv.ensure_can_read(session_id, work_id)?;
-            let resolved = srv.resolve_compound_recursive(work_id)?;
-
-            for elem in resolved.elements() {
-                if let crate::edition::compound::ResolvedElement::Span { source_work_id, .. } = elem
-                {
-                    srv.ensure_can_read(session_id, *source_work_id)?;
-                }
-            }
-
-            let elements: Vec<ResolvedElementPayload> = resolved
-                .elements()
-                .iter()
-                .map(ResolvedElementPayload::from_resolved)
-                .collect();
-            let span_ranges: Vec<SpanRangePayload> = resolved
-                .span_ranges()
-                .iter()
-                .map(SpanRangePayload::from_span_range)
-                .collect();
-
-            let mut source_titles: HashMap<BeId, String> = HashMap::new();
-            for sr in resolved.span_ranges() {
-                if !source_titles.contains_key(&sr.source_work_id) {
-                    if let Some(title) = srv.compound_source_title(sr.source_work_id) {
-                        source_titles.insert(sr.source_work_id, title);
-                    }
-                }
-            }
-
-            Ok(ResponseValue::CompoundResolveWorkResult {
-                elements,
-                flat_text: resolved.flat_text().to_string(),
-                span_ranges,
-                source_titles,
-            })
-        }
         WireRequest::AdminRecorderCreate {
             kind,
             direct_only,
@@ -2285,6 +2154,19 @@ fn dispatch_inner(
             Ok(ResponseValue::EndorsementResult {
                 endorsements: es.iter().map(|e| (e.club_id(), e.token_id())).collect(),
             })
+        }
+        WireRequest::CompoundResolve { .. }
+        | WireRequest::CompoundGetEdition { .. }
+        | WireRequest::CompoundSetEdition { .. }
+        | WireRequest::CompoundRebuild { .. }
+        | WireRequest::CompoundInsertElement { .. }
+        | WireRequest::CompoundRemoveElement { .. }
+        | WireRequest::CompoundMoveElement { .. }
+        | WireRequest::CompoundResolveWork { .. }
+        | WireRequest::CompoundResolveRecursive { .. } => {
+            Err(crate::server::ServerError::Internal(
+                "side-table compound ops have been removed".to_string(),
+            ))
         }
         WireRequest::FederationInfo => {
             let info = srv.federation_info();
@@ -4276,6 +4158,19 @@ fn dispatch_inner_read(
                 results: payloads,
                 total_works_matched,
             })
+        }
+        WireRequest::CompoundResolve { .. }
+        | WireRequest::CompoundGetEdition { .. }
+        | WireRequest::CompoundSetEdition { .. }
+        | WireRequest::CompoundRebuild { .. }
+        | WireRequest::CompoundInsertElement { .. }
+        | WireRequest::CompoundRemoveElement { .. }
+        | WireRequest::CompoundMoveElement { .. }
+        | WireRequest::CompoundResolveWork { .. }
+        | WireRequest::CompoundResolveRecursive { .. } => {
+            Err(crate::server::ServerError::Internal(
+                "side-table compound ops have been removed".to_string(),
+            ))
         }
         _ => Err(crate::server::ServerError::Internal(
             "unhandled read request in dispatch_inner_read".to_string(),
