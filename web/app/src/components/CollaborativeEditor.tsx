@@ -100,6 +100,7 @@ const LINK_TYPE_STYLES: Record<number, { color: string; dash: number[] }> = {
   3: { color: "#f85149", dash: [8, 3] },        // Disagreement — long dashes
   4: { color: "#a371f7", dash: [1, 3] },        // Quotation — dotted
   5: { color: "#d29922", dash: [6, 2, 1, 2] }, // See Also — dash-dot
+  6: { color: "#39d2c0", dash: [2, 2] },        // Web Link — short dotted
 };
 
 const LINK_TYPE_NAMES: Record<number, string> = {
@@ -108,6 +109,7 @@ const LINK_TYPE_NAMES: Record<number, string> = {
   3: "Disagreement",
   4: "Quotation",
   5: "See Also",
+  6: "Web Link",
 };
 
 const COMPOUND_COLORS = [
@@ -870,6 +872,10 @@ export function CollaborativeEditor({
     }
   }, [text]);
 
+  const isTypingRef = useRef(false);
+  const overlayPausedRef = useRef(false);
+  const pauseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     const el = editorRef.current;
     const canvas = overlayRef.current;
@@ -879,8 +885,10 @@ export function CollaborativeEditor({
 
     let rafId = 0;
     let lastDraw = 0;
+
     const redraw = () => {
       if (document.hidden) return;
+      if (overlayPausedRef.current) return;
       const now = performance.now();
       if (now - lastDraw < 80) {
         cancelAnimationFrame(rafId);
@@ -981,6 +989,12 @@ export function CollaborativeEditor({
       toggleClusterExpansion(hit.densityCluster);
       return;
     }
+    if (hit.marker.linkTypeId === 6) {
+      if (hit.marker.excerpt) {
+        window.open(hit.marker.excerpt, "_blank", "noopener,noreferrer");
+      }
+      return;
+    }
     if (e.detail === 2 && onShowBacklinks) {
       const excerpt = (hit.marker as unknown as Record<string, unknown>).excerpt as string || "";
       onShowBacklinks(hit.marker.otherWorkId, excerpt);
@@ -1058,6 +1072,20 @@ export function CollaborativeEditor({
     const el = editorRef.current;
     if (!el) return;
     lastInputTime.current = Date.now();
+    if (!isTypingRef.current) {
+      isTypingRef.current = true;
+      overlayPausedRef.current = true;
+    }
+    if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current);
+    pauseTimerRef.current = setTimeout(() => {
+      isTypingRef.current = false;
+      overlayPausedRef.current = false;
+      const el = editorRef.current;
+      const canvas = overlayRef.current;
+      if (el && canvas) {
+        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight);
+      }
+    }, 400);
     let newText = hasInlineTransclusions ? getEditableText(el) : getTextContent(el);
     if (newText === "\n" && !el.querySelector("DIV") && !el.querySelector("P")) {
       newText = "";
@@ -1504,39 +1532,52 @@ export function CollaborativeEditor({
               }}
             >
               <div className="marker-tooltip-title" style={{ color: hoveredMarker.linkTypeId ? (LINK_TYPE_STYLES[hoveredMarker.linkTypeId]?.color ?? hoveredMarker.color) : hoveredMarker.color }}>
-                {hoveredMarker.otherWorkTitle}
+                {hoveredMarker.linkTypeId === 6 ? hoveredMarker.excerpt : hoveredMarker.otherWorkTitle}
               </div>
               <div className="marker-tooltip-direction">
-                {hoveredMarker.linkTypeId
+                {hoveredMarker.linkTypeId === 6
+                  ? "Web Link — one-way"
+                  : hoveredMarker.linkTypeId
                   ? `${LINK_TYPE_NAMES[hoveredMarker.linkTypeId] ?? "Link"} — ${hoveredMarker.direction === "outgoing" ? "links to" : "linked from"}`
                   : hoveredMarker.linkId === 0
                     ? `Compound — transcluded from`
                     : hoveredMarker.direction === "outgoing" ? "Transcluded to" : "Transcluded from"}
               </div>
-              {hoveredMarker.excerpt && (
+              {hoveredMarker.linkTypeId !== 6 && hoveredMarker.excerpt && (
                 <div className="marker-tooltip-excerpt" style={{ fontSize: 11, color: "#8b949e", marginTop: 4, fontStyle: "italic", maxHeight: 60, overflow: "hidden" }}>
                   &ldquo;{hoveredMarker.excerpt}&rdquo;
                 </div>
               )}
-              {hoveredMarker.otherWorkIsArchived && (
+              {hoveredMarker.linkTypeId !== 6 && hoveredMarker.otherWorkIsArchived && (
                 <div
                   className="marker-tooltip-archived"
                   style={{ color: "#8a6d3b", fontWeight: 600, marginTop: 4 }}
                 >
-                  🗄 Archived work — content retained, source hidden
+                  {"\u{1F5C4}"} Archived work — content retained, source hidden
                   {hoveredMarker.otherWorkOwner != null
-                    ? ` · owner: club:${hoveredMarker.otherWorkOwner
+                    ? ` \u00B7 owner: club:${hoveredMarker.otherWorkOwner
                         .toString(16)
                         .padStart(4, "0")}`
                     : ""}
                 </div>
               )}
-              {hoveredMarker.provenanceChain && hoveredMarker.provenanceChain.length > 0 && (
+              {hoveredMarker.linkTypeId !== 6 && hoveredMarker.provenanceChain && hoveredMarker.provenanceChain.length > 0 && (
                 <div className="marker-tooltip-chain">
                   {hoveredMarker.provenanceChain.length} provenance hop{hoveredMarker.provenanceChain.length > 1 ? "s" : ""}
                 </div>
               )}
-              {onNavigateToWork && (
+              {hoveredMarker.linkTypeId === 6 ? (
+                <a
+                  className="marker-tooltip-link"
+                  href={hoveredMarker.excerpt}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ display: "inline-block", marginTop: 4, color: "#39d2c0", fontSize: 12, textDecoration: "underline" }}
+                >
+                  Open {"\u2197"}
+                </a>
+              ) : onNavigateToWork && (
                 <button
                   className="marker-tooltip-link"
                   onClick={(e) => {

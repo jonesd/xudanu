@@ -8,6 +8,7 @@ const DEFAULT_LINK_TYPE_LABELS: Record<number, string> = {
   3: "Disagreement",
   4: "Quotation",
   5: "See Also",
+  6: "Web Link",
 };
 
 interface ConnectionsSectionProps {
