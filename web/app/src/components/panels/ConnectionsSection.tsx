@@ -81,10 +81,11 @@ export function ConnectionsSection({
     const typeId = link.link_types?.[0] ?? 0;
     const typeName = DEFAULT_LINK_TYPE_LABELS[typeId] || "link";
     const isOutgoing = currentWorkId !== null && link.origin === currentWorkId;
+    const isWebLink = typeId === 6;
     items.push({
       key,
       type: "link",
-      title: link.destination_title || link.origin_title || "Untitled",
+      title: isWebLink ? excerpt : (link.destination_title || link.origin_title || "Untitled"),
       excerpt: excerpt.slice(0, 80),
       meta: typeName,
       workId: isOutgoing ? link.destination : link.origin,
@@ -171,7 +172,13 @@ export function ConnectionsSection({
           style={{
             borderLeft: `3px solid ${borderColor}`,
           }}
-          onClick={() => onNavigateToWork(item.workId)}
+          onClick={() => {
+            if (item.linkTypeId === 6 && item.title) {
+              window.open(item.title, "_blank", "noopener,noreferrer");
+            } else {
+              onNavigateToWork(item.workId);
+            }
+          }}
         >
           <div className="conn-title" style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <span
