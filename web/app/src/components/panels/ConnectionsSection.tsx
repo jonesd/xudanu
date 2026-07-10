@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { LinkEntry, SpanRangePayload, BacklinkEntry } from "../../api/crdt_sync";
+import type { LinkEntry, SpanRangePayload, BacklinkEntry, CrossServerBacklinkPayload } from "../../api/crdt_sync";
 import { getTransclusionColor, DEFAULT_LINK_TYPES } from "../../hooks/useTransclusion";
 
 const DEFAULT_LINK_TYPE_LABELS: Record<number, string> = {
@@ -22,6 +22,7 @@ interface ConnectionsSectionProps {
   onRetypeLink?: (linkId: number, typeId: number) => void;
   pinnedKeys: Set<string>;
   onTogglePin: (key: string, pinned: boolean) => void;
+  crossServerBacklinks?: CrossServerBacklinkPayload[];
 }
 
 export function ConnectionsSection({
@@ -35,6 +36,7 @@ export function ConnectionsSection({
   onRetypeLink,
   pinnedKeys,
   onTogglePin,
+  crossServerBacklinks = [],
 }: ConnectionsSectionProps) {
   const [filter, setFilter] = useState("all");
 
@@ -107,7 +109,19 @@ export function ConnectionsSection({
     });
   }
 
-  const backlinkCount = backlinks.length;
+  for (const csb of crossServerBacklinks) {
+    const key = `csbacklink-${csb.origin_server_address}-${csb.origin_work_id}`;
+    items.push({
+      key,
+      type: "backlink" as const,
+      title: csb.origin_server_name || csb.origin_server_address,
+      excerpt: csb.excerpt.slice(0, 80),
+      meta: "cross-server",
+      workId: 0,
+    });
+  }
+
+  const backlinkCount = backlinks.length + crossServerBacklinks.length;
 
   const filtered = items.filter((item) => {
     if (filter === "pinned") return pinnedKeys.has(item.key);

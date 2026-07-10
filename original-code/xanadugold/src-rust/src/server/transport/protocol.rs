@@ -125,6 +125,7 @@ pub enum OperationCode {
     ConnectionPinSet,
     ConnectionPinUnset,
     ConnectionPinsGet,
+    CrossServerBacklinksGet,
     WorkGraph,
     TrailCreate,
     TrailDelete,
@@ -452,6 +453,7 @@ impl OperationCode {
             0x0349 => Some(OperationCode::ConnectionPinSet),
             0x034a => Some(OperationCode::ConnectionPinUnset),
             0x034b => Some(OperationCode::ConnectionPinsGet),
+            0x034c => Some(OperationCode::CrossServerBacklinksGet),
             0x0341 => Some(OperationCode::WorkDiffNarration),
             0x0342 => Some(OperationCode::WorkWritingFeedback),
             0x0343 => Some(OperationCode::WorkBacklinks),
@@ -723,6 +725,7 @@ impl OperationCode {
             OperationCode::ConnectionPinSet => 0x0349,
             OperationCode::ConnectionPinUnset => 0x034a,
             OperationCode::ConnectionPinsGet => 0x034b,
+            OperationCode::CrossServerBacklinksGet => 0x034c,
             OperationCode::WorkOwner => 0x0313,
             OperationCode::WorkPublish => 0x0317,
             OperationCode::WorkUnpublish => 0x0318,
@@ -1097,6 +1100,9 @@ pub enum WireRequest {
         key: String,
     },
     ConnectionPinsGet,
+    CrossServerBacklinksGet {
+        work_id: BeId,
+    },
     WorkGraph,
 
     TrailCreate {
@@ -2099,6 +2105,7 @@ pub enum ResponseValue {
     LinkList(Vec<LinkPayload>),
     LinkTypes(Vec<LinkTypeInfoPayload>),
     ConnectionPins(Vec<String>),
+    CrossServerBacklinksResult(Vec<CrossServerBacklinkPayload>),
     ExcerptPositions(Vec<ExcerptPositionPayload>),
     TransclusionResults(Vec<TransclusionResultPayload>),
     WorkIds(Vec<BeId>),
@@ -2740,6 +2747,18 @@ pub struct LinkPayload {
 pub struct LinkTypeInfoPayload {
     pub type_id: u64,
     pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossServerBacklinkPayload {
+    pub target_work_id: BeId,
+    pub origin_server_address: String,
+    pub origin_server_name: String,
+    pub origin_work_id: String,
+    pub origin_work_title: String,
+    pub excerpt: String,
+    pub link_type: String,
+    pub received_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

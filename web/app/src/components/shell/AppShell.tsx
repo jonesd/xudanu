@@ -18,7 +18,7 @@ import { ImportWizard } from "../ImportWizard";
 import { TrailsPanel } from "../TrailsPanel";
 import { DocumentSettings, loadDocPreferences } from "../DocumentSettings";
 import type { DocPreferences } from "../DocumentSettings";
-import type { WorkListEntry } from "../../api/crdt_sync";
+import type { WorkListEntry, CrossServerBacklinkPayload } from "../../api/crdt_sync";
 import { TopBar } from "./TopBar";
 import { LeftRail } from "./LeftRail";
 import { BottomBar } from "./BottomBar";
@@ -52,6 +52,7 @@ export function AppShell() {
   const [showTrails, setShowTrails] = useState(false);
   const [showAnnotations, setShowAnnotations] = useState(false);
   const [showCompound, setShowCompound] = useState(false);
+  const [crossServerBacklinks, setCrossServerBacklinks] = useState<CrossServerBacklinkPayload[]>([]);
   const [annotationTarget, setAnnotationTarget] = useState<{ start: number; end: number } | null>(null);
   const [isPublished, setIsPublished] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -129,6 +130,7 @@ export function AppShell() {
     if (connected && workBeId !== null && clientRef.current) {
       refreshAttribution();
       refreshAnnotations();
+      clientRef.current.crossServerBacklinksGet(workBeId).then(setCrossServerBacklinks).catch(() => setCrossServerBacklinks([]));
     }
     if (connected && workBeId !== null && clientRef.current && identity) {
       loadTransclusionLinks(clientRef.current, workBeId, works);
@@ -944,6 +946,7 @@ export function AppShell() {
         attributionLogStatus={attributionLogStatus}
         transclusionLinks={transclusion.links}
         backlinks={transclusion.backlinks}
+        crossServerBacklinks={crossServerBacklinks}
         compoundSpanRanges={compound.spanRanges}
         compoundSourceTitles={compound.sourceTitles}
         currentWorkId={workBeId}
