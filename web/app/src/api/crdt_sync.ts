@@ -268,6 +268,15 @@ export interface LinkTypeInfo {
   name: string;
 }
 
+export interface AgainHop {
+  work_id: number;
+  work_title: string;
+  element_text: string;
+  author_name: string;
+  author_type: string;
+  is_original: boolean;
+}
+
 export interface CrossServerBacklinkPayload {
   target_work_id: number;
   origin_server_address: string;
@@ -1005,6 +1014,13 @@ export class CrdtSyncClient {
     });
     const val = extractValue(resp) as Record<string, unknown>;
     return (val.removed as boolean) || false;
+  }
+
+  async workTransclusionChain(workId: number, charStart: number, charEnd: number): Promise<AgainHop[]> {
+    const resp = await this.sendRequest("work_transclusion_chain", { work_id: workId, char_start: charStart, char_end: charEnd });
+    const val = extractValue(resp);
+    if (Array.isArray(val)) return val as AgainHop[];
+    return [];
   }
 
   async migrateCompoundToInline(workId: number): Promise<number | null> {

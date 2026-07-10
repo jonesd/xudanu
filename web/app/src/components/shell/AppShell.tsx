@@ -445,6 +445,19 @@ export function AppShell() {
     [clientRef],
   );
 
+  const handleTraceProvenance = useCallback(
+    async (workId: number, charStart: number, charEnd: number) => {
+      if (!clientRef.current) return [];
+      try {
+        return await clientRef.current.workTransclusionChain(workId, charStart, charEnd);
+      } catch (e) {
+        console.error("Provenance trace failed:", e);
+        return [];
+      }
+    },
+    [clientRef],
+  );
+
   const handleCopyReference = useCallback(async () => {
     if (workBeId === null) return;
     try {
@@ -878,6 +891,7 @@ export function AppShell() {
             <div className="document-center">
               <CollaborativeEditor
                 text={displayText}
+                workId={workBeId ?? undefined}
                 onTextChange={editable ? handleTextChange : undefined}
                 onCursorChange={sendCursor}
                 onSelectionChange={handleEditorSelectionChange}
@@ -893,6 +907,7 @@ export function AppShell() {
                 onNavigateToWork={selectWork}
                 onShowBacklinks={handleShowBacklinks}
                 onCrossServerResolve={handleCrossServerResolve}
+                onTraceProvenance={handleTraceProvenance}
                 compoundSpanRanges={compound.spanRanges}
                 remoteCursors={awareness}
                 compoundSourceTitles={compound.sourceTitles}
