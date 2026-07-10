@@ -1159,6 +1159,7 @@ fn dispatch_inner(
             srv.ensure_authenticated(session_id)?;
             srv.ensure_can_read(session_id, origin)?;
             srv.ensure_can_read(session_id, destination)?;
+            let destination_ref_payload = destination_ref.clone();
             let o_ref = origin_ref.map(|hr| {
                 tracing::info!(
                     "[link_create] origin_ref excerpt present={}, len={}",
@@ -1233,6 +1234,51 @@ fn dispatch_inner(
                     crate::edition::links::HyperLink::make(link_types, o_with_chain, d_final);
                 srv.create_link_with_hyperlink(session_id, link)?
             };
+
+            if let Some(ref d_hyper_ref) = destination_ref_payload {
+                if let Some(ref csr) = d_hyper_ref.cross_server_ref {
+                    if let Some(csr) = csr.to_cross_server_ref() {
+                        let target_addr = csr.origin_server_address.clone().unwrap_or_default();
+                        if !target_addr.is_empty() {
+                            let work_hex = crate::edition::links::tumbler_local_path(&csr.tumbler)
+                                .split('.')
+                                .next()
+                                .unwrap_or("")
+                                .to_string();
+                            let notify_url = format!(
+                                "{}/api/backlink-notify",
+                                if target_addr.starts_with("http") {
+                                    target_addr.clone()
+                                } else {
+                                    format!("http://{}", target_addr)
+                                }
+                                .trim_end_matches('/')
+                            );
+                            let notify_body = serde_json::json!({
+                                "target_work_id": work_hex,
+                                "origin_server_address": srv.public_address().unwrap_or("").to_string(),
+                                "origin_server_name": srv.server_name().to_string(),
+                                "origin_work_id": format!("{:04x}", origin),
+                                "origin_work_title": srv.works.get(&origin).map(|w| w.cached_title().to_string()).unwrap_or_default(),
+                                "excerpt": csr.excerpt.chars().take(200).collect::<String>(),
+                                "link_type": "cross-server",
+                            });
+                            tracing::info!(
+                                "Sending cross-server backlink notification to {}",
+                                notify_url
+                            );
+                            if let Err(e) = crate::server::server::http_post_json(
+                                &notify_url,
+                                &notify_body.to_string(),
+                                10,
+                            ) {
+                                tracing::warn!("Cross-server backlink notification failed: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+
             Ok(ResponseValue::Id(link_id))
         }
         WireRequest::LinkGet { link_id } => {

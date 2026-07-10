@@ -1090,6 +1090,20 @@ pub struct SocialSection {
     pub trails: Vec<TrailManifestEntry>,
     pub trail_counter: BeId,
     pub compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
+    #[serde(default)]
+    pub cross_server_backlinks: Vec<CrossServerBacklinkEntry>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct CrossServerBacklinkEntry {
+    pub target_work_id: BeId,
+    pub origin_server_address: String,
+    pub origin_server_name: String,
+    pub origin_work_id: String,
+    pub origin_work_title: String,
+    pub excerpt: String,
+    pub link_type: String,
+    pub received_at: u64,
 }
 
 /// Federation section (reconcile_store + reconcile_counter + federation snapshot)
