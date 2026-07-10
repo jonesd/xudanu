@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useMemo, useState } from "react";
-import type { AttributionSpan, TransclusionMarker, AnnotationEntry, SpanRangePayload, AwarenessState, ChangeHighlight } from "../api/crdt_sync";
+import type { AttributionSpan, TransclusionMarker, AnnotationEntry, SpanRangePayload, AwarenessState, ChangeHighlight, AgainHop } from "../api/crdt_sync";
 import type { PendingTransclusion } from "../hooks/useTransclusion";
 import { authorColor } from "../author-color";
 import { TextBuffer } from "../api/text_buffer";
@@ -37,6 +37,7 @@ interface AuthorStyle {
 
 interface CollaborativeEditorProps {
   text: string;
+  workId?: number;
   onTextChange?: (text: string) => void;
   onCursorChange: (index: number | null) => void;
   onSelectionChange: (start: number | null, end: number | null) => void;
@@ -51,6 +52,7 @@ interface CollaborativeEditorProps {
   selectionRange?: { start: number; end: number } | null;
   onNavigateToWork?: (workId: number) => void;
   onCrossServerResolve?: (tumbler: string, contentHash: string) => Promise<{ text: string; hashVerified: boolean; cached: boolean } | null>;
+  onTraceProvenance?: (workId: number, charStart: number, charEnd: number) => Promise<AgainHop[]>;
   onShowBacklinks?: (workId: number, excerpt: string) => void;
   onPasteText?: (text: string, pasteStart: number) => void;
   fontSize?: number;
@@ -659,6 +661,7 @@ function findTextNodeAt(root: Node, targetOffset: number): { node: Text; offset:
 
 export function CollaborativeEditor({
   text,
+  workId,
   onTextChange,
   onCursorChange,
   onSelectionChange,
@@ -672,6 +675,7 @@ export function CollaborativeEditor({
   onPlaceTransclusion,
   onNavigateToWork,
   onCrossServerResolve,
+  onTraceProvenance,
   onShowBacklinks,
   onPasteText,
   fontSize,
@@ -704,6 +708,7 @@ export function CollaborativeEditor({
   const [hoveredMarker, setHoveredMarker] = useState<TransclusionMarker | null>(null);
   const [remoteContent, setRemoteContent] = useState<{ title: string; text: string; cached: boolean } | null>(null);
   const [resolving, setResolving] = useState(false);
+  const [provenanceChain, setProvenanceChain] = useState<AgainHop[] | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const [linkTypeFilter, setLinkTypeFilter] = useState<Set<number> | null>(null);
   const [expandedClusters, setExpandedClusters] = useState<Set<number>>(new Set());
@@ -1618,6 +1623,20 @@ export function CollaborativeEditor({
                   Go to {hoveredMarker.otherWorkId.toString(16).padStart(4, "0")}
                 </button>
               )}
+              {onTraceProvenance && hoveredMarker.start < hoveredMarker.end && (
+                <button
+                  className="marker-tooltip-link"
+                  style={{ color: "#a371f7", marginTop: 4 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTraceProvenance(workId ?? 0, hoveredMarker.start, hoveredMarker.end)
+                      .then((chain) => setProvenanceChain(chain))
+                      .catch(() => {});
+                  }}
+                >
+                  {"\u2197"} Trace provenance
+                </button>
+              )}
             </div>
           )}
           {resolving && (
@@ -1661,6 +1680,87 @@ export function CollaborativeEditor({
                   >
                     {remoteContent.text}
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+          {provenanceChain && (
+            <div className="modal-overlay" onClick={() => setProvenanceChain(null)}>
+              <div
+                className="annotation-dialog"
+                style={{ maxWidth: 560 }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="link-creator-header">
+                  <h3>Provenance Chain</h3>
+                  <button type="button" className="link-creator-close" onClick={() => setProvenanceChain(null)}>
+                    {"\u00d7"}
+                  </button>
+                </div>
+                <div style={{ padding: "16px 20px", maxHeight: "60vh", overflowY: "auto" }}>
+                  {provenanceChain.length === 0 && (
+                    <div style={{ fontSize: 13, color: "#8a8a96", textAlign: "center", padding: 20 }}>
+                      No provenance chain found. This text may not be transcluded.
+                    </div>
+                  )}
+                  {provenanceChain.map((hop, i) => (
+                    <div key={i} style={{
+                      display: "flex",
+                      gap: 12,
+                      marginBottom: 16,
+                      paddingBottom: 16,
+                      borderBottom: i < provenanceChain.length - 1 ? "1px solid #e8e5de" : "none",
+                    }}>
+                      <div style={{
+                        minWidth: 28,
+                        height: 28,
+                        borderRadius: "50%",
+                        background: hop.is_original ? "#3fb950" : "#a371f7",
+                        color: "#fff",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}>
+                        {i + 1}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#2a2a2e" }}>
+                          {hop.work_title || `Work ${hop.work_id.toString(16).padStart(4, "0")}`}
+                          {hop.is_original && (
+                            <span style={{ fontSize: 10, color: "#3fb950", marginLeft: 6, fontWeight: 600 }}>
+                              {"\u2713"} ORIGINAL
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 11, color: "#6a6a76", marginBottom: 4 }}>
+                          by {hop.author_name || "anonymous"}
+                          {hop.author_type && <span style={{ color: "#8a8a96" }}> ({hop.author_type})</span>}
+                        </div>
+                        <div style={{
+                          fontSize: 13,
+                          color: "#4a4a56",
+                          fontStyle: "italic",
+                          lineHeight: 1.6,
+                          fontFamily: "'Source Serif 4', Georgia, serif",
+                          background: "#f6f6f8",
+                          padding: "8px 12px",
+                          borderRadius: 6,
+                          maxHeight: 80,
+                          overflow: "hidden",
+                        }}>
+                          &ldquo;{hop.element_text.slice(0, 200)}{hop.element_text.length > 200 ? "\u2026" : ""}&rdquo;
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {provenanceChain.length > 1 && (
+                    <div style={{ fontSize: 11, color: "#8a8a96", textAlign: "center", marginTop: 8 }}>
+                      Traced {provenanceChain.length} hops via <code>again()</code> &mdash; Gold's recursive transclusion walk
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
