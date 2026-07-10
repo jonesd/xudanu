@@ -1,4 +1,4 @@
-import type { AwarenessState, AttributionSpan, SpanRangePayload, LinkEntry, BacklinkEntry } from "../../api/crdt_sync";
+import type { AwarenessState, AttributionSpan, SpanRangePayload, LinkEntry, BacklinkEntry, CrossServerBacklinkPayload } from "../../api/crdt_sync";
 import { PresenceSection } from "../panels/PresenceSection";
 import { DocuverseSection } from "../panels/DocuverseSection";
 import { ConnectionsSection } from "../panels/ConnectionsSection";
@@ -24,6 +24,7 @@ interface ContextPanelProps {
   onRetypeLink?: (linkId: number, typeId: number) => void;
   pinnedKeys: Set<string>;
   onTogglePin: (key: string, pinned: boolean) => void;
+  crossServerBacklinks?: CrossServerBacklinkPayload[];
 }
 
 export function ContextPanel(props: ContextPanelProps) {
@@ -48,6 +49,7 @@ export function ContextPanel(props: ContextPanelProps) {
         onRetypeLink={props.onRetypeLink}
         pinnedKeys={props.pinnedKeys}
         onTogglePin={props.onTogglePin}
+        crossServerBacklinks={props.crossServerBacklinks}
       />
       <AttributionSection attributionSpans={props.attributionSpans} attributionLogStatus={props.attributionLogStatus} onOpenFullView={props.onOpenProvenance} onExportReport={props.onExportReport} onExportProvJson={props.onExportProvJson} currentWorkId={props.currentWorkId} documentLength={props.documentLength} />
     </div>

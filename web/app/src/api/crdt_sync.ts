@@ -268,6 +268,17 @@ export interface LinkTypeInfo {
   name: string;
 }
 
+export interface CrossServerBacklinkPayload {
+  target_work_id: number;
+  origin_server_address: string;
+  origin_server_name: string;
+  origin_work_id: string;
+  origin_work_title: string;
+  excerpt: string;
+  link_type: string;
+  received_at: number;
+}
+
 export interface AnnotationEntry {
   annotation_id: number;
   kind: string;
@@ -1043,6 +1054,13 @@ export class CrdtSyncClient {
     const resp = await this.sendRequest("connection_pins_get", {});
     const val = extractValue(resp);
     if (Array.isArray(val)) return val as string[];
+    return [];
+  }
+
+  async crossServerBacklinksGet(workId: number): Promise<CrossServerBacklinkPayload[]> {
+    const resp = await this.sendRequest("cross_server_backlinks_get", { work_id: workId });
+    const val = extractValue(resp);
+    if (Array.isArray(val)) return val as CrossServerBacklinkPayload[];
     return [];
   }
 

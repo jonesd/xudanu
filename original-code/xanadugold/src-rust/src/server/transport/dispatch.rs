@@ -576,6 +576,24 @@ fn dispatch_inner(
             let pins = srv.connection_pins_for_session(session_id);
             Ok(ResponseValue::ConnectionPins(pins.into_iter().collect()))
         }
+        WireRequest::CrossServerBacklinksGet { work_id } => {
+            srv.ensure_session(session_id)?;
+            let backlinks = srv.cross_server_backlinks_for_work(work_id);
+            let payloads: Vec<super::protocol::CrossServerBacklinkPayload> = backlinks
+                .into_iter()
+                .map(|b| super::protocol::CrossServerBacklinkPayload {
+                    target_work_id: b.target_work_id,
+                    origin_server_address: b.origin_server_address.clone(),
+                    origin_server_name: b.origin_server_name.clone(),
+                    origin_work_id: b.origin_work_id.clone(),
+                    origin_work_title: b.origin_work_title.clone(),
+                    excerpt: b.excerpt.clone(),
+                    link_type: b.link_type.clone(),
+                    received_at: b.received_at,
+                })
+                .collect();
+            Ok(ResponseValue::CrossServerBacklinksResult(payloads))
+        }
         WireRequest::WorkGraph => {
             srv.ensure_authenticated(session_id)?;
             let (raw_nodes, raw_edges) = srv.build_work_graph(session_id);

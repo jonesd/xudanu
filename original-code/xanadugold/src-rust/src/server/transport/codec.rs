@@ -2978,6 +2978,17 @@ impl JsonCodec {
                 Ok(WireRequest::ConnectionPinUnset { key: args.key })
             }
             OperationCode::ConnectionPinsGet => Ok(WireRequest::ConnectionPinsGet),
+            OperationCode::CrossServerBacklinksGet => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CrossServerBacklinksGet {
+                    work_id: args.work_id,
+                })
+            }
             OperationCode::TrailCreate => {
                 #[derive(Deserialize)]
                 struct Args {
