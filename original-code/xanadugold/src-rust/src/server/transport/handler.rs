@@ -51,6 +51,7 @@ pub fn build_router(state: SharedState) -> Router {
             "/api/public/work/{work_id}/range/{start}/{end}",
             get(public_work_range_handler),
         )
+        .route("/api/backlink-notify", post(backlink_notify_handler))
         .route("/csrf-token", get(csrf_token_handler))
         .route("/auth/login", post(auth_login_handler))
         .route("/auth/logout", post(auth_logout_handler))
@@ -154,6 +155,76 @@ async fn public_work_handler(
             .into_response(),
         Err(_) => (axum::http::StatusCode::NOT_FOUND, "work not found").into_response(),
     }
+}
+
+async fn backlink_notify_handler(
+    State(state): State<SharedState>,
+    body: String,
+) -> impl IntoResponse {
+    #[derive(serde::Deserialize)]
+    struct BacklinkNotify {
+        target_work_id: String,
+        origin_server_address: String,
+        origin_server_name: String,
+        origin_work_id: String,
+        origin_work_title: String,
+        excerpt: String,
+        link_type: String,
+    }
+
+    let notify: BacklinkNotify = match serde_json::from_str(&body) {
+        Ok(n) => n,
+        Err(e) => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                format!("invalid JSON: {}", e),
+            )
+                .into_response()
+        }
+    };
+
+    let work_id = match parse_work_id(&notify.target_work_id) {
+        Some(id) => id,
+        None => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                "invalid target_work_id",
+            )
+                .into_response()
+        }
+    };
+
+    if !state
+        .server
+        .with_server_ref(|srv| srv.works.contains_key(&work_id))
+    {
+        return (axum::http::StatusCode::NOT_FOUND, "work not found").into_response();
+    }
+
+    let entry = crate::server::CrossServerBacklink {
+        target_work_id: work_id,
+        origin_server_address: notify.origin_server_address,
+        origin_server_name: notify.origin_server_name,
+        origin_work_id: notify.origin_work_id,
+        origin_work_title: notify.origin_work_title,
+        excerpt: notify.excerpt.chars().take(200).collect(),
+        link_type: notify.link_type,
+        received_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+    };
+
+    state
+        .server
+        .with_server(|srv| srv.receive_cross_server_backlink(entry));
+
+    tracing::info!(
+        "Received cross-server backlink notification from {}",
+        body.len()
+    );
+
+    (axum::http::StatusCode::OK, "ok").into_response()
 }
 
 async fn public_work_range_handler(

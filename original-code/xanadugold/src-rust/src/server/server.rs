@@ -84,7 +84,7 @@ pub(crate) struct WorkState {
     revision_timestamps: std::collections::HashMap<u64, u64>,
     status_detectors: DetectorList,
     revision_detectors: DetectorList,
-    cached_title: String,
+    pub(crate) cached_title: String,
     is_source: bool,
     source_author_id: Option<BeId>,
     source_edition_info: Option<String>,
@@ -219,6 +219,18 @@ pub struct GlobalSearchResult {
     pub matches: Vec<SearchMatch>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CrossServerBacklink {
+    pub target_work_id: BeId,
+    pub origin_server_address: String,
+    pub origin_server_name: String,
+    pub origin_work_id: String,
+    pub origin_work_title: String,
+    pub excerpt: String,
+    pub link_type: String,
+    pub received_at: u64,
+}
+
 const MAX_CROSS_SERVER_FETCH_BYTES: usize = 5 * 1024 * 1024;
 
 pub fn is_ssrf_address(addr: &str) -> bool {
@@ -284,7 +296,7 @@ pub struct Server {
     session_counter: u64,
     pub(crate) clubs: HashMap<BeId, Club>,
     pub(crate) club_names: HashMap<String, BeId>,
-    works: HashMap<BeId, WorkState>,
+    pub(crate) works: HashMap<BeId, WorkState>,
     standalone_editions: HashMap<BeId, Edition>,
     pub(crate) standalone_edition_refs:
         HashMap<BeId, crate::persist::edition_chunks::EditionChunkRef>,
@@ -298,6 +310,7 @@ pub struct Server {
     work_to_links: HashMap<BeId, Vec<BeId>>,
     link_counter: BeId,
     link_type_names: HashMap<u64, String>,
+    cross_server_backlinks: Vec<CrossServerBacklink>,
     backfollow: BackfollowEngine,
     content_address: ContentAddressIndex,
     blob_store: BlobStore,
@@ -340,10 +353,10 @@ pub struct Server {
     /// Cleared by an explicit admin action once the root cause is fixed.
     restore_errors: Vec<String>,
     trusted_server_registry: Option<crate::crypto::server_identity::TrustedServerRegistry>,
-    server_name: String,
+    pub(crate) server_name: String,
     server_description: String,
     server_namespace_id: u64,
-    public_address: Option<String>,
+    pub(crate) public_address: Option<String>,
     server_directory: crate::server::server_directory::ServerDirectory,
 }
 
@@ -788,6 +801,7 @@ impl Server {
             work_to_links: HashMap::new(),
             link_counter: 0,
             link_type_names: HashMap::new(),
+            cross_server_backlinks: Vec::new(),
             backfollow: BackfollowEngine::new(),
             content_address: ContentAddressIndex::new(1_000_000),
             blob_store: BlobStore::in_memory(),
@@ -1034,6 +1048,25 @@ impl Server {
 
     pub fn server_directory(&self) -> &crate::server::server_directory::ServerDirectory {
         &self.server_directory
+    }
+
+    pub fn receive_cross_server_backlink(&mut self, entry: CrossServerBacklink) {
+        let exists = self.cross_server_backlinks.iter().any(|b| {
+            b.target_work_id == entry.target_work_id
+                && b.origin_server_address == entry.origin_server_address
+                && b.origin_work_id == entry.origin_work_id
+        });
+        if !exists {
+            self.cross_server_backlinks.push(entry);
+            self.auto_checkpoint();
+        }
+    }
+
+    pub fn cross_server_backlinks_for_work(&self, work_id: BeId) -> Vec<&CrossServerBacklink> {
+        self.cross_server_backlinks
+            .iter()
+            .filter(|b| b.target_work_id == work_id)
+            .collect()
     }
 
     pub fn server_directory_add(
@@ -6790,6 +6823,20 @@ impl Server {
                                     self.compound_editions =
                                         social.compound_editions.into_iter().collect();
                                     self.user_pins = social.user_pins;
+                                    self.cross_server_backlinks = social
+                                        .cross_server_backlinks
+                                        .iter()
+                                        .map(|e| CrossServerBacklink {
+                                            target_work_id: e.target_work_id,
+                                            origin_server_address: e.origin_server_address.clone(),
+                                            origin_server_name: e.origin_server_name.clone(),
+                                            origin_work_id: e.origin_work_id.clone(),
+                                            origin_work_title: e.origin_work_title.clone(),
+                                            excerpt: e.excerpt.clone(),
+                                            link_type: e.link_type.clone(),
+                                            received_at: e.received_at,
+                                        })
+                                        .collect();
                                     social.starred_works
                                 }
                                 Err(e) => {
@@ -13877,6 +13924,7 @@ pub(crate) mod persist_snapshot {
                 work_to_links: HashMap::new(),
                 link_counter: snapshot.link_counter,
                 link_type_names: HashMap::new(),
+                cross_server_backlinks: Vec::new(),
                 backfollow: BackfollowEngine::new(),
                 content_address,
                 blob_store: BlobStore::in_memory(),
@@ -14758,11 +14806,26 @@ pub(crate) mod persist_snapshot {
                 trails: manifest.trails.clone(),
                 trail_counter: manifest.trail_counter,
                 compound_editions: manifest.compound_editions.clone(),
+                cross_server_backlinks: self
+                    .cross_server_backlinks
+                    .iter()
+                    .map(|b| crate::persist::manifest::CrossServerBacklinkEntry {
+                        target_work_id: b.target_work_id,
+                        origin_server_address: b.origin_server_address.clone(),
+                        origin_server_name: b.origin_server_name.clone(),
+                        origin_work_id: b.origin_work_id.clone(),
+                        origin_work_title: b.origin_work_title.clone(),
+                        excerpt: b.excerpt.clone(),
+                        link_type: b.link_type.clone(),
+                        received_at: b.received_at,
+                    })
+                    .collect(),
             };
             if !social.starred_works.is_empty()
                 || !social.user_pins.is_empty()
                 || !social.trails.is_empty()
                 || !social.compound_editions.is_empty()
+                || !social.cross_server_backlinks.is_empty()
             {
                 let social_json = serde_json::to_vec(&social)
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
@@ -28004,4 +28067,63 @@ fn http_get_json_http(
 
     let body_start = response_str.find("\r\n\r\n").ok_or("no body separator")?;
     Ok(response_str[body_start + 4..].to_string())
+}
+
+pub fn http_post_json(url: &str, body: &str, timeout_secs: u64) -> Result<String, String> {
+    let no_scheme = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .unwrap_or(url);
+    let (host_port, path) = no_scheme
+        .split_once('/')
+        .map(|(h, p)| (h, format!("/{}", p)))
+        .unwrap_or((no_scheme, "/".to_string()));
+    let default_port = if url.starts_with("https://") { 443 } else { 80 };
+    let (host, port) = if let Some((h, p)) = host_port.rsplit_once(':') {
+        (h, p.parse::<u16>().unwrap_or(default_port))
+    } else {
+        (host_port, default_port)
+    };
+
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+
+    let mut stream =
+        TcpStream::connect((host, port)).map_err(|e| format!("connect failed: {}", e))?;
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
+        .ok();
+    stream
+        .set_write_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
+        .ok();
+
+    let request = format!(
+        "POST {} HTTP/1.0\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        path, host, body.len(), body
+    );
+
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| format!("write failed: {}", e))?;
+
+    let mut all = Vec::new();
+    let mut buf = [0u8; 8192];
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    loop {
+        if std::time::Instant::now() > deadline {
+            break;
+        }
+        match stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => all.extend_from_slice(&buf[..n]),
+            Err(_) => break,
+        }
+    }
+
+    let response = String::from_utf8_lossy(&all);
+    if let Some(body_start) = response.find("\r\n\r\n") {
+        Ok(response[body_start + 4..].to_string())
+    } else {
+        Ok(String::new())
+    }
 }
