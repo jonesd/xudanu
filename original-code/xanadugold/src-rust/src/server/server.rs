@@ -1080,7 +1080,9 @@ impl Server {
             server_id,
             address: address.to_string(),
             port,
-            verifying_key,
+            verifying_key: verifying_key.clone(),
+            pinned_key: Some(verifying_key.clone()),
+            supports_https: None,
             name,
             description,
             trusted: false,
@@ -1088,6 +1090,23 @@ impl Server {
             referred_by: None,
             last_seen: Some(Self::current_timestamp_secs()),
         };
+
+        if let Some(existing) = self.server_directory.get(server_id) {
+            if let Some(ref pinned) = existing.pinned_key {
+                if pinned != &verifying_key {
+                    tracing::warn!(
+                        server_id,
+                        expected = pinned,
+                        got = verifying_key.as_str(),
+                        "Server key mismatch! This could be a MITM attack. Refusing to update."
+                    );
+                    return Err(ServerError::Internal(format!(
+                        "Server {} key mismatch — possible MITM. Pinned key does not match.",
+                        server_id
+                    )));
+                }
+            }
+        }
 
         tracing::info!(
             server_id,
@@ -1114,7 +1133,9 @@ impl Server {
             server_id,
             address,
             port: None,
-            verifying_key,
+            verifying_key: verifying_key.clone(),
+            pinned_key: Some(verifying_key.clone()),
+            supports_https: None,
             name,
             description: String::new(),
             trusted: false,
@@ -1163,6 +1184,36 @@ impl Server {
         Ok(())
     }
 
+    fn https_pinned_for(&self, addr: &str) -> Option<bool> {
+        for entry in self.server_directory.servers.values() {
+            let clean = entry
+                .address
+                .strip_prefix("http://")
+                .or_else(|| entry.address.strip_prefix("https://"))
+                .unwrap_or(&entry.address);
+            if clean == addr {
+                return entry.supports_https;
+            }
+        }
+        None
+    }
+
+    fn mark_https_supported(&mut self, server_label: &str) {
+        let label = server_label.to_string();
+        for entry in self.server_directory.servers.values_mut() {
+            let clean = entry
+                .address
+                .strip_prefix("http://")
+                .or_else(|| entry.address.strip_prefix("https://"))
+                .unwrap_or(&entry.address);
+            if clean == label || entry.server_id.to_string() == label {
+                entry.supports_https = Some(true);
+                tracing::info!("Pinned HTTPS for server {}", label);
+                return;
+            }
+        }
+    }
+
     pub fn resolve_cross_server_ref(
         &mut self,
         tumbler: &str,
@@ -1188,19 +1239,26 @@ impl Server {
             .next()
             .ok_or_else(|| ServerError::Internal("tumbler missing work component".into()))?;
 
-        let (base_url, server_label) = if let Some(ref addr) = server_address {
+        let (base_url, server_label, https_pinned) = if let Some(ref addr) = server_address {
             if is_ssrf_address(addr) {
                 return Err(ServerError::Internal(format!(
                     "refusing to fetch from private/loopback address: {}",
                     addr
                 )));
             }
+            let clean_addr = addr
+                .strip_prefix("http://")
+                .or_else(|| addr.strip_prefix("https://"))
+                .unwrap_or(addr);
+            let pinned = self.https_pinned_for(clean_addr);
             let url = if addr.starts_with("http://") || addr.starts_with("https://") {
                 addr.clone()
+            } else if pinned == Some(true) {
+                format!("https://{}", addr)
             } else {
                 format!("https://{}", addr)
             };
-            (url, addr.clone())
+            (url, addr.clone(), pinned)
         } else {
             if server_id == 0 || server_id == self.server_namespace_id() {
                 return Err(ServerError::Internal(
@@ -1225,17 +1283,28 @@ impl Server {
                     entry.address
                 )));
             }
-            let url = self
-                .server_directory
-                .resolve_address(server_id)
-                .ok_or_else(|| {
-                    ServerError::Internal(format!(
-                        "server {} not in directory — add it first",
-                        server_id
-                    ))
-                })?;
-            (url, server_id.to_string())
+            let pinned = entry.supports_https;
+            let url = if pinned == Some(true) {
+                let addr = &entry.address;
+                let clean = addr
+                    .strip_prefix("http://")
+                    .or_else(|| addr.strip_prefix("https://"))
+                    .unwrap_or(addr);
+                format!("https://{}", clean)
+            } else {
+                self.server_directory
+                    .resolve_address(server_id)
+                    .ok_or_else(|| {
+                        ServerError::Internal(format!(
+                            "server {} not in directory — add it first",
+                            server_id
+                        ))
+                    })?
+            };
+            (url, server_id.to_string(), pinned)
         };
+
+        let https_attempt = base_url.starts_with("https://");
 
         let url = format!(
             "{}/api/public/work/{}",
@@ -1243,11 +1312,46 @@ impl Server {
             work_id_hex
         );
 
-        tracing::info!("Fetching cross-server content from {}", url);
+        tracing::info!(
+            "Fetching cross-server content from {} (https={})",
+            url,
+            https_attempt
+        );
 
-        let response_text = http_get_json(&url, 15).map_err(|e| {
-            ServerError::Internal(format!("fetch from {} failed: {}", server_label, e))
-        })?;
+        let response_text = match http_get_json(&url, 15) {
+            Ok(text) => {
+                if https_attempt {
+                    self.mark_https_supported(&server_label);
+                }
+                text
+            }
+            Err(e) if https_attempt && https_pinned == Some(true) => {
+                return Err(ServerError::Internal(format!(
+                    "HTTPS fetch from {} failed and HTTPS was pinned — refusing HTTP downgrade: {}",
+                    server_label, e
+                )));
+            }
+            Err(e) if https_attempt => {
+                tracing::info!(
+                    "HTTPS failed ({}), falling back to HTTP for {}",
+                    e,
+                    server_label
+                );
+                let http_url = url.replacen("https://", "http://", 1);
+                http_get_json(&http_url, 15).map_err(|e2| {
+                    ServerError::Internal(format!(
+                        "fetch from {} failed (HTTPS: {}, HTTP: {})",
+                        server_label, e, e2
+                    ))
+                })?
+            }
+            Err(e) => {
+                return Err(ServerError::Internal(format!(
+                    "fetch from {} failed: {}",
+                    server_label, e
+                )));
+            }
+        };
 
         if response_text.len() > MAX_CROSS_SERVER_FETCH_BYTES {
             return Err(ServerError::Internal(format!(
