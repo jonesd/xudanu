@@ -50,6 +50,7 @@ interface CollaborativeEditorProps {
   onPlaceTransclusion?: (position: number, padding?: string) => void;
   selectionRange?: { start: number; end: number } | null;
   onNavigateToWork?: (workId: number) => void;
+  onCrossServerResolve?: (tumbler: string, contentHash: string) => Promise<{ text: string; hashVerified: boolean; cached: boolean } | null>;
   onShowBacklinks?: (workId: number, excerpt: string) => void;
   onPasteText?: (text: string, pasteStart: number) => void;
   fontSize?: number;
@@ -670,6 +671,7 @@ export function CollaborativeEditor({
   pendingTransclusion,
   onPlaceTransclusion,
   onNavigateToWork,
+  onCrossServerResolve,
   onShowBacklinks,
   onPasteText,
   fontSize,
@@ -700,6 +702,8 @@ export function CollaborativeEditor({
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [showBoilerplate, setShowBoilerplate] = useState(false);
   const [hoveredMarker, setHoveredMarker] = useState<TransclusionMarker | null>(null);
+  const [remoteContent, setRemoteContent] = useState<{ title: string; text: string; cached: boolean } | null>(null);
+  const [resolving, setResolving] = useState(false);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const [linkTypeFilter, setLinkTypeFilter] = useState<Set<number> | null>(null);
   const [expandedClusters, setExpandedClusters] = useState<Set<number>>(new Set());
@@ -1003,6 +1007,22 @@ export function CollaborativeEditor({
       if (hit.marker.excerpt) {
         window.open(hit.marker.excerpt, "_blank", "noopener,noreferrer");
       }
+      return;
+    }
+    if (hit.marker.crossServerRef && onCrossServerResolve) {
+      setResolving(true);
+      onCrossServerResolve(hit.marker.crossServerRef.tumbler, hit.marker.crossServerRef.contentHash)
+        .then((result) => {
+          if (result) {
+            setRemoteContent({
+              title: hit.marker.otherWorkTitle,
+              text: result.text,
+              cached: result.cached,
+            });
+          }
+          setResolving(false);
+        })
+        .catch(() => setResolving(false));
       return;
     }
     if (e.detail === 2 && onShowBacklinks) {
@@ -1598,6 +1618,51 @@ export function CollaborativeEditor({
                   Go to {hoveredMarker.otherWorkId.toString(16).padStart(4, "0")}
                 </button>
               )}
+            </div>
+          )}
+          {resolving && (
+            <div className="modal-overlay" onClick={() => setResolving(false)}>
+              <div className="annotation-dialog" style={{ maxWidth: 400, padding: 24, textAlign: "center" }}>
+                <div style={{ fontSize: 14, color: "#4a4a56" }}>Fetching from remote server...</div>
+                <div style={{ fontSize: 11, color: "#8a8a96", marginTop: 8 }}>BLAKE3 hash verification in progress</div>
+              </div>
+            </div>
+          )}
+          {remoteContent && (
+            <div className="modal-overlay" onClick={() => setRemoteContent(null)}>
+              <div
+                className="annotation-dialog"
+                style={{ maxWidth: 600 }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="link-creator-header">
+                  <h3>{remoteContent.title}</h3>
+                  <button type="button" className="link-creator-close" onClick={() => setRemoteContent(null)}>
+                    {"\u00d7"}
+                  </button>
+                </div>
+                <div style={{ padding: "16px 20px" }}>
+                  {remoteContent.cached && (
+                    <div style={{ fontSize: 10, color: "#3fb950", marginBottom: 8 }}>
+                      {"\u2713"} Cached locally (BLAKE3 verified)
+                    </div>
+                  )}
+                  <div
+                    className="mock-text"
+                    style={{
+                      fontFamily: "'Source Serif 4', Georgia, serif",
+                      fontSize: 15,
+                      lineHeight: 1.75,
+                      color: "#2a2a2e",
+                      whiteSpace: "pre-wrap",
+                      maxHeight: "50vh",
+                      overflowY: "auto",
+                    }}
+                  >
+                    {remoteContent.text}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
           <div

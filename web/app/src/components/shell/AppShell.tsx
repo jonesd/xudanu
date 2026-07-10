@@ -432,6 +432,19 @@ export function AppShell() {
     [clientRef],
   );
 
+  const handleCrossServerResolve = useCallback(
+    async (tumbler: string, contentHash: string) => {
+      if (!clientRef.current) return null;
+      try {
+        return await clientRef.current.crossServerResolve(tumbler, contentHash);
+      } catch (e) {
+        console.error("Cross-server resolve failed:", e);
+        return null;
+      }
+    },
+    [clientRef],
+  );
+
   const handleToggleStyle = useCallback(
     async (kind: string, start: number, end: number) => {
       if (!clientRef.current || workBeId === null) return;
@@ -851,6 +864,7 @@ export function AppShell() {
                 selectionRange={selectionRange}
                 onNavigateToWork={selectWork}
                 onShowBacklinks={handleShowBacklinks}
+                onCrossServerResolve={handleCrossServerResolve}
                 compoundSpanRanges={compound.spanRanges}
                 remoteCursors={awareness}
                 compoundSourceTitles={compound.sourceTitles}
