@@ -75,25 +75,70 @@ The domain replaces the original numeric server ID. DNS provides self-routing �
 
 4. **Verify** — content from A appears on B, with attribution to A's author
 
+### Phase 1.5: Cross-Server Backlinks (Day 1.5)
+
+**Goal:** When Server B links to content on Server A, Server A automatically knows. Makes the network bidirectional — every connection visible from both ends, as Ted Nelson designed.
+
+11. **Backlink notification endpoint** — new public API on every server:
+    ```
+    POST /api/backlink-notify
+    Content-Type: application/json
+    
+    {
+        "target_tumbler": "\"127.0.0.1:8081\".03ed.1.0.0",
+        "origin_server_address": "127.0.0.1:8082",
+        "origin_server_name": "Bob's Server",
+        "origin_work_id": "03ee",
+        "origin_work_title": "server 8082",
+        "excerpt": "server 8082",
+        "link_type": "cross-server",
+        "origin_server_signature": "<Ed25519 signature of the notification JSON>"
+    }
+    ```
+
+12. **Server B sends notification** — after `linkCreateCrossServer` succeeds:
+    - Server B signs the notification with its Ed25519 server key
+    - POSTs to `{target_server}/api/backlink-notify`
+    - Fire-and-forget (best effort) — if Server A is offline, skip
+    - Log the attempt for retry/diagnostics
+
+13. **Server A receives and stores** — on receiving a backlink notification:
+    - Verify Ed25519 signature against the origin server's known key (TOFU)
+    - If origin server unknown: fetch `/.well-known/xudanu-server.json`, add to directory as untrusted
+    - Store in a `cross_server_backlinks: Vec<CrossServerBacklink>` on the Server struct
+    - Persist in the SocialSection chunk (survives checkpoint/restore)
+    - Rate limit: max 100 backlinks per origin server per hour
+
+14. **Display incoming cross-server references** — on Server A's work:
+    - Right-margin bar indicating incoming cross-server reference
+    - Connections panel: "← Referenced by Bob's Server" with cyan border
+    - Tooltip: shows origin server name, address, excerpt
+    - Click: opens a modal showing the remote server's work (via public API fetch)
+
+15. **Frontend: trigger cross-server resolution** — when user clicks a cross-server link marker:
+    - Send `cross_server_resolve { tumbler, content_hash_hex }` to the server
+    - Server fetches from origin, verifies BLAKE3, returns text
+    - Display resolved text in a read-only modal or inline view
+
 ### Phase 2: Server Directory UI (Day 2)
 
 **Goal:** Users can manage known servers from the UI.
 
-5. **Settings panel** — "Network" section in the settings dialog
+16. **Settings panel** — "Network" section in the settings dialog
    - List of known servers (from `server_directory.json`)
    - Add server by address (fetches `/.well-known/xudanu-server.json`)
    - Remove server
    - Toggle trust (trusted vs untrusted)
    - Show server name, description, verifying key, work count
 
-6. **Server directory wire ops** — already implemented:
+17. **Server directory wire ops** — already implemented:
    - `ServerDirectoryAdd` (0x0F01)
    - `ServerDirectoryRemove` (0x0F02)
    - `ServerDirectoryList` (0x0F03)
    - `ServerDirectoryTrust` (0x0F04)
    - `ServerDirectoryResolve` (0x0F05)
 
-7. **Frontend client methods** — add to `crdt_sync.ts`:
+18. **Frontend client methods** — add to `crdt_sync.ts`:
    - `serverDirectoryAdd(address, port?)`
    - `serverDirectoryRemove(serverId)`
    - `serverDirectoryList()`
@@ -103,17 +148,17 @@ The domain replaces the original numeric server ID. DNS provides self-routing �
 
 **Goal:** Users can browse content on other servers.
 
-8. **Remote content browser** — in the library panel
+19. **Remote content browser** — in the library panel
    - Select a trusted server from the directory
    - Fetch `/api/public/work/{id}` for each public work
    - Display remote works in a "Remote" section
    - Click a remote work to view its content (read-only)
 
-9. **Cross-server search** — search across trusted servers
+20. **Cross-server search** — search across trusted servers
    - Query each trusted server's text search endpoint
    - Merge results, tagged with origin server
 
-10. **Content import** — from remote browser
+21. **Content import** — from remote browser
     - Transclude remote content into a local document
     - Automatically creates `CrossServerRef` with fetched hash
 
@@ -121,7 +166,7 @@ The domain replaces the original numeric server ID. DNS provides self-routing �
 
 **Goal:** Track cross-server traffic for monitoring and future micropayments.
 
-11. **Hook `record_royalty` into `resolve_cross_server_ref`**
+22. **Hook `record_royalty` into `resolve_cross_server_ref`**
     - When content is fetched from a remote server, record:
       ```
       RoyaltyEntry {
@@ -134,7 +179,7 @@ The domain replaces the original numeric server ID. DNS provides self-routing �
       ```
     - Already persisted in `FederationSection` chunk via `royalty_ledger`
 
-12. **Traffic dashboard** — in settings panel
+23. **Traffic dashboard** — in settings panel
     - Per-server byte counts (sent/received)
     - Per-content-fingerprint access counts
     - Timeline of cross-server fetches
@@ -143,12 +188,12 @@ The domain replaces the original numeric server ID. DNS provides self-routing �
 
 **Goal:** Network grows organically through references.
 
-13. **Referral propagation** — when resolving a cross-server ref
+24. **Referral propagation** — when resolving a cross-server ref
     - If the origin server's `/.well-known/xudanu-server.json` lists other known servers
     - Add them to the local directory with `discovered: "referral"` and `referred_by: origin_server_id`
     - User sees them in the directory UI as "Discovered via Server A"
 
-14. **Server graph visualization** — force-directed graph
+25. **Server graph visualization** — force-directed graph
     - Nodes = servers in directory
     - Edges = cross-server references between them
     - Click a server to browse its content
@@ -276,16 +321,31 @@ To join the Xudanu network, a server operator needs:
 
 ## Implementation Priority
 
-### Phase 0: Security Fixes (before any cross-server testing)
+### Phase 0: Security Fixes (before any cross-server testing) — DONE
 
 0. **Enforce trust gate** — `resolve_cross_server_ref` rejects untrusted/unregistered servers
 0. **SSRF protection** — reject private/loopback IPs in tumblers; require directory membership
 0. **HTTPS defaults** — HTTPS for well-known + content fetches; `--allow-insecure-*` flags for LAN
 0. **Byte caps** — 5MB max on fetch buffer + public API response
 0. **API version** — add `api_version: 1` to public work JSON
-0. **Async resolution** — `spawn_blocking` for cross-server fetches
+0. **Async resolution** — `spawn_blocking` for cross-server fetches (deferred)
 
-### Phase 1: End-to-End Testing (Day 1)
+### Phase 1: End-to-End Testing (Day 1) — DONE
+
+1. **Docker/local test network** — two servers with fresh data dirs
+2. **Manual cross-server link** — tumbler + hash entered via LinkCreator
+3. **Content resolution** — backend fetch + BLAKE3 verify + cache works
+4. **Byte tracking** — `record_royalty()` fires on every fetch
+
+### Phase 1.5: Cross-Server Backlinks (Day 1.5) — NEXT
+
+5. **Backlink notification** — `POST /api/backlink-notify` endpoint
+6. **Origin server notification** — send on link creation
+7. **Remote backlink storage** — persist in SocialSection chunk
+8. **Display incoming references** — right margin + Connections panel
+9. **Frontend resolution trigger** — click cross-server marker → fetch + display
+
+**Security issue #105**: harden all cross-server public API endpoints (rate limiting, authentication, audit logging, CORS)
 2. **Day 2:** Server directory UI (add/remove/trust servers from settings)
 3. **Day 3:** Remote content browser + cross-server transclusion
 4. **Day 4:** Byte tracking (hook `record_royalty` into `resolve_cross_server_ref`)
