@@ -174,6 +174,9 @@ export function useTransclusion(): TransclusionState {
           const fallback = isWebLink ? [] : fallbacks[i];
           const positions = resolveMarkerPositions(localRef, fallback);
           const webTitle = isWebLink ? (remoteRef?.excerpt || "Web Link") : title;
+          const crossServerRef = remoteRef?.cross_server_ref
+            ? { tumbler: remoteRef.cross_server_ref.tumbler, contentHash: remoteRef.cross_server_ref.content_hash }
+            : null;
           for (const pos of positions) {
             newMarkers.push({
               start: pos.start,
@@ -188,6 +191,7 @@ export function useTransclusion(): TransclusionState {
               linkTypeId: link.link_types?.[0],
               otherWorkIsArchived: !!otherArchived,
               otherWorkOwner: otherOwner ?? null,
+              crossServerRef,
             });
           }
         }

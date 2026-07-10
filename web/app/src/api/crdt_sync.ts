@@ -302,9 +302,9 @@ export interface TransclusionMarker {
   excerpt?: string;
   provenanceChain?: ProvenanceHop[];
   linkTypeId?: number;
-  // Ghost: the referenced (other) work is archived (soft-deleted).
   otherWorkIsArchived?: boolean;
   otherWorkOwner?: number | null;
+  crossServerRef?: { tumbler: string; contentHash: string } | null;
 }
 
 export interface WorkListEntry {
@@ -1842,6 +1842,17 @@ export class CrdtSyncClient {
     const val = extractValue(resp);
     if (Array.isArray(val)) return val as BacklinkEntry[];
     return [];
+  }
+
+  async crossServerResolve(tumbler: string, contentHashHex: string): Promise<{ text: string; hashVerified: boolean; cached: boolean; originServerId: number }> {
+    const resp = await this.sendRequest("cross_server_resolve", { tumbler, content_hash_hex: contentHashHex });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return {
+      text: (val.text as string) || "",
+      hashVerified: val.hash_verified === true,
+      cached: val.cached === true,
+      originServerId: (val.origin_server_id as number) || 0,
+    };
   }
 
   async workEndorse(workId: number, endorsements: Array<[number, number]>): Promise<void> {
