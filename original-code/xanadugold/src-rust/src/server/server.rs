@@ -219,6 +219,46 @@ pub struct GlobalSearchResult {
     pub matches: Vec<SearchMatch>,
 }
 
+const MAX_CROSS_SERVER_FETCH_BYTES: usize = 5 * 1024 * 1024;
+
+fn is_ssrf_address(addr: &str) -> bool {
+    let host = addr
+        .strip_prefix("http://")
+        .or_else(|| addr.strip_prefix("https://"))
+        .unwrap_or(addr)
+        .split(':')
+        .next()
+        .unwrap_or(addr)
+        .trim_end_matches('/');
+
+    if host == "localhost"
+        || host == "127.0.0.1"
+        || host == "::1"
+        || host == "0.0.0.0"
+        || host == "[::1]"
+    {
+        return true;
+    }
+
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        match ip {
+            std::net::IpAddr::V4(v4) => {
+                if v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified()
+                {
+                    return true;
+                }
+            }
+            std::net::IpAddr::V6(v6) => {
+                if v6.is_loopback() || v6.is_unspecified() {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
 #[derive(Debug, Clone)]
 pub struct InlineTransclusionResult {
     pub text: String,
@@ -1149,10 +1189,14 @@ impl Server {
             .ok_or_else(|| ServerError::Internal("tumbler missing work component".into()))?;
 
         let (base_url, server_label) = if let Some(ref addr) = server_address {
-            let url = if addr.starts_with("http") {
+            if is_ssrf_address(addr) {
+                return Err(ServerError::Internal(format!(
+                    "refusing to fetch from private/loopback address: {}",
+                    addr
+                )));
+            }
+            let url = if addr.starts_with("http://") || addr.starts_with("https://") {
                 addr.clone()
-            } else if addr.contains(':') {
-                format!("http://{}", addr)
             } else {
                 format!("https://{}", addr)
             };
@@ -1162,6 +1206,24 @@ impl Server {
                 return Err(ServerError::Internal(
                     "tumbler does not reference a remote server".into(),
                 ));
+            }
+            let entry = self.server_directory.get(server_id).ok_or_else(|| {
+                ServerError::Internal(format!(
+                    "server {} not in directory — add it first",
+                    server_id
+                ))
+            })?;
+            if !entry.trusted {
+                return Err(ServerError::Internal(format!(
+                    "server {} is not trusted — trust it before resolving",
+                    server_id
+                )));
+            }
+            if is_ssrf_address(&entry.address) {
+                return Err(ServerError::Internal(format!(
+                    "refusing to fetch from private/loopback address: {}",
+                    entry.address
+                )));
             }
             let url = self
                 .server_directory
@@ -1186,6 +1248,14 @@ impl Server {
         let response_text = http_get_json(&url, 15).map_err(|e| {
             ServerError::Internal(format!("fetch from {} failed: {}", server_label, e))
         })?;
+
+        if response_text.len() > MAX_CROSS_SERVER_FETCH_BYTES {
+            return Err(ServerError::Internal(format!(
+                "response too large: {} bytes (max {})",
+                response_text.len(),
+                MAX_CROSS_SERVER_FETCH_BYTES
+            )));
+        }
 
         let body: serde_json::Value = serde_json::from_str(&response_text)
             .map_err(|e| ServerError::Internal(format!("invalid JSON from server: {}", e)))?;
@@ -1218,6 +1288,29 @@ impl Server {
             .store(text.as_bytes(), "text/plain".to_string());
 
         let origin_server_id = body["server_namespace_id"].as_u64().unwrap_or(server_id);
+
+        if origin_server_id != server_id && server_id != 0 {
+            if let Some(entry) = self.server_directory.get(origin_server_id) {
+                if !entry.trusted {
+                    tracing::warn!(
+                        "cross-server content from untrusted origin_server_id={}",
+                        origin_server_id
+                    );
+                }
+            }
+        }
+
+        self.federation
+            .record_royalty(crate::server::federation::RoyaltyEntry {
+                origin_server_id: origin_server_id.to_string(),
+                content_fingerprint: content_hash,
+                royalty_type: crate::server::federation::RoyaltyType::Access,
+                amount: text.len() as u64,
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            });
 
         Ok(CrossServerResolution::Fetched {
             text,
@@ -4154,6 +4247,7 @@ impl Server {
             .collect();
 
         Ok(serde_json::json!({
+            "api_version": 1u64,
             "work_id": format!("{:04x}", work_be_id),
             "title": title,
             "revision": revision,
