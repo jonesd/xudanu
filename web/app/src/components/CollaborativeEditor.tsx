@@ -771,18 +771,28 @@ export function CollaborativeEditor({
     if (marksKey === lastMarksRef.current) return;
     lastMarksRef.current = marksKey;
     const savedCursor = getCursorOffset(el);
-    if (styleMarks.length > 0) {
-      el.innerHTML = buildStyledText(displayText, styleMarks);
-      if (displayText.endsWith("\n")) {
-        el.appendChild(document.createTextNode("\u200B"));
+    try {
+      if (styleMarks.length > 0) {
+        const html = buildStyledText(displayText, styleMarks);
+        if (html && html.length > 0) {
+          el.innerHTML = html;
+        } else {
+          el.textContent = displayText;
+        }
+        if (displayText.endsWith("\n")) {
+          el.appendChild(document.createTextNode("\u200B"));
+        }
+      } else {
+        el.textContent = displayText;
+        if (displayText.endsWith("\n")) {
+          el.appendChild(document.createTextNode("\u200B"));
+        }
       }
-    } else {
+      setCursorOffset(el, savedCursor);
+    } catch (e) {
+      console.error("[style-marks] rebuild failed, falling back to plain text:", e);
       el.textContent = displayText;
-      if (displayText.endsWith("\n")) {
-        el.appendChild(document.createTextNode("\u200B"));
-      }
     }
-    setCursorOffset(el, savedCursor);
   }, [styleMarks, displayText, hasInlineTransclusions]);
 
   useEffect(() => {

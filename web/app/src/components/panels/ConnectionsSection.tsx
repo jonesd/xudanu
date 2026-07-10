@@ -203,7 +203,7 @@ export function ConnectionsSection({
                     }}
                     title="Change link type"
                   >
-                    {DEFAULT_LINK_TYPES.map((t) => (
+                    {DEFAULT_LINK_TYPES.filter((t) => t.type_id !== 6).map((t) => (
                       <option key={t.type_id} value={t.type_id}>{t.name}</option>
                     ))}
                   </select>

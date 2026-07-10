@@ -166,10 +166,14 @@ export function useTransclusion(): TransclusionState {
 
           const localRef = isOrigin ? link.origin_ref : link.destination_ref;
           const remoteRef = isOrigin ? link.destination_ref : link.origin_ref;
-          const excerpt = localRef?.excerpt || remoteRef?.excerpt || "";
+          const isWebLink = link.link_types?.[0] === 6;
+          const excerpt = isWebLink
+            ? (remoteRef?.excerpt || localRef?.excerpt || "")
+            : (localRef?.excerpt || remoteRef?.excerpt || "");
           const chain = localRef?.provenance_chain || remoteRef?.provenance_chain;
-          const fallback = fallbacks[i];
+          const fallback = isWebLink ? [] : fallbacks[i];
           const positions = resolveMarkerPositions(localRef, fallback);
+          const webTitle = isWebLink ? (remoteRef?.excerpt || "Web Link") : title;
           for (const pos of positions) {
             newMarkers.push({
               start: pos.start,
@@ -177,8 +181,8 @@ export function useTransclusion(): TransclusionState {
               linkId: link.link_id,
               direction: isOrigin ? "outgoing" : "incoming",
               otherWorkId,
-              otherWorkTitle: title,
-              color,
+              otherWorkTitle: isWebLink ? webTitle : title,
+              color: isWebLink ? "#39d2c0" : color,
               excerpt: excerpt.slice(0, 120),
               provenanceChain: chain,
               linkTypeId: link.link_types?.[0],
