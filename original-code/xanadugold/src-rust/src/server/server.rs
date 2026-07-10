@@ -221,7 +221,7 @@ pub struct GlobalSearchResult {
 
 const MAX_CROSS_SERVER_FETCH_BYTES: usize = 5 * 1024 * 1024;
 
-fn is_ssrf_address(addr: &str) -> bool {
+pub fn is_ssrf_address(addr: &str) -> bool {
     let host = addr
         .strip_prefix("http://")
         .or_else(|| addr.strip_prefix("https://"))
@@ -301,6 +301,7 @@ pub struct Server {
     backfollow: BackfollowEngine,
     content_address: ContentAddressIndex,
     blob_store: BlobStore,
+    pub allow_loopback_cross_server: bool,
     checkpoint_path: Option<std::path::PathBuf>,
     data_dir: Option<std::path::PathBuf>,
     chunk_store: Option<Arc<crate::persist::chunk_store::ChunkStore>>,
@@ -790,6 +791,7 @@ impl Server {
             backfollow: BackfollowEngine::new(),
             content_address: ContentAddressIndex::new(1_000_000),
             blob_store: BlobStore::in_memory(),
+            allow_loopback_cross_server: false,
             checkpoint_path: None,
             data_dir: None,
             chunk_store: None,
@@ -1240,7 +1242,7 @@ impl Server {
             .ok_or_else(|| ServerError::Internal("tumbler missing work component".into()))?;
 
         let (base_url, server_label, https_pinned) = if let Some(ref addr) = server_address {
-            if is_ssrf_address(addr) {
+            if is_ssrf_address(addr) && !self.allow_loopback_cross_server {
                 return Err(ServerError::Internal(format!(
                     "refusing to fetch from private/loopback address: {}",
                     addr
@@ -1277,7 +1279,7 @@ impl Server {
                     server_id
                 )));
             }
-            if is_ssrf_address(&entry.address) {
+            if is_ssrf_address(&entry.address) && !self.allow_loopback_cross_server {
                 return Err(ServerError::Internal(format!(
                     "refusing to fetch from private/loopback address: {}",
                     entry.address
@@ -13878,6 +13880,7 @@ pub(crate) mod persist_snapshot {
                 backfollow: BackfollowEngine::new(),
                 content_address,
                 blob_store: BlobStore::in_memory(),
+                allow_loopback_cross_server: false,
                 checkpoint_path: None,
                 data_dir: None,
                 chunk_store: None,

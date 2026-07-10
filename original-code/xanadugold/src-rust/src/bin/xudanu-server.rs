@@ -426,6 +426,7 @@ async fn main() {
                 .ok()
                 .and_then(|s| s.parse().ok());
             let mut public_address: Option<String> = std::env::var("XUDANU_PUBLIC_ADDRESS").ok();
+            let mut allow_loopback = false;
             let mut i = 2;
             while i < args.len() {
                 match args[i].as_str() {
@@ -573,6 +574,9 @@ async fn main() {
                                 std::process::exit(1);
                             }));
                     }
+                    "--allow-loopback" => {
+                        allow_loopback = true;
+                    }
                     s if s.contains(':') => {
                         addr = s.to_string();
                     }
@@ -661,6 +665,10 @@ async fn main() {
             if let Some(ref addr) = public_address {
                 server.set_public_address(Some(addr.clone()));
                 tracing::info!("Public address: {} (tumbler prefix: \"{}\")", addr, addr);
+            }
+            if allow_loopback {
+                server.allow_loopback_cross_server = true;
+                tracing::warn!("Loopback addresses allowed for cross-server (testing only — do not use in production)");
             }
 
             if !federation_peers.is_empty() {
