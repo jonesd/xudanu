@@ -157,26 +157,49 @@ The domain replaces the original numeric server ID. DNS provides self-routing �
 
 ## Security Model
 
-### Three-Layer Verification (already implemented)
+### Three-Layer Verification (designed, partially implemented)
 
 | Layer | What | How | Status |
 |-------|------|-----|--------|
 | Tumbler | WHERE content lives | Domain-based global address | Done |
 | BLAKE3 | WHAT the content is | Hash verified on every fetch | Done |
-| Ed25519 | WHO authored it | Server signature on well-known endpoint | Done |
+| Ed25519 | WHO authored it | Server signature on well-known endpoint | **NOT ENFORCED** — signature field exists but `resolve_cross_server_ref` does not verify it |
 
-### Threats & Mitigations
+### Security Fixes Required (before Phase 1 testing)
+
+These must be fixed before any real cross-server testing:
+
+1. **Enforce Ed25519 in resolution path** — `resolve_cross_server_ref` must call `is_server_trusted` / `verify_server_identity` before fetching, and reject if the server is not in the trusted directory.
+
+2. **HTTPS-only for trust material** — `server_directory_add` must fetch `/.well-known/xudanu-server.json` over HTTPS only. HTTP is self-defeating for trust anchor transport. Add `--allow-insecure-discovery` flag for LAN testing.
+
+3. **HTTPS default for content fetches** — `resolve_cross_server_ref` must default to HTTPS. Add `--allow-insecure-cross-server` flag for private/LAN test networks only.
+
+4. **SSRF protection** — `resolve_cross_server_ref` must reject tumblers pointing to loopback (127.0.0.0/8, ::1), link-local (169.254.0.0/16), private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), and hostnames not in the trusted server directory.
+
+5. **Hard byte caps** — Add a max size limit (e.g., 5MB) on both the public API response (`public_work_edition`) and the fetch read buffer in `http_get_json`.
+
+6. **Trust gate** — `resolve_cross_server_ref` must check `directory_entry.trusted` and reject/warn for untrusted servers. Untrusted servers should not auto-resolve.
+
+7. **API version field** — Add `api_version: 1` to the public work JSON response so future format changes are detectable.
+
+8. **Async resolution** — Move `resolve_cross_server_ref` to `spawn_blocking` or async to avoid blocking the dispatch path for up to 15s.
+
+### Threats & Mitigations (updated)
 
 | Threat | Mitigation | Status |
 |--------|-----------|--------|
-| **Man-in-the-middle** during fetch | HTTPS (rustls + webpki-roots) | Done |
+| **Man-in-the-middle** during fetch | HTTPS default (rustls + webpki-roots); HTTP opt-in only for LAN | **Needs fix** (currently HTTP default) |
 | **Content tampering** on origin server | BLAKE3 hash mismatch → reject | Done |
-| **Spoofed server** (fake well-known) | Ed25519 verifying key in directory | Done |
-| **Untrusted server** in directory | UI shows "UNVERIFIED" warning | Needs impl |
-| **DDoS via cross-server refs** | Rate limit fetches per server; blob cache prevents re-fetch | Cache done, rate limit needed |
-| **Stale content** (origin updated after link created) | Hash pins exact version; user sees "content has been updated" if hash differs | Hash check done; update notification needed |
-| **Privacy leak** (server A sees who's fetching) | Fetch via server-to-server, not client-to-server; no user identity sent | Architecture supports this |
-| **Malicious content** (large payloads, binary blobs) | Size limit on public API responses; text-only for now | Needs size limit |
+| **Spoofed server** (fake well-known) | Ed25519 verifying key fetched over HTTPS; key pinned in directory | **Needs fix** (currently HTTP, key not verified) |
+| **SSRF** (server fetches internal endpoints) | Reject private/loopback IPs; require directory membership | **Needs fix** (no validation currently) |
+| **Untrusted server** in directory | Resolution blocked; UI shows "UNVERIFIED" warning | **Needs fix** (trust not enforced) |
+| **DDoS via cross-server refs** | Rate limit fetches per server; blob cache; byte caps; async resolution | Cache done, rest needs impl |
+| **Stale content** (origin updated) | Hash pins exact version; user sees "content updated" notification | Hash check done; notification needed |
+| **Memory exhaustion** (large payloads) | Hard byte cap on fetches (5MB default) | **Needs fix** (no cap currently) |
+| **Blocking dispatch** (slow origins) | `spawn_blocking` for cross-server fetches | **Needs fix** (currently synchronous) |
+| **Privacy leak** (origin sees requester IP) | Server-to-server fetch; no user identity sent; consider relay/proxy for future | Architecture supports this |
+| **Copyright** (operator hosts cached copies) | Public club = implicit redistribution grant; operator responsible for published content; cached blobs subject to takedown | Needs documentation + abuse contact in well-known |
 
 ### Trust Model
 
@@ -192,35 +215,50 @@ The domain replaces the original numeric server ID. DNS provides self-routing �
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
 | **DNS hijacking** of domain tumblers | Low (HTTPS + Ed25519) | High | Certificate transparency + key pinning in directory |
-| **Server goes offline** — content unreachable | Medium | Medium | Blob cache retains last-known-good copy; excerpt in link metadata is permanent proof |
+| **Server goes offline** — content unreachable | Medium | Medium | Blob cache retains last-known-good copy; excerpt in link metadata is permanent proof. Cache only populated after successful first resolve — if origin is down on first access, only excerpt available. |
+| **Cache eviction** — cross-server blobs GC'd | Medium | Medium | Define retention contract: cross-server blobs should not be GC'd (they are permanent proof of the reference). Needs explicit GC protection. |
 | **Hash collision** (BLAKE3) | Negligible | High | BLAKE3 has no known collisions; 256-bit hash space |
 | **Network partition** — servers can't reach each other | Medium | Low | Cached content still available; links show "origin offline" |
-| **Large content fetch** — 100K+ word document | Medium | Medium | Range API (`/api/public/work/{id}/range/{start}/{end}`) already implemented; fetch only needed span |
+| **Large content fetch** — 100K+ word document | Medium | Medium | Range API already implemented; fetch only needed span; 5MB byte cap |
 | **Byte accumulation** for bandwidth tracking | High (pessimistic) | Low | `RoyaltyEntry` stores amounts; operator can monitor and set limits |
-| **Server directory poisoning** — malicious entries | Low | Medium | Operator approves each entry; referral entries marked as untrusted |
+| **Server directory poisoning** — malicious entries | Low | Medium | Operator approves each entry; referral entries marked as untrusted; HTTPS for discovery |
+| **SSRF** — tumbler points to internal network | High (if exposed) | High | Reject private/loopback IPs; require directory membership (Phase 0 fix) |
+| **Memory exhaustion** — hostile large payloads | Medium | High | 5MB byte cap on fetches (Phase 0 fix) |
+| **Blocking dispatch** — slow origins tie up server | Medium | Medium | `spawn_blocking` for cross-server fetches (Phase 0 fix) |
+| **Retroactive signature enforcement** | Low (planned) | Medium | Existing refs with empty sigs get "unverified" status; re-fetch-and-sign migration when enabled |
+| **Public API format change** | Low (future) | Medium | `api_version` field allows graceful degradation |
 
 ---
 
-## What We Need From Operators
+## Operator Requirements
 
 To join the Xudanu network, a server operator needs:
 
-1. **Public address** — a domain name or IP accessible from the network
+1. **Public address** — a domain name accessible from the network
    ```sh
    --public-address alice.xudanu.com
    ```
 
-2. **Published content** — works in the public club (read_club = public)
+2. **HTTPS certificate** — TLS is required for cross-server resolution. Self-signed certs work for testing but won't be trusted by default by other servers.
 
-3. **Server identity** — name and description for the well-known endpoint
+3. **Published content** — works in the public club (read_club = public). Publishing to the public club is an implicit redistribution grant: other servers may cache and serve this content via cross-server references.
+
+4. **Server identity** — name and description for the well-known endpoint
    ```sh
    --server-name "Alice's Literature Server"
    --server-description "Essays and annotations"
    ```
 
-4. **HTTPS** (recommended) — TLS certificate for the domain
+5. **Abuse contact** (recommended) — an email or URL in the well-known endpoint for takedown requests. Operators are responsible for content they publish.
 
-That's it. No registration, no central authority, no federation setup. The server is discoverable by anyone who knows its address.
+6. **Rights to redistribute** — operators must have the rights to any content they mark public, since cross-server transclusion reproduces and caches it on other servers.
+
+### Legal Considerations
+
+- **Copyright**: Cross-server caching means the fetching operator hosts a copy of the origin's content. The public club is an implicit "redistribute me" grant. Operators should only publish content they have rights to.
+- **Cached blobs**: Cross-server cached content is subject to takedown. The blob store should support deletion by hash for DMCA compliance.
+- **Jurisdiction**: Content crosses jurisdictional boundaries. Operators should be aware of their local laws regarding hosting cached copies.
+- **Royalties**: The `RoyaltyEntry` ledger tracks byte usage but does not constitute a license or payment. It is monitoring data only.
 
 ---
 
@@ -238,7 +276,16 @@ That's it. No registration, no central authority, no federation setup. The serve
 
 ## Implementation Priority
 
-1. **Day 1:** Docker test network + manual cross-server link + resolution verify
+### Phase 0: Security Fixes (before any cross-server testing)
+
+0. **Enforce trust gate** — `resolve_cross_server_ref` rejects untrusted/unregistered servers
+0. **SSRF protection** — reject private/loopback IPs in tumblers; require directory membership
+0. **HTTPS defaults** — HTTPS for well-known + content fetches; `--allow-insecure-*` flags for LAN
+0. **Byte caps** — 5MB max on fetch buffer + public API response
+0. **API version** — add `api_version: 1` to public work JSON
+0. **Async resolution** — `spawn_blocking` for cross-server fetches
+
+### Phase 1: End-to-End Testing (Day 1)
 2. **Day 2:** Server directory UI (add/remove/trust servers from settings)
 3. **Day 3:** Remote content browser + cross-server transclusion
 4. **Day 4:** Byte tracking (hook `record_royalty` into `resolve_cross_server_ref`)
