@@ -445,6 +445,24 @@ export function AppShell() {
     [clientRef],
   );
 
+  const handleCopyReference = useCallback(async () => {
+    if (workBeId === null) return;
+    try {
+      const resp = await fetch(`/api/public/work/${workBeId.toString(16).padStart(4, "0")}`);
+      const data = await resp.json();
+      const hash = data.content_hash_blake3;
+      const addr = window.location.host;
+      const tumbler = `"${addr}".${workBeId.toString(16).padStart(4, "0")}.1.0.0`;
+      const ref = `${tumbler}|${hash}`;
+      await navigator.clipboard.writeText(ref);
+      setPublishError("Reference copied! Paste on another server.");
+      setTimeout(() => setPublishError(null), 3000);
+    } catch (e) {
+      setPublishError("Failed to copy reference");
+      setTimeout(() => setPublishError(null), 3000);
+    }
+  }, [workBeId]);
+
   const handleToggleStyle = useCallback(
     async (kind: string, start: number, end: number) => {
       if (!clientRef.current || workBeId === null) return;
@@ -785,6 +803,16 @@ export function AppShell() {
                   title={editOpen ? "Click to restrict editing to owner" : "Click to allow anyone to edit"}
                 >
                   {editOpen ? "Edit: Open" : "Edit: Owner"}
+                </button>
+              )}
+              {isPublished && workBeId !== null && (
+                <button
+                  type="button"
+                  className="publish-toggle"
+                  onClick={handleCopyReference}
+                  title="Copy cross-server reference (tumbler + hash) for linking from another server"
+                >
+                  {"\u29C9"} Copy Ref
                 </button>
               )}
               <button
