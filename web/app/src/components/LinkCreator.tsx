@@ -54,6 +54,22 @@ export function LinkCreator({
   const [remoteAuthorKey, setRemoteAuthorKey] = useState("");
   const [webUrl, setWebUrl] = useState("");
 
+  const handlePasteReference = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      const parts = text.split("|");
+      if (parts.length === 2 && parts[0].includes('"')) {
+        setRemoteTumbler(parts[0].trim());
+        setRemoteHash(parts[1].trim());
+        setStep("remote");
+      } else {
+        setError("Clipboard doesn't contain a valid reference (expected: tumbler|hash)");
+      }
+    } catch {
+      setError("Could not read clipboard");
+    }
+  };
+
   const otherWorks = useMemo(
     () => works.filter((w) => w.work_id !== source?.workId),
     [works, source],
@@ -275,6 +291,17 @@ export function LinkCreator({
                 <div className="link-target-text">
                   <div className="link-target-name">Link to a website</div>
                   <div className="link-target-desc">One-way web link to an external URL</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                className="link-target-option"
+                onClick={handlePasteReference}
+              >
+                <div className="link-target-icon">{"\u2398"}</div>
+                <div className="link-target-text">
+                  <div className="link-target-name">Paste cross-server reference</div>
+                  <div className="link-target-desc">Auto-fill from clipboard (use Copy Ref on published works)</div>
                 </div>
               </button>
             </div>

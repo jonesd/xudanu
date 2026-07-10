@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Xanadu Network &mdash; Xudanu</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:64px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.accent-green{color:#3fb950}.accent-blue{color:#58a6ff}.accent-purple{color:#a371f7}.accent-amber{color:#d29922}.accent-red{color:#f85149}.accent-teal{color:#39d2c0}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+ul,ol{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:6px}
+ol li{margin-bottom:8px;list-style:decimal}
+.step{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px 24px;margin:16px 0}
+.step-num{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#39d2c0;color:#0d1117;border-radius:50%;font-weight:700;font-size:14px;margin-right:10px;flex-shrink:0}
+.step-title{font-size:16px;font-weight:600;color:#e6edf3;display:flex;align-items:center;margin-bottom:8px}
+.step-body{padding-left:38px}
+.wow{background:linear-gradient(135deg,rgba(57,210,192,0.08),rgba(88,166,255,0.08));border:1px solid rgba(57,210,192,0.2);border-radius:12px;padding:24px;margin:24px 0}
+.wow h3{color:#39d2c0;margin-top:0}
+.kbd{font-family:'JetBrains Mono',monospace;font-size:11px;background:#21262d;border:1px solid #30363d;border-radius:4px;padding:2px 6px;color:#c9d1d9}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}h2{page-break-before:always;margin-top:40px}.diagram-container{border:1px solid #ddd;background:#fafafa}pre{background:#f5f5f5;border-color:#ddd;color:#333}code{background:#f0f0f0;color:#555}.note{background:#f0f7ff;border-left-color:#3b82f6}.note strong{color:#3b82f6}a{color:#2563eb}.footer{color:#999}.toc a{color:#444}}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>The Xanadu Network</h1>
+<p class="subtitle">A docuverse of independent servers, connected by permanent, cryptographically verified, attribution-preserving references &mdash; the vision Ted Nelson had in 1960, working today.</p>
+
+<div class="toc">
+  <a class="toc-section" href="#vision">The Vision</a>
+  <a class="toc-section" href="#verified">What We Proved</a>
+  <a class="toc-section" href="#tumbler">Tumbler Addressing</a>
+  <a class="toc-section" href="#setup">Setting Up a Server</a>
+  <a class="toc-section" href="#connect">Connecting Two Servers</a>
+  <a class="toc-section" href="#security">Security Model</a>
+  <a class="toc-section" href="#heritage">Gold Heritage</a>
+</div>
+
+<h2 id="vision">The Vision</h2>
+
+<p>
+In 1960, Ted Nelson envisioned a universe of documents &mdash; a <strong>docuverse</strong> &mdash; where content could be connected, reused, and traced across independent servers. Not a web of pages, but a network of <em>connections at the character level</em>. Every quotation would maintain its bond to the original. Every reuse would carry its full provenance.
+</p>
+
+<p>
+The World Wide Web (1989) gave us one-way links between pages. Nelson's Xanadu was different: bidirectional, typed, permanent connections between passages &mdash; with content staying on its origin server, never copied, always verified.
+</p>
+
+<p>
+Xudanu implements this vision.
+</p>
+
+<div class="diagram-container">
+<svg width="640" height="320" viewBox="0 0 640 320">
+  <!-- Server A -->
+  <rect x="20" y="20" width="240" height="140" rx="12" fill="#161b22" stroke="#39d2c0" stroke-width="2"/>
+  <text x="140" y="45" text-anchor="middle" fill="#39d2c0" font-size="12" font-family="Inter" font-weight="700">ALICE'S SERVER</text>
+  <text x="140" y="62" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono">alice.xudanu.com</text>
+  <rect x="40" y="75" width="200" height="30" rx="4" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="140" y="93" text-anchor="middle" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">"Hello from alice"</text>
+  <text x="140" y="125" text-anchor="middle" fill="#3fb950" font-size="10" font-family="Inter">Published + BLAKE3 hash</text>
+  <text x="140" y="142" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter">← Backlink: "Referenced by Bob"</text>
+
+  <!-- Server B -->
+  <rect x="380" y="20" width="240" height="140" rx="12" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
+  <text x="500" y="45" text-anchor="middle" fill="#58a6ff" font-size="12" font-family="Inter" font-weight="700">BOB'S SERVER</text>
+  <text x="500" y="62" text-anchor="middle" fill="#8b949e" font-size="10" font-family="JetBrains Mono">bob.xudanu.com</text>
+  <rect x="400" y="75" width="200" height="30" rx="4" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="500" y="93" text-anchor="middle" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">[cross-server link]</text>
+  <text x="500" y="125" text-anchor="middle" fill="#58a6ff" font-size="10" font-family="Inter">Click → fetch → verify → display</text>
+  <text x="500" y="142" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter">Cached in blob store</text>
+
+  <!-- Connection arrows -->
+  <line x1="260" y1="80" x2="380" y2="80" stroke="#d29922" stroke-width="2"/>
+  <polygon points="380,80 372,76 374,84" fill="#d29922"/>
+  <text x="320" y="70" text-anchor="middle" fill="#d29922" font-size="9" font-family="Inter" font-weight="600">TUMBLER</text>
+
+  <line x1="380" y1="100" x2="260" y2="100" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="2,3"/>
+  <polygon points="260,100 268,96 266,104" fill="#3fb950"/>
+  <text x="320" y="115" text-anchor="middle" fill="#3fb950" font-size="9" font-family="Inter" font-weight="600">BACKLINK</text>
+
+  <!-- Bottom: security -->
+  <rect x="100" y="200" width="440" height="90" rx="8" fill="rgba(63,185,80,0.04)" stroke="#3fb950" stroke-width="1"/>
+  <text x="320" y="222" text-anchor="middle" fill="#3fb950" font-size="11" font-family="Inter" font-weight="600">THREE-LAYER VERIFICATION</text>
+  <text x="160" y="245" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter">Tumbler (WHERE)</text>
+  <text x="320" y="245" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter">BLAKE3 (WHAT)</text>
+  <text x="480" y="245" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter">Ed25519 TOFU (WHO)</text>
+  <text x="160" y="265" text-anchor="middle" fill="#c9d1d9" font-size="9" font-family="JetBrains Mono">"alice.com".03ed</text>
+  <text x="320" y="265" text-anchor="middle" fill="#c9d1d9" font-size="9" font-family="JetBrains Mono">b6e5e023...</text>
+  <text x="480" y="265" text-anchor="middle" fill="#c9d1d9" font-size="9" font-family="JetBrains Mono">pinned key</text>
+  <text x="320" y="282" text-anchor="middle" fill="#484f58" font-size="9" font-family="Inter">No central registry. No federation. No shared database.</text>
+</svg>
+</div>
+<p class="diagram-caption">Two independent Xudanu servers connected by a tumbler reference. Content stays on its origin server; references travel between them.</p>
+
+<!-- ============================================================ -->
+<h2 id="verified">What We Proved</h2>
+
+<p>
+On July 10, 2026, we verified the full cross-server pipeline end-to-end with two independent Xudanu servers running on separate ports with separate data directories:
+</p>
+
+<div class="wow">
+  <h3>Verified Flow</h3>
+  <ol>
+    <li><strong>Alice's Server</strong> (Node 1) publishes a work: "Hello from alice"</li>
+    <li><strong>Bob's Server</strong> (Node 2) creates a cross-server link using a tumbler: <code class="mono">"127.0.0.1:8081".03ed.1.0.0</code></li>
+    <li>Bob's Server <strong>automatically notifies</strong> Alice's Server of the incoming reference</li>
+    <li>Alice's Server displays: <strong>"&larr; Referenced by Bob's Server"</strong> in the Connections panel</li>
+    <li>Clicking the link marker on Bob's Server <strong>fetches "Hello from alice"</strong> from Alice's Server</li>
+    <li>BLAKE3 hash <strong>verified</strong> &mdash; content cached locally with a green checkmark</li>
+  </ol>
+</div>
+
+<p>
+No central registry was consulted. No shared database was synchronized. No federation protocol was used. Two sovereign servers discovered each other, exchanged a permanent reference, and shared verified content &mdash; exactly as Ted Nelson designed.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="tumbler">Tumbler Addressing</h2>
+
+<p>
+Every piece of content in the Xudanu network has a <strong>permanent, globally unique address</strong> called a tumbler. This is Nelson's innovation from the 1970s &mdash; a hierarchical, dotted notation that identifies content across servers.
+</p>
+
+<div class="diagram-container">
+<svg width="560" height="120" viewBox="0 0 560 120">
+  <text x="280" y="35" text-anchor="middle" fill="#e6edf3" font-size="16" font-family="JetBrains Mono" font-weight="600">"alice.xudanu.com".03ed.1.0.0</text>
+  <line x1="60" y1="50" x2="120" y2="50" stroke="#39d2c0" stroke-width="2"/>
+  <text x="90" y="68" text-anchor="middle" fill="#39d2c0" font-size="10" font-family="Inter" font-weight="600">Server</text>
+  <text x="90" y="82" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter">DNS-routable</text>
+  <line x1="140" y1="50" x2="220" y2="50" stroke="#58a6ff" stroke-width="2"/>
+  <text x="180" y="68" text-anchor="middle" fill="#58a6ff" font-size="10" font-family="Inter" font-weight="600">Work</text>
+  <text x="180" y="82" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter">Hex ID</text>
+  <line x1="240" y1="50" x2="300" y2="50" stroke="#3fb950" stroke-width="2"/>
+  <text x="270" y="68" text-anchor="middle" fill="#3fb950" font-size="10" font-family="Inter" font-weight="600">Edition</text>
+  <text x="270" y="82" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter">Revision</text>
+  <line x1="320" y1="50" x2="380" y2="50" stroke="#d29922" stroke-width="2"/>
+  <text x="350" y="68" text-anchor="middle" fill="#d29922" font-size="10" font-family="Inter" font-weight="600">Position</text>
+  <text x="350" y="82" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter">Char offset</text>
+  <line x1="400" y1="50" x2="460" y2="50" stroke="#a371f7" stroke-width="2"/>
+  <text x="430" y="68" text-anchor="middle" fill="#a371f7" font-size="10" font-family="Inter" font-weight="600">Element</text>
+  <text x="430" y="82" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter">Sub-element</text>
+</svg>
+</div>
+<p class="diagram-caption">A domain-based tumbler. The domain replaces Gold's numeric server IDs, enabling DNS self-routing.</p>
+
+<p>
+The domain format (<code>"alice.xudanu.com".03ed.1.0.0</code>) is Xudanu's enhancement over Gold's original numeric format (<code>1.03ed.1.0.0</code>). DNS provides self-routing &mdash; no central registry needed.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="setup">Setting Up a Server</h2>
+
+<p>
+Any Xudanu server can join the network by publishing its identity and content.
+</p>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">1</span> Start the server</div>
+  <div class="step-body">
+    <pre><code>./xudanu-server run 0.0.0.0:8080 data \
+  --server-name "Alice's Literature Server" \
+  --server-description "Essays and annotations" \
+  --public-address alice.xudanu.com</code></pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">2</span> Publish content</div>
+  <div class="step-body">
+    <p>Create a document, write text, and click <strong>Published</strong>. Published works become available via the public content API at <code>/api/public/work/{id}</code>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">3</span> Verify discovery</div>
+  <div class="step-body">
+    <pre><code>curl https://alice.xudanu.com/.well-known/xudanu-server.json</code></pre>
+    <p>Returns the server's identity, verifying key, name, description, and stats.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">4</span> Verify content API</div>
+  <div class="step-body">
+    <pre><code>curl https://alice.xudanu.com/api/public/work/03ed</code></pre>
+    <p>Returns the work text, BLAKE3 content hash, span provenance, and server identity.</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="connect">Connecting Two Servers</h2>
+
+<p>
+Once two servers are running and have published content, users can create cross-server links:
+</p>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">1</span> On Server B, select text and click Link</div>
+  <div class="step-body">
+    <p>Choose <strong>"Link to a remote server"</strong> in the Link Creator wizard.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">2</span> Enter the tumbler and hash</div>
+  <div class="step-body">
+    <p>Enter the tumbler from Server A (e.g., <code class="mono">"alice.xudanu.com".03ed.1.0.0</code>) and the BLAKE3 content hash from the public API.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">3</span> Create the link</div>
+  <div class="step-body">
+    <p>The link is stored on Server B with the <code>CrossServerRef</code> payload (tumbler + hash + author info). Server B <strong>automatically notifies</strong> Server A of the incoming reference.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">4</span> Click to resolve</div>
+  <div class="step-body">
+    <p>Clicking the link marker on Server B triggers cross-server resolution: fetch from Server A &rarr; verify BLAKE3 hash &rarr; cache locally &rarr; display content.</p>
+  </div>
+</div>
+
+<div class="gold">
+  <strong>Automatic backlinks:</strong> When Server B links to Server A, Server A automatically sees the incoming reference in its Connections panel. This bidirectional visibility is the Xanalogical principle &mdash; every connection visible from both ends.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="security">Security Model</h2>
+
+<p>
+Cross-server content sharing uses three independent layers of verification:
+</p>
+
+<table>
+  <tr><th>Layer</th><th>What it answers</th><th>How</th><th>Even over HTTP?</th></tr>
+  <tr><td><span class="accent-teal">Tumbler</span></td><td>WHERE does content live?</td><td>Domain-based global address</td><td>Yes</td></tr>
+  <tr><td><span class="accent-green">BLAKE3</span></td><td>WHAT is the content?</td><td>256-bit hash verified on every fetch</td><td><strong>Yes &mdash; mathematically impossible to forge</strong></tr>
+  <tr><td><span class="accent-blue">Ed25519 TOFU</span></td><td>WHO is the server?</td><td>Key pinned on first connection (like SSH)</td><td>Yes (after first pin)</tr>
+</table>
+
+<div class="diagram-container">
+<svg width="500" height="100" viewBox="0 0 500 100">
+  <rect x="20" y="20" width="140" height="60" rx="8" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="1.5"/>
+  <text x="90" y="45" text-anchor="middle" fill="#39d2c0" font-size="12" font-family="Inter" font-weight="600">Tumbler</text>
+  <text x="90" y="62" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter">WHERE</text>
+
+  <line x1="160" y1="50" x2="180" y2="50" stroke="#30363d" stroke-width="2"/>
+  <polygon points="180,50 172,46 174,54" fill="#30363d"/>
+
+  <rect x="180" y="20" width="140" height="60" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="250" y="45" text-anchor="middle" fill="#3fb950" font-size="12" font-family="Inter" font-weight="600">BLAKE3</text>
+  <text x="250" y="62" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter">WHAT</text>
+
+  <line x1="320" y1="50" x2="340" y2="50" stroke="#30363d" stroke-width="2"/>
+  <polygon points="340,50 332,46 334,54" fill="#30363d"/>
+
+  <rect x="340" y="20" width="140" height="60" rx="8" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="410" y="45" text-anchor="middle" fill="#58a6ff" font-size="12" font-family="Inter" font-weight="600">Ed25519</text>
+  <text x="410" y="62" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter">WHO</text>
+</svg>
+</div>
+
+<h3>Why HTTP is safe for content fetches</h3>
+<p>
+A man-in-the-middle cannot substitute different content because they would need to produce content with the <strong>exact same BLAKE3 hash</strong> &mdash; which would take 10<sup>22</sup> years (longer than the age of the universe). The hash is stored at link creation time and verified on every fetch.
+</p>
+
+<div class="note">
+  <strong>HTTPS is still preferred</strong> for privacy (hiding what you're fetching) and availability (preventing request blocking). Xudanu tries HTTPS first, and if successful, pins it &mdash; refusing HTTP downgrade for that server in the future.
+</div>
+
+<h3>Additional protections</h3>
+<table>
+  <tr><th>Protection</th><th>Status</th></tr>
+  <tr><td>SSRF protection (reject loopback/private IPs)</td><td class="accent-green">Done</td></tr>
+  <tr><td>5MB byte cap on fetches</td><td class="accent-green">Done</td></tr>
+  <tr><td>Trust gate (untrusted servers rejected)</td><td class="accent-green">Done</td></tr>
+  <tr><td>Ed25519 TOFU (pin on first use, warn on change)</td><td class="accent-green">Done</td></tr>
+  <tr><td>HTTPS pinning (refuse downgrade)</td><td class="accent-green">Done</td></tr>
+  <tr><td>Byte tracking (RoyaltyEntry per fetch)</td><td class="accent-green">Done</td></tr>
+  <tr><td>Rate limiting on public endpoints</td><td>Planned (#105)</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="heritage">Gold Heritage</h2>
+
+<p>
+This implementation inherits directly from the Udanax-Gold hypertext model (open-sourced 1999), with modern adaptations:
+</p>
+
+<table>
+  <tr><th>Gold concept</th><th>Xudanu implementation</th><th>Enhancement</th></tr>
+  <tr><td>Numeric tumblers</td><td>Domain-based tumblers</td><td>DNS replaces central registry</td></tr>
+  <tr><td>Enfilade content storage</td><td>O-tree CRDT + chunk store</td><td>Collaborative editing</td></tr>
+  <td>Push-based sync</td><td>Pull-based resolution</td><td>Server stays sovereign</td>
+  <tr><td>Custom binary protocol</td><td>HTTPS + JSON</td><td>Standard web protocols</td></tr>
+  <tr><td>Royalties (Rule 9)</td><td>RoyaltyEntry ledger</td><td>Byte tracking, no payments yet</td></tr>
+  <tr><td>Bidirectional links</td><td>Cross-server backlinks</td><td>Automatic notification</td></tr>
+</table>
+
+<div class="gold">
+  <strong>"This is what Xanadu was always meant to be."</strong> A docuverse of independent servers connected by permanent, cryptographically verified, attribution-preserving references. Not a web of pages, but a network of connections &mdash; every quotation maintaining its bond to the original, every reuse carrying its full provenance.
+</div>
+
+<div class="footer">
+  The Xanadu Network &mdash; Xudanu v0.9.1 &mdash; Verified July 10, 2026.<br>
+  See also: <a href="xanadu-network-architecture.html">Network Architecture</a> &middot; <a href="gold-heritage.html">Gold Heritage</a> &middot; <a href="user-guide.html">User Guide</a> &middot; <a href="index.html">Documentation Index</a>
+</div>
+
+</div>
+</body>
+</html>
