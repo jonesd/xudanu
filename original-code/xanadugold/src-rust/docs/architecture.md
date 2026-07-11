@@ -4,7 +4,7 @@
 
 Xanadu Gold is a Rust library that compiles to WebAssembly for browser and
 Node.js consumption. It implements the Xanadu hypertext model: a
-conflict-preserving content-addressable document store built on a partially
+content-addressable document store built on a partially
 ordered trace history.
 
 ```mermaid

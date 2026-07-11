@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to **xudanu** — a conflict-preserving hypertext document store (Rust server + React frontend). Items are summarized from the commit history; the date beside each version is when that tag was created (some are approximate). Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
+All notable changes to **xudanu** — a hypertext document store (Rust server + React frontend). Items are summarized from the commit history; the date beside each version is when that tag was created (some are approximate). Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 GitHub releases: https://github.com/jonesd/xudanu/releases
 

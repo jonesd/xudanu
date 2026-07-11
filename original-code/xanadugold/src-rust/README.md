@@ -1,6 +1,6 @@
 # xudanu
 
-Conflict-preserving hypertext document store. A Rust implementation of the Udanax Gold model with server, web frontend, and federation support.
+Hypertext document store with collaborative CRDT editing. A Rust implementation of the Udanax Gold model with server, web frontend, and federation support.
 
 ## What It Is
 

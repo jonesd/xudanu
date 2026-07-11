@@ -2,7 +2,7 @@
 
 ## What is Xudanu
 
-Xudanu is a conflict-preserving content-addressed document store with bidirectional links, transclusion, and fine-grained access control. It is a modern Rust implementation of the Udanax Gold hypertext system.
+Xudanu is a content-addressed document store with bidirectional links, transclusion, and fine-grained access control. It is a modern Rust implementation of the Udanax Gold hypertext system.
 
 **Core concepts:**
 - **Works** — versioned containers that hold Editions. Think of a Work as a document that evolves over time.

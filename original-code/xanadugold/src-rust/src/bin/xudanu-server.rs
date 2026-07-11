@@ -55,7 +55,7 @@ fn init_tracing(data_dir: Option<&str>) {
 
 fn usage() {
     eprintln!(
-        "xudanu {} — conflict-preserving hypertext document store",
+        "xudanu {} — hypertext document store",
         env!("CARGO_PKG_VERSION")
     );
     eprintln!();
@@ -94,6 +94,11 @@ fn usage() {
     eprintln!("Flags:");
     eprintln!("  --version, -V            Print version");
     eprintln!("  --help, -h               Print this help message");
+    eprintln!();
+    eprintln!("Copyright 2026 David G Jones and contributors.");
+    eprintln!("Licensed under the Apache License, Version 2.0.");
+    eprintln!("Xudanu is an independent project, not affiliated with");
+    eprintln!("Ted Nelson, Project Xanadu, or the Udanax development team.");
 }
 
 fn cmd_init(data_dir: &str, passphrase: Option<&[u8]>) {
