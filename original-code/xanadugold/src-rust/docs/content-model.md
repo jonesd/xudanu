@@ -183,7 +183,7 @@ content identical to what's in B). The connection is through shared identity,
 not through a reference. If B is revised, A still holds its version — the
 transclusion is to the specific content, not to the document.
 
-This is why the Gold model is **conflict-preserving**: two authors can edit
+This is why the Gold model aimed to be conflict-preserving: two authors can edit
 the same document, and the system preserves both versions in the version DAG
 (the DagWood). Content identity never changes — it's content-addressed.
 

@@ -2,7 +2,14 @@
 
 **GitHub:** https://github.com/jonesd/xudanu
 
-Conflict-preserving hypertext document store with a collaborative CRDT editing
+> **Disclaimer:** Xudanu is an independent, open-source project (Apache 2.0).
+> It is not affiliated with, endorsed by, or sponsored by Ted Nelson,
+> Project Xanadu™, the Xanadu Operating Company, Autodesk Inc., or the
+> Udanax development team. Xudanu implements concepts from the open-sourced
+> Udanax-Gold codebase (released 1999 under the Xanadu X11 license) using
+> original code. All trademarks belong to their respective owners.
+
+Hypertext document store with collaborative CRDT editing with a collaborative CRDT editing
 frontend. The project is split across two trees:
 
 - **Backend (Rust):** `original-code/xanadugold/src-rust/`  *(this directory)*

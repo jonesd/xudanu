@@ -242,11 +242,9 @@ Requirements:
 
 ---
 
-## Attribution and Non-Endorsement
+## Disclaimer
 
-This project acknowledges the pioneering work of the Xanadu project and Udanax Gold.
-
-xudanu is an independent effort and is **not affiliated with or endorsed by Autodesk or the original Xanadu contributors**.
+Xudanu is an independent, open-source project. It is not affiliated with, endorsed by, or sponsored by Ted Nelson, Project Xanadu™, the Xanadu Operating Company, Autodesk Inc., or the Udanax development team. Xudanu implements concepts from the open-sourced Udanax-Gold codebase (released 1999 under the Xanadu X11 license) using original code. "Xanadu" is a project name of Ted Nelson. All trademarks belong to their respective owners.
 
 ---
 
