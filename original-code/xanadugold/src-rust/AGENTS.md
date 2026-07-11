@@ -9,7 +9,7 @@
 > Udanax-Gold codebase (released 1999 under the Xanadu X11 license) using
 > original code. All trademarks belong to their respective owners.
 
-Hypertext document store with collaborative CRDT editing with a collaborative CRDT editing
+Hypertext document store with collaborative CRDT editing
 frontend. The project is split across two trees:
 
 - **Backend (Rust):** `original-code/xanadugold/src-rust/`  *(this directory)*
