@@ -80,20 +80,39 @@ We maintain that privacy is a human right that must be protected. The statutory 
 echo "  Legal Brief: 0x$BRIEF"
 
 echo "==> Creating typed links..."
+echo "  Types: 1=Comment 2=Reference 3=Disagreement 4=Quotation 5=SeeAlso"
 
-# Create links between the works (origin dest)
-# The CLI creates bare links; types would need the full wire protocol
-LINK1=$($CLI "$SERVER" create-link 0x$BRIEF 0x$STATUTE 2>/dev/null | grep -o '0x[0-9a-f]*' | head -1)
-echo "  Brief -> Statute: $LINK1"
+# Brief references the Statute (type 2 = Reference)
+$CLI "$SERVER" create-link 0x$BRIEF 0x$STATUTE 2 2>/dev/null
+echo "  Brief -Reference-> Statute"
 
-LINK2=$($CLI "$SERVER" create-link 0x$BRIEF 0x$CASELAW 2>/dev/null | grep -o '0x[0-9a-f]*' | head -1)
-echo "  Brief -> Case Law: $LINK2"
+# Brief disagrees with the Dissent (type 3 = Disagreement)
+$CLI "$SERVER" create-link 0x$BRIEF 0x$DISSENT 3 2>/dev/null
+echo "  Brief -Disagreement-> Dissent"
 
-LINK3=$($CLI "$SERVER" create-link 0x$BRIEF 0x$DISSENT 2>/dev/null | grep -o '0x[0-9a-f]*' | head -1)
-echo "  Brief -> Dissent: $LINK3"
+# Brief quotes the Case Law (type 4 = Quotation)
+$CLI "$SERVER" create-link 0x$BRIEF 0x$CASELAW 4 2>/dev/null
+echo "  Brief -Quotation-> Case Law"
 
-LINK4=$($CLI "$SERVER" create-link 0x$STATUTE 0x$CASELAW 2>/dev/null | grep -o '0x[0-9a-f]*' | head -1)
-echo "  Statute -> Case Law: $LINK4"
+# Statute is referenced by Case Law (type 2 = Reference)
+$CLI "$SERVER" create-link 0x$STATUTE 0x$CASELAW 2 2>/dev/null
+echo "  Statute -Reference-> Case Law"
+
+# See Also link between Dissent and Case Law (type 5)
+$CLI "$SERVER" create-link 0x$DISSENT 0x$CASELAW 5 2>/dev/null
+echo "  Dissent -SeeAlso-> Case Law"
+
+# Comment on the Dissent from the Brief (type 1)
+$CLI "$SERVER" create-link 0x$BRIEF 0x$DISSENT 1 2>/dev/null
+echo "  Brief -Comment-> Dissent"
+
+echo ""
+echo "==> Publishing all works..."
+$CLI "$SERVER" publish 0x$STATUTE 2>/dev/null
+$CLI "$SERVER" publish 0x$CASELAW 2>/dev/null
+$CLI "$SERVER" publish 0x$DISSENT 2>/dev/null
+$CLI "$SERVER" publish 0x$BRIEF 2>/dev/null
+$CLI "$SERVER" publish 0x$WELCOME 2>/dev/null
 
 echo ""
 echo "==> Demo content created successfully!"

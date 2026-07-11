@@ -13,6 +13,7 @@ fn usage() {
     eprintln!("Commands:");
     eprintln!("  repl                                    Interactive mode");
     eprintln!("  create-work <text>                      Create a work with text content");
+    eprintln!("  create-work <title> <text>              Create a titled work");
     eprintln!("  get-work <id>                           Get work edition");
     eprintln!("  list-works                              List all works");
     eprintln!("  grab <id>                               Grab a work for editing");
@@ -20,7 +21,9 @@ fn usage() {
     eprintln!("  release <id>                            Release a grabbed work");
     eprintln!("  history <id>                            Show revision count");
     eprintln!("  fetch-revision <id> <n>                 Fetch specific revision");
-    eprintln!("  create-link <origin-id> <dest-id>       Create a link between works");
+    eprintln!("  create-link <origin-id> <dest-id> [type]  Create a link (type: 1=Comment 2=Reference 3=Disagreement 4=Quotation 5=SeeAlso)");
+    eprintln!("  set-link-type <link-id> <type-id>        Set link type");
+    eprintln!("  publish <id>                            Publish a work (make publicly readable)");
     eprintln!("  get-link <link-id>                      Get link details");
     eprintln!("  list-links <work-id>                    List links involving a work");
     eprintln!("  delete-link <link-id>                   Delete a link");
@@ -531,11 +534,11 @@ async fn run_command(
             client.ensure_login().await;
             let origin: u64 = args
                 .first()
-                .ok_or("usage: create-link <origin-id> <dest-id>")?
+                .ok_or("usage: create-link <origin-id> <dest-id> [type-id]")?
                 .parse()?;
             let dest: u64 = args
                 .get(1)
-                .ok_or("usage: create-link <origin-id> <dest-id>")?
+                .ok_or("usage: create-link <origin-id> <dest-id> [type-id]")?
                 .parse()?;
             let resp = client
                 .request(
@@ -549,7 +552,22 @@ async fn run_command(
                 eprintln!("Error: {}", resp["message"].as_str().unwrap_or("unknown"));
             } else {
                 let link_id = extract_value(&resp)["value"].as_u64().unwrap();
-                println!("Link {} created: {} -> {}", link_id, origin, dest);
+                if let Some(type_str) = args.get(2) {
+                    if let Ok(type_id) = type_str.parse::<u64>() {
+                        let _ = client
+                            .request(
+                                "link_set_types",
+                                Some(serde_json::json!({
+                                    "link_id": link_id, "link_types": [type_id]
+                                })),
+                            )
+                            .await;
+                    }
+                }
+                println!(
+                    "Link 0x{:x} created: 0x{:x} -> 0x{:x}",
+                    link_id, origin, dest
+                );
             }
         }
         "get-link" => {
@@ -601,7 +619,41 @@ async fn run_command(
             if resp["type"] == "error" {
                 eprintln!("Error: {}", resp["message"].as_str().unwrap_or("unknown"));
             } else {
-                println!("Link {} deleted.", id);
+                println!("Link 0x{:x} deleted.", id);
+            }
+        }
+        "set-link-type" => {
+            client.ensure_login().await;
+            let link_id: u64 = args
+                .first()
+                .ok_or("usage: set-link-type <link-id> <type-id>")?
+                .parse()?;
+            let type_id: u64 = args
+                .get(1)
+                .ok_or("usage: set-link-type <link-id> <type-id>")?
+                .parse()?;
+            let resp = client
+                .request(
+                    "link_set_types",
+                    Some(serde_json::json!({"link_id": link_id, "link_types": [type_id]})),
+                )
+                .await;
+            if resp["type"] == "error" {
+                eprintln!("Error: {}", resp["message"].as_str().unwrap_or("unknown"));
+            } else {
+                println!("Link 0x{:x} type set to {}.", link_id, type_id);
+            }
+        }
+        "publish" => {
+            client.ensure_login().await;
+            let id: u64 = args.first().ok_or("usage: publish <work-id>")?.parse()?;
+            let resp = client
+                .request("work_publish", Some(serde_json::json!({"work_id": id})))
+                .await;
+            if resp["type"] == "error" {
+                eprintln!("Error: {}", resp["message"].as_str().unwrap_or("unknown"));
+            } else {
+                println!("Work 0x{:x} published.", id);
             }
         }
         "find-content" => {
