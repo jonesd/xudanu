@@ -1461,7 +1461,7 @@ fn dispatch_inner(
                         destination_title,
                         destination_owner,
                         named_ends: Vec::new(),
-                        link_types: Vec::new(),
+                        link_types: link.link_types().to_vec(),
                     })
                 })
                 .collect();
@@ -3785,7 +3785,7 @@ fn dispatch_inner_read(
                         destination_title,
                         destination_owner,
                         named_ends: Vec::new(),
-                        link_types: Vec::new(),
+                        link_types: link.link_types().to_vec(),
                     })
                 })
                 .collect();

@@ -534,19 +534,28 @@ async fn run_command(
             client.ensure_login().await;
             let origin: u64 = args
                 .first()
-                .ok_or("usage: create-link <origin-id> <dest-id> [type-id]")?
+                .ok_or("usage: create-link <origin-id> <dest-id> [type-id] [start] [end] [excerpt]")?
                 .parse()?;
             let dest: u64 = args
                 .get(1)
-                .ok_or("usage: create-link <origin-id> <dest-id> [type-id]")?
+                .ok_or("usage: create-link <origin-id> <dest-id> [type-id] [start] [end] [excerpt]")?
                 .parse()?;
+            let start: Option<i64> = args.get(3).and_then(|s| s.parse::<i64>().ok());
+            let end: Option<i64> = args.get(4).and_then(|s| s.parse::<i64>().ok());
+            let excerpt_val: String = args.get(5).map(|s| s.to_string()).unwrap_or_default();
+
+            let mut payload = serde_json::json!({ "origin": origin, "destination": dest });
+            if let (Some(s), Some(e)) = (start, end) {
+                payload["origin_ref"] = serde_json::json!({
+                    "kind": "single",
+                    "work_context": origin,
+                    "excerpt": excerpt_val,
+                    "start_position": s,
+                    "end_position": e,
+                });
+            }
             let resp = client
-                .request(
-                    "link_create",
-                    Some(serde_json::json!({
-                        "origin": origin, "destination": dest
-                    })),
-                )
+                .request("link_create", Some(payload))
                 .await;
             if resp["type"] == "error" {
                 eprintln!("Error: {}", resp["message"].as_str().unwrap_or("unknown"));
