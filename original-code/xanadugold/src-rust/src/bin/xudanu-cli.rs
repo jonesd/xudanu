@@ -534,11 +534,15 @@ async fn run_command(
             client.ensure_login().await;
             let origin: u64 = args
                 .first()
-                .ok_or("usage: create-link <origin-id> <dest-id> [type-id] [start] [end] [excerpt]")?
+                .ok_or(
+                    "usage: create-link <origin-id> <dest-id> [type-id] [start] [end] [excerpt]",
+                )?
                 .parse()?;
             let dest: u64 = args
                 .get(1)
-                .ok_or("usage: create-link <origin-id> <dest-id> [type-id] [start] [end] [excerpt]")?
+                .ok_or(
+                    "usage: create-link <origin-id> <dest-id> [type-id] [start] [end] [excerpt]",
+                )?
                 .parse()?;
             let start: Option<i64> = args.get(3).and_then(|s| s.parse::<i64>().ok());
             let end: Option<i64> = args.get(4).and_then(|s| s.parse::<i64>().ok());
@@ -554,9 +558,7 @@ async fn run_command(
                     "end_position": e,
                 });
             }
-            let resp = client
-                .request("link_create", Some(payload))
-                .await;
+            let resp = client.request("link_create", Some(payload)).await;
             if resp["type"] == "error" {
                 eprintln!("Error: {}", resp["message"].as_str().unwrap_or("unknown"));
             } else {
