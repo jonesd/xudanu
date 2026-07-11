@@ -8,6 +8,8 @@ SERVER="${1:-127.0.0.1:8080}"
 echo "==> Seeding demo content on $SERVER..."
 
 $CLI "$SERVER" login 2>/dev/null
+$CLI "$SERVER" club-create "Demo User" 2>/dev/null
+$CLI "$SERVER" login 2>/dev/null
 
 echo "==> Creating source works..."
 
