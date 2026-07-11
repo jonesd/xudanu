@@ -762,10 +762,16 @@ export function AppShell() {
                 Browse Library
               </button>
             </div>
+            {works.length > 0 && (
+              <div className="welcome-hint" style={{ marginTop: 16 }}>
+                <strong>{works.length} document{works.length !== 1 ? "s" : ""} available.</strong>{" "}
+                Click <strong>Browse Library</strong> to explore. Toggle <strong>Write</strong> in the top bar to edit.
+              </div>
+            )}
             {!identity && (
               <div className="welcome-hint">
-                Tip: Create an identity first to own and edit your documents.
-                Anonymous works are read-only after sign-in.
+                Tip: Click the person icon in the left rail to create an identity.
+                You need an identity to edit documents.
               </div>
             )}
           </div>
