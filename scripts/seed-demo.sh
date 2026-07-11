@@ -79,30 +79,30 @@ Xudanu implements Ted Nelson's 1960 vision: a docuverse where content is connect
 echo "  Welcome: $WELCOME"
 
 echo ""
-echo "==> Creating typed links..."
+echo "==> Creating typed links WITH span positions..."
 
-# Links FROM the Welcome document so markers show up in it
-# Comment link on welcome (type 1)
-$CLI "$SERVER" create-link "$WELCOME" "$STATUTE" 1 2>/dev/null
-echo "  Welcome -Comment-> Statute"
+# Links FROM the Welcome document anchored to specific text
+# Type 1 = Comment, on "Line 1 has a Comment link"
+$CLI "$SERVER" create-link "$WELCOME" "$STATUTE" 1 365 390 "Line 1 has a Comment link" 2>/dev/null
+echo "  Welcome[365:390] -Comment-> Statute"
 
-# Reference link (type 2)
-$CLI "$SERVER" create-link "$WELCOME" "$CASELAW" 2 2>/dev/null
-echo "  Welcome -Reference-> Case Law"
+# Type 2 = Reference, on "Line 2 has a Reference link"
+$CLI "$SERVER" create-link "$WELCOME" "$CASELAW" 2 406 433 "Line 2 has a Reference link" 2>/dev/null
+echo "  Welcome[406:433] -Reference-> Case Law"
 
-# Disagreement link (type 3)
-$CLI "$SERVER" create-link "$WELCOME" "$DISSENT" 3 2>/dev/null
-echo "  Welcome -Disagreement-> Dissent"
+# Type 3 = Disagreement, on "Line 3 has a Disagreement link"
+$CLI "$SERVER" create-link "$WELCOME" "$DISSENT" 3 449 479 "Line 3 has a Disagreement link" 2>/dev/null
+echo "  Welcome[449:479] -Disagreement-> Dissent"
 
-# Quotation link (type 4)
-$CLI "$SERVER" create-link "$WELCOME" "$BRIEF" 4 2>/dev/null
-echo "  Welcome -Quotation-> Brief"
+# Type 4 = Quotation, on "Line 4 has a Quotation link"
+$CLI "$SERVER" create-link "$WELCOME" "$BRIEF" 4 497 524 "Line 4 has a Quotation link" 2>/dev/null
+echo "  Welcome[497:524] -Quotation-> Brief"
 
-# See Also link (type 5)
-$CLI "$SERVER" create-link "$WELCOME" "$STATUTE" 5 2>/dev/null
-echo "  Welcome -SeeAlso-> Statute"
+# Type 5 = See Also, on "Line 5 has a See Also link"
+$CLI "$SERVER" create-link "$WELCOME" "$STATUTE" 5 542 568 "Line 5 has a See Also link" 2>/dev/null
+echo "  Welcome[542:568] -SeeAlso-> Statute"
 
-# Links between source documents
+# Links between source documents (no span positions — whole-work links)
 $CLI "$SERVER" create-link "$STATUTE" "$CASELAW" 2 2>/dev/null
 echo "  Statute -Reference-> Case Law"
 
