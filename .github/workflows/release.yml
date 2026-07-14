@@ -151,6 +151,7 @@ jobs:
         run: |
           mkdir -p dist
           cp target/${{ matrix.target }}/release/xudanu-server dist/
+          cp target/${{ matrix.target }}/release/xudanu-cli dist/
           cp -r web/app/dist dist/
           [ -f LICENSE ] && cp LICENSE dist/ || true
           [ -f NOTICE ] && cp NOTICE dist/ || true
@@ -162,6 +163,7 @@ jobs:
         run: |
           mkdir dist
           cp target/${{ matrix.target }}/release/xudanu-server.exe dist/
+          cp target/${{ matrix.target }}/release/xudanu-cli.exe dist/
           cp -r web/app/dist dist/
           if (Test-Path LICENSE) { cp LICENSE dist/ }
           if (Test-Path NOTICE) { cp NOTICE dist/ }

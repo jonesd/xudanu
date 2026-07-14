@@ -28,9 +28,31 @@ export function SearchOverlay({
     const pool = scope === "current" && currentWorkId
       ? works.filter((w) => w.work_id === currentWorkId)
       : works;
-    return pool
+
+    let idMatch: number | null = null;
+    if (/^\d+$/.test(q)) {
+      idMatch = parseInt(q, 10);
+    } else if (/^0x[0-9a-f]+$/i.test(q)) {
+      idMatch = parseInt(q, 16);
+    } else if (/^[0-9a-f]{3,6}$/i.test(q)) {
+      idMatch = parseInt(q, 16);
+    }
+
+    const idResults = idMatch !== null
+      ? pool.filter((w) => w.work_id === idMatch)
+          .map((w) => ({ work_id: w.work_id, title: w.title || `work:${w.work_id.toString(16)}` }))
+      : [];
+
+    const titleResults = pool
       .filter((w) => (w.title || "").toLowerCase().includes(q))
       .map((w) => ({ work_id: w.work_id, title: w.title || `work:${w.work_id.toString(16)}` }));
+
+    const seen = new Set<number>();
+    return [...idResults, ...titleResults].filter((r) => {
+      if (seen.has(r.work_id)) return false;
+      seen.add(r.work_id);
+      return true;
+    });
   }, [query, scope, currentWorkId, works]);
 
   const handleSearch = useCallback(async () => {

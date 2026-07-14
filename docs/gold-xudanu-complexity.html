@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gold vs. Xudanu &mdash; Subsystem Complexity Comparison</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:14px;font-weight:600;margin-top:20px;margin-bottom:6px;color:#8b949e}
+p{margin-bottom:12px;max-width:820px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.88em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+.content-wrap{max-width:1080px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}
+th{text-align:left;padding:10px 12px;border-bottom:2px solid #30363d;color:#8b949e;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 12px;border-bottom:1px solid #21262d;vertical-align:top}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.cx{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px}
+.cx-good{color:#3fb950}
+.cx-bad{color:#f85149}
+.cx-ok{color:#d29922}
+.cx-same{color:#58a6ff}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+ul{margin-left:20px;margin-bottom:12px;list-style:disc}
+li{margin-bottom:4px}
+.tag{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:0.5px;margin-left:6px;vertical-align:middle}
+.tag-gold{background:rgba(210,153,34,0.15);color:#d29922;border:1px solid rgba(210,153,34,0.3)}
+.tag-xudanu{background:rgba(63,185,80,0.15);color:#3fb950;border:1px solid rgba(63,185,80,0.3)}
+.tag-shared{background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3)}
+.diverged{background:rgba(248,81,73,0.08);color:#f85149;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:600}
+.aligned{background:rgba(63,185,80,0.08);color:#3fb950;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:600}
+.partial{background:rgba(210,153,34,0.08);color:#d29922;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:600}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}table{font-size:11px}th{color:#555}.cx-good{color:#16a34a}.cx-bad{color:#dc2626}.cx-ok{color:#d97706}.cx-same{color:#2563eb}}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Gold vs. Xudanu: Subsystem Complexity Comparison</h1>
+<p class="subtitle">Detailed side-by-side of every major subsystem, with estimated Big-O complexity and status alignment.</p>
+
+<div class="note">
+<strong>Methodology:</strong> Gold has almost no formal Big-O annotations (exactly one <code>O(log)</code> confession in the entire codebase). Complexity estimates below are derived from code structure analysis &mdash; tree heights, data structure choices, and algorithm patterns. Where Gold acknowledges inefficiency, it is noted.
+</div>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. Summary Matrix</a>
+  <a class="toc-section" href="#s2">2. Core Data Structure: Enfilade vs. O-Tree CRDT</a>
+  <a class="toc-section" href="#s3">3. Splay Operations</a>
+  <a class="toc-section" href="#s4">4. Region Algebra (Position/Region/Dsp)</a>
+  <a class="toc-section" href="#s5">5. Canopy System (Endorsement/Permission Filtering)</a>
+  <a class="toc-section" href="#s6">6. Backfollow / Transclusion Query Engine</a>
+  <a class="toc-section" href="#s7">7. Transclusion Model</a>
+  <a class="toc-section" href="#s8">8. Version Management &amp; DAG</a>
+  <a class="toc-section" href="#s9">9. Diff / Merge / Comparison</a>
+  <a class="toc-section" href="#s10">10. Link Operations</a>
+  <a class="toc-section" href="#s11">11. Identity Merging / Deduplication</a>
+  <a class="toc-section" href="#s12">12. Search</a>
+  <a class="toc-section" href="#s13">13. Storage &amp; Persistence</a>
+  <a class="toc-section" href="#s14">14. Protocol &amp; Networking</a>
+  <a class="toc-section" href="#s15">15. Cryptography</a>
+  <a class="toc-section" href="#s16">16. What Gold Still Offers</a>
+</div>
+
+<!-- ==================== SUMMARY MATRIX ==================== -->
+
+<h2 id="s1">1. Summary Matrix</h2>
+
+<table>
+<tr>
+  <th style="width:18%">Subsystem</th>
+  <th style="width:20%">Gold Approach</th>
+  <th style="width:20%">Xudanu Approach</th>
+  <th style="width:12%">Alignment</th>
+  <th style="width:10%">Gold Complexity</th>
+  <th style="width:10%">Xudanu Complexity</th>
+  <th style="width:10%">Verdict</th>
+</tr>
+<tr>
+  <td><strong>Core tree</strong></td>
+  <td>Enfilade (Split/Loaf/Dsp nodes)</td>
+  <td>OrglRoot (Leaf/Split/Dsp nodes)</td>
+  <td><span class="aligned">Same shape</span></td>
+  <td class="cx cx-same">O(log n)</td>
+  <td class="cx cx-same">O(log n)</td>
+  <td>Equivalent</td>
+</tr>
+<tr>
+  <td><strong>Splay</strong></td>
+  <td>9-case rotation table</td>
+  <td>SplayResult with split</td>
+  <td><span class="aligned">Same concept</span></td>
+  <td class="cx cx-same">O(log n)</td>
+  <td class="cx cx-same">O(log n)</td>
+  <td>Equivalent</td>
+</tr>
+<tr>
+  <td><strong>Region algebra</strong></td>
+  <td>XnRegion (sorted intervals)</td>
+  <td>XnRegion (transition list)</td>
+  <td><span class="aligned">Same model</span></td>
+  <td class="cx cx-bad">O(n) contains*</td>
+  <td class="cx cx-good">O(log n) contains</td>
+  <td>Xudanu faster</td>
+</tr>
+<tr>
+  <td><strong>Canopy filtering</strong></td>
+  <td>Balanced binary canopy + flags + cache</td>
+  <td>Balanced binary canopy + flags (no cache)</td>
+  <td><span class="partial">Partial</span></td>
+  <td class="cx cx-same">O(1) flag check</td>
+  <td class="cx cx-same">O(1) flag check</td>
+  <td>Gold has cache</td>
+</tr>
+<tr>
+  <td><strong>Backfollow query</strong></td>
+  <td>Persistent recorders + incremental</td>
+  <td>On-demand index + DAG walk</td>
+  <td><span class="diverged">Diverged</span></td>
+  <td class="cx cx-ok">O(V+E) amortized</td>
+  <td class="cx cx-ok">O(V+E) per query</td>
+  <td>Gold incremental</td>
+</tr>
+<tr>
+  <td><strong>Transclusion model</strong></td>
+  <td>Structural (shared subtrees)</td>
+  <td>Inline elements (references)</td>
+  <td><span class="diverged">Diverged</span></td>
+  <td class="cx cx-good">O(1) share</td>
+  <td class="cx cx-same">O(d) resolve</td>
+  <td>Different trade-offs</td>
+</tr>
+<tr>
+  <td><strong>Version DAG</strong></td>
+  <td>DagWood + TracePosition + cache</td>
+  <td>DagWood + TracePosition + cache</td>
+  <td><span class="aligned">Direct port</span></td>
+  <td class="cx cx-same">O(h) compare</td>
+  <td class="cx cx-same">O(h) compare</td>
+  <td>Equivalent</td>
+</tr>
+<tr>
+  <td><strong>Diff / merge</strong></td>
+  <td>LCS (Miller-Myers O(ND))</td>
+  <td>Fingerprint alignment + 3-way</td>
+  <td><span class="diverged">Diverged</span></td>
+  <td class="cx cx-bad">O(ND)</td>
+  <td class="cx cx-good">O(n) fingerprint</td>
+  <td>Xudanu faster</td>
+</tr>
+<tr>
+  <td><strong>Links</strong></td>
+  <td>FeHyperLink multi-ended</td>
+  <td>HyperLink multi-ended</td>
+  <td><span class="aligned">Same model</span></td>
+  <td class="cx cx-same">O(1) create</td>
+  <td class="cx cx-same">O(1) create</td>
+  <td>Equivalent</td>
+</tr>
+<tr>
+  <td><strong>Identity merge</strong></td>
+  <td>makeIdentical + become</td>
+  <td>make_range_identical</td>
+  <td><span class="aligned">Same concept</span></td>
+  <td class="cx cx-ok">O(n) redirect</td>
+  <td class="cx cx-ok">O(n) redirect</td>
+  <td>Equivalent</td>
+</tr>
+<tr>
+  <td><strong>Search</strong></td>
+  <td>Within-document scan</td>
+  <td>Within-doc + global cross-work</td>
+  <td><span class="aligned">Xudanu superset</span></td>
+  <td class="cx cx-bad">O(n) scan</td>
+  <td class="cx cx-bad">O(n) scan</td>
+  <td>Equivalent</td>
+</tr>
+<tr>
+  <td><strong>Storage</strong></td>
+  <td>SnarfPacker + Urdi (versioned)</td>
+  <td>Chunk store + WAL + manifest</td>
+  <td><span class="diverged">Diverged</span></td>
+  <td class="cx cx-same">O(1) write</td>
+  <td class="cx cx-same">O(1) write</td>
+  <td>Different models</td>
+</tr>
+<tr>
+  <td><strong>Protocol</strong></td>
+  <td>Custom binary (Recipe/Cookbook)</td>
+  <td>Postcard + JSON over WS/HTTP</td>
+  <td><span class="diverged">Diverged</span></td>
+  <td class="cx cx-same">O(n) serialize</td>
+  <td class="cx cx-same">O(n) serialize</td>
+  <td>Equivalent cost</td>
+</tr>
+<tr>
+  <td><strong>Crypto</strong></td>
+  <td>Pluggable Encrypter/Scrambler</td>
+  <td>Ed25519 + BLAKE3 + ChaCha20 + Argon2</td>
+  <td><span class="diverged">Xudanu superset</span></td>
+  <td class="cx cx-ok">O(1) per op</td>
+  <td class="cx cx-ok">O(1) per op</td>
+  <td>Xudanu stronger</td>
+</tr>
+</table>
+
+<p style="font-size:11px;color:#484f58">* Gold's IntegerRegion <code>hasMember</code> should be O(log n) binary search but is actually O(n) linear scan &mdash; the only explicit O() confession in the codebase: <em>"Currently many of the methods which could be doing an O(log) binary search (such as hasMember) are instead doing a linear search. This will be fixed if it turns out to be a problem in practice."</em></p>
+
+<!-- ==================== CORE DATA STRUCTURE ==================== -->
+
+<h2 id="s2">2. Core Data Structure: Enfilade vs. O-Tree CRDT</h2>
+
+<table>
+<tr>
+  <th style="width:20%">&nbsp;</th>
+  <th style="width:38%">Gold: Enfilade (Loaf tree)</th>
+  <th style="width:42%">Xudanu: OrglRoot (Loaf tree + CRDT)</th>
+</tr>
+<tr>
+  <td><strong>Node types</strong></td>
+  <td><code>Leaf</code> (sorted entries + default), <code>Split</code> (region partition: in/out children), <code>Dsp</code> (displacement/offset)</td>
+  <td><code>Leaf</code> (sorted entries + optional default), <code>Split</code> (region partition: in/out children), <code>Dsp</code> (displacement)</td>
+</tr>
+<tr>
+  <td><strong>Max leaf size</strong></td>
+  <td>Configurable (recipe-driven)</td>
+  <td><code>MAX_LEAF_SIZE = 16384</code></td>
+</tr>
+<tr>
+  <td><strong>Infinite editions</strong></td>
+  <td>Yes &mdash; default values on leaves</td>
+  <td>Yes &mdash; <code>with_default</code> on leaves</td>
+</tr>
+<tr>
+  <td><strong>Concurrency</strong></td>
+  <td>None &mdash; lock-based work grabbing</td>
+  <td class="accent-green">CRDT &mdash; concurrent edits merge automatically via three-way diff</td>
+</tr>
+<tr>
+  <td><strong>fetch(position)</strong></td>
+  <td class="cx cx-same">O(log n) &mdash; tree descent</td>
+  <td class="cx cx-same">O(log n) &mdash; tree descent</td>
+</tr>
+<tr>
+  <td><strong>with(position, element)</strong></td>
+  <td class="cx cx-same">O(log n) &mdash; insert + possible split</td>
+  <td class="cx cx-same">O(log n) &mdash; insert + possible split</td>
+</tr>
+<tr>
+  <td><strong>without(region)</strong></td>
+  <td class="cx cx-same">O(log n) amortized &mdash; splay + remove</td>
+  <td class="cx cx-same">O(log n) amortized</td>
+</tr>
+<tr>
+  <td><strong>combine(other)</strong></td>
+  <td class="cx cx-same">O(n) &mdash; merge all entries</td>
+  <td class="cx cx-same">O(n) &mdash; merge all entries</td>
+</tr>
+<tr>
+  <td><strong>copy(region)</strong></td>
+  <td class="cx cx-same">O(k log n) &mdash; splay + extract k entries</td>
+  <td class="cx cx-same">O(k log n)</td>
+</tr>
+<tr>
+  <td><strong>transformedBy(dsp)</strong></td>
+  <td class="cx cx-same">O(1) &mdash; wrap in Dsp node</td>
+  <td class="cx cx-same">O(1) &mdash; wrap in Dsp node</td>
+</tr>
+<tr>
+  <td><strong>all_entries()</strong></td>
+  <td class="cx cx-bad">O(n) &mdash; full traversal</td>
+  <td class="cx cx-bad">O(n) &mdash; full traversal (cached after first call)</td>
+</tr>
+<tr>
+  <td><strong>Memory sharing</strong></td>
+  <td class="accent-amber">Subtree sharing via identity &mdash; two editions can point at the same enfilade nodes</td>
+  <td>No sharing &mdash; each edition has its own tree</td>
+</tr>
+</table>
+
+<div class="gold">
+<strong>Gold advantage:</strong> Subtree sharing means that if two versions differ by one character, only that character's nodes are duplicated &mdash; the rest is shared memory. Xudanu stores each revision as a full snapshot (chunk), so version-to-version diffing is O(n) to materialize rather than O(1) to share.
+</div>
+
+<!-- ==================== SPLAY ==================== -->
+
+<h2 id="s3">3. Splay Operations</h2>
+
+<p>Both systems use "splaying" &mdash; restructuring the tree so each child is fully inside or outside a query region, enabling O(log n) region-scoped operations.</p>
+
+<table>
+<tr>
+  <th>&nbsp;</th>
+  <th>Gold</th>
+  <th>Xudanu</th>
+</tr>
+<tr>
+  <td><strong>Algorithm</strong></td>
+  <td>9-case transformation table for SplitLoaf rotations (swap, rotateLeft, rotateRight, interleave). Documented in <code>loavesx.cxx</code> lines 2627-2640.</td>
+  <td><code>SplayResult</code> struct with region split into in/out halves. Simpler case analysis &mdash; the Rust enum exhaustiveness check eliminates the invalid combinations that Gold's 9 cases handle.</td>
+</tr>
+<tr>
+  <td><strong>splay(region)</strong></td>
+  <td class="cx cx-same">O(log n) expected</td>
+  <td class="cx cx-same">O(log n) expected</td>
+</tr>
+<tr>
+  <td><strong>Balancing</strong></td>
+  <td>Adaptive &mdash; tree shape depends on access patterns. Known inefficiency: <code>"This should be splaying!"</code> in <code>fetchBottomAt</code> and <code>getBe</code>; <code>"This desperately needs to splay"</code> in <code>BeEdition</code>.</td>
+  <td>On-insert balancing via sorted leaf maintenance. No known splay gaps.</td>
+</tr>
+<tr>
+  <td><strong>Known debt</strong></td>
+  <td class="accent-red">2 confirmed missing splay calls (efficiency bugs); <code>OrglRoot::make</code> builds unbalanced tree ("Hack!!! This should make a balanced tree directly")</td>
+  <td>None identified</td>
+</tr>
+</table>
+
+<!-- ==================== REGION ALGEBRA ==================== -->
+
+<h2 id="s4">4. Region Algebra (Position/Region/Dsp)</h2>
+
+<p>Both systems implement the same "space algebra" &mdash; positions, regions (sets of positions), and displacements (bijective transforms). This is the mathematical foundation for all addressing.</p>
+
+<table>
+<tr>
+  <th>&nbsp;</th>
+  <th>Gold</th>
+  <th>Xudanu</th>
+</tr>
+<tr>
+  <td><strong>Representation</strong></td>
+  <td>IntegerRegion: sorted disjoint interval list</td>
+  <td>XnRegion: sorted transition list with <code>starts_inside</code> flag (supports infinite regions natively)</td>
+</tr>
+<tr>
+  <td><strong>contains(pos)</strong></td>
+  <td class="cx cx-bad">O(n) &mdash; <em>"linear search. This will be fixed"</em></td>
+  <td class="cx cx-good">O(log n) &mdash; binary search on transition list</td>
+</tr>
+<tr>
+  <td><strong>union / intersect</strong></td>
+  <td class="cx cx-ok">O(n+m) &mdash; merge sorted intervals</td>
+  <td class="cx cx-ok">O(n+m) &mdash; merge transition lists</td>
+</tr>
+<tr>
+  <td><strong>complement</strong></td>
+  <td class="cx cx-same">O(1) &mdash; flip starts_inside</td>
+  <td class="cx cx-same">O(1) &mdash; flip starts_inside</td>
+</tr>
+<tr>
+  <td><strong>shift(dsp)</strong></td>
+  <td class="cx cx-same">O(n)</td>
+  <td class="cx cx-same">O(n)</td>
+</tr>
+<tr>
+  <td><strong>Infinite regions</strong></td>
+  <td>Yes &mdash; via default flag on intervals</td>
+  <td>Yes &mdash; via <code>above()</code>, <code>below()</code>, <code>full()</code></td>
+</tr>
+<tr>
+  <td><strong>Mapping (version comparison)</strong></td>
+  <td>Composite mappings with inverse &mdash; <em>"can this be done more efficiently?"</em> comment on inverse</td>
+  <td>Mapping enum (Empty/Simple/Composite) with inverse &mdash; no known debt</td>
+</tr>
+</table>
+
+<div class="note">
+<strong>Xudanu advantage:</strong> Xudanu's <code>XnRegion</code> uses binary search for <code>contains</code> while Gold's <code>IntegerRegion</code> confesses to linear scan. For large documents (10K+ positions), this is a significant difference in hot paths like span lookup.
+</div>
+
+<!-- ==================== CANOPY ==================== -->
+
+<h2 id="s5">5. Canopy System (Endorsement/Permission Filtering)</h2>
+
+<p>The canopy is a balanced binary tree that aggregates endorsement/permission flags upward, enabling O(1) filter checks to prune subtrees during queries. <strong>Xudanu does use the canopy</strong> &mdash; it was directly ported from Gold and is live in the production backfollow path.</p>
+
+<table>
+<tr>
+  <th>&nbsp;</th>
+  <th>Gold</th>
+  <th>Xudanu</th>
+</tr>
+<tr>
+  <td><strong>Tree type</strong></td>
+  <td>Accreting balanced binary tree (no rebalancing)</td>
+  <td>Accreting balanced binary tree (no rebalancing)</td>
+</tr>
+<tr>
+  <td><strong>Flag encoding</strong></td>
+  <td>32-bit flag word: public club bit, "other clubs" bit, up to 23 endorsement bits, sensor/not-partializable bits</td>
+  <td>32-bit flag word: same encoding (<code>BertProp</code>, <code>SensorProp</code>, <code>PropFinder</code>)</td>
+</tr>
+<tr>
+  <td><strong>Flag check</strong></td>
+  <td class="cx cx-same">O(1) &mdash; single bitwise OR + test</td>
+  <td class="cx cx-same">O(1) &mdash; single bitwise OR + test (<code>PropFinder::does_pass</code>)</td>
+</tr>
+<tr>
+  <td><strong>Flag propagation</strong></td>
+  <td class="cx cx-ok">O(h) to root, early-exit on no-change</td>
+  <td class="cx cx-ok">O(h) to root, early-exit on no-change (<code>propagate_flags</code>)</td>
+</tr>
+<tr>
+  <td><strong>computeJoin</strong></td>
+  <td class="cx cx-ok">O(h) worst, O(h&sup2;) if isLE called twice</td>
+  <td class="cx cx-ok">O(h) worst, O(h&sup2;) if isLE called twice</td>
+</tr>
+<tr>
+  <td><strong>Canopy cache</strong></td>
+  <td class="accent-amber"><code>CanopyCache</code> &mdash; caches path lookups and root-finding for repeated queries</td>
+  <td class="accent-red">No cache &mdash; <code>CanopyCacheInner</code> is defined but <strong>unused</strong> (scaffolding only)</td>
+</tr>
+<tr>
+  <td><strong>walk_northward</strong></td>
+  <td>Live &mdash; the canopy's own traversal engine</td>
+  <td class="accent-red">Defined but <strong>unused</strong> &mdash; query walk goes through <code>HUpperCrumData::delayed_store_backfollow</code> instead</td>
+</tr>
+<tr>
+  <td><strong>Exhaustive fallback</strong></td>
+  <td>O(n) scan for criteria without dedicated flag bits</td>
+  <td>O(n) scan for criteria without dedicated flag bits</td>
+</tr>
+<tr>
+  <td><strong>Height maintenance</strong></td>
+  <td>Live (<code>PropChanger</code>, <code>HeightChanger</code>)</td>
+  <td class="accent-red">Defined but unused (<code>propagate_height</code>, <code>change_height</code>)</td>
+</tr>
+</table>
+
+<div class="warning">
+<strong>Gap: Canopy cache is unused.</strong> Gold's <code>CanopyCache</code> caches path lookups (<code>pathFor</code>, <code>rootFor</code>) so repeated queries on the same subtree are O(1) instead of O(h). Xudanu has the cache structure defined (<code>CanopyCacheInner</code>) but it's never called in production &mdash; only in unit tests. For workloads with many repeated transclusion queries, this could be a performance gap. <strong>Recommendation: wire up the canopy cache or add an LRU cache on path lookups.</strong>
+</div>
+
+<div class="gold">
+<strong>Gold note from Ravi (12/2/92):</strong> <em>"Any interesting Club or endorsement gets a bit, and there is a bit for 'any other Club' and 'any other endorsement'. Any criteria not given a bit of their own require an exhaustive search. When we start using more sophisticated hashing strategies, we will probably need to reanimate PropJoints."</em> &mdash; Both systems share this limitation.
+</div>
+
+<!-- ==================== BACKFOLLOW ==================== -->
+
+<h2 id="s6">6. Backfollow / Transclusion Query Engine</h2>
+
+<p>This is the signature Xanadu algorithm: "find all documents that contain this content." Both systems implement it, but with very different approaches to persistence and incrementality.</p>
+
+<table>
+<tr>
+  <th>&nbsp;</th>
+  <th>Gold</th>
+  <th>Xudanu</th>
+</tr>
+<tr>
+  <td><strong>Query model</strong></td>
+  <td><strong>Persistent recorders</strong> &mdash; a query is planted in the sensor canopy and stays there, incrementally updating as new content is added. Survives server restart via <code>RecorderFossil</code>.</td>
+  <td><strong>On-demand index</strong> &mdash; <code>TransclusionIndex</code> (HashMap) is queried fresh each time. Results are computed by walking the DAG.</td>
+</tr>
+<tr>
+  <td><strong>Algorithm</strong></td>
+  <td>Two-phase: (1) "future" &mdash; plant recorders + propagate filter props rootward; (2) "now" &mdash; southward O-tree walk then northward H-tree walk, both canopy-filtered</td>
+  <td>Single-phase: look up content fingerprint in index, then walk hcrum DAG via <code>delayed_store_backfollow</code> with canopy flag pruning</td>
+</tr>
+<tr>
+  <td><strong>find_transcluders(fingerprint)</strong></td>
+  <td class="cx cx-ok">O(V+E) first query, <strong>O(1) incremental</strong> for subsequent updates</td>
+  <td class="cx cx-ok">O(V+E) every query (DAG walk with visited-set)</td>
+</tr>
+<tr>
+  <td><strong>Incremental updates</strong></td>
+  <td class="accent-green">Yes &mdash; recorders fire automatically when new matching content is added</td>
+  <td class="accent-red">No &mdash; must re-query</td>
+</tr>
+<tr>
+  <td><strong>Persistence</strong></td>
+  <td class="accent-green"><code>RecorderFossil</code> survives restart &mdash; query state is on disk</td>
+  <td class="accent-red">Index is rebuilt on restore &mdash; query state is ephemeral</td>
+</tr>
+<tr>
+  <td><strong>Bounded cache</code></strong></td>
+  <td><code>HashSetCache(100)</code> &mdash; deliberately bounded; "redundant work is still correct"</td>
+  <td><code>HashSet&lt;u32&gt;</code> visited-set per query (unbounded within a single query)</td>
+</tr>
+<tr>
+  <td><strong>Async / chunked</strong></td>
+  <td class="accent-green">Yes &mdash; <code>AgendaItem</code> system chunks work across server loop iterations; "spawns unbounded work"</td>
+  <td>Synchronous within request &mdash; no async query processing</td>
+</tr>
+<tr>
+  <td><strong>Canopy pruning</strong></td>
+  <td>Yes &mdash; <code>PropFinder::pass()</code> prunes subtrees during walk</td>
+  <td>Yes &mdash; same <code>PropFinder::pass()</code> pruning in <code>delayed_store_backfollow</code></td>
+</tr>
+</table>
+
+<div class="warning">
+<strong>Biggest architectural gap: persistent incremental queries.</strong> Gold's recorder system meant that a transclusion query was a <em>living index</em> &mdash; once planted, it updated automatically as new content arrived. Xudanu recomputes queries on demand. For a system with millions of documents and many transclusion relationships, Gold's approach scales better because it amortizes the query cost over time.
+
+<strong>Recommendation:</strong> If Xudanu needs to scale transclusion queries, the <code>RecorderFossil</code> pattern from Gold is worth studying &mdash; plant persistent queries that fire incrementally rather than scanning on demand.
+</div>
+
+<!-- ==================== TRANSCLUSION MODEL ==================== -->
+
+<h2 id="s7">7. Transclusion Model</h2>
+
+<table>
+<tr>
+  <th>&nbsp;</th>
+  <th>Gold</th>
+  <th>Xudanu</th>
+</tr>
+<tr>
+  <td><strong>How content is shared</strong></td>
+  <td><strong>Structural</strong> &mdash; <code>BePlaceHolder.makeIdentical()</code> merges element identity so two editions point at the same underlying content. Memory is shared at the tree level.</td>
+  <td><strong>Referential</strong> &mdash; <code>RangeElement::Transclusion { source_work_id, char_start, char_end }</code> stores a reference inline. Content is resolved on read.</td>
+</tr>
+<tr>
+  <td><strong>Create transclusion</strong></td>
+  <td class="cx cx-good">O(1) &mdash; identity merge, no copy</td>
+  <td class="cx cx-same">O(1) &mdash; insert reference element</td>
+</tr>
+<tr>
+  <td><strong>Resolve (read content)</strong></td>
+  <td class="cx cx-good">O(1) &mdash; already points to shared content</td>
+  <td class="cx cx-ok">O(d) &mdash; recursive fetch up to 32 levels, with cycle detection</td>
+</tr>
+<tr>
+  <td><strong>Memory efficiency</strong></td>
+  <td class="accent-green">Excellent &mdash; 100 copies of a paragraph cost O(1) memory</td>
+  <td class="accent-amber">Moderate &mdash; each reference stores (work_id, start, end); resolved content is cached separately</td>
+</tr>
+<tr>
+  <td><strong>Span migration</strong></td>
+  <td>Automatic &mdash; shared subtree means edits propagate to all views</td>
+  <td>O-tree positions survive edits; references store positions, not text. <code>map_span_through_delta</code> migrates.</td>
+</tr>
+<tr>
+  <td><strong>Version awareness</strong></td>
+  <td>Inherent &mdash; the H-tree connects all versions; transclusion queries span versions automatically</td>
+  <td>Revision-specific &mdash; each revision is a snapshot; cross-version transclusion requires explicit query</td>
+</tr>
+<tr>
+  <td><strong>Cross-server</strong></td>
+  <td>Theoretical &mdash; all servers share the same protocol</td>
+  <td class="accent-green">Functional &mdash; <code>CrossServerRef</code> with BLAKE3 hash verification + Ed25519 TOFU trust</td>
+</tr>
+</table>
+
+<div class="note">
+<strong>Different trade-offs, both valid.</strong> Gold's structural sharing is more memory-efficient and makes version-spanning queries natural, but requires a single-server memory model. Xudanu's referential model works better with CRDTs (you can't structurally share across concurrent edit sessions) and enables cross-server transclusion via hash verification.
+</div>
+
+<!-- ==================== VERSION MANAGEMENT ==================== -->
+
+<h2 id="s8">8. Version Management &amp; DAG</h2>
+
+<table>
+<tr>
+  <th>&nbsp;</th>
+  <th>Gold</th>
+  <th>Xudanu</th>
+</tr>
+<tr>
+  <td><strong>Version DAG</strong></td>
+  <td><code>DagWood</code> with <code>BranchDescription</code> (Root/Tree/Dag for merges)</td>
+  <td><code>DagWood</code> with <code>BranchStore</code> (direct port)</td>
+</tr>
+<tr>
+  <td><strong>Position comparison</strong></td>
+  <td><code>TracePosition::isLE</code> with cached nav table</td>
+  <td><code>TracePosition::isLE</code> with cached nav table</td>
+</tr>
+<tr>
+  <td><strong>isLE(a, b)</strong></td>
+  <td class="cx cx-same">O(h) first call, O(1) cached</td>
+  <td class="cx cx-same">O(h) first call, O(1) cached</td>
+</tr>
+<tr>
+  <td><strong>Revision storage</strong></td>
+  <td class="accent-green">Differential &mdash; only changed nodes stored; shared subtrees reused</td>
+  <td class="accent-amber">Snapshot &mdash; each revision serialized to its own chunk</td>
+</tr>
+<tr>
+  <td><strong>fetch_revision(n)</strong></td>
+  <td class="cx cx-good">O(diff) &mdash; walk shared tree, apply delta</td>
+  <td class="cx cx-ok">O(n) &mdash; deserialize full snapshot from chunk store</td>
+</tr>
+<tr>
+  <td><strong>Three-way merge</strong></td>
+  <td>Via <code>combine</code> on orgls (enfilade merge)</td>
+  <td><code>three_way_merge</code> &mdash; fingerprint alignment + LWW strategy</td>
+</tr>
+<tr>
+  <td><strong>Intercomparison</strong></td>
+  <td class="accent-green">Yes &mdash; side-by-side visual document comparison with visible connections</td>
+  <td>Has <code>shared_region</code>, <code>jaccard_similarity</code>, <code>content_shared_region</code> &mdash; algorithmic foundation exists but no visual side-by-side UI</td>
+</tr>
+</table>
+
+<div class="gold">
+<strong>Gold advantage: differential revisions.</strong> Gold's enfilade means revision 100 only stores what changed from revision 99 &mdash; O(diff) to fetch. Xudanu stores full snapshots, so fetching revision 100 is O(document_size) regardless of how much changed. For documents with long revision histories, Gold is more storage-efficient.
+
+<strong>Recommendation:</strong> Consider delta-compressed chunk storage for revisions: store revision 0 as a full snapshot, and subsequent revisions as deltas. This would bring Xudanu's storage efficiency closer to Gold's without changing the CRDT model.
+</div>
+
+<!-- ==================== DIFF / MERGE ==================== -->
+
+<h2 id="s9">9. Diff / Merge / Comparison</h2>
+
+<table>
+<tr>
+  <th>&nbsp;</th>
+  <th>Gold</th>
+  <th>Xudanu</th>
+</tr>
+<tr>
+  <td><strong>Diff algorithm</strong></td>
+  <td>Miller-Myers LCS (from <em>"A File Comparison Program"</em>, Software Practice &amp; Experience, 1985)</td>
+  <td>Content-fingerprint seed matching + segment alignment</td>
+</tr>
+<tr>
+  <td><strong>diff(a, b)</strong></td>
+  <td class="cx cx-bad">O(ND) where N=total size, D=edit distance</td>
+  <td class="cx cx-good">O(n) &mdash; hash-based fingerprint matching</td>
+</tr>
+<tr>
+  <td><strong>Three-way merge</strong></td>
+  <td>Via enfilade combine with conflict detection</td>
+  <td class="cx cx-good">O(n) fingerprint alignment, LWW conflict resolution, produces merged edition + mappings</td>
+</tr>
+<tr>
+  <td><strong>shared_region(a, b)</strong></td>
+  <td class="cx cx-same">O(n) tree comparison</td>
+  <td class="cx cx-same">O(n) entry list comparison</td>
+</tr>
+<tr>
+  <td><strong>jaccard_similarity</strong></td>
+  <td>N/A</td>
+  <td class="cx cx-good">O(n) word-set comparison (stop words filtered)</td>
+</tr>
+<tr>
+  <td><strong>Visual comparison</strong></td>
+  <td class="accent-green">Transpointing windows &mdash; side-by-side with visible connections (Declaration of Independence demo)</td>
+  <td>Revision timeline UI; comparison viewer for 2-3 versions</td>
+</tr>
+</table>
+
+<!-- ==================== LINKS ==================== -->
+
+<h2 id="s10">10. Link Operations</h2>
+
+<table>
+<tr>
+  <th>&nbsp;</th>
+  <th>Gold</th>
+  <th>Xudanu</th>
+</tr>
+<tr>
+  <td><strong>Link model</strong></td>
+  <td><code>FeHyperLink</code> with named ends ("LeftEnd", "RightEnd"), multi-ended</td>
+  <td><code>HyperLink</code> with named ends, multi-ended (same model)</td>
+</tr>
+<tr>
+  <td><strong>Link types</strong></td>
+  <td>Unidirectional links</td>
+  <td>6 built-in types (Comment, Reference, Disagreement, Quotation, See Also, Web Link)</td>
+</tr>
+<tr>
+  <td><strong>create_link</strong></td>
+  <td class="cx cx-same">O(1)</td>
+  <td class="cx cx-same">O(1)</td>
+</tr>
+<tr>
+  <td><strong>list_links(work)</strong></td>
+  <td class="cx cx-same">O(k) where k = links for this work</td>
+  <td class="cx cx-same">O(k)</td>
+</tr>
+<tr>
+  <td><strong>find_backlinks(work)</strong></td>
+  <td class="cx cx-same">O(k)</td>
+  <td class="cx cx-same">O(k) + cross-server backlinks via HTTP</td>
+</tr>
+<tr>
+  <td><strong>Span migration</strong></td>
+  <td>Via enfilade positions</td>
+  <td>O-tree positions + <code>resolveMarkerPositions</code> with excerpt fallback</td>
+</tr>
+<tr>
+  <td><strong>Provenance chain</strong></td>
+  <td><code>again()</code> recursive walk</td>
+  <td><code>transclusion_again_chain</code> &mdash; 32-level with cycle detection</td>
+</tr>
+</table>
+
+<!-- ==================== IDENTITY MERGING ==================== -->
+
+<h2 id="s11">11. Identity Merging / Deduplication</h2>
+
+<table>
+<tr>
+  <th>&nbsp;</th>
+  <th>Gold</th>
+  <th>Xudanu</th>
+</tr>
+<tr>
+  <td><strong>Mechanism</strong></td>
+  <td><code>makeIdentical</code> / <code>tryAllBecome</code> &mdash; merges a PlaceHolder's identity into another element. All pointers to the old element automatically see the new one.</td>
+  <td><code>make_range_identical</code> &mdash; rebinding labels to unify element identity</td>
+</tr>
+<tr>
+  <td><strong>makeIdentical(a, b)</strong></td>
+  <td class="cx cx-ok">O(n) &mdash; redirect all references to a&rarr;b</td>
+  <td class="cx cx-ok">O(n) &mdash; redirect labels</td>
+</tr>
+<tr>
+  <td><strong>Content dedup index</strong></td>
+  <td>Via <code>GrandMap</code> ID&rarr;element mapping</td>
+  <td>Via <code>content_address.rs</code> fingerprint&rarr;BeId index</td>
+</tr>
+</table>
+
+<!-- ==================== SEARCH ==================== -->
+
+<h2 id="s12">12. Search</h2>
+
+<table>
+<tr>
+  <th>&nbsp;</th>
+  <th>Gold</th>
+  <th>Xudanu</th>
+</tr>
+<tr>
+  <td><strong>Within-document</strong></td>
+  <td class="cx cx-bad">O(n) scan</td>
+  <td class="cx cx-bad">O(n) scan (<code>search_text</code>)</td>
+</tr>
+<tr>
+  <td><strong>Cross-document</strong></td>
+  <td>N/A</td>
+  <td class="cx cx-ok">O(W&times;L) global text search (W works &times; avg length), with context snippets</td>
+</tr>
+<tr>
+  <td><strong>Source detection</strong></td>
+  <td>N/A</td>
+  <td class="cx cx-good">O(L) MinHash similarity matching (<code>source_matcher.rs</code>)</td>
+</tr>
+<tr>
+  <td><strong>Outline extraction</strong></td>
+  <td>N/A</td>
+  <td class="cx cx-ok">O(n) line scan for headings/sections</td>
+</tr>
+</table>
+
+<!-- ==================== STORAGE ==================== -->
+
+<h2 id="s13">13. Storage &amp; Persistence</h2>
+
+<table>
+<tr>
+  <th>&nbsp;</th>
+  <th>Gold</th>
+  <th>Xudanu</th>
+</tr>
+<tr>
+  <td><strong>Storage engine</strong></td>
+  <td><code>Urdi</code> &mdash; append-only versioned storage with crash recovery</td>
+  <td>Chunk store (BLAKE3-addressed) + WAL (JSON append-only) + manifest (JSON)</td>
+</tr>
+<tr>
+  <td><strong>Packing</strong></td>
+  <td><code>SnarfPacker</code> &mdash; assigns objects to "snarfs" (disk blocks), forwarding, atomic commits</td>
+  <td><code>packer.rs</code> &mdash; similar snarf model (adapted from Gold)</td>
+</tr>
+<tr>
+  <td><strong>Atomic commits</strong></td>
+  <td><code>BEGIN_CONSISTENT</code> / <code>END_CONSISTENT</code> transactions with dirty-flock accounting</td>
+  <td>WAL entries replayed on startup; checkpoint to chunks</td>
+</tr>
+<tr>
+  <td><strong>Garbage collection</strong></td>
+  <td>Generation-scavenging GC for in-memory; disk GC for orphaned snarfs</td>
+  <td>Chunk GC removes orphaned chunks on checkpoint</td>
+</tr>
+<tr>
+  <td><strong>write</strong></td>
+  <td class="cx cx-same">O(1) amortized</td>
+  <td class="cx cx-same">O(1) amortized</td>
+</tr>
+<tr>
+  <td><strong>checkpoint</strong></td>
+  <td class="cx cx-ok">O(n) all dirty objects</td>
+  <td class="cx cx-ok">O(n) all dirty works/clubs/editions</td>
+</tr>
+<tr>
+  <td><strong>restore</strong></td>
+  <td class="cx cx-ok">O(n) from Urdi view</td>
+  <td class="cx cx-ok">O(n) from manifest + chunks + WAL replay</td>
+</tr>
+<tr>
+  <td><strong>Object stubbing</strong></td>
+  <td class="accent-green">Yes &mdash; objects "become" stubs when purged; reconstituted on demand</td>
+  <td>No &mdash; full deserialization from chunks</td>
+</tr>
+</table>
+
+<div class="gold">
+<strong>Gold advantage: object stubbing.</strong> Gold's persistence layer can "stub out" infrequently accessed objects &mdash; they become placeholders that are transparently reconstituted from disk when accessed. This acts as an automatic memory hierarchy: hot objects stay in RAM, cold objects are stubs. Xudanu deserializes full objects from chunks. For very large document sets, Gold's stubbing would reduce memory pressure.
+
+<strong>Recommendation:</strong> If memory becomes an issue, consider lazy-loading edition content: store a stub (just the chunk hash + metadata) in memory, and deserialize entries on first <code>fetch()</code> call.
+</div>
+
+<!-- ==================== PROTOCOL ==================== -->
+
+<h2 id="s14">14. Protocol &amp; Networking</h2>
+
+<table>
+<tr>
+  <th>&nbsp;</th>
+  <th>Gold</th>
+  <th>Xudanu</th>
+</tr>
+<tr>
+  <td><strong>Transport</strong></td>
+  <td>TCP with custom framing (Portal/Socket)</td>
+  <td>HTTP + WebSocket (Axum) + TLS (rustls)</td>
+</tr>
+<tr>
+  <td><strong>Serialization</strong></td>
+  <td>Recipe/Cookbook object graph encoding (binary or textual)</td>
+  <td>Postcard (binary) + serde_json (human-facing)</td>
+</tr>
+<tr>
+  <td><strong>Request dispatch</strong></td>
+  <td>2,596-line handler table in <code>handlrsx.hxx</code></td>
+  <td>4,338-line dispatch in <code>dispatch.rs</code> (~200+ ops)</td>
+</tr>
+<tr>
+  <td><strong>Async I/O</strong></td>
+  <td>ServerChunk cooperative multitasking (run + yield)</td>
+  <td>Tokio async runtime (true preemptive multitasking)</td>
+</tr>
+<tr>
+  <td><strong>serialize(obj)</strong></td>
+  <td class="cx cx-same">O(n) in object graph size</td>
+  <td class="cx cx-same">O(n) in object size</td>
+</tr>
+<tr>
+  <td><strong>Cross-server</strong></td>
+  <td>Theoretical &mdash; required peer servers to speak full Xanadu protocol</td>
+  <td class="accent-green">Functional &mdash; HTTP fetch + BLAKE3 + Ed25519 TOFU + SSRF protection</td>
+</tr>
+<tr>
+  <td><strong>Session auth</strong></td>
+  <td>MatchLock (password), ChallengeLock (public-key), MultiLock (composite), BooLock (open), WallLock (closed)</td>
+  <td>Same 5 lock types (<code>lock.rs</code>) + OAuth2 (GitHub, Google) + CSRF tokens</td>
+</tr>
+</table>
+
+<!-- ==================== CRYPTO ==================== -->
+
+<h2 id="s15">15. Cryptography</h2>
+
+<table>
+<tr>
+  <th>&nbsp;</th>
+  <th>Gold</th>
+  <th>Xudanu</th>
+</tr>
+<tr>
+  <td><strong>Encryption</strong></td>
+  <td><code>Encrypter</code> &mdash; pluggable public-key (RSA by name registration)</td>
+  <td>ChaCha20-Poly1305 AEAD (<code>aead.rs</code>)</td>
+</tr>
+<tr>
+  <td><strong>Hashing</strong></td>
+  <td><code>Scrambler</code> &mdash; pluggable one-way hash (Snefru by name)</td>
+  <td>BLAKE3 (content addressing, attribution signatures, KDF)</td>
+</tr>
+<tr>
+  <td><strong>Signatures</strong></td>
+  <td>N/A</td>
+  <td class="accent-green">Ed25519 per-author attribution + span-level signing</td>
+</tr>
+<tr>
+  <td><strong>KDF</strong></td>
+  <td>N/A</td>
+  <td class="accent-green">BLAKE3-based domain-separated KDF + Argon2 password hashing</td>
+</tr>
+<tr>
+  <td><strong>Key exchange</strong></td>
+  <td>N/A</td>
+  <td class="accent-green">X25519 ephemeral key exchange</td>
+</tr>
+<tr>
+  <td><strong>Content verification</strong></td>
+  <td>None &mdash; trusted the server</td>
+  <td class="accent-green">BLAKE3 hash on every cross-server fetch (forgery impossible)</td>
+</tr>
+<tr>
+  <td><strong>Audit trail</strong></td>
+  <td>N/A</td>
+  <td class="accent-green">Chained security log (tamper-evident, <code>security.log.*</code>)</td>
+</tr>
+<tr>
+  <td><strong>Trust model</strong></td>
+  <td>Implicit server-to-server trust</td>
+  <td class="accent-green">Ed25519 TOFU (Trust On First Use) &mdash; like SSH known_hosts</td>
+</tr>
+</table>
+
+<!-- ==================== WHAT GOLD OFFERS ==================== -->
+
+<h2 id="s16">16. What Gold Still Offers</h2>
+
+<p>After this detailed comparison, here is what Gold has that Xudanu could still learn from:</p>
+
+<table>
+<tr>
+  <th style="width:25%">Feature</th>
+  <th style="width:10%">Status in Xudanu</th>
+  <th style="width:35%">Gold's approach</th>
+  <th style="width:30%">Recommendation</th>
+</tr>
+<tr>
+  <td><strong>Persistent incremental backfollow</strong></td>
+  <td><span class="partial">On-demand only</span></td>
+  <td><code>RecorderFossil</code> + <code>AgendaItem</code> system plants persistent queries that fire incrementally as new content arrives</td>
+  <td>Study for scaling transclusion queries to large docuverse</td>
+</tr>
+<tr>
+  <td><strong>Canopy path cache</strong></td>
+  <td><span class="diverged">Unused</span></td>
+  <td><code>CanopyCache</code> caches path/root lookups for O(1) repeated access</td>
+  <td><strong>Wire up the existing <code>CanopyCacheInner</code></strong> or add LRU cache</td>
+</tr>
+<tr>
+  <td><strong>Object stubbing</strong></td>
+  <td><span class="diverged">Not implemented</span></td>
+  <td>Objects become stubs when cold; reconstituted on access. Automatic memory hierarchy.</td>
+  <td>Consider for large document sets (lazy-load edition entries)</td>
+</tr>
+<tr>
+  <td><strong>Differential revisions</strong></td>
+  <td><span class="diverged">Full snapshots</span></td>
+  <td>Only changed enfilade nodes stored per revision; shared subtrees reused</td>
+  <td>Consider delta-compressed chunk storage for revision history</td>
+</tr>
+<tr>
+  <td><strong>Structural transclusion sharing</strong></td>
+  <td><span class="diverged">Referential</span></td>
+  <td><code>makeIdentical</code> shares actual memory across editions</td>
+  <td>Incompatible with CRDT model; not actionable without fundamental redesign</td>
+</tr>
+<tr>
+  <td><strong>Intercomparison UI</strong></td>
+  <td><span class="partial">Algorithm exists, no visual UI</span></td>
+  <td>Transpointing windows &mdash; side-by-side with visible connections</td>
+  <td>Build a transpointing window view using existing <code>shared_region</code> + <code>content_map_shared_to</code></td>
+</tr>
+<tr>
+  <td><strong>AgendaItem async processing</strong></td>
+  <td><span class="diverged">Synchronous</span></td>
+  <td>Long-running queries chunked across iterations; survives crashes</td>
+  <td>Consider for large backfollow queries (spawn task, return partial results)</td>
+</tr>
+</table>
+
+<h3>Priority ranking</h3>
+
+<ol>
+  <li><strong class="accent-amber">Canopy cache</strong> &mdash; already coded, just needs wiring. Low effort, immediate benefit for repeated queries.</li>
+  <li><strong class="accent-blue">Differential revisions</strong> &mdash; moderate effort, big win for storage efficiency on long-lived documents.</li>
+  <li><strong class="accent-green">Intercomparison UI</strong> &mdash; algorithms exist (<code>shared_region</code>, <code>content_map_shared_to</code>), just needs frontend work.</li>
+  <li><strong class="accent-purple">Persistent incremental backfollow</strong> &mdash; high effort, but essential for docuverse-scale transclusion queries. Study Gold's <code>RecorderFossil</code> pattern.</li>
+  <li><strong>Object stubbing</strong> &mdash; low priority until memory pressure becomes an issue.</li>
+</ol>
+
+<div class="footer">
+<p>Complexity estimates derived from code structure analysis, not formal proofs. Gold has exactly one explicit O() annotation in the entire codebase. Xudanu has none in the canopy/backfollow modules.</p>
+<p>Xudanu is an independent, open-source project (Apache 2.0). Not affiliated with Ted Nelson, Project Xanadu&trade;, or the Udanax team.</p>
+</div>
+
+</div>
+</body>
+</html>

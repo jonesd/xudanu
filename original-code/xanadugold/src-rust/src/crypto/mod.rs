@@ -8,6 +8,9 @@ pub mod protocol;
 pub mod server_identity;
 pub mod sign;
 
+#[cfg(test)]
+mod known_values_tests;
+
 pub use aead::{
     open_standalone as open, seal_standalone as seal, AeadError, SealedEnvelope, SessionCipher,
 };

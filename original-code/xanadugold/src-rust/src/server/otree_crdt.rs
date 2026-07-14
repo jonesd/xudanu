@@ -144,6 +144,7 @@ pub struct OtreeAnnotation {
 struct OtreeWorkDoc {
     current_edition: Edition,
     base_edition: Edition,
+    session_bases: HashMap<SessionId, Edition>,
     pending_edition: Option<Edition>,
     narration_snapshot: Option<String>,
     subscribers: HashMap<SessionId, OtreeSyncSessionId>,
@@ -451,17 +452,25 @@ fn append_text_with_llm_provenance(
     text: &str,
     llm_model: &str,
     triggerer_club_id: BeId,
+    server_pub_key: [u8; 32],
+    attestation_json: Option<&str>,
 ) -> Edition {
     let mut entries = edition.all_entries().to_vec();
     let mut pos = entries.last().map(|(p, _)| *p + 1).unwrap_or(0);
 
+    let model_label = if let Some(json) = attestation_json {
+        format!("{} {}", llm_model, json)
+    } else {
+        llm_model.to_string()
+    };
+
     let llm_prov = ElementProvenance {
-        author_public_key: [0u8; 32],
+        author_public_key: server_pub_key,
         author_display_name: llm_model.to_string(),
         author_club_id: triggerer_club_id,
         timestamp: current_timestamp_secs(),
         author_type: crate::edition::provenance::AuthorType::Llm,
-        llm_model: Some(llm_model.to_string()),
+        llm_model: Some(model_label),
         historical_author_id: None,
         source_work_id: None,
         transcluded_by: None,
@@ -527,6 +536,7 @@ impl OtreeCrdtManager {
                 OtreeWorkDoc {
                     base_edition: edition.clone(),
                     current_edition: edition,
+                    session_bases: HashMap::new(),
                     pending_edition: None,
                     narration_snapshot: None,
                     subscribers: HashMap::new(),
@@ -547,6 +557,8 @@ impl OtreeCrdtManager {
             .get_mut(&work_id)
             .expect("work doc must exist after insert");
         wd.subscribers.insert(session_id, sync_id);
+        wd.session_bases
+            .insert(session_id, wd.current_edition.clone());
 
         let current_text = {
             let cache = wd.cached_text.lock().unwrap_or_else(|e| e.into_inner());
@@ -578,6 +590,7 @@ impl OtreeCrdtManager {
         wd.subscribers.remove(&session_id);
         wd.author_keys.remove(&session_id);
         wd.awareness.remove(&session_id);
+        wd.session_bases.remove(&session_id);
         if wd.subscribers.is_empty() {
             self.docs.remove(&work_id);
         }
@@ -599,9 +612,14 @@ impl OtreeCrdtManager {
         }
 
         let author = wd.author_keys.get(&sender_session).cloned();
-        let author_edition = apply_text_delta_to_edition(&wd.current_edition, ops, author.as_ref());
+        let session_base = wd
+            .session_bases
+            .get(&sender_session)
+            .cloned()
+            .unwrap_or_else(|| wd.base_edition.clone());
+        let author_edition = apply_text_delta_to_edition(&session_base, ops, author.as_ref());
 
-        let base = &wd.base_edition;
+        let base = &session_base;
         let current = &wd.current_edition;
 
         let (merged, was_merged) = if base == current {
@@ -659,8 +677,8 @@ impl OtreeCrdtManager {
             (old_len + insert_len as u64).saturating_sub(delete_sum) as usize
         };
 
-        wd.current_edition = merged;
-        wd.base_edition = wd.current_edition.clone();
+        wd.current_edition = merged.clone();
+        wd.session_bases.insert(sender_session, merged);
         if !was_merged && expected_len > 0 {
             let actual_len = wd.current_edition.to_text().len();
             if actual_len > expected_len * 2
@@ -778,6 +796,8 @@ impl OtreeCrdtManager {
         text: &str,
         llm_model: &str,
         triggerer_club_id: BeId,
+        server_pub_key: [u8; 32],
+        attestation_json: Option<&str>,
     ) -> Result<(), OtreeError> {
         let wd = self
             .docs
@@ -788,6 +808,8 @@ impl OtreeCrdtManager {
             text,
             llm_model,
             triggerer_club_id,
+            server_pub_key,
+            attestation_json,
         );
         wd.cached_text
             .lock()
@@ -1020,6 +1042,7 @@ impl OtreeCrdtManager {
             OtreeWorkDoc {
                 base_edition: edition.clone(),
                 current_edition: edition.clone(),
+                session_bases: HashMap::new(),
                 pending_edition: None,
                 narration_snapshot: None,
                 subscribers: HashMap::new(),
@@ -1421,8 +1444,35 @@ impl OtreeCrdtManager {
     pub fn restore_annotations(&mut self, data: &[(BeId, Vec<OtreeAnnotation>)]) {
         for (work_id, annotations) in data {
             if let Some(wd) = self.docs.get_mut(work_id) {
-                wd.annotations = annotations.clone();
+                let existing_ids: std::collections::HashSet<u64> =
+                    wd.annotations.iter().map(|a| a.annotation_id).collect();
+                for ann in annotations {
+                    if !existing_ids.contains(&ann.annotation_id) {
+                        wd.annotations.push(ann.clone());
+                    }
+                }
             }
+        }
+    }
+
+    pub fn filter_annotations(
+        &mut self,
+        work_id: BeId,
+        deleted_ids: &std::collections::HashSet<u64>,
+    ) {
+        if let Some(wd) = self.docs.get_mut(&work_id) {
+            wd.annotations
+                .retain(|a| !deleted_ids.contains(&a.annotation_id));
+        }
+    }
+
+    pub fn replace_edition(&mut self, work_id: BeId, edition: crate::edition::Edition) {
+        if let Some(wd) = self.docs.get_mut(&work_id) {
+            wd.current_edition = edition;
+            wd.cached_text
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take();
         }
     }
 }
@@ -1460,7 +1510,7 @@ mod tests {
         mgr.open_sync_session(work_id, sid, Some(&Edition::from_text("hello")));
 
         let ops = vec![
-            TextDeltaOp::Retain { count: 5 },
+            TextDeltaOp::Retain { count: 5 as u64 },
             TextDeltaOp::Insert {
                 text: " world".to_string(),
             },
@@ -1636,7 +1686,7 @@ mod tests {
         mgr1.open_sync_session(work_id, sid, Some(&Edition::from_text("hello")));
 
         let ops = vec![
-            TextDeltaOp::Retain { count: 5 },
+            TextDeltaOp::Retain { count: 5 as u64 },
             TextDeltaOp::Insert {
                 text: " world".to_string(),
             },
@@ -1672,7 +1722,7 @@ mod tests {
         let edition = Edition::from_text_batched("hello\nworld");
         assert_eq!(edition.count(), 2);
         let ops = vec![
-            TextDeltaOp::Retain { count: 5 },
+            TextDeltaOp::Retain { count: 5 as u64 },
             TextDeltaOp::Insert {
                 text: "!\n".to_string(),
             },
@@ -1686,7 +1736,7 @@ mod tests {
     fn test_delta_on_batched_edition_delete() {
         let edition = Edition::from_text_batched("hello\nworld\n");
         let ops = vec![
-            TextDeltaOp::Retain { count: 5 },
+            TextDeltaOp::Retain { count: 5 as u64 },
             TextDeltaOp::Delete { count: 1 },
             TextDeltaOp::Retain { count: 6 },
         ];
@@ -1770,7 +1820,14 @@ mod tests {
     #[test]
     fn test_batched_append_llm_provenance() {
         let edition = Edition::from_text_batched("hello\n");
-        let result = append_text_with_llm_provenance(&edition, "world\nfoo", "test-model", 0);
+        let result = append_text_with_llm_provenance(
+            &edition,
+            "world\nfoo",
+            "test-model",
+            0,
+            [0u8; 32],
+            None,
+        );
         assert_eq!(result.to_text(), "hello\nworld\nfoo");
         let entries = result.all_entries();
         let llm_entries: Vec<_> = entries
@@ -2087,5 +2144,474 @@ mod tests {
         assert_eq!(anns[0].annotation_id, 99);
         assert_eq!(anns[0].kind, "restored");
         assert_eq!(anns[0].created_by, Some(7));
+    }
+
+    #[test]
+    fn test_concurrent_insert_at_same_position() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+        let s2 = make_session(2);
+
+        mgr.open_sync_session(work_id, s1, Some(&Edition::from_text("hello")));
+        mgr.open_sync_session(work_id, s2, Some(&Edition::from_text("hello")));
+
+        let ops1 = vec![
+            TextDeltaOp::Retain { count: 2 },
+            TextDeltaOp::Insert {
+                text: "A".to_string(),
+            },
+            TextDeltaOp::Retain { count: 3 },
+        ];
+        mgr.apply_text_delta(work_id, s1, &ops1).unwrap();
+
+        let ops2 = vec![
+            TextDeltaOp::Retain { count: 2 },
+            TextDeltaOp::Insert {
+                text: "B".to_string(),
+            },
+            TextDeltaOp::Retain { count: 3 },
+        ];
+        mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
+
+        let text = mgr.current_text(work_id).unwrap();
+        assert!(text.contains('A'), "must contain A from s1");
+        assert!(text.contains('B'), "must contain B from s2");
+        assert!(text.starts_with("he"), "prefix preserved");
+        assert!(text.ends_with("llo"), "suffix preserved");
+    }
+
+    #[test]
+    fn test_concurrent_insert_at_different_positions() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+        let s2 = make_session(2);
+
+        let base = "The document text";
+        mgr.open_sync_session(work_id, s1, Some(&Edition::from_text(base)));
+        mgr.open_sync_session(work_id, s2, Some(&Edition::from_text(base)));
+
+        let ops1 = vec![
+            TextDeltaOp::Insert {
+                text: "[START] ".to_string(),
+            },
+            TextDeltaOp::Retain {
+                count: base.len() as u64,
+            },
+        ];
+        mgr.apply_text_delta(work_id, s1, &ops1).unwrap();
+
+        let ops2 = vec![
+            TextDeltaOp::Retain {
+                count: base.len() as u64,
+            },
+            TextDeltaOp::Insert {
+                text: " [END]".to_string(),
+            },
+        ];
+        mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
+
+        let text = mgr.current_text(work_id).unwrap();
+        assert!(
+            text.contains("The document text"),
+            "original text preserved"
+        );
+    }
+
+    #[test]
+    fn test_concurrent_delete_different_regions() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+        let s2 = make_session(2);
+
+        let base = "abcdefghij";
+        mgr.open_sync_session(work_id, s1, Some(&Edition::from_text(base)));
+        mgr.open_sync_session(work_id, s2, Some(&Edition::from_text(base)));
+
+        let ops1 = vec![
+            TextDeltaOp::Retain { count: 2 },
+            TextDeltaOp::Delete { count: 2 },
+            TextDeltaOp::Retain { count: 6 },
+        ];
+        mgr.apply_text_delta(work_id, s1, &ops1).unwrap();
+
+        let ops2 = vec![
+            TextDeltaOp::Retain { count: 6 },
+            TextDeltaOp::Delete { count: 2 },
+            TextDeltaOp::Retain { count: 2 },
+        ];
+        mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
+
+        let text = mgr.current_text(work_id).unwrap();
+        assert!(
+            !text.is_empty(),
+            "concurrent deletes must not empty the document"
+        );
+        assert!(text.contains('a'), "undeleted prefix preserved");
+    }
+
+    #[test]
+    fn test_concurrent_replace_vs_insert() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+        let s2 = make_session(2);
+
+        let base = "old text";
+        mgr.open_sync_session(work_id, s1, Some(&Edition::from_text(base)));
+        mgr.open_sync_session(work_id, s2, Some(&Edition::from_text(base)));
+
+        let ops1 = vec![
+            TextDeltaOp::Delete { count: 3 },
+            TextDeltaOp::Insert {
+                text: "new".to_string(),
+            },
+            TextDeltaOp::Retain { count: 5 as u64 },
+        ];
+        mgr.apply_text_delta(work_id, s1, &ops1).unwrap();
+
+        let ops2 = vec![
+            TextDeltaOp::Retain { count: 8 },
+            TextDeltaOp::Insert {
+                text: " appended".to_string(),
+            },
+        ];
+        mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
+
+        let text = mgr.current_text(work_id).unwrap();
+        assert!(text.contains("new"), "replacement from s1 preserved");
+        assert!(text.contains("appended"), "insert from s2 preserved");
+    }
+
+    #[test]
+    fn test_three_users_concurrent_edits() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+        let s2 = make_session(2);
+        let s3 = make_session(3);
+
+        let base = "Line one.\nLine two.\nLine three.";
+        mgr.open_sync_session(work_id, s1, Some(&Edition::from_text(base)));
+        mgr.open_sync_session(work_id, s2, Some(&Edition::from_text(base)));
+        mgr.open_sync_session(work_id, s3, Some(&Edition::from_text(base)));
+
+        let ops1 = vec![
+            TextDeltaOp::Retain { count: 9 },
+            TextDeltaOp::Insert {
+                text: " [edited by A]".to_string(),
+            },
+            TextDeltaOp::Retain {
+                count: (base.len() - 9) as u64,
+            },
+        ];
+        mgr.apply_text_delta(work_id, s1, &ops1).unwrap();
+
+        let line2_start = "Line one.\n".len();
+        let ops2 = vec![
+            TextDeltaOp::Retain {
+                count: (line2_start + 8) as u64,
+            },
+            TextDeltaOp::Insert {
+                text: " [edited by B]".to_string(),
+            },
+            TextDeltaOp::Retain {
+                count: (base.len() - line2_start - 8) as u64,
+            },
+        ];
+        mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
+
+        let line3_start = "Line one.\nLine two.\n".len();
+        let ops3 = vec![
+            TextDeltaOp::Retain {
+                count: (line3_start + 10) as u64,
+            },
+            TextDeltaOp::Insert {
+                text: " [edited by C]".to_string(),
+            },
+        ];
+        mgr.apply_text_delta(work_id, s3, &ops3).unwrap();
+
+        let text = mgr.current_text(work_id).unwrap();
+        assert!(text.contains("[edited by A]"), "A's edit must survive");
+        assert!(text.contains("[edited by B]"), "B's edit must survive");
+        assert!(text.contains("[edited by C]"), "C's edit must survive");
+        assert!(text.contains("Line one."), "line 1 preserved");
+        assert!(text.contains("Line two."), "line 2 preserved");
+        assert!(text.contains("Line three."), "line 3 preserved");
+    }
+
+    #[test]
+    fn test_rapid_sequential_edits_same_author() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+        let sid = make_session(1);
+
+        mgr.open_sync_session(work_id, sid, Some(&Edition::from_text("")));
+
+        for i in 0..50 {
+            let cur = mgr.current_text(work_id).unwrap();
+            let ops = vec![
+                TextDeltaOp::Retain {
+                    count: cur.len() as u64,
+                },
+                TextDeltaOp::Insert {
+                    text: format!("line{}\n", i),
+                },
+            ];
+            mgr.apply_text_delta(work_id, sid, &ops).unwrap();
+        }
+
+        let text = mgr.current_text(work_id).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 50, "must have 50 lines");
+        assert_eq!(lines[0], "line0");
+        assert_eq!(lines[49], "line49");
+    }
+
+    #[test]
+    fn test_interleaved_edits_two_authors() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+        let s2 = make_session(2);
+
+        mgr.open_sync_session(work_id, s1, Some(&Edition::from_text("base")));
+        mgr.open_sync_session(work_id, s2, Some(&Edition::from_text("base")));
+
+        for round in 0..10 {
+            let ops1 = vec![
+                TextDeltaOp::Retain {
+                    count: (4 + round * 2) as u64,
+                },
+                TextDeltaOp::Insert {
+                    text: format!("A{}", round),
+                },
+            ];
+            mgr.apply_text_delta(work_id, s1, &ops1).unwrap();
+
+            let ops2 = vec![
+                TextDeltaOp::Retain {
+                    count: (4 + round * 2 + 2) as u64,
+                },
+                TextDeltaOp::Insert {
+                    text: format!("B{}", round),
+                },
+            ];
+            mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
+        }
+
+        let text = mgr.current_text(work_id).unwrap();
+        assert!(text.starts_with("base"), "original text preserved");
+        for round in 0..10 {
+            assert!(
+                text.contains(&format!("A{}", round)),
+                "A{} must be in merged text",
+                round
+            );
+            assert!(
+                text.contains(&format!("B{}", round)),
+                "B{} must be in merged text",
+                round
+            );
+        }
+    }
+
+    #[test]
+    fn test_annotation_migrates_through_concurrent_edit() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+        let s2 = make_session(2);
+
+        mgr.open_sync_session(work_id, s1, Some(&Edition::from_text("hello world")));
+        mgr.open_sync_session(work_id, s2, Some(&Edition::from_text("hello world")));
+
+        mgr.annotation_create(
+            work_id,
+            100,
+            "note".to_string(),
+            "annotated".to_string(),
+            6,
+            11,
+            None,
+            false,
+        )
+        .unwrap();
+
+        let anns_before = mgr.annotation_list(work_id).unwrap();
+        assert_eq!(anns_before[0].char_start, 6);
+        assert_eq!(anns_before[0].char_end, 11);
+
+        let ops1 = vec![
+            TextDeltaOp::Retain { count: 5 as u64 },
+            TextDeltaOp::Insert {
+                text: " beautiful".to_string(),
+            },
+            TextDeltaOp::Retain { count: 6 },
+        ];
+        mgr.apply_text_delta(work_id, s1, &ops1).unwrap();
+
+        let anns_after = mgr.annotation_list(work_id).unwrap();
+        assert_eq!(anns_after.len(), 1, "annotation must survive edit");
+    }
+
+    #[test]
+    fn test_concurrent_edit_large_document() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+        let s2 = make_session(2);
+
+        let base = (0..500)
+            .map(|i| format!("Line {} of content.\n", i))
+            .collect::<String>();
+        let base_len = base.len();
+        mgr.open_sync_session(work_id, s1, Some(&Edition::from_text(&base)));
+        mgr.open_sync_session(work_id, s2, Some(&Edition::from_text(&base)));
+
+        let quarter = base_len / 4;
+        let half = base_len / 2;
+        let three_q = base_len * 3 / 4;
+
+        let ops1 = vec![
+            TextDeltaOp::Retain {
+                count: quarter as u64,
+            },
+            TextDeltaOp::Insert {
+                text: "[INSERT_A]".to_string(),
+            },
+            TextDeltaOp::Retain {
+                count: (base_len - quarter) as u64,
+            },
+        ];
+        mgr.apply_text_delta(work_id, s1, &ops1).unwrap();
+
+        let ops2 = vec![
+            TextDeltaOp::Retain {
+                count: three_q as u64,
+            },
+            TextDeltaOp::Insert {
+                text: "[INSERT_B]".to_string(),
+            },
+            TextDeltaOp::Retain {
+                count: (base_len - three_q) as u64,
+            },
+        ];
+        mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
+
+        let text = mgr.current_text(work_id).unwrap();
+        assert!(
+            text.contains("[INSERT_A]"),
+            "A's insert at 1/4 must survive"
+        );
+        assert!(
+            text.contains("[INSERT_B]"),
+            "B's insert at 3/4 must survive"
+        );
+        assert!(
+            text.len() > base_len,
+            "merged must be longer than base (inserts preserved)"
+        );
+    }
+
+    #[test]
+    fn test_concurrent_delete_same_region() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+        let s2 = make_session(2);
+
+        let base = "keep1 DELETE_ME keep2";
+        mgr.open_sync_session(work_id, s1, Some(&Edition::from_text(base)));
+        mgr.open_sync_session(work_id, s2, Some(&Edition::from_text(base)));
+
+        let ops1 = vec![
+            TextDeltaOp::Retain { count: 6 },
+            TextDeltaOp::Delete { count: 10 },
+            TextDeltaOp::Retain { count: 6 },
+        ];
+        mgr.apply_text_delta(work_id, s1, &ops1).unwrap();
+
+        let ops2 = vec![
+            TextDeltaOp::Retain { count: 6 },
+            TextDeltaOp::Delete { count: 10 },
+            TextDeltaOp::Retain { count: 6 },
+        ];
+        mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
+
+        let text = mgr.current_text(work_id).unwrap();
+        assert!(
+            !text.contains("DELETE_ME"),
+            "deleted text must not reappear after concurrent delete"
+        );
+        assert!(text.contains("keep1"), "prefix preserved");
+        assert!(text.contains("keep2"), "suffix preserved");
+    }
+
+    #[test]
+    fn test_relay_notification_on_concurrent_edit() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+        let s2 = make_session(2);
+        let s3 = make_session(3);
+
+        mgr.open_sync_session(work_id, s1, Some(&Edition::from_text("base")));
+        mgr.open_sync_session(work_id, s2, Some(&Edition::from_text("base")));
+        mgr.open_sync_session(work_id, s3, Some(&Edition::from_text("base")));
+
+        let ops = vec![
+            TextDeltaOp::Insert {
+                text: "X".to_string(),
+            },
+            TextDeltaOp::Retain { count: 4 },
+        ];
+        let result = mgr.apply_text_delta(work_id, s1, &ops).unwrap();
+
+        assert_eq!(result.relay_to.len(), 2, "must relay to s2 and s3");
+        let relay_targets: Vec<u64> = result.relay_to.iter().map(|(s, _)| s.as_u64()).collect();
+        assert!(relay_targets.contains(&2), "must relay to s2");
+        assert!(relay_targets.contains(&3), "must relay to s3");
+    }
+
+    #[test]
+    fn test_materialize_after_concurrent_edits() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+        let s2 = make_session(2);
+
+        mgr.open_sync_session(work_id, s1, Some(&Edition::from_text("hello")));
+        mgr.open_sync_session(work_id, s2, Some(&Edition::from_text("hello")));
+
+        let ops1 = vec![
+            TextDeltaOp::Retain { count: 5 },
+            TextDeltaOp::Insert {
+                text: " world".to_string(),
+            },
+        ];
+        mgr.apply_text_delta(work_id, s1, &ops1).unwrap();
+
+        let ops2 = vec![
+            TextDeltaOp::Insert {
+                text: "Greeting: ".to_string(),
+            },
+            TextDeltaOp::Retain { count: 5 },
+        ];
+        mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
+
+        mgr.materialize_edition(work_id).unwrap();
+        let text = mgr.current_text(work_id).unwrap();
+        assert!(
+            text.contains("Greeting:"),
+            "s2 prefix must survive materialization"
+        );
+        assert!(
+            text.contains("world"),
+            "s1 suffix must survive materialization"
+        );
     }
 }

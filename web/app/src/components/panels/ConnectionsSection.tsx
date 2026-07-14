@@ -238,9 +238,11 @@ export function ConnectionsSection({
             )}
           </div>
           <div className="conn-excerpt">&ldquo;{item.excerpt}{item.excerpt.length >= 100 ? "\u2026" : ""}&rdquo;</div>
-          <div className="conn-meta">
-            <span>{item.meta}</span>
-          </div>
+          {!(item.type === "link" && canManage && item.linkId !== undefined && onRetypeLink) && (
+            <div className="conn-meta">
+              <span>{item.meta}</span>
+            </div>
+          )}
         </div>
         );
       })}

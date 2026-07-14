@@ -67,6 +67,9 @@ interface CollaborativeEditorProps {
   showAttributionColors?: boolean;
   inlineResolvedText?: string;
   onUndoLastTransclusion?: () => Promise<boolean>;
+  showLinkDescriptions?: boolean;
+  onResolveLinkDescription?: (linkId: number, resolved: boolean) => void;
+  onEditLinkDescription?: (linkId: number, newText: string) => void;
 }
 
 const CHUNK_SIZE = 50_000;
@@ -114,6 +117,34 @@ const LINK_TYPE_NAMES: Record<number, string> = {
   5: "See Also",
   6: "Web Link",
 };
+
+const DESC_BOX_WIDTH = 210;
+const DESC_BOX_HEIGHT = 46;
+const DESC_BOX_GAP = 4;
+const DESC_BOX_RIGHT_MARGIN = 8;
+
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const test = line ? line + " " + word : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+      if (lines.length >= maxLines) return lines;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  if (lines.length > maxLines) {
+    const last = lines[maxLines - 1];
+    lines.length = maxLines;
+    lines[maxLines - 1] = last.slice(0, Math.max(0, last.length - 1)) + "\u2026";
+  }
+  return lines;
+}
 
 const COMPOUND_COLORS = [
   { bg: "rgba(0, 137, 123, 0.12)", border: "rgba(0, 137, 123, 0.35)", label: "#00897b" },
@@ -193,6 +224,8 @@ function drawOverlay(
   expandedClusters: Set<number> = new Set(),
   compoundSourceTitles: Record<number, string> = {},
   showCompound: boolean = true,
+  showLinkDescriptions: boolean = false,
+  linkDescMap: Map<number, { text: string; resolved: boolean }> = new Map(),
 ): MarkerHitZone[] {
   const hitZones: MarkerHitZone[] = [];
   if (!editor || !canvas) return hitZones;
@@ -426,6 +459,18 @@ function drawOverlay(
     }
   });
 
+  interface PendingDesc {
+    firstTop: number;
+    height: number;
+    textRightX: number;
+    marker: TransclusionMarker;
+    typeStyle: { color: string; dash: number[] };
+    marginX: number;
+    isIncoming: boolean;
+    lane: number;
+  }
+  const pendingDescs: PendingDesc[] = [];
+
   for (let mi = 0; mi < markers.length; mi++) {
     if (collapsed.has(mi)) continue;
     const marker = markers[mi];
@@ -522,6 +567,104 @@ function drawOverlay(
         height,
       });
     }
+
+    if (showLinkDescriptions && typeStyle && linkDescMap.has(marker.linkId)) {
+      const textRightX = lastRect.right - rect.left;
+      pendingDescs.push({
+        firstTop,
+        height,
+        textRightX,
+        marker,
+        typeStyle,
+        marginX: isIncoming ? rect.width - 3 - lane * 4 : lane * 4,
+        isIncoming,
+        lane,
+      });
+    }
+  }
+
+  if (showLinkDescriptions && pendingDescs.length > 0) {
+    pendingDescs.sort((a, b) => a.firstTop - b.firstTop);
+    const placedBoxes: Array<{ y: number; height: number }> = [];
+    for (const desc of pendingDescs) {
+      if (desc.firstTop + DESC_BOX_HEIGHT < viewportTop || desc.firstTop > viewportBottom) continue;
+      let boxY = desc.firstTop;
+      for (const box of placedBoxes) {
+        if (boxY < box.y + box.height + DESC_BOX_GAP && boxY + DESC_BOX_HEIGHT > box.y) {
+          boxY = box.y + box.height + DESC_BOX_GAP;
+        }
+      }
+      const boxH = DESC_BOX_HEIGHT;
+      placedBoxes.push({ y: boxY, height: boxH });
+
+      const boxX = rect.width - DESC_BOX_WIDTH - DESC_BOX_RIGHT_MARGIN;
+      const color = desc.typeStyle.color;
+      const descEntry = linkDescMap.get(desc.marker.linkId);
+      const isResolved = descEntry?.resolved ?? false;
+
+      ctx.save();
+      ctx.strokeStyle = color + (isResolved ? "40" : "a0");
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash(desc.typeStyle.dash.length > 0 ? desc.typeStyle.dash : [3, 3]);
+      ctx.beginPath();
+      const startX = desc.textRightX + 4;
+      const endX = boxX;
+      const textMidY = desc.firstTop + desc.height / 2;
+      const boxMidY = boxY + boxH / 2;
+      const lineY = textMidY + desc.lane * 4 - 2;
+      const elbowX = endX - 20 - desc.lane * 5;
+      ctx.moveTo(startX, lineY);
+      ctx.lineTo(elbowX, lineY);
+      ctx.lineTo(elbowX, boxMidY);
+      ctx.lineTo(endX, boxMidY);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.fillStyle = isResolved ? color + "06" : color + "12";
+      ctx.strokeStyle = isResolved ? color + "30" : color + "90";
+      if (isResolved) ctx.setLineDash([3, 2]);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      const r = 4;
+      ctx.moveTo(boxX + r, boxY);
+      ctx.lineTo(boxX + DESC_BOX_WIDTH - r, boxY);
+      ctx.arcTo(boxX + DESC_BOX_WIDTH, boxY, boxX + DESC_BOX_WIDTH, boxY + r, r);
+      ctx.lineTo(boxX + DESC_BOX_WIDTH, boxY + boxH - r);
+      ctx.arcTo(boxX + DESC_BOX_WIDTH, boxY + boxH, boxX + DESC_BOX_WIDTH - r, boxY + boxH, r);
+      ctx.lineTo(boxX + r, boxY + boxH);
+      ctx.arcTo(boxX, boxY + boxH, boxX, boxY + boxH - r, r);
+      ctx.lineTo(boxX, boxY + r);
+      ctx.arcTo(boxX, boxY, boxX + r, boxY, r);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.fillStyle = isResolved ? color + "60" : color;
+      ctx.font = `${isResolved ? "400" : "600"} 10px ui-monospace, SFMono-Regular, monospace`;
+      ctx.textBaseline = "top";
+      const typeName = LINK_TYPE_NAMES[desc.marker.linkTypeId!] ?? "Link";
+      ctx.fillText((isResolved ? "\u2713 " : "") + typeName.toUpperCase(), boxX + 8, boxY + 5);
+
+      ctx.fillStyle = isResolved ? "#484f58" : "#8b949e";
+      ctx.font = `${isResolved ? "italic " : ""}11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+      const descText = descEntry?.text || "";
+      const wrapped = wrapText(ctx, descText, DESC_BOX_WIDTH - 16, 2);
+      for (let li = 0; li < wrapped.length; li++) {
+        ctx.fillText(wrapped[li], boxX + 8, boxY + 20 + li * 13);
+      }
+      ctx.restore();
+
+      hitZones.push({
+        marker: desc.marker,
+        x: boxX,
+        y: boxY,
+        width: DESC_BOX_WIDTH,
+        height: boxH,
+      });
+    }
   }
 
   // FR-4.5: density pills collapse DENSITY_THRESHOLD+ overlapping links into
@@ -608,7 +751,7 @@ function drawOverlay(
   }
 
   for (const ann of annotations) {
-    if (ann.kind === "bold" || ann.kind === "italic") continue;
+    if (ann.kind === "bold" || ann.kind === "italic" || ann.kind === "link-description" || ann.kind === "link-description-resolved") continue;
     if (ann.char_start >= ann.char_end) continue;
     const drawStart = Math.max(ann.char_start, 0);
     const drawEnd = Math.min(ann.char_end, textLen);
@@ -690,11 +833,15 @@ export function CollaborativeEditor({
   showAttributionColors = true,
   inlineResolvedText,
   onUndoLastTransclusion,
+  showLinkDescriptions = false,
+  onResolveLinkDescription,
+  onEditLinkDescription,
 }: CollaborativeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const hitZonesRef = useRef<MarkerHitZone[]>([]);
   const [placementIndicator, setPlacementIndicator] = useState<{ x: number; y: number; height: number; pos: number; padding?: string } | null>(null);
+  const [editingDesc, setEditingDesc] = useState<{ linkId: number; x: number; y: number; width: number; text: string } | null>(null);
   const isComposing = useRef(false);
   const lastText = useRef(text);
   const undoStack = useRef<UndoEntry[]>([]);
@@ -710,7 +857,26 @@ export function CollaborativeEditor({
   const [resolving, setResolving] = useState(false);
   const [provenanceChain, setProvenanceChain] = useState<AgainHop[] | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
-  const [linkTypeFilter, setLinkTypeFilter] = useState<Set<number> | null>(null);
+  const [linkTypeFilter, setLinkTypeFilterState] = useState<Set<number> | null>(() => {
+    try {
+      const saved = localStorage.getItem("xudanu_linkTypeFilter");
+      if (saved === "all" || saved === null) return null;
+      const arr = JSON.parse(saved);
+      if (Array.isArray(arr)) return new Set(arr);
+    } catch {}
+    return null;
+  });
+
+  const setLinkTypeFilter = useCallback((updater: Set<number> | null | ((prev: Set<number> | null) => Set<number> | null)) => {
+    setLinkTypeFilterState((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      try {
+        if (next === null) localStorage.setItem("xudanu_linkTypeFilter", "all");
+        else localStorage.setItem("xudanu_linkTypeFilter", JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
+  }, []);
   const [expandedClusters, setExpandedClusters] = useState<Set<number>>(new Set());
   const [showCompoundHighlight, setShowCompoundHighlight] = useState(true);
   const styleMarks = useMemo(() => extractStyleMarks(annotations), [annotations]);
@@ -721,6 +887,21 @@ export function CollaborativeEditor({
     () => filterMarkersByType(transclusionMarkers, linkTypeFilter),
     [transclusionMarkers, linkTypeFilter],
   );
+
+  const linkDescMap = useMemo(() => {
+    const m = new Map<number, { text: string; resolved: boolean }>();
+    for (const ann of annotations) {
+      if (ann.kind === "link-description" || ann.kind === "link-description-resolved") {
+        try {
+          const parsed = JSON.parse(ann.payload);
+          if (parsed.link_id != null && parsed.text) {
+            m.set(parsed.link_id, { text: parsed.text, resolved: ann.kind === "link-description-resolved" });
+          }
+        } catch { /* ignore */ }
+      }
+    }
+    return m;
+  }, [annotations]);
 
   const hasContentRange = (contentStartLine != null && contentStartLine > 0) || (contentEndLine != null);
 
@@ -913,16 +1094,16 @@ export function CollaborativeEditor({
         cancelAnimationFrame(rafId);
         rafId = requestAnimationFrame(() => {
           lastDraw = performance.now();
-          hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight);
+          hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight, showLinkDescriptions, linkDescMap);
         });
         return;
       }
       cancelAnimationFrame(rafId);
       lastDraw = now;
-      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight);
+      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight, showLinkDescriptions, linkDescMap);
     };
 
-    hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight);
+    hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight, showLinkDescriptions, linkDescMap);
 
     const ro = new ResizeObserver(redraw);
     ro.observe(container);
@@ -933,7 +1114,7 @@ export function CollaborativeEditor({
       container.removeEventListener("scroll", redraw);
       cancelAnimationFrame(rafId);
     };
-  }, [attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight]);
+  }, [attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight, showLinkDescriptions, linkDescMap]);
 
   useEffect(() => {
     if (recentChanges.length === 0) return;
@@ -941,7 +1122,7 @@ export function CollaborativeEditor({
       const el = editorRef.current;
       const canvas = overlayRef.current;
       if (!el || !canvas) return;
-      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight);
+      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight, showLinkDescriptions, linkDescMap);
     }, 200);
     return () => clearInterval(interval);
   }, [recentChanges, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, showAttributionColors, expandedClusters]);
@@ -953,7 +1134,7 @@ export function CollaborativeEditor({
       setHoveredMarker(null);
       setTooltipPos(null);
       hideTooltipTimer.current = null;
-    }, 800);
+    }, 2000);
   }, []);
 
   const cancelHideTooltip = useCallback(() => {
@@ -1008,6 +1189,17 @@ export function CollaborativeEditor({
       toggleClusterExpansion(hit.densityCluster);
       return;
     }
+    if (e.detail === 2 && onEditLinkDescription && linkDescMap.has(hit.marker.linkId)) {
+      const entry = linkDescMap.get(hit.marker.linkId);
+      setEditingDesc({
+        linkId: hit.marker.linkId,
+        x: hit.x,
+        y: hit.y,
+        width: hit.width,
+        text: entry?.text ?? "",
+      });
+      return;
+    }
     if (hit.marker.linkTypeId === 6) {
       if (hit.marker.excerpt) {
         window.open(hit.marker.excerpt, "_blank", "noopener,noreferrer");
@@ -1036,7 +1228,7 @@ export function CollaborativeEditor({
     } else if (e.detail === 1 && onNavigateToWork) {
       onNavigateToWork(hit.marker.otherWorkId);
     }
-  }, [onNavigateToWork, onShowBacklinks, toggleClusterExpansion]);
+  }, [onNavigateToWork, onShowBacklinks, toggleClusterExpansion, onEditLinkDescription, linkDescMap]);
 
   const getSelectionInEditor = useCallback((): { start: number; end: number } => {
     const el = editorRef.current;
@@ -1118,7 +1310,7 @@ export function CollaborativeEditor({
       const el = editorRef.current;
       const canvas = overlayRef.current;
       if (el && canvas) {
-        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight);
+        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight, showLinkDescriptions, linkDescMap);
       }
     }, 400);
     let newText = hasInlineTransclusions ? getEditableText(el) : getTextContent(el);
@@ -1561,8 +1753,10 @@ export function CollaborativeEditor({
               onMouseLeave={scheduleHideTooltip}
               style={{
                 position: "fixed",
-                left: tooltipPos.x + 10,
-                top: tooltipPos.y - 10,
+                ...(tooltipPos.x > window.innerWidth - 320
+                  ? { right: window.innerWidth - tooltipPos.x + 10 }
+                  : { left: tooltipPos.x + 10 }),
+                top: Math.min(tooltipPos.y - 10, window.innerHeight - 280),
                 zIndex: 100,
               }}
             >
@@ -1629,13 +1823,65 @@ export function CollaborativeEditor({
                   style={{ color: "#a371f7", marginTop: 4 }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onTraceProvenance(workId ?? 0, hoveredMarker.start, hoveredMarker.end)
-                      .then((chain) => setProvenanceChain(chain))
-                      .catch(() => {});
+                    if (hoveredMarker.provenanceChain && hoveredMarker.provenanceChain.length > 0) {
+                      const hops: AgainHop[] = hoveredMarker.provenanceChain.map((hop, i) => ({
+                        work_id: hop.source_work_id,
+                        work_title: hop.source_work_title || `Work ${hop.source_work_id.toString(16).padStart(4, "0")}`,
+                        element_text: "",
+                        author_name: hop.source_author_name || "unknown",
+                        author_type: "",
+                        is_original: i === hoveredMarker.provenanceChain!.length - 1,
+                      }));
+                      setProvenanceChain(hops);
+                    } else {
+                      onTraceProvenance(workId ?? 0, hoveredMarker.start, hoveredMarker.end)
+                        .then((chain) => setProvenanceChain(chain))
+                        .catch(() => {});
+                    }
                   }}
                 >
                   {"\u2197"} Trace provenance
                 </button>
+              )}
+              {onResolveLinkDescription && linkDescMap.has(hoveredMarker.linkId) && (
+                <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                  {(() => {
+                    const entry = linkDescMap.get(hoveredMarker.linkId);
+                    return entry?.resolved ? (
+                      <button
+                        className="marker-tooltip-link"
+                        style={{ color: "#3fb950", fontSize: 11 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onResolveLinkDescription(hoveredMarker.linkId, false);
+                        }}
+                      >
+                        {"\u21ba"} Unresolve
+                      </button>
+                    ) : (
+                      <button
+                        className="marker-tooltip-link"
+                        style={{ color: "#d29922", fontSize: 11 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onResolveLinkDescription(hoveredMarker.linkId, true);
+                        }}
+                      >
+                        {"\u2713"} Resolve
+                      </button>
+                    );
+                  })()}
+                  <button
+                    className="marker-tooltip-link"
+                    style={{ color: "#f85149", fontSize: 11 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onResolveLinkDescription(hoveredMarker.linkId, "delete" as unknown as boolean);
+                    }}
+                  >
+                    {"\u00d7"} Delete
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -1817,6 +2063,55 @@ export function CollaborativeEditor({
                 }}
               >
                 &#8594; pos {placementIndicator.pos}
+              </div>
+            </div>
+          )}
+          {editingDesc && (
+            <div
+              style={{
+                position: "absolute",
+                left: editingDesc.x,
+                top: editingDesc.y,
+                width: editingDesc.width,
+                zIndex: 60,
+              }}
+            >
+              <textarea
+                autoFocus
+                defaultValue={editingDesc.text}
+                className="link-desc-editor"
+                style={{
+                  width: "100%",
+                  minHeight: 60,
+                  background: "rgba(13, 17, 23, 0.97)",
+                  border: "1px solid #58a6ff",
+                  borderRadius: 4,
+                  color: "#c9d1d9",
+                  fontSize: 12,
+                  padding: "6px 8px",
+                  fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                  resize: "vertical",
+                  outline: "none",
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    onEditLinkDescription?.(editingDesc.linkId, e.currentTarget.value.trim());
+                    setEditingDesc(null);
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    setEditingDesc(null);
+                  }
+                }}
+                onBlur={(e) => {
+                  if (e.target.value.trim() !== editingDesc.text) {
+                    onEditLinkDescription?.(editingDesc.linkId, e.target.value.trim());
+                  }
+                  setEditingDesc(null);
+                }}
+              />
+              <div style={{ fontSize: 9, color: "#6e7681", marginTop: 2, textAlign: "right" }}>
+                Ctrl+Enter to save {"\u00b7"} Esc to cancel
               </div>
             </div>
           )}

@@ -251,6 +251,44 @@ impl WalLog {
         )
     }
 
+    pub fn append_annotation_create(
+        &mut self,
+        work_id: BeId,
+        annotation_id: u64,
+        kind: &str,
+        payload: &str,
+        char_start: usize,
+        char_end: usize,
+        is_private: bool,
+    ) -> Result<u64, WalError> {
+        self.append(
+            "annotation_create",
+            serde_json::json!({
+                "work_id": work_id,
+                "annotation_id": annotation_id,
+                "kind": kind,
+                "payload": payload,
+                "char_start": char_start,
+                "char_end": char_end,
+                "is_private": is_private,
+            }),
+        )
+    }
+
+    pub fn append_annotation_delete(
+        &mut self,
+        work_id: BeId,
+        annotation_id: u64,
+    ) -> Result<u64, WalError> {
+        self.append(
+            "annotation_delete",
+            serde_json::json!({
+                "work_id": work_id,
+                "annotation_id": annotation_id,
+            }),
+        )
+    }
+
     pub fn append_create_link(
         &mut self,
         link_id: BeId,
@@ -404,6 +442,53 @@ impl WalLog {
                         entry.args.get("key").and_then(|v| v.as_str()),
                     ) {
                         server.wal_replay_unpin(club_id, key.to_string());
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "annotation_create" => {
+                    if let (Some(work_id), Some(annotation_id), Some(kind), Some(payload)) = (
+                        entry.args.get("work_id").and_then(|v| v.as_u64()),
+                        entry.args.get("annotation_id").and_then(|v| v.as_u64()),
+                        entry.args.get("kind").and_then(|v| v.as_str()),
+                        entry.args.get("payload").and_then(|v| v.as_str()),
+                    ) {
+                        let char_start = entry
+                            .args
+                            .get("char_start")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0) as usize;
+                        let char_end = entry
+                            .args
+                            .get("char_end")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0) as usize;
+                        let is_private = entry
+                            .args
+                            .get("is_private")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        server.wal_replay_annotation_create(
+                            work_id,
+                            annotation_id,
+                            kind.to_string(),
+                            payload.to_string(),
+                            char_start,
+                            char_end,
+                            is_private,
+                        );
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "annotation_delete" => {
+                    if let (Some(work_id), Some(annotation_id)) = (
+                        entry.args.get("work_id").and_then(|v| v.as_u64()),
+                        entry.args.get("annotation_id").and_then(|v| v.as_u64()),
+                    ) {
+                        server.wal_replay_annotation_delete(work_id, annotation_id);
                         true
                     } else {
                         false
@@ -789,6 +874,90 @@ mod tests {
 
         let (_ver, entries) = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
         assert!(entries.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn wal_annotation_create_persists() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        {
+            let mut wal = WalLog::open(&dir).unwrap();
+            wal.append_annotation_create(
+                0x0500,
+                12345,
+                "link-description",
+                r#"{"link_id":42,"text":"test description"}"#,
+                10,
+                30,
+                false,
+            )
+            .unwrap();
+            wal.append_annotation_create(0x0500, 12346, "bold", "", 0, 5, false)
+                .unwrap();
+        }
+
+        let (_ver, entries) = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].op, "annotation_create");
+        assert_eq!(entries[0].args["work_id"], 0x0500);
+        assert_eq!(entries[0].args["annotation_id"], 12345);
+        assert_eq!(entries[0].args["kind"], "link-description");
+        assert_eq!(entries[0].args["char_start"], 10);
+        assert_eq!(entries[0].args["char_end"], 30);
+        assert_eq!(entries[0].args["is_private"], false);
+        assert_eq!(entries[1].args["kind"], "bold");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn wal_annotation_delete_persists() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        {
+            let mut wal = WalLog::open(&dir).unwrap();
+            wal.append_annotation_create(0x0500, 12345, "bold", "", 0, 5, false)
+                .unwrap();
+            wal.append_annotation_delete(0x0500, 12345).unwrap();
+        }
+
+        let (_ver, entries) = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].op, "annotation_create");
+        assert_eq!(entries[1].op, "annotation_delete");
+        assert_eq!(entries[1].args["annotation_id"], 12345);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn wal_annotation_create_and_delete_roundtrip() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        {
+            let mut wal = WalLog::open(&dir).unwrap();
+            wal.append_annotation_create(0x0500, 99999, "italic", "", 50, 60, true)
+                .unwrap();
+        }
+
+        {
+            let wal = WalLog::open(&dir).unwrap();
+            assert_eq!(wal.seq(), 1, "seq recovered from WAL");
+        }
+
+        let (_ver, entries) = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].args["is_private"], true);
+        assert_eq!(entries[0].args["char_start"], 50);
+        assert_eq!(entries[0].args["char_end"], 60);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

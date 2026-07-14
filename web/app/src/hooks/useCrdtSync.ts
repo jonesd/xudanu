@@ -96,14 +96,14 @@ export function useCrdtSync(
           disconnectTimerRef.current = setTimeout(() => {
             disconnectTimerRef.current = null;
             setConnected(false);
-            setReconnectAttempt(client.getReconnectAttempt());
+            setReconnectAttempt(client!.getReconnectAttempt());
           }, 3000);
         }
       }
     });
 
     const reconnectPoll = setInterval(() => {
-      if (!client.isConnected()) {
+      if (client && !client.isConnected()) {
         setReconnectAttempt(client.getReconnectAttempt());
       }
     }, 2000);
@@ -120,7 +120,7 @@ export function useCrdtSync(
 
     const unsubConn2 = client.onConnectionChange((isConnected) => {
       if (isConnected) {
-        client.sendRequest("server_stats").then((resp) => {
+        client!.sendRequest("server_stats").then((resp) => {
           const r = resp as Record<string, unknown>;
           if (r && "value" in r) {
             const val = r.value as Record<string, unknown>;
@@ -144,6 +144,10 @@ export function useCrdtSync(
       unsubMatch();
       unsubIdentity();
       unsubChanges();
+      if (disconnectTimerRef.current) {
+        clearTimeout(disconnectTimerRef.current);
+        disconnectTimerRef.current = null;
+      }
       if (subscriptionIdRef.current !== null) {
         client.unsubscribe(subscriptionIdRef.current);
         subscriptionIdRef.current = null;
@@ -198,6 +202,19 @@ export function useCrdtSync(
     setAttributionLogStatus(null);
     setAwareness([]);
     setRecentChanges([]);
+  }, [workBeId]);
+
+  useEffect(() => {
+    const handler = () => {
+      const client = clientRef.current;
+      if (client && client.isConnected() && workBeId !== null) {
+        try {
+          client.sendRequest("crdt_sync_close", { work_id: workBeId });
+        } catch {}
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
   }, [workBeId]);
 
   useEffect(() => {

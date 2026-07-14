@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Udanax-Gold vs. OpenXanadu vs. Xudanu &mdash; Comparative Analysis</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+.example-block{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin:16px 0}
+.example-block .example-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#484f58;margin-bottom:8px;font-weight:600}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:16px 0}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.toc .toc-sub{padding-left:16px}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-purple{color:#a371f7}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.accent-cyan{color:#39d2c0}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0;font-size:12px;color:#8b949e}
+.legend-item{display:flex;align-items:center;gap:6px}
+.legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+ul{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:4px}
+.pro{color:#3fb950}
+.con{color:#f85149}
+.neutral{color:#d29922}
+.tag{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:0.5px;margin-left:6px;vertical-align:middle}
+.tag-gold{background:rgba(210,153,34,0.15);color:#d29922;border:1px solid rgba(210,153,34,0.3)}
+.tag-open{background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3)}
+.tag-xudanu{background:rgba(63,185,80,0.15);color:#3fb950;border:1px solid rgba(63,185,80,0.3)}
+.timeline-bar{display:flex;align-items:center;gap:0;margin:24px 0;position:relative}
+.timeline-line{position:absolute;top:50%;left:0;right:0;height:2px;background:#21262d}
+.timeline-event{position:relative;z-index:1;text-align:center;flex:1}
+.timeline-dot{width:12px;height:12px;border-radius:50%;margin:0 auto 4px}
+.timeline-year{font-size:11px;color:#8b949e;font-family:'JetBrains Mono',monospace}
+.timeline-label{font-size:11px;color:#c9d1d9;font-weight:600}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}h2{page-break-before:always;margin-top:40px}.diagram-container{border:1px solid #ddd;background:#fafafa}pre{background:#f5f5f5;border-color:#ddd;color:#333}code{background:#f0f0f0;color:#555}.note{background:#f0f7ff;border-left-color:#3b82f6}.note strong{color:#3b82f6}a{color:#2563eb}.footer{color:#999}.toc a{color:#444}.pro{color:#16a34a}.con{color:#dc2626}.neutral{color:#d97706}}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}.two-col{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Udanax-Gold vs. OpenXanadu vs. Xudanu</h1>
+<p class="subtitle">A detailed comparison of three Xanadu-lineage systems: the 1998 open-sourced codebase, the 2014 web demo, and the 2026 independent implementation.</p>
+
+<div class="note">
+<strong>Disclaimer:</strong> Xudanu is an independent, open-source project (Apache 2.0).
+It is not affiliated with, endorsed by, or sponsored by Ted Nelson, Project Xanadu&trade;,
+the Xanadu Operating Company, Autodesk Inc., or the Udanax development team.
+All trademarks belong to their respective owners.
+</div>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. Timeline: 60+ Years of Xanadu</a>
+  <a class="toc-section" href="#s2">2. At a Glance</a>
+  <a class="toc-section" href="#s3">3. Udanax-Gold (1998)</a>
+  <a class="toc-sub" href="#s3a">&mdash; Architecture</a>
+  <a class="toc-sub" href="#s3b">&mdash; Strengths</a>
+  <a class="toc-sub" href="#s3c">&mdash; Limitations</a>
+  <a class="toc-section" href="#s4">4. OpenXanadu (2014)</a>
+  <a class="toc-sub" href="#s4a">&mdash; What It Is</a>
+  <a class="toc-sub" href="#s4b">&mdash; Strengths</a>
+  <a class="toc-sub" href="#s4c">&mdash; Limitations</a>
+  <a class="toc-section" href="#s5">5. Xudanu (2026)</a>
+  <a class="toc-sub" href="#s5a">&mdash; Architecture</a>
+  <a class="toc-sub" href="#s5b">&mdash; Strengths</a>
+  <a class="toc-sub" href="#s5c">&mdash; Limitations</a>
+  <a class="toc-section" href="#s6">6. Feature-by-Feature Comparison</a>
+  <a class="toc-section" href="#s7">7. Data Structures: Enfilades vs. O-Tree</a>
+  <a class="toc-section" href="#s8">8. Networking: Xanadu Protocol vs. HTTP + Tumblers</a>
+  <a class="toc-section" href="#s9">9. What Xudanu Inherits from Gold</a>
+  <a class="toc-section" href="#s10">10. What Xudanu Does Differently</a>
+  <a class="toc-section" href="#s11">11. The 17 Rules: Compliance Scorecard</a>
+  <a class="toc-section" href="#s12">12. Verdict</a>
+</div>
+
+<!-- ==================== SECTION 1: TIMELINE ==================== -->
+
+<h2 id="s1">1. Timeline: 60+ Years of Xanadu</h2>
+
+<div class="diagram-container">
+<svg viewBox="0 0 920 260" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- Era bands -->
+  <rect x="240" y="10" width="220" height="24" rx="4" fill="rgba(210,153,34,0.08)" stroke="rgba(210,153,34,0.2)"/>
+  <text x="350" y="26" text-anchor="middle" font-family="Inter" font-size="10" fill="#d29922" font-weight="600">AUTODESK ERA (1983&ndash;1992)</text>
+
+  <rect x="480" y="226" width="420" height="24" rx="4" fill="rgba(63,185,80,0.08)" stroke="rgba(63,185,80,0.2)"/>
+  <text x="690" y="242" text-anchor="middle" font-family="Inter" font-size="10" fill="#3fb950" font-weight="600">INDEPENDENT ERA (1995&ndash;present)</text>
+
+  <!-- Timeline base line -->
+  <line x1="40" y1="130" x2="880" y2="130" stroke="#30363d" stroke-width="2"/>
+
+  <!-- 1960 (above) -->
+  <line x1="40" y1="130" x2="40" y2="90" stroke="#30363d" stroke-width="1"/>
+  <circle cx="40" cy="130" r="5" fill="#58a6ff"/>
+  <text x="40" y="82" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#58a6ff" font-weight="600">1960</text>
+  <text x="40" y="68" text-anchor="middle" font-family="Inter" font-size="10" fill="#8b949e">Nelson's idea</text>
+
+  <!-- 1974 (above) -->
+  <line x1="130" y1="130" x2="130" y2="90" stroke="#30363d" stroke-width="1"/>
+  <circle cx="130" cy="130" r="5" fill="#58a6ff"/>
+  <text x="130" y="82" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#58a6ff" font-weight="600">1974</text>
+  <text x="130" y="68" text-anchor="middle" font-family="Inter" font-size="10" fill="#8b949e">Computer Lib</text>
+
+  <!-- 1983 (below) -->
+  <line x1="240" y1="130" x2="240" y2="170" stroke="#30363d" stroke-width="1"/>
+  <circle cx="240" cy="130" r="5" fill="#d29922"/>
+  <text x="240" y="184" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#d29922" font-weight="600">1983</text>
+  <text x="240" y="198" text-anchor="middle" font-family="Inter" font-size="10" fill="#8b949e">Autodesk backs</text>
+
+  <!-- 1988 (above) -->
+  <line x1="360" y1="130" x2="360" y2="90" stroke="#30363d" stroke-width="1"/>
+  <circle cx="360" cy="130" r="5" fill="#d29922"/>
+  <text x="360" y="82" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#d29922" font-weight="600">1988</text>
+  <text x="360" y="68" text-anchor="middle" font-family="Inter" font-size="10" fill="#8b949e">Green demo at</text>
+  <text x="360" y="56" text-anchor="middle" font-family="Inter" font-size="10" fill="#8b949e">Hackers Conf.</text>
+
+  <!-- 1992 (below) -->
+  <line x1="450" y1="130" x2="450" y2="170" stroke="#30363d" stroke-width="1"/>
+  <circle cx="450" cy="130" r="5" fill="#f85149"/>
+  <text x="450" y="184" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#f85149" font-weight="600">1992</text>
+  <text x="450" y="198" text-anchor="middle" font-family="Inter" font-size="10" fill="#8b949e">Autodesk divests</text>
+
+  <!-- 1995 (above) -->
+  <line x1="520" y1="130" x2="520" y2="90" stroke="#30363d" stroke-width="1"/>
+  <circle cx="520" cy="130" r="5" fill="#f85149"/>
+  <text x="520" y="82" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#f85149" font-weight="600">1995</text>
+  <text x="520" y="68" text-anchor="middle" font-family="Inter" font-size="10" fill="#8b949e">"Curse of Xanadu"</text>
+
+  <!-- 1998 (below) - KEY EVENT -->
+  <line x1="590" y1="130" x2="590" y2="170" stroke="#d29922" stroke-width="1.5"/>
+  <circle cx="590" cy="130" r="7" fill="#d29922" stroke="#d29922" stroke-width="2"/>
+  <text x="590" y="184" text-anchor="middle" font-family="JetBrains Mono" font-size="12" fill="#d29922" font-weight="700">1998</text>
+  <text x="590" y="198" text-anchor="middle" font-family="Inter" font-size="10" fill="#d29922" font-weight="600">Project Udanax</text>
+  <text x="590" y="210" text-anchor="middle" font-family="Inter" font-size="10" fill="#d29922" font-weight="600">Green (C) + Gold (Smalltalk/C++)</text>
+
+  <!-- 2007 (above) -->
+  <line x1="670" y1="130" x2="670" y2="90" stroke="#30363d" stroke-width="1"/>
+  <circle cx="670" cy="130" r="5" fill="#a371f7"/>
+  <text x="670" y="82" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#a371f7" font-weight="600">2007</text>
+  <text x="670" y="68" text-anchor="middle" font-family="Inter" font-size="10" fill="#8b949e">XanaduSpace 1.0</text>
+
+  <!-- 2014 (below) - KEY EVENT -->
+  <line x1="760" y1="130" x2="760" y2="170" stroke="#58a6ff" stroke-width="1.5"/>
+  <circle cx="760" cy="130" r="7" fill="#58a6ff" stroke="#58a6ff" stroke-width="2"/>
+  <text x="760" y="184" text-anchor="middle" font-family="JetBrains Mono" font-size="12" fill="#58a6ff" font-weight="700">2014</text>
+  <text x="760" y="198" text-anchor="middle" font-family="Inter" font-size="10" fill="#58a6ff" font-weight="600">OpenXanadu</text>
+  <text x="760" y="210" text-anchor="middle" font-family="Inter" font-size="10" fill="#58a6ff" font-weight="600">web demo</text>
+
+  <!-- 2026 (above) - KEY EVENT -->
+  <line x1="860" y1="130" x2="860" y2="90" stroke="#3fb950" stroke-width="1.5"/>
+  <circle cx="860" cy="130" r="7" fill="#3fb950" stroke="#3fb950" stroke-width="2"/>
+  <text x="860" y="82" text-anchor="middle" font-family="JetBrains Mono" font-size="12" fill="#3fb950" font-weight="700">2026</text>
+  <text x="860" y="68" text-anchor="middle" font-family="Inter" font-size="10" fill="#3fb950" font-weight="600">Xudanu v0.9.1</text>
+  <text x="860" y="56" text-anchor="middle" font-family="Inter" font-size="10" fill="#3fb950" font-weight="600">Apache 2.0</text>
+
+</svg>
+<p class="diagram-caption">Timeline of major events in the Xanadu lineage. Labels alternate above and below the line to avoid overlap. Gold marks the open-sourced code; blue marks the web demo; green marks Xudanu.</p>
+</div>
+
+<!-- ==================== SECTION 2: AT A GLANCE ==================== -->
+
+<h2 id="s2">2. At a Glance</h2>
+
+<table>
+<tr>
+  <th style="width:20%">&nbsp;</th>
+  <th style="width:26%">Udanax-Gold <span class="tag tag-gold">1998</span></th>
+  <th style="width:26%">OpenXanadu <span class="tag tag-open">2014</span></th>
+  <th style="width:28%">Xudanu <span class="tag tag-xudanu">2026</span></th>
+</tr>
+<tr>
+  <td><strong>Creator</strong></td>
+  <td>Xanadu Operating Company (Gregory, Miller, et al.)</td>
+  <td>Ted Nelson (solo / small team)</td>
+  <td>Independent developer (Jones D.)</td>
+</tr>
+<tr>
+  <td><strong>License</strong></td>
+  <td class="neutral">Xanadu X11 (source-visible, proprietary)</td>
+  <td class="con">Not open source &mdash; "you can see all the parts"</td>
+  <td class="pro">Apache 2.0</td>
+</tr>
+<tr>
+  <td><strong>Language</strong></td>
+  <td>C/C++ (Smalltalk cross-compiled, period toolchain)</td>
+  <td>JavaScript (static web page)</td>
+  <td>Rust + React/TypeScript</td>
+</tr>
+<tr>
+  <td><strong>Status</strong></td>
+  <td>Archived (~1999)</td>
+  <td>Static demo at xanadu.com</td>
+  <td>Active development (v0.9.1)</td>
+</tr>
+<tr>
+  <td><strong>Buildable?</strong></td>
+  <td class="neutral">Buildable with effort &mdash; period C++ toolchain, complex deps, minimal build docs</td>
+  <td class="neutral">Loads in browser, but "takes a while"</td>
+  <td class="pro"><code>cargo build</code> + <code>npm install</code></td>
+</tr>
+<tr>
+  <td><strong>Backend</strong></td>
+  <td>Custom server with enfilade storage</td>
+  <td>None (static files)</td>
+  <td>Async Rust (tokio + axum + WebSocket)</td>
+</tr>
+<tr>
+  <td><strong>Database</strong></td>
+  <td>Custom enfilade-based backend</td>
+  <td>N/A</td>
+  <td>Content-addressed chunk store + WAL + manifest</td>
+</tr>
+<tr>
+  <td><strong>Concurrency</strong></td>
+  <td>Lock-based (work grabbing)</td>
+  <td>None</td>
+  <td>Real-time CRDT (O-tree) with live presence</td>
+</tr>
+<tr>
+  <td><strong>Crypto</strong></td>
+  <td>Session auth, access controls</td>
+  <td>None</td>
+  <td>Ed25519, Argon2, BLAKE3, ChaCha20-Poly1305, TLS</td>
+</tr>
+<tr>
+  <td><strong>Cross-server</strong></td>
+  <td>Theoretical (custom protocol)</td>
+  <td>None</td>
+  <td>Domain tumblers + HTTP + hash verification</td>
+</tr>
+</table>
+
+<!-- ==================== SECTION 3: UDANAX-GOLD ==================== -->
+
+<h2 id="s3">3. Udanax-Gold <span class="tag tag-gold">1998</span></h2>
+
+<p>In 1998, facing the irrelevance brought by the Web's dominance, the Xanadu team released their source code as <strong>Project Udanax</strong> &mdash; two codebases:</p>
+<ul>
+  <li><strong>Udanax Green</strong> (formerly Xanadu 88.1) &mdash; the <strong>C</strong> version, developed 1979&ndash;1988 by the Swarthmore team. Focused on "global transclusive address space" &mdash; tumblers, basic transclusion, and the FeBe (Frontend-Backend) protocol. The earlier, simpler system.</li>
+  <li><strong>Udanax Gold</strong> (formerly Xanadu 92.1) &mdash; the <strong>Smalltalk + C++</strong> version, developed 1988&ndash;1995. Developed in Smalltalk and cross-compiled to C++. Focused on "full transclusive versioning" &mdash; General Enfilade Theory, The Ent, deep versioning, and the royalty system. The more complete and ambitious codebase.</li>
+</ul>
+<p>This document focuses on Gold, which contains the advanced algorithms (enfilades, intercomparison, royalties) that influenced Xudanu's design. The release was under the Xanadu X11 license, which is source-visible but <em>not</em> open source by modern definitions (OSI-incompatible due to restrictions on derivative works).</p>
+
+<p>The release had a dual purpose: to establish prior art against software patents, and to let the world see what Xanadu actually was after 38 years of vaporware accusations.</p>
+
+<h3 id="s3a">Architecture</h3>
+
+<div class="diagram-container">
+<svg viewBox="0 0 860 280" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="goldGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(210,153,34,0.12)"/>
+      <stop offset="100%" stop-color="rgba(210,153,34,0.03)"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Client layer -->
+  <rect x="20" y="20" width="200" height="60" rx="8" fill="url(#goldGrad)" stroke="#d29922" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="120" y="44" text-anchor="middle" font-family="Inter" font-size="13" fill="#d29922" font-weight="600">Frontend (C++)</text>
+  <text x="120" y="62" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">C++ client (Smalltalk cross-compiled)</text>
+
+  <!-- Protocol -->
+  <line x1="120" y1="80" x2="120" y2="100" stroke="#d29922" stroke-width="1" stroke-dasharray="3,2"/>
+  <rect x="60" y="100" width="120" height="24" rx="4" fill="#161b22" stroke="#d29922" stroke-width="1"/>
+  <text x="120" y="116" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#d29922">Xanadu Protocol</text>
+
+  <!-- Server -->
+  <rect x="20" y="140" width="200" height="120" rx="8" fill="url(#goldGrad)" stroke="#d29922" stroke-width="1"/>
+  <text x="120" y="162" text-anchor="middle" font-family="Inter" font-size="13" fill="#d29922" font-weight="600">Udanax Server</text>
+  <line x1="40" y1="170" x2="200" y2="170" stroke="#30363d" stroke-width="1"/>
+  <text x="120" y="186" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">Enfilade Tree</text>
+  <text x="120" y="200" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">Tumbler Addressing</text>
+  <text x="120" y="214" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">Work Grabbing (locks)</text>
+  <text x="120" y="228" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">Royalty Tracking</text>
+  <text x="120" y="246" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">Version Management</text>
+
+  <!-- Separator -->
+  <line x1="260" y1="20" x2="260" y2="260" stroke="#21262d" stroke-width="1"/>
+
+  <!-- Key algorithms -->
+  <text x="570" y="40" font-family="Inter" font-size="13" fill="#e6edf3" font-weight="600">Key Algorithms</text>
+  <rect x="280" y="54" width="560" height="28" rx="4" fill="#161b22" stroke="#21262d"/>
+  <text x="294" y="72" font-family="JetBrains Mono" font-size="11" fill="#d29922">Enfilade</text>
+  <text x="380" y="72" font-family="Inter" font-size="11" fill="#8b949e">&mdash; B-tree-like with cranking, umbing, and splay operations</text>
+
+  <rect x="280" y="90" width="560" height="28" rx="4" fill="#161b22" stroke="#21262d"/>
+  <text x="294" y="108" font-family="JetBrains Mono" font-size="11" fill="#d29922">Tumblers</text>
+  <text x="380" y="108" font-family="Inter" font-size="11" fill="#8b949e">&mdash; Transfinite number addressing for global content references</text>
+
+  <rect x="280" y="126" width="560" height="28" rx="4" fill="#161b22" stroke="#21262d"/>
+  <text x="294" y="144" font-family="JetBrains Mono" font-size="11" fill="#d29922">Transclusion</text>
+  <text x="400" y="144" font-family="Inter" font-size="11" fill="#8b949e">&mdash; Virtual copies via enfilade span references</text>
+
+  <rect x="280" y="162" width="560" height="28" rx="4" fill="#161b22" stroke="#21262d"/>
+  <text x="294" y="180" font-family="JetBrains Mono" font-size="11" fill="#d29922">Again()</text>
+  <text x="380" y="180" font-family="Inter" font-size="11" fill="#8b949e">&mdash; Recursive provenance walk through transclusion chains</text>
+
+  <rect x="280" y="198" width="560" height="28" rx="4" fill="#161b22" stroke="#21262d"/>
+  <text x="294" y="216" font-family="JetBrains Mono" font-size="11" fill="#d29922">Intercomparison</text>
+  <text x="420" y="216" font-family="Inter" font-size="11" fill="#8b949e">&mdash; Side-by-side visual comparison of document versions</text>
+
+  <rect x="280" y="234" width="560" height="28" rx="4" fill="#161b22" stroke="#21262d"/>
+  <text x="294" y="252" font-family="JetBrains Mono" font-size="11" fill="#d29922">Royalty System</text>
+  <text x="412" y="252" font-family="Inter" font-size="11" fill="#8b949e">&mdash; Micropayment tracking per transclusion access</text>
+</svg>
+<p class="diagram-caption">Udanax-Gold architecture: monolithic C++ server with enfilade-based storage and the full Xanadu algorithm suite.</p>
+</div>
+
+<h3 id="s3b">Strengths</h3>
+
+<ul>
+  <li><span class="pro">&#10003;</span> <strong>Complete algorithm suite</strong> &mdash; the only implementation with the full set of Xanadu algorithms (enfilades, tumblers, transclusion, intercomparison, royalties)</li>
+  <li><span class="pro">&#10003;</span> <strong>Battle-designed data structure</strong> &mdash; the enfilade tree was refined over 15+ years by Roger Gregory and Mark Miller</li>
+  <li><span class="pro">&#10003;</span> <strong>Royalty system</strong> &mdash; built-in micropayment tracking, still ahead of its time</li>
+  <li><span class="pro">&#10003;</span> <strong>Deep versioning</strong> &mdash; every revision preserved with full provenance</li>
+  <li><span class="pro">&#10003;</span> <strong>Historical significance</strong> &mdash; the canonical reference implementation of Ted Nelson's vision</li>
+</ul>
+
+<h3 id="s3c">Limitations</h3>
+
+<ul>
+  <li><span class="con">&#10007;</span> <strong>Difficult to build today</strong> &mdash; requires significant effort to set up the period C++ toolchain, resolve dependencies, and work through minimal build documentation. The code is complex and cross-compiled from Smalltalk, adding to the challenge.</li>
+  <li><span class="con">&#10007;</span> <strong>License incompatibility</strong> &mdash; Xanadu X11 is not OSI-approved; derivatives are restricted</li>
+  <li><span class="con">&#10007;</span> <strong>No concurrency</strong> &mdash; lock-based work grabbing prevents real-time collaboration</li>
+  <li><span class="con">&#10007;</span> <strong>No web integration</strong> &mdash; custom protocol, no HTTP/REST/WebSocket support</li>
+  <li><span class="con">&#10007;</span> <strong>No content-level crypto</strong> &mdash; had session auth and access controls, but no per-author attribution signatures, no content hash verification, and no transport encryption</li>
+  <li><span class="con">&#10007;</span> <strong>Dead project</strong> &mdash; no commits since ~1999, no community, no maintenance</li>
+  <li><span class="con">&#10007;</span> <strong>Steep learning curve</strong> &mdash; enfilade concepts are complex and poorly documented</li>
+</ul>
+
+<!-- ==================== SECTION 4: OPENXANADU ==================== -->
+
+<h2 id="s4">4. OpenXanadu <span class="tag tag-open">2014</span></h2>
+
+<p>In 2014, Ted Nelson released <strong>OpenXanadu</strong> as a web page at xanadu.com. Despite the name, it was explicitly <em>not open source</em> &mdash; the site stated it was "open" in the sense that "you can see all the parts." It was described as "a working deliverable," the first in 54 years of Project Xanadu's history.</p>
+
+<p>The demo showed <strong>parallel documents</strong> &mdash; multiple source documents displayed side-by-side with visible transclusion connections between them. A user could see how a passage in one document was quoted or derived from another, with the connections drawn as visible lines.</p>
+
+<div class="warning">
+<strong>Key distinction:</strong> OpenXanadu is a <em>demonstration</em>, not a platform. It has no backend, no API, no storage, no collaboration, and no source code release. It shows what the Xanadu experience <em>looks like</em> without providing the infrastructure to <em>build it</em>.
+</div>
+
+<h3 id="s4a">What It Is</h3>
+
+<table>
+<tr><th>Aspect</th><th>Detail</th></tr>
+<tr><td><strong>Format</strong></td><td>Static web page with pre-built documents</td></tr>
+<tr><td><strong>Content</strong></td><td>Sample documents (e.g., "Origins" by Moe Juste) with visible transclusion links</td></tr>
+<tr><td><td>Large downloads required ("takes a while to open because it's downloading a lot")</td></tr>
+<tr><td><strong>Interaction</strong></td><td>View only &mdash; no editing, no creating new documents, no linking</td></tr>
+<tr><td><strong>Transclusion display</strong></td><td>Parallel documents with visible connections between matching passages</td></tr>
+<tr><td><strong>Source code</strong></td><td>Not released; client-side JavaScript is visible but not licensed for reuse</td></tr>
+</table>
+
+<h3 id="s4b">Strengths</h3>
+
+<ul>
+  <li><span class="pro">&#10003;</span> <strong>Visual proof of concept</strong> &mdash; demonstrates that the Xanadu experience is comprehensible and compelling</li>
+  <li><span class="pro">&#10003;</span> <strong>Ted Nelson's seal of approval</strong> &mdash; the only "official" Xanadu deliverable</li>
+  <li><span class="pro">&#10003;</span> <strong>Accessible</strong> &mdash; runs in any browser, no installation required</li>
+  <li><span class="pro">&#10003;</span> <strong>Shows parallel documents</strong> &mdash; the core Xanadu visualization that 54 years of promises hadn't delivered</li>
+</ul>
+
+<h3 id="s4c">Limitations</h3>
+
+<ul>
+  <li><span class="con">&#10007;</span> <strong>Not open source</strong> &mdash; despite the "Open" in the name, no source license granted</li>
+  <li><span class="con">&#10007;</span> <strong>Read-only</strong> &mdash; cannot create, edit, or link documents</li>
+  <li><span class="con">&#10007;</span> <strong>No backend</strong> &mdash; no server, no storage, no networking</li>
+  <li><span class="con">&#10007;</span> <strong>No collaboration</strong> &mdash; single-user, view-only</li>
+  <li><span class="con">&#10007;</span> <strong>No versioning</strong> &mdash; shows static snapshots, no revision history</li>
+  <li><span class="con">&#10007;</span> <strong>Slow to load</strong> &mdash; "takes a while to open because it's downloading a lot"</li>
+  <li><span class="con">&#10007;</span> <strong>No API</strong> &mdash; cannot be extended or integrated</li>
+  <li><span class="con">&#10007;</span> <strong>Stale</strong> &mdash; no updates since 2014</li>
+  <li><span class="con">&#10007;</span> <strong>Anti-Web rhetoric</strong> &mdash; site claims Tim Berners-Lee "stole" the idea and that the Web has a "terrible programming language"</li>
+</ul>
+
+<!-- ==================== SECTION 5: XUDANU ==================== -->
+
+<h2 id="s5">5. Xudanu <span class="tag tag-xudanu">2026</span></h2>
+
+<p>Xudanu began as a direct reading of the Udanax-Gold C++ source, migrating concepts into Rust. Early development followed Gold's design closely. The project then diverged significantly: the adoption of BLAKE3 for content hashing opened the door to verifiable cross-server content (impossible in Gold's trust model); React and WebSocket replaced the traditional client architecture; and most fundamentally, the O-tree CRDT with inline transclusion elements replaced the enfilade as the core data structure. Many components from Gold were dropped along the way &mdash; the FeBe protocol, the enfilade tree, the Smalltalk cross-compilation pipeline. What remains is the conceptual DNA: tumblers, transclusion, typed links, bidirectional connections, provenance tracing, and the principle that links are unbreakable.</p>
+
+<h3 id="s5a">Architecture</h3>
+
+<div class="diagram-container">
+<svg viewBox="0 0 860 320" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="greenGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(63,185,80,0.12)"/>
+      <stop offset="100%" stop-color="rgba(63,185,80,0.03)"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Frontend -->
+  <rect x="20" y="20" width="200" height="70" rx="8" fill="url(#greenGrad)" stroke="#3fb950" stroke-width="1"/>
+  <text x="120" y="42" text-anchor="middle" font-family="Inter" font-size="13" fill="#3fb950" font-weight="600">Frontend</text>
+  <text x="120" y="58" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">React 19 + TypeScript</text>
+  <text x="120" y="72" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">Vite 8 + Vitest</text>
+  <text x="120" y="86" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">Canvas overlay rendering</text>
+
+  <!-- Protocol -->
+  <line x1="120" y1="90" x2="120" y2="110" stroke="#3fb950" stroke-width="1" stroke-dasharray="3,2"/>
+  <rect x="50" y="110" width="140" height="24" rx="4" fill="#161b22" stroke="#3fb950" stroke-width="1"/>
+  <text x="120" y="126" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#3fb950">HTTP + WebSocket + TLS</text>
+
+  <!-- Backend -->
+  <rect x="20" y="150" width="200" height="160" rx="8" fill="url(#greenGrad)" stroke="#3fb950" stroke-width="1"/>
+  <text x="120" y="172" text-anchor="middle" font-family="Inter" font-size="13" fill="#3fb950" font-weight="600">Xudanu Server (Rust)</text>
+  <line x1="40" y1="180" x2="200" y2="180" stroke="#30363d" stroke-width="1"/>
+  <text x="120" y="196" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">O-Tree CRDT (concurrent)</text>
+  <text x="120" y="210" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">Domain Tumblers (DNS-based)</text>
+  <text x="120" y="224" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">Typed Links (6 types)</text>
+  <text x="120" y="238" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">Transclusion (inline, 32-level)</text>
+  <text x="120" y="252" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">BLAKE3 Content Verification</text>
+  <text x="120" y="266" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">Ed25519 Attribution</text>
+  <text x="120" y="280" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">Tamper-evident Audit Log</text>
+  <text x="120" y="294" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">Chunk Store + WAL</text>
+
+  <!-- Key innovations -->
+  <text x="570" y="40" font-family="Inter" font-size="13" fill="#e6edf3" font-weight="600">Key Innovations over Gold</text>
+
+  <rect x="280" y="54" width="560" height="28" rx="4" fill="#161b22" stroke="#21262d"/>
+  <text x="294" y="72" font-family="JetBrains Mono" font-size="11" fill="#3fb950">O-Tree CRDT</text>
+  <text x="410" y="72" font-family="Inter" font-size="11" fill="#8b949e">&mdash; Position-based CRDT replacing enfilades; supports concurrent edits</text>
+
+  <rect x="280" y="90" width="560" height="28" rx="4" fill="#161b22" stroke="#21262d"/>
+  <text x="294" y="108" font-family="JetBrains Mono" font-size="11" fill="#3fb950">Domain Tumblers</text>
+  <text x="440" y="108" font-family="Inter" font-size="11" fill="#8b949e">&mdash; <code>"server.com".work.rev.edition</code> &mdash; DNS-routable, human-readable</text>
+
+  <rect x="280" y="126" width="560" height="28" rx="4" fill="#161b22" stroke="#21262d"/>
+  <text x="294" y="144" font-family="JetBrains Mono" font-size="11" fill="#3fb950">Cross-Server (FR-7)</text>
+  <text x="450" y="144" font-family="Inter" font-size="11" fill="#8b949e">&mdash; HTTP fetch + BLAKE3 verify + Ed25519 TOFU trust model</text>
+
+  <rect x="280" y="162" width="560" height="28" rx="4" fill="#161b22" stroke="#21262d"/>
+  <text x="294" y="180" font-family="JetBrains Mono" font-size="11" fill="#3fb950">Link Descriptions</text>
+  <text x="440" y="180" font-family="Inter" font-size="11" fill="#8b949e">&mdash; Typed margin annotation boxes with resolve/edit/lifecycle</text>
+
+  <rect x="280" y="198" width="560" height="28" rx="4" fill="#161b22" stroke="#21262d"/>
+  <text x="294" y="216" font-family="JetBrains Mono" font-size="11" fill="#3fb950">Span Migration</text>
+  <text x="420" y="216" font-family="Inter" font-size="11" fill="#8b949e">&mdash; Links and annotations survive text edits via O-tree positions</text>
+
+  <rect x="280" y="234" width="560" height="28" rx="4" fill="#161b22" stroke="#21262d"/>
+  <text x="294" y="252" font-family="JetBrains Mono" font-size="11" fill="#3fb950">Real-time Presence</text>
+  <text x="430" y="252" font-family="Inter" font-size="11" fill="#8b949e">&mdash; Live multi-user editing with cursor awareness</text>
+
+  <rect x="280" y="270" width="560" height="28" rx="4" fill="#161b22" stroke="#21262d"/>
+  <text x="294" y="288" font-family="JetBrains Mono" font-size="11" fill="#3fb950">Compound Documents</text>
+  <text x="450" y="288" font-family="Inter" font-size="11" fill="#8b949e">&mdash; Inline transclusion in O-tree (single source of truth)</text>
+</svg>
+<p class="diagram-caption">Xudanu architecture: modern async Rust backend with CRDT editing, React frontend, and cross-server networking.</p>
+</div>
+
+<h3 id="s5b">Strengths</h3>
+
+<ul>
+  <li><span class="pro">&#10003;</span> <strong>Buildable and runnable</strong> &mdash; <code>cargo build</code> + <code>npm install</code>, no exotic toolchain</li>
+  <li><span class="pro">&#10003;</span> <strong>Apache 2.0 licensed</strong> &mdash; true open source, commercially usable, derivative-friendly</li>
+  <li><span class="pro">&#10003;</span> <strong>Real-time collaboration</strong> &mdash; O-tree CRDT enables concurrent multi-user editing without locks</li>
+  <li><span class="pro">&#10003;</span> <strong>Modern cryptography</strong> &mdash; Ed25519 attribution signatures, BLAKE3 content verification, TLS, tamper-evident audit trail</li>
+  <li><span class="pro">&#10003;</span> <strong>Cross-server networking</strong> &mdash; domain tumblers make content globally addressable; BLAKE3 hash prevents substitution</li>
+  <li><span class="pro">&#10003;</span> <strong>Visual link system</strong> &mdash; coloured typed links with margin description boxes, connecting lines, resolve/edit lifecycle</li>
+  <li><span class="pro">&#10003;</span> <strong>Active development</strong> &mdash; 2,300+ backend tests, 286 frontend tests, regular commits</li>
+  <li><span class="pro">&#10003;</span> <strong>Web-native</strong> &mdash; HTTP API, WebSocket sync, runs in any modern browser</li>
+  <li><span class="pro">&#10003;</span> <strong>Compound documents</strong> &mdash; inline transclusion in the CRDT itself (no side-table drift)</li>
+  <li><span class="pro">&#10003;</span> <strong>Span migration</strong> &mdash; links and annotations survive edits to underlying text</li>
+</ul>
+
+<h3 id="s5c">Limitations</h3>
+
+<ul>
+  <li><span class="con">&#10007;</span> <strong>No enfilade</strong> &mdash; the O-tree CRDT is conceptually different; some Gold algorithms (cranking, umbing) have no equivalent</li>
+  <li><span class="con">&#10007;</span> <strong>No intercomparison</strong> &mdash; the side-by-side visual document comparison from Gold is not yet implemented</li>
+  <li><span class="con">&#10007;</span> <strong>No royalty system</strong> &mdash; byte tracking exists (FR-6 record_royalty) but no payment mechanism</li>
+  <li><span class="con">&#10007;</span> <strong>Not production-hardened</strong> &mdash; v0.9.x, still in active development</li>
+  <li><span class="con">&#10007;</span> <strong>Single-server focus</strong> &mdash; cluster federation (FR-3) exists but is optional; cross-server (FR-7) is the primary model</li>
+  <li><span class="con">&#10007;</span> <strong>No mobile client</strong> &mdash; desktop browser only (though responsive design works on tablets)</li>
+  <li><span class="con">&#10007;</span> <strong>Wasm incomplete</strong> &mdash; browser-side CRDT compilation is stubbed but not functional</li>
+</ul>
+
+<!-- ==================== SECTION 6: FEATURE COMPARISON ==================== -->
+
+<h2 id="s6">6. Feature-by-Feature Comparison</h2>
+
+<table>
+<tr>
+  <th>Feature</th>
+  <th>Udanax-Gold</th>
+  <th>OpenXanadu</th>
+  <th>Xudanu</th>
+</tr>
+<tr>
+  <td><strong>Tumbler addressing</strong></td>
+  <td>Full numeric tumblers (transfinite)</td>
+  <td>Display only</td>
+  <td class="pro">Domain-based (<code>"server.com".w.r.e</code>)</td>
+</tr>
+<tr>
+  <td><strong>Transclusion</strong></td>
+  <td>Enfilade span references</td>
+  <td>Static visual display</td>
+  <td class="pro">Inline O-tree elements, 32-level resolution</td>
+</tr>
+<tr>
+  <td><strong>Typed links</strong></td>
+  <td>Unidirectional links</td>
+  <td>N/A</td>
+  <td class="pro">6 types (Comment, Reference, Disagreement, Quotation, See Also, Web)</td>
+</tr>
+<tr>
+  <td><strong>Bidirectional links</strong></td>
+  <td class="pro">Yes &mdash; visible from both ends</td>
+  <td>N/A</td>
+  <td class="pro">Yes &mdash; backlinks + cross-server backlinks</td>
+</tr>
+<tr>
+  <td><strong>Version management</strong></td>
+  <td class="pro">Deep versioning via enfilade</td>
+  <td>None</td>
+  <td>Revision timeline + ancestors/descendants</td>
+</tr>
+<tr>
+  <td><strong>Provenance tracing</strong></td>
+  <td class="pro"><code>again()</code> recursive walk</td>
+  <td>None</td>
+  <td class="pro"><code>again()</code> equivalent + link chain + UI modal</td>
+</tr>
+<tr>
+  <td><strong>Real-time editing</strong></td>
+  <td class="con">Lock-based (work grabbing)</td>
+  <td class="con">None (view-only)</td>
+  <td class="pro">CRDT (O-tree) with live presence</td>
+</tr>
+<tr>
+  <td><strong>Royalties / micropayments</strong></td>
+  <td class="pro">Full system, built into protocol</td>
+  <td class="con">None</td>
+  <td>Byte tracking (no payment mechanism yet)</td>
+</tr>
+<tr>
+  <td><strong>Intercomparison</strong></td>
+  <td class="pro">Side-by-side version comparison</td>
+  <td class="con">None</td>
+  <td class="con">Not yet implemented</td>
+</tr>
+<tr>
+  <td><strong>Cross-server content</strong></td>
+  <td>Theoretical (custom protocol)</td>
+  <td class="con">None</td>
+  <td class="pro">HTTP + BLAKE3 + Ed25519 TOFU</td>
+</tr>
+<tr>
+  <td><strong>Content verification</strong></td>
+  <td class="neutral">Server-trusted</td>
+  <td class="con">None</td>
+  <td class="pro">BLAKE3 hash on every cross-server fetch</td>
+</tr>
+<tr>
+  <td><strong>Attribution signatures</strong></td>
+  <td class="con">None</td>
+  <td class="con">None</td>
+  <td class="pro">Ed25519 per-author, verified on load</td>
+</tr>
+<tr>
+  <td><strong>Annotations</strong></td>
+  <td>Basic</td>
+  <td class="con">None</td>
+  <td class="pro">Per-user, private/public, bold/italic, link descriptions</td>
+</tr>
+<tr>
+  <td><strong>Span migration</strong></td>
+  <td>Via enfilade positions</td>
+  <td>N/A</td>
+  <td class="pro">O-tree positions survive arbitrary edits</td>
+</tr>
+<tr>
+  <td><strong>Audit trail</strong></td>
+  <td class="con">None</td>
+  <td class="con">None</td>
+  <td class="pro">Chained security log (tamper-evident)</td>
+</tr>
+<tr>
+  <td><strong>Search</strong></td>
+  <td>Within-document</td>
+  <td class="con">None</td>
+  <td>Within-doc + global text search</td>
+</tr>
+<tr>
+  <td><strong>Trails</strong></td>
+  <td class="con">No</td>
+  <td class="con">No</td>
+  <td class="pro">Curated document sequences with categories</td>
+</tr>
+<tr>
+  <td><strong>Document graph</strong></td>
+  <td class="con">No</td>
+  <td class="con">No</td>
+  <td class="pro">Force-directed work relationship graph</td>
+</tr>
+<tr>
+  <td><strong>Identity</strong></td>
+  <td>Session-based</td>
+  <td class="con">None</td>
+  <td class="pro">Club-based + OAuth (GitHub, Google)</td>
+</tr>
+<tr>
+  <td><strong>Access control</strong></td>
+  <td>Publication + work grabbing</td>
+  <td class="con">None</td>
+  <td>Owner / published / edit-open / read-club / edit-club</td>
+</tr>
+<tr>
+  <td><strong>Archival</strong></td>
+  <td class="con">No</td>
+  <td class="con">No</td>
+  <td class="pro">Ghost works (content retained, source hidden)</td>
+</tr>
+<tr>
+  <td><strong>Test coverage</strong></td>
+  <td class="con">Unknown / minimal</td>
+  <td class="con">None</td>
+  <td class="pro">2,300+ backend + 286 frontend tests</td>
+</tr>
+</table>
+
+<!-- ==================== SECTION 7: DATA STRUCTURES ==================== -->
+
+<h2 id="s7">7. Data Structures: Enfilades vs. O-Tree</h2>
+
+<p>The most fundamental architectural difference is the underlying data structure for storing document content.</p>
+
+<div class="two-col">
+<div>
+<h4 class="accent-amber">Enfilade (Udanax-Gold)</h4>
+<p>A <strong>B-tree-like</strong> structure where each node stores a portion of the document with associated position information. Key operations include:</p>
+<ul>
+  <li><strong>Cranking</strong> &mdash; rebalancing the tree for locality of reference</li>
+  <li><strong>Umbing</strong> &mdash; splitting and merging nodes to maintain density</li>
+  <li><strong>Splaying</strong> &mdash; moving frequently-accessed nodes closer to the root</li>
+</ul>
+<p>Enfilades provide efficient insert, delete, and lookup over arbitrarily large documents, and their tree structure naturally supports versioning (each revision is a new root).</p>
+</div>
+<div>
+<h4 class="accent-green">O-Tree CRDT (Xudanu)</h4>
+<p>A <strong>position-based CRDT</strong> using the space algebra (region/displacement). Each character has a position that is:</p>
+<ul>
+  <li><strong>Immutable</strong> &mdash; once assigned, a position never changes</li>
+  <li><strong>Orderable</strong> &mdash; positions define a total order without coordination</li>
+  <li><strong>Concurrent-safe</strong> &mdash; multiple users can insert simultaneously without conflict</li>
+</ul>
+<p>The O-tree supports inline transclusion elements, span migration (positions survive edits), and attribution tracking (each span knows who wrote it).</p>
+</div>
+</div>
+
+<div class="note">
+<strong>Trade-off:</strong> Enfilades give better deep versioning (every revision is a tree snapshot) and have 30+ years of theoretical backing. The O-tree CRDT gives better concurrency (no locks needed) and integrates naturally with the web (positions are stable across HTTP requests). Xudanu chose concurrency over deep versioning &mdash; revisions are stored as snapshots, not as parallel tree paths.
+</div>
+
+<!-- ==================== SECTION 8: NETWORKING ==================== -->
+
+<h2 id="s8">8. Networking: Xanadu Protocol vs. HTTP + Tumblers</h2>
+
+<table>
+<tr>
+  <th>&nbsp;</th>
+  <th>Udanax-Gold</th>
+  <th>Xudanu</th>
+</tr>
+<tr>
+  <td><strong>Protocol</strong></td>
+  <td>Custom binary protocol (postcard-like wire format)</td>
+  <td>HTTP/REST for API + WebSocket for real-time sync</td>
+</tr>
+<tr>
+  <td><strong>Content addressing</strong></td>
+  <td>Numeric tumblers (<code>1.5.3.10.7</code>)</td>
+  <td>Domain tumblers (<code>"alice.com".5.3.10.7</code>) &mdash; DNS-routable</td>
+</tr>
+<tr>
+  <td><strong>Cross-server</strong></td>
+  <td>Theoretical &mdash; required all servers to speak Xanadu protocol</td>
+  <td>Pragmatic &mdash; servers expose <code>/api/public/work/{id}</code> over HTTP</td>
+</tr>
+<tr>
+  <td><strong>Content verification</strong></td>
+  <td>None &mdash; trusted the server</td>
+  <td>BLAKE3 hash on every fetch &mdash; forgery is cryptographically impossible</td>
+</tr>
+<tr>
+  <td><strong>Trust model</strong></td>
+  <td>Implicit (server-to-server trust)</td>
+  <td>Ed25519 TOFU (Trust On First Use) &mdash; like SSH known_hosts</td>
+</tr>
+<tr>
+  <td><strong>Privacy</strong></td>
+  <td>None (plaintext)</td>
+  <td>HTTPS preferred (supports_https field, refuse downgrade)</td>
+</tr>
+<tr>
+  <td><strong>SSRF protection</strong></td>
+  <td>N/A</td>
+  <td><code>is_ssrf_address()</code> blocks loopback, private ranges, metadata endpoints</td>
+</tr>
+</table>
+
+<!-- ==================== SECTION 9: INHERITANCE ==================== -->
+
+<h2 id="s9">9. What Xudanu Inherits from Gold</h2>
+
+<p>Despite sharing no code, Xudanu draws heavily on the conceptual framework established by Udanax-Gold:</p>
+
+<table>
+<tr>
+  <th>Concept from Gold</th>
+  <th>How Xudanu implements it</th>
+</tr>
+<tr>
+  <td><strong>Tumblers</strong></td>
+  <td>Domain-based tumblers instead of pure numeric &mdash; <code>"server.com".work_id.revision.edition</code>. The domain prefix makes tumblers self-routing via DNS.</td>
+</tr>
+<tr>
+  <td><strong>Transclusion</strong></td>
+  <td>Inline <code>RangeElement::Transclusion</code> in the O-tree CRDT. 32-level recursive resolution with cycle detection. Span migration through arbitrary deltas.</td>
+</tr>
+<tr>
+  <td><strong>Typed links</strong></td>
+  <td>Extended to 6 visual types (Comment, Reference, Disagreement, Quotation, See Also, Web Link) with coloured markers, margin bars, and description boxes.</td>
+</tr>
+<tr>
+  <td><strong>Provenance (<code>again()</code>)</strong></td>
+  <td><code>work_transclusion_chain</code> API walks the O-tree recursively, returning a numbered chain with author info and text excerpts.</td>
+</tr>
+<tr>
+  <td><strong>Bidirectional links</strong></td>
+  <td>Links are visible from both endpoints. Backlinks are tracked. Cross-server backlinks notify the origin server via HTTP POST.</td>
+</tr>
+<tr>
+  <td><strong>Span migration</strong></td>
+  <td>O-tree positions are immutable. Links store <code>start_position</code> / <code>end_position</code> which survive edits. Excerpt search is a fallback only.</td>
+</tr>
+<tr>
+  <td><strong>Royalty concept</strong></td>
+  <td><code>record_royalty</code> tracks byte counts on every cross-server content fetch. No payment mechanism yet, but the accounting infrastructure exists.</td>
+</tr>
+</table>
+
+<!-- ==================== SECTION 10: DIFFERENCES ==================== -->
+
+<h2 id="s10">10. What Xudanu Does Differently</h2>
+
+<div class="two-col">
+<div>
+<h4 class="accent-green">Concurrency</h4>
+<p>Gold used <strong>work grabbing</strong> &mdash; pessimistic locking where one user "grabs" a work, preventing all others from editing. Xudanu uses a <strong>CRDT</strong> &mdash; any number of users can edit simultaneously, with changes merged automatically. This is the single biggest user-facing difference.</p>
+</div>
+<div>
+<h4 class="accent-green">Networking</h4>
+<p>Gold envisioned a <strong>native Xanadu network</strong> with all servers speaking the Xanadu protocol. Xudanu uses <strong>HTTP + domain tumblers</strong> &mdash; any web server can participate. BLAKE3 verification replaces trust.</p>
+</div>
+</div>
+
+<div class="two-col">
+<div>
+<h4 class="accent-green">Cryptography</h4>
+<p>Gold had <strong>no content verification</strong> &mdash; you trusted the server. Xudanu has <strong>Ed25519 attribution signatures</strong> (every span is signed), <strong>BLAKE3 content hashes</strong> (every cross-server fetch is verified), and a <strong>tamper-evident audit log</strong>.</p>
+</div>
+<div>
+<h4 class="accent-green">Visual link system</h4>
+<p>Gold had transclusion markers but <strong>no margin annotation system</strong>. Xudanu adds coloured description boxes with dotted connecting lines, lane separation for overlapping links, resolve/edit/delete lifecycle, and type filtering.</p>
+</div>
+</div>
+
+<div class="two-col">
+<div>
+<h4 class="accent-amber">What's missing</h4>
+<p>Gold's <strong>intercomparison</strong> (side-by-side visual document comparison) has no Xudanu equivalent yet. The <strong>royalty payment system</strong> is stubbed but not functional. <strong>Deep versioning</strong> (every revision as a parallel tree path) is replaced by snapshot-based revisions.</p>
+</div>
+<div>
+<h4 class="accent-blue">OpenXanadu's contribution</h4>
+<p>OpenXanadu showed what <strong>parallel documents with visible transclusion connections</strong> look like. This visualization is the eventual goal for Xudanu's compound document viewer &mdash; but interactive and live, not static.</p>
+</div>
+</div>
+
+<!-- ==================== SECTION 11: 17 RULES ==================== -->
+
+<h2 id="s11">11. The 17 Rules: Compliance Scorecard</h2>
+
+<p>Ted Nelson defined 17 requirements for a true Xanadu system. Here's how each implementation measures up:</p>
+
+<table>
+<tr>
+  <th style="width:4%">#</th>
+  <th style="width:40%">Rule</th>
+  <th style="width:18%; text-align:center">Udanax-Gold</th>
+  <th style="width:18%; text-align:center">OpenXanadu</th>
+  <th style="width:20%; text-align:center">Xudanu</th>
+</tr>
+<tr><td>1</td><td>Every server uniquely and securely identified</td><td class="neutral" style="text-align:center">Partial</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Ed25519 key</td></tr>
+<tr><td>2</td><td>Server can operate independently or in a network</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003;</td></tr>
+<tr><td>3</td><td>Every user uniquely and securely identified</td><td class="neutral" style="text-align:center">Session</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Club + OAuth</td></tr>
+<tr><td>4</td><td>Users can search, retrieve, create, store documents</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">View only</td><td class="pro" style="text-align:center">&#10003;</td></tr>
+<tr><td>5</td><td>Documents can contain any data type</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">Text only</td><td class="neutral" style="text-align:center">Text + blobs</td></tr>
+<tr><td>6</td><td>Documents can contain links/transclusions to any other</td><td class="pro" style="text-align:center">&#10003;</td><td class="neutral" style="text-align:center">Display</td><td class="pro" style="text-align:center">&#10003;</td></tr>
+<tr><td>7</td><td>Links visible and followable from all endpoints</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Backlinks</td></tr>
+<tr><td>8</td><td>Permission to link granted by act of publication</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Publish/unpublish</td></tr>
+<tr><td>9</td><td>Royalty mechanism at any granularity</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">&mdash;</td><td class="neutral" style="text-align:center">Byte tracking</td></tr>
+<tr><td>10</td><td>Every document uniquely and securely identified</td><td class="pro" style="text-align:center">&#10003; Tumblers</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Tumblers + hash</td></tr>
+<tr><td>11</td><td>Secure access controls on documents</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Read/edit clubs</td></tr>
+<tr><td>12</td><td>Rapid search, store, retrieve without knowing location</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Global search</td></tr>
+<tr><td>13</td><td>Documents moved to storage appropriate to access frequency</td><td class="con" style="text-align:center">&mdash;</td><td class="con" style="text-align:center">&mdash;</td><td class="con" style="text-align:center">&mdash;</td></tr>
+<tr><td>14</td><td>Documents stored redundantly for disaster recovery</td><td class="con" style="text-align:center">&mdash;</td><td class="con" style="text-align:center">&mdash;</td><td class="neutral" style="text-align:center">Chunk store + WAL</td></tr>
+<tr><td>15</td><td>Service providers can charge for storage/retrieval</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">&mdash;</td><td class="con" style="text-align:center">&mdash;</td></tr>
+<tr><td>16</td><td>Transactions secure and auditable only by parties</td><td class="con" style="text-align:center">&mdash;</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Audit log</td></tr>
+<tr><td>17</td><td>Client-server protocol is openly published</td><td class="neutral" style="text-align:center">Source</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Open source</td></tr>
+<tr style="border-top:2px solid #30363d">
+  <td colspan="2"><strong>Score (fully meets)</strong></td>
+  <td style="text-align:center"><strong>10 / 17</strong></td>
+  <td style="text-align:center"><strong>0 / 17</strong></td>
+  <td style="text-align:center"><strong>11 / 17</strong></td>
+</tr>
+</table>
+
+<!-- ==================== SECTION 12: VERDICT ==================== -->
+
+<h2 id="s12">12. Verdict</h2>
+
+<div class="two-col">
+<div>
+<h3 class="accent-amber">Udanax-Gold</h3>
+<p><strong>The reference implementation.</strong> Conceptually complete but technologically frozen. It contains the only working versions of several key algorithms (enfilade cranking, intercomparison, royalty system). Its value today is primarily as <strong>inspiration and prior art</strong> &mdash; a design document in code form. It cannot be built, deployed, or extended without significant archaeological effort.</p>
+</div>
+<div>
+<h3 class="accent-blue">OpenXanadu</h3>
+<p><strong>The demo.</strong> It proves that Ted Nelson's visualization ideas work &mdash; parallel documents with visible transclusion connections are comprehensible and compelling. But it's a <strong>screenshot, not a system</strong>. No source code, no backend, no editing, no collaboration. Its anti-Web rhetoric and "not open source" status limit its influence.</p>
+</div>
+</div>
+
+<div style="margin-top:24px">
+<h3 class="accent-green">Xudanu</h3>
+<p><strong>The practical implementation.</strong> It takes the concepts that Gold proved and OpenXanadu visualized, and makes them <strong>buildable, deployable, and usable</strong>. The trade-offs are clear: enfilades replaced by CRDTs (concurrency over deep versioning), custom protocol replaced by HTTP (accessibility over purity), theoretical royalties replaced by byte tracking (accountability without payments).</p>
+
+<p>Xudanu doesn't claim to be "true Xanadu" &mdash; it's an independent interpretation of the concepts, built with modern tools, released under a proper open-source license, and designed to be actually used rather than merely admired. The 17-rules scorecard shows it meeting 11 of 17 fully, with clear paths forward for the rest.</p>
+
+<p>The biggest gaps &mdash; intercomparison and the royalty payment system &mdash; are acknowledged limitations with planned roadmaps. The biggest advantages &mdash; real-time CRDT collaboration, modern cryptography, cross-server hash verification, and the visual link description system &mdash; are features that neither Gold nor OpenXanadu ever had.</p>
+</div>
+
+<div class="footer">
+<p>Xudanu is an independent, open-source project (Apache 2.0). Not affiliated with, endorsed by, or sponsored by Ted Nelson, Project Xanadu&trade;, the Xanadu Operating Company, Autodesk Inc., or the Udanax development team. All trademarks belong to their respective owners.</p>
+<p>Comparison based on Udanax-Gold source (1998, Xanadu X11 license), OpenXanadu demo (2014, xanadu.com), and Xudanu v0.9.1 (2026, Apache 2.0).</p>
+</div>
+
+</div>
+</body>
+</html>

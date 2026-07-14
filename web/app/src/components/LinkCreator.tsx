@@ -53,6 +53,7 @@ export function LinkCreator({
   const [remoteAuthor, setRemoteAuthor] = useState("");
   const [remoteAuthorKey, setRemoteAuthorKey] = useState("");
   const [webUrl, setWebUrl] = useState("");
+  const [description, setDescription] = useState("");
 
   const handlePasteReference = async () => {
     try {
@@ -89,6 +90,7 @@ export function LinkCreator({
     setRemoteAuthor("");
     setRemoteAuthorKey("");
     setWebUrl("");
+    setDescription("");
   };
 
   const handleClose = () => {
@@ -132,6 +134,16 @@ export function LinkCreator({
         );
         if (selectedTypeId > 0) {
           await client.linkSetTypes(linkId, [selectedTypeId]);
+        }
+        if (description.trim()) {
+          await client.annotationCreate(
+            source.workId,
+            Date.now(),
+            "link-description",
+            JSON.stringify({ link_id: linkId, text: description.trim() }),
+            source.start,
+            source.end,
+          );
         }
         void targetWork;
         setStep("done");
@@ -371,6 +383,19 @@ export function LinkCreator({
                 </button>
               ))}
             </div>
+            {selectedTypeId !== null && (
+              <label className="link-form-label" style={{ marginTop: 12 }}>
+                Description
+                <textarea
+                  className="link-form-input"
+                  placeholder="Explain why this link exists — this appears in the margin box next to the linked text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                  style={{ resize: "vertical", fontFamily: "inherit", fontSize: 13 }}
+                />
+              </label>
+            )}
             {error && <div className="link-creator-error">{error}</div>}
             <button
               type="button"

@@ -26,6 +26,7 @@ import { ContextPanel } from "./ContextPanel";
 import { LibrarySlideOut } from "./LibrarySlideOut";
 import { SearchOverlay } from "./SearchOverlay";
 import { PermissionBadge } from "./PermissionBadge";
+import { useCompare, CompareHeader, CompareSplitView } from "../ComparePanel";
 import { buildProvValidatorHtml } from "../../prov-validator";
 import "../../app-shell.css";
 
@@ -52,6 +53,19 @@ export function AppShell() {
   const [showTrails, setShowTrails] = useState(false);
   const [showAnnotations, setShowAnnotations] = useState(false);
   const [showCompound, setShowCompound] = useState(false);
+  const [showLinkDesc, setShowLinkDescRaw] = useState(() => {
+    try { return localStorage.getItem("xudanu_showLinkDesc") !== "false"; }
+    catch { return true; }
+  });
+  const setShowLinkDesc = useCallback((updater: boolean | ((prev: boolean) => boolean)) => {
+    setShowLinkDescRaw((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      try { localStorage.setItem("xudanu_showLinkDesc", String(next)); } catch {}
+      return next;
+    });
+  }, []);
+  const [linkDescription, setLinkDescription] = useState("");
+  const [showCompare, setShowCompare] = useState(false);
   const [crossServerBacklinks, setCrossServerBacklinks] = useState<CrossServerBacklinkPayload[]>([]);
   const [annotationTarget, setAnnotationTarget] = useState<{ start: number; end: number } | null>(null);
   const [isPublished, setIsPublished] = useState(false);
@@ -98,6 +112,7 @@ export function AppShell() {
 
   const transclusion = useTransclusion();
   const compound = useCompoundEdition(connected ? clientRef.current : null, workBeId);
+  const compare = useCompare(showCompare, workBeId, text, connected ? clientRef.current : null);
 
   const loadWorks = useCallback(async () => {
     if (!fetchWorkList) return;
@@ -289,6 +304,138 @@ export function AppShell() {
     }
   }, [createWork, selectWork, loadWorks]);
 
+  const handleCreateDemo = useCallback(async () => {
+    if (!clientRef.current) return;
+    if (!identity) {
+      setShowIdentity(true);
+      return;
+    }
+
+    const demoText = [
+      "Welcome to Xudanu",
+      "",
+      "This interactive demo document shows the key features of the system.",
+      "Each concept below is connected to others through typed links.",
+      "",
+      "Typed Links",
+      "Typed links connect passages with coloured margin boxes.",
+      "Each type has a specific meaning: Comment, Reference, Disagreement, Quotation, See Also.",
+      "Hover over the margin bars to see descriptions. Click Show Links to toggle boxes.",
+      "",
+      "Transclusion",
+      "Content can be reused across documents while maintaining its provenance.",
+      "When you transclude a passage, the original author is always credited.",
+      "",
+      "Provenance and Attribution",
+      "Every character carries cryptographic provenance via Ed25519 signatures.",
+      "Click Show Prov to see attribution spans and derivation chains.",
+      "",
+      "Comparison View",
+      "The comparison view shows shared passages between documents with bezier connections.",
+      "Click Compare in the toolbar to explore side-by-side and diff views.",
+      "",
+      "Real-time Editing",
+      "Multiple users can edit the same document simultaneously.",
+      "Changes merge automatically using the O-tree CRDT without locks or conflicts.",
+      "",
+      "Cross-Server Networking",
+      "Documents on different servers can link to each other via domain tumblers.",
+      "BLAKE3 hash verification ensures content integrity across the network.",
+    ].join("\n");
+
+    try {
+      if (!clientRef.current) return;
+      const resp = await clientRef.current.sendRequest("work_create", { edition: { text: demoText } });
+      const demoId = (resp as any)?.value?.value ?? (resp as any)?.value;
+      if (typeof demoId !== "number") return;
+
+      try { await clientRef.current.workPublish(demoId); } catch {}
+      selectWork(demoId);
+      loadWorks();
+      setShowLinkDesc(true);
+      setShowProvenance(true);
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      const client = clientRef.current;
+      if (!client) return;
+
+      const lines = demoText.split("\n");
+      const findPos = (lineIdx: number, phrase: string): { start: number; end: number } => {
+        let pos = 0;
+        for (let i = 0; i < lineIdx; i++) pos += lines[i].length + 1;
+        const lineText = lines[lineIdx];
+        const rel = lineText.indexOf(phrase);
+        if (rel === -1) return { start: pos, end: pos + phrase.length };
+        return { start: pos + rel, end: pos + rel + phrase.length };
+      };
+
+      const links: Array<{ srcLine: number; srcPhrase: string; dstLine: number; dstPhrase: string; type: number; desc: string }> = [
+        { srcLine: 6, srcPhrase: "Typed links connect passages with coloured margin boxes.", dstLine: 10, dstPhrase: "Content can be reused across documents", type: 5, desc: "See Also: transclusion is another way to connect content" },
+        { srcLine: 7, srcPhrase: "Each type has a specific meaning", dstLine: 15, dstPhrase: "Every character carries cryptographic provenance", type: 2, desc: "Reference: provenance is a core principle that underpins all link types" },
+        { srcLine: 8, srcPhrase: "Click Show Links to toggle boxes.", dstLine: 18, dstPhrase: "The comparison view shows shared passages", type: 1, desc: "Comment: the Compare button is another toolbar feature worth exploring" },
+        { srcLine: 23, srcPhrase: "Changes merge automatically using the O-tree CRDT", dstLine: 6, dstPhrase: "Typed links connect passages", type: 3, desc: "Disagreement: CRDT editing trades deep versioning for concurrency — unlike the original Xanadu model" },
+        { srcLine: 10, srcPhrase: "the original author is always credited", dstLine: 14, dstPhrase: "Every character carries cryptographic provenance", type: 4, desc: "Quotation: this principle is guaranteed by the attribution system" },
+      ];
+
+      let annId = Date.now();
+      for (const link of links) {
+        try {
+          const srcPos = findPos(link.srcLine, link.srcPhrase);
+          const dstPos = findPos(link.dstLine, link.dstPhrase);
+          const linkId = await client.linkCreate(
+            demoId, demoId,
+            { excerpt: link.srcPhrase, start: srcPos.start, end: srcPos.end },
+            { excerpt: link.dstPhrase, start: dstPos.start, end: dstPos.end },
+          );
+          await client.linkSetTypes(linkId, [link.type]);
+          if (link.desc) {
+            await client.annotationCreate(
+              demoId, annId++,
+              "link-description",
+              JSON.stringify({ link_id: linkId, text: link.desc }),
+              srcPos.start, srcPos.end,
+            );
+          }
+        } catch (e) {
+          console.warn("[demo] link creation failed:", e);
+        }
+      }
+
+      const boldTitles = [0, 6, 10, 14, 18, 22, 26];
+      for (const lineIdx of boldTitles) {
+        const pos = findPos(lineIdx, lines[lineIdx]);
+        try {
+          await client.annotationCreate(demoId, annId++, "bold", "", pos.start, pos.end);
+        } catch {}
+      }
+
+      const italicPhrases: Array<{ line: number; phrase: string }> = [
+        { line: 7, phrase: "Comment, Reference, Disagreement, Quotation, See Also" },
+        { line: 11, phrase: "the original author is always credited" },
+        { line: 15, phrase: "Ed25519 signatures" },
+        { line: 19, phrase: "bezier connections" },
+        { line: 23, phrase: "O-tree CRDT" },
+        { line: 27, phrase: "BLAKE3 hash verification" },
+      ];
+      for (const { line, phrase } of italicPhrases) {
+        const pos = findPos(line, phrase);
+        try {
+          await client.annotationCreate(demoId, annId++, "italic", "", pos.start, pos.end);
+        } catch {}
+      }
+
+      await refreshAnnotations();
+      await transclusion.loadLinks(client, demoId, works);
+      refreshAttribution();
+
+    } catch (e) {
+      const err = e as Error;
+      console.error("[demo] Failed:", err);
+      alert("Failed to create demo: " + (err.message || "unknown error"));
+    }
+  }, [createWork, selectWork, loadWorks, setShowLinkDesc, setShowProvenance, identity, refreshAnnotations, transclusion, works]);
+
   const currentWorkMeta = works.find((w) => w.work_id === workBeId);
   const isSourceWork = currentWorkMeta?.is_source === true;
   const hasInlineTransclusions = compound.hasCompound && compound.spanRanges.length > 0;
@@ -384,7 +531,8 @@ export function AppShell() {
     if (!clientRef.current || workBeId === null) return;
     await transclusion.loadLinks(clientRef.current, workBeId, works);
     await transclusion.loadBacklinks(clientRef.current, workBeId);
-  }, [clientRef, workBeId, transclusion, works]);
+    refreshAnnotations();
+  }, [clientRef, workBeId, transclusion, works, refreshAnnotations]);
 
   const handleDeleteLink = useCallback(async (linkId: number) => {
     if (!clientRef.current || workBeId === null) return;
@@ -401,6 +549,51 @@ export function AppShell() {
       console.error("Failed to retype link:", e);
     }
   }, [clientRef, workBeId, transclusion, works]);
+
+  const handleResolveLinkDescription = useCallback(async (linkId: number, resolved: boolean) => {
+    if (workBeId === null) return;
+    const existing = annotations.find((a) => {
+      if (a.kind !== "link-description" && a.kind !== "link-description-resolved") return false;
+      try {
+        const parsed = JSON.parse(a.payload);
+        return parsed.link_id === linkId;
+      } catch { return false; }
+    });
+    if (!existing) return;
+    if (resolved === ("delete" as unknown)) {
+      await deleteAnnotation(existing.annotation_id);
+      return;
+    }
+    const newKind = resolved ? "link-description-resolved" : "link-description";
+    if (existing.kind === newKind) return;
+    try {
+      const parsed = JSON.parse(existing.payload);
+      await deleteAnnotation(existing.annotation_id);
+      await createAnnotation(newKind, JSON.stringify(parsed), existing.char_start, existing.char_end);
+    } catch (e) {
+      console.error("Failed to update link description:", e);
+    }
+  }, [workBeId, annotations, deleteAnnotation, createAnnotation]);
+
+  const handleEditLinkDescription = useCallback(async (linkId: number, newText: string) => {
+    if (workBeId === null) return;
+    const existing = annotations.find((a) => {
+      if (a.kind !== "link-description" && a.kind !== "link-description-resolved") return false;
+      try {
+        const parsed = JSON.parse(a.payload);
+        return parsed.link_id === linkId;
+      } catch { return false; }
+    });
+    if (!existing) return;
+    try {
+      const parsed = JSON.parse(existing.payload);
+      const updatedPayload = JSON.stringify({ ...parsed, text: newText });
+      await deleteAnnotation(existing.annotation_id);
+      await createAnnotation(existing.kind, updatedPayload, existing.char_start, existing.char_end);
+    } catch (e) {
+      console.error("Failed to edit link description:", e);
+    }
+  }, [workBeId, annotations, deleteAnnotation, createAnnotation]);
 
   const handlePullFromWork = useCallback(
     async (sourceWorkId: number, charStart: number, charEnd: number, text: string) => {
@@ -505,6 +698,8 @@ export function AppShell() {
       } else {
         targetText = displayText.slice(selectionRange.start, selectionRange.end);
       }
+      const sourceStart = transclusion.pendingLink?.start ?? selectionRange.start;
+      const sourceEnd = transclusion.pendingLink?.end ?? selectionRange.end;
       const linkId = await transclusion.createContentLink(
         clientRef.current,
         workBeId,
@@ -514,13 +709,26 @@ export function AppShell() {
         typeId,
       );
       if (linkId !== null && clientRef.current) {
+        if (linkDescription.trim()) {
+          try {
+            await createAnnotation(
+              "link-description",
+              JSON.stringify({ link_id: linkId, text: linkDescription.trim() }),
+              sourceStart,
+              sourceEnd,
+            );
+          } catch (e) {
+            console.error("[link-desc] Failed to create annotation:", e);
+          }
+        }
+        setLinkDescription("");
         await Promise.all([
           transclusion.loadLinks(clientRef.current, workBeId, works),
           transclusion.loadBacklinks(clientRef.current, workBeId),
         ]);
       }
     },
-    [clientRef, workBeId, selectionRange, displayText, transclusion, works],
+    [clientRef, workBeId, selectionRange, displayText, transclusion, works, linkDescription, createAnnotation],
   );
 
   useEffect(() => {
@@ -662,6 +870,7 @@ export function AppShell() {
       else if (item === "trails") setShowTrails((s) => !s);
       else if (item === "annotate") setShowAnnotations((s) => !s);
       else if (item === "compound") setShowCompound((s) => !s);
+      else if (item === "document") { setWorkBeId(null); setSelectionRange(null); }
     },
     []
   );
@@ -669,7 +878,7 @@ export function AppShell() {
   const handleEditorSelectionChange = useCallback(
     (s: number | null, e: number | null) => {
       sendSelection(s, e);
-      if (s !== null && e !== null) setSelectionRange({ start: s, end: e });
+      if (s !== null && e !== null && s !== e) setSelectionRange({ start: s, end: e });
       else setSelectionRange(null);
     },
     [sendSelection]
@@ -734,6 +943,17 @@ export function AppShell() {
             >
               Link
             </button>
+            {editable && (
+              <button
+                type="button"
+                className="selection-action-btn"
+                onClick={() => setAnnotationTarget({ start: selectionRange.start, end: selectionRange.end })}
+                title="Add a note or comment to this passage (Ctrl+Alt+A)"
+                style={{ fontSize: 11, border: "1px solid #d29922", color: "#d29922" }}
+              >
+                {"\u270E"} Note
+              </button>
+            )}
           </div>
         )}
         {workBeId !== null && transclusion.pending && (
@@ -751,6 +971,38 @@ export function AppShell() {
               A connected literature where every quotation maintains its bond to the original,
               where every reuse carries its full provenance.
             </div>
+            <div className="welcome-features">
+              <div className="welcome-feature-card">
+                <div className="welcome-feature-icon" style={{ background: "rgba(88,166,255,0.12)", color: "#58a6ff" }}>{"\u2192"}</div>
+                <div className="welcome-feature-name">Typed Links</div>
+                <div className="welcome-feature-desc">Six link types &mdash; Comment, Reference, Disagreement, Quotation, See Also, Web &mdash; each colour-coded with margin descriptions</div>
+              </div>
+              <div className="welcome-feature-card">
+                <div className="welcome-feature-icon" style={{ background: "rgba(63,185,80,0.12)", color: "#3fb950" }}>{"\u25A3"}</div>
+                <div className="welcome-feature-name">Transclusion</div>
+                <div className="welcome-feature-desc">Inline content reuse with 32-level recursive resolution. Links survive edits via O-tree span migration.</div>
+              </div>
+              <div className="welcome-feature-card">
+                <div className="welcome-feature-icon" style={{ background: "rgba(163,113,247,0.12)", color: "#a371f7" }}>{"\u2713"}</div>
+                <div className="welcome-feature-name">Provenance</div>
+                <div className="welcome-feature-desc">Every character is cryptographically attributed. Ed25519 signatures, BLAKE3 verification, tamper-evident audit trail.</div>
+              </div>
+              <div className="welcome-feature-card">
+                <div className="welcome-feature-icon" style={{ background: "rgba(210,153,34,0.12)", color: "#d29922" }}>{"\u21C4"}</div>
+                <div className="welcome-feature-name">Comparison</div>
+                <div className="welcome-feature-desc">Side-by-side document comparison with bezier-curve connections between shared passages. Split view and inline diff.</div>
+              </div>
+              <div className="welcome-feature-card">
+                <div className="welcome-feature-icon" style={{ background: "rgba(57,210,192,0.12)", color: "#39d2c0" }}>{"\u2302"}</div>
+                <div className="welcome-feature-name">Cross-Server</div>
+                <div className="welcome-feature-desc">Domain-based tumblers route content across servers. BLAKE3 hash verification makes content substitution impossible.</div>
+              </div>
+              <div className="welcome-feature-card">
+                <div className="welcome-feature-icon" style={{ background: "rgba(248,81,73,0.12)", color: "#f85149" }}>{"\u270E"}</div>
+                <div className="welcome-feature-name">Real-time CRDT</div>
+                <div className="welcome-feature-desc">Live multi-user editing without locks. Purpose-built O-tree CRDT with presence awareness and conflict-free merges.</div>
+              </div>
+            </div>
             <div className="welcome-actions">
               <button className="welcome-btn primary" onClick={handleCreate}>
                 New Document
@@ -760,6 +1012,11 @@ export function AppShell() {
               </button>
               <button className="welcome-btn" onClick={() => setLibraryOpen(true)}>
                 Browse Library
+              </button>
+            </div>
+            <div className="welcome-actions">
+              <button className="welcome-btn" style={{ borderColor: "var(--blue)", color: "var(--blue)" }} onClick={handleCreateDemo}>
+                {"\u25B6 Try the Interactive Demo"}
               </button>
             </div>
             {works.length > 0 && (
@@ -842,6 +1099,22 @@ export function AppShell() {
               >
                 {showProvenance ? "Hide Prov" : "Show Prov"}
               </button>
+              <button
+                type="button"
+                className="publish-toggle"
+                onClick={() => setShowLinkDesc((s) => !s)}
+                title="Toggle link description boxes"
+              >
+                {showLinkDesc ? "Hide Links" : "Show Links"}
+              </button>
+              <button
+                type="button"
+                className="publish-toggle"
+                onClick={() => setShowCompare((s) => !s)}
+                title="Toggle document comparison view"
+              >
+                {showCompare ? "Close Compare" : "Compare"}
+              </button>
               <div className="doc-meta">
                 {compound.spanRanges.length > 0 && (
                   <div className="compound-badge" title="This document contains transcluded content from other works">
@@ -872,6 +1145,23 @@ export function AppShell() {
                 ) : (
                   <>
                     <span className="link-action-text">Link type:</span>
+                    <input
+                      type="text"
+                      className="link-description-input"
+                      placeholder="Description (appears in margin box)..."
+                      value={linkDescription}
+                      onChange={(e) => setLinkDescription(e.target.value)}
+                      style={{
+                        background: "rgba(13, 17, 23, 0.9)",
+                        border: "1px solid #30363d",
+                        borderRadius: 4,
+                        color: "#c9d1d9",
+                        fontSize: 12,
+                        padding: "3px 8px",
+                        width: 260,
+                        flexShrink: 0,
+                      }}
+                    />
                     {DEFAULT_LINK_TYPES.map((t) => (
                       <button
                         key={t.type_id}
@@ -888,13 +1178,26 @@ export function AppShell() {
                 <button
                   type="button"
                   className="link-cancel-btn"
-                  onClick={transclusion.clearPendingLink}
+                  onClick={() => { transclusion.clearPendingLink(); setLinkDescription(""); }}
                 >
                   cancel
                 </button>
               </div>
             )}
-            <div className="document-center">
+            {showCompare && (
+              <>
+                <CompareHeader
+                  visible={showCompare}
+                  state={compare}
+                  currentWorkId={workBeId}
+                  works={works}
+                  revisionCount={currentWorkMeta?.revision_count ?? 1}
+                  onClose={() => setShowCompare(false)}
+                />
+                <CompareSplitView currentText={displayText} state={compare} />
+              </>
+            )}
+            <div className="document-center" style={showCompare ? { display: "none" } : undefined}>
               <CollaborativeEditor
                 text={displayText}
                 workId={workBeId ?? undefined}
@@ -921,6 +1224,9 @@ export function AppShell() {
                 onUndoLastTransclusion={compound.undoLastInsert}
                 recentChanges={crdt.recentChanges}
                 showAttributionColors={showProvenance}
+                showLinkDescriptions={showLinkDesc}
+                onResolveLinkDescription={handleResolveLinkDescription}
+                onEditLinkDescription={handleEditLinkDescription}
                 fontSize={docPrefs.fontSize}
                 lineHeight={docPrefs.lineHeight}
                 annotations={crdt.annotations}

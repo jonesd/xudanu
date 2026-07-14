@@ -2926,6 +2926,17 @@ impl JsonCodec {
                     max_results: args.max_results,
                 })
             }
+            OperationCode::SeedDemoAttribution => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::SeedDemoAttribution {
+                    work_id: args.work_id,
+                })
+            }
             OperationCode::WorkStar => {
                 #[derive(Deserialize)]
                 struct Args {

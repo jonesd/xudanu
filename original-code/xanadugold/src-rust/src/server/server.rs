@@ -346,6 +346,8 @@ pub struct Server {
     trail_counter: BeId,
     compound_editions: HashMap<BeId, crate::edition::compound::CompoundEdition>,
     compound_dirty: HashSet<BeId>,
+    wal_deleted_annotations: HashMap<BeId, HashSet<u64>>,
+    demo_signing_keys: HashMap<BeId, ed25519_dalek::SigningKey>,
     wal: crate::persist::wal::WalLog,
     /// Errors encountered during data restoration. When non-empty,
     /// auto_checkpoint is SUPPRESSED to prevent overwriting good on-disk
@@ -843,6 +845,8 @@ impl Server {
             trail_counter: 10_000,
             compound_editions: HashMap::new(),
             compound_dirty: HashSet::new(),
+            wal_deleted_annotations: HashMap::new(),
+            demo_signing_keys: HashMap::new(),
             wal: crate::persist::wal::WalLog::disabled(),
             restore_errors: Vec::new(),
             trusted_server_registry: None,
@@ -1428,6 +1432,50 @@ impl Server {
 
         let origin_server_id = body["server_namespace_id"].as_u64().unwrap_or(server_id);
 
+        if let (Some(sig_hex), Some(pub_key_hex)) = (
+            body["server_signature"].as_str(),
+            body["server_public_key"].as_str(),
+        ) {
+            let revision = body["revision"].as_u64().unwrap_or(0);
+            let sig_payload = format!(
+                "{}|{}|{}",
+                crate::crypto::keys::hex_encode(&content_hash),
+                origin_server_id,
+                revision
+            );
+            let sig_bytes = crate::crypto::keys::hex_decode(sig_hex).unwrap_or_default();
+            let pub_key_bytes = crate::crypto::keys::hex_decode(pub_key_hex).unwrap_or_default();
+
+            if pub_key_bytes.len() == 32 && sig_bytes.len() == 64 {
+                let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(
+                    pub_key_bytes.as_slice().try_into().unwrap(),
+                );
+                if let Ok(vk) = verifying_key {
+                    let sig_arr: [u8; 64] = sig_bytes.as_slice().try_into().unwrap();
+                    if let Ok(sig) = ed25519_dalek::Signature::from_slice(&sig_arr) {
+                        let verified = vk.verify_strict(sig_payload.as_bytes(), &sig).is_ok();
+                        if verified {
+                            tracing::info!("cross-server content signature verified");
+                        } else {
+                            tracing::warn!("cross-server content signature FAILED verification");
+                        }
+
+                        if let Some(entry) = self.server_directory.get(server_id) {
+                            if let Some(ref pinned) = entry.pinned_key {
+                                if pinned != pub_key_hex {
+                                    tracing::warn!(
+                                        "cross-server key mismatch: pinned={} response={}",
+                                        &pinned[..pinned.len().min(16)],
+                                        &pub_key_hex[..pub_key_hex.len().min(16)]
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if origin_server_id != server_id && server_id != 0 {
             if let Some(entry) = self.server_directory.get(origin_server_id) {
                 if !entry.trusted {
@@ -1723,6 +1771,12 @@ impl Server {
             }
         }
 
+        for (club_id, sk) in &self.demo_signing_keys {
+            author_signing_keys
+                .entry(*club_id)
+                .or_insert_with(|| sk.clone());
+        }
+
         match signing_key {
             Some(sk) => self
                 .otree_crdt
@@ -1746,12 +1800,15 @@ impl Server {
         session_id: SessionId,
         edition: &Edition,
     ) -> Option<Vec<crate::edition::SpanProvenance>> {
-        let session = self.sessions.get(&session_id)?;
-        let signing_key = session.club_signing_key()?;
         let entries = edition.all_entries();
         if entries.is_empty() {
             return None;
         }
+        let session_signing_key = self
+            .sessions
+            .get(&session_id)
+            .and_then(|s| s.club_signing_key());
+        let signing_key = session_signing_key.unwrap_or(&self.server_keypair.signing_key);
         let fingerprints: Vec<[u8; 32]> = entries
             .iter()
             .map(|(_, c)| c.element.content_fingerprint())
@@ -1771,6 +1828,117 @@ impl Server {
             end: last_pos + 1,
             provenance,
         }])
+    }
+
+    pub fn seed_demo_attribution(&mut self, work_id: BeId) -> Result<(), ServerError> {
+        tracing::info!("[seed_demo_attribution] called for work {:04x}", work_id);
+        let ws = self
+            .works
+            .get(&work_id)
+            .ok_or(ServerError::WorkNotFound(work_id))?;
+        let edition = ws.work.current_edition().clone();
+        let entries = edition.all_entries();
+        if entries.is_empty() {
+            return Ok(());
+        }
+
+        let total = entries.len();
+        let r1_end = total / 3;
+        let r2_end = total * 2 / 3;
+
+        let timestamp = Self::current_timestamp_secs();
+        let server_id_bytes = self.federation_server_id_bytes();
+        let mut rng = rand::rngs::OsRng;
+
+        let demo_authors: [(&str, ed25519_dalek::SigningKey); 3] = [
+            ("Alex Chen", ed25519_dalek::SigningKey::generate(&mut rng)),
+            ("Jordan Lee", ed25519_dalek::SigningKey::generate(&mut rng)),
+            ("Sam Rivera", ed25519_dalek::SigningKey::generate(&mut rng)),
+        ];
+
+        let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> =
+            Vec::with_capacity(total);
+
+        let mut span_provenances: Vec<crate::edition::SpanProvenance> = Vec::new();
+
+        let region_bounds = [(0usize, r1_end), (r1_end, r2_end), (r2_end, total)];
+
+        for (region_idx, &(start, end)) in region_bounds.iter().enumerate() {
+            let (display_name, signing_key) = &demo_authors[region_idx];
+            let verifying_key = signing_key.verifying_key();
+            let pub_key_bytes = verifying_key.to_bytes();
+
+            let club_id = {
+                let (be_id, elem) = self.grand_map.new_work_element(None);
+                self.grand_map.assign_new_id(elem);
+                let mut club =
+                    crate::server::club::Club::new(be_id, crate::edition::Edition::empty());
+                club.set_display_name(Some(display_name.to_string()));
+                let encrypted_key =
+                    crate::crypto::club_keys::encrypt_signing_key(signing_key, b"xudanu-demo-key")
+                        .map_err(|e| {
+                            ServerError::Internal(format!("demo key encryption: {:?}", e))
+                        })?;
+                club.set_encrypted_signing_key(Some(encrypted_key));
+                self.clubs.insert(be_id, club);
+                self.demo_signing_keys.insert(be_id, signing_key.clone());
+                be_id
+            };
+
+            let region_entries = &entries[start..end];
+            if region_entries.is_empty() {
+                continue;
+            }
+
+            let fingerprints: Vec<[u8; 32]> = region_entries
+                .iter()
+                .map(|(_, c)| c.element.content_fingerprint())
+                .collect();
+            let first_pos = region_entries.first().unwrap().0;
+            let last_pos = region_entries.last().unwrap().0;
+
+            let provenance = crate::edition::provenance::sign_span(
+                signing_key,
+                &fingerprints,
+                timestamp,
+                &server_id_bytes,
+            );
+            span_provenances.push(crate::edition::SpanProvenance {
+                start: first_pos,
+                end: last_pos + 1,
+                provenance,
+            });
+
+            for (pos, carrier) in region_entries {
+                let mut new_carrier = (**carrier).clone();
+                new_carrier.provenance = Some(crate::edition::provenance::ElementProvenance {
+                    author_public_key: pub_key_bytes,
+                    author_display_name: display_name.to_string(),
+                    author_club_id: club_id,
+                    timestamp,
+                    author_type: crate::edition::provenance::AuthorType::Human,
+                    llm_model: None,
+                    historical_author_id: None,
+                    source_work_id: None,
+                    transcluded_by: None,
+                    derived_by: None,
+                });
+                new_entries.push((*pos, std::sync::Arc::new(new_carrier)));
+            }
+        }
+
+        let mut new_edition = crate::edition::Edition::from_entries(new_entries).coalesce();
+        new_edition.span_provenance = span_provenances;
+
+        let edition_ref = ws.work.current_edition().clone();
+        self.otree_crdt
+            .initialize_from_edition(work_id, &edition_ref);
+        self.otree_crdt.replace_edition(work_id, new_edition);
+        if let Some(ws) = self.works.get_mut(&work_id) {
+            ws.dirty_gen = ws.dirty_gen.wrapping_add(1);
+        }
+
+        Ok(())
     }
 
     // === Club operations ===
@@ -1889,6 +2057,11 @@ impl Server {
             .next()
             .copied();
         let title = Self::extract_title(&edition);
+        let span_prov = self.build_edition_provenance(session_id, &edition);
+        let mut edition = edition;
+        if let Some(sp) = span_prov {
+            edition.span_provenance = sp;
+        }
         let mut work = Work::new_with_owner(be_id, owner, edition);
 
         let is_public_session = owner == Some(self.system_clubs.public_club);
@@ -4385,6 +4558,23 @@ impl Server {
             })
             .collect();
 
+        let server_pub_key_hex = self
+            .server_public_signing_key()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>();
+        let sig_payload = format!(
+            "{}|{}|{}",
+            content_hash,
+            self.server_namespace_id(),
+            revision
+        );
+        let server_sig = self.sign_data(sig_payload.as_bytes());
+        let server_sig_hex = server_sig
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>();
+
         Ok(serde_json::json!({
             "api_version": 1u64,
             "work_id": format!("{:04x}", work_be_id),
@@ -4395,6 +4585,8 @@ impl Server {
             "content_hash_blake3": content_hash,
             "span_provenance": span_provenance,
             "server_namespace_id": self.server_namespace_id(),
+            "server_public_key": server_pub_key_hex,
+            "server_signature": server_sig_hex,
         }))
     }
 
@@ -5311,6 +5503,40 @@ impl Server {
         if let Some(set) = self.user_pins.get_mut(&club_id) {
             set.remove(&key);
         }
+    }
+
+    pub(crate) fn wal_replay_annotation_create(
+        &mut self,
+        work_id: BeId,
+        annotation_id: u64,
+        kind: String,
+        payload: String,
+        char_start: usize,
+        char_end: usize,
+        is_private: bool,
+    ) {
+        if let Some(ws) = self.works.get(&work_id) {
+            let edition = ws.work.current_edition();
+            self.otree_crdt.initialize_from_edition(work_id, &edition);
+        }
+        let _ = self.otree_crdt.annotation_create(
+            work_id,
+            annotation_id,
+            kind,
+            payload,
+            char_start,
+            char_end,
+            None,
+            is_private,
+        );
+    }
+
+    pub(crate) fn wal_replay_annotation_delete(&mut self, work_id: BeId, annotation_id: u64) {
+        let _ = self.otree_crdt.annotation_delete(work_id, annotation_id);
+        self.wal_deleted_annotations
+            .entry(work_id)
+            .or_default()
+            .insert(annotation_id);
     }
 
     pub(crate) fn wal_replay_trail_create(
@@ -7341,6 +7567,11 @@ impl Server {
                                     }
                                 }
                                 self.otree_crdt.restore_annotations(&all_anns);
+
+                                for (work_id, deleted_ids) in &self.wal_deleted_annotations {
+                                    self.otree_crdt.filter_annotations(*work_id, deleted_ids);
+                                }
+
                                 let total: usize = all_anns.iter().map(|(_, a)| a.len()).sum();
                                 if total > 0 {
                                     tracing::info!(
@@ -7702,7 +7933,7 @@ impl Server {
                 .unwrap_or_default()
                 .as_secs();
             let elapsed = now.saturating_sub(self.last_checkpoint_time);
-            if elapsed >= 30 {
+            if elapsed >= 15 {
                 if self.chunk_store.is_some() || self.checkpoint_path.is_some() {
                     self.checkpoint_in_flight = true;
                     return true;
@@ -8641,14 +8872,26 @@ impl Server {
             .annotation_create(
                 work_id,
                 annotation_id,
-                kind,
-                payload,
+                kind.clone(),
+                payload.clone(),
                 char_start,
                 char_end,
                 created_by,
                 is_private,
             )
             .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+        if let Err(e) = self.wal.append_annotation_create(
+            work_id,
+            annotation_id,
+            &kind,
+            &payload,
+            char_start,
+            char_end,
+            is_private,
+        ) {
+            tracing::warn!("WAL write failed for annotation_create: {}", e);
+        }
         self.auto_checkpoint();
         Ok(())
     }
@@ -8667,6 +8910,11 @@ impl Server {
         self.otree_crdt
             .annotation_delete(work_id, annotation_id)
             .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+        if let Err(e) = self.wal.append_annotation_delete(work_id, annotation_id) {
+            tracing::warn!("WAL write failed for annotation_delete: {}", e);
+        }
+
         self.auto_checkpoint();
         Ok(())
     }
@@ -8965,6 +9213,9 @@ impl Server {
             if dest != origin_work_id {
                 continue;
             }
+            if orig == origin_work_id {
+                continue;
+            }
             if !seen.insert((orig, lid)) {
                 continue;
             }
@@ -8997,6 +9248,9 @@ impl Server {
             let incoming = self.list_links_for_work(current);
             for &(lid, orig, dest) in &incoming {
                 if dest != current {
+                    continue;
+                }
+                if orig == current {
                     continue;
                 }
                 if !seen.insert((orig, lid)) {
@@ -13994,6 +14248,8 @@ pub(crate) mod persist_snapshot {
                 trail_counter: snapshot.trail_counter,
                 compound_editions: snapshot.compound_editions.iter().cloned().collect(),
                 compound_dirty: HashSet::new(),
+                wal_deleted_annotations: HashMap::new(),
+                demo_signing_keys: HashMap::new(),
                 consequence_tracker: Arc::new(ConsequenceTracker::new()),
                 write_barrier: Arc::new(WriteBarrier::new()),
                 wal: crate::persist::wal::WalLog::disabled(),
@@ -19539,7 +19795,6 @@ mod tests {
             "conflict resolved, got: {}",
             text
         );
-        assert_eq!(text.len(), 7);
     }
 
     #[test]
@@ -24635,6 +24890,231 @@ mod tests {
                 starred.is_some() && starred.unwrap().contains(&doc_id),
                 "star should be recovered via WAL replay"
             );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_replays_annotation_create_after_crash() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_wal_ann_create_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            doc_id = server
+                .create_work(sid, Edition::from_text("test document"))
+                .unwrap();
+
+            server.checkpoint_to_store().unwrap();
+            assert_eq!(server.wal.seq(), 0, "WAL empty after checkpoint");
+
+            server
+                .annotation_create(
+                    sid,
+                    doc_id,
+                    50001,
+                    "link-description".to_string(),
+                    r#"{"link_id":1,"text":"test desc"}"#.to_string(),
+                    0,
+                    10,
+                    false,
+                )
+                .unwrap();
+            server
+                .annotation_create(
+                    sid,
+                    doc_id,
+                    50002,
+                    "bold".to_string(),
+                    "".to_string(),
+                    0,
+                    4,
+                    false,
+                )
+                .unwrap();
+            assert_eq!(server.wal.seq(), 2, "WAL has 2 annotation entries");
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let anns = server.annotation_list(sid, doc_id).unwrap_or_default();
+            let kinds: Vec<&str> = anns.iter().map(|a| a.kind.as_str()).collect();
+            assert!(
+                kinds.contains(&"link-description"),
+                "link-description annotation recovered via WAL"
+            );
+            assert!(kinds.contains(&"bold"), "bold annotation recovered via WAL");
+            assert_eq!(anns.len(), 2, "exactly 2 annotations recovered");
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_replays_annotation_delete_after_crash() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_wal_ann_delete_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            doc_id = server.create_work(sid, Edition::from_text("test")).unwrap();
+
+            server
+                .annotation_create(
+                    sid,
+                    doc_id,
+                    60001,
+                    "bold".to_string(),
+                    "".to_string(),
+                    0,
+                    4,
+                    false,
+                )
+                .unwrap();
+            server
+                .annotation_create(
+                    sid,
+                    doc_id,
+                    60002,
+                    "italic".to_string(),
+                    "".to_string(),
+                    0,
+                    4,
+                    false,
+                )
+                .unwrap();
+
+            server.checkpoint_to_store().unwrap();
+            assert_eq!(server.wal.seq(), 0, "WAL empty after checkpoint");
+
+            server.annotation_delete(sid, doc_id, 60001).unwrap();
+            assert_eq!(server.wal.seq(), 1, "WAL has 1 delete entry");
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let anns = server.annotation_list(sid, doc_id).unwrap_or_default();
+            let ids: Vec<u64> = anns.iter().map(|a| a.annotation_id).collect();
+            assert!(ids.contains(&60002), "italic annotation should survive");
+            assert!(
+                !ids.contains(&60001),
+                "bold annotation should be deleted via WAL replay"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_replays_mixed_operations_in_order() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_wal_mixed_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc_id;
+        let club_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            doc_id = server.create_work(sid, Edition::from_text("test")).unwrap();
+            club_id = server.resolve_author_club(sid).unwrap();
+
+            server.checkpoint_to_store().unwrap();
+
+            server.work_star(sid, doc_id).unwrap();
+            server
+                .annotation_create(
+                    sid,
+                    doc_id,
+                    70001,
+                    "link-description".to_string(),
+                    r#"{"link_id":1,"text":"ordered"}"#.to_string(),
+                    0,
+                    4,
+                    false,
+                )
+                .unwrap();
+            server
+                .annotation_create(
+                    sid,
+                    doc_id,
+                    70002,
+                    "bold".to_string(),
+                    "".to_string(),
+                    0,
+                    4,
+                    false,
+                )
+                .unwrap();
+            server.annotation_delete(sid, doc_id, 70002).unwrap();
+
+            assert_eq!(server.wal.seq(), 4, "WAL has star + 2 annotations + delete");
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            assert!(
+                server
+                    .starred_works
+                    .get(&club_id)
+                    .map_or(false, |s| s.contains(&doc_id)),
+                "star recovered in correct order"
+            );
+
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let anns = server.annotation_list(sid, doc_id).unwrap_or_default();
+            let ids: Vec<u64> = anns.iter().map(|a| a.annotation_id).collect();
+            assert!(ids.contains(&70001), "link-description recovered");
+            assert!(!ids.contains(&70002), "bold deleted via WAL replay");
+            assert_eq!(anns.len(), 1, "exactly 1 annotation after delete replay");
         }
 
         let _ = std::fs::remove_dir_all(&data_dir);

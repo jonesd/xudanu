@@ -14,8 +14,8 @@ export default defineConfig({
         ws: true,
         changeOrigin: true,
         configure: (proxy) => {
-          proxy.on("error", (err) => {
-            console.log("[ws proxy] error (non-fatal):", err.message);
+          proxy.on("error", (err: Error) => {
+            console.log("[ws proxy] error:", err.message);
           });
         },
       },
