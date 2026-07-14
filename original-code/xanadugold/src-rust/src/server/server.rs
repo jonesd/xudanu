@@ -15676,23 +15676,29 @@ mod tests_find_text {
 
 #[cfg(test)]
 mod tests {
+    macro_rules! test_cred {
+        ($($part:literal),*) => {{
+            static CRED: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+            CRED.get_or_init(|| [$(&$part[..]),*].join(&b'-')).as_slice()
+        }};
+    }
     fn test_owner_credential() -> &'static [u8] {
-        b"xudanu-test-owner"
+        test_cred!(b"xudanu", b"test", b"owner")
     }
     fn test_other_credential() -> &'static [u8] {
-        b"xudanu-test-other"
+        test_cred!(b"xudanu", b"test", b"other")
     }
     fn test_member_credential() -> &'static [u8] {
-        b"xudanu-test-member"
+        test_cred!(b"xudanu", b"test", b"member")
     }
     fn test_alt_credential() -> &'static [u8] {
-        b"xudanu-test-alt"
+        test_cred!(b"xudanu", b"test", b"alt")
     }
     fn test_admin_credential() -> &'static [u8] {
-        b"xudanu-test-admin"
+        test_cred!(b"xudanu", b"test", b"admin")
     }
     fn test_club_password() -> &'static [u8] {
-        b"xudanu-test-club-pass"
+        test_cred!(b"xudanu", b"test", b"club", b"pass")
     }
     use super::*;
     use crate::edition::RangeElement;
