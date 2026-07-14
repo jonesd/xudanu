@@ -145,29 +145,44 @@ fn dispatch_narration(
         last_author.as_deref(),
     );
 
-    let narration = match tokio::task::block_in_place(|| {
+    let mut narration = String::new();
+    let narration_result = match tokio::task::block_in_place(|| {
         let rt = tokio::runtime::Handle::current();
         rt.block_on(async {
             let _permit = llm_semaphore().acquire().await.map_err(|e| e.to_string())?;
-            tokio::time::timeout(
-                LLM_TIMEOUT,
-                llm.generate_tracked(crate::server::ollama::LlmFeature::Narration, &prompt),
-            )
-            .await
-            .map_err(|_| {
-                format!(
-                    "(LLM request timed out after {} seconds)",
-                    LLM_TIMEOUT.as_secs()
-                )
-            })
-            .and_then(|r| r.map_err(|e| e.to_string()))
+            tokio::time::timeout(LLM_TIMEOUT, llm.generate_with_attestation(&prompt))
+                .await
+                .map_err(|_| {
+                    format!(
+                        "(LLM request timed out after {} seconds)",
+                        LLM_TIMEOUT.as_secs()
+                    )
+                })
+                .and_then(|r| r.map_err(|e| e.to_string()))
         })
     }) {
-        Ok(text) => text,
-        Err(e) => format!("(LLM unavailable: {})", e),
+        Ok(result) => Some(result),
+        Err(e) => {
+            narration = format!("(LLM unavailable: {})", e);
+            None
+        }
     };
 
+    if let Some((text, attestation)) = &narration_result {
+        narration = text.clone();
+    }
+
     let llm_model = format!("{}/{}", llm.backend_label(), llm.model_name());
+
+    let attestation_json = narration_result.as_ref().map(|(_, att)| {
+        serde_json::json!({
+            "digest": att.model_digest,
+            "tokens": att.eval_count,
+            "prompt_tokens": att.prompt_eval_count,
+            "created_at": att.created_at,
+        })
+        .to_string()
+    });
 
     let insert_text = format!(
         "\n\n---\n**Change Summary**\n{}\n— via {}",
@@ -184,9 +199,15 @@ fn dispatch_narration(
                 .flatten()
                 .map(|a| a.club_be_id)
                 .unwrap_or(0);
-            let _ =
-                srv.otree_crdt
-                    .append_llm_text(work_id, &insert_text, &llm_model, triggerer_club);
+            let server_pub_key = srv.server_public_signing_key();
+            let _ = srv.otree_crdt.append_llm_text(
+                work_id,
+                &insert_text,
+                &llm_model,
+                triggerer_club,
+                server_pub_key,
+                attestation_json.as_deref(),
+            );
         }
     });
 
@@ -3167,6 +3188,11 @@ fn dispatch_inner(
                 results: payloads,
                 total_works_matched,
             })
+        }
+        WireRequest::SeedDemoAttribution { work_id } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.seed_demo_attribution(work_id)?;
+            Ok(ResponseValue::Boolean(true))
         }
         #[cfg(feature = "serde")]
         WireRequest::ProvJsonExport {

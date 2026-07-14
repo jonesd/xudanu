@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CRDT Evolution in Xudanu &mdash; From Gold to True Conflict-Free Editing</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:14px;font-weight:600;margin-top:20px;margin-bottom:6px;color:#8b949e}
+p{margin-bottom:12px;max-width:820px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.88em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.toc .toc-sub{padding-left:16px}
+.pro{color:#3fb950}
+.con{color:#f85149}
+.neutral{color:#d29922}
+.tag{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:0.5px;margin-left:6px;vertical-align:middle}
+.tag-gold{background:rgba(210,153,34,0.15);color:#d29922;border:1px solid rgba(210,153,34,0.3)}
+.tag-l1{background:rgba(63,185,80,0.15);color:#3fb950;border:1px solid rgba(63,185,80,0.3)}
+.tag-l2{background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3)}
+.tag-l3{background:rgba(163,113,247,0.15);color:#a371f7;border:1px solid rgba(163,113,247,0.3)}
+.tag-l4{background:rgba(248,81,73,0.15);color:#f85149;border:1px solid rgba(248,81,73,0.3)}
+ul{margin-left:20px;margin-bottom:12px;list-style:disc}
+li{margin-bottom:4px}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+.checklist{list-style:none;margin-left:0}
+.checklist li{padding-left:24px;position:relative}
+.checklist li:before{content:"\2610";position:absolute;left:0;color:#58a6ff}
+.checklist li.done:before{content:"\2611";color:#3fb950}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}table{font-size:11px}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>CRDT Evolution in Xudanu</h1>
+<p class="subtitle">From Gold's lock-based model to true conflict-free editing &mdash; a complete journey through concurrent document editing.</p>
+
+<div class="note">
+<strong>Context:</strong> This document traces the evolution of Xudanu's collaborative editing system,
+from its Udanax-Gold heritage through four levels of sophistication, to the planned FR-8 true position-based
+CRDT. It covers alternative approaches, trade-offs, and implementation details.
+</div>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. The Problem: Concurrent Document Editing</a>
+  <a class="toc-section" href="#s2">2. Historical Context: How Gold Did It</a>
+  <a class="toc-section" href="#s3">3. The Four Levels: Evolution Path</a>
+  <a class="toc-section" href="#s4">4. Level 1: Three-Way Merge (v0.9.x)</a>
+  <a class="toc-section" href="#s5">5. Level 2: Operational Transformation (OT)</a>
+  <a class="toc-section" href="#s6">6. Level 3: True Position-Based CRDT (FR-8)</a>
+  <a class="toc-section" href="#s7">7. Level 4: Distributed CRDT with Federation</a>
+  <a class="toc-section" href="#s8">8. Alternative Approaches</a>
+  <a class="toc-section" href="#s9">9. FR-8 Design Details</a>
+  <a class="toc-sub" href="#s9a">&mdash; Wire Protocol</a>
+  <a class="toc-sub" href="#s9b">&mdash; Tombstone Deletes</a>
+  <a class="toc-sub" href="#s9c">&mdash; Vector Clocks</a>
+  <a class="toc-sub" href="#s9d">&mdash; Offline Editing</a>
+  <a class="toc-sub" href="#s9e">&mdash; Federation Sync</a>
+  <a class="toc-sub" href="#s9f">&mdash; Compaction</a>
+  <a class="toc-section" href="#s10">10. Implementation Plan</a>
+  <a class="toc-section" href="#s11">11. Success Criteria</a>
+  <a class="toc-section" href="#s12">12. Convergence Guarantees</a>
+  <a class="toc-section" href="#s13">13. Risks and Mitigations</a>
+  <a class="toc-section" href="#s14">14. Comparison Summary</a>
+</div>
+
+<!-- ==================== SECTION 1 ==================== -->
+
+<h2 id="s1">1. The Problem: Concurrent Document Editing</h2>
+
+<p>When two people edit the same document at the same time, their changes can conflict. The fundamental challenge is:</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 860 220" xmlns="http://www.w3.org/2000/svg">
+  <!-- Base document -->
+  <rect x="180" y="20" width="160" height="40" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="260" y="45" text-anchor="middle" font-family="JetBrains Mono" font-size="13" fill="#c9d1d9">"Hello World"</text>
+  <text x="260" y="12" text-anchor="middle" font-family="Inter" font-size="10" fill="#8b949e">Base document</text>
+
+  <!-- User A branch -->
+  <path d="M 220 60 Q 160 90 140 120" stroke="#58a6ff" stroke-width="2" fill="none" stroke-dasharray="4,3"/>
+  <rect x="40" y="120" width="200" height="40" rx="6" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="140" y="145" text-anchor="middle" font-family="JetBrains Mono" font-size="12" fill="#58a6ff">"[Hi] Hello World"</text>
+  <text x="140" y="175" text-anchor="middle" font-family="Inter" font-size="10" fill="#58a6ff">User A inserts "[Hi] "</text>
+
+  <!-- User B branch -->
+  <path d="M 300 60 Q 380 90 400 120" stroke="#3fb950" stroke-width="2" fill="none" stroke-dasharray="4,3"/>
+  <rect x="400" y="120" width="200" height="40" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="500" y="145" text-anchor="middle" font-family="JetBrains Mono" font-size="12" fill="#3fb950">"Hello World!"</text>
+  <text x="500" y="175" text-anchor="middle" font-family="Inter" font-size="10" fill="#3fb950">User B appends "!"</text>
+
+  <!-- Merged -->
+  <path d="M 140 162 Q 260 185 260 190" stroke="#8b949e" stroke-width="1.5" fill="none"/>
+  <path d="M 500 162 Q 380 185 380 190" stroke="#8b949e" stroke-width="1.5" fill="none"/>
+  <rect x="180" y="190" width="280" height="0" rx="6" fill="none"/>
+  <text x="320" y="208" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e" font-style="italic">What should the merged result be?</text>
+</svg>
+<p class="diagram-caption">The fundamental concurrent editing problem: two users diverge from the same base.</p>
+</div>
+
+<p>Six families of solutions exist, each with different trade-offs:</p>
+
+<table>
+<tr><th>Approach</th><th>Conflict-free?</th><th>Offline?</th><th>P2P?</th><th>Used by</th></tr>
+<tr><td><strong>Pessimistic locking</strong></td><td>N/A (no conflicts)</td><td class="con">No</td><td class="con">No</td><td>Git, Subversion, Gold</td></tr>
+<tr><td><strong>Differential merge</strong></td><td class="con">No (manual resolve)</td><td class="con">No</td><td class="con">No</td><td>Git merge, diff3</td></tr>
+<tr><td><strong>Three-way merge + LWW</strong></td><td class="neutral">Partial (may lose)</td><td class="con">No</td><td class="con">No</td><td>Xudanu v0.9.x, Etherpad</td></tr>
+<tr><td><strong>Operational Transform</strong></td><td class="pro">Yes (transform)</td><td class="con">No</td><td class="con">No</td><td>Google Docs, Office Online</td></tr>
+<tr><td><strong>CRDT (position-based)</strong></td><td class="pro">Yes (by construction)</td><td class="pro">Yes</td><td class="pro">Yes</td><td>Yjs, Automerge, Figma</td></tr>
+<tr><td><strong>Distributed CRDT</strong></td><td class="pro">Yes</td><td class="pro">Yes</td><td class="pro">Yes (multi-server)</td><td>Research systems</td></tr>
+</table>
+
+<!-- ==================== SECTION 2 ==================== -->
+
+<h2 id="s2">2. Historical Context: How Gold Did It</h2>
+
+<p>Udanax-Gold (1998) solved concurrent access with <strong>pessimistic locking</strong> &mdash; the "work grabbing" model:</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 860 260" xmlns="http://www.w3.org/2000/svg">
+  <!-- Work -->
+  <rect x="330" y="20" width="200" height="50" rx="8" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="430" y="42" text-anchor="middle" font-family="Inter" font-size="13" fill="#d29922" font-weight="600">Document</text>
+  <text x="430" y="58" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#d29922">GRABBED by User A</text>
+
+  <!-- User A -->
+  <rect x="40" y="100" width="180" height="50" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="130" y="122" text-anchor="middle" font-family="Inter" font-size="12" fill="#3fb950">User A (editing)</text>
+  <text x="130" y="138" text-anchor="middle" font-family="Inter" font-size="10" fill="#8b949e">Holds the lock</text>
+  <path d="M 130 100 Q 200 70 330 55" stroke="#3fb950" stroke-width="2" fill="none"/>
+
+  <!-- User B -->
+  <rect x="280" y="100" width="180" height="50" rx="8" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="1"/>
+  <text x="370" y="122" text-anchor="middle" font-family="Inter" font-size="12" fill="#f85149">User B (waiting)</text>
+  <text x="370" y="138" text-anchor="middle" font-family="Inter" font-size="10" fill="#8b949e">Blocked &mdash; cannot edit</text>
+  <path d="M 370 100 Q 400 80 420 70" stroke="#f85149" stroke-width="2" fill="none" stroke-dasharray="4,3"/>
+  <text x="430" y="85" text-anchor="middle" font-family="Inter" font-size="9" fill="#f85149">DENIED</text>
+
+  <!-- User C -->
+  <rect x="520" y="100" width="180" height="50" rx="8" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="1"/>
+  <text x="610" y="122" text-anchor="middle" font-family="Inter" font-size="12" fill="#f85149">User C (waiting)</text>
+  <text x="610" y="138" text-anchor="middle" font-family="Inter" font-size="10" fill="#8b949e">In grab wait queue</text>
+  <path d="M 610 100 Q 570 80 510 70" stroke="#f85149" stroke-width="2" fill="none" stroke-dasharray="4,3"/>
+
+  <!-- Arrow: release -->
+  <path d="M 220 150 Q 400 200 610 150" stroke="#d29922" stroke-width="1.5" fill="none" stroke-dasharray="6,3"/>
+  <text x="415" y="190" text-anchor="middle" font-family="Inter" font-size="10" fill="#d29922">User A releases &rarr; User B gets lock</text>
+
+  <text x="430" y="235" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e" font-style="italic">Only ONE user can edit at a time. No conflicts possible &mdash; but no collaboration either.</text>
+</svg>
+<p class="diagram-caption">Gold's work grabbing model: pessimistic locking, one editor at a time.</p>
+</div>
+
+<div class="gold">
+<strong>Gold's approach was simple and correct:</strong> Only one user can edit a document at a time. No conflicts are possible because concurrent edits don't exist. The trade-off: <strong>no real-time collaboration</strong>.
+</div>
+
+<!-- ==================== SECTION 3 ==================== -->
+
+<h2 id="s3">3. The Four Levels: Evolution Path</h2>
+
+<div class="diagram-container">
+<svg viewBox="0 0 860 420" xmlns="http://www.w3.org/2000/svg">
+  <!-- Level axis -->
+  <line x1="430" y1="20" x2="430" y2="380" stroke="#30363d" stroke-width="2"/>
+
+  <!-- Level 0: Gold -->
+  <rect x="80" y="30" width="340" height="60" rx="8" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1"/>
+  <circle cx="430" cy="60" r="10" fill="#d29922"/>
+  <text x="100" y="52" font-family="Inter" font-size="14" fill="#d29922" font-weight="700">Gold (1998) &mdash; Lock-Based</text>
+  <text x="100" y="72" font-family="Inter" font-size="11" fill="#8b949e">One editor at a time. No conflicts. No collaboration.</text>
+
+  <!-- Level 1 -->
+  <rect x="480" y="30" width="340" height="60" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1"/>
+  <circle cx="430" cy="60" r="8" fill="#3fb950" stroke="#0d1117" stroke-width="2"/>
+  <text x="500" y="52" font-family="Inter" font-size="14" fill="#3fb950" font-weight="700">Level 1 &mdash; Three-Way Merge (v0.9.x) <span class="tag tag-l1">SHIPPED</span></text>
+  <text x="500" y="72" font-family="Inter" font-size="11" fill="#8b949e">Concurrent editing. LWW for conflicts. Per-session base tracking.</text>
+
+  <path d="M 430 70 L 430 110" stroke="#3fb950" stroke-width="2" marker-end="url(#arrowGreen)"/>
+
+  <!-- Level 2 -->
+  <rect x="80" y="120" width="340" height="60" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
+  <circle cx="430" cy="150" r="8" fill="#58a6ff" stroke="#0d1117" stroke-width="2"/>
+  <text x="100" y="142" font-family="Inter" font-size="14" fill="#58a6ff" font-weight="700">Level 2 &mdash; Operational Transform (OT)</text>
+  <text x="100" y="162" font-family="Inter" font-size="11" fill="#8b949e">Transform concurrent ops. Both edits survive. No offline.</text>
+  <text x="100" y="174" font-family="Inter" font-size="10" fill="#8b949e" font-style="italic">Skipped &mdash; dead end. Go directly to Level 3.</text>
+
+  <path d="M 430 160 L 430 200" stroke="#58a6ff" stroke-width="2" stroke-dasharray="4,3"/>
+
+  <!-- Level 3 -->
+  <rect x="480" y="120" width="340" height="60" rx="8" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1.5"/>
+  <circle cx="430" cy="150" r="10" fill="#a371f7" stroke="#0d1117" stroke-width="2"/>
+  <text x="500" y="142" font-family="Inter" font-size="14" fill="#a371f7" font-weight="700">Level 3 &mdash; True Position CRDT (FR-8) <span class="tag tag-l3">PLANNED</span></text>
+  <text x="500" y="162" font-family="Inter" font-size="11" fill="#8b949e">Immutable positions. Never loses data. Offline editing.</text>
+  <text x="500" y="174" font-family="Inter" font-size="11" fill="#8b949e">O-tree position heritage from Gold.</text>
+
+  <path d="M 430 180 L 430 220" stroke="#a371f7" stroke-width="2" stroke-dasharray="4,3"/>
+
+  <!-- Level 4 -->
+  <rect x="80" y="230" width="680" height="60" rx="8" fill="rgba(248,81,73,0.06)" stroke="#f85149" stroke-width="1"/>
+  <circle cx="430" cy="260" r="8" fill="#f85149" stroke="#0d1117" stroke-width="2"/>
+  <text x="100" y="252" font-family="Inter" font-size="14" fill="#f85149" font-weight="700">Level 4 &mdash; Distributed CRDT with Federation</text>
+  <text x="100" y="272" font-family="Inter" font-size="11" fill="#8b949e">Multi-server editing. Any server accepts edits. True Xanadu docuverse.</text>
+
+  <!-- Properties at bottom -->
+  <text x="430" y="330" text-anchor="middle" font-family="Inter" font-size="12" fill="#e6edf3" font-weight="600">Key Properties Gained at Each Level</text>
+  <text x="100" y="355" font-family="Inter" font-size="10" fill="#d29922">&#9679; Correctness (no corruption)</text>
+  <text x="500" y="355" font-family="Inter" font-size="10" fill="#3fb950">&#9679; Collaboration (concurrent)</text>
+  <text x="100" y="375" font-family="Inter" font-size="10" fill="#a371f7">&#9679; Conflict-free (never loses)</text>
+  <text x="500" y="375" font-family="Inter" font-size="10" fill="#f85149">&#9679; Distribution (multi-server)</text>
+
+  <defs>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3fb950"/>
+    </marker>
+  </defs>
+</svg>
+<p class="diagram-caption">The evolution path: each level adds capability without removing the previous level's guarantees.</p>
+</div>
+
+<!-- ==================== SECTION 4 ==================== -->
+
+<h2 id="s4">4. Level 1: Three-Way Merge <span class="tag tag-l1">SHIPPED v0.9.2</span></h2>
+
+<h3>How it works</h3>
+
+<p>The server maintains a <strong>per-session base edition</strong> for each client. When a client sends a text delta, the server:</p>
+
+<ol>
+  <li>Applies the delta to the client's session base (not the current edition)</li>
+  <li>Three-way merges: session base vs current edition vs delta-applied edition</li>
+  <li>LastWriterWins (LWW) resolves conflicts &mdash; the incoming edit wins</li>
+  <li>Updates the client's session base to the merged result</li>
+  <li>Relays the delta to other connected clients</li>
+</ol>
+
+<div class="diagram-container">
+<svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg">
+  <!-- Base -->
+  <rect x="310" y="10" width="240" height="35" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="430" y="32" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#c9d1d9">Base: "Hello World"</text>
+
+  <!-- A applies -->
+  <path d="M 380 45 Q 200 70 200 90" stroke="#58a6ff" stroke-width="1.5" fill="none"/>
+  <rect x="40" y="90" width="220" height="35" rx="6" fill="rgba(88,166,255,0.06)" stroke="#58a6ff"/>
+  <text x="150" y="112" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#58a6ff">A: "[Hi] Hello World"</text>
+
+  <!-- B applies -->
+  <path d="M 480 45 Q 660 70 660 90" stroke="#3fb950" stroke-width="1.5" fill="none"/>
+  <rect x="560" y="90" width="220" height="35" rx="6" fill="rgba(63,185,80,0.06)" stroke="#3fb950"/>
+  <text x="670" y="112" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#3fb950">B: "Hello World!"</text>
+
+  <!-- Merge box -->
+  <rect x="160" y="150" width="540" height="50" rx="8" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="430" y="172" text-anchor="middle" font-family="Inter" font-size="13" fill="#a371f7" font-weight="600">Three-Way Merge</text>
+  <text x="430" y="190" text-anchor="middle" font-family="Inter" font-size="10" fill="#8b949e">base &times; current &times; incoming &rarr; merged result</text>
+
+  <path d="M 150 125 L 150 150" stroke="#58a6ff" stroke-width="1.5" fill="none"/>
+  <path d="M 670 125 L 670 150" stroke="#3fb950" stroke-width="1.5" fill="none"/>
+  <path d="M 430 45 L 430 150" stroke="#8b949e" stroke-width="1" fill="none" stroke-dasharray="3,2"/>
+
+  <!-- Result -->
+  <path d="M 430 200 L 430 230" stroke="#a371f7" stroke-width="2"/>
+  <rect x="250" y="230" width="360" height="35" rx="6" fill="rgba(163,113,247,0.1)" stroke="#a371f7" stroke-width="1"/>
+  <text x="430" y="252" text-anchor="middle" font-family="JetBrains Mono" font-size="12" fill="#a371f7">Merged: "[Hi] Hello World!"</text>
+
+  <text x="430" y="285" text-anchor="middle" font-family="Inter" font-size="10" fill="#8b949e">Both inserts at different positions &mdash; merge preserves both</text>
+</svg>
+<p class="diagram-caption">Level 1 three-way merge: non-overlapping edits are preserved. Same-region conflicts use LWW.</p>
+</div>
+
+<h3>Limitations</h3>
+
+<table>
+<tr><th>Limitation</th><th>Impact</th><th>Mitigation in v0.9.2</th></tr>
+<tr><td>Same-region conflict</td><td>Earlier edit is silently dropped</td><td>Per-session base tracking reduces frequency</td></tr>
+<tr><td>Position shift</td><td>Client positions become stale after remote edits</td><td>Session base tracking ensures correct merge base</td></tr>
+<tr><td>No offline editing</td><td>Cannot edit without server connection</td><td>Not fixable at this level</td></tr>
+<tr><td>Single server</td><td>All edits must go through one server</td><td>Not fixable at this level</td></tr>
+</table>
+
+<!-- ==================== SECTION 5 ==================== -->
+
+<h2 id="s5">5. Level 2: Operational Transformation (OT)</h2>
+
+<div class="warning">
+<strong>Recommendation: Skip this level.</strong> OT adds significant complexity without the benefits of Level 3. Go directly to Level 3 (position-based CRDT).
+</div>
+
+<p>OT works by <strong>transforming</strong> concurrent operations before applying them. If A inserts at position 5 and B deletes position 3, the server transforms A's insert to position 4 (accounting for B's deletion).</p>
+
+<h4>Pros</h4>
+<ul>
+  <li class="pro">Both edits survive when in different regions</li>
+  <li class="pro">Full undo/redo across collaboration boundaries</li>
+  <li class="pro">Mature theory (OT research since 1989)</li>
+  <li class="pro">Production-proven (Google Docs since 2006)</li>
+</ul>
+
+<h4>Cons</h4>
+<ul>
+  <li class="con">Transform functions are complex (many edge cases)</li>
+  <li class="con">Still server-authoritative (no offline, no P2P)</li>
+  <li class="con">Transform correctness is hard to verify formally</li>
+  <li class="con">Same-region conflicts still need LWW fallback</li>
+  <li class="con">~2-3 months effort for minimal gain over Level 1</li>
+</ul>
+
+<!-- ==================== SECTION 6 ==================== -->
+
+<h2 id="s6">6. Level 3: True Position-Based CRDT <span class="tag tag-l3">FR-8 PLANNED</span></h2>
+
+<p>The O-tree already has <strong>immutable positions</strong> &mdash; inherited from Gold's enfilade heritage. Each character gets a position at creation time that never changes. Level 3 exposes these positions in the wire protocol.</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 860 280" xmlns="http://www.w3.org/2000/svg">
+  <!-- Sequential vs Position -->
+  <text x="430" y="20" text-anchor="middle" font-family="Inter" font-size="12" fill="#e6edf3" font-weight="600">Sequential (v0.9.x) vs Position-Based (FR-8)</text>
+
+  <!-- Sequential row -->
+  <text x="100" y="55" font-family="Inter" font-size="11" fill="#8b949e">Sequential:</text>
+  <rect x="200" y="35" width="50" height="30" rx="4" fill="#161b22" stroke="#30363d"/>
+  <text x="225" y="55" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#c9d1d9">pos: 0</text>
+  <rect x="255" y="35" width="50" height="30" rx="4" fill="#161b22" stroke="#30363d"/>
+  <text x="280" y="55" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#c9d1d9">pos: 1</text>
+  <rect x="310" y="35" width="50" height="30" rx="4" fill="#161b22" stroke="#30363d"/>
+  <text x="335" y="55" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#c9d1d9">pos: 2</text>
+  <text x="390" y="55" font-family="Inter" font-size="10" fill="#f85149">Shifts when text is inserted!</text>
+
+  <!-- Position-based row -->
+  <text x="100" y="105" font-family="Inter" font-size="11" fill="#8b949e">Position:</text>
+  <rect x="200" y="85" width="50" height="30" rx="4" fill="rgba(163,113,247,0.08)" stroke="#a371f7"/>
+  <text x="225" y="105" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#a371f7">[0,0]</text>
+  <rect x="255" y="85" width="50" height="30" rx="4" fill="rgba(163,113,247,0.08)" stroke="#a371f7"/>
+  <text x="280" y="105" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#a371f7">[0,1]</text>
+  <rect x="310" y="85" width="50" height="30" rx="4" fill="rgba(163,113,247,0.08)" stroke="#a371f7"/>
+  <text x="335" y="105" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#a371f7">[0,2]</text>
+  <text x="390" y="105" font-family="Inter" font-size="10" fill="#3fb950">Immutable &mdash; never shifts!</text>
+
+  <!-- Insert demo -->
+  <text x="430" y="155" text-anchor="middle" font-family="Inter" font-size="11" fill="#e6edf3">After inserting "X" at position [0,1]:</text>
+
+  <rect x="200" y="175" width="50" height="30" rx="4" fill="rgba(163,113,247,0.08)" stroke="#a371f7"/>
+  <text x="225" y="195" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#a371f7">[0,0]</text>
+  <rect x="255" y="175" width="50" height="30" rx="4" fill="rgba(63,185,80,0.12)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="280" y="195" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#3fb950">[0,1,t]</text>
+  <rect x="310" y="175" width="50" height="30" rx="4" fill="rgba(163,113,247,0.08)" stroke="#a371f7"/>
+  <text x="335" y="195" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#a371f7">[0,1]</text>
+  <rect x="365" y="175" width="50" height="30" rx="4" fill="rgba(163,113,247,0.08)" stroke="#a371f7"/>
+  <text x="390" y="195" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#a371f7">[0,2]</text>
+
+  <text x="280" y="230" text-anchor="middle" font-family="Inter" font-size="10" fill="#3fb950">New entry gets [0,1,t] &mdash; sorted between [0,0] and [0,1]</text>
+  <text x="335" y="250" text-anchor="middle" font-family="Inter" font-size="10" fill="#8b949e">Existing positions are unchanged. No shift. No merge needed.</text>
+</svg>
+<p class="diagram-caption">Position-based addressing: inserting between [0,0] and [0,1] creates [0,1,t] where t is a timestamp. Existing positions never change.</p>
+</div>
+
+<h3>Why this matters for users</h3>
+
+<ul>
+  <li><strong>Never lose data:</strong> Every keystroke from every user is preserved. If A and B both edit the same word, both versions survive (interleaved or side-by-side)</li>
+  <li><strong>Work offline:</strong> Edit on a train, sync when you reconnect. All changes merge cleanly</li>
+  <li><strong>Faster collaboration:</strong> No merge computation needed &mdash; operations apply directly</li>
+  <li><strong>Multi-server:</strong> Two xudanu servers can accept edits independently and converge</li>
+</ul>
+
+<!-- ==================== SECTION 7 ==================== -->
+
+<h2 id="s7">7. Level 4: Distributed CRDT with Federation</h2>
+
+<p>Level 4 extends Level 3 across multiple servers. Any server accepts edits, operations propagate via federation sync, all replicas converge.</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 860 260" xmlns="http://www.w3.org/2000/svg">
+  <!-- Server A -->
+  <rect x="40" y="40" width="200" height="100" rx="10" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="140" y="65" text-anchor="middle" font-family="Inter" font-size="13" fill="#58a6ff" font-weight="600">Server A (alice.com)</text>
+  <text x="140" y="85" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">User 1 edits paragraph 3</text>
+  <text x="140" y="105" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">User 2 edits paragraph 7</text>
+  <text x="140" y="125" text-anchor="middle" font-family="Inter" font-size="10" fill="#3fb950">Accepts edits immediately</text>
+
+  <!-- Server B -->
+  <rect x="620" y="40" width="200" height="100" rx="10" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="720" y="65" text-anchor="middle" font-family="Inter" font-size="13" fill="#3fb950" font-weight="600">Server B (bob.com)</text>
+  <text x="720" y="85" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">User 3 edits paragraph 3</text>
+  <text x="720" y="105" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">User 4 edits paragraph 1</text>
+  <text x="720" y="125" text-anchor="middle" font-family="Inter" font-size="10" fill="#3fb950">Accepts edits immediately</text>
+
+  <!-- Federation sync -->
+  <path d="M 240 80 Q 430 30 620 80" stroke="#a371f7" stroke-width="2" fill="none" stroke-dasharray="6,3"/>
+  <path d="M 620 100 Q 430 150 240 100" stroke="#a371f7" stroke-width="2" fill="none" stroke-dasharray="6,3"/>
+  <text x="430" y="25" text-anchor="middle" font-family="Inter" font-size="11" fill="#a371f7">Federation sync (anti-entropy gossip)</text>
+
+  <!-- Converged -->
+  <rect x="230" y="170" width="400" height="50" rx="8" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="1"/>
+  <text x="430" y="192" text-anchor="middle" font-family="Inter" font-size="13" fill="#a371f7" font-weight="600">Both replicas converge</text>
+  <text x="430" y="210" text-anchor="middle" font-family="Inter" font-size="11" fill="#8b949e">All 4 edits preserved &mdash; no conflicts, no data loss</text>
+
+  <path d="M 140 140 Q 200 160 250 170" stroke="#58a6ff" stroke-width="1" fill="none"/>
+  <path d="M 720 140 Q 660 160 610 170" stroke="#3fb950" stroke-width="1" fill="none"/>
+</svg>
+<p class="diagram-caption">Level 4: Multi-server editing. Users on different servers edit the same document, changes propagate and converge.</p>
+</div>
+
+<!-- ==================== SECTION 8 ==================== -->
+
+<h2 id="s8">8. Alternative Approaches</h2>
+
+<h3>Yjs / Yrs (CRDT library)</h3>
+<p>Mature CRDT library used by Notion, Figma, Atlassian. Would replace the O-tree entirely.</p>
+<ul>
+  <li class="pro">Battle-tested, production-proven at massive scale</li>
+  <li class="pro">Built-in awareness, undo/redo, offline support</li>
+  <li class="pro">Rich ecosystem (bindings for React, ProseMirror, etc.)</li>
+  <li class="con">Abandons Gold's O-tree and enfilade heritage</li>
+  <li class="con">Different data model (not compatible with edition/span provenance)</li>
+  <li class="con">Would require rewriting transclusion, links, attribution</li>
+</ul>
+
+<h3>Automerge (JSON CRDT)</h3>
+<p>CRDT for JSON documents with offline-first design.</p>
+<ul>
+  <li class="pro">Excellent offline support</li>
+  <li class="pro">Works with any JSON structure</li>
+  <li class="con">Heavy memory overhead</li>
+  <li class="con">Not designed for text editing specifically</li>
+  <li class="con">Would require adapting to text model</li>
+</ul>
+
+<h3>Diamond Types (byte-level CRDT)</h3>
+<p>Position-based CRDT operating at the byte level, used in Figma.</p>
+<ul>
+  <li class="pro">Extremely efficient (minimal metadata)</li>
+  <li class="pro">Production-proven at Figma scale</li>
+  <li class="con">Proprietary implementation (not open source)</li>
+  <li class="con">Byte-level &mdash; doesn't integrate with O-tree positions</li>
+</ul>
+
+<h3>Our approach: O-tree position CRDT (FR-8)</h3>
+<p>Use Gold's own O-tree positions, already in the codebase, as the CRDT position identifiers.</p>
+<ul>
+  <li class="pro">Preserves Gold heritage (enfilade positions)</li>
+  <li class="pro">Integrates naturally with transclusion, links, attribution</li>
+  <li class="pro">No external dependency</li>
+  <li class="pro">Full control over implementation</li>
+  <li class="neutral">Requires implementing CRDT logic ourselves</li>
+  <li class="neutral">~4 months development effort</li>
+</ul>
+
+<!-- ==================== SECTION 9 ==================== -->
+
+<h2 id="s9">9. FR-8 Design Details</h2>
+
+<h3 id="s9a">Wire Protocol</h3>
+
+<p>Delta operations reference O-tree positions instead of sequential character counts:</p>
+
+<pre>
+Current (v0.9.x):     Retain { count: 18 }, Insert { text: " world" }
+
+FR-8:                Retain { positions: [[0,0], [0,1], ..., [0,17]] }
+                     Insert { after: [0,17], text: " world", origin: "session-42" }</pre>
+
+<p>Positions are O-tree region coordinates. They are <strong>immutable</strong> &mdash; assigned at creation, never reassigned.</p>
+
+<h3 id="s9b">Tombstone Deletes</h3>
+
+<p>Deleted characters are <strong>marked</strong>, not removed. This preserves position stability for other clients that may still reference them.</p>
+
+<pre>
+struct OtreeEntry {
+    position: XnPosition,       // immutable
+    element: RangeElement,
+    origin_session: SessionId,  // who created this
+    is_tombstone: bool,        // deleted but not removed
+    tombstone_after: Option&lt;u64&gt;, // revision when deleted
+}</pre>
+
+<p>Tombstones are invisible in rendered text but present in the data model. Periodic compaction removes tombstones that no client references.</p>
+
+<h3 id="s9c">Vector Clocks (Causal Ordering)</h3>
+
+<p>Each operation carries a vector clock &mdash; a map of <code>{session_id: operation_count}</code>. This enables:</p>
+<ul>
+  <li>Detecting concurrent operations (neither happened-before the other)</li>
+  <li>Deterministic ordering (same operations in any order = same result)</li>
+  <li>Offline sync (operations queue and apply in causal order on reconnect)</li>
+</ul>
+
+<h3 id="s9d">Offline Editing</h3>
+
+<p>The client maintains a local operation queue (using IndexedDB). When offline:</p>
+<ol>
+  <li>All edits are stored locally with their O-tree positions</li>
+  <li>On reconnect, the client sends queued operations to the server</li>
+  <li>The server applies them position-by-position (no merge needed)</li>
+  <li>The server relays to other clients</li>
+  <li>All replicas converge &mdash; guaranteed by CRDT properties</li>
+</ol>
+
+<h3 id="s9e">Federation Sync</h3>
+
+<p>Position-based operations are naturally distributable:</p>
+<ol>
+  <li>Server A accepts edit from client</li>
+  <li>Server A applies to its O-tree replica</li>
+  <li>Server A relays to Server B via anti-entropy gossip</li>
+  <li>Server B applies to its O-tree replica</li>
+  <li>Both replicas converge</li>
+</ol>
+
+<p>This enables true multi-server editing &mdash; the Xanadu docuverse vision where documents live across servers.</p>
+
+<h3 id="s9f">Compaction</h3>
+
+<p>Tombstones accumulate over time. Compaction removes them:</p>
+<ul>
+  <li><strong>Trigger:</strong> When tombstone ratio exceeds 30% of total entries</li>
+  <li><strong>Process:</strong> Create new edition without tombstones</li>
+  <li><strong>Position remap:</strong> Build mapping from old positions to new</li>
+  <li><strong>Client notification:</strong> Send <code>crdt_compacted</code> event with remap table</li>
+  <li><strong>Safety:</strong> Only compact tombstones older than N revisions</li>
+</ul>
+
+<!-- ==================== SECTION 10 ==================== -->
+
+<h2 id="s10">10. Implementation Plan</h2>
+
+<table>
+<tr><th>Phase</th><th>Duration</th><th>Deliverables</th></tr>
+<tr><td><strong>Phase 1: Position Protocol</strong></td><td>4-6 weeks</td><td>Position-based wire protocol, client buffer, server apply, convergence tests</td></tr>
+<tr><td><strong>Phase 2: Offline Support</strong></td><td>2-3 weeks</td><td>IndexedDB queue, vector clocks, sync protocol, offline test suite</td></tr>
+<tr><td><strong>Phase 3: Tombstone Compaction</strong></td><td>2 weeks</td><td>Tombstone tracking, compaction trigger, position remap, scheduling</td></tr>
+<tr><td><strong>Phase 4: Federation Sync</strong></td><td>4-6 weeks</td><td>Cross-server relay, causal ordering, anti-entropy gossip, partition recovery</td></tr>
+<tr><td><strong>Total</strong></td><td><strong>14-17 weeks</strong></td><td>Full Level 3+4 CRDT system</td></tr>
+</table>
+
+<!-- ==================== SECTION 11 ==================== -->
+
+<h2 id="s11">11. Success Criteria</h2>
+
+<ul class="checklist">
+  <li>Two clients editing the same paragraph simultaneously &mdash; both edits preserved (no data loss)</li>
+  <li>Client disconnects, edits offline for 10 minutes, reconnects &mdash; edits sync without conflict</li>
+  <li>Two servers accept edits independently, sync converges to identical state</li>
+  <li>10 concurrent users editing a 10K-word document &mdash; no data loss, sub-second latency</li>
+  <li>Mathematical convergence proof (all replicas eventually identical)</li>
+</ul>
+
+<!-- ==================== SECTION 12 ==================== -->
+
+<h2 id="s12">12. Convergence Guarantees</h2>
+
+<div class="note">
+<strong>Theorem:</strong> Given any two replicas that have received the same set of operations (in any order), the rendered text is identical.
+</div>
+
+<p><strong>Proof sketch:</strong></p>
+<ul>
+  <li>Insert operations are uniquely identified by <code>(position, origin, timestamp)</code></li>
+  <li>Delete operations are idempotent (tombstone marking &mdash; marking twice has no effect)</li>
+  <li>Retain operations preserve order (positions define a total order)</li>
+  <li>Operations commute because positions are immutable and unique</li>
+  <li>Therefore: any permutation of the same operation set produces the same result</li>
+</ul>
+
+<!-- ==================== SECTION 13 ==================== -->
+
+<h2 id="s13">13. Risks and Mitigations</h2>
+
+<table>
+<tr><th>Risk</th><th>Impact</th><th>Mitigation</th></tr>
+<tr><td>Position metadata size</td><td>~8-16 bytes per character (800KB-1.6MB for 100K doc)</td><td>Compression, position pooling, compact representation</td></tr>
+<tr><td>Tombstone accumulation</td><td>Memory grows without bound</td><td>Automatic compaction at 30% tombstone ratio</td></tr>
+<tr><td>Client complexity</td><td>Position tracking adds client-side complexity</td><td>Provide PositionAwareBuffer library (transparent to app code)</td></tr>
+<tr><td>Protocol migration</td><td>Running both protocols increases server load</td><td>Feature detection + gradual rollout (backward compatible)</td></tr>
+</table>
+
+<!-- ==================== SECTION 14 ==================== -->
+
+<h2 id="s14">14. Comparison Summary</h2>
+
+<table>
+<tr>
+  <th style="width:18%">Dimension</th>
+  <th class="tag-gold" style="width:16%">Gold <span class="tag tag-gold">1998</span></th>
+  <th class="tag-l1" style="width:16%">Level 1 <span class="tag tag-l1">v0.9.x</span></th>
+  <th style="width:16%">Level 2 (OT)</th>
+  <th class="tag-l3" style="width:16%">Level 3 <span class="tag tag-l3">FR-8</span></th>
+  <th class="tag-l4" style="width:18%">Level 4 <span class="tag tag-l4">Future</span></th>
+</tr>
+<tr>
+  <td><strong>Concurrent editing</strong></td>
+  <td>None (lock-based)</td>
+  <td>LWW merge</td>
+  <td>Transform-based</td>
+  <td>Conflict-free</td>
+  <td>Conflict-free + distributed</td>
+</tr>
+<tr>
+  <td><strong>Data loss on conflict</strong></td>
+  <td>N/A (no conflicts)</td>
+  <td class="con">Possible (same region)</td>
+  <td class="neutral">Rare (same region)</td>
+  <td class="pro">Never</td>
+  <td class="pro">Never</td>
+</tr>
+<tr>
+  <td><strong>Offline editing</strong></td>
+  <td class="con">No</td>
+  <td class="con">No</td>
+  <td class="con">No</td>
+  <td class="pro">Yes</td>
+  <td class="pro">Yes</td>
+</tr>
+<tr>
+  <td><strong>Multi-server</strong></td>
+  <td class="con">No</td>
+  <td class="con">No</td>
+  <td class="con">No</td>
+  <td class="con">No</td>
+  <td class="pro">Yes</td>
+</tr>
+<tr>
+  <td><strong>Position stability</strong></td>
+  <td class="pro">Excellent (enfilade)</td>
+  <td class="con">Poor (sequential)</td>
+  <td class="con">Poor (sequential)</td>
+  <td class="pro">Excellent (O-tree)</td>
+  <td class="pro">Excellent (O-tree)</td>
+</tr>
+<tr>
+  <td><strong>Convergence proof</strong></td>
+  <td>N/A</td>
+  <td>Empirical</td>
+  <td>Theoretical (OT laws)</td>
+  <td>Mathematical (CRDT)</td>
+  <td>Mathematical (CRDT)</td>
+</tr>
+<tr>
+  <td><strong>Effort</strong></td>
+  <td>Done</td>
+  <td>~1 day (done)</td>
+  <td>~3 months</td>
+  <td>~4 months</td>
+  <td>~12 months</td>
+</tr>
+<tr>
+  <td><strong>Production-proven</strong></td>
+  <td class="con">No (never deployed)</td>
+  <td>Etherpad-scale</td>
+  <td>Google Docs-scale</td>
+  <td>Yjs-scale (Figma, Notion)</td>
+  <td>Research-level</td>
+</tr>
+</table>
+
+<div class="footer">
+<p>Xudanu is an independent, open-source project (Apache 2.0). Not affiliated with Ted Nelson, Project Xanadu&trade;, or the Udanax team.</p>
+<p>Design document: FR-8 (<code>docs/dev/FR-8.md</code>). Current implementation: v0.9.2 (Level 1 with per-session base tracking).</p>
+</div>
+
+</div>
+</body>
+</html>

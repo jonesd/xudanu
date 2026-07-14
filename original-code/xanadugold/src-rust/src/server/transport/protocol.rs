@@ -364,6 +364,7 @@ pub enum OperationCode {
     WorkVersionTimeline,
     PassageComposition,
     GlobalTextSearch,
+    SeedDemoAttribution,
 
     TrailUpdate,
     TrailPublish,
@@ -643,6 +644,7 @@ impl OperationCode {
             0x0D14 => Some(OperationCode::WorkVersionTimeline),
             0x0D15 => Some(OperationCode::PassageComposition),
             0x0D16 => Some(OperationCode::GlobalTextSearch),
+            0x0D17 => Some(OperationCode::SeedDemoAttribution),
 
             #[cfg(feature = "serde")]
             0x0F01 => Some(OperationCode::ServerDirectoryList),
@@ -927,6 +929,7 @@ impl OperationCode {
             OperationCode::WorkVersionTimeline => 0x0D14,
             OperationCode::PassageComposition => 0x0D15,
             OperationCode::GlobalTextSearch => 0x0D16,
+            OperationCode::SeedDemoAttribution => 0x0D17,
 
             #[cfg(feature = "serde")]
             OperationCode::ProvJsonExport => 0x0E01,
@@ -1862,6 +1865,9 @@ pub enum WireRequest {
         query: String,
         #[serde(default)]
         max_results: Option<u64>,
+    },
+    SeedDemoAttribution {
+        work_id: BeId,
     },
 
     #[cfg(feature = "serde")]

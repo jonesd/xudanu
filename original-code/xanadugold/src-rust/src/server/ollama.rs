@@ -191,6 +191,26 @@ struct OllamaResponse {
     response: String,
     #[allow(dead_code)]
     done: bool,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    created_at: Option<String>,
+    #[serde(default)]
+    eval_count: Option<u64>,
+    #[serde(default)]
+    prompt_eval_count: Option<u64>,
+    #[serde(default)]
+    total_duration: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GenerationAttestation {
+    pub model: String,
+    pub model_digest: Option<String>,
+    pub eval_count: Option<u64>,
+    pub prompt_eval_count: Option<u64>,
+    pub created_at: Option<String>,
+    pub backend: String,
 }
 
 #[derive(Serialize)]
@@ -367,6 +387,96 @@ impl LlmClient {
         let response_len = result.as_ref().map(|r| r.len() as u64).unwrap_or(0);
         usage_tracker().record(feature, prompt_len, response_len);
         result
+    }
+
+    pub async fn generate_with_attestation(
+        &self,
+        prompt: &str,
+    ) -> Result<(String, GenerationAttestation), LlmError> {
+        match &self.backend {
+            LlmBackend::Ollama { base_url, model } => {
+                let url = format!("{}/api/generate", base_url.trim_end_matches('/'));
+                let body = OllamaRequest {
+                    model: model.clone(),
+                    prompt: prompt.to_string(),
+                    stream: false,
+                };
+
+                let client = reqwest::Client::new();
+                let resp = client
+                    .post(&url)
+                    .json(&body)
+                    .timeout(std::time::Duration::from_secs(120))
+                    .send()
+                    .await
+                    .map_err(|e| LlmError::Connection(e.to_string()))?;
+
+                if !resp.status().is_success() {
+                    let status = resp.status();
+                    let text = resp.text().await.unwrap_or_default();
+                    return Err(LlmError::Api(format!("{}: {}", status, text)));
+                }
+
+                let gen: OllamaResponse = resp
+                    .json()
+                    .await
+                    .map_err(|e| LlmError::Parse(e.to_string()))?;
+
+                let digest = self.fetch_model_digest().await;
+                let attestation = GenerationAttestation {
+                    model: gen.model.unwrap_or_else(|| model.clone()),
+                    model_digest: digest,
+                    eval_count: gen.eval_count,
+                    prompt_eval_count: gen.prompt_eval_count,
+                    created_at: gen.created_at,
+                    backend: "ollama".to_string(),
+                };
+
+                Ok((gen.response.trim().to_string(), attestation))
+            }
+            _ => {
+                let text = self.generate(prompt).await?;
+                let attestation = GenerationAttestation {
+                    model: self.model_name().to_string(),
+                    model_digest: None,
+                    eval_count: None,
+                    prompt_eval_count: None,
+                    created_at: None,
+                    backend: self.backend_label().to_string(),
+                };
+                Ok((text, attestation))
+            }
+        }
+    }
+
+    async fn fetch_model_digest(&self) -> Option<String> {
+        match &self.backend {
+            LlmBackend::Ollama { base_url, model } => {
+                #[derive(Deserialize)]
+                struct TagsResponse {
+                    models: Vec<TagModel>,
+                }
+                #[derive(Deserialize)]
+                struct TagModel {
+                    name: String,
+                    digest: String,
+                }
+                let url = format!("{}/api/tags", base_url);
+                let client = reqwest::Client::new();
+                let resp = client
+                    .get(&url)
+                    .timeout(std::time::Duration::from_secs(5))
+                    .send()
+                    .await
+                    .ok()?;
+                let tags: TagsResponse = resp.json().await.ok()?;
+                tags.models
+                    .iter()
+                    .find(|m| m.name == *model || m.name.starts_with(&format!("{}:", model)))
+                    .map(|m| m.digest.clone())
+            }
+            _ => None,
+        }
     }
 
     #[allow(dead_code)]

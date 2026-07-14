@@ -58,7 +58,40 @@ struct Client {
 
 impl Client {
     async fn connect(url: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let (stream, _) = tokio_tungstenite::connect_async(url).await?;
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+        let http_base = url
+            .trim_start_matches("ws://")
+            .trim_start_matches("wss://")
+            .split('/')
+            .next()
+            .unwrap_or("127.0.0.1:8080");
+
+        let final_url = match reqwest::get(format!("http://{}/csrf-token", http_base)).await {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    #[derive(serde::Deserialize)]
+                    struct CsrfResp {
+                        csrf_token: String,
+                    }
+                    if let Ok(data) = resp.json::<CsrfResp>().await {
+                        let sep = if url.contains('?') { '&' } else { '?' };
+                        format!("{}{}csrf_token={}", url, sep, data.csrf_token)
+                    } else {
+                        url.to_string()
+                    }
+                } else {
+                    url.to_string()
+                }
+            }
+            Err(_) => url.to_string(),
+        };
+
+        let mut request = final_url.into_client_request()?;
+        request
+            .headers_mut()
+            .insert("Origin", "http://localhost:5173".parse().unwrap());
+        let (stream, _) = tokio_tungstenite::connect_async(request).await?;
         let (sender, mut receiver) = stream.split();
 
         let _hs: serde_json::Value = match receiver.next().await {

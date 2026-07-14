@@ -74,6 +74,10 @@ impl CanopyCacheInner {
             }
         }
     }
+
+    fn is_cached_path_valid(&self) -> bool {
+        self.cached_crum.is_some()
+    }
 }
 
 #[derive(Debug)]
@@ -334,10 +338,18 @@ impl CanopyCrumData {
             a.clone(),
             b.clone(),
             kind,
-            cache,
+            cache.clone(),
         )));
         a.lock().unwrap_or_else(|e| e.into_inner()).parent = Some(parent.clone());
         b.lock().unwrap_or_else(|e| e.into_inner()).parent = Some(parent.clone());
+        cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            ._update_cache_for_parent(a, &parent);
+        cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            ._update_cache_for_parent(&b, &parent);
         parent
     }
 }
@@ -345,6 +357,17 @@ impl CanopyCrumData {
 pub fn is_le(crum: &Arc<Mutex<CanopyCrumData>>, other: &Arc<Mutex<CanopyCrumData>>) -> bool {
     if Arc::ptr_eq(crum, other) {
         return true;
+    }
+    let cache = crum.lock().unwrap_or_else(|e| e.into_inner()).cache.clone();
+    {
+        let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.is_cached_path_valid() {
+            for c in &guard.cached_path {
+                if Arc::ptr_eq(c, other) {
+                    return true;
+                }
+            }
+        }
     }
     let mut cur = crum
         .lock()
@@ -378,6 +401,24 @@ pub fn compute_join(
 }
 
 pub fn find_root(crum: &Arc<Mutex<CanopyCrumData>>) -> Arc<Mutex<CanopyCrumData>> {
+    let cache = crum.lock().unwrap_or_else(|e| e.into_inner()).cache.clone();
+    {
+        let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(ref cached_crum) = guard.cached_crum {
+            if Arc::ptr_eq(cached_crum, crum) {
+                if let Some(ref root) = guard.cached_root {
+                    let root_parent = root
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .parent
+                        .clone();
+                    if root_parent.is_none() {
+                        return root.clone();
+                    }
+                }
+            }
+        }
+    }
     let mut cur = crum.clone();
     loop {
         let parent = cur.lock().unwrap_or_else(|e| e.into_inner()).parent.clone();
@@ -391,12 +432,12 @@ pub fn find_root(crum: &Arc<Mutex<CanopyCrumData>>) -> Arc<Mutex<CanopyCrumData>
 pub fn propagate_flags(crum: &Arc<Mutex<CanopyCrumData>>) {
     let mut current = Some(crum.clone());
     while let Some(c) = current {
-        let changed = c.lock().unwrap_or_else(|e| e.into_inner()).change_canopy();
-        if changed {
-            current = c.lock().unwrap_or_else(|e| e.into_inner()).parent.clone();
-        } else {
+        let c_guard = &mut c.lock().unwrap_or_else(|e| e.into_inner());
+        let changed = c_guard.change_canopy();
+        if !changed {
             break;
         }
+        current = c_guard.parent.clone();
     }
 }
 

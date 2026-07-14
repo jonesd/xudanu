@@ -398,6 +398,7 @@ export class CrdtSyncClient {
   private recentChanges: ChangeHighlight[] = [];
   private identityListeners = new Set<IdentityListener>();
   private connected = false;
+  private disposed = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private static readonly RECONNECT_BASE_MS = 500;
@@ -427,6 +428,7 @@ export class CrdtSyncClient {
 
   connect(): void {
     if (this.ws?.readyState === WebSocket.OPEN) return;
+    this.disposed = false;
 
     const wsUrl = `${this.url}?format=json&version=${PROTOCOL_VERSION}`;
 
@@ -445,6 +447,7 @@ export class CrdtSyncClient {
   }
 
   private openWs(url: string): void {
+    if (this.disposed) return;
     this.ws = new WebSocket(url);
     this.ws.onopen = () => this.onOpen();
     this.ws.onmessage = (e) => this.onMessage(e.data);
@@ -453,6 +456,7 @@ export class CrdtSyncClient {
   }
 
   disconnect(): void {
+    this.disposed = true;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -1503,7 +1507,6 @@ export class CrdtSyncClient {
 
         const wasInitialOpen = !this.crdtOpenedThisConnection;
         if (wasInitialOpen) {
-          this.text = (inner.current_text as string) || "";
           this.crdtOpenedThisConnection = true;
         }
 
@@ -1513,6 +1516,10 @@ export class CrdtSyncClient {
           } catch (e) {
             console.warn("crdt_sync: register_author failed:", e);
           }
+        }
+
+        if (wasInitialOpen) {
+          this.text = (inner.current_text as string) || "";
         }
 
         this.crdtReady = true;

@@ -357,6 +357,9 @@ fn sort_json_value(value: &mut serde_json::Value) {
             for v in arr.iter_mut() {
                 sort_json_value(v);
             }
+            if arr.iter().all(|v| !v.is_object()) {
+                arr.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
+            }
         }
         _ => {}
     }
