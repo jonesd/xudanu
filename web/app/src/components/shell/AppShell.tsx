@@ -1081,7 +1081,7 @@ export function AppShell() {
                   {editOpen ? "Edit: Open" : "Edit: Owner"}
                 </button>
               )}
-              {isPublished && workBeId !== null && (
+              {isPublished && (
                 <button
                   type="button"
                   className="publish-toggle"
@@ -1256,7 +1256,7 @@ export function AppShell() {
                 </div>
               </div>
             )}
-            {showAnnotations && workBeId !== null && (
+            {showAnnotations && (
               <div className="provenance-split">
                 <div className="provenance-split-header">
                   <span className="provenance-title">Annotations</span>
@@ -1278,7 +1278,7 @@ export function AppShell() {
                 </div>
               </div>
             )}
-            {showCompound && workBeId !== null && !isSourceWork && (
+            {showCompound && !isSourceWork && (
               <div className="provenance-split">
                 <div className="provenance-split-header">
                   <span className="provenance-title">Compound Structure</span>
