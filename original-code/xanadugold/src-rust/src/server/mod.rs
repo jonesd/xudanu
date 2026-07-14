@@ -20,6 +20,8 @@ pub mod keymaster;
 pub mod lock;
 #[cfg(feature = "server")]
 pub mod otree_crdt;
+#[cfg(feature = "server")]
+pub mod rate_limiter;
 
 #[cfg(feature = "server")]
 pub mod ollama;

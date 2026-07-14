@@ -414,6 +414,7 @@ async fn main() {
             let mut allowed_origins: std::collections::HashSet<String> =
                 std::collections::HashSet::new();
             let mut csrf_enabled = false;
+            let mut dev_mode = false;
             let mut key_passphrase: Option<String> = std::env::var("XUDANU_KEY_PASSPHRASE").ok();
             let mut github_client_id: Option<String> =
                 std::env::var("XUDANU_GITHUB_CLIENT_ID").ok();
@@ -504,6 +505,9 @@ async fn main() {
                     }
                     "--csrf-token" => {
                         csrf_enabled = true;
+                    }
+                    "--dev" => {
+                        dev_mode = true;
                     }
                     "--key-passphrase" => {
                         i += 1;
@@ -796,6 +800,12 @@ async fn main() {
                 let app = if csrf_enabled {
                     tracing::info!("CSRF token protection enabled for WebSocket");
                     app.with_csrf(true)
+                } else {
+                    app
+                };
+                let app = if dev_mode {
+                    tracing::info!("Dev mode: permissive CORS, relaxed rate limits");
+                    app.with_dev_mode(true)
                 } else {
                     app
                 };

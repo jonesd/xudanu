@@ -1034,6 +1034,7 @@ impl Server {
         let vk_hex: String = vk_bytes.iter().map(|b| format!("{:02x}", b)).collect();
         serde_json::json!({
             "protocol_version": 1,
+            "api_version": 1,
             "server_id": self.server_namespace_id(),
             "public_address": self.public_address,
             "tumbler_prefix": self.server_tumbler_prefix(),

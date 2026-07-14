@@ -131,8 +131,24 @@ async fn well_known_handler(State(state): State<SharedState>) -> impl IntoRespon
 
 async fn public_work_handler(
     State(state): State<SharedState>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     axum::extract::Path(work_id_hex): axum::extract::Path<String>,
 ) -> impl IntoResponse {
+    if !crate::server::rate_limiter::validate_work_id_hex(&work_id_hex) {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            "invalid work ID format",
+        )
+            .into_response();
+    }
+    if !state.rate_limiter.check_get(addr.ip()) {
+        tracing::warn!(target: "xudanu::security", ip = %addr, event = "SECURITY:rate_limited_get", "public API rate limit exceeded");
+        return (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            "rate limit exceeded",
+        )
+            .into_response();
+    }
     let work_id = match parse_work_id(&work_id_hex) {
         Some(id) => id,
         None => return (axum::http::StatusCode::NOT_FOUND, "work not found").into_response(),
@@ -149,6 +165,10 @@ async fn public_work_handler(
                     "application/json; charset=utf-8",
                 ),
                 (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+                (
+                    axum::http::header::HeaderName::from_static("x-xudanu-served-by"),
+                    "xudanu",
+                ),
             ],
             json.to_string(),
         )
@@ -159,6 +179,7 @@ async fn public_work_handler(
 
 async fn backlink_notify_handler(
     State(state): State<SharedState>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     body: String,
 ) -> impl IntoResponse {
     #[derive(serde::Deserialize)]
@@ -172,6 +193,11 @@ async fn backlink_notify_handler(
         link_type: String,
     }
 
+    if body.len() > 8192 {
+        tracing::warn!(target: "xudanu::security", ip = %addr, event = "SECURITY:oversized_backlink", "backlink notify body too large: {} bytes", body.len());
+        return (axum::http::StatusCode::PAYLOAD_TOO_LARGE, "body too large").into_response();
+    }
+
     let notify: BacklinkNotify = match serde_json::from_str(&body) {
         Ok(n) => n,
         Err(e) => {
@@ -182,6 +208,38 @@ async fn backlink_notify_handler(
                 .into_response()
         }
     };
+
+    if !crate::server::rate_limiter::validate_work_id_hex(&notify.target_work_id) {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            "invalid target_work_id format",
+        )
+            .into_response();
+    }
+
+    let server_id = if notify.origin_server_address.is_empty() {
+        notify.origin_server_name.clone()
+    } else {
+        notify.origin_server_address.clone()
+    };
+
+    let (ip_ok, srv_ok) = state.rate_limiter.check_notify(addr.ip(), &server_id);
+    if !ip_ok {
+        tracing::warn!(target: "xudanu::security", ip = %addr, event = "SECURITY:backlink_rate_ip", "backlink rate limit (IP) exceeded from {}", addr);
+        return (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            "rate limit: too many backlinks from this IP",
+        )
+            .into_response();
+    }
+    if !srv_ok {
+        tracing::warn!(target: "xudanu::security", ip = %addr, server = %server_id, event = "SECURITY:backlink_rate_server", "backlink rate limit (server) exceeded for {}", server_id);
+        return (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            "rate limit: too many backlinks from this server",
+        )
+            .into_response();
+    }
 
     let work_id = match parse_work_id(&notify.target_work_id) {
         Some(id) => id,
@@ -220,17 +278,51 @@ async fn backlink_notify_handler(
         .with_server(|srv| srv.receive_cross_server_backlink(entry));
 
     tracing::info!(
-        "Received cross-server backlink notification from {}",
-        body.len()
+        target: "xudanu::security",
+        ip = %addr,
+        origin = %server_id,
+        work = %work_id,
+        event = "CROSS_SERVER:backlink_received",
+        "Received cross-server backlink notification"
     );
 
-    (axum::http::StatusCode::OK, "ok").into_response()
+    if state.dev_mode {
+        axum::response::Response::builder()
+            .status(axum::http::StatusCode::OK)
+            .header(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .body(axum::body::Body::from("ok"))
+            .unwrap_or_else(|_| (axum::http::StatusCode::OK, "ok").into_response())
+    } else {
+        (axum::http::StatusCode::OK, "ok").into_response()
+    }
 }
 
 async fn public_work_range_handler(
     State(state): State<SharedState>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     axum::extract::Path((work_id_hex, start, end)): axum::extract::Path<(String, usize, usize)>,
 ) -> impl IntoResponse {
+    if !crate::server::rate_limiter::validate_work_id_hex(&work_id_hex) {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            "invalid work ID format",
+        )
+            .into_response();
+    }
+    if !state.rate_limiter.check_get(addr.ip()) {
+        return (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            "rate limit exceeded",
+        )
+            .into_response();
+    }
+    if end > start + 1_000_000 {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            "range too large (max 1M chars)",
+        )
+            .into_response();
+    }
     let work_id = match parse_work_id(&work_id_hex) {
         Some(id) => id,
         None => return (axum::http::StatusCode::NOT_FOUND, "work not found").into_response(),
