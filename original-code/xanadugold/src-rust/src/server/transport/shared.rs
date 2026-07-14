@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use super::audit::SecurityMonitor;
 use super::channel::EventMessage;
 use super::oauth::{OAuthConfig, OAuthState};
+use crate::server::rate_limiter::RateLimiter;
 use crate::server::session::SessionId;
 use crate::server::Server;
 
@@ -26,6 +27,8 @@ pub struct AppState {
     pub oauth_state: OAuthState,
     pub verification: crate::server::verification::VerificationState,
     pub governance_tx: tokio::sync::broadcast::Sender<super::federation_handler::FederationFrame>,
+    pub rate_limiter: Arc<RateLimiter>,
+    pub dev_mode: bool,
 }
 
 impl AppState {
@@ -53,6 +56,8 @@ impl AppState {
             oauth_state: OAuthState::new(),
             verification: crate::server::verification::VerificationState::new(String::new()),
             governance_tx: gov_tx,
+            rate_limiter: Arc::new(RateLimiter::new()),
+            dev_mode: false,
         }
     }
 
@@ -98,6 +103,11 @@ impl AppState {
 
     pub fn with_csrf(mut self, enabled: bool) -> Self {
         self.csrf_enabled = enabled;
+        self
+    }
+
+    pub fn with_dev_mode(mut self, dev: bool) -> Self {
+        self.dev_mode = dev;
         self
     }
 

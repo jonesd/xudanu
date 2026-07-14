@@ -837,6 +837,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return handle_registry_command(&args).await;
     }
 
+    if args.len() >= 2 && args[1] == "security-test" {
+        if args.len() < 3 {
+            eprintln!("Usage: xudanu-cli security-test <http://host:port>");
+            eprintln!("");
+            eprintln!("Tests public API security controls on a running xudanu server:");
+            eprintln!("  - Health endpoint accessibility");
+            eprintln!("  - Well-known identity endpoint");
+            eprintln!("  - Public work API (valid + invalid IDs)");
+            eprintln!("  - Rate limiting (flood test)");
+            eprintln!("  - Backlink notification (valid + invalid)");
+            eprintln!("  - Input validation (bad work IDs, bad hashes)");
+            eprintln!("  - CORS headers");
+            eprintln!("  - Response size caps");
+            std::process::exit(1);
+        }
+        return security_test(&args[2]).await;
+    }
+
     if args.len() < 3 {
         usage();
         std::process::exit(1);
@@ -1660,6 +1678,287 @@ fn registry_list(path: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!("Total: {} trusted server(s)", file.registry.server_count());
+
+    Ok(())
+}
+
+async fn security_test(base_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let base = base_url.trim_end_matches('/');
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
+
+    let mut passed = 0u32;
+    let mut failed = 0u32;
+    let mut warnings = 0u32;
+
+    let check = |name: &str,
+                 condition: bool,
+                 detail: &str,
+                 passed: &mut u32,
+                 failed: &mut u32,
+                 warnings: &mut u32| {
+        if condition {
+            println!("  [PASS] {} - {}", name, detail);
+            *passed += 1;
+        } else {
+            println!("  [FAIL] {} - {}", name, detail);
+            *failed += 1;
+        }
+    };
+
+    println!("\n=== Xudanu Security Test ===");
+    println!("Target: {}\n", base);
+
+    // 1. Health endpoint
+    println!("[1] Health endpoint");
+    let resp = client.get(format!("{}/health", base)).send().await?;
+    check(
+        "health returns 200",
+        resp.status() == 200,
+        &format!("status: {}", resp.status()),
+        &mut passed,
+        &mut failed,
+        &mut warnings,
+    );
+
+    // 2. Well-known identity
+    println!("\n[2] Well-known identity");
+    let resp = client
+        .get(format!("{}/.well-known/xudanu-server.json", base))
+        .send()
+        .await?;
+    check(
+        "well-known returns 200",
+        resp.status() == 200,
+        &format!("status: {}", resp.status()),
+        &mut passed,
+        &mut failed,
+        &mut warnings,
+    );
+    if resp.status() == 200 {
+        let body: serde_json::Value = resp.json().await?;
+        check(
+            "has server_id",
+            body.get("server_id").is_some(),
+            "server identity present",
+            &mut passed,
+            &mut failed,
+            &mut warnings,
+        );
+        check(
+            "has api_version",
+            body.get("api_version").is_some(),
+            "API version present",
+            &mut passed,
+            &mut failed,
+            &mut warnings,
+        );
+    }
+
+    // 3. Public work API - valid ID
+    println!("\n[3] Public work API (valid ID)");
+    let resp = client
+        .get(format!("{}/api/public/work/0001", base))
+        .send()
+        .await?;
+    let status = resp.status();
+    check(
+        "valid hex ID accepted",
+        status == 200 || status == 404,
+        &format!("status: {} (404 = no such work, acceptable)", status),
+        &mut passed,
+        &mut failed,
+        &mut warnings,
+    );
+
+    // 4. Public work API - invalid ID
+    println!("\n[4] Public work API (invalid ID)");
+    let resp = client
+        .get(format!("{}/api/public/work/INVALID", base))
+        .send()
+        .await?;
+    check(
+        "invalid ID rejected",
+        resp.status() == 400,
+        &format!("status: {} (expected 400)", resp.status()),
+        &mut passed,
+        &mut failed,
+        &mut warnings,
+    );
+
+    let resp = client
+        .get(format!("{}/api/public/work/''", base))
+        .send()
+        .await?;
+    check(
+        "empty ID rejected",
+        resp.status() == 400 || resp.status() == 404,
+        &format!("status: {}", resp.status()),
+        &mut passed,
+        &mut failed,
+        &mut warnings,
+    );
+
+    // 5. Rate limiting
+    println!("\n[5] Rate limiting (flooding 130 requests)");
+    let mut rate_limited = false;
+    let mut last_status = 0;
+    for i in 0..130 {
+        let resp = client
+            .get(format!("{}/api/public/work/0001", base))
+            .send()
+            .await?;
+        last_status = resp.status().as_u16();
+        if resp.status() == 429 {
+            rate_limited = true;
+            println!("    Rate limited at request #{}", i + 1);
+            break;
+        }
+    }
+    check(
+        "rate limit triggers",
+        rate_limited,
+        &format!("last status: {}", last_status),
+        &mut passed,
+        &mut failed,
+        &mut warnings,
+    );
+    if !rate_limited {
+        println!("    (warning: no rate limit triggered — may need higher count or disabled)");
+        warnings += 1;
+    }
+
+    // Wait for rate limit to reset
+    println!("    Waiting 60s for rate limit reset...");
+    tokio::time::sleep(std::time::Duration::from_secs(62)).await;
+
+    // 6. Backlink notification
+    println!("\n[6] Backlink notification");
+    let valid_notify = serde_json::json!({
+        "target_work_id": "0001",
+        "origin_server_address": "test.example.com",
+        "origin_server_name": "Test Server",
+        "origin_work_id": "0002",
+        "origin_work_title": "Test Document",
+        "excerpt": "test excerpt",
+        "link_type": "reference"
+    });
+    let resp = client
+        .post(format!("{}/api/backlink-notify", base))
+        .json(&valid_notify)
+        .send()
+        .await?;
+    check(
+        "valid backlink accepted",
+        resp.status() == 200 || resp.status() == 404,
+        &format!(
+            "status: {} (404 = work not found, acceptable)",
+            resp.status()
+        ),
+        &mut passed,
+        &mut failed,
+        &mut warnings,
+    );
+
+    // Invalid backlink
+    let resp = client
+        .post(format!("{}/api/backlink-notify", base))
+        .body("not json")
+        .send()
+        .await?;
+    check(
+        "invalid JSON rejected",
+        resp.status() == 400,
+        &format!("status: {} (expected 400)", resp.status()),
+        &mut passed,
+        &mut failed,
+        &mut warnings,
+    );
+
+    // Invalid work ID in backlink
+    let bad_notify = serde_json::json!({
+        "target_work_id": "NOT_HEX",
+        "origin_server_address": "test.example.com",
+        "origin_server_name": "Test",
+        "origin_work_id": "0002",
+        "origin_work_title": "Test",
+        "excerpt": "test",
+        "link_type": "ref"
+    });
+    let resp = client
+        .post(format!("{}/api/backlink-notify", base))
+        .json(&bad_notify)
+        .send()
+        .await?;
+    check(
+        "invalid work ID in backlink rejected",
+        resp.status() == 400,
+        &format!("status: {} (expected 400)", resp.status()),
+        &mut passed,
+        &mut failed,
+        &mut warnings,
+    );
+
+    // 7. Oversized backlink
+    println!("\n[7] Backlink size cap");
+    let big_body = "x".repeat(10000);
+    let resp = client
+        .post(format!("{}/api/backlink-notify", base))
+        .body(big_body)
+        .header("Content-Type", "application/json")
+        .send()
+        .await?;
+    check(
+        "oversized backlink rejected",
+        resp.status() == 413 || resp.status() == 400,
+        &format!("status: {}", resp.status()),
+        &mut passed,
+        &mut failed,
+        &mut warnings,
+    );
+
+    // 8. CORS headers
+    println!("\n[8] CORS headers");
+    let resp = client
+        .get(format!("{}/.well-known/xudanu-server.json", base))
+        .send()
+        .await?;
+    let cors = resp.headers().get("access-control-allow-origin");
+    check(
+        "CORS header present",
+        cors.is_some(),
+        &format!("CORS: {:?}", cors),
+        &mut passed,
+        &mut failed,
+        &mut warnings,
+    );
+
+    // 9. Range size cap
+    println!("\n[9] Range size cap");
+    let resp = client
+        .get(format!("{}/api/public/work/0001/range/0/2000000", base))
+        .send()
+        .await?;
+    check(
+        "oversized range rejected",
+        resp.status() == 400,
+        &format!("status: {} (expected 400)", resp.status()),
+        &mut passed,
+        &mut failed,
+        &mut warnings,
+    );
+
+    // Summary
+    println!("\n=== Summary ===");
+    println!("  Passed:   {}", passed);
+    println!("  Failed:   {}", failed);
+    println!("  Warnings: {}", warnings);
+    println!("  Total:    {}", passed + failed + warnings);
+
+    if failed > 0 {
+        std::process::exit(1);
+    }
 
     Ok(())
 }
