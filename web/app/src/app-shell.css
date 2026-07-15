@@ -29,7 +29,7 @@
 
 .app-shell {
   display: grid;
-  grid-template-columns: 52px 1fr 300px;
+  grid-template-columns: 52px 1fr 240px;
   grid-template-rows: 44px 1fr 28px;
   height: 100vh;
   overflow: hidden;
@@ -437,15 +437,15 @@
 
 .document-center {
   flex: 1;
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 48px 48px 120px;
+  max-width: 100%;
+  margin: 0;
+  padding: 8px 16px 24px;
   width: 100%;
   overflow-y: auto;
 }
 
 .focus-mode .document-center {
-  max-width: 1100px;
+  max-width: 100%;
 }
 
 .document-center .editor-content,
@@ -459,7 +459,7 @@
 }
 .document-center .editor-content {
   min-height: 100%;
-  padding-bottom: 40vh;
+  padding-bottom: 20vh;
 }
 
 /* ── Context Panel (right) ── */
@@ -1676,3 +1676,108 @@
 .compare-loading { color: var(--text-muted); }
 ._bridge { background: transparent; }
 .compound-placed-meta { font-size: 10px; color: #6a6a76; margin-left: 4px; }
+
+.related-footer-panel {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+  padding: 0 12px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.related-footer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-family: 'Inter', sans-serif;
+}
+
+.related-footer-toggle:hover {
+  color: var(--text);
+}
+
+.related-footer-header {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.related-footer-count {
+  font-size: 10px;
+  background: var(--border);
+  border-radius: 8px;
+  padding: 1px 6px;
+  color: var(--text-muted);
+}
+
+.related-footer-chevron {
+  margin-left: auto;
+  font-size: 8px;
+}
+
+.related-footer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  padding-bottom: 12px;
+}
+
+.related-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+  text-decoration: none;
+  color: inherit;
+  font-family: inherit;
+}
+
+.related-card:hover {
+  border-color: var(--accent-blue, #58a6ff);
+  background: rgba(88, 166, 255, 0.06);
+}
+
+.related-card-reason {
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.related-card-title {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.related-card-excerpt {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

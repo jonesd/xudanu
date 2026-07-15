@@ -204,6 +204,7 @@ pub struct TextRangeResult {
 
 pub struct OtreeCrdtManager {
     docs: HashMap<BeId, OtreeWorkDoc>,
+    orphaned_annotations: HashMap<BeId, Vec<OtreeAnnotation>>,
     session_counter: u64,
     debounce_secs: u64,
 }
@@ -509,6 +510,7 @@ impl OtreeCrdtManager {
     pub fn new(debounce_secs: u64) -> Self {
         OtreeCrdtManager {
             docs: HashMap::new(),
+            orphaned_annotations: HashMap::new(),
             session_counter: 0,
             debounce_secs,
         }
@@ -592,6 +594,10 @@ impl OtreeCrdtManager {
         wd.awareness.remove(&session_id);
         wd.session_bases.remove(&session_id);
         if wd.subscribers.is_empty() {
+            if !wd.annotations.is_empty() {
+                self.orphaned_annotations
+                    .insert(work_id, std::mem::take(&mut wd.annotations));
+            }
             self.docs.remove(&work_id);
         }
         Ok(())
@@ -1037,6 +1043,10 @@ impl OtreeCrdtManager {
         if self.docs.contains_key(&work_id) {
             return;
         }
+        let annotations = self
+            .orphaned_annotations
+            .remove(&work_id)
+            .unwrap_or_default();
         self.docs.insert(
             work_id,
             OtreeWorkDoc {
@@ -1053,7 +1063,7 @@ impl OtreeCrdtManager {
                 federated_provenance: Vec::new(),
                 last_author_mapping: None,
                 cached_text: Mutex::new(None),
-                annotations: Vec::new(),
+                annotations,
             },
         );
     }
@@ -1434,11 +1444,18 @@ impl OtreeCrdtManager {
     }
 
     pub fn all_annotations(&self) -> Vec<(BeId, Vec<OtreeAnnotation>)> {
-        self.docs
+        let mut result: Vec<(BeId, Vec<OtreeAnnotation>)> = self
+            .docs
             .iter()
             .filter(|(_, wd)| !wd.annotations.is_empty())
             .map(|(work_id, wd)| (*work_id, wd.annotations.clone()))
-            .collect()
+            .collect();
+        for (work_id, anns) in &self.orphaned_annotations {
+            if !anns.is_empty() {
+                result.push((*work_id, anns.clone()));
+            }
+        }
+        result
     }
 
     pub fn restore_annotations(&mut self, data: &[(BeId, Vec<OtreeAnnotation>)]) {
@@ -1449,6 +1466,15 @@ impl OtreeCrdtManager {
                 for ann in annotations {
                     if !existing_ids.contains(&ann.annotation_id) {
                         wd.annotations.push(ann.clone());
+                    }
+                }
+            } else {
+                let existing = self.orphaned_annotations.entry(*work_id).or_default();
+                let existing_ids: std::collections::HashSet<u64> =
+                    existing.iter().map(|a| a.annotation_id).collect();
+                for ann in annotations {
+                    if !existing_ids.contains(&ann.annotation_id) {
+                        existing.push(ann.clone());
                     }
                 }
             }

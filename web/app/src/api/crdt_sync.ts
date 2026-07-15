@@ -399,6 +399,8 @@ export class CrdtSyncClient {
   private identityListeners = new Set<IdentityListener>();
   private connected = false;
   private disposed = false;
+  private connecting = false;
+  private generation = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private static readonly RECONNECT_BASE_MS = 500;
@@ -428,13 +430,17 @@ export class CrdtSyncClient {
 
   connect(): void {
     if (this.ws?.readyState === WebSocket.OPEN) return;
+    if (this.connecting) return;
+    this.connecting = true;
     this.disposed = false;
 
+    const gen = this.generation;
     const wsUrl = `${this.url}?format=json&version=${PROTOCOL_VERSION}`;
 
     fetch("/csrf-token")
       .then((r) => r.ok ? r.json() : Promise.reject(new Error("csrf disabled")))
       .then((d) => {
+        if (gen !== this.generation) return;
         if (d.csrf_token) {
           this.openWs(wsUrl + "&csrf_token=" + encodeURIComponent(d.csrf_token));
         } else {
@@ -442,12 +448,18 @@ export class CrdtSyncClient {
         }
       })
       .catch(() => {
+        if (gen !== this.generation) return;
         this.openWs(wsUrl);
       });
   }
 
   private openWs(url: string): void {
     if (this.disposed) return;
+    if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+      this.ws.onclose = null;
+      this.ws.close();
+    }
+    this.connecting = false;
     this.ws = new WebSocket(url);
     this.ws.onopen = () => this.onOpen();
     this.ws.onmessage = (e) => this.onMessage(e.data);
@@ -457,6 +469,8 @@ export class CrdtSyncClient {
 
   disconnect(): void {
     this.disposed = true;
+    this.connecting = false;
+    this.generation++;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -1455,19 +1469,27 @@ export class CrdtSyncClient {
       }
     }, 20000);
 
-    try {
-      const resp = await this.sendRequest("session_connect");
-      this.sessionId = extractValue(resp) as number;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const resp = await this.sendRequest("session_connect");
+        this.sessionId = extractValue(resp) as number;
 
-      const who = await this.checkWhoAmI();
-      if (!who) {
-        await this.sendRequest("session_login_public");
+        const who = await this.checkWhoAmI();
+        if (!who) {
+          await this.sendRequest("session_login_public");
+        }
+
+        await this.checkSourceWork();
+        await this.tryOpenWork();
+        return;
+      } catch (e) {
+        if (attempt < 2) {
+          console.warn(`CRDT session setup attempt ${attempt + 1} failed, retrying...`, e);
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        } else {
+          console.warn("CRDT session setup failed after 3 attempts:", e);
+        }
       }
-
-      await this.checkSourceWork();
-      await this.tryOpenWork();
-    } catch (e) {
-      console.warn("CRDT session setup (will retry after auth):", e);
     }
   }
 
@@ -1494,7 +1516,7 @@ export class CrdtSyncClient {
   }
 
   async tryOpenWork(): Promise<void> {
-    if (!this.workBeId || !this.ws?.OPEN) return;
+    if (!this.workBeId || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     let loaded = false;
     if (!this.skipCrdt) {
       try {
@@ -1763,6 +1785,9 @@ export class CrdtSyncClient {
   }
 
   private onClose(): void {
+    if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
+      return;
+    }
     this.connected = false;
     this.crdtReady = false;
     this.crdtOpenedThisConnection = false;
@@ -1780,7 +1805,9 @@ export class CrdtSyncClient {
     this.connectionListeners.forEach((cb) => cb(false));
     this.pending.forEach((handler) => handler("connection closed", true));
     this.pending.clear();
-    this.scheduleReconnect();
+    if (!this.disposed) {
+      this.scheduleReconnect();
+    }
   }
 
   private scheduleReconnect(): void {

@@ -26,6 +26,7 @@ import { ContextPanel } from "./ContextPanel";
 import { LibrarySlideOut } from "./LibrarySlideOut";
 import { SearchOverlay } from "./SearchOverlay";
 import { PermissionBadge } from "./PermissionBadge";
+import { RelatedFooter } from "../RelatedFooter";
 import { useCompare, CompareHeader, CompareSplitView } from "../ComparePanel";
 import { buildProvValidatorHtml } from "../../prov-validator";
 import "../../app-shell.css";
@@ -140,29 +141,39 @@ export function AppShell() {
 
   const loadTransclusionLinks = transclusion.loadLinks;
   const loadBacklinks = transclusion.loadBacklinks;
+  const clearOnWorkSwitch = transclusion.clearOnWorkSwitch;
   const loadLinkTypes = transclusion.loadLinkTypes;
+
+  useEffect(() => {
+    clearOnWorkSwitch();
+  }, [workBeId, clearOnWorkSwitch]);
+
   useEffect(() => {
     if (connected && workBeId !== null && clientRef.current) {
       refreshAttribution();
       refreshAnnotations();
       clientRef.current.crossServerBacklinksGet(workBeId).then(setCrossServerBacklinks).catch(() => setCrossServerBacklinks([]));
-    }
-    if (connected && workBeId !== null && clientRef.current && identity) {
       loadTransclusionLinks(clientRef.current, workBeId, works);
       loadBacklinks(clientRef.current, workBeId);
     }
-  }, [connected, workBeId, works, identity, loadTransclusionLinks, loadBacklinks, refreshAttribution, refreshAnnotations]);
+  }, [connected, workBeId, works, loadTransclusionLinks, loadBacklinks, refreshAttribution, refreshAnnotations]);
+
+  useEffect(() => {
+    if (!connected || workBeId === null) return;
+    const timer = setTimeout(() => {
+      refreshAnnotations();
+      refreshAttribution();
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [connected, workBeId, refreshAnnotations, refreshAttribution]);
 
   useEffect(() => {
     if (!connected || workBeId === null || !clientRef.current) return;
     const handler = setTimeout(() => {
-      refreshAttribution();
-      if (identity) {
-        loadTransclusionLinks(clientRef.current!, workBeId!, works);
-      }
+      loadTransclusionLinks(clientRef.current!, workBeId!, works);
     }, 500);
     return () => clearTimeout(handler);
-  }, [text, connected, workBeId, identity, works, loadTransclusionLinks, refreshAttribution]);
+  }, [text, connected, workBeId, works, loadTransclusionLinks]);
 
   useEffect(() => {
     if (connected && clientRef.current && identity) {
@@ -1305,6 +1316,15 @@ export function AppShell() {
                 </div>
               </div>
             )}
+            <RelatedFooter
+              backlinks={transclusion.backlinks}
+              outgoingLinks={transclusion.links}
+              compoundSpanRanges={compound.spanRanges}
+              compoundSourceTitles={compound.sourceTitles}
+              crossServerBacklinks={crossServerBacklinks}
+              currentWorkId={workBeId}
+              onNavigateToWork={selectWork}
+            />
           </>
         )}
       </div>

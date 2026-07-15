@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import type { CrdtSyncClient, LinkEntry, TransclusionMarker, WorkListEntry, BacklinkEntry, LinkTypeInfo } from "../api/crdt_sync";
 import { resolveMarkerPositions } from "../link-markers";
 
@@ -44,6 +44,7 @@ export interface TransclusionState {
   loadBacklinks: (client: CrdtSyncClient, workId: number) => Promise<void>;
   loadLinkTypes: (client: CrdtSyncClient) => Promise<void>;
   deleteLink: (client: CrdtSyncClient, linkId: number) => Promise<void>;
+  clearOnWorkSwitch: () => void;
 }
 
 const MARKER_COLORS = [
@@ -88,6 +89,8 @@ export function useTransclusion(): TransclusionState {
   const [markers, setMarkers] = useState<TransclusionMarker[]>([]);
   const [backlinks, setBacklinks] = useState<BacklinkEntry[]>([]);
   const [linkTypes, setLinkTypes] = useState<LinkTypeInfo[]>([]);
+  const linkEpoch = useRef(0);
+  const backlinkEpoch = useRef(0);
 
   const holdSelection = useCallback(
     (workId: number, workTitle: string, start: number, end: number, text: string) => {
@@ -128,14 +131,24 @@ export function useTransclusion(): TransclusionState {
 
   const loadLinks = useCallback(
     async (client: CrdtSyncClient, workId: number, works: WorkListEntry[]) => {
+      const epoch = ++linkEpoch.current;
+      let linkList;
       try {
-      const rawList = await client.linkListForWork(workId);
-      const seenIds = new Set<number>();
-      const linkList = rawList.filter((l) =>
-        seenIds.has(l.link_id) ? false : (seenIds.add(l.link_id), true),
-      );
+        const rawList = await client.linkListForWork(workId);
+        if (epoch !== linkEpoch.current) return;
+        const seenIds = new Set<number>();
+        linkList = rawList.filter((l) =>
+          seenIds.has(l.link_id) ? false : (seenIds.add(l.link_id), true),
+        );
+      } catch {
+        if (epoch !== linkEpoch.current) return;
+        setLinks([]);
+        setMarkers([]);
+        return;
+      }
       setLinks(linkList);
 
+      try {
         const workTitleMap = new Map<number, string>();
         for (const w of works) {
           workTitleMap.set(w.work_id, w.title || "Untitled");
@@ -149,7 +162,7 @@ export function useTransclusion(): TransclusionState {
             ? client.findExcerptPositions(workId, excerpt)
             : Promise.resolve([]);
         });
-        const fallbacks = await Promise.all(fallbackPromises);
+        const fallbackResults = await Promise.allSettled(fallbackPromises);
 
         const newMarkers: TransclusionMarker[] = [];
         for (let i = 0; i < linkList.length; i++) {
@@ -171,7 +184,7 @@ export function useTransclusion(): TransclusionState {
             ? (remoteRef?.excerpt || localRef?.excerpt || "")
             : (localRef?.excerpt || remoteRef?.excerpt || "");
           const chain = localRef?.provenance_chain || remoteRef?.provenance_chain;
-          const fallback = isWebLink ? [] : fallbacks[i];
+          const fallback = (fallbackResults[i].status === "fulfilled") ? (fallbackResults[i] as PromiseFulfilledResult<{ start: number; end: number; }[]>).value : [];
           const positions = resolveMarkerPositions(localRef, fallback);
           const webTitle = isWebLink ? (remoteRef?.excerpt || "Web Link") : title;
           const crossServerRef = remoteRef?.cross_server_ref
@@ -195,9 +208,10 @@ export function useTransclusion(): TransclusionState {
             });
           }
         }
+        if (epoch !== linkEpoch.current) return;
         setMarkers(newMarkers);
       } catch {
-        setLinks([]);
+        if (epoch !== linkEpoch.current) return;
         setMarkers([]);
       }
     },
@@ -262,10 +276,13 @@ export function useTransclusion(): TransclusionState {
 
   const loadBacklinks = useCallback(
     async (client: CrdtSyncClient, workId: number) => {
+      const epoch = ++backlinkEpoch.current;
       try {
         const result = await client.findBacklinks(workId);
+        if (epoch !== backlinkEpoch.current) return;
         setBacklinks(result);
       } catch {
+        if (epoch !== backlinkEpoch.current) return;
         setBacklinks([]);
       }
     },
@@ -285,6 +302,14 @@ export function useTransclusion(): TransclusionState {
     [],
   );
 
+  const clearOnWorkSwitch = useCallback(() => {
+    linkEpoch.current++;
+    backlinkEpoch.current++;
+    setLinks([]);
+    setMarkers([]);
+    setBacklinks([]);
+  }, []);
+
   return {
     pending,
     pendingLink,
@@ -302,5 +327,6 @@ export function useTransclusion(): TransclusionState {
     loadBacklinks,
     loadLinkTypes,
     deleteLink,
+    clearOnWorkSwitch,
   };
 }
