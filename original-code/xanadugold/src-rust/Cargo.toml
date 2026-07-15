@@ -20,7 +20,7 @@ wasm = ["wasm-bindgen", "console_error_panic_hook", "serde", "serde_json", "js-s
 server = ["tokio", "axum", "postcard", "tracing", "tracing-subscriber", "tracing-appender", "serde", "serde_json", "futures-util", "tokio-tungstenite", "chacha20poly1305", "x25519-dalek", "ed25519-dalek", "sha2", "hmac", "hkdf", "argon2", "subtle", "rand", "zeroize", "mime_guess", "axum-server", "rustls-pemfile", "rustls", "ring", "base64", "reqwest", "oauth2", "webpki-roots", "hex"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.2", features = ["js"] }
+getrandom = { version = "0.4", features = ["js"] }
 
 [dependencies]
 blake3 = "1"
