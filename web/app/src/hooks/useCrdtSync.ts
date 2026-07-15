@@ -454,7 +454,6 @@ export function useCrdtSync(
   const createAnnotation = useCallback(async (kind: string, payload: string, charStart: number, charEnd: number, isPrivate = false) => {
     const client = clientRef.current;
     if (!client || workBeId === null) return;
-    if (!client.isConnected()) return;
     const id = Date.now();
     await client.annotationCreate(workBeId, id, kind, payload, charStart, charEnd, isPrivate);
     refreshAnnotations();
