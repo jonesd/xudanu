@@ -70,6 +70,7 @@ interface CollaborativeEditorProps {
   showLinkDescriptions?: boolean;
   onResolveLinkDescription?: (linkId: number, resolved: boolean) => void;
   onEditLinkDescription?: (linkId: number, newText: string) => void;
+  onDeleteLink?: (linkId: number) => void;
 }
 
 const CHUNK_SIZE = 50_000;
@@ -609,9 +610,8 @@ function drawOverlay(
       ctx.beginPath();
       const startX = desc.textRightX + 4;
       const endX = boxX;
-      const textMidY = desc.firstTop + desc.height / 2;
+      const lineY = desc.firstTop + desc.height - 1 + desc.lane * 2;
       const boxMidY = boxY + boxH / 2;
-      const lineY = textMidY + desc.lane * 4 - 2;
       const elbowX = endX - 20 - desc.lane * 5;
       ctx.moveTo(startX, lineY);
       ctx.lineTo(elbowX, lineY);
@@ -836,6 +836,7 @@ export function CollaborativeEditor({
   showLinkDescriptions = false,
   onResolveLinkDescription,
   onEditLinkDescription,
+  onDeleteLink,
 }: CollaborativeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -1841,6 +1842,19 @@ export function CollaborativeEditor({
                   }}
                 >
                   {"\u2197"} Trace provenance
+                </button>
+              )}
+              {onDeleteLink && hoveredMarker.linkTypeId != null && (
+                <button
+                  className="marker-tooltip-link"
+                  style={{ color: "#f85149", fontSize: 11, marginTop: 4 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteLink(hoveredMarker.linkId);
+                    setHoveredMarker(null);
+                  }}
+                >
+                  {"\u00d7"} Delete link
                 </button>
               )}
               {onResolveLinkDescription && linkDescMap.has(hoveredMarker.linkId) && (

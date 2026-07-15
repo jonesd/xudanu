@@ -548,8 +548,11 @@ export function AppShell() {
   const handleDeleteLink = useCallback(async (linkId: number) => {
     if (!clientRef.current || workBeId === null) return;
     await transclusion.deleteLink(clientRef.current, linkId);
-    await transclusion.loadBacklinks(clientRef.current, workBeId);
-  }, [clientRef, workBeId, transclusion]);
+    await Promise.all([
+      transclusion.loadLinks(clientRef.current, workBeId, works),
+      transclusion.loadBacklinks(clientRef.current, workBeId),
+    ]);
+  }, [clientRef, workBeId, transclusion, works]);
 
   const handleRetypeLink = useCallback(async (linkId: number, typeId: number) => {
     if (!clientRef.current || workBeId === null) return;
@@ -1238,6 +1241,7 @@ export function AppShell() {
                 showLinkDescriptions={showLinkDesc}
                 onResolveLinkDescription={handleResolveLinkDescription}
                 onEditLinkDescription={handleEditLinkDescription}
+                onDeleteLink={editable ? handleDeleteLink : undefined}
                 fontSize={docPrefs.fontSize}
                 lineHeight={docPrefs.lineHeight}
                 annotations={crdt.annotations}
