@@ -709,12 +709,12 @@ How closely does Xudanu implement Ted Nelson's original 17 Rules of Xanadu? Here
 <table>
   <tr><th>#</th><th>Rule</th><th>Status</th></tr>
   <tr><td>1</td><td>Every document consists of arbitrarily many portions</td><td class="status-done">Done — O-tree elements</td></tr>
-  <tr><td>2</td><td>Every portion can be transcluded</td><td class="status-partial">Partial — backend finds, no live rendering</td></tr>
+  <tr><td>2</td><td>Every portion can be transcluded</td><td class="status-done">Done — inline <code>RangeElement::Transclusion</code>, 32-level recursive resolution</td></tr>
   <tr><td>3</td><td>Permission is required to transclude</td><td class="status-done">Done — club-based ACLs</td></tr>
   <tr><td>4</td><td>Permission is required to quote</td><td class="status-done">Done — source import + attribution</td></tr>
   <tr><td>5</td><td>Tumbler addressing</td><td class="status-partial">Partial — Id/IdSpace, no full tumbler paths</td></tr>
   <tr><td>6</td><td>Bidirectional links</td><td class="status-done">Done — HyperLink/HyperRef</td></tr>
-  <tr><td>7</td><td>Visible on both sides</td><td class="status-partial">Partial — backlinks exist, no always-visible UI</td></tr>
+  <tr><td>7</td><td>Visible on both sides</td><td class="status-done">Done — backlinks + Related footer (always-visible)</td></tr>
   <tr><td>8</td><td>Identical content stored once</td><td class="status-done">Done — GrandMap + BLAKE3</td></tr>
   <tr><td>9</td><td>Royalty at any granularity</td><td class="status-partial">Partial — data structures exist, no payments</td></tr>
   <tr><td>10</td><td>Mix of royalty-bearing and free content</td><td class="status-partial">Partial — endorsement types exist</td></tr>
@@ -729,11 +729,11 @@ How closely does Xudanu implement Ted Nelson's original 17 Rules of Xanadu? Here
 
 <div style="display:flex;gap:48px;margin-top:24px;flex-wrap:wrap">
   <div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:#3fb950">4</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:#3fb950">6</div>
     <div style="font-size:11px;color:#484f58;text-transform:uppercase;letter-spacing:1px">Fully Done</div>
   </div>
   <div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:#d29922">11</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:#d29922">9</div>
     <div style="font-size:11px;color:#484f58;text-transform:uppercase;letter-spacing:1px">Partially Done</div>
   </div>
   <div>
@@ -755,9 +755,9 @@ Features from Ted Nelson's original vision that remain to be built.
 
 <table>
   <tr><th>Feature</th><th>Status</th><th>What Exists</th></tr>
-  <tr><td>Live transclusion rendering</td><td class="status-not">Not started</td><td>BackfollowEngine finds content, but no rendering pipeline for showing transcluded fragments inline with live updates</td></tr>
-  <tr><td>Compound documents</td><td class="status-partial">Partial</td><td><code>CompoundResolve</code> opcode and <code>CompoundSpan</code> stubs exist in <code>src/edition/compound.rs</code> but no resolution engine or UI</td></tr>
-  <tr><td>Trails and guided paths</td><td class="status-not">Not started</td><td>No trail builder UI or data model for curated paths through documents</td></tr>
+  <tr><td>Live transclusion rendering</td><td class="status-done">Shipped</td><td>Inline <code>RangeElement::Transclusion</code> in the O-tree CRDT with 32-level recursive resolution and cycle detection. Transcluded fragments render inline with live updates.</td></tr>
+  <tr><td>Compound documents</td><td class="status-done">Shipped</td><td>Inline transclusion in the O-tree (single source of truth &mdash; no side-table drift). Compound tutorial exists. Span migration through arbitrary deltas.</td></tr>
+  <tr><td>Trails and guided paths</td><td class="status-done">Shipped</td><td>TrailsPanel provides trail builder UI with create, reorder, remove, navigate, and publish. Curated document sequences with categories.</td></tr>
   <tr><td>Inter-span links</td><td class="status-partial">Partial</td><td>Links at work-level only. No <code>(work, edition, start, end)</code> targeting</td></tr>
   <tr><td>Three-way visual diff UI</td><td class="status-partial">Partial</td><td>Backend has <code>three_way_diff()</code> and <code>three_way_merge()</code>. No visual character-level diff UI</td></tr>
   <tr><td>Full-text search</td><td class="status-partial">Partial</td><td><code>find_text_transcluders</code> does fingerprint search. No general inverted-index search across all works</td></tr>
@@ -827,10 +827,22 @@ Features present in the Udanax-Gold C++ codebase (~200,000 lines) that have no e
   <tr><td>Comm protocol negotiation</td><td><code>Portal</code> for bidirectional channels, <code>Negotiator</code> for version negotiation, <code>BootPlan</code> for connection setup</td><td>Single WebSocket protocol — no version negotiation, no multi-transport</td></tr>
 </table>
 
+<div class="note">
+  <strong>Recent versions (v0.9.5 &ndash; v0.9.6):</strong>
+  <ul style="margin-top:8px">
+    <li><strong>Delete link from tooltip</strong> &mdash; hovering over a link's margin bar shows a red "&times; Delete link" button in the tooltip (in addition to "Go to" and "Trace provenance"). Works for any typed link without opening the Connections panel.</li>
+    <li><strong>Description boxes with connecting lines</strong> &mdash; link descriptions render as coloured boxes in the right margin with dotted connecting lines anchored to the underline of the source text. Lane separation for overlapping links.</li>
+    <li><strong>Related footer</strong> &mdash; a collapsible bar at the bottom of the document showing backlinks, outgoing links, transclusion sources, and cross-server references with reason labels and excerpts.</li>
+    <li><strong>Auto-sizing panels</strong> &mdash; annotation, provenance, and compound panels now size to fit their content instead of using a fixed 40% screen height.</li>
+    <li><strong>Annotation persistence</strong> &mdash; annotations survive document close/reopen and server restarts via an orphaned-annotations mechanism.</li>
+    <li><strong>Link loading without login</strong> &mdash; links are public content; they load without requiring an identity.</li>
+  </ul>
+</div>
+
 <div class="footer">
   <div style="max-width:600px;margin:0 auto 16px;font-size:11px;color:#484f58;line-height:1.6"><strong>Disclaimer:</strong> Xudanu is an independent, open-source project. It is not affiliated with, endorsed by, or sponsored by Ted Nelson, Project Xanadu<div class="footer">trade;, the Xanadu Operating Company, Autodesk Inc., or the Udanax development team. Xudanu implements concepts from the open-sourced Udanax-Gold codebase (released 1999 under the Xanadu X11 license) using original code. All trademarks belong to their respective owners.</div>
 
-  Xudanu v0.7.0 &mdash; <a href="https://github.com/jonesd/xudanu">github.com/jonesd/xudanu</a> &mdash; Based on Udanax-Gold, open-sourced 1999. From Ted Nelson's vision, 1963.
+  Xudanu v0.9.6 &mdash; <a href="https://github.com/jonesd/xudanu">github.com/jonesd/xudanu</a> &mdash; Based on Udanax-Gold, open-sourced 1999. From Ted Nelson's vision, 1963.
 </div>
 
 </div>

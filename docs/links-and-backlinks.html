@@ -391,6 +391,8 @@ t.<span class="fn">holdLinkSelection</span>(<span class="num">0x10</span>, <span
   <text x="312" y="153" fill="#8b949e" font-size="10" font-style="italic">“this claim is contested in case law”</text>
   <rect x="312" y="158" width="70" height="16" rx="3" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="1"/>
   <text x="347" y="170" text-anchor="middle" fill="#58a6ff" font-size="9">Go to 0020</text>
+  <rect x="392" y="158" width="80" height="16" rx="3" fill="rgba(248,81,73,0.15)" stroke="#f85149" stroke-width="1"/>
+  <text x="432" y="170" text-anchor="middle" fill="#f85149" font-size="9">&#215; Delete link</text>
 
   <!-- filter control (top-right) -->
   <rect x="640" y="50" width="100" height="22" rx="5" fill="rgba(13,17,23,0.85)" stroke="#30363d"/>
@@ -401,7 +403,7 @@ t.<span class="fn">holdLinkSelection</span>(<span class="num">0x10</span>, <span
   <rect x="722" y="55" width="11" height="11" rx="2" fill="none" stroke="#30363d"/>
 </svg>
 </div>
-<p class="diagram-caption">Figure 3: A Comment link in the origin document. The left margin shows a blue "C" bar; the passage has a blue dashed underline. Hovering reveals the target work, type, excerpt, and a "Go to" button.</p>
+<p class="diagram-caption">Figure 3: A Comment link in the origin document. The left margin shows a blue "C" bar; the passage has a blue dashed underline. Hovering reveals the target work, type, excerpt, a "Go to" button, and a red "Delete link" button.</p>
 
 <div class="note">
 <strong>Single-click navigates; double-click shows backlinks.</strong> Clicking the marker calls <code>onNavigateToWork</code> (jumps to the linked work). Double-click calls <code>onShowBacklinks</code> (jumps there and surfaces its connections). Both are wired in <code>AppShell.tsx</code>.
@@ -609,6 +611,8 @@ filterMarkersByType(markers, <span class="kw">new</span> <span class="typ">Set</
   <li><strong>Right margin bar</strong> &mdash; incoming typed backlinks, at <code>rect.width - 3 - lane*4</code>.</li>
   <li><strong>Density pill</strong> &mdash; amber, count badge, when a cluster reaches 5+ links.</li>
   <li><strong>Hit zones</strong> &mdash; every marker registers a <code>MarkerHitZone</code> used by mouse-move (tooltip) and click (navigate / expand).</li>
+  <li><strong>Description boxes</strong> &mdash; when a link has a description, a coloured box appears in the right margin showing the type label and description text.</li>
+  <li><strong>Connecting lines</strong> &mdash; dotted lines drawn from each description box to the source text. Lines anchor to the <strong>underline position</strong> (bottom of the text), not the centre of the span. Overlapping links use lane separation so each connecting line stays distinguishable.</li>
 </ol>
 
 <div class="diagram-container">
