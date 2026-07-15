@@ -27,6 +27,7 @@ import { LibrarySlideOut } from "./LibrarySlideOut";
 import { SearchOverlay } from "./SearchOverlay";
 import { PermissionBadge } from "./PermissionBadge";
 import { RelatedFooter } from "../RelatedFooter";
+import { PerspectiveView } from "../PerspectiveView";
 import { useCompare, CompareHeader, CompareSplitView } from "../ComparePanel";
 import { buildProvValidatorHtml } from "../../prov-validator";
 import "../../app-shell.css";
@@ -67,6 +68,7 @@ export function AppShell() {
   }, []);
   const [linkDescription, setLinkDescription] = useState("");
   const [showCompare, setShowCompare] = useState(false);
+  const [showPerspective, setShowPerspective] = useState(false);
   const [crossServerBacklinks, setCrossServerBacklinks] = useState<CrossServerBacklinkPayload[]>([]);
   const [annotationTarget, setAnnotationTarget] = useState<{ start: number; end: number } | null>(null);
   const [isPublished, setIsPublished] = useState(false);
@@ -1129,6 +1131,14 @@ export function AppShell() {
               >
                 {showCompare ? "Close Compare" : "Compare"}
               </button>
+              <button
+                type="button"
+                className="publish-toggle"
+                onClick={() => setShowPerspective(true)}
+                title="Open perspective view showing connected documents"
+              >
+                Perspective
+              </button>
               <div className="doc-meta">
                 {compound.spanRanges.length > 0 && (
                   <div className="compound-badge" title="This document contains transcluded content from other works">
@@ -1453,6 +1463,27 @@ export function AppShell() {
         onCreate={handleAnnotationSubmit}
         onClose={() => setAnnotationTarget(null)}
       />
+
+      {showPerspective && workBeId !== null && (
+        <PerspectiveView
+          centerWorkId={workBeId}
+          centerText={displayText}
+          centerTitle={currentWorkMeta?.title || `Work ${workIdDisplay}`}
+          links={transclusion.links}
+          works={works}
+          onClose={() => setShowPerspective(false)}
+          onNavigateToWork={selectWork}
+          onFetchWorkText={async (workId) => {
+            if (!clientRef.current) return null;
+            try {
+              const resp = await clientRef.current.sendRequest("crdt_sync_open", { work_id: workId });
+              const r = resp as Record<string, unknown>;
+              const inner = (r.value as Record<string, unknown> | undefined) ?? r;
+              return (inner?.current_text as string) || null;
+            } catch { return null; }
+          }}
+        />
+      )}
     </div>
   );
 }

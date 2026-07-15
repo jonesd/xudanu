@@ -1159,6 +1159,8 @@
 .link-creator-modal {
   font-family: 'Inter', sans-serif;
   color: #2a2a2e;
+  max-height: 85vh;
+  overflow-y: auto;
 }
 
 .link-creator-header {
@@ -1228,8 +1230,8 @@
 }
 
 .link-target-options {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 
@@ -1278,7 +1280,7 @@
   margin-bottom: 8px;
 }
 .link-work-list {
-  max-height: 220px;
+  max-height: 400px;
   overflow-y: auto;
   border: 1px solid #e8e5de;
   border-radius: 6px;

@@ -230,7 +230,7 @@ export function LinkCreator({
       <div
         className="modal-content link-creator-modal"
         onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: 560 }}
+        style={{ maxWidth: 760 }}
       >
         <div className="link-creator-header">
           <h3>Create Link</h3>
