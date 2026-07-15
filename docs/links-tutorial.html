@@ -542,6 +542,10 @@ You can manage existing links from the <strong>Connections panel</strong> on the
   <li><strong>Filter:</strong> Use the dropdown at the top of the panel to filter by All, Pinned, Transclusions, Links, or Backlinks.</li>
 </ol>
 
+<div class="note">
+  <strong>Delete from the document:</strong> You don't have to open the Connections panel to delete a link. Simply hover over the link's margin bar in the document and the tooltip that appears includes a red <strong>&times; Delete link</strong> button. This works for any typed link, even if it has no description. Click it and the link is removed from both documents immediately.
+</div>
+
 <div class="warning">
   <strong>Note:</strong> Link management controls only appear when you have edit access to the current document. If you are viewing a read-only document, you can see links but not modify them.
 </div>
@@ -623,6 +627,16 @@ Multiple links on the same passage are rendered in separate vertical <strong>lan
 </svg>
 </div>
 
+<h3>Description boxes and connecting lines</h3>
+<p>
+  When a link has a description, a coloured <strong>description box</strong> appears in the right margin showing the link type label and the description text. A dotted <strong>connecting line</strong> runs from the box to the source text, anchoring to the <strong>underline</strong> of the linked passage (the bottom of the text, not the centre). When multiple links overlap, the connecting lines use lane separation so each remains distinguishable.
+</p>
+
+<h3>Tooltip with delete button</h3>
+<p>
+  Hovering over any link marker (margin bar, underline hit zone, or density pill) shows a tooltip with the target document title, link type, text excerpt, and action buttons: <strong>Go to</strong>, <strong>Trace provenance</strong>, and a red <strong>&times; Delete link</strong> button. The delete button works for any typed link &mdash; no need to open the Connections panel.
+</p>
+
 <!-- ============================================================ -->
 <h2 id="s8">8. The Connections Panel</h2>
 
@@ -644,6 +658,10 @@ Use the dropdown at the top to filter by type. Pin important connections with th
 
 <div class="gold">
   <strong>Direction matters:</strong> The same link appears differently depending on which document you're viewing. In the origin document, it shows as a <strong>link</strong> (&#8644;, outgoing, left margin). In the destination document, it shows as a <strong>backlink</strong> (&#8592;, incoming, right margin).
+</div>
+
+<div class="note">
+  <strong>Related footer:</strong> In addition to the Connections panel, a collapsible <strong>Related</strong> bar appears at the bottom of the document. It shows backlinks, outgoing links, transclusion sources, and cross-server references in a compact list. Each item displays a reason label (e.g., "Referenced by", "Includes content from"), the connected document's title, and a text excerpt. This is an alternative way to discover connections without opening the side panel.
 </div>
 
 <!-- ============================================================ -->
