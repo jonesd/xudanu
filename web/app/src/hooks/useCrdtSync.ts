@@ -448,8 +448,7 @@ export function useCrdtSync(
   const refreshAnnotations = useCallback(() => {
     const client = clientRef.current;
     if (!client || workBeId === null) return;
-    if (!client.isConnected()) return;
-    client.annotationList(workBeId).then(setAnnotations).catch((e) => { console.warn("[refreshAnnotations] failed:", e); });
+    client.annotationList(workBeId).then(setAnnotations).catch(() => {});
   }, [workBeId]);
 
   const createAnnotation = useCallback(async (kind: string, payload: string, charStart: number, charEnd: number, isPrivate = false) => {
