@@ -50,6 +50,13 @@ tr:hover{background:rgba(110,118,129,0.04)}
 .legend{display:flex;gap:16px;flex-wrap:wrap;margin:16px 0}
 .legend-item{display:flex;align-items:center;gap:6px;font-size:13px;color:#8b949e}
 .legend-swatch{width:14px;height:14px;border-radius:3px;border:1px solid #30363d}
+.struct-list{list-style:none;padding:0;margin:16px 0;border:1px solid #21262d;border-radius:8px;overflow:hidden}
+.struct-item{display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid #161b22;font-size:12px}
+.struct-item:last-child{border-bottom:none}
+.struct-num{color:#484f58;font-weight:600;min-width:20px;font-family:'JetBrains Mono',monospace}
+.struct-text{color:#8b949e;flex:1}
+.struct-item.trans{background:rgba(56,166,255,0.04)}
+.struct-item.orig{background:rgba(110,118,129,0.02)}
 </style>
 </head>
 <body>
@@ -81,25 +88,54 @@ tr:hover{background:rgba(110,118,129,0.04)}
 
 <p>This is Ted Nelson's <strong>EDL (Edit Decision List)</strong> concept: the document doesn't contain copies of text &mdash; it contains <em>addresses</em> pointing to text in other documents. When you read a compound document, the system fetches and assembles the referenced content in real time.</p>
 
-<div class="diagram">
-<pre style="background:none;border:none;padding:0;text-align:center;font-family:'Inter',sans-serif;font-size:13px">
-<strong>Your Document (Compound)</strong>
-┌──────────────────────────────────────────────┐
-│ <span class="badge badge-orig">Original</span> Introduction paragraph              │
-│                                              │
-│ <span class="badge badge-trans">From: Criminal Code</span> "Theft is defined as..."  │
-│                                              │
-│ <span class="badge badge-orig">Original</span> Analysis connecting the law...      │
-│                                              │
-│ <span class="badge badge-trans">From: Case Law</span> "The court held that..."     │
-│                                              │
-│ <span class="badge badge-trans">From: Legal Commentary</span> "Scholars argue..."  │
-│                                              │
-│ <span class="badge badge-orig">Original</span> Conclusion                          │
-└──────────────────────────────────────────────┘
-    ↑                    ↑                    ↑
-    └──── live references to source works ────┘
-</pre>
+<div class="diagram-container">
+<svg viewBox="0 0 680 340" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <rect x="140" y="10" width="400" height="280" fill="#faf9f6" stroke="#d0cec8" stroke-width="2" rx="8"/>
+  <text x="340" y="32" text-anchor="middle" fill="#333" font-size="12" font-weight="700">Your Document (Compound)</text>
+  
+  <rect x="160" y="48" width="360" height="24" fill="rgba(110,118,129,0.08)" stroke="#8b949e" stroke-width="1" rx="4"/>
+  <text x="170" y="64" fill="#8b949e" font-size="10" font-weight="600">[Original]</text>
+  <text x="230" y="64" fill="#555" font-size="10">Introduction paragraph</text>
+  
+  <rect x="160" y="80" width="360" height="24" fill="rgba(0,149,97,0.08)" stroke="#009e73" stroke-width="1" rx="4"/>
+  <text x="170" y="96" fill="#009e73" font-size="10" font-weight="600">[From: Criminal Code]</text>
+  <text x="310" y="96" fill="#555" font-size="10">"Theft is defined as..."</text>
+  
+  <rect x="160" y="112" width="360" height="24" fill="rgba(110,118,129,0.08)" stroke="#8b949e" stroke-width="1" rx="4"/>
+  <text x="170" y="128" fill="#8b949e" font-size="10" font-weight="600">[Original]</text>
+  <text x="230" y="128" fill="#555" font-size="10">Analysis connecting the law...</text>
+  
+  <rect x="160" y="144" width="360" height="24" fill="rgba(92,107,192,0.08)" stroke="#5c6bc0" stroke-width="1" rx="4"/>
+  <text x="170" y="160" fill="#5c6bc0" font-size="10" font-weight="600">[From: Case Law]</text>
+  <text x="280" y="160" fill="#555" font-size="10">"The court held that..."</text>
+  
+  <rect x="160" y="176" width="360" height="24" fill="rgba(244,81,30,0.08)" stroke="#f4511e" stroke-width="1" rx="4"/>
+  <text x="170" y="192" fill="#f4511e" font-size="10" font-weight="600">[From: Legal Commentary]</text>
+  <text x="320" y="192" fill="#555" font-size="10">"Scholars argue..."</text>
+  
+  <rect x="160" y="208" width="360" height="24" fill="rgba(110,118,129,0.08)" stroke="#8b949e" stroke-width="1" rx="4"/>
+  <text x="170" y="224" fill="#8b949e" font-size="10" font-weight="600">[Original]</text>
+  <text x="230" y="224" fill="#555" font-size="10">Conclusion</text>
+  
+  <line x1="220" y1="250" x2="220" y2="290" stroke="#8b949e" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="340" y1="250" x2="340" y2="290" stroke="#8b949e" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="460" y1="250" x2="460" y2="290" stroke="#8b949e" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="220" y1="290" x2="460" y2="290" stroke="#8b949e" stroke-width="1"/>
+  
+  <text x="340" y="308" text-anchor="middle" fill="#8b949e" font-size="10" font-style="italic">live references to source works</text>
+  
+  <rect x="30" y="60" width="90" height="36" fill="#161b22" stroke="#009e73" stroke-width="1" rx="4"/>
+  <text x="75" y="82" text-anchor="middle" fill="#009e73" font-size="10">Criminal Code</text>
+  <line x1="120" y1="78" x2="160" y2="92" stroke="#009e73" stroke-width="1" stroke-dasharray="3,2"/>
+  
+  <rect x="30" y="130" width="90" height="36" fill="#161b22" stroke="#5c6bc0" stroke-width="1" rx="4"/>
+  <text x="75" y="152" text-anchor="middle" fill="#5c6bc0" font-size="10">Case Law</text>
+  <line x1="120" y1="148" x2="160" y2="156" stroke="#5c6bc0" stroke-width="1" stroke-dasharray="3,2"/>
+  
+  <rect x="560" y="170" width="90" height="36" fill="#161b22" stroke="#f4511e" stroke-width="1" rx="4"/>
+  <text x="605" y="192" text-anchor="middle" fill="#f4511e" font-size="10">Commentary</text>
+  <line x1="520" y1="188" x2="560" y2="188" stroke="#f4511e" stroke-width="1" stroke-dasharray="3,2"/>
+</svg>
 <div class="diagram-caption">A compound document mixes original text with transcluded passages from multiple sources</div>
 </div>
 
@@ -137,24 +173,44 @@ tr:hover{background:rgba(110,118,129,0.04)}
 <h3>Opening the Builder</h3>
 <p>Open any document and click <strong>"Build"</strong> in the document toolbar (next to "Compare" and "Perspective"). The three-panel builder layout opens:</p>
 
-<div class="diagram">
-<pre style="background:none;border:none;padding:0;text-align:center;font-family:'Inter',sans-serif;font-size:13px">
-┌────────────────┬──────────────────────────┬────────────────┐
-│  <strong>Source Pool</strong>   │   <strong>Compound Document</strong>      │  <strong>Structure</strong>     │
-│                │   (live preview)          │  <strong>Outline</strong>      │
-│ + Add source   │                           │                │
-│ ┌────────────┐ │  <span class="badge badge-orig">Original</span> Intro text      │ 1.<span class="badge badge-orig">Original</span>    │
-│ │ Source A   │ │                           │   Intro        │
-│ └────────────┘ │  <span class="badge badge-trans">From: Source A</span>           │ 2.<span class="badge badge-trans">From: A</span>     │
-│ ┌────────────┐ │  "Transcluded text..."    │   Passage      │
-│ │ Source B   │ │                           │ 3.<span class="badge badge-orig">Original</span>    │
-│ └────────────┘ │  <span class="badge badge-orig">Original</span> Your analysis    │   Analysis     │
-│                │                           │ 4.<span class="badge badge-trans">From: B</span>     │
-│ Select text →  │  <span class="badge badge-trans">From: Source B</span>           │   Evidence     │
-│ Include button │  "More text..."           │ 5.<span class="badge badge-orig">Original</span>    │
-│                │                           │   Conclusion   │
-└────────────────┴──────────────────────────┴────────────────┘
-</pre>
+<div class="diagram-container">
+<svg viewBox="0 0 780 320" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <rect x="20" y="10" width="200" height="300" fill="#22222e" stroke="#30363d" stroke-width="1" rx="6"/>
+  <text x="120" y="30" text-anchor="middle" fill="#c9d1d9" font-size="11" font-weight="700">Source Pool</text>
+  <rect x="35" y="45" width="170" height="28" fill="#30363d" stroke="#484f58" rx="4"/>
+  <text x="120" y="63" text-anchor="middle" fill="#c9d1d9" font-size="10">Source A</text>
+  <rect x="35" y="80" width="170" height="28" fill="#30363d" stroke="#484f58" rx="4"/>
+  <text x="120" y="98" text-anchor="middle" fill="#c9d1d9" font-size="10">Source B</text>
+  <text x="120" y="128" text-anchor="middle" fill="#8b949e" font-size="10">+ Add source</text>
+  <text x="120" y="270" text-anchor="middle" fill="#6e7681" font-size="9">Select text &#8594; Include</text>
+  
+  <rect x="250" y="10" width="280" height="300" fill="#fff" stroke="#d0d0d0" stroke-width="2" rx="6"/>
+  <text x="390" y="30" text-anchor="middle" fill="#333" font-size="11" font-weight="700">Compound Document</text>
+  <text x="390" y="46" text-anchor="middle" fill="#999" font-size="9">(live preview)</text>
+  <rect x="270" y="58" width="240" height="20" fill="rgba(110,118,129,0.08)" stroke="#8b949e" rx="3"/>
+  <text x="280" y="72" fill="#8b949e" font-size="9">[Original] Intro text</text>
+  <rect x="270" y="85" width="240" height="20" fill="rgba(0,149,97,0.08)" stroke="#009e73" rx="3"/>
+  <text x="280" y="99" fill="#009e73" font-size="9">[From: A] "Transcluded text..."</text>
+  <rect x="270" y="112" width="240" height="20" fill="rgba(110,118,129,0.08)" stroke="#8b949e" rx="3"/>
+  <text x="280" y="126" fill="#8b949e" font-size="9">[Original] Your analysis</text>
+  <rect x="270" y="139" width="240" height="20" fill="rgba(92,107,192,0.08)" stroke="#5c6bc0" rx="3"/>
+  <text x="280" y="153" fill="#5c6bc0" font-size="9">[From: B] "More text..."</text>
+  <rect x="270" y="166" width="240" height="20" fill="rgba(110,118,129,0.08)" stroke="#8b949e" rx="3"/>
+  <text x="280" y="180" fill="#8b949e" font-size="9">[Original] Conclusion</text>
+  
+  <rect x="560" y="10" width="200" height="300" fill="#22222e" stroke="#30363d" stroke-width="1" rx="6"/>
+  <text x="660" y="30" text-anchor="middle" fill="#c9d1d9" font-size="11" font-weight="700">Structure</text>
+  <rect x="575" y="45" width="170" height="24" fill="rgba(110,118,129,0.06)" stroke="rgba(110,118,129,0.15)" rx="3"/>
+  <text x="580" y="60" fill="#8b949e" font-size="9">1. [Original] Intro</text>
+  <rect x="575" y="74" width="170" height="24" fill="rgba(0,149,97,0.06)" stroke="rgba(0,149,97,0.15)" rx="3"/>
+  <text x="580" y="89" fill="#009e73" font-size="9">2. [From A] Passage</text>
+  <rect x="575" y="103" width="170" height="24" fill="rgba(110,118,129,0.06)" stroke="rgba(110,118,129,0.15)" rx="3"/>
+  <text x="580" y="118" fill="#8b949e" font-size="9">3. [Original] Analysis</text>
+  <rect x="575" y="132" width="170" height="24" fill="rgba(92,107,192,0.06)" stroke="rgba(92,107,192,0.15)" rx="3"/>
+  <text x="580" y="147" fill="#5c6bc0" font-size="9">4. [From B] Evidence</text>
+  <rect x="575" y="161" width="170" height="24" fill="rgba(110,118,129,0.06)" stroke="rgba(110,118,129,0.15)" rx="3"/>
+  <text x="580" y="176" fill="#8b949e" font-size="9">5. [Original] Conclusion</text>
+</svg>
 </div>
 
 <h3>Step-by-Step</h3>
@@ -182,15 +238,15 @@ Span migration keeps positions valid through edits. Provenance chains trace each
 <p>You're writing a response to an essay. You want to quote specific passages and respond to each one.</p>
 
 <p><strong>Structure:</strong></p>
-<pre style="font-size:12px">
-1. <span class="badge badge-orig">Original</span>   "In this response, I argue that..."
-2. <span class="badge badge-trans">From: Essay</span>  "The author claims that X is true."
-3. <span class="badge badge-orig">Original</span>   "This claim overlooks the evidence in..."
-4. <span class="badge badge-trans">From: Essay</span>  "Furthermore, the data shows..."
-5. <span class="badge badge-orig">Original</span>   "However, this data is from 2010. More recent..."
-6. <span class="badge badge-trans">From: Essay</span>  "In conclusion, X implies Y."
-7. <span class="badge badge-orig">Original</span>   "I disagree. X does not imply Y because..."
-</pre>
+<ul class="struct-list">
+<li class="struct-item orig"><span class="struct-num">1.</span><span class="badge badge-orig">Original</span><span class="struct-text">"In this response, I argue that..."</span></li>
+<li class="struct-item trans"><span class="struct-num">2.</span><span class="badge badge-trans">From: Essay</span><span class="struct-text">"The author claims that X is true."</span></li>
+<li class="struct-item orig"><span class="struct-num">3.</span><span class="badge badge-orig">Original</span><span class="struct-text">"This claim overlooks the evidence in..."</span></li>
+<li class="struct-item trans"><span class="struct-num">4.</span><span class="badge badge-trans">From: Essay</span><span class="struct-text">"Furthermore, the data shows..."</span></li>
+<li class="struct-item orig"><span class="struct-num">5.</span><span class="badge badge-orig">Original</span><span class="struct-text">"However, this data is from 2010. More recent..."</span></li>
+<li class="struct-item trans"><span class="struct-num">6.</span><span class="badge badge-trans">From: Essay</span><span class="struct-text">"In conclusion, X implies Y."</span></li>
+<li class="struct-item orig"><span class="struct-num">7.</span><span class="badge badge-orig">Original</span><span class="struct-text">"I disagree. X does not imply Y because..."</span></li>
+</ul>
 
 <p>Each quote is a live transclusion. If the essay is revised, your document shows the updated quotes automatically. Readers can click any quote to verify it against the source.</p>
 </div>
@@ -202,18 +258,18 @@ Span migration keeps positions valid through edits. Provenance chains trace each
 <p>You're surveying multiple papers on a topic. Each paper contributes a key finding.</p>
 
 <p><strong>Structure:</strong></p>
-<pre style="font-size:12px">
- 1. <span class="badge badge-orig">Original</span>      "Recent research on topic Z has shown..."
- 2. <span class="badge badge-trans">From: Paper A</span>  "We found a 40% improvement using method M."
- 3. <span class="badge badge-orig">Original</span>      "This established M as the standard, but..."
- 4. <span class="badge badge-trans">From: Paper B</span>  "Method M fails when applied to large datasets."
- 5. <span class="badge badge-orig">Original</span>      "This limitation led researchers to explore..."
- 6. <span class="badge badge-trans">From: Paper C</span>  "Our hybrid approach combines M with N."
- 7. <span class="badge badge-trans">From: Paper A</span>  "In our follow-up study, we confirmed..."
- 8. <span class="badge badge-orig">Original</span>      "Together, these findings suggest..."
- 9. <span class="badge badge-trans">From: Paper D</span>  "Contrary to earlier results, we observed..."
-10. <span class="badge badge-orig">Original</span>      "This disagreement motivates further study."
-</pre>
+<ul class="struct-list">
+<li class="struct-item orig"><span class="struct-num">1.</span><span class="badge badge-orig">Original</span><span class="struct-text">"Recent research on topic Z has shown..."</span></li>
+<li class="struct-item trans"><span class="struct-num">2.</span><span class="badge badge-trans">From: Paper A</span><span class="struct-text">"We found a 40% improvement using method M."</span></li>
+<li class="struct-item orig"><span class="struct-num">3.</span><span class="badge badge-orig">Original</span><span class="struct-text">"This established M as the standard, but..."</span></li>
+<li class="struct-item trans"><span class="struct-num">4.</span><span class="badge badge-trans">From: Paper B</span><span class="struct-text">"Method M fails when applied to large datasets."</span></li>
+<li class="struct-item orig"><span class="struct-num">5.</span><span class="badge badge-orig">Original</span><span class="struct-text">"This limitation led researchers to explore..."</span></li>
+<li class="struct-item trans"><span class="struct-num">6.</span><span class="badge badge-trans">From: Paper C</span><span class="struct-text">"Our hybrid approach combines M with N."</span></li>
+<li class="struct-item trans"><span class="struct-num">7.</span><span class="badge badge-trans">From: Paper A</span><span class="struct-text">"In our follow-up study, we confirmed..."</span></li>
+<li class="struct-item orig"><span class="struct-num">8.</span><span class="badge badge-orig">Original</span><span class="struct-text">"Together, these findings suggest..."</span></li>
+<li class="struct-item trans"><span class="struct-num">9.</span><span class="badge badge-trans">From: Paper D</span><span class="struct-text">"Contrary to earlier results, we observed..."</span></li>
+<li class="struct-item orig"><span class="struct-num">10.</span><span class="badge badge-orig">Original</span><span class="struct-text">"This disagreement motivates further study."</span></li>
+</ul>
 
 <p>Four sources, one document. Each finding is traceable to its paper. The structure shows how ideas build on and challenge each other.</p>
 </div>
@@ -225,17 +281,17 @@ Span migration keeps positions valid through edits. Provenance chains trace each
 <p>A legal brief is inherently a compound document &mdash; it assembles statutes, case law, and commentary into a coherent argument.</p>
 
 <p><strong>Structure:</strong></p>
-<pre style="font-size:12px">
- 1. <span class="badge badge-orig">Original</span>          "The defendant moves to dismiss on the grounds..."
- 2. <span class="badge badge-trans">From: Penal Code</span>   "&sect; 487. Grand theft is theft committed when..."
- 3. <span class="badge badge-orig">Original</span>          "The statute requires that the value exceed..."
- 4. <span class="badge badge-trans">From: Brown v. State</span>  "We hold that the value must be assessed at..."
- 5. <span class="badge badge-orig">Original</span>          "Applying this standard to the present case..."
- 6. <span class="badge badge-trans">From: Smith v. Jones</span>  "The court may consider fair market value..."
- 7. <span class="badge badge-trans">From: Legal Commentary</span>  "Professor Wright argues that the Brown rule..."
- 8. <span class="badge badge-orig">Original</span>          "This commentary supports our position because..."
- 9. <span class="badge badge-orig">Original</span>          "For these reasons, the motion should be denied."
-</pre>
+<ul class="struct-list">
+<li class="struct-item orig"><span class="struct-num">1.</span><span class="badge badge-orig">Original</span><span class="struct-text">"The defendant moves to dismiss on the grounds..."</span></li>
+<li class="struct-item trans"><span class="struct-num">2.</span><span class="badge badge-trans">From: Penal Code</span><span class="struct-text">"&sect; 487. Grand theft is theft committed when..."</span></li>
+<li class="struct-item orig"><span class="struct-num">3.</span><span class="badge badge-orig">Original</span><span class="struct-text">"The statute requires that the value exceed..."</span></li>
+<li class="struct-item trans"><span class="struct-num">4.</span><span class="badge badge-trans">From: Brown v. State</span><span class="struct-text">"We hold that the value must be assessed at..."</span></li>
+<li class="struct-item orig"><span class="struct-num">5.</span><span class="badge badge-orig">Original</span><span class="struct-text">"Applying this standard to the present case..."</span></li>
+<li class="struct-item trans"><span class="struct-num">6.</span><span class="badge badge-trans">From: Smith v. Jones</span><span class="struct-text">"The court may consider fair market value..."</span></li>
+<li class="struct-item trans"><span class="struct-num">7.</span><span class="badge badge-trans">From: Legal Commentary</span><span class="struct-text">"Professor Wright argues that the Brown rule..."</span></li>
+<li class="struct-item orig"><span class="struct-num">8.</span><span class="badge badge-orig">Original</span><span class="struct-text">"This commentary supports our position because..."</span></li>
+<li class="struct-item orig"><span class="struct-num">9.</span><span class="badge badge-orig">Original</span><span class="struct-text">"For these reasons, the motion should be denied."</span></li>
+</ul>
 
 <p>Three source types: statute, case law, commentary. The lawyer's original analysis weaves them together. Every citation is verifiable &mdash; no misquotation possible.</p>
 </div>
@@ -247,16 +303,16 @@ Span migration keeps positions valid through edits. Provenance chains trace each
 <p>You're assembling a collection of passages from different works that explore a common theme.</p>
 
 <p><strong>Structure:</strong></p>
-<pre style="font-size:12px">
- 1. <span class="badge badge-orig">Original</span>           "The theme of memory appears throughout..."
- 2. <span class="badge badge-trans">From: Proust</span>       "Remembrance of things past is not..."
- 3. <span class="badge badge-orig">Original</span>           "Proust's involuntary memory contrasts with..."
- 4. <span class="badge badge-trans">From: Borges</span>       "I cannot walk through the suburbs in the..."
- 5. <span class="badge badge-trans">From: Sebald</span>       "It does not seem to me that we understand..."
- 6. <span class="badge badge-orig">Original</span>           "Both Borges and Sebald treat memory as..."
- 7. <span class="badge badge-trans">From: Nelson</span>       "The interconnectedness of all literature..."
- 8. <span class="badge badge-orig">Original</span>           "Nelson's vision of connected literature..."
-</pre>
+<ul class="struct-list">
+<li class="struct-item orig"><span class="struct-num">1.</span><span class="badge badge-orig">Original</span><span class="struct-text">"The theme of memory appears throughout..."</span></li>
+<li class="struct-item trans"><span class="struct-num">2.</span><span class="badge badge-trans">From: Proust</span><span class="struct-text">"Remembrance of things past is not..."</span></li>
+<li class="struct-item orig"><span class="struct-num">3.</span><span class="badge badge-orig">Original</span><span class="struct-text">"Proust's involuntary memory contrasts with..."</span></li>
+<li class="struct-item trans"><span class="struct-num">4.</span><span class="badge badge-trans">From: Borges</span><span class="struct-text">"I cannot walk through the suburbs in the..."</span></li>
+<li class="struct-item trans"><span class="struct-num">5.</span><span class="badge badge-trans">From: Sebald</span><span class="struct-text">"It does not seem to me that we understand..."</span></li>
+<li class="struct-item orig"><span class="struct-num">6.</span><span class="badge badge-orig">Original</span><span class="struct-text">"Both Borges and Sebald treat memory as..."</span></li>
+<li class="struct-item trans"><span class="struct-num">7.</span><span class="badge badge-trans">From: Nelson</span><span class="struct-text">"The interconnectedness of all literature..."</span></li>
+<li class="struct-item orig"><span class="struct-num">8.</span><span class="badge badge-orig">Original</span><span class="struct-text">"Nelson's vision of connected literature..."</span></li>
+</ul>
 
 <p>Four authors in conversation. The curator's notes bridge the passages. Each quote is a live link to the source text &mdash; readers can explore the original context.</p>
 </div>
@@ -284,17 +340,26 @@ Span migration keeps positions valid through edits. Provenance chains trace each
 
 <p>Every transcluded passage carries <strong>provenance</strong> &mdash; a chain showing where the content originated and how it reached your document. This is Gold's <code>again()</code> function: recursive tracing of content reuse.</p>
 
-<div class="diagram">
-<pre style="background:none;border:none;padding:0;text-align:center;font-family:'Inter',sans-serif;font-size:13px">
-Your Compound
-    ↑ transcluded from
-Legal Commentary
-    ↑ quoted from
-Brown v. State
-    ↑ cited from
-Penal Code &sect; 487
-    ✓ ORIGINAL
-</pre>
+<div class="diagram-container">
+<svg viewBox="0 0 480 300" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <rect x="120" y="10" width="240" height="36" fill="#1c1c26" stroke="#38a6ff" stroke-width="1" rx="6"/>
+  <text x="240" y="32" text-anchor="middle" fill="#38a6ff" font-size="12" font-weight="600">Your Compound</text>
+  <line x1="240" y1="46" x2="240" y2="72" stroke="#484f58" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="250" y="62" fill="#6e7681" font-size="9">&#8593; transcluded from</text>
+  
+  <rect x="120" y="72" width="240" height="36" fill="#1c1c26" stroke="#f4511e" stroke-width="1" rx="6"/>
+  <text x="240" y="94" text-anchor="middle" fill="#f4511e" font-size="12" font-weight="600">Legal Commentary</text>
+  <line x1="240" y1="108" x2="240" y2="134" stroke="#484f58" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="250" y="124" fill="#6e7681" font-size="9">&#8593; quoted from</text>
+  
+  <rect x="120" y="134" width="240" height="36" fill="#1c1c26" stroke="#5c6bc0" stroke-width="1" rx="6"/>
+  <text x="240" y="156" text-anchor="middle" fill="#5c6bc0" font-size="12" font-weight="600">Brown v. State</text>
+  <line x1="240" y1="170" x2="240" y2="196" stroke="#484f58" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="250" y="186" fill="#6e7681" font-size="9">&#8593; cited from</text>
+  
+  <rect x="120" y="196" width="240" height="36" fill="#1c1c26" stroke="#3fb950" stroke-width="2" rx="6"/>
+  <text x="240" y="218" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="600">Penal Code &#167; 487 &#10003; ORIGINAL</text>
+</svg>
 <div class="diagram-caption">Provenance chain: trace any passage back through its full reuse history</div>
 </div>
 
