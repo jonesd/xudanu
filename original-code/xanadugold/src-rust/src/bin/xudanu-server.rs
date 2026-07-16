@@ -780,6 +780,9 @@ async fn main() {
             }
 
             let state = {
+                if dev_mode {
+                    server.dev_mode = true;
+                }
                 let app = AppState::new(server);
                 let app = match static_dir {
                     Some(ref dir) => {
@@ -804,7 +807,7 @@ async fn main() {
                     app
                 };
                 let app = if dev_mode {
-                    tracing::info!("Dev mode: permissive CORS, relaxed rate limits");
+                    tracing::info!("Dev mode: permissive CORS, relaxed rate limits, admin access for all sessions");
                     app.with_dev_mode(true)
                 } else {
                     app

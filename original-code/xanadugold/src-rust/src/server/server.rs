@@ -358,6 +358,7 @@ pub struct Server {
     pub(crate) server_name: String,
     server_description: String,
     server_namespace_id: u64,
+    pub dev_mode: bool,
     pub(crate) public_address: Option<String>,
     server_directory: crate::server::server_directory::ServerDirectory,
 }
@@ -853,6 +854,7 @@ impl Server {
             server_name: "Xudanu Server".to_string(),
             server_description: String::new(),
             server_namespace_id: 0,
+            dev_mode: false,
             public_address: None,
             server_directory: crate::server::server_directory::ServerDirectory::new(),
             // TODO: Annotations use a simple HashMap for pragmatic first implementation.
@@ -6699,6 +6701,9 @@ impl Server {
 
     pub fn ensure_admin(&self, session_id: SessionId) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
+        if self.dev_mode {
+            return Ok(());
+        }
         let session = self
             .sessions
             .get(&session_id)
@@ -14263,6 +14268,7 @@ pub(crate) mod persist_snapshot {
                 server_name: "Xudanu Server".to_string(),
                 server_description: String::new(),
                 server_namespace_id: 0,
+                dev_mode: false,
                 public_address: None,
                 server_directory: crate::server::server_directory::ServerDirectory::new(),
             };
