@@ -43,3 +43,8 @@ original-code/xanadugold/goldwinfe.tar.gz
 original-code/xanadugold/sthack.tar
 ┃
 session-ses_*.md
+target/
+*.rlib
+*.rmeta
+original-code/xanadugold/src.tar.gz
+original-code/xanadugold/src/image/base.log
