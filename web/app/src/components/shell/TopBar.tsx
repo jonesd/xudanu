@@ -27,7 +27,7 @@ export function TopBar({
 }: TopBarProps) {
   return (
     <div className="top-bar">
-      <div className="top-bar-brand">
+      <div className="top-bar-brand" style={{ cursor: "pointer" }} onClick={() => { window.history.pushState({}, "", "/"); window.dispatchEvent(new PopStateEvent("popstate")); }}>
         <Logo size={18} />
         <span>xudanu</span>
       </div>

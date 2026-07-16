@@ -1025,11 +1025,13 @@ export function AppShell() {
               <button className="welcome-btn" style={{ borderColor: "var(--blue)", color: "var(--blue)" }} onClick={handleCreateDemo}>
                 {"\u25B6 Try the Interactive Demo"}
               </button>
-              <a href="https://jonesd.github.io/xudanu/" target="_blank" rel="noopener noreferrer"
+              <button
                 className="welcome-btn"
-                style={{ textDecoration: "none", borderColor: "var(--border)", color: "var(--text-muted)" }}>
+                style={{ borderColor: "#58a6ff", color: "#58a6ff", cursor: "pointer" }}
+                onClick={() => window.open("https://jonesd.github.io/xudanu/", "_blank", "noopener,noreferrer")}
+              >
                 {"\u2756 Documentation"}
-              </a>
+              </button>
             </div>
             {works.length > 0 && (
               <div className="welcome-hint" style={{ marginTop: 16 }}>
