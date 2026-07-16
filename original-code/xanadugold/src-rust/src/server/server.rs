@@ -9210,11 +9210,15 @@ impl Server {
         let incoming = self.list_links_for_work(origin_work_id);
         let mut chain = Vec::new();
         let mut seen = std::collections::HashSet::new();
+        let mut visited_works = std::collections::HashSet::new();
         for &(lid, orig, dest) in &incoming {
             if dest != origin_work_id {
                 continue;
             }
             if orig == origin_work_id {
+                continue;
+            }
+            if !visited_works.insert(orig) {
                 continue;
             }
             if !seen.insert((orig, lid)) {
@@ -9224,7 +9228,7 @@ impl Server {
                 if let Some(o_ref) = ls.link.end_at("LeftEnd") {
                     for hop in o_ref.provenance_chain() {
                         let key = (hop.source_work_id(), hop.link_id());
-                        if seen.insert(key) {
+                        if visited_works.insert(hop.source_work_id()) && seen.insert(key) {
                             chain.push(hop.clone());
                         }
                     }

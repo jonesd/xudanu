@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compound Document Builder &mdash; Xudanu Guide</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.example{background:rgba(0,149,97,0.04);border:1px solid rgba(0,149,97,0.15);border-radius:8px;padding:20px;margin:24px 0}
+.example h4{color:#3fb950;margin-top:0}
+.diagram{margin:32px 0;padding:24px;background:#161b22;border:1px solid #30363d;border-radius:12px;overflow-x:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin-bottom:40px}
+.toc-title{font-size:13px;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px}
+.toc ul{list-style:none;padding:0}
+.toc li{padding:3px 0}
+.toc a{font-size:14px}
+.toc .indent{padding-left:20px}
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:12px;vertical-align:middle}
+.badge-trans{background:rgba(56,166,255,0.12);color:#38a6ff;border:1px solid rgba(56,166,255,0.2)}
+.badge-orig{background:rgba(110,118,129,0.12);color:#8b949e;border:1px solid rgba(110,118,129,0.2)}
+.badge-new{background:rgba(63,185,80,0.12);color:#3fb950;border:1px solid rgba(63,185,80,0.2)}
+.feature-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin:24px 0}
+.feature-card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px}
+.feature-card h4{color:#58a6ff;margin:0 0 6px}
+.feature-card p{font-size:13px;color:#8b949e;margin:0}
+table{border-collapse:collapse;margin:16px 0;width:100%;max-width:780px}
+th,td{border:1px solid #21262d;padding:8px 12px;text-align:left;font-size:14px}
+th{background:#161b22;color:#8b949e;font-weight:600}
+tr:hover{background:rgba(110,118,129,0.04)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin:16px 0}
+.legend-item{display:flex;align-items:center;gap:6px;font-size:13px;color:#8b949e}
+.legend-swatch{width:14px;height:14px;border-radius:3px;border:1px solid #30363d}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Compound Document Builder</h1>
+<p class="subtitle">Assemble new documents from passages of existing works &mdash; the Xanadu EDL model, made visual</p>
+
+<div class="toc">
+<div class="toc-title">Contents</div>
+<ul>
+<li><a href="#what">What Is a Compound Document?</a></li>
+<li><a href="#why">Why Use Compound Documents?</a></li>
+<li><a href="#how">How to Use the Builder</a></li>
+<li><a href="#single">Example 1: Single-Source Compound</a></li>
+<li><a href="#multi">Example 2: Multi-Source Compound</a></li>
+<li><a href="#legal">Example 3: Legal Brief Assembly</a></li>
+<li><a href="#literature">Example 4: Literary Anthology</a></li>
+<li><a href="#structure">Understanding the Structure</a></li>
+<li><a href="#provenance">Provenance and Attribution</a></li>
+<li><a href="#edl">EDL Export</a></li>
+<li><a href="#gold">Connection to Udanax-Gold</a></li>
+</ul>
+</div>
+
+<h2 id="what">What Is a Compound Document?</h2>
+
+<p>A <strong>compound document</strong> is a document assembled from passages of other documents. Instead of writing everything from scratch, you select relevant passages from existing works and arrange them with your own connecting text. Each transcluded passage maintains a <strong>live reference</strong> to its source &mdash; if the source changes, the transclusion updates.</p>
+
+<p>This is Ted Nelson's <strong>EDL (Edit Decision List)</strong> concept: the document doesn't contain copies of text &mdash; it contains <em>addresses</em> pointing to text in other documents. When you read a compound document, the system fetches and assembles the referenced content in real time.</p>
+
+<div class="diagram">
+<pre style="background:none;border:none;padding:0;text-align:center;font-family:'Inter',sans-serif;font-size:13px">
+<strong>Your Document (Compound)</strong>
+┌──────────────────────────────────────────────┐
+│ <span class="badge badge-orig">Original</span> Introduction paragraph              │
+│                                              │
+│ <span class="badge badge-trans">From: Criminal Code</span> "Theft is defined as..."  │
+│                                              │
+│ <span class="badge badge-orig">Original</span> Analysis connecting the law...      │
+│                                              │
+│ <span class="badge badge-trans">From: Case Law</span> "The court held that..."     │
+│                                              │
+│ <span class="badge badge-trans">From: Legal Commentary</span> "Scholars argue..."  │
+│                                              │
+│ <span class="badge badge-orig">Original</span> Conclusion                          │
+└──────────────────────────────────────────────┘
+    ↑                    ↑                    ↑
+    └──── live references to source works ────┘
+</pre>
+<div class="diagram-caption">A compound document mixes original text with transcluded passages from multiple sources</div>
+</div>
+
+<h2 id="why">Why Use Compound Documents?</h2>
+
+<div class="feature-grid">
+<div class="feature-card">
+<h4>Never Copy-Paste Again</h4>
+<p>Transclusion replaces copy-paste. The passage stays connected to its source. No drift, no outdated copies.</p>
+</div>
+<div class="feature-card">
+<h4>Automatic Attribution</h4>
+<p>Every transcluded passage carries its provenance. Readers can trace any quote back to its origin in one click.</p>
+</div>
+<div class="feature-card">
+<h4>Live Updates</h4>
+<p>If a source document is revised, the transcluded content updates in your compound &mdash; through span migration.</p>
+</div>
+<div class="feature-card">
+<h4>Build Arguments</h4>
+<p>Assemble evidence from multiple sources, add your analysis between them. The structure IS the argument.</p>
+</div>
+<div class="feature-card">
+<h4>Misquote-Proof</h4>
+<p>Because passages are live references, readers can verify they match the source. No cherry-picking or distortion.</p>
+</div>
+<div class="feature-card">
+<h4>Reusable Structure</h4>
+<p>Others can transclude from YOUR compound into theirs. Content flows through the docuverse with full provenance.</p>
+</div>
+</div>
+
+<h2 id="how">How to Use the Builder</h2>
+
+<h3>Opening the Builder</h3>
+<p>Open any document and click <strong>"Build"</strong> in the document toolbar (next to "Compare" and "Perspective"). The three-panel builder layout opens:</p>
+
+<div class="diagram">
+<pre style="background:none;border:none;padding:0;text-align:center;font-family:'Inter',sans-serif;font-size:13px">
+┌────────────────┬──────────────────────────┬────────────────┐
+│  <strong>Source Pool</strong>   │   <strong>Compound Document</strong>      │  <strong>Structure</strong>     │
+│                │   (live preview)          │  <strong>Outline</strong>      │
+│ + Add source   │                           │                │
+│ ┌────────────┐ │  <span class="badge badge-orig">Original</span> Intro text      │ 1.<span class="badge badge-orig">Original</span>    │
+│ │ Source A   │ │                           │   Intro        │
+│ └────────────┘ │  <span class="badge badge-trans">From: Source A</span>           │ 2.<span class="badge badge-trans">From: A</span>     │
+│ ┌────────────┐ │  "Transcluded text..."    │   Passage      │
+│ │ Source B   │ │                           │ 3.<span class="badge badge-orig">Original</span>    │
+│ └────────────┘ │  <span class="badge badge-orig">Original</span> Your analysis    │   Analysis     │
+│                │                           │ 4.<span class="badge badge-trans">From: B</span>     │
+│ Select text →  │  <span class="badge badge-trans">From: Source B</span>           │   Evidence     │
+│ Include button │  "More text..."           │ 5.<span class="badge badge-orig">Original</span>    │
+│                │                           │   Conclusion   │
+└────────────────┴──────────────────────────┴────────────────┘
+</pre>
+</div>
+
+<h3>Step-by-Step</h3>
+
+<ol>
+<li><strong>Add a source</strong>: Click "+ Add source" in the left panel. Pick a document from your library.</li>
+<li><strong>Read the source</strong>: Click the source name to expand its text in the lower-left panel.</li>
+<li><strong>Select a passage</strong>: Click and drag to select text in the source. The "Include passage" button appears at the top.</li>
+<li><strong>Include it</strong>: Click "Include passage". The text is transcluded into your document at the end.</li>
+<li><strong>Repeat</strong>: Add more sources, include more passages. Mix in your own original text.</li>
+<li><strong>Review structure</strong>: The right panel shows the document composition &mdash; what's original vs. what's transcluded.</li>
+<li><strong>Done</strong>: Click "Done" to return to the normal editor. Your compound is saved.</li>
+</ol>
+
+<div class="note">
+<strong>What happens behind the scenes:</strong> Each "Include" creates an inline <code>RangeElement::Transclusion</code>
+in the O-tree CRDT. The transclusion stores the source work ID, character span, and BLAKE3 content hash.
+Span migration keeps positions valid through edits. Provenance chains trace each passage back to its origin.
+</div>
+
+<h2 id="single">Example 1: Single-Source Compound</h2>
+
+<div class="example">
+<h4>Quoting a Single Source with Commentary</h4>
+<p>You're writing a response to an essay. You want to quote specific passages and respond to each one.</p>
+
+<p><strong>Structure:</strong></p>
+<pre style="font-size:12px">
+1. <span class="badge badge-orig">Original</span>   "In this response, I argue that..."
+2. <span class="badge badge-trans">From: Essay</span>  "The author claims that X is true."
+3. <span class="badge badge-orig">Original</span>   "This claim overlooks the evidence in..."
+4. <span class="badge badge-trans">From: Essay</span>  "Furthermore, the data shows..."
+5. <span class="badge badge-orig">Original</span>   "However, this data is from 2010. More recent..."
+6. <span class="badge badge-trans">From: Essay</span>  "In conclusion, X implies Y."
+7. <span class="badge badge-orig">Original</span>   "I disagree. X does not imply Y because..."
+</pre>
+
+<p>Each quote is a live transclusion. If the essay is revised, your document shows the updated quotes automatically. Readers can click any quote to verify it against the source.</p>
+</div>
+
+<h2 id="multi">Example 2: Multi-Source Compound</h2>
+
+<div class="example">
+<h4>Building a Literature Review</h4>
+<p>You're surveying multiple papers on a topic. Each paper contributes a key finding.</p>
+
+<p><strong>Structure:</strong></p>
+<pre style="font-size:12px">
+ 1. <span class="badge badge-orig">Original</span>      "Recent research on topic Z has shown..."
+ 2. <span class="badge badge-trans">From: Paper A</span>  "We found a 40% improvement using method M."
+ 3. <span class="badge badge-orig">Original</span>      "This established M as the standard, but..."
+ 4. <span class="badge badge-trans">From: Paper B</span>  "Method M fails when applied to large datasets."
+ 5. <span class="badge badge-orig">Original</span>      "This limitation led researchers to explore..."
+ 6. <span class="badge badge-trans">From: Paper C</span>  "Our hybrid approach combines M with N."
+ 7. <span class="badge badge-trans">From: Paper A</span>  "In our follow-up study, we confirmed..."
+ 8. <span class="badge badge-orig">Original</span>      "Together, these findings suggest..."
+ 9. <span class="badge badge-trans">From: Paper D</span>  "Contrary to earlier results, we observed..."
+10. <span class="badge badge-orig">Original</span>      "This disagreement motivates further study."
+</pre>
+
+<p>Four sources, one document. Each finding is traceable to its paper. The structure shows how ideas build on and challenge each other.</p>
+</div>
+
+<h2 id="legal">Example 3: Legal Brief Assembly</h2>
+
+<div class="example">
+<h4>Building a Legal Argument from Statutes and Precedents</h4>
+<p>A legal brief is inherently a compound document &mdash; it assembles statutes, case law, and commentary into a coherent argument.</p>
+
+<p><strong>Structure:</strong></p>
+<pre style="font-size:12px">
+ 1. <span class="badge badge-orig">Original</span>          "The defendant moves to dismiss on the grounds..."
+ 2. <span class="badge badge-trans">From: Penal Code</span>   "&sect; 487. Grand theft is theft committed when..."
+ 3. <span class="badge badge-orig">Original</span>          "The statute requires that the value exceed..."
+ 4. <span class="badge badge-trans">From: Brown v. State</span>  "We hold that the value must be assessed at..."
+ 5. <span class="badge badge-orig">Original</span>          "Applying this standard to the present case..."
+ 6. <span class="badge badge-trans">From: Smith v. Jones</span>  "The court may consider fair market value..."
+ 7. <span class="badge badge-trans">From: Legal Commentary</span>  "Professor Wright argues that the Brown rule..."
+ 8. <span class="badge badge-orig">Original</span>          "This commentary supports our position because..."
+ 9. <span class="badge badge-orig">Original</span>          "For these reasons, the motion should be denied."
+</pre>
+
+<p>Three source types: statute, case law, commentary. The lawyer's original analysis weaves them together. Every citation is verifiable &mdash; no misquotation possible.</p>
+</div>
+
+<h2 id="literature">Example 4: Literary Anthology</h2>
+
+<div class="example">
+<h4>Curating a Thematic Collection</h4>
+<p>You're assembling a collection of passages from different works that explore a common theme.</p>
+
+<p><strong>Structure:</strong></p>
+<pre style="font-size:12px">
+ 1. <span class="badge badge-orig">Original</span>           "The theme of memory appears throughout..."
+ 2. <span class="badge badge-trans">From: Proust</span>       "Remembrance of things past is not..."
+ 3. <span class="badge badge-orig">Original</span>           "Proust's involuntary memory contrasts with..."
+ 4. <span class="badge badge-trans">From: Borges</span>       "I cannot walk through the suburbs in the..."
+ 5. <span class="badge badge-trans">From: Sebald</span>       "It does not seem to me that we understand..."
+ 6. <span class="badge badge-orig">Original</span>           "Both Borges and Sebald treat memory as..."
+ 7. <span class="badge badge-trans">From: Nelson</span>       "The interconnectedness of all literature..."
+ 8. <span class="badge badge-orig">Original</span>           "Nelson's vision of connected literature..."
+</pre>
+
+<p>Four authors in conversation. The curator's notes bridge the passages. Each quote is a live link to the source text &mdash; readers can explore the original context.</p>
+</div>
+
+<h2 id="structure">Understanding the Structure</h2>
+
+<p>The structure outline (right panel) shows your document's composition. Each entry is either:</p>
+
+<div class="legend">
+<div class="legend-item"><span class="legend-swatch" style="background:transparent;border:1px solid #8b949e"></span> <span class="badge badge-orig">Original</span> &mdash; text you wrote yourself</div>
+<div class="legend-item"><span class="legend-swatch" style="background:rgba(56,166,255,0.12);border:1px solid #38a6ff"></span> <span class="badge badge-trans">Transclusion</span> &mdash; text included from another work</div>
+</div>
+
+<p>The outline tells you:</p>
+<ul>
+<li><strong>How many sources</strong> you're drawing from</li>
+<li><strong>The ratio</strong> of original to transcluded content</li>
+<li><strong>The order</strong> in which passages appear</li>
+<li><strong>Which source</strong> each passage comes from</li>
+</ul>
+
+<p>A document with 0 transclusions is just a regular document. A document with 1+ transclusions is a compound.</p>
+
+<h2 id="provenance">Provenance and Attribution</h2>
+
+<p>Every transcluded passage carries <strong>provenance</strong> &mdash; a chain showing where the content originated and how it reached your document. This is Gold's <code>again()</code> function: recursive tracing of content reuse.</p>
+
+<div class="diagram">
+<pre style="background:none;border:none;padding:0;text-align:center;font-family:'Inter',sans-serif;font-size:13px">
+Your Compound
+    ↑ transcluded from
+Legal Commentary
+    ↑ quoted from
+Brown v. State
+    ↑ cited from
+Penal Code &sect; 487
+    ✓ ORIGINAL
+</pre>
+<div class="diagram-caption">Provenance chain: trace any passage back through its full reuse history</div>
+</div>
+
+<p>To view the provenance chain for a transcluded passage, click the passage and select <strong>"Trace provenance"</strong>. The chain shows each hop with the work title, author, and whether the content is original or derived.</p>
+
+<h2 id="edl">EDL Export</h2>
+
+<p>A compound document is fundamentally an EDL &mdash; a list of content references. The structure can be exported as JSON:</p>
+
+<pre><code>{
+  "version": 1,
+  "title": "My Legal Brief",
+  "entries": [
+    { "type": "text", "content": "Introduction paragraph..." },
+    {
+      "type": "transclusion",
+      "source_work_id": "0x415",
+      "source_title": "Penal Code",
+      "char_start": 120,
+      "char_end": 340,
+      "content_hash": "a1b2c3...",
+      "resolved_text": "Grand theft is theft committed when..."
+    },
+    { "type": "text", "content": "Analysis paragraph..." }
+  ]
+}</code></pre>
+
+<p>This format is compatible with the Xanadu EDL concept and could be imported by other systems that understand content-addressed transclusion.</p>
+
+<h2 id="gold">Connection to Udanax-Gold</h2>
+
+<p>Gold's primary document creation model was compound-based. The compound builder is the modern equivalent of Gold's assembly facilities:</p>
+
+<table>
+<tr><th>Gold concept</th><th>Xudanu equivalent</th><th>What it does</th></tr>
+<tr><td><code>Enfilade</code></td><td>O-tree CRDT</td><td>Stores document structure</td></tr>
+<tr><td><code>Tumbler</code></td><td>BeId + char position</td><td>Addresses content within works</td></tr>
+<tr><td>Transclusion link</td><td><code>RangeElement::Transclusion</code></td><td>Inline reference to source passage</td></tr>
+<tr><td><code>again()</code></td><td><code>compute_provenance_chain</code></td><td>Recursive content origin tracing</td></tr>
+<tr><td>Intercomparison</td><td><code>find_shared_regions</code> + Perspective</td><td>Visual document comparison</td></tr>
+<tr><td>Bazik (assembly)</td><td><strong>Compound Builder</strong></td><td>Visual document assembly</td></tr>
+</table>
+
+<p>The compound builder completes the loop: it provides the <strong>authoring tool</strong> that makes the docuverse structure buildable. Without it, users can link and view documents but can't easily build new documents from existing content. With it, the full Xanadu model &mdash; create, connect, transclude, trace &mdash; is available in a visual interface.</p>
+
+<div class="note">
+<strong>Try it:</strong> Open a document, click "Build", add a source, select a passage, click "Include passage".
+Your document is now a compound. Click "Done" and use the Compound panel (left rail) to explore its structure.
+</div>
+
+<h2>Stretch Goals: Where the Builder Could Go</h2>
+
+<p>The current Compound Builder is Phase 1 &mdash; basic assembly. Here's what it could become:</p>
+
+<div class="feature-grid">
+<div class="feature-card">
+<h4>Drag to Reorder</h4>
+<p>Drag transcluded passages up/down to rearrange your document. The O-tree CRDT already supports position changes &mdash; we just need the drag UI.</p>
+</div>
+<div class="feature-card">
+<h4>Drag from Source</h4>
+<p>Instead of select-then-click, drag selected text directly from a source panel into the document at the exact insertion point. Visual drop indicator shows where it lands.</p>
+</div>
+<div class="feature-card">
+<h4>Compound from Trail</h4>
+<p>Convert a trail (curated reading sequence) into a compound document. Each trail stop becomes a transcluded passage, with your connecting text between them. Result: a guided anthology built from the docuverse.</p>
+</div>
+<div class="feature-card">
+<h4>Perspective Integration</h4>
+<p>Enter Build mode directly from the Perspective view. Drag passages from neighbor columns into your center document. Sources auto-populate from Perspective neighbors. Build while you explore.</p>
+</div>
+<div class="feature-card">
+<h4>Fuzzy Match Suggestions</h4>
+<p>When you type text similar to a passage in another document, the Builder suggests: "This resembles a passage in [Source]. Transclude instead?" Turns accidental duplication into intentional structure.</p>
+</div>
+<div class="feature-card">
+<h4>Version Sync</h4>
+<p>When a source document is revised, the Builder shows which transclusions are affected. Option to update to latest source version, or keep the original. Diff view shows what changed.</p>
+</div>
+<div class="feature-card">
+<h4>Auto-Citation</h4>
+<p>Generate citations from transclusion provenance. Format as MLA, APA, Chicago, or legal (Bluebook). Inline citations auto-inserted. Bibliography auto-generated from all transclusion sources.</p>
+</div>
+<div class="feature-card">
+<h4>Templates</h4>
+<p>Pre-defined compound templates: Legal Brief (statute + precedent + analysis sections), Literature Review (paper + critique + synthesis), Debate Brief (claim + counter-claim + rebuttal). Template defines structure; user fills with transcluded content.</p>
+</div>
+<div class="feature-card">
+<h4>EDL Import</h4>
+<p>Import an EDL (Edit Decision List) from an external source. The Builder creates the compound from the EDL's content references, fetching each source passage. Interoperability with other Xanadu-lineage systems.</p>
+</div>
+<div class="feature-card">
+<h4>Nested Compounds</h4>
+<p>A compound document can itself be a source for another compound. The Builder shows nesting depth. Structure outline uses indentation to show hierarchy. Provenance chains trace through multiple levels of assembly.</p>
+</div>
+<div class="feature-card">
+<h4>Collaborative Assembly</h4>
+<p>Multiple users build the same compound simultaneously via CRDT. Each user sees the other's transclusions appear in real-time. Useful for team research projects, collaborative legal briefs, group anthologies.</p>
+</div>
+<div class="feature-card">
+<h4>Smart Compilation</h4>
+<p>The Builder analyzes your original text and suggests relevant passages from the docuverse using content fingerprinting. "You mentioned X &mdash; here are passages from 3 works that discuss X. Include any?"</p>
+</div>
+</div>
+
+<h3>Priority Order</h3>
+
+<table>
+<tr><th>Feature</th><th>Effort</th><th>Impact</th><th>Why</th></tr>
+<tr><td>Drag to reorder</td><td>Small</td><td>High</td><td>Essential for document flow</td></tr>
+<tr><td>Compound from Trail</td><td>Small</td><td>High</td><td>Connects two existing features</td></tr>
+<tr><td>Perspective integration</td><td>Medium</td><td>High</td><td>Build while exploring</td></tr>
+<tr><td>Fuzzy match suggestions</td><td>Medium</td><td>High</td><td>Proactive structure building</td></tr>
+<tr><td>Auto-citation</td><td>Medium</td><td>High</td><td>Real-world academic use case</td></tr>
+<tr><td>Version sync</td><td>Medium</td><td>Medium</td><td>Important for long-lived compounds</td></tr>
+<tr><td>Templates</td><td>Medium</td><td>Medium</td><td>Lowers barrier for new users</td></tr>
+<tr><td>EDL import</td><td>Small</td><td>Low</td><td>Interoperability</td></tr>
+<tr><td>Nested compounds</td><td>Automatic</td><td>Low</td><td>Already works, needs UI</td></tr>
+<tr><td>Collaborative assembly</td><td>Already works</td><td>Medium</td><td>CRDT handles it; needs testing</td></tr>
+<tr><td>Smart compilation</td><td>Large</td><td>High</td><td>AI-assisted authoring</td></tr>
+</table>
+
+</div>
+</body>
+</html>

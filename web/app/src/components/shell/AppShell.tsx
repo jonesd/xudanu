@@ -28,6 +28,7 @@ import { SearchOverlay } from "./SearchOverlay";
 import { PermissionBadge } from "./PermissionBadge";
 import { RelatedFooter } from "../RelatedFooter";
 import { PerspectiveView } from "../PerspectiveView";
+import { CompoundBuilder } from "../CompoundBuilder";
 import { useCompare, CompareHeader, CompareSplitView } from "../ComparePanel";
 import { buildProvValidatorHtml } from "../../prov-validator";
 import "../../app-shell.css";
@@ -69,6 +70,7 @@ export function AppShell() {
   const [linkDescription, setLinkDescription] = useState("");
   const [showCompare, setShowCompare] = useState(false);
   const [showPerspective, setShowPerspective] = useState(false);
+  const [showCompoundBuilder, setShowCompoundBuilder] = useState(false);
   const [crossServerBacklinks, setCrossServerBacklinks] = useState<CrossServerBacklinkPayload[]>([]);
   const [annotationTarget, setAnnotationTarget] = useState<{ start: number; end: number } | null>(null);
   const [isPublished, setIsPublished] = useState(false);
@@ -611,22 +613,6 @@ export function AppShell() {
     }
   }, [workBeId, annotations, deleteAnnotation, createAnnotation]);
 
-  const handlePullFromWork = useCallback(
-    async (sourceWorkId: number, charStart: number, charEnd: number, text: string) => {
-      if (!clientRef.current || workBeId === null) return;
-      let position = selectionRange?.end ?? displayText.length;
-      for (const sr of compound.spanRanges) {
-        if (sr.flat_end <= position) {
-          position -= (sr.flat_end - sr.flat_start);
-        }
-      }
-      await compound.addSpan(text, position, text, sourceWorkId, charStart, charEnd);
-      await new Promise((r) => setTimeout(r, 100));
-      await compound.reload();
-    },
-    [clientRef, workBeId, selectionRange, displayText, compound],
-  );
-
   const handleToggleStar = useCallback(
     async (workId: number, current: boolean) => {
       if (!clientRef.current) return;
@@ -1139,6 +1125,14 @@ export function AppShell() {
               >
                 Perspective
               </button>
+              <button
+                type="button"
+                className="publish-toggle"
+                onClick={() => setShowCompoundBuilder(true)}
+                title="Open compound document builder"
+              >
+                Build
+              </button>
               <div className="doc-meta">
                 {compound.spanRanges.length > 0 && (
                   <div className="compound-badge" title="This document contains transcluded content from other works">
@@ -1309,6 +1303,14 @@ export function AppShell() {
                   <span className="provenance-title">Compound Structure</span>
                   <button
                     type="button"
+                    className="publish-toggle"
+                    style={{ fontSize: 11, padding: "2px 8px", marginRight: 4 }}
+                    onClick={() => { setShowCompound(false); setShowCompoundBuilder(true); }}
+                  >
+                    Build
+                  </button>
+                  <button
+                    type="button"
                     className="provenance-close"
                     onClick={() => setShowCompound(false)}
                   >
@@ -1325,7 +1327,6 @@ export function AppShell() {
                     works={works}
                     onReload={() => compound.reload()}
                     onRemoveTransclusion={compound.undoLastInsert}
-                    onPullFromWork={handlePullFromWork}
                   />
                 </div>
               </div>
@@ -1482,6 +1483,24 @@ export function AppShell() {
               return (inner?.current_text as string) || null;
             } catch { return null; }
           }}
+        />
+      )}
+
+      {showCompoundBuilder && workBeId !== null && (
+        <CompoundBuilder
+          centerWorkId={workBeId}
+          centerText={displayText}
+          centerTitle={currentWorkMeta?.title || `Work ${workIdDisplay}`}
+          compoundSpanRanges={compound.spanRanges}
+          compoundSourceTitles={compound.sourceTitles}
+          works={works}
+          client={clientRef.current}
+          onClose={() => setShowCompoundBuilder(false)}
+          onPlaceTransclusion={(sourceWorkId, sourceWorkTitle, start, end, text) => {
+            transclusion.holdSelection(sourceWorkId, sourceWorkTitle, start, end, text);
+            handlePlaceTransclusion(displayText.length);
+          }}
+          onReloadCompound={() => compound.reload()}
         />
       )}
     </div>
