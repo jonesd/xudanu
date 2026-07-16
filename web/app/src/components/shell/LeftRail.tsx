@@ -108,6 +108,14 @@ export function LeftRail({ activeItem, onNavigate, onOpenLibrary, onOpenSearch }
       <div className="rail-separator" />
       <RailButton icon={ICONS.identity} label="Identity" active={false} onClick={() => handleNav("identity")} />
       <RailButton icon={ICONS.settings} label="Settings" active={false} onClick={() => handleNav("settings")} />
+      <div className="rail-separator" />
+      <a href="https://jonesd.github.io/xudanu/" target="_blank" rel="noopener noreferrer" title="Documentation"
+        style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "40px", color: "var(--text-muted)", textDecoration: "none", cursor: "pointer", borderRadius: "6px", marginTop: "auto" }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+        </svg>
+      </a>
     </div>
   );
 }
