@@ -1391,6 +1391,7 @@ export class CrdtSyncClient {
     } catch {
       this.isAdmin = false;
     }
+    this.identityListeners.forEach((cb) => cb(this.currentIdentity));
   }
 
   onIdentityChange(cb: IdentityListener): () => void {

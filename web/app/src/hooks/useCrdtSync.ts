@@ -117,7 +117,10 @@ export function useCrdtSync(
         return next.length > MAX_CONTENT_MATCHES ? next.slice(-MAX_CONTENT_MATCHES) : next;
       });
     });
-    const unsubIdentity = client.onIdentityChange(setIdentity);
+    const unsubIdentity = client.onIdentityChange((id) => {
+      setIdentity(id);
+      setIsAdmin(client!.getIsAdmin());
+    });
     const unsubChanges = client.onChangeHighlights(setRecentChanges);
 
     const unsubConn2 = client.onConnectionChange((isConnected) => {

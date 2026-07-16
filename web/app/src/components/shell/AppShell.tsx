@@ -1524,9 +1524,9 @@ export function AppShell() {
 
       )}
 
-      {showAdmin && (
+      <div style={{ display: showAdmin ? "block" : "none" }}>
         <AdminDashboard onClose={() => setShowAdmin(false)} />
-      )}
+      </div>
     </div>
   );
 }
