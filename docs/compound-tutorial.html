@@ -200,45 +200,47 @@ The Brief is <strong>one document</strong> whose content literally comes from fo
 </div>
 
 <div class="step">
-  <div class="step-title"><span class="step-num">2</span> Open the destination document</div>
+  <div class="step-title"><span class="step-num">2</span> Open the Compound Builder</div>
   <div class="step-body">
-    <p>Create a new document (e.g., "Legal Brief") and enable write mode. Write any original analysis text you want to start with.</p>
+    <p>Open the document you want to build into a compound (or create a new one). Click <strong>Build</strong> in the document toolbar. A three-panel layout opens: source pool on the left, your document in the center, and a structure outline on the right.</p>
   </div>
 </div>
 
 <div class="step">
-  <div class="step-title"><span class="step-num">3</span> Transclude from the first source</div>
+  <div class="step-title"><span class="step-num">3</span> Add sources</div>
   <div class="step-body">
-    <p>Open the source work (e.g., "Statute"). Select the passage you want to include. Click <strong>Transclude</strong> (amber button).</p>
-    <p>A floating badge appears: "Transcluding from: Statute &mdash; 'All persons shall have...'"</p>
+    <p>Click <strong>"+ Add source"</strong> in the left panel and pick a source document from your library. The source text loads in the lower-left panel. Add as many sources as you need &mdash; they stay open simultaneously.</p>
   </div>
 </div>
 
 <div class="step">
-  <div class="step-title"><span class="step-num">4</span> Place the transclusion</div>
+  <div class="step-title"><span class="step-num">4</span> Include passages</div>
   <div class="step-body">
-    <p>Navigate back to your "Legal Brief" document. Position the cursor where you want the transcluded text. Click <strong>Place at cursor</strong> on the badge.</p>
-    <p>The transcluded text appears inline, with a coloured background and source label.</p>
+    <p>Click a source to read its text. Select a passage (click and drag). An <strong>"Include passage"</strong> button appears at the top. Click it to transclude the passage into your document. The text appears in the center panel with a coloured background and source label.</p>
   </div>
 </div>
 
 <div class="step">
-  <div class="step-title"><span class="step-num">5</span> Repeat for each source</div>
+  <div class="step-title"><span class="step-num">5</span> Mix in original text</div>
   <div class="step-body">
-    <p>Go back to each source work, select text, click Transclude, return to the Brief, and place it. Each transclusion gets a <strong>different colour</strong> based on its source work.</p>
-    <p>Interleave with your own original text by simply typing in the editor.</p>
+    <p>Between transcluded passages, type your own analysis, commentary, or connecting text. The structure outline on the right shows which sections are [Original] vs [From: Source], giving you a live overview of the document's composition.</p>
   </div>
 </div>
 
 <div class="step">
-  <div class="step-title"><span class="step-num">6</span> View the compound structure</div>
+  <div class="step-title"><span class="step-num">6</span> Review and finish</div>
   <div class="step-body">
-    <p>Click the <strong>compound icon</strong> in the left rail to open the Compound Panel. It shows every transclusion element with its source work, character range, and resolved text.</p>
+    <p>Check the structure outline to see how many sources you've drawn from and the ratio of original to transcluded content. Click <strong>"Done"</strong> to return to the normal editor. Your compound is saved.</p>
+    <p>To view the compound structure later, click the <strong>compound icon</strong> in the left rail to open the Compound Panel (read-only), or click <strong>Build</strong> again to continue assembling.</p>
   </div>
 </div>
 
 <div class="note">
-  <strong>Tip:</strong> Each source work gets a distinct colour (teal, indigo, orange, purple, red, green, cyan, or amber). The colour is deterministic based on the work ID &mdash; the same source always has the same colour across all compound documents.
+  <strong>Alternative method:</strong> You can also transclude without the Builder. Select text in any document, click <strong>Transclude</strong> (amber button in the floating toolbar), navigate to your target document, and place it at the cursor. The Builder is better for multi-source assembly; the Transclude button is better for quick one-off inclusions.
+</div>
+
+<div class="note">
+  <strong>Learn more:</strong> See the <a href="compound-builder-guide.html">Compound Builder Guide</a> for detailed examples (single-source, multi-source, legal brief, literary anthology) and stretch goals for future capabilities.
 </div>
 
 <!-- ============================================================ -->
@@ -335,27 +337,45 @@ When a document contains transclusions, a badge appears in the document toolbar:
 </p>
 
 <!-- ============================================================ -->
-<h2 id="s5">5. The Compound Panel</h2>
+<h2 id="s5">5. The Compound Panel &amp; Compound Builder</h2>
 
 <p>
-Click the <strong>compound icon</strong> in the left rail to open the Compound Structure panel. It shows:
+Xudanu provides two complementary tools for working with compound documents:
+</p>
+
+<h3>The Compound Panel (read-only viewer)</h3>
+<p>
+Click the <strong>compound icon</strong> in the left rail to open the Compound Structure panel. This is a read-only viewer showing:
 </p>
 
 <ul>
-  <li><strong>Resolved text preview</strong> &mdash; the first 200 characters of the fully resolved compound text</li>
   <li><strong>Element list</strong> &mdash; each transclusion element with:
     <ul>
       <li>Source work title badge</li>
       <li>Character range <code>[start:end]</code></li>
-      <li>Move up/down buttons (when editable)</li>
       <li>Remove button (when editable)</li>
     </ul>
   </li>
 </ul>
 
-<div class="note">
-  <strong>Removing a transclusion</strong> from the compound panel removes the transclusion element from the document &mdash; the text disappears from the document. This is different from deleting a link, which only removes the connection without affecting content.
-</div>
+<p>
+The panel includes a <strong>"Build"</strong> button that opens the full Compound Builder for adding new transclusions.
+</p>
+
+<h3>The Compound Builder (authoring tool)</h3>
+<p>
+Click <strong>"Build"</strong> in the document toolbar (or the Build button in the Compound Panel) to open the three-panel assembly view:
+</p>
+
+<ul>
+  <li><strong>Source pool (left)</strong> &mdash; add and browse source documents simultaneously</li>
+  <li><strong>Compound preview (center)</strong> &mdash; live view of your document with transcluded passages highlighted</li>
+  <li><strong>Structure outline (right)</strong> &mdash; numbered list showing [Original] vs [From: Source] composition</li>
+</ul>
+
+<p>
+See the <a href="compound-builder-guide.html">Compound Builder Guide</a> for detailed examples and stretch goals.
+</p>
 
 <!-- ============================================================ -->
 <h2 id="s6">6. Compound vs. Link &mdash; When to Use Which</h2>

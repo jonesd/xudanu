@@ -124,6 +124,9 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
 .hero-network:hover{border-color:#39d2c0;box-shadow:0 8px 24px rgba(57,210,192,0.15)}
 .hero-network .hero-tag{background:rgba(57,210,192,0.15);color:#39d2c0}
 
+.section-intro{color:#8b949e;font-size:14px;margin-bottom:20px;max-width:760px}
+.subhead{font-size:13px;font-weight:700;color:#8b949e;margin:28px 0 12px;letter-spacing:0.6px;text-transform:uppercase;border-bottom:1px solid #21262d;padding-bottom:6px}
+
 .footer{margin-top:64px;padding-top:20px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
 
 @media(max-width:640px){
@@ -226,9 +229,12 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
   <p style="font-size:13px;color:#8b949e;margin-top:10px;margin-bottom:0">The fundamental pieces, end to end. Click any region to open its deep-dive page.</p>
 </div>
 
-<!-- Getting Started -->
+<!-- ============================================================= -->
+<!-- SECTION 1: GETTING STARTED                                    -->
+<!-- ============================================================= -->
 <div class="section">
   <h2>Getting Started <span class="badge badge-green">START HERE</span></h2>
+  <p class="section-intro">Start here if you're new to Xudanu.</p>
   <div class="doc-grid">
     <div class="doc-card">
       <h3><a href="user-guide.html">User Guide (v0.7.0)</a></h3>
@@ -250,16 +256,130 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
       <p>Configure HTTPS and WSS for encrypted connections. Self-signed certs, Caddy reverse proxy, and Safari compatibility.</p>
       <span class="tag tag-md">markdown</span>
     </div>
-  </div>
-</div>
-
-<!-- What's New -->
-<div class="section">
-  <h2>What's New in v0.7.0 <span class="badge badge-amber">RELEASE</span></h2>
-  <div class="doc-grid">
     <div class="doc-card">
       <h3><a href="user-guide.html#stars">Stars / Favorites</a></h3>
       <p>Star documents to mark them as favorites. Starred docs appear in a dedicated sidebar section and as amber nodes in the Document Map.</p>
+      <span class="tag tag-featured">new</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="xudanu-in-one-page.html">Xudanu in One Page</a></h3>
+      <p>Content and performance architecture diagram on a single page. The complete system at a glance: O-tree, chunk store, WAL, CRDT, federation, and the wire protocol.</p>
+      <span class="tag tag-html">html</span>
+    </div>
+  </div>
+  <div class="hero-grid-2" style="margin-top:16px">
+    <div class="hero-card hero-arch">
+      <h3><a href="collaborative-editing.html">Collaborative Editing</a></h3>
+      <p>Real-time multi-user editing with O-tree CRDT, Ed25519-signed author attribution, awareness state (cursors/selections), three-way merge fallback, and LLM-assisted change narration.</p>
+      <span class="hero-tag">8 sections &middot; 1 diagram</span>
+    </div>
+    <div class="hero-card hero-notif">
+      <h3><a href="notification-system.html">Notification System</a></h3>
+      <p>Real-time notification and event system for collaborative editing sessions.</p>
+      <span class="hero-tag">interactive</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- SECTION 2: DOCUMENTS & STORAGE                                -->
+<!-- ============================================================= -->
+<div class="section">
+  <h2>Documents &amp; Storage <span class="badge badge-blue">CORE</span></h2>
+  <p class="section-intro">How content is stored, versioned, and managed. A Xudanu document is an edition &mdash; an immutable snapshot of text and structure. Editions are organized into works, persisted in chunks, and tracked through a version DAG.</p>
+  <div class="hero-grid-2">
+    <div class="hero-card hero-editions">
+      <h3><a href="editions-and-works.html">Editions &amp; Works</a></h3>
+      <p>How documents are structured as versioned editions with per-line attribution, three-way merge, and the O-tree data model. Essential reading for understanding Xudanu's core abstractions.</p>
+      <span class="hero-tag">10 sections &middot; 10 diagrams</span>
+    </div>
+    <div class="hero-card hero-diagram">
+      <h3><a href="storage-system.html">Storage System</a></h3>
+      <p>BLAKE3 content-addressed chunk store, incremental checkpoints, garbage collection, and integrity verification.</p>
+      <span class="hero-tag">13 sections &middot; 11 diagrams</span>
+    </div>
+    <div class="hero-card hero-ent">
+      <h3><a href="ent-dagwood-trace-dag.html">Ent, DagWood &amp; Trace DAG</a></h3>
+      <p>The versioning spine adapted from Udanax-Gold C++: partial-order TracePositions, Root/Tree/Dag branch topologies, the navigation cache (max-over-paths), assertion-based content with 13 payload types, conflict-preserving AlternativeSet materialization, the H-Tree, and the bridge to the Edition model &mdash; with code examples and SVG diagrams.</p>
+      <span class="hero-tag">18 sections &middot; 7 diagrams</span>
+    </div>
+    <div class="hero-card hero-arch">
+      <h3><a href="manifest-architecture.html">Manifest &amp; Chunk Architecture</a></h3>
+      <p>How manifest.json uses hash pointers to reference document content in the chunk store: WorkChunkRef, EditionChunkRef, EntryChunk, ProvenanceChunk, and the three-layer link persistence model.</p>
+      <span class="hero-tag">featured</span>
+    </div>
+  </div>
+  <div class="doc-grid">
+    <div class="doc-card">
+      <h3><a href="garbage-collector.html">Garbage Collector</a></h3>
+      <p>How the GC reclaims disk space: mark-and-sweep algorithm, chunk write path, WAL journaling, and the v0.7.5 safety fix.</p>
+      <span class="tag tag-html">html</span> <span class="tag tag-featured">new</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="storage-system.html">Storage System</a></h3>
+      <p>Content-addressed BLAKE3 chunk store, incremental checkpoints, garbage collection, and integrity verification. 13 sections with SVG diagrams.</p>
+      <span class="tag tag-html">html</span> <span class="tag tag-featured">featured</span>
+    </div>
+    <div class="doc-card">
+      <h3>Hardened Persistence</h3>
+      <p>Three-layer data protection: Write-Ahead Log, dual manifest slots (A/B), and atomic fsync+rename checkpoints every 5 seconds.</p>
+      <span class="tag tag-featured">new</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="dev/path-navigation-snapshots-endorsements.md">Paths, Snapshots, Endorsements</a></h3>
+      <p>Label sequences through nested editions, snapshot persistence, and the endorsement system.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- SECTION 3: CONNECTIONS & REUSE                                -->
+<!-- ============================================================= -->
+<div class="section">
+  <h2>Connections &amp; Reuse <span class="badge badge-purple">HYPERTEXT</span></h2>
+  <p class="section-intro">How documents link to, reference, and include each other. Xudanu's core innovation is visible, typed connections between specific passages &mdash; combined with transclusion (live content reuse) that tracks provenance back to the original source.</p>
+  <div class="hero-grid">
+    <div class="hero-card hero-editions">
+      <h3><a href="links-and-backlinks.html">Links &amp; Backlinks</a></h3>
+      <p>Nelson's typed, bidirectional, unbreakable connections between passages. The five link types (Comment, Reference, Disagreement, Quotation, See Also), the two-part creation flow, backlinks, span migration, and profuse overlapping links &mdash; with code examples and canvas-render diagrams.</p>
+      <span class="hero-tag">14 sections &middot; 9 diagrams</span>
+    </div>
+    <div class="hero-card hero-diagram">
+      <h3><a href="transclusion-engine.html">Transclusion Engine</a></h3>
+      <p>How content reuse is detected, indexed, and queried across documents: BLAKE3 fingerprinting, Bert Canopy tree, Recorder pub/sub, Hoist propagation, and Backfollow queries. The core intellectual property of Xanadu.</p>
+      <span class="hero-tag">9 sections &middot; 3 diagrams</span>
+    </div>
+    <div class="hero-card hero-prov">
+      <h3><a href="provenance-and-attribution.html">Provenance &amp; Cryptographic Attribution</a></h3>
+      <p>How Xudanu answers "who wrote this?" at the character level. Ed25519 span signing, content fingerprints, domain separation, the materialization pipeline, transclusion attribution, historical attestation for imported texts, the tamper-evident SHA-256-chained attribution log, provenance ancestry walks, exportable attestation reports, and federation cluster consensus with W3C PROV-JSON export.</p>
+      <span class="hero-tag">23 sections &middot; 7 diagrams</span>
+    </div>
+  </div>
+  <div class="doc-grid">
+    <div class="doc-card">
+      <h3><a href="compound-documents.html">Compound Documents</a></h3>
+      <p>How live transclusion works: inline RangeElement::Transclusion in the O-tree, recursive resolution, attribution propagation, span migration, and the visual Compound Builder for assembling passages from multiple sources into one editable view.</p>
+      <span class="tag tag-html">html</span> <span class="tag tag-featured">new</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="compound-builder-guide.html">Compound Builder Guide</a></h3>
+      <p>Visual builder for assembling compound documents from transcluded passages. Drag, drop, and rearrange live content from multiple sources into a single editable view.</p>
+      <span class="tag tag-html">html</span> <span class="tag tag-featured">new</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="compound-tutorial.html">Compound Tutorial</a></h3>
+      <p>Step-by-step user guide for compound documents: creating transclusions, seeing colour-coded source regions, the compound panel, and the legal brief assembly example. Includes comparison with Udanax-Gold.</p>
+      <span class="tag tag-html">html</span> <span class="tag tag-featured">new</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="links-tutorial.html">Links Tutorial</a></h3>
+      <p>Step-by-step user guide for creating links and backlinks: using the Link Creator wizard, choosing link types, creating transclusions, managing existing links, and understanding the visual markers.</p>
+      <span class="tag tag-html">html</span> <span class="tag tag-featured">interactive walkthrough</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="user-guide.html#document-map">Document Map</a></h3>
+      <p>Force-directed graph showing all documents, transclusion links (solid lines), and content similarity (dashed lines). Click nodes to navigate.</p>
       <span class="tag tag-featured">new</span>
     </div>
     <div class="doc-card">
@@ -268,182 +388,131 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
       <span class="tag tag-featured">new</span>
     </div>
     <div class="doc-card">
-      <h3><a href="user-guide.html#document-map">Document Map</a></h3>
-      <p>Force-directed graph showing all documents, transclusion links (solid lines), and content similarity (dashed lines). Click nodes to navigate.</p>
+      <h3>Content Similarity</h3>
+      <p>Documents with overlapping vocabulary (&gt;15% Jaccard similarity) are connected with dashed lines and drift together in the Document Map.</p>
       <span class="tag tag-featured">new</span>
     </div>
     <div class="doc-card">
-      <h3>Content Similarity</a></h3>
-      <p>Documents with overlapping vocabulary (>15% Jaccard similarity) are connected with dashed lines and drift together in the Document Map.</p>
-      <span class="tag tag-featured">new</span>
+      <h3><a href="prov-validator.html">PROV-JSON Validator</a></h3>
+      <p>Interactive W3C PROV-JSON validator for Xudanu's attribution export. Paste a report, see the provenance graph, verify signatures and timestamps.</p>
+      <span class="tag tag-html">html</span>
     </div>
     <div class="doc-card">
-      <h3>Hardened Persistence</h3>
-      <p>Three-layer data protection: Write-Ahead Log, dual manifest slots (A/B), and atomic fsync+rename checkpoints every 5 seconds.</p>
-      <span class="tag tag-featured">new</span>
-    </div>
-    <div class="doc-card">
-      <h3><a href="gold-heritage.html">Xanadu Gold Foundations</a></h3>
-      <p>Progressive implementation of Udanax-Gold: transclusion with provenance, content addressing, clubs/permissions, cryptographic attribution, and trails.</p>
-      <span class="tag tag-featured">enhanced</span>
+      <h3><a href="dev/transclusion-plan.md">Transclusion Plan</a></h3>
+      <p>Plan for connecting BackfollowEngine, canopy, recorder, and ENT into a working transclusion detection pipeline.</p>
+      <span class="tag tag-md">markdown</span>
     </div>
   </div>
 </div>
 
-<!-- Gold Heritage - featured -->
+<!-- ============================================================= -->
+<!-- SECTION 4: MATHEMATICAL FOUNDATIONS                           -->
+<!-- ============================================================= -->
 <div class="section">
-  <a href="udanax-to-xudanu.html" style="text-decoration:none">
-    <div style="background:linear-gradient(135deg,rgba(57,210,192,0.08),rgba(163,113,247,0.08));border:2px solid #39d2c0;border-radius:12px;padding:28px 32px;transition:all 0.25s;position:relative;overflow:hidden" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 24px rgba(57,210,192,0.15)'" onmouseout="this.style.transform='none';this.style.boxShadow='none'">
-      <div style="display:flex;align-items:center;gap:16px">
-        <div style="font-size:28px">&#9776;</div>
-        <div style="flex:1">
-          <h3 style="font-size:20px;font-weight:700;color:#e6edf3;margin-bottom:4px">From Udanax to Xudanu &mdash; 35 Years of Connected Documents</h3>
-          <p style="font-size:14px;color:#8b949e;line-height:1.6;margin-bottom:0">The algorithms, the people, and the modern realization. Enfilades, tumblers, canopy trees, backfollow, DagWood &mdash; from Green and Gold to running Rust code. The complete story of how Nelson's 1960 vision became a working system.</p>
-        </div>
-        <span style="background:rgba(57,210,192,0.15);color:#39d2c0;font-size:11px;padding:4px 12px;border-radius:12px;font-weight:600;letter-spacing:0.3px;white-space:nowrap">new</span>
-      </div>
+  <h2>Mathematical Foundations <span class="badge badge-blue">MATH</span></h2>
+  <p class="section-intro">The position algebra and tree structures that make precise content addressing possible. These power span migration (links survive edits), intercomparison (finding shared passages), and efficient tree traversal.</p>
+  <div class="hero-grid-2">
+    <div class="hero-card hero-space">
+      <h3><a href="space-algebra.html">The Space Algebra</a></h3>
+      <p>The mathematical foundation underlying every position, region, span, mapping, and address in Xudanu. The four core traits (Space, Position, Region, Dsp), the transition-set representation, the seven concrete spaces (Integer, Real, Sequence/Tumbler, CrossSpace2, CrossSpaceN, FilterSpace), span migration, shared-content detection, and tumbler addressing for federation &mdash; explained from the ground up for developers.</p>
+      <span class="hero-tag">20 sections &middot; 9 diagrams</span>
     </div>
-  </a>
+    <div class="hero-card hero-ent">
+      <h3><a href="transclusion-engine.html#canopy">Canopy (Bert Tree)</a></h3>
+      <p>The hierarchical property tree that indexes content for fast transclusion queries. Built atop the Space Algebra, the Canopy maps regions to properties and powers backfollow lookup &mdash; the structural heart of content reuse and intercomparison.</p>
+      <span class="hero-tag">within Transclusion Engine &middot; deep dive</span>
+    </div>
+  </div>
 </div>
 
+<!-- ============================================================= -->
+<!-- SECTION 5: IDENTITY & SECURITY                                -->
+<!-- ============================================================= -->
 <div class="section">
-  <a href="gold-heritage.html" style="text-decoration:none">
-    <div style="background:linear-gradient(135deg,rgba(210,153,34,0.08),rgba(88,166,255,0.08));border:2px solid #d29922;border-radius:12px;padding:28px 32px;transition:all 0.25s;position:relative;overflow:hidden" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 24px rgba(210,153,34,0.15)'" onmouseout="this.style.transform='none';this.style.boxShadow='none'">
-      <div style="display:flex;align-items:center;gap:16px">
-        <div style="font-size:28px">&#128218;</div>
-        <div style="flex:1">
-          <h3 style="font-size:20px;font-weight:700;color:#e6edf3;margin-bottom:4px">Udanax Gold Heritage &mdash; Concept Mapping</h3>
-          <p style="font-size:14px;color:#8b949e;line-height:1.6;margin-bottom:0">Every Gold concept traced to its Xudanu descendant: O-tree, GrandMap, clubs, locks, canopy, backfollow, H-tree &mdash; with side-by-side comparison cards and SVG diagrams. The complete lineage from C++ to Rust.</p>
-        </div>
-        <span style="background:rgba(210,153,34,0.15);color:#d29922;font-size:11px;padding:4px 12px;border-radius:12px;font-weight:600;letter-spacing:0.3px;white-space:nowrap">35+ concepts mapped</span>
-      </div>
+  <h2>Identity &amp; Security <span class="badge badge-amber">SECURITY</span></h2>
+  <p class="section-intro">Who you are, what you can access, and how content is verified. Xudanu uses cryptographic signatures (Ed25519), Argon2id password hashing, and a club-based permission system inherited from Udanax-Gold.</p>
+  <div class="hero-grid-2">
+    <div class="hero-card hero-notif">
+      <h3><a href="identity-auth.html">Identity &amp; Authentication</a></h3>
+      <p>Clubs (the Udanax-Gold identity model), the lock hierarchy (Boo/Wall/Challenge/Match/Multi), KeyMaster authority tracking, Ed25519 provenance, and per-session security monitoring.</p>
+      <span class="hero-tag">8 sections &middot; 1 diagram</span>
     </div>
-  </a>
+    <div class="hero-card hero-editions">
+      <h3><a href="dev/phase-12-modern-encryption.md">Cryptography</a></h3>
+      <p>Production-grade crypto stack: Ed25519 signatures, X25519 key exchange, ChaCha20-Poly1305 AEAD, HKDF-SHA256 domain separation, and Argon2id password hashing.</p>
+      <span class="hero-tag">markdown</span>
+    </div>
+  </div>
 </div>
 
-<!-- Hero: standout docs -->
+<!-- ============================================================= -->
+<!-- SECTION 6: NETWORK & FEDERATION                               -->
+<!-- ============================================================= -->
 <div class="section">
+  <h2>Network &amp; Federation <span class="badge badge-purple">FEDERATION</span></h2>
+  <p class="section-intro">Connecting Xudanu servers across the internet. Tumblers provide stable hierarchical addresses for content on any server. Cross-server backlinks, BLAKE3 hash verification, and the federation protocol let documents span multiple independent servers.</p>
   <div class="hero-grid">
+    <div class="hero-card hero-network">
+      <h3><a href="xanadu-network-guide.html">The Xanadu Network Guide</a></h3>
+      <p>Verified end-to-end: two servers sharing content via tumblers, automatic bidirectional backlinks, click-to-resolve content fetch with BLAKE3 verification. Includes setup guide, tumbler format, security model, and Gold heritage comparison.</p>
+      <span class="hero-tag">verified Jul 2026 &middot; working demo</span>
+    </div>
+    <div class="hero-card hero-network">
+      <h3><a href="xanadu-network-architecture.html">The Xanadu Network &amp; the Docuverse</a></h3>
+      <p>How independent Xudanu servers form a connected literature. The tumbler address space, content sharing without replication, transclusion across server boundaries, BLAKE3 content addressing, three-layer verification (tumbler + hash + Ed25519), server operator responsibilities, scaling to hundreds of servers, and the risks and mitigations of hostile machines in the network.</p>
+      <span class="hero-tag">12 sections &middot; 6 diagrams</span>
+    </div>
+    <div class="hero-card hero-trust">
+      <h3><a href="federation-trust-analysis.html">Federation Trust Boundary Analysis</a></h3>
+      <p>A security audit of the multi-server federation layer. Maps seven trust boundaries from connection admission through governance, catalogs 14 authorization gaps by severity (CRITICAL/HIGH/MEDIUM/LOW), and provides a phased remediation roadmap to align federation access control with the single-server club model. Includes safe deployment patterns for current-state operation.</p>
+      <span class="hero-tag">13 sections &middot; 3 diagrams &middot; 14 gaps catalogued</span>
+    </div>
+  </div>
+  <div class="doc-grid">
+    <div class="doc-card">
+      <h3><a href="dev/FR-6.md">FR-6: Linked Independent Servers</a></h3>
+      <p>Lightweight multi-server model using tumbler resolution instead of data-replicating clusters. Each server is sovereign; cross-server content references via tumbler addresses with BLAKE3-verified caching. Handles hundreds of servers, offline machines, and hostile actors. Replaces FR-3 as the default multi-server architecture.</p>
+      <span class="tag tag-md">markdown</span> <span class="tag tag-featured">proposed</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="dev/FR-6-stories.md">FR-6 Implementation Stories</a></h3>
+      <p>10 ordered user stories for building the linked independent server model. Covers server identity, directory, public content API, reference manifests, cross-server resolution, offline caching, provenance chains, trust management, referral discovery, and mothballing the FR-3 cluster.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="federation-activation.html">Federation Activation</a></h3>
+      <p>How to enable and operate the optional cluster federation: the outbound dialer, PeerPool, periodic sync and heartbeat, and PBFT broadcast. Operational guide for running federated nodes behind the <code>--enable-cluster</code> flag.</p>
+      <span class="tag tag-html">html</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="dev/cost-utility-meter-micropayments.md">Micropayments &amp; Cost Model</a></h3>
+      <p>Ted Nelson's micropayment vision, storage cost accounting, the utility meter, and per-use billing &mdash; the economic layer for a federated docuverse.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- SECTION 7: DEVELOPER GUIDE                                    -->
+<!-- ============================================================= -->
+<div class="section">
+  <h2>Developer Guide <span class="badge badge-blue">BUILD</span></h2>
+  <p class="section-intro">For contributors building on Xudanu. Technical architecture deep-dives, wire protocol specifications, test documentation, and phase-by-phase development history.</p>
+  <div class="hero-grid-2">
     <div class="hero-card hero-arch">
       <h3><a href="technical-architecture.html">Technical Architecture</a></h3>
       <p>15-section deep dive with 9 SVG diagrams, worked examples, and Big-O analysis of every data structure.</p>
       <span class="hero-tag">9 diagrams &middot; interactive</span>
     </div>
-    <div class="hero-card hero-diagram">
-      <h3><a href="storage-system.html">Storage System</a></h3>
-      <p>BLAKE3 content-addressed chunk store, incremental checkpoints, garbage collection, and integrity verification.</p>
-      <span class="hero-tag">13 sections &middot; 11 diagrams</span>
-    </div>
     <div class="hero-card hero-slides">
-      <h3><a href="slides.html">30 Years of Innovation</a></h3>
-      <p>Presentation: Xanadu history, migration story, architecture, performance, and live demo. Arrow keys to navigate.</p>
-      <span class="hero-tag">10 slides</span>
-    </div>
-  </div>
-  <div class="hero-grid-2" style="margin-top:16px">
-    <div class="hero-card hero-editions">
-      <h3><a href="editions-and-works.html">Editions &amp; Works</a></h3>
-      <p>How documents are structured as versioned editions with per-line attribution, three-way merge, and the O-tree data model. Essential reading for understanding Xudanu's core abstractions.</p>
-      <span class="hero-tag">10 sections &middot; 10 diagrams</span>
-    </div>
-    <div class="hero-card hero-notif">
-      <h3><a href="notification-system.html">Notification System</a></h3>
-      <p>Real-time notification and event system for collaborative editing sessions.</p>
-      <span class="hero-tag">interactive</span>
+      <h3><a href="wire-protocol.html">Wire Protocol</a></h3>
+      <p>The complete 140+ operation WebSocket API: message framing, JSON and binary codecs, connection lifecycle, real-time subscriptions, and security features. The integration surface for building clients.</p>
+      <span class="hero-tag">8 sections &middot; 1 diagram</span>
     </div>
   </div>
 
-  <!-- Udanax-Gold Subsystems -->
-  <div class="section" style="margin-top:32px">
-    <h2>Udanax-Gold Subsystems <span class="badge badge-purple">DEEP DIVES</span></h2>
-    <p style="color:#8b949e;font-size:13px;margin-bottom:16px">Detailed documentation of the Udanax-Gold subsystems implemented in Rust, with modern enhancements.</p>
-    <div class="hero-grid-2">
-      <div class="hero-card hero-diagram">
-        <h3><a href="transclusion-engine.html">Transclusion Engine</a></h3>
-        <p>How content reuse is detected, indexed, and queried across documents: BLAKE3 fingerprinting, Bert Canopy tree, Recorder pub/sub, Hoist propagation, and Backfollow queries. The core intellectual property of Xanadu.</p>
-        <span class="hero-tag">9 sections &middot; 3 diagrams</span>
-      </div>
-      <div class="hero-card hero-editions">
-        <h3><a href="links-and-backlinks.html">Links &amp; Backlinks</a></h3>
-        <p>Nelson's typed, bidirectional, unbreakable connections between passages. The five link types (Comment, Reference, Disagreement, Quotation, See Also), the two-part creation flow, backlinks, span migration, and profuse overlapping links &mdash; with code examples and canvas-render diagrams.</p>
-        <span class="hero-tag">14 sections &middot; 9 diagrams</span>
-      </div>
-      <div class="hero-card hero-editions">
-        <h3><a href="links-tutorial.html">Links Tutorial</a></h3>
-        <p>Step-by-step user guide for creating links and backlinks: using the Link Creator wizard, choosing link types, creating transclusions, managing existing links, and understanding the visual markers.</p>
-        <span class="hero-tag">8 sections &middot; interactive walkthrough</span>
-      </div>
-      <div class="hero-card hero-arch">
-        <h3><a href="collaborative-editing.html">Collaborative Editing</a></h3>
-        <p>Real-time multi-user editing with O-tree CRDT, Ed25519-signed author attribution, awareness state (cursors/selections), three-way merge fallback, and LLM-assisted change narration.</p>
-        <span class="hero-tag">8 sections &middot; 1 diagram</span>
-      </div>
-      <div class="hero-card hero-notif">
-        <h3><a href="identity-auth.html">Identity &amp; Authentication</a></h3>
-        <p>Clubs (the Udanax-Gold identity model), the lock hierarchy (Boo/Wall/Challenge/Match/Multi), KeyMaster authority tracking, Ed25519 provenance, and per-session security monitoring.</p>
-        <span class="hero-tag">8 sections &middot; 1 diagram</span>
-      </div>
-      <div class="hero-card hero-slides">
-        <h3><a href="wire-protocol.html">Wire Protocol</a></h3>
-        <p>The complete 140+ operation WebSocket API: message framing, JSON and binary codecs, connection lifecycle, real-time subscriptions, and security features. The integration surface for building clients.</p>
-        <span class="hero-tag">8 sections &middot; 1 diagram</span>
-      </div>
-      <div class="hero-card hero-ent">
-        <h3><a href="ent-dagwood-trace-dag.html">Ent, DagWood &amp; Trace DAG</a></h3>
-        <p>The versioning spine adapted from Udanax-Gold C++: partial-order TracePositions, Root/Tree/Dag branch topologies, the navigation cache (max-over-paths), assertion-based content with 13 payload types, conflict-preserving AlternativeSet materialization, the H-Tree, and the bridge to the Edition model &mdash; with code examples and SVG diagrams.</p>
-        <span class="hero-tag">18 sections &middot; 7 diagrams</span>
-      </div>
-      <div class="hero-card hero-space">
-        <h3><a href="space-algebra.html">The Space Algebra</a></h3>
-        <p>The mathematical foundation underlying every position, region, span, mapping, and address in Xudanu. The four core traits (Space, Position, Region, Dsp), the transition-set representation, the seven concrete spaces (Integer, Real, Sequence/Tumbler, CrossSpace2, CrossSpaceN, FilterSpace), span migration, shared-content detection, and tumbler addressing for federation &mdash; explained from the ground up for developers.</p>
-        <span class="hero-tag">20 sections &middot; 9 diagrams</span>
-      </div>
-      <div class="hero-card hero-prov">
-        <h3><a href="provenance-and-attribution.html">Provenance &amp; Cryptographic Attribution</a></h3>
-        <p>How Xudanu answers "who wrote this?" at the character level. Ed25519 span signing, content fingerprints, domain separation, the materialization pipeline, transclusion attribution, historical attestation for imported texts, the tamper-evident SHA-256-chained attribution log, provenance ancestry walks, exportable attestation reports, and federation cluster consensus with W3C PROV-JSON export.</p>
-        <span class="hero-tag">23 sections &middot; 7 diagrams</span>
-      </div>
-      <div class="hero-card hero-trust">
-        <h3><a href="federation-trust-analysis.html">Federation Trust Boundary Analysis</a></h3>
-        <p>A security audit of the multi-server federation layer. Maps seven trust boundaries from connection admission through governance, catalogs 14 authorization gaps by severity (CRITICAL/HIGH/MEDIUM/LOW), and provides a phased remediation roadmap to align federation access control with the single-server club model. Includes safe deployment patterns for current-state operation.</p>
-        <span class="hero-tag">13 sections &middot; 3 diagrams &middot; 14 gaps catalogued</span>
-      </div>
-      <div class="hero-card hero-network">
-        <h3><a href="xanadu-network-architecture.html">The Xanadu Network &amp; the Docuverse</a></h3>
-        <p>How independent Xudanu servers form a connected literature. The tumbler address space, content sharing without replication, transclusion across server boundaries, BLAKE3 content addressing, three-layer verification (tumbler + hash + Ed25519), server operator responsibilities, scaling to hundreds of servers, and the risks and mitigations of hostile machines in the network.</p>
-        <span class="hero-tag">12 sections &middot; 6 diagrams</span>
-      </div>
-      <div class="hero-card hero-network">
-        <h3><a href="xanadu-network-guide.html">The Xanadu Network Guide</a></h3>
-        <p>Verified end-to-end: two servers sharing content via tumblers, automatic bidirectional backlinks, click-to-resolve content fetch with BLAKE3 verification. Includes setup guide, tumbler format, security model, and Gold heritage comparison.</p>
-        <span class="hero-tag">verified Jul 2026 &middot; working demo</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="section">
-  <h2>Architecture &amp; Design <span class="badge badge-blue">DEEP DIVES</span></h2>
+  <h3 class="subhead">Architecture &amp; Design</h3>
   <div class="doc-grid">
-    <div class="doc-card">
-      <h3><a href="gold-heritage.html">Udanax Gold Heritage</a></h3>
-      <p>Side-by-side concept mapping: every Gold type, module, and subsystem traced to its Rust descendant, with SVG diagrams and status badges.</p>
-      <span class="tag tag-html">html</span> <span class="tag tag-featured">featured</span>
-    </div>
-    <div class="doc-card">
-      <h3><a href="manifest-architecture.html">Manifest &amp; Chunk Architecture</a></h3>
-      <p>How manifest.json uses hash pointers to reference document content in the chunk store: WorkChunkRef, EditionChunkRef, EntryChunk, ProvenanceChunk, and the three-layer link persistence model.</p>
-      <span class="tag tag-html">html</span> <span class="tag tag-featured">new</span>
-    </div>
-    <div class="doc-card">
-      <h3><a href="garbage-collector.html">Garbage Collector</a></h3>
-      <p>How the GC reclaims disk space: mark-and-sweep algorithm, chunk write path, WAL journaling, and the v0.7.5 safety fix.</p>
-      <span class="tag tag-html">html</span> <span class="tag tag-featured">new</span>
-    </div>
-    <div class="doc-card">
-      <h3><a href="whats-new-since-udanax-gold.html">What's New Since Gold</a></h3>
-      <p>New features beyond Gold: cryptographic provenance, CRDT editing, BLAKE3 content addressing, OAuth, federation, and more.</p>
-      <span class="tag tag-html">html</span>
-    </div>
     <div class="doc-card">
       <h3><a href="dev/architecture.md">System Overview</a></h3>
       <p>Xanadu Gold as a Rust library compiling to WebAssembly. High-level component map and design philosophy.</p>
@@ -470,31 +539,13 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
       <span class="tag tag-md">markdown</span>
     </div>
     <div class="doc-card">
-      <h3><a href="dev/migration-notes.md">Migration Notes</a></h3>
-      <p>Tracking the port from Udanax-Gold C++ to Rust. Edition, XnRegion, RangeElement, and connected components.</p>
-      <span class="tag tag-md">markdown</span>
-    </div>
-    <div class="doc-card">
-      <h3><a href="compound-documents.html">Compound Documents</a></h3>
-      <p>How live transclusion works: inline RangeElement::Transclusion in the O-tree, recursive resolution, attribution propagation, span migration, and use cases from simple to visionary.</p>
-      <span class="tag tag-html">html</span> <span class="tag tag-featured">new</span>
-    </div>
-    <div class="doc-card">
-      <h3><a href="compound-tutorial.html">Compound Tutorial</a></h3>
-      <p>Step-by-step user guide for compound documents: creating transclusions, seeing colour-coded source regions, the compound panel, and the legal brief assembly example. Includes comparison with Udanax-Gold.</p>
-      <span class="tag tag-html">html</span> <span class="tag tag-featured">new</span>
-    </div>
-    <div class="doc-card">
-      <h3><a href="storage-system.html">Storage System</a></h3>
-      <p>Content-addressed BLAKE3 chunk store, incremental checkpoints, garbage collection, and integrity verification. 13 sections with SVG diagrams.</p>
-      <span class="tag tag-html">html</span> <span class="tag tag-featured">featured</span>
+      <h3><a href="diagram.html">Architecture Diagram</a></h3>
+      <p>Full system architecture diagram showing the relationship between O-tree, chunk store, WAL, CRDT sync, wire protocol, and federation layers.</p>
+      <span class="tag tag-html">html</span>
     </div>
   </div>
-</div>
 
-<!-- Protocol & Integration -->
-<div class="section">
-  <h2>Protocol &amp; Integration <span class="badge badge-purple">FOR DEVELOPERS</span></h2>
+  <h3 class="subhead">API, Protocol &amp; Testing</h3>
   <div class="doc-grid">
     <div class="doc-card">
       <h3><a href="dev/api-reference.md">API Reference</a></h3>
@@ -517,36 +568,96 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
       <span class="tag tag-md">markdown</span>
     </div>
     <div class="doc-card">
-      <h3><a href="dev/cost-utility-meter-micropayments.md">Micropayments &amp; Cost Model</a></h3>
-      <p>Ted Nelson's micropayment vision, storage cost accounting, the utility meter, and per-use billing.</p>
-      <span class="tag tag-md">markdown</span>
-    </div>
-    <div class="doc-card">
-      <h3><a href="dev/path-navigation-snapshots-endorsements.md">Paths, Snapshots, Endorsements</a></h3>
-      <p>Label sequences through nested editions, snapshot persistence, and the endorsement system.</p>
-      <span class="tag tag-md">markdown</span>
-    </div>
-    <div class="doc-card">
-      <h3><a href="dev/transclusion-plan.md">Transclusion Plan</a></h3>
-      <p>Plan for connecting BackfollowEngine, canopy, recorder, and ENT into a working transclusion detection pipeline.</p>
-      <span class="tag tag-md">markdown</span>
-    </div>
-    <div class="doc-card">
-      <h3><a href="dev/FR-6.md">FR-6: Linked Independent Servers</a></h3>
-      <p>Lightweight multi-server model using tumbler resolution instead of data-replicating clusters. Each server is sovereign; cross-server content references via tumbler addresses with BLAKE3-verified caching. Handles hundreds of servers, offline machines, and hostile actors. Replaces FR-3 as the default multi-server architecture.</p>
-      <span class="tag tag-md">markdown</span> <span class="tag tag-featured">proposed</span>
-    </div>
-    <div class="doc-card">
-      <h3><a href="dev/FR-6-stories.md">FR-6 Implementation Stories</a></h3>
-      <p>10 ordered user stories for building the linked independent server model. Covers server identity, directory, public content API, reference manifests, cross-server resolution, offline caching, provenance chains, trust management, referral discovery, and mothballing the FR-3 cluster.</p>
+      <h3><a href="dev/test-registry.md">Test Registry</a></h3>
+      <p>Index of the test suite: backend library tests, integration tests, and frontend Vitest specs, with what each covers and how to run them.</p>
       <span class="tag tag-md">markdown</span>
     </div>
   </div>
-</div>
 
-<!-- Implementation Phases -->
-<div class="section">
-  <h2>Implementation Phases <span class="badge badge-purple">BUILD LOG</span></h2>
+  <h3 class="subhead">Gold Heritage &amp; Comparison</h3>
+
+  <div class="section" style="margin-bottom:16px">
+    <a href="udanax-to-xudanu.html" style="text-decoration:none">
+      <div style="background:linear-gradient(135deg,rgba(57,210,192,0.08),rgba(163,113,247,0.08));border:2px solid #39d2c0;border-radius:12px;padding:28px 32px;transition:all 0.25s;position:relative;overflow:hidden" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 24px rgba(57,210,192,0.15)'" onmouseout="this.style.transform='none';this.style.boxShadow='none'">
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="font-size:28px">&#9776;</div>
+          <div style="flex:1">
+            <h3 style="font-size:20px;font-weight:700;color:#e6edf3;margin-bottom:4px">From Udanax to Xudanu &mdash; 35 Years of Connected Documents</h3>
+            <p style="font-size:14px;color:#8b949e;line-height:1.6;margin-bottom:0">The algorithms, the people, and the modern realization. Enfilades, tumblers, canopy trees, backfollow, DagWood &mdash; from Green and Gold to running Rust code. The complete story of how Nelson's 1960 vision became a working system.</p>
+          </div>
+          <span style="background:rgba(57,210,192,0.15);color:#39d2c0;font-size:11px;padding:4px 12px;border-radius:12px;font-weight:600;letter-spacing:0.3px;white-space:nowrap">new</span>
+        </div>
+      </div>
+    </a>
+  </div>
+
+  <div class="section" style="margin-bottom:16px">
+    <a href="gold-heritage.html" style="text-decoration:none">
+      <div style="background:linear-gradient(135deg,rgba(210,153,34,0.08),rgba(88,166,255,0.08));border:2px solid #d29922;border-radius:12px;padding:28px 32px;transition:all 0.25s;position:relative;overflow:hidden" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 24px rgba(210,153,34,0.15)'" onmouseout="this.style.transform='none';this.style.boxShadow='none'">
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="font-size:28px">&#128218;</div>
+          <div style="flex:1">
+            <h3 style="font-size:20px;font-weight:700;color:#e6edf3;margin-bottom:4px">Udanax Gold Heritage &mdash; Concept Mapping</h3>
+            <p style="font-size:14px;color:#8b949e;line-height:1.6;margin-bottom:0">Every Gold concept traced to its Xudanu descendant: O-tree, GrandMap, clubs, locks, canopy, backfollow, H-tree &mdash; with side-by-side comparison cards and SVG diagrams. The complete lineage from C++ to Rust.</p>
+          </div>
+          <span style="background:rgba(210,153,34,0.15);color:#d29922;font-size:11px;padding:4px 12px;border-radius:12px;font-weight:600;letter-spacing:0.3px;white-space:nowrap">35+ concepts mapped</span>
+        </div>
+      </div>
+    </a>
+  </div>
+
+  <div class="hero-grid-2" style="margin-bottom:16px">
+    <div class="hero-card hero-slides">
+      <h3><a href="slides.html">30 Years of Innovation</a></h3>
+      <p>Presentation: Xanadu history, migration story, architecture, performance, and live demo. Arrow keys to navigate.</p>
+      <span class="hero-tag">10 slides</span>
+    </div>
+    <div class="hero-card hero-arch">
+      <h3><a href="30-years-of-hypertext-innovation.html">30 Years of Hypertext Innovation</a></h3>
+      <p>The history of Xanadu from Nelson's 1960 vision through Udanax-Gold to Xudanu. Timelines, key people, and how the concepts evolved over six decades.</p>
+      <span class="hero-tag">html</span>
+    </div>
+  </div>
+
+  <div class="doc-grid">
+    <div class="doc-card">
+      <h3><a href="gold-heritage.html">Udanax Gold Heritage</a></h3>
+      <p>Side-by-side concept mapping: every Gold type, module, and subsystem traced to its Rust descendant, with SVG diagrams and status badges.</p>
+      <span class="tag tag-html">html</span> <span class="tag tag-featured">featured</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="gold-heritage.html">Xanadu Gold Foundations</a></h3>
+      <p>Progressive implementation of Udanax-Gold: transclusion with provenance, content addressing, clubs/permissions, cryptographic attribution, and trails.</p>
+      <span class="tag tag-featured">enhanced</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="whats-new-since-udanax-gold.html">What's New Since Gold</a></h3>
+      <p>New features beyond Gold: cryptographic provenance, CRDT editing, BLAKE3 content addressing, OAuth, federation, and more.</p>
+      <span class="tag tag-html">html</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="gold-xudanu-complexity.html">Gold vs. Xudanu Complexity</a></h3>
+      <p>Subsystem-by-subsystem complexity comparison between Udanax-Gold and Xudanu: lines of code, data-structure footprint, and where modern Rust simplifies the original C++ design.</p>
+      <span class="tag tag-html">html</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="xanadu-comparison.html">Udanax-Gold vs. OpenXanadu vs. Xudanu</a></h3>
+      <p>Comparative analysis across three Xanadu lineages: feature coverage, architectural choices, and implementation maturity.</p>
+      <span class="tag tag-html">html</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="xudanu-vs-gold.md">Xudanu: What's New Since Udanax Gold</a></h3>
+      <p>Markdown comparison of what Xudanu adds, changes, and drops relative to the original Udanax-Gold codebase.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="dev/migration-notes.md">Migration Notes</a></h3>
+      <p>Tracking the port from Udanax-Gold C++ to Rust. Edition, XnRegion, RangeElement, and connected components.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+  </div>
+
+  <h3 class="subhead">Implementation Phases</h3>
   <p style="color:#8b949e;font-size:13px;margin-bottom:16px">Design documents for each phase of the Rust implementation, from core data structures through federation.</p>
   <div class="doc-grid">
     <div class="doc-card">
@@ -618,33 +729,6 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
       <h3><a href="dev/phase-19b-governance-bft.md">Phase 19b: Governance (PBFT)</a></h3>
       <p>Governance Plane using lightweight PBFT consensus for federation-wide decisions.</p>
       <span class="tag tag-md">phase</span>
-    </div>
-  </div>
-</div>
-
-<!-- Additional Resources -->
-<div class="section">
-  <h2>Additional Resources</h2>
-  <div class="doc-grid">
-    <div class="doc-card">
-      <h3><a href="xudanu-in-one-page.html">Xudanu in One Page</a></h3>
-      <p>Content and performance architecture diagram on a single page. The complete system at a glance: O-tree, chunk store, WAL, CRDT, federation, and the wire protocol.</p>
-      <span class="tag tag-html">html</span>
-    </div>
-    <div class="doc-card">
-      <h3><a href="30-years-of-hypertext-innovation.html">30 Years of Hypertext Innovation</a></h3>
-      <p>The history of Xanalu from Nelson's 1960 vision through Udanax-Gold to Xudanu. Timelines, key people, and how the concepts evolved over six decades.</p>
-      <span class="tag tag-html">html</span>
-    </div>
-    <div class="doc-card">
-      <h3><a href="prov-validator.html">PROV-JSON Validator</a></h3>
-      <p>Interactive W3C PROV-JSON validator for Xudanu's attribution export. Paste a report, see the provenance graph, verify signatures and timestamps.</p>
-      <span class="tag tag-html">html</span>
-    </div>
-    <div class="doc-card">
-      <h3><a href="diagram.html">Architecture Diagram</a></h3>
-      <p>Full system architecture diagram showing the relationship between O-tree, chunk store, WAL, CRDT sync, wire protocol, and federation layers.</p>
-      <span class="tag tag-html">html</span>
     </div>
   </div>
 </div>
