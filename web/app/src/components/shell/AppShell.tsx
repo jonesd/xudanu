@@ -29,6 +29,7 @@ import { PermissionBadge } from "./PermissionBadge";
 import { RelatedFooter } from "../RelatedFooter";
 import { PerspectiveView } from "../PerspectiveView";
 import { CompoundBuilder } from "../CompoundBuilder";
+import { AdminDashboard } from "../AdminDashboard";
 import { useCompare, CompareHeader, CompareSplitView } from "../ComparePanel";
 import { buildProvValidatorHtml } from "../../prov-validator";
 import "../../app-shell.css";
@@ -71,6 +72,7 @@ export function AppShell() {
   const [showCompare, setShowCompare] = useState(false);
   const [showPerspective, setShowPerspective] = useState(false);
   const [showCompoundBuilder, setShowCompoundBuilder] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
   const [crossServerBacklinks, setCrossServerBacklinks] = useState<CrossServerBacklinkPayload[]>([]);
   const [annotationTarget, setAnnotationTarget] = useState<{ start: number; end: number } | null>(null);
   const [isPublished, setIsPublished] = useState(false);
@@ -1509,6 +1511,27 @@ export function AppShell() {
           }}
           onReloadCompound={() => compound.reload()}
         />
+
+      )}
+
+      {showAdmin && (
+        <AdminDashboard onClose={() => setShowAdmin(false)} />
+      )}
+
+      {!showAdmin && (
+        <button
+          type="button"
+          onClick={() => setShowAdmin(true)}
+          title="Admin Dashboard (Ctrl+Shift+A)"
+          style={{
+            position: "fixed", bottom: "32px", right: "8px", zIndex: 50,
+            background: "#21262d", border: "1px solid #30363d",
+            color: "#6e7681", borderRadius: "4px", padding: "3px 8px",
+            cursor: "pointer", fontSize: "10px", fontFamily: "Inter, sans-serif",
+          }}
+        >
+          Admin
+        </button>
       )}
     </div>
   );

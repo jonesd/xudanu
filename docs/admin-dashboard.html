@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin Monitoring Dashboard &mdash; Xudanu</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.warn{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warn strong{color:#f85149}
+.success{background:rgba(63,185,80,0.06);border-left:3px solid #3fb950;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.success strong{color:#3fb950}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin-bottom:40px}
+.toc-title{font-size:13px;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px}
+.toc ul{list-style:none;padding:0}
+.toc li{padding:3px 0}
+table{border-collapse:collapse;margin:16px 0;width:100%;max-width:780px}
+th,td{border:1px solid #21262d;padding:8px 12px;text-align:left;font-size:14px}
+th{background:#161b22;color:#8b949e;font-weight:600}
+tr:hover{background:rgba(110,118,129,0.04)}
+.dash-mock{background:#0d1117;border:1px solid #21262d;border-radius:12px;padding:24px;margin:24px 0;overflow-x:auto}
+.metric-row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+.metric-box{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:14px;min-width:130px}
+.metric-box .lbl{font-size:10px;color:#8b949e;font-weight:600;text-transform:uppercase;letter-spacing:0.05em}
+.metric-box .val{font-size:22px;font-weight:700;color:#e6edf3;margin-top:4px}
+.metric-box .val.green{color:#3fb950}
+.metric-box .val.red{color:#f85149}
+.alert-box{display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(248,81,73,0.06);border:1px solid rgba(248,81,73,0.2);border-radius:6px;font-size:13px;color:#f85149;margin-bottom:6px}
+.check-row{display:flex;align-items:center;gap:10px;padding:8px 14px;background:#161b22;border:1px solid #21262d;border-radius:6px;margin-bottom:4px;font-size:13px}
+.check-dot{width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700}
+.check-dot.ok{background:rgba(63,185,80,0.15);border:1.5px solid #3fb950;color:#3fb950}
+.check-dot.fail{background:rgba(248,81,73,0.15);border:1.5px solid #f85149;color:#f85149}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Admin Monitoring Dashboard</h1>
+<p class="subtitle">Real-time system health, anomaly detection, and diagnostic tools for Xudanu operators</p>
+
+<div class="toc">
+<div class="toc-title">Contents</div>
+<ul>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#access">Accessing the Dashboard</a></li>
+<li><a href="#metrics">System Metrics</a></li>
+<li><a href="#alerts">Anomaly Alerts</a></li>
+<li><a href="#checks">Health Checks</a></li>
+<li><a href="#identity">Server Identity</a></li>
+<li><a href="#gaps">Critical Gaps &amp; Future Work</a></li>
+</ul>
+</div>
+
+<h2 id="overview">Overview</h2>
+
+<p>The Admin Dashboard provides a single-screen view of the Xudanu server's operational state. It auto-refreshes every 5 seconds, highlighting anything unusual so operators can spot problems before they become critical.</p>
+
+<div class="success">
+<strong>What it monitors:</strong> System health (status, checkpoint recency), resource counts (works, links, sessions, editions), and automated health checks for common failure modes.
+</div>
+
+<h2 id="access">Accessing the Dashboard</h2>
+
+<p>Click the small <strong>"Admin"</strong> button in the bottom-right corner of any page. The dashboard opens as a full-screen overlay. Click <strong>"Close"</strong> or press the button again to return to the normal interface.</p>
+
+<div class="note">
+<strong>Auto-refresh:</strong> The dashboard polls <code>/health</code> every 5 seconds. The last update time is shown in the header. Click "Refresh" for an immediate update.
+</div>
+
+<h2 id="metrics">System Metrics</h2>
+
+<p>The dashboard shows live counts for key resources:</p>
+
+<div class="dash-mock">
+<div class="metric-row">
+<div class="metric-box"><div class="lbl">Works</div><div class="val green">68</div></div>
+<div class="metric-box"><div class="lbl">Links</div><div class="val">133</div></div>
+<div class="metric-box"><div class="lbl">Editions</div><div class="val">0</div></div>
+<div class="metric-box"><div class="lbl">Clubs</div><div class="val">10</div></div>
+<div class="metric-box"><div class="lbl">Sessions</div><div class="val green">3</div></div>
+<div class="metric-box"><div class="lbl">Operations</div><div class="val">656K</div></div>
+</div>
+</div>
+
+<table>
+<tr><th>Metric</th><th>What it means</th><th>Warning if</th></tr>
+<tr><td>Works</td><td>Total documents on the server</td><td>0 (empty server)</td></tr>
+<tr><td>Links</td><td>Total typed links between works</td><td>0 (no connections)</td></tr>
+<tr><td>Editions</td><td>Materialized editions in memory</td><td>&mdash;</td></tr>
+<tr><td>Clubs</td><td>Identity groups (users + system clubs)</td><td>&lt; 3 (system clubs missing)</td></tr>
+<tr><td>Sessions</td><td>Active WebSocket connections</td><td>&gt; 40 (approaching limit)</td></tr>
+<tr><td>Operations</td><td>Total server operations since start</td><td>0 (not processing)</td></tr>
+<tr><td>Blobs</td><td>Binary uploads (images, files)</td><td>&mdash;</td></tr>
+<tr><td>Grabbed Works</td><td>Works with active write locks</td><td>&gt; 10 (many locked)</td></tr>
+</table>
+
+<h2 id="alerts">Anomaly Alerts</h2>
+
+<p>The dashboard automatically highlights problems with red alert banners:</p>
+
+<div class="alert-box"><span style="font-size:16px">&#9888;</span> Last checkpoint was 8 minutes ago &mdash; checkpoint may be stuck</div>
+<div class="alert-box"><span style="font-size:16px">&#9888;</span> Server status: degraded &mdash; data verification issues detected</div>
+<div class="alert-box"><span style="font-size:16px">&#9888;</span> High session count: 47 (max recommended: 40)</div>
+
+<table>
+<tr><th>Alert</th><th>Trigger</th><th>Action</th></tr>
+<tr><td>Checkpoint stuck</td><td><code>last_checkpoint_ago_secs &gt; 300</code></td><td>Check WAL errors, disk space, manifest write permissions</td></tr>
+<tr><td>Degraded status</td><td><code>status != "ok"</code></td><td>Check server logs for verification errors</td></tr>
+<tr><td>High sessions</td><td><code>sessions &gt; 40</code></td><td>Check for disconnected sessions not being cleaned up</td></tr>
+</table>
+
+<h2 id="checks">Health Checks</h2>
+
+<p>Automated pass/fail checks for common failure modes:</p>
+
+<div class="dash-mock">
+<div class="check-row"><span class="check-dot ok">&#10003;</span> Server responding</div>
+<div class="check-row"><span class="check-dot ok">&#10003;</span> Status: ok</div>
+<div class="check-row"><span class="check-dot ok">&#10003;</span> Checkpoint recent (&lt; 5 min)</div>
+<div class="check-row"><span class="check-dot ok">&#10003;</span> Sessions under limit (&lt; 40)</div>
+<div class="check-row"><span class="check-dot ok">&#10003;</span> Works present</div>
+<div class="check-row"><span class="check-dot ok">&#10003;</span> Links present</div>
+</div>
+
+<h2 id="identity">Server Identity</h2>
+
+<p>The dashboard shows the server's cryptographic identity and operational state:</p>
+
+<table>
+<tr><th>Field</th><th>Description</th></tr>
+<tr><td>Server ID</td><td>Ed25519 public key fingerprint (hex)</td></tr>
+<tr><td>Last Checkpoint</td><td>Seconds since last successful checkpoint</td></tr>
+<tr><td>Total Operations</td><td>Server lifetime operation counter</td></tr>
+</table>
+
+<h2 id="gaps">Critical Gaps &amp; Future Work</h2>
+
+<div class="warn">
+<strong>Known gaps in monitoring coverage:</strong>
+<ul style="margin:8px 0 0 16px">
+<li><strong>Data integrity:</strong> No automated check that all chunks are readable and match hashes</li>
+<li><strong>Backup verification:</strong> Backups exist but no automated restore-test</li>
+<li><strong>Memory monitoring:</strong> No memory usage reporting</li>
+<li><strong>Disk space:</strong> No disk space monitoring (full disk causes checkpoint failure)</li>
+<li><strong>Connection quality:</strong> No WebSocket disconnect/latency tracking</li>
+<li><strong>Session details:</strong> No per-session view (IP, work, duration)</li>
+<li><strong>Security events:</strong> No real-time view of chained security log</li>
+<li><strong>Rate limiter status:</strong> No view of blocked IPs or notification counts</li>
+</ul>
+</div>
+
+<h3>Planned additions (Phase 2-4)</h3>
+
+<table>
+<tr><th>Feature</th><th>Phase</th><th>Priority</th></tr>
+<tr><td>Session list (IP, work, duration)</td><td>2</td><td>High</td></tr>
+<tr><td>Security event log (recent)</td><td>2</td><td>High</td></tr>
+<tr><td>Rate limiter status</td><td>2</td><td>Medium</td></tr>
+<tr><td>WAL health (size, replay queue)</td><td>2</td><td>Medium</td></tr>
+<tr><td>Storage breakdown (chunks, disk)</td><td>2</td><td>Medium</td></tr>
+<tr><td>Force checkpoint button</td><td>3</td><td>High</td></tr>
+<tr><td>Block/unblock IP</td><td>3</td><td>Medium</td></tr>
+<tr><td>View/rotate keys</td><td>3</td><td>Low</td></tr>
+<tr><td>Time-series graphs</td><td>4</td><td>Medium</td></tr>
+<tr><td>Email/webhook alerts</td><td>4</td><td>Low</td></tr>
+<tr><td>Data integrity background scan</td><td>4</td><td>High</td></tr>
+</table>
+
+</div>
+</body>
+</html>
