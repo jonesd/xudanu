@@ -1498,7 +1498,14 @@ export function AppShell() {
           onClose={() => setShowCompoundBuilder(false)}
           onPlaceTransclusion={(sourceWorkId, sourceWorkTitle, start, end, text) => {
             transclusion.holdSelection(sourceWorkId, sourceWorkTitle, start, end, text);
-            handlePlaceTransclusion(displayText.length);
+            handlePlaceTransclusion(displayText.length).then(() => {
+              if (clientRef.current && workBeId !== null) {
+                clientRef.current.migrateCompoundToInline(workBeId).then(() => {
+                  compound.reload();
+                  refreshAnnotations();
+                }).catch(() => {});
+              }
+            });
           }}
           onReloadCompound={() => compound.reload()}
         />
