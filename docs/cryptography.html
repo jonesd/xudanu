@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cryptography &amp; Security &mdash; Xudanu</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.warn{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warn strong{color:#f85149}
+.success{background:rgba(63,185,80,0.06);border-left:3px solid #3fb950;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.success strong{color:#3fb950}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin-bottom:40px}
+.toc-title{font-size:13px;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px}
+.toc ul{list-style:none;padding:0}
+.toc li{padding:3px 0}
+.toc a{font-size:14px}
+table{border-collapse:collapse;margin:16px 0;width:100%;max-width:780px}
+th,td{border:1px solid #21262d;padding:8px 12px;text-align:left;font-size:14px}
+th{background:#161b22;color:#8b949e;font-weight:600}
+tr:hover{background:rgba(110,118,129,0.04)}
+.crypto-stack{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin:24px 0}
+.crypto-card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px}
+.crypto-card h4{color:#58a6ff;margin:0 0 4px}
+.crypto-card .algo{font-size:11px;color:#484f58;font-family:'JetBrains Mono',monospace;margin-bottom:6px}
+.crypto-card p{font-size:12px;color:#8b949e;margin:0}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Cryptography &amp; Security</h1>
+<p class="subtitle">Modern cryptography replacing Udanax-Gold's placeholder crypto &mdash; Ed25519, X25519, ChaCha20-Poly1305, Argon2id, and signed key rotation</p>
+
+<div class="toc">
+<div class="toc-title">Contents</div>
+<ul>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#stack">The Crypto Stack</a></li>
+<li><a href="#locks">Lock System Upgrade</a></li>
+<li><a href="#server">Server Identity &amp; Key Rotation</a></li>
+<li><a href="#protocol">Wire Protocol</a></li>
+<li><a href="#gold">C++ Equivalence</a></li>
+<li><a href="#design">Security Design</a></li>
+<li><a href="#tests">Tests &amp; Auditing</a></li>
+</ul>
+</div>
+
+<h2 id="overview">Overview</h2>
+
+<p>Phase 12 replaced the original Udanax-Gold placeholder crypto (<code>NoEncrypter</code>/<code>NoScrambler</code>) with production-grade modern cryptography. Every primitive comes from the <a href="https://github.com/RustCrypto">RustCrypto</a> project &mdash; pure Rust with no C dependencies, auditable and FFI-free.</p>
+
+<div class="success">
+<strong>Result:</strong> 62 crypto unit tests + 6 integration tests, all passing. <code>cargo audit</code> clean &mdash; zero known vulnerabilities.
+</div>
+
+<h2 id="stack">The Crypto Stack</h2>
+
+<div class="crypto-stack">
+<div class="crypto-card">
+<h4>Ed25519</h4>
+<div class="algo">ed25519-dalek 2.1</div>
+<p>Digital signatures for server identity, data signing, and key rotation proofs. 64-byte signatures, 32-byte keys.</p>
+</div>
+<div class="crypto-card">
+<h4>X25519</h4>
+<div class="algo">x25519-dalek 2.0</div>
+<p>Curve25519 Diffie-Hellman key exchange. Double-DH (static + ephemeral) for forward secrecy in challenge-response.</p>
+</div>
+<div class="crypto-card">
+<h4>ChaCha20-Poly1305</h4>
+<div class="algo">chacha20poly1305 0.10</div>
+<p>Authenticated encryption with associated data (AEAD). Monotonic nonce counter per session. Separate direction keys.</p>
+</div>
+<div class="crypto-card">
+<h4>HKDF-SHA256</h4>
+<div class="algo">hkdf 0.12 + sha2 0.10</div>
+<p>Key derivation with domain separation. Labels: <code>xudanu/v1/handshake</code>, <code>xudanu/v1/aead/...</code>, <code>xudanu/v1/challenge-key</code>.</p>
+</div>
+<div class="crypto-card">
+<h4>Argon2id</h4>
+<div class="algo">argon2 0.5</div>
+<p>Password hashing with OWASP parameters (19456 KiB, 2 iterations, 1 lane). PHC format. Constant-time verification.</p>
+</div>
+<div class="crypto-card">
+<h4>BLAKE3</h4>
+<div class="algo">blake3 1.5</div>
+<p>Content fingerprinting for transclusion identity. Already used throughout &mdash; not new in Phase 12 but part of the crypto foundation.</p>
+</div>
+</div>
+
+<h3>Module: AEAD (<code>aead.rs</code>)</h3>
+<p>ChaCha20-Poly1305 with per-session monotonic nonce counter. The <code>SessionCipher</code> maintains separate direction labels (client-to-server vs server-to-client) so the same key material can't be replayed across directions. <code>SealedEnvelope</code> provides a versioned wire format. Session keys are <code>zeroize</code>d on drop.</p>
+
+<h3>Module: Signing (<code>sign.rs</code>)</h3>
+<p>Thin Ed25519 wrappers: <code>sign_bytes()</code>, <code>verify_signature()</code>, <code>generate_signing_key()</code>. Keys are generated with secure randomness and zeroized on drop.</p>
+
+<h3>Module: Key Exchange (<code>kex.rs</code>)</h3>
+<p>X25519 with double-DH (combining static and ephemeral keys). The transcript hash (BLAKE3 of both ephemeral public keys) binds the handshake to prevent man-in-the-middle attacks. <code>SharedSecret</code> zeroizes on drop.</p>
+
+<h3>Module: KDF (<code>kdf.rs</code>)</h3>
+<p>HKDF-SHA256 with domain-separated labels. Derives separate inbound/outbound session keys from the shared secret + handshake hash. Each label is prefixed <code>xudanu/v1/</code> to prevent cross-protocol attacks.</p>
+
+<h3>Module: Password Hashing (<code>password.rs</code>)</h3>
+<p>Argon2id with OWASP-recommended parameters. Stores hashes in PHC format (<code>$argon2id$v=19$...</code>). Verification uses <code>subtle::constant_time_eq</code> to prevent timing attacks.</p>
+
+<h3>Module: Server Keys (<code>keys.rs</code>)</h3>
+<p><code>ServerKeyPair</code> holds Ed25519 signing + X25519 kex keys with <code>key_id</code>, validity window, and active status. <code>KeyHistory</code> stores the full rotation chain &mdash; each new key is signed by the previous key, creating a tamper-evident history from the genesis key.</p>
+
+<h2 id="locks">Lock System Security Upgrade</h2>
+
+<p>Gold's lock system had placeholder crypto. Phase 12 replaced both lock types:</p>
+
+<table>
+<tr><th>Lock Type</th><th>Before (Gold)</th><th>After (Xudanu)</th></tr>
+<tr><td><code>MatchLock</code></td><td>Plaintext <code>==</code> comparison</td><td>Argon2id PHC hash + constant-time verify</td></tr>
+<tr><td><code>ChallengeLock</code></td><td>Placeholder <code>vec![0u8; 32]</code></td><td>X25519 ECDH &rarr; HKDF &rarr; ChaCha20-Poly1305</td></tr>
+</table>
+
+<h4>Challenge-response flow</h4>
+<ol>
+<li>Generate ephemeral X25519 key pair</li>
+<li>ECDH with peer's static public key &rarr; shared secret</li>
+<li>HKDF derive AEAD key with domain label <code>xudanu/v1/challenge-key</code></li>
+<li>Encrypt challenge data with ChaCha20-Poly1305</li>
+<li>Return <code>ephemeral_public_key || ciphertext</code></li>
+</ol>
+
+<h2 id="server">Server Identity &amp; Key Rotation</h2>
+
+<p>The server holds a <code>ServerKeyPair</code> (Ed25519 + X25519) and maintains a <code>KeyHistory</code> &mdash; an ordered chain of key entries where each rotation is signed by the previous key.</p>
+
+<div class="note">
+<strong>Key rotation from day one:</strong> <code>verify_rotation_chain()</code> validates the entire history from the genesis key. Time-based validity (<code>not_before</code>/<code>not_after</code>) on each entry. Admin-triggered rotation via <code>crypto_key_rotation</code> operation.
+</div>
+
+<h2 id="protocol">Wire Protocol</h2>
+
+<p>Five operations (opcodes 0x1201&ndash;0x1205) expose crypto functionality:</p>
+
+<table>
+<tr><th>Operation</th><th>Opcode</th><th>Auth</th><th>Returns</th></tr>
+<tr><td><code>crypto_get_public_key</code></td><td class="mono">0x1201</td><td>None</td><td>key_id, signing_key[32], kex_key[32], server_id</td></tr>
+<tr><td><code>crypto_sign_data</code></td><td class="mono">0x1202</td><td>Admin</td><td>signature[64], key_id</td></tr>
+<tr><td><code>crypto_verify_signature</code></td><td class="mono">0x1203</td><td>None</td><td>valid (bool)</td></tr>
+<tr><td><code>crypto_key_rotation</code></td><td class="mono">0x1204</td><td>Admin</td><td>new_key_id</td></tr>
+<tr><td><code>crypto_key_history</code></td><td class="mono">0x1205</td><td>None</td><td>server_id, current_key_id, entries[]</td></tr>
+</table>
+
+<h2 id="gold">C++ Equivalence</h2>
+
+<p>How Gold's placeholder crypto maps to Xudanu's real implementations:</p>
+
+<table>
+<tr><th>C++ Component</th><th>Rust Replacement</th></tr>
+<tr><td><code>NoEncrypter</code> (stub)</td><td>ChaCha20-Poly1305 AEAD</td></tr>
+<tr><td><code>NoScrambler</code> (stub)</td><td>Argon2id password hashing</td></tr>
+<tr><td><code>Encrypter::make()</code> factory</td><td><code>ServerKeyPair::generate()</code></td></tr>
+<tr><td><code>MatchLock::encryptedPassword()</code></td><td><code>MatchLockSmith</code> with Argon2id PHC</td></tr>
+<tr><td><code>ChallengeLock</code> (stub)</td><td>X25519 ECDH + AEAD challenge</td></tr>
+<tr><td>Snefru S-boxes</td><td>BLAKE3 content fingerprints</td></tr>
+</table>
+
+<h2 id="design">Security Design</h2>
+
+<h3>What's protected</h3>
+<table>
+<tr><th>Asset</th><th>Protection</th></tr>
+<tr><td>Passwords</td><td>Argon2id (OWASP params), PHC format, constant-time verify</td></tr>
+<tr><td>Transport</td><td>X25519 ECDH, HKDF-derived keys, AEAD-encrypted challenges</td></tr>
+<tr><td>Signatures</td><td>Ed25519 for identity, data signing, key rotation proofs</td></tr>
+<tr><td>Documents</td><td>ChaCha20-Poly1305, monotonic nonces, direction-separated keys</td></tr>
+<tr><td>Key material</td><td><code>zeroize</code> on drop for all secret types</td></tr>
+</table>
+
+<h3>Domain separation</h3>
+<p>All HKDF derivations use <code>xudanu/v1/</code> prefixed labels. Session keys are split into separate inbound/outbound. AEAD AAD includes the direction label. This prevents cross-protocol and cross-direction attacks.</p>
+
+<h3>What's NOT included yet</h3>
+<div class="warn">
+<ul style="margin:0;padding-left:16px">
+<li><strong>TLS termination:</strong> Use Caddy (built-in Let's Encrypt) or nginx + certbot as reverse proxy</li>
+<li><strong>Federation encryption:</strong> Crypto primitives exist; federation transport is separate</li>
+<li><strong>Post-quantum:</strong> Architecture supports ML-KEM (Kyber) via KEM abstraction</li>
+<li><strong>Encrypted key storage at rest:</strong> Keys are in memory only (not persisted in snapshot)</li>
+</ul>
+</div>
+
+<h2 id="tests">Tests &amp; Auditing</h2>
+
+<div class="success">
+<strong>62 crypto unit tests:</strong> AEAD roundtrip/tamper/wrong-key/wrong-aad/empty/large, signing roundtrip/tamper/wrong-key, KDF determinism/domain-separation/session-keys, Argon2id roundtrip/PHC-format/unicode, key generation/identity/rotation/history-chain/transcript.
+</div>
+
+<div class="success">
+<strong>6 integration tests:</strong> crypto_get_public_key, crypto_sign_and_verify, crypto_verify_rejects_tampered, crypto_key_rotation, crypto_key_history, crypto_sign_requires_admin.
+</div>
+
+<div class="success">
+<strong><code>cargo audit</code> clean:</strong> Zero known vulnerabilities in dependencies. Scans Cargo.lock against RustSec advisory database.
+</div>
+
+<h4>Known-value tests</h4>
+<p>23 crypto known-value tests verify that Ed25519 signatures, BLAKE3 hashes, and KDF outputs match expected byte-for-byte values. These catch regressions in the crypto implementation.</p>
+
+<h4>Dependencies</h4>
+<p>All from RustCrypto &mdash; pure Rust, no C dependencies, no OpenSSL:</p>
+<table>
+<tr><th>Crate</th><th>Version</th><th>Purpose</th></tr>
+<tr><td><code>chacha20poly1305</code></td><td>0.10</td><td>AEAD authenticated encryption</td></tr>
+<tr><td><code>x25519-dalek</code></td><td>2.0</td><td>Curve25519 Diffie-Hellman</td></tr>
+<tr><td><code>ed25519-dalek</code></td><td>2.1</td><td>Ed25519 digital signatures</td></tr>
+<tr><td><code>sha2</code></td><td>0.10</td><td>SHA-256 for HKDF</td></tr>
+<tr><td><code>hkdf</code></td><td>0.12</td><td>HKDF-SHA256 key derivation</td></tr>
+<tr><td><code>argon2</code></td><td>0.5</td><td>Argon2id password hashing</td></tr>
+<tr><td><code>subtle</code></td><td>2.5</td><td>Constant-time comparison</td></tr>
+<tr><td><code>zeroize</code></td><td>1.8</td><td>Secure memory zeroization</td></tr>
+<tr><td><code>blake3</code></td><td>1.5</td><td>Content fingerprinting</td></tr>
+<tr><td><code>ring</code></td><td>0.17</td><td> TLS / additional primitives</td></tr>
+</table>
+
+</div>
+</body>
+</html>
