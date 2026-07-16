@@ -100,6 +100,7 @@ export function AppShell() {
     sendCursor,
     sendSelection,
     identity,
+    isAdmin: crdtIsAdmin,
     login,
     createWork,
     createIdentity,
@@ -900,6 +901,7 @@ export function AppShell() {
         onOpenSearch={() => setSearchOpen(true)}
         onOpenIdentity={() => setShowIdentity(true)}
         onOpenAdmin={() => setShowAdmin(true)}
+        isAdmin={crdtIsAdmin}
       />
 
       <LeftRail

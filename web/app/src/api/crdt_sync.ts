@@ -417,6 +417,7 @@ export class CrdtSyncClient {
   private pendingServerText: string | null = null;
   private crdtOpenedThisConnection = false;
   currentIdentity: WhoAmIEntry | null = null;
+  private isAdmin = false;
   private skipCrdt = false;
 
   constructor(url: string, workBeId: number) {
@@ -1379,6 +1380,19 @@ export class CrdtSyncClient {
     return this.currentIdentity;
   }
 
+  getIsAdmin(): boolean {
+    return this.isAdmin;
+  }
+
+  private async checkAdminStatus(): Promise<void> {
+    try {
+      await this.sendRequest("admin_grants");
+      this.isAdmin = true;
+    } catch {
+      this.isAdmin = false;
+    }
+  }
+
   onIdentityChange(cb: IdentityListener): () => void {
     this.identityListeners.add(cb);
     return () => { this.identityListeners.delete(cb); };
@@ -1481,6 +1495,7 @@ export class CrdtSyncClient {
 
         await this.checkSourceWork();
         await this.tryOpenWork();
+        this.checkAdminStatus().catch(() => {});
         return;
       } catch (e) {
         if (attempt < 2) {

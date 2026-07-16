@@ -39,6 +39,7 @@ export interface CrdtSyncState {
   createAnnotation: (kind: string, payload: string, charStart: number, charEnd: number, isPrivate?: boolean) => Promise<void>;
   deleteAnnotation: (annotationId: number) => Promise<void>;
   connectionEpoch: number;
+  isAdmin: boolean;
   canEdit: boolean;
   recentChanges: ChangeHighlight[];
 }
@@ -60,6 +61,7 @@ export function useCrdtSync(
   const [attributionSpans, setAttributionSpans] = useState<AttributionSpan[]>([]);
   const [attributionLogStatus, setAttributionLogStatus] = useState<AttributionLogStatus | null>(null);
   const [identity, setIdentity] = useState<WhoAmIEntry | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [publicClubId, setPublicClubId] = useState(0);
   const [authenticated, setAuthenticated] = useState(false);
@@ -224,10 +226,12 @@ export function useCrdtSync(
     }
     const client = clientRef.current;
     if (!client) return;
-    client.checkWhoAmI().then((identity) => {
-      if (identity) {
+    client.checkWhoAmI().then((id) => {
+      if (id) {
         setAuthenticated(true);
+        setIdentity(id);
       }
+      setIsAdmin(client.getIsAdmin());
     }).catch(() => {
       setAuthenticated(false);
     });
@@ -476,6 +480,7 @@ export function useCrdtSync(
     getWritingFeedback, llmEnabled, fetchWorkList,     setVisibility, getReadClub, getEditClub, publicClubId, logout,
     annotations, refreshAnnotations, createAnnotation, deleteAnnotation,
     connectionEpoch,
+    isAdmin,
     canEdit,
     recentChanges,
   };
