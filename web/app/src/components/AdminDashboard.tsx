@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 interface HealthData {
   status: string;
@@ -70,13 +70,20 @@ export function AdminDashboard({ onClose }: AdminDashboardProps) {
   const [health, setHealth] = useState<HealthData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const degradedCount = useRef(0);
 
   const fetchHealth = useCallback(async () => {
     try {
       const resp = await fetch("/health");
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
-      setHealth(data);
+      if (data.status === "ok") {
+        degradedCount.current = 0;
+      } else {
+        degradedCount.current++;
+      }
+      const smoothed = degradedCount.current >= 2 ? data : { ...data, status: "ok" };
+      setHealth(smoothed);
       setError(null);
       setLastUpdate(new Date());
     } catch (e) {

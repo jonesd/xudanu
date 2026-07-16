@@ -9,6 +9,7 @@ interface TopBarProps {
   onToggleWrite: () => void;
   onOpenSearch: () => void;
   onOpenIdentity: () => void;
+  onOpenAdmin: () => void;
 }
 
 export function TopBar({
@@ -20,6 +21,7 @@ export function TopBar({
   onToggleWrite,
   onOpenSearch,
   onOpenIdentity,
+  onOpenAdmin,
 }: TopBarProps) {
   return (
     <div className="top-bar">
@@ -50,6 +52,17 @@ export function TopBar({
           {writeMode ? "Writing" : "Read"}
         </button>
         <div className="connection-dot" title={connected ? "Connected" : "Offline"} style={connected ? {} : { background: "var(--red)" }} />
+        <button
+          onClick={onOpenAdmin}
+          title="Admin Dashboard"
+          style={{ background: "none", border: "1px solid var(--border)", color: "var(--text-muted)", borderRadius: "4px", padding: "3px 8px", cursor: "pointer", fontSize: "11px", fontFamily: "Inter, sans-serif", display: "flex", alignItems: "center", gap: "4px" }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z" />
+            <path d="M12 16v-4M12 8h.01" />
+          </svg>
+          Admin
+        </button>
         <div className="identity-badge" onClick={onOpenIdentity}>
           <div className="identity-avatar" style={{ background: identityColor }}>
             {identityName ? identityName[0].toUpperCase() : "?"}

@@ -899,6 +899,7 @@ export function AppShell() {
         onToggleWrite={() => setWriteMode((w) => !w)}
         onOpenSearch={() => setSearchOpen(true)}
         onOpenIdentity={() => setShowIdentity(true)}
+        onOpenAdmin={() => setShowAdmin(true)}
       />
 
       <LeftRail
@@ -1516,22 +1517,6 @@ export function AppShell() {
 
       {showAdmin && (
         <AdminDashboard onClose={() => setShowAdmin(false)} />
-      )}
-
-      {!showAdmin && (
-        <button
-          type="button"
-          onClick={() => setShowAdmin(true)}
-          title="Admin Dashboard (Ctrl+Shift+A)"
-          style={{
-            position: "fixed", bottom: "32px", right: "8px", zIndex: 50,
-            background: "#21262d", border: "1px solid #30363d",
-            color: "#6e7681", borderRadius: "4px", padding: "3px 8px",
-            cursor: "pointer", fontSize: "10px", fontFamily: "Inter, sans-serif",
-          }}
-        >
-          Admin
-        </button>
       )}
     </div>
   );
