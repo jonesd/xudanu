@@ -209,7 +209,7 @@
   background: transparent;
 }
 .rail-btn:hover { background: var(--bg-elevated); color: var(--text); }
-.rail-btn.active { background: var(--amber); color: #1a1a24; }
+.rail-btn.active { background: var(--accent-blue); color: #fff; }
 .rail-btn svg { width: 18px; height: 18px; }
 .rail-btn .rail-tooltip {
   position: absolute;
