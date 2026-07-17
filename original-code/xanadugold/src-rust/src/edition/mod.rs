@@ -24,6 +24,7 @@ pub mod provenance;
 pub mod range_element;
 pub mod range_transclusion;
 pub mod recorder;
+pub mod region_index;
 pub mod shared_mapping;
 pub mod snapshot;
 pub mod three_way;
