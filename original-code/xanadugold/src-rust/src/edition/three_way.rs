@@ -38,6 +38,50 @@ pub struct ThreeWayDiff {
     pub conflict: Vec<ConflictRegion>,
 }
 
+impl ThreeWayDiff {
+    /// Returns the set of base positions that are unchanged in both A and B.
+    /// Uses region algebra for clean set computation.
+    pub fn unchanged_region(&self) -> XnRegion {
+        let mut region = XnRegion::empty();
+        for run in &self.unchanged {
+            for &pos in &run.base_positions {
+                region = region.with(pos);
+            }
+        }
+        region
+    }
+
+    /// Returns the set of base positions that changed (delta of base vs union of A and B).
+    /// This is: all_base_positions.minus(unchanged_region)
+    /// Useful for comparison UIs to compute change density / heat maps.
+    pub fn changed_region(&self, base_len: usize) -> XnRegion {
+        let full = XnRegion::interval(0, base_len as i64);
+        full.minus(&self.unchanged_region())
+    }
+
+    /// Returns the symmetric difference between A-only and B-only changes.
+    /// High values indicate divergent edits; low values indicate complementary edits.
+    pub fn conflict_density(&self) -> f64 {
+        let total = self.only_a.len() + self.only_b.len() + self.conflict.len();
+        if total == 0 {
+            return 0.0;
+        }
+        self.conflict.len() as f64 / total as f64
+    }
+
+    /// Decompose unchanged regions into clean disjoint intervals.
+    /// Uses simple_regions() for correct handling of gaps.
+    pub fn unchanged_intervals(&self) -> Vec<(i64, i64)> {
+        let region = self.unchanged_region();
+        region.simple_regions()
+    }
+
+    /// Decompose changed regions into clean disjoint intervals.
+    pub fn changed_intervals(&self, base_len: usize) -> Vec<(i64, i64)> {
+        self.changed_region(base_len).simple_regions()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MergeStrategy {
     LastWriterWins,
@@ -1887,5 +1931,84 @@ mod tests {
             .iter()
             .any(|(_, c)| c.provenance.is_some());
         assert!(has_prov, "merged edition should carry A's provenance");
+    }
+
+    #[test]
+    fn unchanged_region_all_same() {
+        let base = text_edition("hello world");
+        let a = text_edition("hello world");
+        let b = text_edition("hello world");
+        let diff = three_way_diff(&base, &a, &b);
+        let region = diff.unchanged_region();
+        assert!(region.contains(0));
+        assert!(region.contains(10));
+    }
+
+    #[test]
+    fn unchanged_region_with_changes() {
+        let base = text_edition("hello world");
+        let a = text_edition("HELLO world");
+        let b = text_edition("hello world");
+        let diff = three_way_diff(&base, &a, &b);
+        let region = diff.unchanged_region();
+        assert!(!region.contains(0));
+        assert!(region.contains(7));
+    }
+
+    #[test]
+    fn changed_region_complement_of_unchanged() {
+        let base = text_edition("hello world");
+        let a = text_edition("HELLO world");
+        let b = text_edition("hello WORLD");
+        let diff = three_way_diff(&base, &a, &b);
+        let changed = diff.changed_region(11);
+        let unchanged = diff.unchanged_region();
+        assert!(!changed.intersects(&unchanged));
+        assert!(changed.contains(0));
+        assert!(changed.contains(6));
+    }
+
+    #[test]
+    fn conflict_density_zero_when_complementary() {
+        let base = text_edition("hello world");
+        let a = text_edition("HELLO world");
+        let b = text_edition("hello WORLD");
+        let diff = three_way_diff(&base, &a, &b);
+        assert_eq!(diff.conflict_density(), 0.0);
+    }
+
+    #[test]
+    fn conflict_density_nonzero_when_overlapping() {
+        let base = text_edition("hello");
+        let a = text_edition("HELLO");
+        let b = text_edition("Hello");
+        let diff = three_way_diff(&base, &a, &b);
+        assert!(diff.conflict_density() > 0.0);
+    }
+
+    #[test]
+    fn unchanged_intervals_clean_decomposition() {
+        let base = text_edition("aaa bbb ccc");
+        let a = text_edition("aaa XXX ccc");
+        let b = text_edition("aaa bbb ccc");
+        let diff = three_way_diff(&base, &a, &b);
+        let intervals = diff.unchanged_intervals();
+        assert!(intervals.len() >= 1);
+        for (start, end) in &intervals {
+            assert!(*start < *end, "intervals must be non-empty");
+        }
+    }
+
+    #[test]
+    fn changed_intervals_for_heatmap() {
+        let base = text_edition("abcdefghij");
+        let a = text_edition("abcXefghij");
+        let b = text_edition("abcdefghij");
+        let diff = three_way_diff(&base, &a, &b);
+        let intervals = diff.changed_intervals(10);
+        assert!(
+            !intervals.is_empty(),
+            "should have at least one changed interval"
+        );
     }
 }
