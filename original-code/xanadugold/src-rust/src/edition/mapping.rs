@@ -169,37 +169,11 @@ impl Mapping {
         if other.is_empty() {
             return self.clone();
         }
-        match (self, other) {
-            (
-                Mapping::Simple {
-                    offset: a_off,
-                    region: a_reg,
-                },
-                Mapping::Simple {
-                    offset: b_off,
-                    region: b_reg,
-                },
-            ) if a_off == b_off && a_reg.intersects(b_reg) => {
-                let merged = a_reg.union(b_reg);
-                Mapping::Simple {
-                    offset: *a_off,
-                    region: merged,
-                }
-            }
-            (
-                Mapping::Simple {
-                    offset: a_off,
-                    region: a_reg,
-                },
-                Mapping::Simple {
-                    offset: b_off,
-                    region: b_reg,
-                },
-            ) if a_off == b_off && !a_reg.intersects(b_reg) => {
-                Mapping::Composite(vec![self.clone(), other.clone()])
-            }
-            _ => Mapping::Composite(vec![self.clone(), other.clone()]),
-        }
+        // Flatten both into a list of simple parts
+        let mut parts = Vec::new();
+        flatten_into(self, &mut parts);
+        flatten_into(other, &mut parts);
+        canonicalize(&mut parts)
     }
 
     pub fn restrict(&self, region: &XnRegion) -> Mapping {
@@ -399,6 +373,82 @@ impl Mapping {
                 result
             }
         }
+    }
+}
+
+/// Flatten a Mapping into a list of (offset, region) pairs.
+fn flatten_into(m: &Mapping, out: &mut Vec<(i64, XnRegion)>) {
+    match m {
+        Mapping::Empty => {}
+        Mapping::Simple { offset, region } => {
+            if !region.is_empty() {
+                out.push((*offset, region.clone()));
+            }
+        }
+        Mapping::Composite(parts) => {
+            for p in parts {
+                flatten_into(p, out);
+            }
+        }
+    }
+}
+
+/// Canonicalize a list of (offset, region) pairs into a minimal Mapping.
+/// Merges same-offset overlapping/adjacent regions, removes empty parts,
+/// collapses identities, and flattens nested composites.
+fn canonicalize(parts: &mut Vec<(i64, XnRegion)>) -> Mapping {
+    // Remove empty regions
+    parts.retain(|(_, r)| !r.is_empty());
+    if parts.is_empty() {
+        return Mapping::Empty;
+    }
+
+    // Sort by offset, then by region start
+    parts.sort_by(|a, b| {
+        a.0.cmp(&b.0).then_with(|| {
+            let a_start = a.1.start().unwrap_or(i64::MIN);
+            let b_start = b.1.start().unwrap_or(i64::MIN);
+            a_start.cmp(&b_start)
+        })
+    });
+
+    // Merge same-offset parts: union overlapping or adjacent regions
+    let mut merged: Vec<(i64, XnRegion)> = Vec::new();
+    for (offset, region) in parts.drain(..) {
+        if let Some(last) = merged.last_mut() {
+            if last.0 == offset
+                && (last.1.intersects(&region)
+                    || last.1.intersects(&region.shift(1))
+                    || region.intersects(&last.1.shift(1)))
+            {
+                last.1 = last.1.union(&region);
+                continue;
+            }
+        }
+        merged.push((offset, region));
+    }
+
+    // Check for identity collapse: offset=0 and region covers everything
+    if merged.len() == 1 && merged[0].0 == 0 {
+        let r = &merged[0].1;
+        // [0,∞) from above(0) union interval(0,n) = above(0)
+        if r == &XnRegion::above(0) || r.is_full() {
+            return Mapping::identity();
+        }
+    }
+
+    match merged.len() {
+        0 => Mapping::Empty,
+        1 => {
+            let (offset, region) = merged.pop().unwrap();
+            Mapping::Simple { offset, region }
+        }
+        _ => Mapping::Composite(
+            merged
+                .into_iter()
+                .map(|(offset, region)| Mapping::Simple { offset, region })
+                .collect(),
+        ),
     }
 }
 
@@ -789,5 +839,100 @@ mod tests {
         assert_eq!(result.of(0), Some(0));
         assert_eq!(result.of(9), Some(9));
         assert_eq!(result.of(15), Some(20));
+    }
+
+    #[test]
+    fn combine_merges_same_offset_overlapping() {
+        let a = Mapping::restricted(5, XnRegion::interval(0, 10));
+        let b = Mapping::restricted(5, XnRegion::interval(5, 15));
+        let combined = a.combine(&b);
+        match combined {
+            Mapping::Simple { offset, region } => {
+                assert_eq!(offset, 5);
+                assert!(region.contains(0));
+                assert!(region.contains(14));
+            }
+            _ => panic!("expected Simple, got {:?}", combined),
+        }
+    }
+
+    #[test]
+    fn combine_merges_same_offset_adjacent() {
+        let a = Mapping::restricted(3, XnRegion::interval(0, 5));
+        let b = Mapping::restricted(3, XnRegion::interval(5, 10));
+        let combined = a.combine(&b);
+        match combined {
+            Mapping::Simple { offset, region } => {
+                assert_eq!(offset, 3);
+                assert!(region.contains(0));
+                assert!(region.contains(9));
+            }
+            _ => panic!("expected Simple for adjacent, got {:?}", combined),
+        }
+    }
+
+    #[test]
+    fn combine_keeps_different_offsets() {
+        let a = Mapping::restricted(5, XnRegion::interval(0, 10));
+        let b = Mapping::restricted(10, XnRegion::interval(0, 10));
+        let combined = a.combine(&b);
+        assert!(matches!(combined, Mapping::Composite(_)));
+    }
+
+    #[test]
+    fn combine_collapses_identity() {
+        // interval(0,10) union above(10) = [0,10) ∪ [10,∞) = [0,∞) = full
+        let a = Mapping::restricted(0, XnRegion::interval(0, 10));
+        let b = Mapping::restricted(0, XnRegion::above(10));
+        let combined = a.combine(&b);
+        // Should merge into offset=0, region=full → identity
+        assert!(
+            combined.is_identity(),
+            "expected identity, got {:?}",
+            combined
+        );
+    }
+
+    #[test]
+    fn combine_flattens_nested() {
+        let inner = Mapping::Composite(vec![Mapping::restricted(3, XnRegion::interval(0, 5))]);
+        let outer = Mapping::restricted(3, XnRegion::interval(5, 10));
+        let combined = inner.combine(&outer);
+        match combined {
+            Mapping::Simple { offset, region } => {
+                assert_eq!(offset, 3);
+                assert!(region.contains(0));
+                assert!(region.contains(9));
+            }
+            _ => panic!("expected flattened Simple, got {:?}", combined),
+        }
+    }
+
+    #[test]
+    fn combine_repeated_builds_canonical() {
+        let mut m = Mapping::empty();
+        for i in 0..5 {
+            m = m.combine(&Mapping::restricted(
+                5,
+                XnRegion::interval(i * 3, i * 3 + 3),
+            ));
+        }
+        // All parts have offset 5, should merge into one Simple
+        match m {
+            Mapping::Simple { offset, region } => {
+                assert_eq!(offset, 5);
+                assert!(region.contains(0));
+                assert!(region.contains(14));
+            }
+            _ => panic!("expected canonical Simple, got {:?}", m),
+        }
+    }
+
+    #[test]
+    fn combine_empty_parts_removed() {
+        let a = Mapping::restricted(5, XnRegion::interval(0, 10));
+        let b = Mapping::restricted(5, XnRegion::empty());
+        let combined = a.combine(&b);
+        assert_eq!(combined, a);
     }
 }
