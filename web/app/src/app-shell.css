@@ -962,18 +962,18 @@
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  border: 1px solid var(--border-light);
-  background: white;
-  color: var(--doc-text);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text);
   transition: all 0.15s;
 }
-.welcome-btn:hover { background: var(--bg-document-margin); }
+.welcome-btn:hover { background: var(--bg-elevated); }
 .welcome-btn.primary {
-  background: var(--amber);
-  color: #1a1a24;
-  border-color: var(--amber);
+  background: var(--accent-blue);
+  color: #fff;
+  border-color: var(--accent-blue);
 }
-.welcome-btn.primary:hover { background: #f59e0b; }
+.welcome-btn.primary:hover { opacity: 0.9; }
 
 .welcome-features {
   display: grid;
