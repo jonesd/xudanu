@@ -1054,10 +1054,11 @@ impl Edition {
                 claimed_a[i + k] = true;
                 claimed_b[j + k] = true;
             }
-            let pos_a_start = entries_a[*i].0;
-            let pos_a_end = entries_a[*i + *len - 1].0 + 1;
-            let pos_b_start = entries_b[*j].0;
-            let pos_b_end = entries_b[*j + *len - 1].0 + 1;
+            // Convert element indices to character offsets
+            let pos_a_start: i64 = entries_a[..*i].iter().map(|(_, c)| c.char_len() as i64).sum();
+            let pos_a_end: i64 = pos_a_start + entries_a[*i..*i + *len].iter().map(|(_, c)| c.char_len() as i64).sum::<i64>();
+            let pos_b_start: i64 = entries_b[..*j].iter().map(|(_, c)| c.char_len() as i64).sum();
+            let pos_b_end: i64 = pos_b_start + entries_b[*j..*j + *len].iter().map(|(_, c)| c.char_len() as i64).sum::<i64>();
             let text: String = entries_a[*i..*i + *len]
                 .iter()
                 .filter_map(|(_, c)| c.element.as_text())
