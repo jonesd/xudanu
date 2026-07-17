@@ -30,6 +30,7 @@ pub mod snapshot;
 pub mod space_bridge;
 pub mod three_way;
 pub mod transclusion;
+pub mod tumbler;
 pub mod work;
 pub mod wrapper;
 pub mod xn_region;
