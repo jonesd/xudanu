@@ -2,7 +2,6 @@
 // Scans <code> elements for source file references and wraps them in
 // GitHub links. Include this script at the bottom of any doc page.
 (function() {
-  var GITHUB = 'https://github.com/jonesd/xudanu/blob/main/';
   var RUST_BASE = 'original-code/xanadugold/src-rust/';
   var WEB_BASE = 'web/app/';
 
@@ -115,8 +114,6 @@
     if (node.nodeType !== Node.TEXT_NODE) return;
 
     var text = node.textContent;
-    var parts = [];
-    var lastIndex = 0;
     var found = [];
 
     // Pattern 1: file.rs:line or file.tsx:line or file.ts:line

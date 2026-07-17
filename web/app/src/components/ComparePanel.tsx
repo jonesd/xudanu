@@ -495,7 +495,6 @@ function findClientSharedRegions(textA: string, textB: string, minLen: number = 
           usedB.push([idx, idx + lineTrim.length]);
         }
       }
-      searchFrom = idx + lineTrim.length;
       break;
     }
     posA += line.length + 1;
