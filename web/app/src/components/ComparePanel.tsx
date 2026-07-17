@@ -141,6 +141,7 @@ export interface CompareState {
   hasTarget: boolean;
   leftRegions: TextRegion[];
   rightRegions: TextRegion[];
+  sharedRegions: ContentRegion[];
   loading: boolean;
   regionCount: number;
   clearTarget: () => void;
@@ -164,6 +165,7 @@ export function useCompare(
   const [leftRegions, setLeftRegions] = useState<TextRegion[]>([]);
   const [rightRegions, setRightRegions] = useState<TextRegion[]>([]);
   const [loading, setLoading] = useState(false);
+  const [sharedRegions, setSharedRegions] = useState<ContentRegion[]>([]);
 
   const setMode = useCallback((m: CompareMode) => {
     setModeRaw(m);
@@ -209,6 +211,9 @@ export function useCompare(
       setLoading(true);
       try {
         const regions = await client.findSharedRegions(currentWorkId, wid);
+        console.log(`[compare] findSharedRegions returned ${regions.length} regions`);
+        if (regions.length > 0) console.log("[compare] first region:", regions[0]);
+        setSharedRegions(regions.map(r => ({ startA: r.start_a, endA: r.end_a, startB: r.start_b, endB: r.end_b })));
         setLeftRegions(regions.map((r, i) => ({ start: r.start_a, end: r.end_a, cidx: i % 8 })));
         setRightRegions(regions.map((r, i) => ({ start: r.start_b, end: r.end_b, cidx: i % 8 })));
       } catch (e) {
@@ -262,6 +267,7 @@ export function useCompare(
     hasTarget: targetText !== "",
     leftRegions,
     rightRegions,
+    sharedRegions,
     loading,
     regionCount: Math.max(leftRegions.length, rightRegions.length),
     clearTarget,
@@ -394,7 +400,7 @@ export function CompareHeader({ visible, state, currentWorkId, works, revisionCo
 // ── Inline diff (word-level LCS) ─────────────────────────────────────────
 
 export interface DiffSegment {
-  type: "common" | "added" | "removed";
+  type: "common" | "added" | "removed" | "shared";
   text: string;
 }
 
@@ -409,13 +415,11 @@ export function charTokens(text: string): string[] {
 export function computeDiff(textA: string, textB: string, granularity: DiffGranularity = "word"): DiffSegment[] {
   const a = granularity === "char" ? charTokens(textA) : tokenize(textA);
   const b = granularity === "char" ? charTokens(textB) : tokenize(textB);
-  const m = a.length;
-  const n = b.length;
 
   // LCS DP table
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
+  const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
       dp[i][j] = a[i - 1] === b[j - 1]
         ? dp[i - 1][j - 1] + 1
         : Math.max(dp[i - 1][j], dp[i][j - 1]);
@@ -424,8 +428,8 @@ export function computeDiff(textA: string, textB: string, granularity: DiffGranu
 
   // Backtrack
   const raw: DiffSegment[] = [];
-  let i = m;
-  let j = n;
+  let i = a.length;
+  let j = b.length;
   while (i > 0 && j > 0) {
     if (a[i - 1] === b[j - 1]) {
       raw.unshift({ type: "common", text: a[i - 1] });
@@ -452,6 +456,102 @@ export function computeDiff(textA: string, textB: string, granularity: DiffGranu
   return merged;
 }
 
+interface ContentRegion {
+  startA: number;
+  endA: number;
+  startB: number;
+  endB: number;
+}
+
+function findClientSharedRegions(textA: string, textB: string, minLen: number = 30): ContentRegion[] {
+  const regions: ContentRegion[] = [];
+  const usedB: [number, number][] = [];
+
+  const linesA = textA.split(/(?<=\.)\s+/);
+  let posA = 0;
+
+  for (const line of linesA) {
+    const lineTrim = line.trim();
+    if (lineTrim.length < minLen) {
+      posA += line.length + 1;
+      continue;
+    }
+
+    let searchFrom = 0;
+    while (true) {
+      const idx = textB.indexOf(lineTrim, searchFrom);
+      if (idx === -1) break;
+
+      const overlap = usedB.some(([s, e]) => idx < e && idx + lineTrim.length > s);
+      if (!overlap) {
+        const startA = textA.indexOf(lineTrim, posA > lineTrim.length ? posA - lineTrim.length : 0);
+        if (startA !== -1) {
+          regions.push({
+            startA,
+            endA: startA + lineTrim.length,
+            startB: idx,
+            endB: idx + lineTrim.length,
+          });
+          usedB.push([idx, idx + lineTrim.length]);
+        }
+      }
+      searchFrom = idx + lineTrim.length;
+      break;
+    }
+    posA += line.length + 1;
+  }
+
+  regions.sort((a, b) => a.startA - b.startA);
+  return regions;
+}
+
+export function computeContentAwareDiff(
+  textA: string,
+  textB: string,
+  sharedRegions: ContentRegion[],
+  granularity: DiffGranularity = "word",
+): DiffSegment[] {
+  if (sharedRegions.length === 0) {
+    return computeDiff(textA, textB, granularity);
+  }
+
+  const sorted = [...sharedRegions].sort((a, b) => a.startA - b.startA);
+  const segments: DiffSegment[] = [];
+
+  let posA = 0;
+  let posB = 0;
+
+  for (const region of sorted) {
+    if (region.startA > posA && region.startB > posB) {
+      const gapA = textA.slice(posA, region.startA);
+      const gapB = textB.slice(posB, region.startB);
+      const gapDiff = computeDiff(gapA, gapB, granularity);
+      segments.push(...gapDiff);
+    }
+
+    const sharedA = textA.slice(region.startA, region.endA);
+    segments.push({ type: "shared", text: sharedA });
+
+    posA = region.endA;
+    posB = region.endB;
+  }
+
+  if (posA < textA.length || posB < textB.length) {
+    const tailA = textA.slice(posA);
+    const tailB = textB.slice(posB);
+    const tailDiff = computeDiff(tailA, tailB, granularity);
+    segments.push(...tailDiff);
+  }
+
+  const merged: DiffSegment[] = [];
+  for (const seg of segments) {
+    const last = merged[merged.length - 1];
+    if (last && last.type === seg.type) last.text += seg.text;
+    else merged.push({ ...seg });
+  }
+  return merged;
+}
+
 function DiffView({ segments }: { segments: DiffSegment[] }) {
   return (
     <div
@@ -467,6 +567,12 @@ function DiffView({ segments }: { segments: DiffSegment[] }) {
       }}
     >
       {segments.map((seg, i) => {
+        if (seg.type === "shared")
+          return (
+            <span key={i} style={{ background: "#e8f4fd", color: "#1565c0", borderRadius: 2, borderBottom: "1px solid #90caf9" }}>
+              {seg.text}
+            </span>
+          );
         if (seg.type === "added")
           return (
             <span key={i} style={{ background: "#f0f9f0", color: "#3a7a3a", borderRadius: 2 }}>
@@ -511,8 +617,16 @@ export function CompareSplitView({ currentText, state }: CompareSplitViewProps) 
   const [viewMode, setViewMode] = useState<"split" | "diff">("split");
   const diffSegments = useMemo(() => {
     if (viewMode !== "diff" || !state.targetText) return [];
+    let regions = state.sharedRegions;
+    if (regions.length < 2) {
+      regions = findClientSharedRegions(currentText, state.targetText);
+      console.log(`[compare] client-side shared regions: ${regions.length}`);
+    }
+    if (regions.length > 0) {
+      return computeContentAwareDiff(currentText, state.targetText, regions, state.diffGranularity);
+    }
     return computeDiff(currentText, state.targetText, state.diffGranularity);
-  }, [viewMode, currentText, state.targetText, state.diffGranularity]);
+  }, [viewMode, currentText, state.targetText, state.diffGranularity, state.sharedRegions]);
 
   useEffect(() => {
     if (viewMode !== "split") {
@@ -620,6 +734,7 @@ export function CompareSplitView({ currentText, state }: CompareSplitViewProps) 
         ))}
         {viewMode === "diff" ? (
           <span style={{ marginLeft: "auto", paddingRight: 10, color: "#aaa" }}>
+            <span style={{ background: "#e8f4fd", color: "#1565c0", padding: "0 3px", borderRadius: 2, borderBottom: "1px solid #90caf9" }}>shared</span>{" "}
             <span style={{ background: "#f0f9f0", color: "#3a7a3a", padding: "0 3px", borderRadius: 2 }}>+added</span>{" "}
             <span style={{ background: "#fdf2f2", color: "#a04040", padding: "0 3px", borderRadius: 2, textDecoration: "line-through" }}>-removed</span>
           </span>
