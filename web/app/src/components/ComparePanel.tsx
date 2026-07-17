@@ -515,6 +515,14 @@ export function CompareSplitView({ currentText, state }: CompareSplitViewProps) 
   }, [viewMode, currentText, state.targetText, state.diffGranularity]);
 
   useEffect(() => {
+    if (viewMode !== "split") {
+      const canvas = areaRef.current?.querySelector("canvas._bridge") as HTMLCanvasElement;
+      if (canvas) {
+        const ctx = canvas.getContext("2d");
+        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      return;
+    }
     if (!state.leftRegions.length && !state.rightRegions.length) return;
 
     function computeBridges() {
@@ -564,7 +572,7 @@ export function CompareSplitView({ currentText, state }: CompareSplitViewProps) 
       }
     }
 
-    const timer = setTimeout(computeBridges, 100);
+    const timer = setTimeout(computeBridges, 150);
     const lw = leftWrapRef.current;
     const rw = rightWrapRef.current;
     if (lw) lw.addEventListener("scroll", computeBridges);
@@ -576,7 +584,7 @@ export function CompareSplitView({ currentText, state }: CompareSplitViewProps) 
       if (rw) rw.removeEventListener("scroll", computeBridges);
       window.removeEventListener("resize", computeBridges);
     };
-  }, [state.leftRegions, state.rightRegions, leftHtml, rightHtml]);
+  }, [state.leftRegions, state.rightRegions, leftHtml, rightHtml, viewMode]);
 
   return (
     <div className="compare-split" ref={areaRef}>
