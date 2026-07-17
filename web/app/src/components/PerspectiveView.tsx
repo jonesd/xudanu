@@ -75,8 +75,8 @@ export function PerspectiveView({
           works.find((w) => w.work_id === otherWorkId)?.title ||
           `Work ${otherWorkId.toString(16)}`;
         const ref = isOrigin ? link.destination_ref : link.origin_ref;
-        const fullText = neighborTexts.get(otherWorkId) || ref?.excerpt || "(loading...)";
-        const text = fullText.length > 500 ? fullText.slice(0, 500) + " \u2026" : fullText;
+        const fullText = neighborTexts.get(otherWorkId) || ref?.excerpt || "";
+        const text = fullText.length > 800 ? fullText.slice(0, 800) + " \u2026" : fullText;
         neighborMap.set(otherWorkId, { workId: otherWorkId, title, text, links: [] });
       }
       neighborMap.get(otherWorkId)!.links.push(link);
@@ -135,14 +135,16 @@ export function PerspectiveView({
   }, [neighbors, zoom]);
 
   const neighborScale = useCallback((distance: number) => {
-    const baseScale = Math.max(0.12, 0.6 - distance * 0.18);
-    const zoomMultiplier = 1 + zoom * 0.25;
-    return Math.min(1.0, baseScale * zoomMultiplier);
+    const baseScale = Math.max(0.15, 0.75 - distance * 0.2);
+    const zoomMultiplier = 1 + zoom * 0.4;
+    return Math.min(1.5, baseScale * zoomMultiplier);
   }, [zoom]);
 
   const neighborWidth = useCallback((distance: number) => {
-    return Math.max(6, 26 - distance * 5);
-  }, []);
+    const base = Math.max(8, 24 - distance * 5);
+    const zoomBonus = zoom * 4;
+    return base + zoomBonus;
+  }, [zoom]);
 
   const drawConnections = useCallback(() => {
     const canvas = canvasRef.current;
@@ -234,10 +236,12 @@ export function PerspectiveView({
         const isOrigin = link.origin === centerWorkId;
         const ref = isOrigin ? link.destination_ref : link.origin_ref;
         if (ref && typeof ref.start_position === "number" && typeof ref.end_position === "number" && ref.end_position > ref.start_position) {
-          return [{ start: 0, end: Math.min(ref.end_position - ref.start_position, doc.text.length), linkId: link.link_id, color }];
+          return [{ start: 0, end: Math.min(ref.end_position - ref.start_position, doc.text.length), linkId: link.link_id, color, hasSpan: true }];
         }
-        return [{ start: 0, end: doc.text.length, linkId: link.link_id, color }];
+        return [{ start: 0, end: doc.text.length, linkId: link.link_id, color, hasSpan: false }];
       });
+
+      const wholeWorkColors = spans.filter(s => !s.hasSpan).map(s => s.color);
 
       return (
         <div
@@ -256,6 +260,7 @@ export function PerspectiveView({
             opacity: Math.max(0.3, 1 - distance * 0.2),
             background: "#faf9f6",
             border: "1px solid #d0d0d0",
+            borderLeft: wholeWorkColors.length > 0 ? `4px solid ${wholeWorkColors[0]}` : "1px solid #d0d0d0",
             borderRadius: "6px",
             boxShadow: distance === 1 ? "0 4px 12px rgba(0,0,0,0.25)" : distance === 2 ? "0 2px 8px rgba(0,0,0,0.15)" : "none",
             cursor: "default",
@@ -269,19 +274,33 @@ export function PerspectiveView({
               marginBottom: "6px", fontFamily: "Inter, sans-serif",
               background: "#30363d", padding: "3px 6px", borderRadius: "3px",
               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              display: "flex", alignItems: "center", gap: "4px",
             }}>
-              {doc.title}
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{doc.title}</span>
+              <span style={{ fontSize: "9px", color: "#8b949e", flexShrink: 0 }}>{doc.links.length}</span>
             </div>
-            <div
-              ref={(el) => { if (el) docRefs.current.set(doc.workId, el); }}
-              dangerouslySetInnerHTML={{ __html: renderTextWithSpans(doc.text, spans.map((s) => ({ ...s, linkId: s.linkId })), "nplink-") }}
-            />
+            {doc.text ? (
+              <div
+                ref={(el) => { if (el) docRefs.current.set(doc.workId, el); }}
+                dangerouslySetInnerHTML={{ __html: renderTextWithSpans(doc.text, spans.filter(s => s.hasSpan).map((s) => ({ ...s, linkId: s.linkId })), "nplink-") }}
+              />
+            ) : (
+              <div style={{ color: "#6e7681", fontSize: "11px", fontStyle: "italic" }}>Loading...</div>
+            )}
           </div>
         </div>
       );
     },
     [neighborScale, neighborWidth, linkColorMap, centerWorkId, onNavigateToWork],
   );
+
+  const centerWholeWorkColors = centerSpans.filter(s => {
+    const link = allLinks.find(l => l.link_id === s.linkId);
+    if (!link) return false;
+    const isOrigin = link.origin === centerWorkId;
+    const ref = isOrigin ? link.origin_ref : link.destination_ref;
+    return !ref || typeof ref.start_position !== "number" || typeof ref.end_position !== "number" || ref.end_position <= ref.start_position;
+  }).map(s => s.color);
 
   const centerColumn = (
     <div
@@ -294,6 +313,7 @@ export function PerspectiveView({
         overflowY: "auto" as const,
         background: "#fff",
         border: "2px solid #d0d0d0",
+        borderLeft: centerWholeWorkColors.length > 0 ? `4px solid ${centerWholeWorkColors[0]}` : "2px solid #d0d0d0",
         borderRadius: "6px",
         zIndex: 5,
       }}
