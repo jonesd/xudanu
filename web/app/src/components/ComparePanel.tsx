@@ -7,6 +7,7 @@ const BRIDGE_COLORS = [
 ];
 
 type CompareMode = "document" | "revision";
+type DiffGranularity = "word" | "char";
 
 interface TextRegion {
   start: number;
@@ -98,7 +99,7 @@ function findParagraphMatches(
         bestRi = ri;
       }
     }
-    if (bestRi >= 0 && bestSim >= 0.20) {
+    if (bestRi >= 0 && bestSim >= 0.35) {
       rightUsed.add(bestRi);
       const cidx = leftRegions.length % 8;
       leftRegions.push({ start: leftOffset, end: leftOffset + leftParas[li].length, cidx });
@@ -126,6 +127,8 @@ export interface CompareState {
   clearTarget: () => void;
   fuzzy: boolean;
   setFuzzy: (f: boolean) => void;
+  diffGranularity: DiffGranularity;
+  setDiffGranularity: (g: DiffGranularity) => void;
 }
 
 export function useCompare(
@@ -136,6 +139,7 @@ export function useCompare(
 ): CompareState {
   const [mode, setModeRaw] = useState<CompareMode>("document");
   const [fuzzy, setFuzzy] = useState(true);
+  const [diffGranularity, setDiffGranularity] = useState<DiffGranularity>("word");
   const [targetText, setTargetText] = useState("");
   const [targetLabel, setTargetLabel] = useState("");
   const [leftRegions, setLeftRegions] = useState<TextRegion[]>([]);
@@ -244,6 +248,8 @@ export function useCompare(
     clearTarget,
     fuzzy,
     setFuzzy,
+    diffGranularity,
+    setDiffGranularity,
   };
 }
 
@@ -298,6 +304,23 @@ export function CompareHeader({ visible, state, currentWorkId, works, revisionCo
         }}
       >
         {state.fuzzy ? "Fuzzy" : "Exact"}
+      </button>
+      <button
+        type="button"
+        onClick={() => state.setDiffGranularity(state.diffGranularity === "word" ? "char" : "word")}
+        title={state.diffGranularity === "word" ? "Word-level diff. Click for character-level." : "Character-level diff. Click for word-level."}
+        style={{
+          padding: "2px 8px",
+          fontSize: 11,
+          border: "1px solid #d0d0d0",
+          borderRadius: 3,
+          background: state.diffGranularity === "char" ? "#f0e8ff" : "#fff",
+          color: state.diffGranularity === "char" ? "#7b1fa2" : "#888",
+          cursor: "pointer",
+          fontWeight: 500,
+        }}
+      >
+        {state.diffGranularity === "word" ? "Word" : "Char"}
       </button>
       {state.mode === "document" && !state.hasTarget && (
         <select
@@ -360,9 +383,13 @@ export function tokenize(text: string): string[] {
   return text.match(/\S+|\s+/g) || [text];
 }
 
-export function computeDiff(textA: string, textB: string): DiffSegment[] {
-  const a = tokenize(textA);
-  const b = tokenize(textB);
+export function charTokens(text: string): string[] {
+  return Array.from(text);
+}
+
+export function computeDiff(textA: string, textB: string, granularity: DiffGranularity = "word"): DiffSegment[] {
+  const a = granularity === "char" ? charTokens(textA) : tokenize(textA);
+  const b = granularity === "char" ? charTokens(textB) : tokenize(textB);
   const m = a.length;
   const n = b.length;
 
@@ -464,8 +491,8 @@ export function CompareSplitView({ currentText, state }: CompareSplitViewProps) 
   const [viewMode, setViewMode] = useState<"split" | "diff">("split");
   const diffSegments = useMemo(() => {
     if (viewMode !== "diff" || !state.targetText) return [];
-    return computeDiff(currentText, state.targetText);
-  }, [viewMode, currentText, state.targetText]);
+    return computeDiff(currentText, state.targetText, state.diffGranularity);
+  }, [viewMode, currentText, state.targetText, state.diffGranularity]);
 
   useEffect(() => {
     if (!state.leftRegions.length && !state.rightRegions.length) return;
