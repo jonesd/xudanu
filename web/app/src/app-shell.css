@@ -25,6 +25,36 @@
   --teal: #0d9488;
   --red: #dc2626;
   --rose: #e11d48;
+  --accent-blue: #2f81f7;
+}
+
+/* Light theme — GitHub Primer light palette */
+.light-theme {
+  --bg: #ffffff;
+  --bg-surface: #f6f8fa;
+  --bg-elevated: #eaeef2;
+  --bg-document: #ffffff;
+  --bg-document-margin: #f0f0f0;
+  --border: #d0d7de;
+  --border-light: #e8e5de;
+  --text: #1f2328;
+  --text-muted: #656d76;
+  --text-dim: #8c959f;
+  --doc-text: #1f2328;
+  --doc-text-muted: #656d76;
+  --amber: #9a6700;
+  --amber-light: #fff8c5;
+  --amber-bg: rgba(154, 103, 0, 0.08);
+  --green: #1a7f37;
+  --green-light: #dafbe1;
+  --blue: #0969da;
+  --blue-light: #ddf4ff;
+  --purple: #8250df;
+  --purple-light: #fbefff;
+  --teal: #0d9488;
+  --red: #cf222e;
+  --rose: #d1242f;
+  --accent-blue: #0969da;
 }
 
 .app-shell {

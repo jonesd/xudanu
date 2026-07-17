@@ -71,6 +71,9 @@ export function AppShell() {
   }, []);
   const [linkDescription, setLinkDescription] = useState("");
   const [showCompare, setShowCompare] = useState(false);
+  const [isLightTheme, setIsLightTheme] = useState(() => {
+    try { return localStorage.getItem("xudanu_theme") === "light"; } catch { return false; }
+  });
   const [showPerspective, setShowPerspective] = useState(false);
   const [showCompoundBuilder, setShowCompoundBuilder] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
@@ -892,7 +895,7 @@ export function AppShell() {
   );
 
   return (
-    <div className={`app-shell ${focusMode ? "focus-mode" : ""}`}>
+    <div className={`app-shell ${focusMode ? "focus-mode" : ""} ${isLightTheme ? "light-theme" : ""}`}>
       <TopBar
         connected={connected}
         identityName={identityName}
@@ -904,6 +907,12 @@ export function AppShell() {
         onOpenIdentity={() => setShowIdentity(true)}
         onOpenAdmin={() => setShowAdmin(true)}
         isAdmin={crdtIsAdmin}
+        isLightTheme={isLightTheme}
+        onToggleTheme={() => {
+          const next = !isLightTheme;
+          setIsLightTheme(next);
+          try { localStorage.setItem("xudanu_theme", next ? "light" : "dark"); } catch {}
+        }}
       />
 
       <LeftRail
