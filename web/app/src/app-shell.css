@@ -506,6 +506,7 @@
 .ctx-section {
   border-bottom: 1px solid var(--border);
   padding: 14px 16px;
+  background: var(--bg);
 }
 
 .ctx-header {

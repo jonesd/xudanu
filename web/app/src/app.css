@@ -2460,13 +2460,13 @@ body {
 }
 
 .marker-tooltip {
-  background: #1e1e1e;
-  border: 1px solid #333;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px 10px;
   font-size: 12px;
-  color: #ddd;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  color: var(--text);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   max-width: 250px;
 }
 
@@ -2476,7 +2476,7 @@ body {
 }
 
 .marker-tooltip-direction {
-  color: #999;
+  color: var(--text-muted);
   font-size: 11px;
 }
 
@@ -2491,9 +2491,9 @@ body {
   margin-top: 6px;
   padding: 3px 8px;
   font-size: 11px;
-  color: #fff;
-  background: #4361ee;
-  border: none;
+  color: var(--accent-blue);
+  background: transparent;
+  border: 1px solid var(--accent-blue);
   border-radius: 3px;
   cursor: pointer;
   text-transform: uppercase;
@@ -2501,7 +2501,12 @@ body {
 }
 
 .marker-tooltip-link:hover {
-  background: #3651d4;
+  background: var(--accent-blue);
+  color: #fff;
+}
+
+.marker-tooltip-excerpt {
+  color: var(--text-muted) !important;
 }
 
 /* Compare panel */
