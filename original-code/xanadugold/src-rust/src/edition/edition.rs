@@ -1055,10 +1055,24 @@ impl Edition {
                 claimed_b[j + k] = true;
             }
             // Convert element indices to character offsets
-            let pos_a_start: i64 = entries_a[..*i].iter().map(|(_, c)| c.char_len() as i64).sum();
-            let pos_a_end: i64 = pos_a_start + entries_a[*i..*i + *len].iter().map(|(_, c)| c.char_len() as i64).sum::<i64>();
-            let pos_b_start: i64 = entries_b[..*j].iter().map(|(_, c)| c.char_len() as i64).sum();
-            let pos_b_end: i64 = pos_b_start + entries_b[*j..*j + *len].iter().map(|(_, c)| c.char_len() as i64).sum::<i64>();
+            let pos_a_start: i64 = entries_a[..*i]
+                .iter()
+                .map(|(_, c)| c.char_len() as i64)
+                .sum();
+            let pos_a_end: i64 = pos_a_start
+                + entries_a[*i..*i + *len]
+                    .iter()
+                    .map(|(_, c)| c.char_len() as i64)
+                    .sum::<i64>();
+            let pos_b_start: i64 = entries_b[..*j]
+                .iter()
+                .map(|(_, c)| c.char_len() as i64)
+                .sum();
+            let pos_b_end: i64 = pos_b_start
+                + entries_b[*j..*j + *len]
+                    .iter()
+                    .map(|(_, c)| c.char_len() as i64)
+                    .sum::<i64>();
             let text: String = entries_a[*i..*i + *len]
                 .iter()
                 .filter_map(|(_, c)| c.element.as_text())
