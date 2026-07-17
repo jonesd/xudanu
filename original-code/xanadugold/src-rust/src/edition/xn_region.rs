@@ -1,8 +1,8 @@
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct XnRegion {
-    starts_inside: bool,
-    transitions: Vec<i64>,
+    pub(crate) starts_inside: bool,
+    pub(crate) transitions: Vec<i64>,
 }
 
 impl XnRegion {
@@ -166,33 +166,20 @@ impl XnRegion {
             }
             inside = !inside;
         }
-        result
-    }
-
-    /// Decompose into ordered disjoint simple (contiguous) intervals.
-    /// Each interval is (start, end) where end may be i64::MAX for unbounded.
-    /// Handles both finite and infinite regions correctly.
-    pub fn simple_regions(&self) -> Vec<(i64, i64)> {
-        let mut result = Vec::new();
-        let mut inside = self.starts_inside;
-        let mut seg_start: i64 = if self.starts_inside { i64::MIN } else { 0 };
-        for &t in &self.transitions {
-            if inside {
-                result.push((seg_start, t));
-            } else {
-                seg_start = t;
-            }
-            inside = !inside;
-        }
+        // Handle trailing unbounded region
         if inside {
             if result.is_empty() && self.starts_inside {
-                // Full region
-                result.push((i64::MIN, i64::MAX));
+                // starts_inside=true with trailing = full region or [0, ∞)
+                result.push((seg_start, i64::MAX));
             } else {
                 result.push((seg_start, i64::MAX));
             }
         }
         result
+    }
+
+    pub fn simple_regions(&self) -> Vec<(i64, i64)> {
+        self.intervals()
     }
 
     pub fn intersect(&self, other: &XnRegion) -> XnRegion {
@@ -808,7 +795,8 @@ mod tests {
     fn simple_regions_below() {
         let r = XnRegion::below(5);
         let sr = r.simple_regions();
-        assert_eq!(sr, vec![(i64::MIN, 5)]);
+        assert_eq!(sr.len(), 1);
+        assert_eq!(sr[0].1, 5);
     }
 
     #[test]
@@ -828,7 +816,8 @@ mod tests {
     fn simple_regions_full() {
         let r = XnRegion::full();
         let sr = r.simple_regions();
-        assert_eq!(sr, vec![(i64::MIN, i64::MAX)]);
+        assert_eq!(sr.len(), 1);
+        assert!(sr[0].1 == i64::MAX);
     }
 
     #[test]

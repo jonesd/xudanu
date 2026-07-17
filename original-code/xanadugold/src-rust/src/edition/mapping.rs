@@ -54,6 +54,50 @@ impl Mapping {
         }
     }
 
+    /// Build a displacement Mapping from compound DeltaOps (usize-based).
+    /// Parallel to from_delta_ops but for the edition::compound::DeltaOp type.
+    pub fn from_compound_delta_ops(ops: &[crate::edition::compound::DeltaOp]) -> Mapping {
+        let mut pos: i64 = 0;
+        let mut displacement: i64 = 0;
+        let mut parts: Vec<(i64, i64, i64)> = Vec::new();
+
+        for op in ops {
+            match op {
+                crate::edition::compound::DeltaOp::Retain(count) => {
+                    let end = pos + *count as i64;
+                    if *count > 0 {
+                        parts.push((pos, end, displacement));
+                    }
+                    pos = end;
+                }
+                crate::edition::compound::DeltaOp::Insert(len) => {
+                    displacement += *len as i64;
+                }
+                crate::edition::compound::DeltaOp::Delete(count) => {
+                    pos += *count as i64;
+                    displacement -= *count as i64;
+                }
+            }
+        }
+
+        let mappings: Vec<Mapping> = parts
+            .iter()
+            .map(|(start, end, off)| Mapping::restricted(*off, XnRegion::interval(*start, *end)))
+            .collect();
+
+        match mappings.len() {
+            0 => Mapping::identity(),
+            1 => mappings.into_iter().next().unwrap(),
+            _ => {
+                let mut result = Mapping::Empty;
+                for m in mappings {
+                    result = result.combine(&m);
+                }
+                result
+            }
+        }
+    }
+
     pub fn of_region(&self, region: &XnRegion) -> XnRegion {
         match self {
             Mapping::Empty => XnRegion::empty(),
