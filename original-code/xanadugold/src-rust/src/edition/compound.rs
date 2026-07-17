@@ -33,6 +33,82 @@ pub fn map_span_through_delta(
     span_end: usize,
     ops: &[DeltaOp],
 ) -> (usize, usize) {
+    // Algebraic implementation using Mapping
+    let span = super::xn_region::XnRegion::interval(span_start as i64, span_end as i64);
+
+    let mut pos: i64 = 0;
+    let mut displacement: i64 = 0;
+    let mut parts: Vec<(i64, i64, i64)> = Vec::new();
+
+    for op in ops {
+        match *op {
+            DeltaOp::Retain(count) => {
+                let end = pos + count as i64;
+                parts.push((pos, end, displacement));
+                pos = end;
+            }
+            DeltaOp::Insert(ins_len) => {
+                displacement += ins_len as i64;
+            }
+            DeltaOp::Delete(count) => {
+                pos += count as i64;
+                displacement -= count as i64;
+            }
+        }
+    }
+
+    // If there are no retained regions, algebra can't build a displacement.
+    // Fall back to imperative logic which handles replace semantics.
+    if parts.is_empty() {
+        return map_span_through_delta_imperative(span_start, span_end, ops);
+    }
+
+    let dsp = if parts.iter().all(|(_, _, off)| *off == 0) {
+        super::mapping::Mapping::identity()
+    } else {
+        let mappings: Vec<super::mapping::Mapping> = parts
+            .iter()
+            .map(|(start, end, off)| {
+                super::mapping::Mapping::restricted(
+                    *off,
+                    super::xn_region::XnRegion::interval(*start, *end),
+                )
+            })
+            .collect();
+        let mut result = super::mapping::Mapping::empty();
+        for m in mappings {
+            result = result.combine(&m);
+        }
+        result
+    };
+
+    let new_span = dsp.of_region(&span);
+
+    if !new_span.is_empty() {
+        // Algebraic result is valid
+        if let Some((start, end)) = new_span.as_interval() {
+            let s = start.max(0) as usize;
+            let e = (end as usize).max(s);
+            return (s, e);
+        }
+        let intervals = new_span.intervals();
+        if !intervals.is_empty() {
+            let s = intervals[0].0.max(0) as usize;
+            let e = (intervals.last().unwrap().1 as usize).max(s);
+            return (s, e);
+        }
+    }
+
+    // Fall back to imperative logic for edge cases
+    // (e.g., span entirely within a delete-then-insert replacement)
+    map_span_through_delta_imperative(span_start, span_end, ops)
+}
+
+fn map_span_through_delta_imperative(
+    span_start: usize,
+    span_end: usize,
+    ops: &[DeltaOp],
+) -> (usize, usize) {
     let mut old_pos: usize = 0;
     let mut new_pos: usize = 0;
     let mut result_start = span_start;

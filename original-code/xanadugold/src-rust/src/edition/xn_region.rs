@@ -169,6 +169,32 @@ impl XnRegion {
         result
     }
 
+    /// Decompose into ordered disjoint simple (contiguous) intervals.
+    /// Each interval is (start, end) where end may be i64::MAX for unbounded.
+    /// Handles both finite and infinite regions correctly.
+    pub fn simple_regions(&self) -> Vec<(i64, i64)> {
+        let mut result = Vec::new();
+        let mut inside = self.starts_inside;
+        let mut seg_start: i64 = if self.starts_inside { i64::MIN } else { 0 };
+        for &t in &self.transitions {
+            if inside {
+                result.push((seg_start, t));
+            } else {
+                seg_start = t;
+            }
+            inside = !inside;
+        }
+        if inside {
+            if result.is_empty() && self.starts_inside {
+                // Full region
+                result.push((i64::MIN, i64::MAX));
+            } else {
+                result.push((seg_start, i64::MAX));
+            }
+        }
+        result
+    }
+
     pub fn intersect(&self, other: &XnRegion) -> XnRegion {
         let (starts_inside, transitions) = merge_transitions(self, other, |a, b| a && b);
         XnRegion {
@@ -187,6 +213,16 @@ impl XnRegion {
 
     pub fn minus(&self, other: &XnRegion) -> XnRegion {
         let (starts_inside, transitions) = merge_transitions(self, other, |a, b| a && !b);
+        XnRegion {
+            starts_inside,
+            transitions,
+        }
+    }
+
+    /// Symmetric difference: positions in exactly one of self or other.
+    /// Equivalent to `(self - other) ∪ (other - self)`.
+    pub fn delta(&self, other: &XnRegion) -> XnRegion {
+        let (starts_inside, transitions) = merge_transitions(self, other, |a, b| a ^ b);
         XnRegion {
             starts_inside,
             transitions,
@@ -689,7 +725,118 @@ mod tests {
                     *a == *b,
                     "subset=equality {name_a} vs {name_b}"
                 );
+                // delta (symmetric difference) laws
+                assert_eq!(
+                    a.delta(b),
+                    b.delta(a),
+                    "delta commutativity {name_a} vs {name_b}"
+                );
+                assert!(
+                    a.delta(b).is_subset_of(&a.union(b)),
+                    "delta subset of union {name_a} vs {name_b}"
+                );
+                assert!(
+                    !a.delta(b).intersects(&a.intersect(b)),
+                    "delta disjoint from intersection {name_a} vs {name_b}"
+                );
+                assert_eq!(
+                    a.delta(b),
+                    a.minus(b).union(&b.minus(a)),
+                    "delta equals manual symmetric diff {name_a} vs {name_b}"
+                );
+                assert_eq!(a.delta(a).is_empty(), true, "delta self is empty {name_a}");
             }
         }
+    }
+
+    #[test]
+    fn delta_basic_intervals() {
+        let a = XnRegion::interval(0, 10);
+        let b = XnRegion::interval(5, 15);
+        let d = a.delta(&b);
+        assert!(d.contains(0));
+        assert!(d.contains(4));
+        assert!(!d.contains(5));
+        assert!(!d.contains(9));
+        assert!(d.contains(10));
+        assert!(d.contains(14));
+        assert!(!d.contains(15));
+    }
+
+    #[test]
+    fn delta_disjoint() {
+        let a = XnRegion::interval(0, 5);
+        let b = XnRegion::interval(10, 15);
+        let d = a.delta(&b);
+        assert!(d.contains(0));
+        assert!(d.contains(14));
+        assert!(!d.contains(7));
+        assert_eq!(d, a.union(&b));
+    }
+
+    #[test]
+    fn delta_identical() {
+        let a = XnRegion::interval(0, 10);
+        assert!(a.delta(&a).is_empty());
+    }
+
+    #[test]
+    fn delta_empty() {
+        let a = XnRegion::interval(0, 10);
+        let e = XnRegion::empty();
+        assert_eq!(a.delta(&e), a);
+        assert_eq!(e.delta(&a), a);
+    }
+
+    #[test]
+    fn simple_regions_finite_interval() {
+        let r = XnRegion::interval(5, 10);
+        let sr = r.simple_regions();
+        assert_eq!(sr, vec![(5, 10)]);
+    }
+
+    #[test]
+    fn simple_regions_above() {
+        let r = XnRegion::above(5);
+        let sr = r.simple_regions();
+        assert_eq!(sr.len(), 1);
+        assert_eq!(sr[0].0, 5);
+        assert_eq!(sr[0].1, i64::MAX);
+    }
+
+    #[test]
+    fn simple_regions_below() {
+        let r = XnRegion::below(5);
+        let sr = r.simple_regions();
+        assert_eq!(sr, vec![(i64::MIN, 5)]);
+    }
+
+    #[test]
+    fn simple_regions_union_of_two() {
+        let r = XnRegion::interval(0, 5).union(&XnRegion::interval(10, 15));
+        let sr = r.simple_regions();
+        assert_eq!(sr, vec![(0, 5), (10, 15)]);
+    }
+
+    #[test]
+    fn simple_regions_empty() {
+        let r = XnRegion::empty();
+        assert!(r.simple_regions().is_empty());
+    }
+
+    #[test]
+    fn simple_regions_full() {
+        let r = XnRegion::full();
+        let sr = r.simple_regions();
+        assert_eq!(sr, vec![(i64::MIN, i64::MAX)]);
+    }
+
+    #[test]
+    fn simple_regions_complement_of_interval() {
+        let r = XnRegion::interval(5, 10).complement();
+        let sr = r.simple_regions();
+        assert_eq!(sr.len(), 2);
+        assert_eq!(sr[0].1, 5);
+        assert_eq!(sr[1].0, 10);
     }
 }

@@ -213,6 +213,116 @@ impl Mapping {
             _ => false,
         }
     }
+
+    /// Transform this mapping by pre-applying a displacement.
+    /// Result.of(pos) == self.of(dsp.of(pos))
+    ///
+    /// For span migration: if `dsp` represents the displacement caused by
+    /// a text edit, then `mapping.transformed_by(dsp)` gives the new
+    /// positions of whatever the mapping pointed to.
+    pub fn transformed_by(&self, dsp: &Mapping) -> Mapping {
+        match (self, dsp) {
+            (Mapping::Empty, _) => Mapping::Empty,
+            (_, Mapping::Empty) => Mapping::Empty,
+            (_, Mapping::Simple { offset: 0, region }) if region.is_full() => self.clone(),
+            (
+                Mapping::Simple {
+                    offset: m,
+                    region: r_m,
+                },
+                Mapping::Simple {
+                    offset: d,
+                    region: r_d,
+                },
+            ) => {
+                let new_region = r_d.intersect(&r_m.shift(-d));
+                if new_region.is_empty() {
+                    Mapping::Empty
+                } else {
+                    Mapping::Simple {
+                        offset: m + d,
+                        region: new_region,
+                    }
+                }
+            }
+            (simple @ Mapping::Simple { .. }, Mapping::Composite(parts)) => {
+                let transformed: Vec<Mapping> =
+                    parts.iter().map(|p| simple.transformed_by(p)).collect();
+                let non_empty: Vec<Mapping> =
+                    transformed.into_iter().filter(|m| !m.is_empty()).collect();
+                match non_empty.len() {
+                    0 => Mapping::Empty,
+                    1 => non_empty.into_iter().next().unwrap(),
+                    _ => Mapping::Composite(non_empty),
+                }
+            }
+            (Mapping::Composite(parts), _) => {
+                let transformed: Vec<Mapping> =
+                    parts.iter().map(|m| m.transformed_by(dsp)).collect();
+                let non_empty: Vec<Mapping> =
+                    transformed.into_iter().filter(|m| !m.is_empty()).collect();
+                match non_empty.len() {
+                    0 => Mapping::Empty,
+                    1 => non_empty.into_iter().next().unwrap(),
+                    _ => Mapping::Composite(non_empty),
+                }
+            }
+        }
+    }
+
+    /// Build a displacement Mapping from a sequence of text delta operations.
+    ///
+    /// Each Retain advances position with zero displacement.
+    /// Each Insert adds displacement equal to text length.
+    /// Each Delete subtracts displacement equal to count.
+    ///
+    /// The result is a piecewise-constant Mapping that maps positions
+    /// in the OLD text to corresponding positions in the NEW text.
+    pub fn from_delta_ops(ops: &[crate::server::transport::protocol::TextDeltaOp]) -> Mapping {
+        let mut pos: i64 = 0;
+        let mut displacement: i64 = 0;
+        let mut parts: Vec<(i64, i64, i64)> = Vec::new();
+
+        for op in ops {
+            match op {
+                crate::server::transport::protocol::TextDeltaOp::Retain { count } => {
+                    let end = pos + *count as i64;
+                    if *count > 0 {
+                        parts.push((pos, end, displacement));
+                    }
+                    pos = end;
+                }
+                crate::server::transport::protocol::TextDeltaOp::Insert { text } => {
+                    let len = text.chars().count() as i64;
+                    displacement += len;
+                }
+                crate::server::transport::protocol::TextDeltaOp::Delete { count } => {
+                    let end = pos + *count as i64;
+                    displacement -= *count as i64;
+                    pos = end;
+                }
+            }
+        }
+
+        // Build mapping from the collected (start, end, offset) segments
+        // Include zero-offset segments so the full domain is covered
+        let mappings: Vec<Mapping> = parts
+            .iter()
+            .map(|(start, end, off)| Mapping::restricted(*off, XnRegion::interval(*start, *end)))
+            .collect();
+
+        match mappings.len() {
+            0 => Mapping::identity(),
+            1 => mappings.into_iter().next().unwrap(),
+            _ => {
+                let mut result = Mapping::Empty;
+                for m in mappings {
+                    result = result.combine(&m);
+                }
+                result
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -404,5 +514,144 @@ mod tests {
         assert_eq!(double_inv.of(0), Some(10));
         assert_eq!(double_inv.of(4), Some(14));
         assert_eq!(double_inv.of(5), None);
+    }
+
+    #[test]
+    fn transformed_by_simple_shift() {
+        let m = Mapping::restricted(10, XnRegion::interval(5, 15));
+        let dsp = Mapping::shift(3);
+        let m2 = m.transformed_by(&dsp);
+        assert_eq!(m2.of(2), Some(15));
+        assert_eq!(m2.of(7), Some(20));
+        assert_eq!(m2.of(12), None);
+    }
+
+    #[test]
+    fn transformed_by_identity_is_self() {
+        let m = Mapping::restricted(10, XnRegion::interval(0, 10));
+        let identity = Mapping::identity();
+        assert_eq!(m.transformed_by(&identity), m);
+    }
+
+    #[test]
+    fn transformed_by_empty_is_empty() {
+        let m = Mapping::restricted(10, XnRegion::interval(0, 10));
+        assert!(m.transformed_by(&Mapping::empty()).is_empty());
+        assert!(Mapping::empty().transformed_by(&m).is_empty());
+    }
+
+    #[test]
+    fn transformed_by_composite_insert() {
+        let m = Mapping::restricted(0, XnRegion::interval(0, 20));
+        let dsp = Mapping::Composite(vec![
+            Mapping::restricted(0, XnRegion::below(10)),
+            Mapping::restricted(5, XnRegion::above(10)),
+        ]);
+        let m2 = m.transformed_by(&dsp);
+        assert_eq!(m2.of(0), Some(0));
+        assert_eq!(m2.of(9), Some(9));
+        assert_eq!(m2.of(10), Some(15));
+        assert_eq!(m2.of(14), Some(19));
+        assert_eq!(m2.of(15), None);
+    }
+
+    #[test]
+    fn transformed_by_preserves_of_semantics() {
+        let m = Mapping::restricted(7, XnRegion::interval(3, 12));
+        let dsp = Mapping::shift(-2);
+        let m2 = m.transformed_by(&dsp);
+        for pos in 0..20 {
+            let expected = m.of(dsp.of(pos).unwrap_or(pos));
+            let actual = m2.of(pos);
+            assert_eq!(expected, actual, "mismatch at pos={pos}");
+        }
+    }
+
+    #[test]
+    fn transformed_by_composite_delete() {
+        let m = Mapping::restricted(0, XnRegion::interval(0, 20));
+        let dsp = Mapping::Composite(vec![
+            Mapping::restricted(0, XnRegion::below(5)),
+            Mapping::restricted(-3, XnRegion::above(8)),
+        ]);
+        let m2 = m.transformed_by(&dsp);
+        assert_eq!(m2.of(0), Some(0));
+        assert_eq!(m2.of(4), Some(4));
+        assert_eq!(m2.of(8), Some(5));
+        assert_eq!(m2.of(15), Some(12));
+    }
+
+    #[test]
+    fn from_delta_ops_insert() {
+        use crate::server::transport::protocol::TextDeltaOp;
+        let ops = vec![
+            TextDeltaOp::Retain { count: 5 },
+            TextDeltaOp::Insert {
+                text: "XXX".to_string(),
+            },
+            TextDeltaOp::Retain { count: 10 },
+        ];
+        let dsp = Mapping::from_delta_ops(&ops);
+        assert_eq!(dsp.of(0), Some(0));
+        assert_eq!(dsp.of(4), Some(4));
+        assert_eq!(dsp.of(5), Some(8));
+        assert_eq!(dsp.of(14), Some(17));
+    }
+
+    #[test]
+    fn from_delta_ops_delete() {
+        use crate::server::transport::protocol::TextDeltaOp;
+        let ops = vec![
+            TextDeltaOp::Retain { count: 5 },
+            TextDeltaOp::Delete { count: 3 },
+            TextDeltaOp::Retain { count: 10 },
+        ];
+        let dsp = Mapping::from_delta_ops(&ops);
+        assert_eq!(dsp.of(0), Some(0));
+        assert_eq!(dsp.of(4), Some(4));
+        assert_eq!(dsp.of(8), Some(5));
+        assert_eq!(dsp.of(17), Some(14));
+    }
+
+    #[test]
+    fn from_delta_ops_no_change() {
+        use crate::server::transport::protocol::TextDeltaOp;
+        let ops = vec![TextDeltaOp::Retain { count: 20 }];
+        let dsp = Mapping::from_delta_ops(&ops);
+        assert_eq!(dsp.of(0), Some(0));
+        assert_eq!(dsp.of(19), Some(19));
+    }
+
+    #[test]
+    fn from_delta_ops_insert_at_end() {
+        use crate::server::transport::protocol::TextDeltaOp;
+        let ops = vec![
+            TextDeltaOp::Retain { count: 10 },
+            TextDeltaOp::Insert {
+                text: " appended".to_string(),
+            },
+        ];
+        let dsp = Mapping::from_delta_ops(&ops);
+        assert_eq!(dsp.of(0), Some(0));
+        assert_eq!(dsp.of(9), Some(9));
+    }
+
+    #[test]
+    fn span_migration_via_algebra() {
+        use crate::server::transport::protocol::TextDeltaOp;
+        let ops = vec![
+            TextDeltaOp::Retain { count: 10 },
+            TextDeltaOp::Insert {
+                text: "INSERTED ".to_string(),
+            },
+            TextDeltaOp::Retain { count: 20 },
+        ];
+        let dsp = Mapping::from_delta_ops(&ops);
+        let old_span = XnRegion::interval(15, 25);
+        let new_span = dsp.of_region(&old_span);
+        assert!(new_span.contains(24));
+        assert!(new_span.contains(33));
+        assert!(!new_span.contains(23));
+        assert!(!new_span.contains(34));
     }
 }

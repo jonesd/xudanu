@@ -33,6 +33,14 @@ pub trait Region: Debug + Clone + PartialEq + Eq + Hash + Send + Sync + 'static 
     fn minus(&self, other: &Self) -> Self;
     fn is_simple(&self) -> bool;
     fn count(&self) -> Option<usize>;
+
+    /// Symmetric difference: (self - other) ∪ (other - self).
+    /// Returns the region of positions that are in exactly one of the two regions.
+    fn delta(&self, other: &Self) -> Self {
+        let a_minus_b = self.minus(other);
+        let b_minus_a = other.minus(self);
+        a_minus_b.union_with(&b_minus_a)
+    }
 }
 
 pub trait Dsp: Debug + Clone + PartialEq + Eq + Hash + Send + Sync + 'static {
