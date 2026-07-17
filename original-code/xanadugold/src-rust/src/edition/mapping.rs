@@ -85,6 +85,83 @@ impl Mapping {
         }
     }
 
+    /// Compute the "difference" between two mappings: result.apply(other.apply(x)) == self.apply(x).
+    /// For constant shifts: self.offset - other.offset.
+    /// Enables undoing a migration: original = migrated.minus(edit_dsp).
+    pub fn minus(&self, other: &Mapping) -> Mapping {
+        match (self, other) {
+            (Mapping::Empty, _) | (_, Mapping::Empty) => Mapping::Empty,
+            (
+                Mapping::Simple {
+                    offset: sa,
+                    region: ra,
+                },
+                Mapping::Simple {
+                    offset: sb,
+                    region: rb,
+                },
+            ) if ra == rb => Mapping::Simple {
+                offset: sa - sb,
+                region: ra.clone(),
+            },
+            _ => {
+                let other_inv = other.inverse();
+                self.compose_with(&other_inv)
+            }
+        }
+    }
+
+    /// Compose two mappings: result.apply(x) == self.apply(other.apply(x)).
+    pub fn compose_with(&self, other: &Mapping) -> Mapping {
+        match (self, other) {
+            (Mapping::Empty, _) | (_, Mapping::Empty) => Mapping::Empty,
+            (Mapping::Simple { offset: 0, region }, _) if region.is_full() => other.clone(),
+            (_, Mapping::Simple { offset: 0, region }) if region.is_full() => self.clone(),
+            (
+                Mapping::Simple {
+                    offset: sa,
+                    region: ra,
+                },
+                Mapping::Simple {
+                    offset: sb,
+                    region: rb,
+                },
+            ) => {
+                // other maps rb → rb+sb, self maps ra → ra+sa
+                // composed maps (rb ∩ ra-sb) → (rb ∩ ra-sb) + sa + sb
+                let composed_region = rb.intersect(&ra.shift(-sb));
+                if composed_region.is_empty() {
+                    Mapping::Empty
+                } else {
+                    Mapping::Simple {
+                        offset: sa + sb,
+                        region: composed_region,
+                    }
+                }
+            }
+            (simple @ Mapping::Simple { .. }, Mapping::Composite(parts)) => {
+                let composed: Vec<Mapping> = parts.iter().map(|p| simple.compose_with(p)).collect();
+                let non_empty: Vec<Mapping> =
+                    composed.into_iter().filter(|m| !m.is_empty()).collect();
+                match non_empty.len() {
+                    0 => Mapping::Empty,
+                    1 => non_empty.into_iter().next().unwrap(),
+                    _ => Mapping::Composite(non_empty),
+                }
+            }
+            (Mapping::Composite(parts), _) => {
+                let composed: Vec<Mapping> = parts.iter().map(|m| m.compose_with(other)).collect();
+                let non_empty: Vec<Mapping> =
+                    composed.into_iter().filter(|m| !m.is_empty()).collect();
+                match non_empty.len() {
+                    0 => Mapping::Empty,
+                    1 => non_empty.into_iter().next().unwrap(),
+                    _ => Mapping::Composite(non_empty),
+                }
+            }
+        }
+    }
+
     pub fn combine(&self, other: &Mapping) -> Mapping {
         if self.is_empty() {
             return other.clone();
@@ -653,5 +730,64 @@ mod tests {
         assert!(new_span.contains(33));
         assert!(!new_span.contains(23));
         assert!(!new_span.contains(34));
+    }
+
+    #[test]
+    fn minus_constant_shift() {
+        let a = Mapping::shift(10);
+        let b = Mapping::shift(3);
+        let diff = a.minus(&b);
+        assert_eq!(diff.of(0), Some(7));
+    }
+
+    #[test]
+    fn minus_same_region() {
+        // a = shift by 10, b = shift by 3, both over [0,20)
+        // a.minus(b): compose a with b.inverse()
+        // b.inverse() = { offset: -3, region: [3,23) } (shifted by +3)
+        // a.compose_with(b_inv): region = [3,23) ∩ [0,20).shift(3) = [3,23) ∩ [3,23) = [3,23)
+        // offset = 10 + (-3) = 7
+        let a = Mapping::restricted(10, XnRegion::interval(0, 20));
+        let b = Mapping::restricted(3, XnRegion::interval(0, 20));
+        let diff = a.minus(&b);
+        let result = diff.of(5);
+        // 5 is in [3,23) so result = 5 + 7 = 12
+        assert_eq!(result, Some(12));
+    }
+
+    #[test]
+    fn compose_with_identity() {
+        let m = Mapping::restricted(5, XnRegion::interval(0, 10));
+        assert_eq!(m.compose_with(&Mapping::identity()), m);
+        assert_eq!(Mapping::identity().compose_with(&m), m);
+    }
+
+    #[test]
+    fn compose_two_shifts() {
+        let a = Mapping::shift(3);
+        let b = Mapping::shift(5);
+        let composed = a.compose_with(&b);
+        assert_eq!(composed.of(0), Some(8));
+    }
+
+    #[test]
+    fn minus_undoes_migration() {
+        let edit_dsp = Mapping::shift(10);
+        let migrated = Mapping::shift(20);
+        let original = migrated.minus(&edit_dsp);
+        assert_eq!(original.of(0), Some(10));
+    }
+
+    #[test]
+    fn compose_with_composite() {
+        let simple = Mapping::restricted(0, XnRegion::interval(0, 30));
+        let composite = Mapping::Composite(vec![
+            Mapping::restricted(0, XnRegion::below(10)),
+            Mapping::restricted(5, XnRegion::above(10)),
+        ]);
+        let result = simple.compose_with(&composite);
+        assert_eq!(result.of(0), Some(0));
+        assert_eq!(result.of(9), Some(9));
+        assert_eq!(result.of(15), Some(20));
     }
 }
