@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backup &amp; Restore &mdash; Xudanu</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.warn{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warn strong{color:#f85149}
+.success{background:rgba(63,185,80,0.06);border-left:3px solid #3fb950;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.success strong{color:#3fb950}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin-bottom:40px}
+.toc-title{font-size:13px;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px}
+.toc ul{list-style:none;padding:0}
+.toc li{padding:3px 0}
+.toc a{font-size:14px}
+table{border-collapse:collapse;margin:16px 0;width:100%;max-width:780px}
+th,td{border:1px solid #21262d;padding:8px 12px;text-align:left;font-size:14px}
+th{background:#161b22;color:#8b949e;font-weight:600}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Backup &amp; Restore</h1>
+<p class="subtitle">Offsite backup, corruption repair, and full disaster recovery for the Xudanu chunk store</p>
+
+<div class="toc">
+<div class="toc-title">Contents</div>
+<ul>
+<li><a href="#architecture">How Chunks Work</a></li>
+<li><a href="#backup">Backing Up Offsite</a></li>
+<li><a href="#repair">Repairing Corrupt Chunks</a></li>
+<li><a href="#restore">Full Restore</a></li>
+<li><a href="#merge">Merge Restore</a></li>
+<li><a href="#verify">Verification</a></li>
+<li><a href="#multiple">Multiple Backup Locations</a></li>
+<li><a href="#automation">Automation &amp; Cron</a></li>
+<li><a href="#corruption">What Causes Corruption</a></li>
+</ul>
+</div>
+
+<h2 id="architecture">How Chunks Work</h2>
+
+<p>Xudanu stores all data as content-addressed chunks. The chunk filename <strong>IS</strong> its BLAKE3 hash:</p>
+
+<pre><code>data/chunks/
+  00/004fdcb3...3817c.xchunk    ← hash starts with "00"
+  61/61c8d5b2...8746a.xchunk    ← hash starts with "61"
+  ab/abcdef12...34567.xchunk</code></pre>
+
+<p>This means:</p>
+<ul>
+<li><strong>Verification is free</strong>: compute BLAKE3 of file contents, compare to filename. No separate hash database needed.</li>
+<li><strong>Deduplication is automatic</strong>: same content = same hash = same file. rsync skips it.</li>
+<li><strong>Corruption is detectable</strong>: if a file's content doesn't match its filename hash, it's corrupt.</li>
+<li><strong>Repair is simple</strong>: copy the correct file from backup. Same hash = same path.</li>
+</ul>
+
+<div class="note">
+<strong>What gets backed up:</strong> chunks (all works, editions, links, annotations, clubs), manifest.json (dual slots), WAL, key history, security logs, blobs, attribution data.
+</div>
+
+<h2 id="backup">Backing Up Offsite</h2>
+
+<h3>Single destination</h3>
+<pre><code># Local disk
+./scripts/backup-offsite.sh data /mnt/backup/xudanu --verify
+
+# Remote server via SSH
+./scripts/backup-offsite.sh data user@remote:/backups/xudanu</code></pre>
+
+<h3>Multiple destinations</h3>
+<pre><code># Backup to local + remote simultaneously
+./scripts/backup-offsite.sh data /mnt/backup/xudanu user@remote:/backups/xudanu --verify</code></pre>
+
+<h3>What the backup does</h3>
+<ol>
+<li>Copies manifest and metadata (small, fast)</li>
+<li>Syncs chunks via rsync (incremental — only new/changed chunks transfer)</li>
+<li>Syncs blobs (if any)</li>
+<li>Syncs WAL and attribution data</li>
+<li>Writes <code>.backup-info</code> with timestamp and chunk count</li>
+<li>Verifies all chunks (with <code>--verify</code>)</li>
+</ol>
+
+<div class="success">
+<strong>Incremental:</strong> rsync only copies chunks that are new or changed. For a server with 10,000 chunks where 5 new chunks were added, only 5 files transfer.
+</div>
+
+<h2 id="repair">Repairing Corrupt Chunks</h2>
+
+<p>If you suspect corruption (server reports deserialization errors, chunks fail to load):</p>
+
+<pre><code># Scan all chunks, verify BLAKE3 hash, repair from backup
+./scripts/restore-offsite.sh /mnt/backup/xudanu data repair</code></pre>
+
+<h3>What repair does</h3>
+<ol>
+<li>Scans every chunk file in <code>data/chunks/</code></li>
+<li>Computes BLAKE3 hash of file contents</li>
+<li>Compares to filename (the expected hash)</li>
+<li>If mismatch: copies correct version from backup</li>
+<li>If file is empty/missing: copies from backup</li>
+<li>Reports: OK count, corrupt count, repaired count, unrepairable count</li>
+</ol>
+
+<div class="note">
+<strong>BLAKE3 verification requires:</strong> <code>pip3 install blake3</code>. Without it, only file-size checking is performed.
+</div>
+
+<h3>Example output</h3>
+<pre><code>Verifying target chunks via BLAKE3 (hash = filename)...
+
+  CORRUPT: 004fdcb3...3817c
+    -> Repaired from backup
+  Checked 500 / 549...
+
+Repair summary:
+  OK:           548
+  Empty:        0
+  Corrupt:      1
+  Repaired:     1
+  Unrepairable: 0</code></pre>
+
+<h2 id="restore">Full Restore</h2>
+
+<p>For disaster recovery — restore everything from backup to a fresh directory:</p>
+
+<pre><code># Restore to a new data directory
+./scripts/restore-offsite.sh /mnt/backup/xudanu /path/to/new-data full
+
+# Or overwrite existing (requires confirmation)
+./scripts/restore-offsite.sh /mnt/backup/xudanu data full</code></pre>
+
+<h3>What full restore does</h3>
+<ol>
+<li>Copies manifest.json and all manifest backups</li>
+<li>Copies key_history.json and server.key</li>
+<li>Copies security logs</li>
+<li>rsyncs all chunks from backup</li>
+<li>Copies blobs, WAL, and attribution</li>
+<li>Reports final chunk count</li>
+</ol>
+
+<div class="warn">
+<strong>After restore:</strong> Run <code>xudanu-server verify &lt;data_dir&gt;</code> to confirm the server can read all data. The server performs its own integrity check on startup.
+</div>
+
+<h2 id="merge">Merge Restore</h2>
+
+<p>Add only missing chunks from backup without touching existing data:</p>
+
+<pre><code>./scripts/restore-offsite.sh /mnt/backup/xudanu data merge</code></pre>
+
+<p>Useful when:</p>
+<ul>
+<li>A few chunks were accidentally deleted</li>
+<li>You want to add chunks from an older backup</li>
+<li>The server is running and you don't want to stop it</li>
+</ul>
+
+<h2 id="verify">Verification</h2>
+
+<p>Standalone verification (no backup needed):</p>
+
+<pre><code># Check all chunks — verify BLAKE3, find empties, check manifest references
+./scripts/verify-chunks.sh data
+
+# Find and remove corrupt/empty chunks
+./scripts/verify-chunks.sh data --fix
+
+# Save report to file
+./scripts/verify-chunks.sh data --report verification.txt</code></pre>
+
+<h3>What verification checks</h3>
+<ol>
+<li><strong>Chunk integrity</strong>: BLAKE3 hash of each file vs filename</li>
+<li><strong>Empty files</strong>: zero-byte chunks</li>
+<li><strong>Manifest references</strong>: all chunks referenced by manifest exist on disk</li>
+<li><strong>Orphaned chunks</strong>: chunks on disk not referenced by manifest</li>
+<li><strong>Dual manifest slots</strong>: backup manifest files exist</li>
+</ol>
+
+<h2 id="multiple">Multiple Backup Locations</h2>
+
+<p>For redundancy, back up to multiple destinations:</p>
+
+<pre><code># Daily: local NAS
+./scripts/backup-offsite.sh data /nas/xudanu --verify
+
+# Weekly: remote server
+./scripts/backup-offsite.sh data user@offsite:/backups/xudanu --verify
+
+# Monthly: cold storage (S3, Glacier, tape)
+aws s3 sync data/chunks/ s3://my-bucket/xudanu/chunks/
+aws s3 cp data/manifest.json s3://my-bucket/xudanu/manifest.json</code></pre>
+
+<p>For restore, try each location until the chunk is found:</p>
+
+<pre><code># Try local backup first
+./scripts/restore-offsite.sh /nas/xudanu data repair
+
+# If still missing, try remote
+./scripts/restore-offsite.sh user@offsite:/backups/xudanu data merge</code></pre>
+
+<h2 id="automation">Automation &amp; Cron</h2>
+
+<h3>Daily backup via cron</h3>
+<pre><code># crontab -e
+0 2 * * * /path/to/scripts/backup-offsite.sh /path/to/data /mnt/backup/xudanu >> /var/log/xudanu-backup.log 2>&1
+
+# Weekly remote backup
+0 3 * * 0 /path/to/scripts/backup-offsite.sh /path/to/data user@remote:/backups/xudanu >> /var/log/xudanu-backup.log 2>&1</code></pre>
+
+<h3>Weekly verification</h3>
+<pre><code>0 4 * * 0 /path/to/scripts/verify-chunks.sh /path/to/data --report /var/log/xudanu-verify.log</code></pre>
+
+<h3>Pre-backup checkpoint</h3>
+<p>For maximum consistency, trigger a checkpoint before backup:</p>
+<pre><code># Force checkpoint via admin API, then backup
+curl -s http://127.0.0.1:8080/health | grep -q '"status"' && \
+    ./scripts/backup-offsite.sh data /mnt/backup/xudanu --verify</code></pre>
+
+<h2 id="corruption">What Causes Corruption</h2>
+
+<table>
+<tr><th>Cause</th><th>Prevention</th><th>Recovery</th></tr>
+<tr><td>Disk failure (bad sectors)</td><td>RAID, SMART monitoring</td><td>Repair from backup</td></tr>
+<tr><td>Power loss during write</td><td>UPS, WAL + dual manifest</td><td>Server replays WAL on startup</td></tr>
+<tr><td>Filesystem corruption</td><td>Journaling FS (ext4, ZFS)</td><td>Verify + repair from backup</td></tr>
+<tr><td>Accidental deletion</td><td>Permissions, read-only mount</td><td>Merge restore from backup</td></tr>
+<tr><td>Memory corruption (bit flip)</td><td>ECC RAM</td><td>BLAKE3 detects mismatch</td></tr>
+<tr><td>Ransomware / malicious</td><td>Immutable backup (WORM)</td><td>Full restore from cold storage</td></tr>
+</table>
+
+<div class="note">
+<strong>Xudanu's built-in protections:</strong>
+<ul style="margin:8px 0 0 16px">
+<li>Dual manifest slots — crash during manifest write keeps the old one</li>
+<li>WAL (Write-Ahead Log) — replayed on startup to restore in-memory state</li>
+<li>BLAKE3 content addressing — corruption is always detectable</li>
+<li>Orphaned chunk cleanup — GC removes unreferenced chunks</li>
+<li>Server <code>verify</code> subcommand — full integrity scan</li>
+</ul>
+</div>
+
+</div>
+</body>
+</html>
