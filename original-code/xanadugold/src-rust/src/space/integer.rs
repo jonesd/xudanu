@@ -1,6 +1,10 @@
 use super::traits::*;
 use crate::edition::xn_region::XnRegion;
 
+/// # Deprecated
+/// Use `edition::space_bridge::IntegerSpace` and `edition::xn_region::XnRegion` directly.
+/// This wrapper exists for backward compatibility with phase3_tests.
+/// `XnRegion` now implements `Region` directly via `space_bridge`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct IntegerSpace;
 

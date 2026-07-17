@@ -2,12 +2,12 @@ mod arrangement;
 mod cross;
 mod cross_n;
 mod filter;
-mod integer;
-mod mapping;
+pub mod integer;
+pub mod mapping;
 mod order;
 mod real;
 mod sequence;
-mod traits;
+pub mod traits;
 
 #[cfg(test)]
 mod phase3_tests;

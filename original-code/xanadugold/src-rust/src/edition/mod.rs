@@ -27,6 +27,7 @@ pub mod recorder;
 pub mod region_index;
 pub mod shared_mapping;
 pub mod snapshot;
+pub mod space_bridge;
 pub mod three_way;
 pub mod transclusion;
 pub mod work;
