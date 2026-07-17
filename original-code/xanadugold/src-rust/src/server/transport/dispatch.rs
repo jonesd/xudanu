@@ -1634,6 +1634,41 @@ fn dispatch_inner(
                 .collect();
             Ok(ResponseValue::SharedRegions(payloads))
         }
+        WireRequest::WorkDiffRegions { work_a, work_b } => {
+            srv.ensure_can_read(session_id, work_a)?;
+            srv.ensure_can_read(session_id, work_b)?;
+            let result = srv.work_diff_regions(work_a, work_b);
+            let shared: Vec<serde_json::Value> = result
+                .shared
+                .iter()
+                .map(|s| {
+                    serde_json::json!({
+                        "start_a": s.start_a, "end_a": s.end_a,
+                        "start_b": s.start_b, "end_b": s.end_b,
+                        "text": s.text,
+                    })
+                })
+                .collect();
+            let changed_a: Vec<serde_json::Value> = result
+                .changed_a
+                .iter()
+                .map(|(s, e)| serde_json::json!([s, e]))
+                .collect();
+            let changed_b: Vec<serde_json::Value> = result
+                .changed_b
+                .iter()
+                .map(|(s, e)| serde_json::json!([s, e]))
+                .collect();
+            let val = serde_json::json!({
+                "shared": shared,
+                "changed_a": changed_a,
+                "changed_b": changed_b,
+                "text_len_a": result.text_len_a,
+                "text_len_b": result.text_len_b,
+                "coverage": result.coverage,
+            });
+            Ok(ResponseValue::JsonValue(val))
+        }
         WireRequest::RenderTransclusions { work_id } => {
             srv.ensure_can_read(session_id, work_id)?;
             let elements = srv.render_transclusions(work_id)?;

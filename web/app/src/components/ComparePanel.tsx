@@ -210,12 +210,19 @@ export function useCompare(
       setTargetLabel(`Document ${wid}`);
       setLoading(true);
       try {
-        const regions = await client.findSharedRegions(currentWorkId, wid);
-        console.log(`[compare] findSharedRegions returned ${regions.length} regions`);
-        if (regions.length > 0) console.log("[compare] first region:", regions[0]);
-        setSharedRegions(regions.map(r => ({ startA: r.start_a, endA: r.end_a, startB: r.start_b, endB: r.end_b })));
-        setLeftRegions(regions.map((r, i) => ({ start: r.start_a, end: r.end_a, cidx: i % 8 })));
-        setRightRegions(regions.map((r, i) => ({ start: r.start_b, end: r.end_b, cidx: i % 8 })));
+        const diffResult = await client.workDiffRegions(currentWorkId, wid);
+        if (diffResult && diffResult.shared.length > 0) {
+          console.log(`[compare] workDiffRegions: ${diffResult.shared.length} shared, coverage=${(diffResult.coverage * 100).toFixed(1)}%`);
+          setSharedRegions(diffResult.shared.map(s => ({ startA: s.start_a, endA: s.end_a, startB: s.start_b, endB: s.end_b })));
+          setLeftRegions(diffResult.shared.map((s, i) => ({ start: s.start_a, end: s.end_a, cidx: i % 8 })));
+          setRightRegions(diffResult.shared.map((s, i) => ({ start: s.start_b, end: s.end_b, cidx: i % 8 })));
+        } else {
+          const regions = await client.findSharedRegions(currentWorkId, wid);
+          console.log(`[compare] findSharedRegions fallback: ${regions.length} regions`);
+          setSharedRegions(regions.map(r => ({ startA: r.start_a, endA: r.end_a, startB: r.start_b, endB: r.end_b })));
+          setLeftRegions(regions.map((r, i) => ({ start: r.start_a, end: r.end_a, cidx: i % 8 })));
+          setRightRegions(regions.map((r, i) => ({ start: r.start_b, end: r.end_b, cidx: i % 8 })));
+        }
       } catch (e) {
         console.error("Compare failed:", e);
         setLeftRegions([]);

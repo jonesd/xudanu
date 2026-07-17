@@ -393,6 +393,25 @@ pub struct PendingAttribution {
     pub placed_by: Option<crate::edition::provenance::TransclusionInfo>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct SharedInterval {
+    pub start_a: i64,
+    pub end_a: i64,
+    pub start_b: i64,
+    pub end_b: i64,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct WorkDiffResult {
+    pub shared: Vec<SharedInterval>,
+    pub changed_a: Vec<(i64, i64)>,
+    pub changed_b: Vec<(i64, i64)>,
+    pub text_len_a: usize,
+    pub text_len_b: usize,
+    pub coverage: f64,
+}
+
 pub struct ServerHealth {
     pub operation_count: u64,
     pub active_recorders: usize,
@@ -9854,6 +9873,68 @@ impl Server {
             start += idx + excerpt.len();
         }
         positions
+    }
+
+    /// Compute diff regions between two works using space algebra.
+    /// Returns shared regions (content-identical) and changed intervals
+    /// using XnRegion::delta and simple_regions for clean decomposition.
+    pub fn work_diff_regions(&self, work_a: BeId, work_b: BeId) -> WorkDiffResult {
+        let text_a = match self.work_text(work_a) {
+            Ok(t) => t,
+            Err(_) => return WorkDiffResult::default(),
+        };
+        let text_b = match self.work_text(work_b) {
+            Ok(t) => t,
+            Err(_) => return WorkDiffResult::default(),
+        };
+
+        let shared = self.find_shared_regions(work_a, work_b);
+
+        let mut shared_a = XnRegion::empty();
+        let mut shared_b = XnRegion::empty();
+        let mut shared_list: Vec<SharedInterval> = Vec::new();
+
+        for (sa, ea, sb, eb, text) in &shared {
+            if sa < ea && sb < eb {
+                let region_a = XnRegion::interval(*sa, *ea);
+                let region_b = XnRegion::interval(*sb, *eb);
+                shared_a = shared_a.union(&region_a);
+                shared_b = shared_b.union(&region_b);
+                shared_list.push(SharedInterval {
+                    start_a: *sa,
+                    end_a: *ea,
+                    start_b: *sb,
+                    end_b: *eb,
+                    text: text.clone(),
+                });
+            }
+        }
+
+        let full_a = XnRegion::interval(0, text_a.chars().count() as i64);
+        let full_b = XnRegion::interval(0, text_b.chars().count() as i64);
+
+        let changed_a = full_a.minus(&shared_a);
+        let changed_b = full_b.minus(&shared_b);
+
+        let changed_intervals_a: Vec<(i64, i64)> = changed_a.simple_regions();
+        let changed_intervals_b: Vec<(i64, i64)> = changed_b.simple_regions();
+
+        let shared_count = shared_a.count().unwrap_or(0);
+        let changed_count = changed_a.count().unwrap_or(0);
+        let coverage = if text_a.chars().count() > 0 {
+            shared_count as f64 / text_a.chars().count() as f64
+        } else {
+            0.0
+        };
+
+        WorkDiffResult {
+            shared: shared_list,
+            changed_a: changed_intervals_a,
+            changed_b: changed_intervals_b,
+            text_len_a: text_a.chars().count(),
+            text_len_b: text_b.chars().count(),
+            coverage,
+        }
     }
 
     fn work_text(&self, work_id: u64) -> Result<String, ServerError> {

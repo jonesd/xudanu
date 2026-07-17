@@ -255,6 +255,21 @@ export interface SharedRegion {
   text: string;
 }
 
+export interface WorkDiffResult {
+  shared: Array<{
+    start_a: number;
+    end_a: number;
+    start_b: number;
+    end_b: number;
+    text: string;
+  }>;
+  changed_a: [number, number][];
+  changed_b: [number, number][];
+  text_len_a: number;
+  text_len_b: number;
+  coverage: number;
+}
+
 export interface BacklinkEntry {
   source_work_id: number;
   link_id: number;
@@ -960,6 +975,19 @@ export class CrdtSyncClient {
     const val = extractValue(resp);
     if (Array.isArray(val)) return val as SharedRegion[];
     return [];
+  }
+
+  async workDiffRegions(workA: number, workB: number): Promise<WorkDiffResult | null> {
+    try {
+      const resp = await this.sendRequest("work_diff_regions", { work_a: workA, work_b: workB });
+      const val = extractValue(resp);
+      if (val && typeof val === "object") {
+        return val as WorkDiffResult;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   async fetchRevision(workId: number, revision: number): Promise<string> {

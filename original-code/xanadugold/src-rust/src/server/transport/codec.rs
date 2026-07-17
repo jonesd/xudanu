@@ -1650,6 +1650,19 @@ impl JsonCodec {
                     filter_text: args.filter_text,
                 })
             }
+            OperationCode::WorkDiffRegions => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_a: BeId,
+                    work_b: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkDiffRegions {
+                    work_a: args.work_a,
+                    work_b: args.work_b,
+                })
+            }
             OperationCode::BlobUpload => {
                 #[derive(Deserialize)]
                 struct Args {

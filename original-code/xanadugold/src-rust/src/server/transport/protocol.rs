@@ -198,6 +198,7 @@ pub enum OperationCode {
     FindWorksForContent,
     FindTextTranscluders,
     FindSharedRegions,
+    WorkDiffRegions,
 
     ServerStats,
 
@@ -498,6 +499,7 @@ impl OperationCode {
             0x0802 => Some(OperationCode::FindWorksForContent),
             0x0803 => Some(OperationCode::FindTextTranscluders),
             0x0804 => Some(OperationCode::FindSharedRegions),
+            0x0805 => Some(OperationCode::WorkDiffRegions),
 
             0x0805 => Some(OperationCode::ProvenanceAncestry),
 
@@ -786,6 +788,7 @@ impl OperationCode {
             OperationCode::FindWorksForContent => 0x0802,
             OperationCode::FindTextTranscluders => 0x0803,
             OperationCode::FindSharedRegions => 0x0804,
+            OperationCode::WorkDiffRegions => 0x0805,
 
             OperationCode::ServerStats => 0x0601,
 
@@ -1393,6 +1396,10 @@ pub enum WireRequest {
         work_a: BeId,
         work_b: BeId,
         filter_text: Option<String>,
+    },
+    WorkDiffRegions {
+        work_a: BeId,
+        work_b: BeId,
     },
 
     ServerStats,
@@ -2118,6 +2125,7 @@ pub enum ResponseValue {
     TextTransclusionResults(Vec<TextTransclusionResultPayload>),
     RenderedTransclusions(Vec<RenderedElementPayload>),
     SharedRegions(Vec<SharedRegionPayload>),
+    JsonValue(serde_json::Value),
     BlobMeta(BlobMetaPayload),
     BlobData(Vec<u8>),
     BlobStatsInfo(BlobStatsPayload),
