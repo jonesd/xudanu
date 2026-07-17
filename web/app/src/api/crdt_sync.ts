@@ -1052,6 +1052,14 @@ export class CrdtSyncClient {
     }
   }
 
+  async workMerge(baseWorkId: number, workAId: number, workBId: number): Promise<number> {
+    const resp = await this.sendRequest("work_merge", { base_work_id: baseWorkId, work_a_id: workAId, work_b_id: workBId });
+    const val = extractValue(resp);
+    if (typeof val === "number") return val;
+    const r = val as Record<string, unknown>;
+    return (r.work_id as number) || (r.value as number) || 0;
+  }
+
   async rangeTranscluders(workId: number): Promise<{ edition_ids: number[]; work_ids: number[] }> {
     const resp = await this.sendRequest("range_transcluders", { work_id: workId });
     const val = extractValue(resp) as Record<string, unknown>;

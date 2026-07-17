@@ -77,11 +77,30 @@ function findParagraphMatches(
   const leftRegions: TextRegion[] = [];
   const rightRegions: TextRegion[] = [];
 
+  // Track actual separator lengths by scanning the original text
+  const leftSepLens: number[] = [];
+  let scanLeft = 0;
+  for (let i = 0; i < leftParas.length - 1; i++) {
+    scanLeft += leftParas[i].length;
+    const sepMatch = leftText.slice(scanLeft).match(/^\n\s*\n/);
+    leftSepLens.push(sepMatch ? sepMatch[0].length : 2);
+    scanLeft += leftSepLens[leftSepLens.length - 1];
+  }
+
+  const rightSepLens: number[] = [];
+  let scanRight = 0;
+  for (let i = 0; i < rightParas.length - 1; i++) {
+    scanRight += rightParas[i].length;
+    const sepMatch = rightText.slice(scanRight).match(/^\n\s*\n/);
+    rightSepLens.push(sepMatch ? sepMatch[0].length : 2);
+    scanRight += rightSepLens[rightSepLens.length - 1];
+  }
+
   let leftOffset = 0;
   for (let li = 0; li < leftParas.length; li++) {
     const lTrim = leftParas[li].trim();
     if (lTrim.length < 10) {
-      leftOffset += leftParas[li].length + (li < leftParas.length - 1 ? 1 : 0);
+      leftOffset += leftParas[li].length + (li < leftSepLens.length ? leftSepLens[li] : 0);
       continue;
     }
     let bestRi = -1;
@@ -90,7 +109,7 @@ function findParagraphMatches(
     const offsets: number[] = [];
     for (let ri = 0; ri < rightParas.length; ri++) {
       offsets.push(rightOffset);
-      rightOffset += rightParas[ri].length + (ri < rightParas.length - 1 ? 1 : 0);
+      rightOffset += rightParas[ri].length + (ri < rightSepLens.length ? rightSepLens[ri] : 0);
       if (rightUsed.has(ri)) continue;
       const rTrim = rightParas[ri].trim();
       const sim = rTrim === lTrim ? 1.0 : fuzzy ? wordSimilarity(lTrim, rTrim) : 0;
@@ -109,7 +128,7 @@ function findParagraphMatches(
         cidx,
       });
     }
-    leftOffset += leftParas[li].length + (li < leftParas.length - 1 ? 1 : 0);
+    leftOffset += leftParas[li].length + (li < leftSepLens.length ? leftSepLens[li] : 0);
   }
   return { leftRegions, rightRegions };
 }
@@ -443,7 +462,8 @@ function DiffView({ segments }: { segments: DiffSegment[] }) {
         lineHeight: 1.7,
         padding: 16,
         overflow: "auto",
-        maxHeight: "55vh",
+        flex: 1,
+        minHeight: 0,
       }}
     >
       {segments.map((seg, i) => {

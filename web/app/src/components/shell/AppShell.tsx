@@ -30,6 +30,7 @@ import { RelatedFooter } from "../RelatedFooter";
 import { PerspectiveView } from "../PerspectiveView";
 import { CompoundBuilder } from "../CompoundBuilder";
 import { AdminDashboard } from "../AdminDashboard";
+import { MergePanel } from "../MergePanel";
 import { useCompare, CompareHeader, CompareSplitView } from "../ComparePanel";
 import { buildProvValidatorHtml } from "../../prov-validator";
 import "../../app-shell.css";
@@ -73,6 +74,7 @@ export function AppShell() {
   const [showPerspective, setShowPerspective] = useState(false);
   const [showCompoundBuilder, setShowCompoundBuilder] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
+  const [showMerge, setShowMerge] = useState(false);
   const [crossServerBacklinks, setCrossServerBacklinks] = useState<CrossServerBacklinkPayload[]>([]);
   const [annotationTarget, setAnnotationTarget] = useState<{ start: number; end: number } | null>(null);
   const [isPublished, setIsPublished] = useState(false);
@@ -1132,6 +1134,14 @@ export function AppShell() {
               <button
                 type="button"
                 className="publish-toggle"
+                onClick={() => setShowMerge(true)}
+                title="3-way merge two documents using a common base"
+              >
+                Merge
+              </button>
+              <button
+                type="button"
+                className="publish-toggle"
                 onClick={() => setShowPerspective(true)}
                 title="Open perspective view showing connected documents"
               >
@@ -1527,6 +1537,19 @@ export function AppShell() {
       <div style={{ display: showAdmin ? "block" : "none" }}>
         <AdminDashboard onClose={() => setShowAdmin(false)} />
       </div>
+
+      {showMerge && workBeId !== null && (
+        <MergePanel
+          client={clientRef.current}
+          currentWorkId={workBeId}
+          works={works}
+          onClose={() => setShowMerge(false)}
+          onMerged={(newWorkId) => {
+            setShowMerge(false);
+            selectWork(newWorkId);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -2515,8 +2515,8 @@ body {
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background: var(--bg2);
-  border-bottom: 1px solid var(--border);
+  background: #fafafa;
+  border-bottom: 1px solid #d0d0d0;
   font-size: 12px;
 }
 .compare-title {
@@ -2524,19 +2524,19 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-size: 10px;
-  color: var(--fg3);
+  color: #555;
 }
 .compare-select {
   font-size: 12px;
-  padding: 2px 6px;
-  border: 1px solid var(--border);
+  padding: 4px 8px;
+  border: 1px solid #c0c0c0;
   border-radius: 4px;
-  background: var(--bg);
-  color: var(--fg);
+  background: #fff;
+  color: #222;
 }
 .compare-target-label {
   font-size: 12px;
-  color: var(--fg);
+  color: #222;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -2544,18 +2544,18 @@ body {
 .compare-close-target {
   background: none;
   border: none;
-  color: var(--fg3);
+  color: #666;
   cursor: pointer;
   font-size: 11px;
   padding: 0 4px;
 }
-.compare-close-target:hover { color: var(--fg); }
+.compare-close-target:hover { color: #222; }
 .compare-legend {
   display: flex;
   gap: 12px;
   margin-left: auto;
   font-size: 10px;
-  color: var(--fg3);
+  color: #666;
 }
 .compare-legend-item {
   display: flex;
@@ -2579,7 +2579,7 @@ body {
 .compare-close {
   background: var(--bg3);
   border: none;
-  color: var(--fg);
+  color: #222;
   padding: 2px 8px;
   border-radius: 4px;
   cursor: pointer;
@@ -2594,17 +2594,17 @@ body {
   overflow: hidden;
 }
 .compare-mode-tab {
-  background: var(--bg);
+  background: #fff;
   border: none;
-  color: var(--fg3);
+  color: #555;
   padding: 3px 10px;
   font-size: 11px;
   cursor: pointer;
 }
-.compare-mode-tab:hover { color: var(--fg); }
+.compare-mode-tab:hover { color: #222; }
 .compare-mode-tab.active {
-  background: var(--bg3);
-  color: var(--fg);
+  background: #e8e8e8;
+  color: #1a1a2e;
   font-weight: 600;
 }
 .compare-split {
@@ -2628,7 +2628,7 @@ body {
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 1px;
-  color: var(--fg3);
+  color: #666;
   background: var(--bg2);
   padding: 2px 6px;
   border-radius: 3px;
@@ -2661,12 +2661,12 @@ body {
 .compare-empty {
   padding: 20px;
   text-align: center;
-  color: var(--fg3);
+  color: #666;
   font-size: 13px;
 }
 .compare-loading {
   padding: 20px;
-  color: var(--fg3);
+  color: #666;
 }
 canvas._bridge {
   position: absolute;
