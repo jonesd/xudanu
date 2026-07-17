@@ -570,18 +570,20 @@ function DiffView({ segments }: { segments: DiffSegment[] }) {
         overflow: "auto",
         flex: 1,
         minHeight: 0,
+        background: "#fff",
+        color: "#333",
       }}
     >
       {segments.map((seg, i) => {
         if (seg.type === "shared")
           return (
-            <span key={i} style={{ background: "#e8f4fd", color: "#1565c0", borderRadius: 2, borderBottom: "1px solid #90caf9" }}>
+            <span key={i} style={{ color: "#1565c0", borderBottom: "1px solid #90caf9" }}>
               {seg.text}
             </span>
           );
         if (seg.type === "added")
           return (
-            <span key={i} style={{ background: "#f0f9f0", color: "#3a7a3a", borderRadius: 2 }}>
+            <span key={i} style={{ color: "#2e7d32", fontWeight: 500 }}>
               {seg.text}
             </span>
           );
@@ -589,12 +591,12 @@ function DiffView({ segments }: { segments: DiffSegment[] }) {
           return (
             <span
               key={i}
-              style={{ background: "#fdf2f2", color: "#a04040", textDecoration: "line-through", borderRadius: 2 }}
+              style={{ color: "#c62828", textDecoration: "line-through", opacity: 0.7 }}
             >
               {seg.text}
             </span>
           );
-        return <span key={i}>{seg.text}</span>;
+        return <span key={i} style={{ color: "#888" }}>{seg.text}</span>;
       })}
     </div>
   );
