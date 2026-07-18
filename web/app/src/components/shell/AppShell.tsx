@@ -1057,6 +1057,9 @@ export function AppShell() {
                 You need an identity to edit documents.
               </div>
             )}
+            <div style={{ marginTop: 32, fontSize: 10, color: "var(--text-dim)", textAlign: "center", maxWidth: 400 }}>
+              Independent open-source project (Apache 2.0). Not affiliated with Project Xanadu&trade; or the Udanax team.
+            </div>
           </div>
         ) : isSourceWork ? (
           <SourceTextViewer
