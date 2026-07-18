@@ -226,6 +226,14 @@ tr:hover{background:rgba(110,118,129,0.04)}
 </ol>
 
 <div class="note">
+<strong>Phase 2 features:</strong>
+<ul style="margin:8px 0 0 16px">
+<li><strong>Source highlighting</strong> — Click a transclusion (colored block) in the center panel. The source panel switches to the originating work and highlights the matching passage in yellow for 4 seconds, scrolling it into view.</li>
+<li><strong>EDL export</strong> — Click "Export EDL" to download a JSON file containing the document's content references. Each entry is typed as <code>text</code> (original) or <code>transclusion</code> (with source work ID, character positions, and resolved text).</li>
+</ul>
+</div>
+
+<div class="note">
 <strong>What happens behind the scenes:</strong> Each "Include" creates an inline <code>RangeElement::Transclusion</code>
 in the O-tree CRDT. The transclusion stores the source work ID, character span, and BLAKE3 content hash.
 Span migration keeps positions valid through edits. Provenance chains trace each passage back to its origin.
