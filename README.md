@@ -1,10 +1,28 @@
 # xudanu
 
-> **[Read the rendered documentation](https://dgjones.info/xudanu/)** — user guides, technical architecture, and visual diagrams.
+![Xudanu — documents with visible connections](docs/screenshots/hero.png)
 
-**xudanu** (Xudanu) is a modern Rust and WebAssembly implementation inspired by the Xanadu Project and its Udanax Gold (Xanadu 92.1) system.
+> **[Read the documentation](https://dgjones.info/xudanu/)** — user guides, technical architecture, and visual diagrams.
 
-It reinterprets and evolves foundational ideas in generalized hypertext and data structures for use in contemporary systems.
+**xudanu** (Xudanu) is a modern Rust and TypeScript implementation inspired by the Xanadu Project and its Udanax Gold (Xanadu 92.1) system.
+
+> **Disclaimer:** Xudanu is an independent, open-source project (Apache 2.0).
+> It is not affiliated with, endorsed by, or sponsored by Ted Nelson,
+> Project Xanadu&trade;, the Xanadu Operating Company, Autodesk Inc., or the
+> Udanax development team. All trademarks belong to their respective owners.
+
+---
+
+## What Xudanu does differently
+
+- **Visible typed links** — Six link types (Comment, Reference, Disagreement, Quotation, See Also, Web) with coloured description boxes and connecting lines
+- **Real transclusion** — Content from one document appears live in another, with provenance tracing back to the source
+- **Real-time CRDT collaboration** — Multiple users editing the same document without locks
+- **Cross-server federation** — Documents link across independent servers via BLAKE3-verified tumblers
+- **Compound document builder** — Assemble new documents from passages of existing works
+- **Perspective view** — Spatial document landscape showing connected works
+
+![Compound Builder](docs/screenshots/compound-builder.png)
 
 ---
 
