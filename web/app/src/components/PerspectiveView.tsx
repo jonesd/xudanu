@@ -277,12 +277,16 @@ export function PerspectiveView({
             <div style={{
               fontSize: "11px", fontWeight: 700, color: "#fff",
               marginBottom: "6px", fontFamily: "Inter, sans-serif",
-              background: "#30363d", padding: "3px 6px", borderRadius: "3px",
+              background: wholeWorkColors.length > 0 ? wholeWorkColors[0] : "#30363d",
+              padding: "3px 6px", borderRadius: "3px",
               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
               display: "flex", alignItems: "center", gap: "4px",
             }}>
+              {doc.links.map((link) => (
+                <span key={link.link_id} id={`nplink-${link.link_id}`} style={{ display: "inline-block", width: 4, height: 4, borderRadius: "50%", background: linkColorMap.get(link.link_id) || "#fff", flexShrink: 0 }} />
+              ))}
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{doc.title}</span>
-              <span style={{ fontSize: "9px", color: "#8b949e", flexShrink: 0 }}>{doc.links.length}</span>
+              <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.6)", flexShrink: 0 }}>{doc.links.length}</span>
             </div>
             {doc.text ? (
               <div
