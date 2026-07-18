@@ -34,7 +34,6 @@ function renderCompoundText(
   text: string,
   spans: SpanRangePayload[],
   sourceTitles: Record<number, string>,
-  onSpanClick?: (span: SpanRangePayload) => void,
 ): string {
   if (spans.length === 0) return escapeHtml(text);
   const sorted = [...spans].sort((a, b) => a.flat_start - b.flat_start);
@@ -48,10 +47,7 @@ function renderCompoundText(
     if (start > pos) html += escapeHtml(text.slice(pos, start));
     const title = sourceTitles[span.source_work_id] || `Work ${span.source_work_id.toString(16)}`;
     const color = BRIDGE_COLORS[i % BRIDGE_COLORS.length];
-    const clickHandler = onSpanClick
-      ? ` onclick="document.dispatchEvent(new CustomEvent('compound-span-click', {detail: ${i}}))" data-span-idx="${i}" style="cursor:pointer"`
-      : "";
-    html += `<span style="background:${color}20;border-left:3px solid ${color};padding-left:4px;margin-left:-4px;${clickHandler ? "" : ""}" title="From: ${escapeHtml(title)} — click to highlight source"${clickHandler}>`;
+    html += `<span style="background:${color}20;border-left:3px solid ${color};padding-left:4px;margin-left:-4px;" title="From: ${escapeHtml(title)} — click to highlight source" data-span-idx="${i}">`;
     html += escapeHtml(text.slice(start, end));
     html += `</span>`;
     pos = Math.max(pos, end);
@@ -333,7 +329,7 @@ export function CompoundBuilder({
               {centerTitle}
             </div>
             <div style={{ fontSize: "16px", fontFamily: "Source Serif 4, Georgia, serif", lineHeight: 1.75, color: "#1a1a24", whiteSpace: "pre-wrap" }}
-              dangerouslySetInnerHTML={{ __html: renderCompoundText(centerText, compoundSpanRanges, compoundSourceTitles, undefined) }} />
+              dangerouslySetInnerHTML={{ __html: renderCompoundText(centerText, compoundSpanRanges, compoundSourceTitles) }} />
           </div>
         </div>
 

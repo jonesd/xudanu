@@ -130,7 +130,13 @@ export function CompoundPanel({
 
   const availableWorks = works.filter((w) => w.work_id !== workBeId);
 
-  if (elements.length === 0 && !canEdit) return null;
+  if (elements.length === 0 && !canEdit) {
+    return (
+      <div className="compound-empty" style={{ padding: "16px", textAlign: "center", color: "#8b949e", fontSize: 12 }}>
+        No transclusions yet. Use the Compound Builder (Build button) to add content from other works.
+      </div>
+    );
+  }
 
   return (
     <div className="compound-panel">
