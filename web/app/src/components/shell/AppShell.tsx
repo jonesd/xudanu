@@ -1109,14 +1109,6 @@ export function AppShell() {
                   Edit: Open
                 </button>
               )}
-              <button
-                type="button"
-                className="publish-toggle"
-                onClick={() => setShowLinkDesc((s) => !s)}
-                title="Toggle link description boxes"
-              >
-                {showLinkDesc ? "Hide Links" : "Show Links"}
-              </button>
               <div style={{ position: "relative" }}>
                 <button
                   type="button"
