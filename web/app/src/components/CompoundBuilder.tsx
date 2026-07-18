@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import type { CrdtSyncClient, WorkListEntry, SpanRangePayload } from "../api/crdt_sync";
 
 interface CompoundBuilderProps {
@@ -72,6 +72,10 @@ export function CompoundBuilder({
   const [activeSourceId, setActiveSourceId] = useState<number | null>(null);
   const [selectedText, setSelectedText] = useState<{ start: number; end: number; text: string } | null>(null);
   const sourceTextRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    onReloadCompound();
+  }, [onReloadCompound]);
 
   const addSource = useCallback(async (workId: number) => {
     if (sources.some((s) => s.workId === workId)) return;
