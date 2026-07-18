@@ -1084,30 +1084,10 @@ export function AppShell() {
                 isOwner={!!identity && currentWorkMeta?.owner === identity.club_id}
                 documentTitle={currentWorkMeta?.title || null}
               />
-              {isPublished && (
-                <button
-                  type="button"
-                  className="publish-toggle"
-                  onClick={handleTogglePublish}
-                  title={isPublished ? "Click to unpublish" : "Click to publish"}
-                >
-                  {isPublished ? "Published" : "Private"}
-                </button>
-              )}
               {publishError && (
                 <span style={{ fontSize: 10, color: "var(--red)", maxWidth: 200 }}>
                   {publishError}
                 </span>
-              )}
-              {isPublished && editOpen && (
-                <button
-                  type="button"
-                  className="publish-toggle"
-                  onClick={handleToggleEditAccess}
-                  title="Click to restrict editing to owner"
-                >
-                  Edit: Open
-                </button>
               )}
               <div style={{ position: "relative" }}>
                 <button
@@ -1127,14 +1107,17 @@ export function AppShell() {
                       borderRadius: "6px", boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
                       minWidth: 180, padding: "4px",
                     }}>
+                      <button type="button" className="tools-menu-item" onClick={() => { handleTogglePublish(); setToolsMenuOpen(false); }}>
+                        {isPublished ? "Unpublish" : "Publish"}
+                      </button>
+                      {isPublished && editOpen && (
+                        <button type="button" className="tools-menu-item" onClick={() => { handleToggleEditAccess(); setToolsMenuOpen(false); }}>
+                          Restrict editing to owner
+                        </button>
+                      )}
                       {isPublished && (
                         <button type="button" className="tools-menu-item" onClick={() => { handleCopyReference(); setToolsMenuOpen(false); }}>
                           {"\u29C9"} Copy Reference
-                        </button>
-                      )}
-                      {isPublished && !editOpen && (
-                        <button type="button" className="tools-menu-item" onClick={() => { handleToggleEditAccess(); setToolsMenuOpen(false); }}>
-                          Edit: Owner only
                         </button>
                       )}
                       <button type="button" className="tools-menu-item" onClick={() => { setShowLinkDesc((s) => !s); setToolsMenuOpen(false); }}>

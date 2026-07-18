@@ -1818,7 +1818,7 @@ export function CollaborativeEditor({
                   Go to {hoveredMarker.otherWorkId.toString(16).padStart(4, "0")}
                 </button>
               )}
-              {onTraceProvenance && hoveredMarker.start < hoveredMarker.end && (
+              {onTraceProvenance && hoveredMarker.start < hoveredMarker.end && hoveredMarker.linkTypeId == null && (
                 <button
                   className="marker-tooltip-link"
                   style={{ color: "#a371f7", marginTop: 4 }}
