@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import type { CrdtSyncClient, WorkListEntry, SpanRangePayload } from "../api/crdt_sync";
 
 interface CompoundBuilderProps {
@@ -30,7 +30,12 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-function renderCompoundText(text: string, spans: SpanRangePayload[], sourceTitles: Record<number, string>): string {
+function renderCompoundText(
+  text: string,
+  spans: SpanRangePayload[],
+  sourceTitles: Record<number, string>,
+  onSpanClick?: (span: SpanRangePayload) => void,
+): string {
   if (spans.length === 0) return escapeHtml(text);
   const sorted = [...spans].sort((a, b) => a.flat_start - b.flat_start);
   let html = "";
@@ -43,7 +48,10 @@ function renderCompoundText(text: string, spans: SpanRangePayload[], sourceTitle
     if (start > pos) html += escapeHtml(text.slice(pos, start));
     const title = sourceTitles[span.source_work_id] || `Work ${span.source_work_id.toString(16)}`;
     const color = BRIDGE_COLORS[i % BRIDGE_COLORS.length];
-    html += `<span style="background:${color}20;border-left:3px solid ${color};padding-left:4px;margin-left:-4px;" title="From: ${escapeHtml(title)}">`;
+    const clickHandler = onSpanClick
+      ? ` onclick="document.dispatchEvent(new CustomEvent('compound-span-click', {detail: ${i}}))" data-span-idx="${i}" style="cursor:pointer"`
+      : "";
+    html += `<span style="background:${color}20;border-left:3px solid ${color};padding-left:4px;margin-left:-4px;${clickHandler ? "" : ""}" title="From: ${escapeHtml(title)} — click to highlight source"${clickHandler}>`;
     html += escapeHtml(text.slice(start, end));
     html += `</span>`;
     pos = Math.max(pos, end);
@@ -67,6 +75,8 @@ export function CompoundBuilder({
   const [sources, setSources] = useState<SourceDoc[]>([]);
   const [activeSourceId, setActiveSourceId] = useState<number | null>(null);
   const [selectedText, setSelectedText] = useState<{ start: number; end: number; text: string } | null>(null);
+  const [highlightedSource, setHighlightedSource] = useState<{ workId: number; start: number; end: number } | null>(null);
+  const sourceTextRef = useRef<HTMLDivElement>(null);
 
   const addSource = useCallback(async (workId: number) => {
     if (sources.some((s) => s.workId === workId)) return;
@@ -121,6 +131,61 @@ export function CompoundBuilder({
     setTimeout(() => onReloadCompound(), 500);
   }, [selectedText, activeSourceId, sources, onPlaceTransclusion, onReloadCompound]);
 
+  const handleTransclusionClick = useCallback((span: SpanRangePayload) => {
+    const workId = span.source_work_id;
+    const start = span.char_start;
+    const end = span.char_end;
+    setActiveSourceId(workId);
+    setHighlightedSource({ workId, start, end });
+    setTimeout(() => {
+      const el = document.getElementById(`source-highlight-${start}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 300);
+    setTimeout(() => setHighlightedSource(null), 4000);
+  }, []);
+
+  const handleEDLExport = useCallback(() => {
+    const sorted = [...compoundSpanRanges].sort((a, b) => a.flat_start - b.flat_start);
+    const entries: Array<Record<string, unknown>> = [];
+    let pos = 0;
+    for (const span of sorted) {
+      if (span.flat_start > pos) {
+        entries.push({
+          type: "text",
+          content: centerText.slice(pos, span.flat_start),
+        });
+      }
+      const title = compoundSourceTitles[span.source_work_id] || `Work ${span.source_work_id.toString(16)}`;
+      entries.push({
+        type: "transclusion",
+        source_work_id: `0x${span.source_work_id.toString(16)}`,
+        source_title: title,
+        char_start: span.char_start,
+        char_end: span.char_end,
+        resolved_text: span.resolved_content || centerText.slice(span.flat_start, span.flat_end),
+      });
+      pos = Math.max(pos, span.flat_end);
+    }
+    if (pos < centerText.length) {
+      entries.push({ type: "text", content: centerText.slice(pos) });
+    }
+    const edl = {
+      version: 1,
+      title: centerTitle,
+      work_id: `0x${centerWorkId.toString(16)}`,
+      entries,
+    };
+    const blob = new Blob([JSON.stringify(edl, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${centerTitle.replace(/[^a-z0-9]/gi, "_").toLowerCase()}_edl.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [compoundSpanRanges, centerText, centerTitle, centerWorkId, compoundSourceTitles]);
+
   const structure = useMemo(() => {
     const items: Array<{ type: "original" | "transclusion"; label: string; preview: string }> = [];
     if (compoundSpanRanges.length === 0) {
@@ -167,6 +232,11 @@ export function CompoundBuilder({
               Include passage
             </button>
           )}
+          <button type="button" onClick={handleEDLExport}
+            style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-muted)",
+              borderRadius: "4px", padding: "4px 12px", cursor: "pointer", fontSize: "12px" }}>
+            Export EDL
+          </button>
           <button type="button" onClick={onClose}
             style={{ background: "#da3633", border: "1px solid #f85149", color: "#fff",
               borderRadius: "4px", padding: "4px 12px", cursor: "pointer", fontSize: "13px" }}>
@@ -222,10 +292,24 @@ export function CompoundBuilder({
                 <span style={{ color: "#c9d1d9", fontSize: "11px", fontWeight: 600 }}>{activeSource.title}</span>
                 <span style={{ color: "#6e7681", fontSize: "10px", marginLeft: "6px" }}>Select text to include</span>
               </div>
-              <div id="compound-source-text" onMouseUp={handleSourceTextSelection}
+              <div id="compound-source-text" ref={sourceTextRef} onMouseUp={handleSourceTextSelection}
                 style={{ padding: "8px 10px", fontSize: "13px", fontFamily: "Source Serif 4, Georgia, serif",
                   lineHeight: 1.6, color: "#c9d1d9", userSelect: "text" }}>
-                {activeSource.text}
+                {activeSource.text.split("").map((char, i) => {
+                  const isHighlighted = highlightedSource &&
+                    highlightedSource.workId === activeSource.workId &&
+                    i >= highlightedSource.start &&
+                    i < highlightedSource.end;
+                  return (
+                    <span
+                      key={i}
+                      id={i === highlightedSource?.start ? `source-highlight-${i}` : undefined}
+                      style={isHighlighted ? { background: "rgba(255, 214, 10, 0.3)" } : undefined}
+                    >
+                      {char}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -233,12 +317,23 @@ export function CompoundBuilder({
 
         {/* Center: Compound Document */}
         <div style={{ flex: 1, overflowY: "auto", background: "#fff" }}>
-          <div style={{ maxWidth: "700px", margin: "0 auto", padding: "24px 32px" }}>
+          <div
+            style={{ maxWidth: "700px", margin: "0 auto", padding: "24px 32px" }}
+            onClick={(e) => {
+              const target = e.target as HTMLElement;
+              const idx = target?.getAttribute?.("data-span-idx");
+              if (idx !== null && idx !== undefined) {
+                const sorted = [...compoundSpanRanges].sort((a, b) => a.flat_start - b.flat_start);
+                const span = sorted[parseInt(idx, 10)];
+                if (span) handleTransclusionClick(span);
+              }
+            }}
+          >
             <div style={{ fontSize: "12px", fontWeight: 700, color: "#333", marginBottom: "12px", fontFamily: "Inter, sans-serif" }}>
               {centerTitle}
             </div>
             <div style={{ fontSize: "16px", fontFamily: "Source Serif 4, Georgia, serif", lineHeight: 1.75, color: "#1a1a24", whiteSpace: "pre-wrap" }}
-              dangerouslySetInnerHTML={{ __html: renderCompoundText(centerText, compoundSpanRanges, compoundSourceTitles) }} />
+              dangerouslySetInnerHTML={{ __html: renderCompoundText(centerText, compoundSpanRanges, compoundSourceTitles, undefined) }} />
           </div>
         </div>
 
