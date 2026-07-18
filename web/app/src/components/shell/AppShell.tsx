@@ -74,6 +74,7 @@ export function AppShell() {
   const [isLightTheme, setIsLightTheme] = useState(() => {
     try { return localStorage.getItem("xudanu_theme") === "light"; } catch { return false; }
   });
+  const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const [showPerspective, setShowPerspective] = useState(false);
   const [showCompoundBuilder, setShowCompoundBuilder] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
@@ -1083,6 +1084,86 @@ export function AppShell() {
                 isOwner={!!identity && currentWorkMeta?.owner === identity.club_id}
                 documentTitle={currentWorkMeta?.title || null}
               />
+              {isPublished && (
+                <button
+                  type="button"
+                  className="publish-toggle"
+                  onClick={handleTogglePublish}
+                  title={isPublished ? "Click to unpublish" : "Click to publish"}
+                >
+                  {isPublished ? "Published" : "Private"}
+                </button>
+              )}
+              {publishError && (
+                <span style={{ fontSize: 10, color: "var(--red)", maxWidth: 200 }}>
+                  {publishError}
+                </span>
+              )}
+              {isPublished && editOpen && (
+                <button
+                  type="button"
+                  className="publish-toggle"
+                  onClick={handleToggleEditAccess}
+                  title="Click to restrict editing to owner"
+                >
+                  Edit: Open
+                </button>
+              )}
+              <button
+                type="button"
+                className="publish-toggle"
+                onClick={() => setShowLinkDesc((s) => !s)}
+                title="Toggle link description boxes"
+              >
+                {showLinkDesc ? "Hide Links" : "Show Links"}
+              </button>
+              <div style={{ position: "relative" }}>
+                <button
+                  type="button"
+                  className="publish-toggle"
+                  onClick={() => setToolsMenuOpen((o) => !o)}
+                  title="More tools"
+                >
+                  Tools {"\u25BE"}
+                </button>
+                {toolsMenuOpen && (
+                  <>
+                    <div style={{ position: "fixed", inset: 0, zIndex: 98 }} onClick={() => setToolsMenuOpen(false)} />
+                    <div style={{
+                      position: "absolute", top: "100%", right: 0, zIndex: 99,
+                      background: "var(--bg-surface)", border: "1px solid var(--border)",
+                      borderRadius: "6px", boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                      minWidth: 180, padding: "4px",
+                    }}>
+                      {isPublished && (
+                        <button type="button" className="tools-menu-item" onClick={() => { handleCopyReference(); setToolsMenuOpen(false); }}>
+                          {"\u29C9"} Copy Reference
+                        </button>
+                      )}
+                      {isPublished && !editOpen && (
+                        <button type="button" className="tools-menu-item" onClick={() => { handleToggleEditAccess(); setToolsMenuOpen(false); }}>
+                          Edit: Owner only
+                        </button>
+                      )}
+                      <button type="button" className="tools-menu-item" onClick={() => { setShowProvenance((s) => !s); setToolsMenuOpen(false); }}>
+                        {showProvenance ? "\u2713 Provenance" : "Provenance"}
+                      </button>
+                      <button type="button" className="tools-menu-item" onClick={() => { setShowCompare((s) => !s); setToolsMenuOpen(false); }}>
+                        Compare Documents
+                      </button>
+                      <button type="button" className="tools-menu-item" onClick={() => { setShowMerge(true); setToolsMenuOpen(false); }}>
+                        3-Way Merge
+                      </button>
+                      <button type="button" className="tools-menu-item" onClick={() => { setShowPerspective(true); setToolsMenuOpen(false); }}>
+                        Perspective View
+                      </button>
+                      <button type="button" className="tools-menu-item" onClick={() => { setShowCompoundBuilder(true); setToolsMenuOpen(false); }}>
+                        Compound Builder
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
               <button
                 type="button"
                 className="publish-toggle"
@@ -1096,74 +1177,6 @@ export function AppShell() {
                   {publishError}
                 </span>
               )}
-              {isPublished && (
-                <button
-                  type="button"
-                  className="publish-toggle"
-                  onClick={handleToggleEditAccess}
-                  title={editOpen ? "Click to restrict editing to owner" : "Click to allow anyone to edit"}
-                >
-                  {editOpen ? "Edit: Open" : "Edit: Owner"}
-                </button>
-              )}
-              {isPublished && (
-                <button
-                  type="button"
-                  className="publish-toggle"
-                  onClick={handleCopyReference}
-                  title="Copy cross-server reference (tumbler + hash) for linking from another server"
-                >
-                  {"\u29C9"} Copy Ref
-                </button>
-              )}
-              <button
-                type="button"
-                className="publish-toggle"
-                onClick={() => setShowProvenance((s) => !s)}
-                title="Toggle provenance panel"
-              >
-                {showProvenance ? "Hide Prov" : "Show Prov"}
-              </button>
-              <button
-                type="button"
-                className="publish-toggle"
-                onClick={() => setShowLinkDesc((s) => !s)}
-                title="Toggle link description boxes"
-              >
-                {showLinkDesc ? "Hide Links" : "Show Links"}
-              </button>
-              <button
-                type="button"
-                className="publish-toggle"
-                onClick={() => setShowCompare((s) => !s)}
-                title="Toggle document comparison view"
-              >
-                {showCompare ? "Close Compare" : "Compare"}
-              </button>
-              <button
-                type="button"
-                className="publish-toggle"
-                onClick={() => setShowMerge(true)}
-                title="3-way merge two documents using a common base"
-              >
-                Merge
-              </button>
-              <button
-                type="button"
-                className="publish-toggle"
-                onClick={() => setShowPerspective(true)}
-                title="Open perspective view showing connected documents"
-              >
-                Perspective
-              </button>
-              <button
-                type="button"
-                className="publish-toggle"
-                onClick={() => setShowCompoundBuilder(true)}
-                title="Open compound document builder"
-              >
-                Build
-              </button>
               <div className="doc-meta">
                 {compound.spanRanges.length > 0 && (
                   <div className="compound-badge" title="This document contains transcluded content from other works">

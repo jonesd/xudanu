@@ -602,7 +602,23 @@
   cursor: pointer;
   transition: background 0.15s;
 }
-.conn-item:hover { background: #30303e; }
+.conn-item:hover { background: var(--bg-elevated); }
+
+.tools-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+.tools-menu-item:hover { background: var(--bg-elevated); }
 
 .ctx-badge.risk { background: rgba(248,81,73,0.15); color: var(--red); }
 
