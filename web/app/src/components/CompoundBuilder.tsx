@@ -71,7 +71,6 @@ export function CompoundBuilder({
   const [sources, setSources] = useState<SourceDoc[]>([]);
   const [activeSourceId, setActiveSourceId] = useState<number | null>(null);
   const [selectedText, setSelectedText] = useState<{ start: number; end: number; text: string } | null>(null);
-  const [highlightedSource, setHighlightedSource] = useState<{ workId: number; start: number; end: number } | null>(null);
   const sourceTextRef = useRef<HTMLDivElement>(null);
 
   const addSource = useCallback(async (workId: number) => {
@@ -129,17 +128,13 @@ export function CompoundBuilder({
 
   const handleTransclusionClick = useCallback((span: SpanRangePayload) => {
     const workId = span.source_work_id;
-    const start = span.char_start;
-    const end = span.char_end;
     setActiveSourceId(workId);
-    setHighlightedSource({ workId, start, end });
     setTimeout(() => {
-      const el = document.getElementById(`source-highlight-${start}`);
+      const el = document.getElementById("compound-source-text");
       if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.scrollTo({ top: 0, behavior: "smooth" });
       }
     }, 300);
-    setTimeout(() => setHighlightedSource(null), 4000);
   }, []);
 
   const handleEDLExport = useCallback(() => {
@@ -234,7 +229,7 @@ export function CompoundBuilder({
             Export EDL
           </button>
           <button type="button" onClick={onClose}
-            style={{ background: "#da3633", border: "1px solid #f85149", color: "#fff",
+            style={{ background: "#238636", border: "1px solid #2ea043", color: "#fff",
               borderRadius: "4px", padding: "4px 12px", cursor: "pointer", fontSize: "13px" }}>
             Done
           </button>
@@ -290,22 +285,8 @@ export function CompoundBuilder({
               </div>
               <div id="compound-source-text" ref={sourceTextRef} onMouseUp={handleSourceTextSelection}
                 style={{ padding: "8px 10px", fontSize: "13px", fontFamily: "Source Serif 4, Georgia, serif",
-                  lineHeight: 1.6, color: "#c9d1d9", userSelect: "text" }}>
-                {activeSource.text.split("").map((char, i) => {
-                  const isHighlighted = highlightedSource &&
-                    highlightedSource.workId === activeSource.workId &&
-                    i >= highlightedSource.start &&
-                    i < highlightedSource.end;
-                  return (
-                    <span
-                      key={i}
-                      id={i === highlightedSource?.start ? `source-highlight-${i}` : undefined}
-                      style={isHighlighted ? { background: "rgba(255, 214, 10, 0.3)" } : undefined}
-                    >
-                      {char}
-                    </span>
-                  );
-                })}
+                  lineHeight: 1.6, color: "#c9d9d9", userSelect: "text" }}>
+                {activeSource.text}
               </div>
             </div>
           )}
