@@ -1137,6 +1137,9 @@ export function AppShell() {
                           Edit: Owner only
                         </button>
                       )}
+                      <button type="button" className="tools-menu-item" onClick={() => { setShowLinkDesc((s) => !s); setToolsMenuOpen(false); }}>
+                        {showLinkDesc ? "\u2713 Link Descriptions" : "Link Descriptions"}
+                      </button>
                       <button type="button" className="tools-menu-item" onClick={() => { setShowProvenance((s) => !s); setToolsMenuOpen(false); }}>
                         {showProvenance ? "\u2713 Provenance" : "Provenance"}
                       </button>

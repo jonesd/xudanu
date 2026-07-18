@@ -595,7 +595,7 @@
 
 /* Connection cards */
 .conn-item {
-  background: transparent;
+  background: var(--blue-light);
   border-radius: 6px;
   padding: 6px 10px;
   margin-bottom: 4px;

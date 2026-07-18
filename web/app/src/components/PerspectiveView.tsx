@@ -131,7 +131,10 @@ export function PerspectiveView({
   const layout = useMemo(() => {
     const maxNeighbors = Math.min(neighbors.length, 4 + zoom * 2);
     const visible = neighbors.slice(0, maxNeighbors);
-    return { visible };
+    const half = Math.ceil(visible.length / 2);
+    const leftNeighbors = visible.slice(half).reverse();
+    const rightNeighbors = visible.slice(0, half);
+    return { visible, leftNeighbors, rightNeighbors };
   }, [neighbors, zoom]);
 
   const neighborScale = useCallback((distance: number) => {
@@ -226,10 +229,12 @@ export function PerspectiveView({
   }, [drawConnections]);
 
   const renderColumn = useCallback(
-    (doc: NeighborDoc, _side: "left" | "right", distance: number) => {
+    (doc: NeighborDoc, side: "left" | "right", distance: number) => {
       const scale = neighborScale(distance);
       const widthPct = neighborWidth(distance);
-      const leftPct = 42 + 2 + (distance - 1) * (widthPct + 2);
+      const leftPct = side === "right"
+        ? 42 + 2 + (distance - 1) * (widthPct + 2)
+        : 28 - 2 - distance * (widthPct + 2);
 
       const spans = doc.links.flatMap((link) => {
         const color = linkColorMap.get(link.link_id) || "#888";
@@ -256,7 +261,7 @@ export function PerspectiveView({
             overflowX: "hidden" as const,
             transformStyle: "flat",
             transform: `scale(${scale})`,
-            transformOrigin: "top left",
+            transformOrigin: side === "right" ? "top left" : "top right",
             opacity: Math.max(0.3, 1 - distance * 0.2),
             background: "#faf9f6",
             border: "1px solid #d0d0d0",
@@ -387,8 +392,9 @@ export function PerspectiveView({
       </div>
       <div ref={containerRef} style={{ position: "relative", width: "100%", height: "calc(100% - 48px)", overflowX: "auto", overflowY: "hidden" }}>
         <div style={{ position: "relative", height: "100%", minWidth: "100%" }}>
+        {layout.leftNeighbors.map((doc, i) => renderColumn(doc, "left", i + 1))}
         {centerColumn}
-        {layout.visible.map((doc, i) => renderColumn(doc, "right", i + 1))}
+        {layout.rightNeighbors.map((doc, i) => renderColumn(doc, "right", i + 1))}
         <canvas
           ref={canvasRef}
           style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 10 }}
