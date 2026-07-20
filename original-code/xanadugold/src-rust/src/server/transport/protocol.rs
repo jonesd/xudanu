@@ -131,6 +131,11 @@ pub enum OperationCode {
     WorkKindSet,
     WorkListByKind,
     WorkSetText,
+    WorkRevisionsList,
+    WorkTextAtRevision,
+    WorkRevisionDescribe,
+    WorkRevisionMarkNotable,
+    WorkRevisionRollback,
     TrailCreate,
     TrailDelete,
     TrailRename,
@@ -447,6 +452,11 @@ impl OperationCode {
             0x0B02 => Some(OperationCode::WorkKindSet),
             0x0B03 => Some(OperationCode::WorkListByKind),
             0x0B04 => Some(OperationCode::WorkSetText),
+            0x0C01 => Some(OperationCode::WorkRevisionsList),
+            0x0C02 => Some(OperationCode::WorkTextAtRevision),
+            0x0C03 => Some(OperationCode::WorkRevisionDescribe),
+            0x0C04 => Some(OperationCode::WorkRevisionMarkNotable),
+            0x0C05 => Some(OperationCode::WorkRevisionRollback),
             0x0339 => Some(OperationCode::TrailCreate),
             0x033a => Some(OperationCode::TrailDelete),
             0x033b => Some(OperationCode::TrailRename),
@@ -725,6 +735,11 @@ impl OperationCode {
             OperationCode::WorkKindSet => 0x0B02,
             OperationCode::WorkListByKind => 0x0B03,
             OperationCode::WorkSetText => 0x0B04,
+            OperationCode::WorkRevisionsList => 0x0C01,
+            OperationCode::WorkTextAtRevision => 0x0C02,
+            OperationCode::WorkRevisionDescribe => 0x0C03,
+            OperationCode::WorkRevisionMarkNotable => 0x0C04,
+            OperationCode::WorkRevisionRollback => 0x0C05,
             OperationCode::TrailCreate => 0x0339,
             OperationCode::TrailDelete => 0x033a,
             OperationCode::TrailRename => 0x033b,
@@ -1138,6 +1153,29 @@ pub enum WireRequest {
     WorkSetText {
         work_id: BeId,
         text: String,
+    },
+
+    /// FR-23: Revision wire ops
+    WorkRevisionsList {
+        work_id: BeId,
+    },
+    WorkTextAtRevision {
+        work_id: BeId,
+        revision_id: u64,
+    },
+    WorkRevisionDescribe {
+        work_id: BeId,
+        revision_id: u64,
+        description: String,
+    },
+    WorkRevisionMarkNotable {
+        work_id: BeId,
+        revision_id: u64,
+        notable: bool,
+    },
+    WorkRevisionRollback {
+        work_id: BeId,
+        target_revision_id: u64,
     },
 
     TrailCreate {
@@ -2143,6 +2181,10 @@ pub enum ResponseValue {
     },
     AnnotationResult(AnnotationPayload),
     AnnotationListResult(Vec<AnnotationPayload>),
+    /// FR-23: Revision metadata list
+    RevisionListResult(Vec<crate::persist::manifest::RevisionMeta>),
+    /// FR-23: Text at a specific revision
+    TextResult(String),
     LinkInfo(LinkPayload),
     LinkList(Vec<LinkPayload>),
     LinkTypes(Vec<LinkTypeInfoPayload>),

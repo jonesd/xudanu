@@ -101,6 +101,42 @@ pub struct WorkEntry {
     pub kind: crate::edition::WorkKind,
 }
 
+/// Metadata for a single revision of a work. Per FR-23.
+/// Stored in the manifest alongside the work's chunk references.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RevisionMeta {
+    /// Sequential revision number (0-based, matches edition_history key)
+    pub revision_id: u64,
+
+    /// Parent revision (None for the first revision)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<u64>,
+
+    /// Unix timestamp (seconds) when this revision was created
+    #[serde(default)]
+    pub created_at: u64,
+
+    /// Identity (club ID) that created this revision
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<BeId>,
+
+    /// Author-supplied description ("Refined wording, added section on...")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// Author-marked or auto-detected as notable (publishing event, major revision)
+    #[serde(default)]
+    pub is_notable: bool,
+
+    /// Character count of the edition (quick stat without loading full edition)
+    #[serde(default)]
+    pub char_count: u64,
+
+    /// Auto-detected change summary vs. parent ("+123 chars, 15% changed")
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub change_summary: String,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AdminEntry {
     pub accepting_connections: bool,
@@ -296,6 +332,10 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub social_chunk_hash: Option<[u8; 32]>,
     // ── v5+ (future additions go here with version annotation) ──
+
+    // ── FR-23: revision metadata ──
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub revisions: std::collections::HashMap<BeId, Vec<RevisionMeta>>,
 }
 
 #[derive(Debug)]
@@ -1053,6 +1093,7 @@ pub fn create_empty_manifest(
         trail_counter: 10_000,
         compound_editions: Vec::new(),
         social_chunk_hash: None,
+        revisions: std::collections::HashMap::new(),
     }
 }
 

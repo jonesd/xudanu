@@ -3223,6 +3223,71 @@ impl JsonCodec {
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::WorkSetText { work_id: args.work_id, text: args.text })
             }
+            OperationCode::WorkRevisionsList => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkRevisionsList { work_id: args.work_id })
+            }
+            OperationCode::WorkTextAtRevision => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    revision_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkTextAtRevision {
+                    work_id: args.work_id,
+                    revision_id: args.revision_id,
+                })
+            }
+            OperationCode::WorkRevisionDescribe => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    revision_id: u64,
+                    description: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkRevisionDescribe {
+                    work_id: args.work_id,
+                    revision_id: args.revision_id,
+                    description: args.description,
+                })
+            }
+            OperationCode::WorkRevisionMarkNotable => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    revision_id: u64,
+                    notable: bool,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkRevisionMarkNotable {
+                    work_id: args.work_id,
+                    revision_id: args.revision_id,
+                    notable: args.notable,
+                })
+            }
+            OperationCode::WorkRevisionRollback => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    target_revision_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkRevisionRollback {
+                    work_id: args.work_id,
+                    target_revision_id: args.target_revision_id,
+                })
+            }
             _ => Err(FrameParseError::MissingPayload.into()),
         }
     }

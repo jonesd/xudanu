@@ -349,6 +349,17 @@ export interface WorkListEntry {
 
 export type WorkKind = "document" | "note" | "person" | "concept" | "collection" | "commentary";
 
+export interface RevisionMeta {
+  revision_id: number;
+  parent?: number;
+  created_at: number;
+  created_by?: number;
+  description?: string;
+  is_notable: boolean;
+  char_count: number;
+  change_summary?: string;
+}
+
 export interface GraphNode {
   work_id: number;
   title: string;
@@ -1175,6 +1186,47 @@ export class CrdtSyncClient {
 
   async workSetText(workId: number, text: string): Promise<void> {
     await this.sendRequest("work_set_text", { work_id: workId, text });
+  }
+
+  // ── FR-23: Revisions ──
+
+  async workRevisionsList(workId: number): Promise<RevisionMeta[]> {
+    const resp = await this.sendRequest("work_revisions_list", { work_id: workId });
+    return extractValue(resp) as RevisionMeta[];
+  }
+
+  async workTextAtRevision(workId: number, revisionId: number): Promise<string> {
+    const resp = await this.sendRequest("work_text_at_revision", {
+      work_id: workId,
+      revision_id: revisionId,
+    });
+    const val = extractValue(resp);
+    if (typeof val === "string") return val;
+    return (val as { text?: string }).text || "";
+  }
+
+  async workRevisionDescribe(workId: number, revisionId: number, description: string): Promise<void> {
+    await this.sendRequest("work_revision_describe", {
+      work_id: workId,
+      revision_id: revisionId,
+      description,
+    });
+  }
+
+  async workRevisionMarkNotable(workId: number, revisionId: number, notable: boolean): Promise<void> {
+    await this.sendRequest("work_revision_mark_notable", {
+      work_id: workId,
+      revision_id: revisionId,
+      notable,
+    });
+  }
+
+  async workRevisionRollback(workId: number, targetRevisionId: number): Promise<number> {
+    const resp = await this.sendRequest("work_revision_rollback", {
+      work_id: workId,
+      target_revision_id: targetRevisionId,
+    });
+    return extractValue(resp) as number;
   }
 
   async trailCreate(name: string, introduction?: string, categories?: string[]): Promise<number> {
