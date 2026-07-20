@@ -6,6 +6,36 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v0.9.7] — 2026-07-20
+
+### Workspace Shell (FR-18) — new UI at /explore
+- **feat(workspace):** New `WorkspaceShell` component with 4-zone layout (top bar, left rail with graph + concepts, document surface, right panel with tabs). Route at `/explore` alongside existing AppShell at `/`.
+- **feat(theme):** Six palette themes (Midnight, OLED Black, Slate, GitHub Light, Solarized, Paper) with picker dropdown in TopBar. Persisted to localStorage.
+- **feat(graph):** Relevance-filtered mini graph (FR-21) — 9-node display with force-directed layout, kind-colored nodes with icons, light dotted edges, position clamping, related concepts panel. 65 unit tests for scoring functions.
+- **feat(concepts):** WorkKind backend (FR-22) — Document, Note, Person, Concept, Collection, Commentary. Wire ops for get/set kind. 41 seeded default concepts (hypertext/PKM/writing). Kind picker in document header and work list.
+
+### Revision System (FR-23) — Phase A + C
+- **feat(revisions):** 5 wire ops (work_revisions_list, work_text_at_revision, work_revision_describe, work_revision_mark_notable, work_revision_rollback). Auto-recording metadata in revise_work (timestamp, author, change summary, auto-notable detection). 19 backend tests.
+- **feat(timeline):** Revision Timeline component in right panel History tab. View past revisions read-only, add descriptions, mark notable, non-destructive rollback.
+
+### Connections + Links
+- **feat(connections):** Connections tab with outbound links, backlinks, and transclusion spans. Link delete (× button). Web link URLs visible.
+- **feat(linkcreator):** LinkCreator wizard integrated into workspace for typed link creation between works.
+
+### Critical Bug Fixes
+- **fix(codec):** Trail publish/unpublish/update/listPublished wire ops were missing from codec.rs — requests silently failed with "missing payload." Added handlers for all 5 ops. This was the root cause of trail publish not persisting.
+- **fix(compound-builder):** Source loading uses textRange (ensure_can_read) instead of crdt_sync_open (ensure_logged_in). Anonymous users can now load compound sources.
+- **fix(router):** App.tsx simplified — removed pushState/replaceState override that caused session churn (101 sessions/sec).
+
+### Other
+- **feat(trails):** Trail publish/unpublish from workspace badge with error handling. Trails tab shows all trails (not filtered by current work).
+- **feat(anon-warning):** Amber banner when browsing anonymously — "Sign in to save links, edits, and revisions."
+- **feat(work_set_text):** New wire op for batch text setting (bypasses grab requirement). Used for concept seeding.
+- **docs:** 8 design documents (FR-18 through FR-23, versioning design, cross-server resolution).
+- **test:** 2438 backend tests (+19 revision, +65 graph scoring), 360 frontend tests.
+
+---
+
 ## [v0.8.1] — 2026-06-30
 
 ### Federation Activation (FR-3) — cluster goes live

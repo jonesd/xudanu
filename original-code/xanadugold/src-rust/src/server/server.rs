@@ -2318,7 +2318,8 @@ impl Server {
         let old_rev_id = revision - 1;
         let char_delta = new_text.len() as i64 - old_text.len() as i64;
         let changed_pct = if old_text.len() > 0 {
-            ((new_text.len().abs_diff(old_text.len())) as f64 / old_text.len() as f64 * 100.0) as u32
+            ((new_text.len().abs_diff(old_text.len())) as f64 / old_text.len() as f64 * 100.0)
+                as u32
         } else {
             100
         };
@@ -2331,7 +2332,11 @@ impl Server {
         );
         let meta = crate::persist::manifest::RevisionMeta {
             revision_id: old_rev_id,
-            parent: if old_rev_id > 0 { Some(old_rev_id - 1) } else { None },
+            parent: if old_rev_id > 0 {
+                Some(old_rev_id - 1)
+            } else {
+                None
+            },
             created_at: now,
             created_by: author_club,
             description: None,
@@ -6142,7 +6147,11 @@ impl Server {
             .get_mut(&trail_id)
             .ok_or_else(|| ServerError::InvalidArgument("trail not found".into()))?;
         if t.owner_club != owner {
-            tracing::warn!("[trail_publish] ownership mismatch: trail.owner={} session.owner={}", t.owner_club, owner);
+            tracing::warn!(
+                "[trail_publish] ownership mismatch: trail.owner={} session.owner={}",
+                t.owner_club,
+                owner
+            );
             return Err(ServerError::InvalidArgument("not your trail".into()));
         }
         t.published = true;
@@ -9017,7 +9026,9 @@ impl Server {
     ) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
         if self.is_source_work(work_id) {
-            return Err(ServerError::InvalidArgument("source works are immutable".into()));
+            return Err(ServerError::InvalidArgument(
+                "source works are immutable".into(),
+            ));
         }
         let edition = crate::edition::Edition::from_text_batched(text);
         let author_club = self.resolve_author_club(session_id);
@@ -9086,17 +9097,17 @@ impl Server {
         let chunk_store = self
             .chunk_store
             .as_ref()
-            .ok_or(ServerError::InvalidArgument("chunk store not available".into()))?;
-        let chunk_ref = ws
-            .chunk_ref
-            .as_ref()
-            .ok_or(ServerError::InvalidArgument("chunk ref not available".into()))?;
-        let edition = crate::persist::edition_chunks::work_load_revision(
-            chunk_ref,
-            revision_id,
-            chunk_store,
-        )
-        .map_err(|e| ServerError::InvalidArgument(format!("revision load failed: {}", e)))?;
+            .ok_or(ServerError::InvalidArgument(
+                "chunk store not available".into(),
+            ))?;
+        let chunk_ref = ws.chunk_ref.as_ref().ok_or(ServerError::InvalidArgument(
+            "chunk ref not available".into(),
+        ))?;
+        let edition =
+            crate::persist::edition_chunks::work_load_revision(chunk_ref, revision_id, chunk_store)
+                .map_err(|e| {
+                    ServerError::InvalidArgument(format!("revision load failed: {}", e))
+                })?;
         Ok(edition.to_text())
     }
 
@@ -9114,7 +9125,11 @@ impl Server {
         } else {
             list.push(crate::persist::manifest::RevisionMeta {
                 revision_id,
-                parent: if revision_id > 0 { Some(revision_id - 1) } else { None },
+                parent: if revision_id > 0 {
+                    Some(revision_id - 1)
+                } else {
+                    None
+                },
                 created_at: 0,
                 created_by: None,
                 description: Some(description),
@@ -9141,7 +9156,11 @@ impl Server {
         } else {
             list.push(crate::persist::manifest::RevisionMeta {
                 revision_id,
-                parent: if revision_id > 0 { Some(revision_id - 1) } else { None },
+                parent: if revision_id > 0 {
+                    Some(revision_id - 1)
+                } else {
+                    None
+                },
                 created_at: 0,
                 created_by: None,
                 description: None,
@@ -9183,7 +9202,6 @@ impl Server {
         self.auto_checkpoint();
         Ok(new_rev)
     }
-
 
     pub fn annotation_attach_node(
         &mut self,
@@ -28966,9 +28984,7 @@ mod tests_revisions {
     #[test]
     fn test_revisions_list_empty_work() {
         let (mut server, sid) = setup();
-        let work_id = server
-            .create_work(sid, Edition::from_text(""))
-            .unwrap();
+        let work_id = server.create_work(sid, Edition::from_text("")).unwrap();
         let revisions = server.work_revisions_list(sid, work_id).unwrap();
         // New work has 1 revision (the initial edition, revision 0)
         assert_eq!(revisions.len(), 1);
@@ -28984,7 +29000,9 @@ mod tests_revisions {
         // Edit 3 times
         server.work_set_text(sid, work_id, "hello world").unwrap();
         server.work_set_text(sid, work_id, "hello world!").unwrap();
-        server.work_set_text(sid, work_id, "hello world!!!").unwrap();
+        server
+            .work_set_text(sid, work_id, "hello world!!!")
+            .unwrap();
         let revisions = server.work_revisions_list(sid, work_id).unwrap();
         // Initial + 3 edits = 4 revisions
         assert_eq!(revisions.len(), 4);
@@ -29021,9 +29039,7 @@ mod tests_revisions {
     #[test]
     fn test_text_at_revision_not_found() {
         let (mut server, sid) = setup();
-        let work_id = server
-            .create_work(sid, Edition::from_text("test"))
-            .unwrap();
+        let work_id = server.create_work(sid, Edition::from_text("test")).unwrap();
         // Revision 99 doesn't exist
         let result = server.work_text_at_revision(sid, work_id, 99);
         // Should return current (revision_count or above returns current)
@@ -29050,9 +29066,7 @@ mod tests_revisions {
     #[test]
     fn test_revision_describe_update() {
         let (mut server, sid) = setup();
-        let work_id = server
-            .create_work(sid, Edition::from_text("test"))
-            .unwrap();
+        let work_id = server.create_work(sid, Edition::from_text("test")).unwrap();
 
         server
             .work_revision_describe(sid, work_id, 0, "first description".to_string())
@@ -29062,18 +29076,21 @@ mod tests_revisions {
             .unwrap();
 
         let revisions = server.work_revisions_list(sid, work_id).unwrap();
-        assert_eq!(revisions[0].description, Some("updated description".to_string()));
+        assert_eq!(
+            revisions[0].description,
+            Some("updated description".to_string())
+        );
     }
 
     #[test]
     fn test_revision_mark_notable() {
         let (mut server, sid) = setup();
-        let work_id = server
-            .create_work(sid, Edition::from_text("test"))
-            .unwrap();
+        let work_id = server.create_work(sid, Edition::from_text("test")).unwrap();
         server.work_set_text(sid, work_id, "edited").unwrap();
 
-        server.work_revision_mark_notable(sid, work_id, 0, true).unwrap();
+        server
+            .work_revision_mark_notable(sid, work_id, 0, true)
+            .unwrap();
 
         let revisions = server.work_revisions_list(sid, work_id).unwrap();
         assert!(revisions[0].is_notable);
@@ -29082,12 +29099,14 @@ mod tests_revisions {
     #[test]
     fn test_revision_unmark_notable() {
         let (mut server, sid) = setup();
-        let work_id = server
-            .create_work(sid, Edition::from_text("test"))
-            .unwrap();
+        let work_id = server.create_work(sid, Edition::from_text("test")).unwrap();
         server.work_set_text(sid, work_id, "edited").unwrap();
-        server.work_revision_mark_notable(sid, work_id, 0, true).unwrap();
-        server.work_revision_mark_notable(sid, work_id, 0, false).unwrap();
+        server
+            .work_revision_mark_notable(sid, work_id, 0, true)
+            .unwrap();
+        server
+            .work_revision_mark_notable(sid, work_id, 0, false)
+            .unwrap();
 
         let revisions = server.work_revisions_list(sid, work_id).unwrap();
         assert!(!revisions[0].is_notable);
@@ -29111,7 +29130,9 @@ mod tests_revisions {
 
         // Current text should now be "version A"
         let current_count = server.works.get(&work_id).unwrap().work.revision_count();
-        let after = server.work_text_at_revision(sid, work_id, current_count).unwrap();
+        let after = server
+            .work_text_at_revision(sid, work_id, current_count)
+            .unwrap();
         assert_eq!(after, "version A");
 
         // revision_count should be 3 (initial=0, edit1=1, edit2=2, rollback creates rev 3=count 3)
@@ -29122,15 +29143,21 @@ mod tests_revisions {
         let revisions = server.work_revisions_list(sid, work_id).unwrap();
         let rollback_meta = revisions.last().unwrap();
         assert!(rollback_meta.is_notable);
-        assert!(rollback_meta.description.as_ref().unwrap().contains("Rollback"), "expected Rollback in description: {:?}", rollback_meta.description);
+        assert!(
+            rollback_meta
+                .description
+                .as_ref()
+                .unwrap()
+                .contains("Rollback"),
+            "expected Rollback in description: {:?}",
+            rollback_meta.description
+        );
     }
 
     #[test]
     fn test_rollback_non_destructive() {
         let (mut server, sid) = setup();
-        let work_id = server
-            .create_work(sid, Edition::from_text("v1"))
-            .unwrap();
+        let work_id = server.create_work(sid, Edition::from_text("v1")).unwrap();
         server.work_set_text(sid, work_id, "v2").unwrap();
 
         // Before rollback, we can access revision 0
@@ -29155,7 +29182,13 @@ mod tests_revisions {
         let work_id = server
             .create_work(sid, Edition::from_text("short text"))
             .unwrap();
-        server.work_set_text(sid, work_id, "much longer text with more characters than before").unwrap();
+        server
+            .work_set_text(
+                sid,
+                work_id,
+                "much longer text with more characters than before",
+            )
+            .unwrap();
 
         let revisions = server.work_revisions_list(sid, work_id).unwrap();
         // The revision just pushed to history (rev 0) should have auto-recorded metadata
@@ -29196,7 +29229,9 @@ mod tests_revisions {
             .unwrap();
 
         // Small edit: add one character
-        server.work_set_text(sid, work_id, "hello world this is a test!").unwrap();
+        server
+            .work_set_text(sid, work_id, "hello world this is a test!")
+            .unwrap();
 
         let revisions = server.work_revisions_list(sid, work_id).unwrap();
         // Small change should NOT be auto-notable
@@ -29227,9 +29262,7 @@ mod tests_revisions {
     #[test]
     fn test_revision_list_newest_first_ordering() {
         let (mut server, sid) = setup();
-        let work_id = server
-            .create_work(sid, Edition::from_text("r0"))
-            .unwrap();
+        let work_id = server.create_work(sid, Edition::from_text("r0")).unwrap();
         server.work_set_text(sid, work_id, "r1").unwrap();
         server.work_set_text(sid, work_id, "r2").unwrap();
         server.work_set_text(sid, work_id, "r3").unwrap();
@@ -29248,13 +29281,23 @@ mod tests_revisions {
             .create_work(sid, Edition::from_text("1234567890"))
             .unwrap();
         // Add 5 chars
-        server.work_set_text(sid, work_id, "1234567890abcde").unwrap();
+        server
+            .work_set_text(sid, work_id, "1234567890abcde")
+            .unwrap();
 
         let revisions = server.work_revisions_list(sid, work_id).unwrap();
         let summary = &revisions[0].change_summary;
         // Should contain "+5" (added 5 chars) and a percentage
-        assert!(summary.contains("+5"), "Expected +5 in summary: {}", summary);
-        assert!(summary.contains("%"), "Expected percentage in summary: {}", summary);
+        assert!(
+            summary.contains("+5"),
+            "Expected +5 in summary: {}",
+            summary
+        );
+        assert!(
+            summary.contains("%"),
+            "Expected percentage in summary: {}",
+            summary
+        );
     }
 
     #[test]
@@ -29273,4 +29316,3 @@ mod tests_revisions {
         assert!(result.is_ok());
     }
 }
-

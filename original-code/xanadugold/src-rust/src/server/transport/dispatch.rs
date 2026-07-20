@@ -620,17 +620,19 @@ fn dispatch_inner(
             let (raw_nodes, raw_edges) = srv.build_work_graph(session_id);
             let nodes: Vec<super::protocol::GraphNodePayload> = raw_nodes
                 .into_iter()
-                .map(|(work_id, title, is_starred, is_source, revision_count, kind)| {
-                    super::protocol::GraphNodePayload {
-                        work_id,
-                        title,
-                        is_starred,
-                        is_source,
-                        revision_count,
-                        author_type: None,
-                        kind,
-                    }
-                })
+                .map(
+                    |(work_id, title, is_starred, is_source, revision_count, kind)| {
+                        super::protocol::GraphNodePayload {
+                            work_id,
+                            title,
+                            is_starred,
+                            is_source,
+                            revision_count,
+                            author_type: None,
+                            kind,
+                        }
+                    },
+                )
                 .collect();
             let edges: Vec<super::protocol::GraphEdgePayload> = raw_edges
                 .into_iter()
@@ -671,22 +673,36 @@ fn dispatch_inner(
             let revisions = srv.work_revisions_list(session_id, work_id)?;
             Ok(ResponseValue::RevisionListResult(revisions))
         }
-        WireRequest::WorkTextAtRevision { work_id, revision_id } => {
+        WireRequest::WorkTextAtRevision {
+            work_id,
+            revision_id,
+        } => {
             srv.ensure_can_read(session_id, work_id)?;
             let text = srv.work_text_at_revision(session_id, work_id, revision_id)?;
             Ok(ResponseValue::TextResult(text))
         }
-        WireRequest::WorkRevisionDescribe { work_id, revision_id, description } => {
+        WireRequest::WorkRevisionDescribe {
+            work_id,
+            revision_id,
+            description,
+        } => {
             srv.ensure_can_edit(session_id, work_id)?;
             srv.work_revision_describe(session_id, work_id, revision_id, description)?;
             Ok(ResponseValue::Void)
         }
-        WireRequest::WorkRevisionMarkNotable { work_id, revision_id, notable } => {
+        WireRequest::WorkRevisionMarkNotable {
+            work_id,
+            revision_id,
+            notable,
+        } => {
             srv.ensure_can_edit(session_id, work_id)?;
             srv.work_revision_mark_notable(session_id, work_id, revision_id, notable)?;
             Ok(ResponseValue::Void)
         }
-        WireRequest::WorkRevisionRollback { work_id, target_revision_id } => {
+        WireRequest::WorkRevisionRollback {
+            work_id,
+            target_revision_id,
+        } => {
             srv.ensure_can_edit(session_id, work_id)?;
             let new_rev = srv.work_revision_rollback(session_id, work_id, target_revision_id)?;
             Ok(ResponseValue::Id(new_rev))

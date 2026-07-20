@@ -681,9 +681,9 @@ impl JsonCodec {
                 OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
                 OperationCode::HistoricalAuthorList => Ok(WireRequest::HistoricalAuthorList),
                 OperationCode::SourcePatternList => Ok(WireRequest::SourcePatternList),
-            OperationCode::WorkGraph => Ok(WireRequest::WorkGraph),
+                OperationCode::WorkGraph => Ok(WireRequest::WorkGraph),
                 OperationCode::TrailList => Ok(WireRequest::TrailList),
-            OperationCode::TrailListCategories => Ok(WireRequest::TrailListCategories),
+                OperationCode::TrailListCategories => Ok(WireRequest::TrailListCategories),
                 OperationCode::WorkListArchived => Ok(WireRequest::WorkListArchived),
                 OperationCode::ConnectionPinsGet => Ok(WireRequest::ConnectionPinsGet),
                 #[cfg(feature = "serde")]
@@ -3233,8 +3233,8 @@ impl JsonCodec {
                 Ok(WireRequest::CrossServerResolve {
                     tumbler: args.tumbler,
                     content_hash_hex: args.content_hash_hex,
-                 })
-             }
+                })
+            }
             OperationCode::WorkKindGet => {
                 #[derive(Deserialize)]
                 struct Args {
@@ -3242,7 +3242,9 @@ impl JsonCodec {
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkKindGet { work_id: args.work_id })
+                Ok(WireRequest::WorkKindGet {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkKindSet => {
                 #[derive(Deserialize)]
@@ -3252,7 +3254,10 @@ impl JsonCodec {
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkKindSet { work_id: args.work_id, kind: args.kind })
+                Ok(WireRequest::WorkKindSet {
+                    work_id: args.work_id,
+                    kind: args.kind,
+                })
             }
             OperationCode::WorkListByKind => {
                 #[derive(Deserialize)]
@@ -3271,7 +3276,10 @@ impl JsonCodec {
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkSetText { work_id: args.work_id, text: args.text })
+                Ok(WireRequest::WorkSetText {
+                    work_id: args.work_id,
+                    text: args.text,
+                })
             }
             OperationCode::WorkRevisionsList => {
                 #[derive(Deserialize)]
@@ -3280,7 +3288,9 @@ impl JsonCodec {
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkRevisionsList { work_id: args.work_id })
+                Ok(WireRequest::WorkRevisionsList {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkTextAtRevision => {
                 #[derive(Deserialize)]
