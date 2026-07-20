@@ -312,6 +312,144 @@
   font-style: italic;
 }
 
+/* ── Revision Timeline ── */
+.ws-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ws-timeline-item {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  transition: background 0.1s;
+}
+.ws-timeline-item:hover {
+  background: var(--bg);
+}
+.ws-timeline-item.notable {
+  background: rgba(245, 158, 11, 0.06);
+  border: 1px solid rgba(245, 158, 11, 0.15);
+}
+.ws-timeline-item.viewing {
+  background: var(--blue-light);
+  border: 1px solid var(--accent-blue);
+}
+.ws-timeline-marker {
+  font-size: 14px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+.ws-timeline-item.notable .ws-timeline-marker {
+  color: var(--amber);
+}
+.ws-timeline-content {
+  flex: 1;
+  min-width: 0;
+}
+.ws-timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2px;
+}
+.ws-timeline-rev {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+.ws-timeline-date {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.ws-timeline-desc {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.4;
+  margin-bottom: 2px;
+}
+.ws-timeline-desc.empty {
+  color: var(--text-dim);
+  font-style: italic;
+  cursor: pointer;
+}
+.ws-timeline-desc.empty:hover {
+  color: var(--text-muted);
+}
+.ws-timeline-summary {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: 'JetBrains Mono', monospace;
+  margin-bottom: 4px;
+}
+.ws-timeline-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.ws-timeline-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.ws-timeline-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+.ws-timeline-btn.save {
+  background: var(--accent-blue);
+  color: white;
+  border-color: var(--accent-blue);
+}
+.ws-timeline-btn.active {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.ws-timeline-btn.rollback {
+  border-color: var(--red);
+  color: var(--red);
+}
+.ws-timeline-edit {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.ws-timeline-edit .ws-picker-search {
+  flex: 1;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+/* ── Revision view banner ── */
+.ws-revision-banner {
+  background: rgba(59, 130, 246, 0.1);
+  border-bottom: 1px solid var(--accent-blue);
+  padding: 6px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--accent-blue);
+}
+.ws-revision-banner button {
+  background: var(--accent-blue);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+}
+
 .ws-rail-collapse {
   position: absolute;
   top: 50%;

@@ -8,6 +8,7 @@ import { TransclusionBadge } from "../TransclusionBadge";
 import { IdentityPanel } from "../IdentityPanel";
 import { DocumentMapPanel } from "../DocumentMapPanel";
 import { TrailsPanel } from "../TrailsPanel";
+import { RevisionTimeline } from "../RevisionTimeline";
 import { loadThemeState, saveThemeState, activePalette } from "../../theme";
 import type { ThemeMode } from "../../theme";
 import type { WorkListEntry, TrailPayload } from "../../api/crdt_sync";
@@ -21,7 +22,7 @@ import "../../workspace.css";
 const WS_URL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/xudanu`;
 
 type LeftRailMode = "graph" | "outline";
-type RightPanelTab = "provenance" | "reuse" | "connections" | "trails" | "more";
+type RightPanelTab = "provenance" | "connections" | "trails" | "timeline" | "more";
 
 interface WorkMeta {
   title: string;
@@ -82,6 +83,7 @@ export function WorkspaceShell() {
   const [seedingConcepts, setSeedingConcepts] = useState(false);
   const [seedProgress, setSeedProgress] = useState(0);
   const [serverDomain, setServerDomain] = useState<string>("localhost");
+  const [viewingRevision, setViewingRevision] = useState<{ id: number; text: string } | null>(null);
 
   const crdt = useCrdtSync(WS_URL, workBeId);
   const {
@@ -857,6 +859,30 @@ export function WorkspaceShell() {
                   >
                     Trails
                   </button>
+                  <button
+                    className="ws-action-btn"
+                    title="Save current state as a named revision"
+                    onClick={async () => {
+                      if (workBeId === null || !clientRef.current) return;
+                      const desc = prompt("Revision description (optional):", "");
+                      if (desc === null) return;
+                      try {
+                        const revs = await clientRef.current.workRevisionsList(workBeId);
+                        const latest = revs[revs.length - 1];
+                        if (latest && desc) {
+                          await clientRef.current.workRevisionDescribe(workBeId, latest.revision_id, desc);
+                        }
+                        if (latest) {
+                          await clientRef.current.workRevisionMarkNotable(workBeId, latest.revision_id, true);
+                        }
+                        setRightPanelTab("timeline");
+                      } catch (e) {
+                        alert(`Could not save revision: ${e instanceof Error ? e.message : String(e)}`);
+                      }
+                    }}
+                  >
+                    Save revision
+                  </button>
                   <div className="ws-more-wrap" ref={moreMenuRef}>
                     <button
                       className="ws-action-btn"
@@ -918,6 +944,18 @@ export function WorkspaceShell() {
               </header>
 
               <div className="ws-doc-scroll">
+                {viewingRevision && (
+                  <div className="ws-revision-banner">
+                    <span>Viewing revision v{viewingRevision.id} (read-only)</span>
+                    <button onClick={() => setViewingRevision(null)}>Return to current</button>
+                  </div>
+                )}
+                {viewingRevision ? (
+                  <div style={{ padding: "16px 0", maxWidth: "38em", margin: "0 auto", fontFamily: "Source Serif 4, Georgia, serif", fontSize: 16, lineHeight: 1.7, color: "#000", whiteSpace: "pre-wrap" }}>
+                    {viewingRevision.text}
+                  </div>
+                ) : (
+                  <>
                 {selectionRange && !transclusion.pending && !transclusion.pendingLink && (
                   <div className="ws-selection-actions">
                     <button
@@ -1026,8 +1064,10 @@ export function WorkspaceShell() {
                   compoundSourceTitles={compound.sourceTitles}
                   inlineResolvedText={compound.resolvedText || undefined}
                   annotations={annotations}
-                  onCreateAnnotation={canEdit ? handleCreateAnnotation : undefined}
-                />
+                   onCreateAnnotation={canEdit ? handleCreateAnnotation : undefined}
+                 />
+                  </>
+                )}
               </div>
 
               {annotationTarget && (
@@ -1072,6 +1112,7 @@ export function WorkspaceShell() {
               ["provenance", "Provenance"],
               ["connections", "Connections"],
               ["trails", "Trails"],
+              ["timeline", "Timeline"],
               ["more", "More"],
             ] as const).map(([id, label]) => (
               <button
@@ -1114,13 +1155,7 @@ export function WorkspaceShell() {
                   {workMeta?.publishedAt && (<><dt>Updated</dt><dd>{workMeta.publishedAt}</dd></>)}
                 </dl>
               </div>
-            )}
-            {rightPanelTab === "reuse" && (
-              <div className="ws-placeholder">
-                <div className="ws-placeholder-label">Reuse</div>
-                <div className="ws-placeholder-sublabel">Coming soon — works that transclude or quote this one</div>
-              </div>
-            )}
+             )}
             {rightPanelTab === "connections" && (
               <div className="ws-placeholder">
                 <div className="ws-placeholder-label">Connections</div>
@@ -1185,6 +1220,20 @@ export function WorkspaceShell() {
                     })}
                   </ul>
                 )}
+              </div>
+             )}
+            {rightPanelTab === "timeline" && (
+              <div className="ws-timeline-tab">
+                <div className="ws-trails-tab-header">
+                  <span>Revision history</span>
+                </div>
+                <RevisionTimeline
+                  workId={workBeId}
+                  client={connected ? clientRef.current : null}
+                  onViewRevision={(revId, revText) => {
+                    setViewingRevision({ id: revId, text: revText });
+                  }}
+                />
               </div>
             )}
             {rightPanelTab === "more" && (
