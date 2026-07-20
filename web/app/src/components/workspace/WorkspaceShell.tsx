@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCrdtSync } from "../../hooks/useCrdtSync";
-import { useTransclusion } from "../../hooks/useTransclusion";
+import { useTransclusion, DEFAULT_LINK_TYPES } from "../../hooks/useTransclusion";
 import { useCompoundEdition } from "../../hooks/useCompoundEdition";
 import { authorColorPair } from "../../author-color";
 import { CollaborativeEditor } from "../CollaborativeEditor";
@@ -9,6 +9,7 @@ import { IdentityPanel } from "../IdentityPanel";
 import { DocumentMapPanel } from "../DocumentMapPanel";
 import { TrailsPanel } from "../TrailsPanel";
 import { RevisionTimeline } from "../RevisionTimeline";
+import { LinkCreator } from "../LinkCreator";
 import { loadThemeState, saveThemeState, activePalette } from "../../theme";
 import type { ThemeMode } from "../../theme";
 import type { WorkListEntry, TrailPayload } from "../../api/crdt_sync";
@@ -89,6 +90,7 @@ export function WorkspaceShell() {
   const {
     text,
     connected,
+    authenticated,
     identity,
     isAdmin,
     setText,
@@ -298,30 +300,44 @@ export function WorkspaceShell() {
     }
   }, [clientRef]);
 
-  // Load trails that have at least one stop on the current work
+  // Load all trails (not filtered by work — show everything)
   const loadTrailsForWork = useCallback(async () => {
-    if (!clientRef.current || workBeId === null) {
+    if (!clientRef.current) {
       setTrailsForWork([]);
       return;
     }
     setTrailsLoading(true);
     try {
       const all = await clientRef.current.trailList();
-      const filtered = all.filter((t) => t.stops.some((s) => s.work_id === workBeId));
-      setTrailsForWork(filtered);
-    } catch (e) {
-      console.warn("trail_list failed", e);
-      setTrailsForWork([]);
+      setTrailsForWork(all);
+    } catch {
+      try {
+        const published = await clientRef.current.trailListPublished();
+        setTrailsForWork(published);
+      } catch {
+        setTrailsForWork([]);
+      }
     } finally {
       setTrailsLoading(false);
     }
-  }, [clientRef, workBeId]);
+  }, [clientRef]);
 
   useEffect(() => {
     if (connected && rightPanelTab === "trails") {
       void loadTrailsForWork();
     }
   }, [connected, rightPanelTab, loadTrailsForWork]);
+
+  // Load connections when Connections tab is active
+  const loadLinks = transclusion.loadLinks;
+  const loadBacklinks = transclusion.loadBacklinks;
+  useEffect(() => {
+    if (!connected || workBeId === null || rightPanelTab !== "connections") return;
+    if (clientRef.current) {
+      void loadLinks(clientRef.current, workBeId, works);
+      void loadBacklinks(clientRef.current, workBeId);
+    }
+  }, [connected, workBeId, rightPanelTab, clientRef, works, loadLinks, loadBacklinks]);
 
   // Fetch work kind when work changes
   useEffect(() => {
@@ -558,7 +574,7 @@ export function WorkspaceShell() {
   }, [workMeta]);
 
   return (
-    <div className={`ws-shell ${activeCssClass} ${navTab === "compose" ? "ws-mode-compose" : ""}`}>
+    <div className={`ws-shell ${activeCssClass} ${navTab === "compose" ? "ws-mode-compose" : ""} ${navTab === "library" ? "ws-mode-library" : ""}`}>
       <WorkspaceTopBar
         connected={connected}
         identityName={identityName}
@@ -791,6 +807,11 @@ export function WorkspaceShell() {
           ) : (
             <>
               <header className="ws-doc-header">
+                {!authenticated && (
+                  <div className="ws-auth-warning" onClick={() => setShowIdentity(true)}>
+                    ⚠ You're browsing anonymously. Sign in to save links, edits, and revisions.
+                  </div>
+                )}
                 <div className="ws-doc-title-row">
                   <div className="ws-kind-picker-wrap">
                     <button
@@ -861,17 +882,12 @@ export function WorkspaceShell() {
                   </button>
                   <button
                     className="ws-action-btn"
-                    title="Save current state as a named revision"
+                    title="Mark current state as a notable revision (add description later in Timeline)"
                     onClick={async () => {
                       if (workBeId === null || !clientRef.current) return;
-                      const desc = prompt("Revision description (optional):", "");
-                      if (desc === null) return;
                       try {
                         const revs = await clientRef.current.workRevisionsList(workBeId);
                         const latest = revs[revs.length - 1];
-                        if (latest && desc) {
-                          await clientRef.current.workRevisionDescribe(workBeId, latest.revision_id, desc);
-                        }
                         if (latest) {
                           await clientRef.current.workRevisionMarkNotable(workBeId, latest.revision_id, true);
                         }
@@ -1109,10 +1125,10 @@ export function WorkspaceShell() {
         <aside className={`ws-right-panel ${rightPanelHidden ? "hidden" : ""}`}>
           <div className="ws-tabs">
             {([
-              ["provenance", "Provenance"],
-              ["connections", "Connections"],
+              ["provenance", "Prov"],
+              ["connections", "Links"],
               ["trails", "Trails"],
-              ["timeline", "Timeline"],
+              ["timeline", "History"],
               ["more", "More"],
             ] as const).map(([id, label]) => (
               <button
@@ -1157,9 +1173,129 @@ export function WorkspaceShell() {
               </div>
              )}
             {rightPanelTab === "connections" && (
-              <div className="ws-placeholder">
-                <div className="ws-placeholder-label">Connections</div>
-                <div className="ws-placeholder-sublabel">Coming soon — typed links and backlinks</div>
+              <div className="ws-connections-tab">
+                {/* Outbound links */}
+                <div className="ws-conn-section">
+                  <div className="ws-conn-header">
+                    Links ({transclusion.links.length})
+                  </div>
+                  {transclusion.links.length === 0 ? (
+                    <div className="ws-conn-empty">No outbound links. Select text and click "Link" to create one.</div>
+                  ) : (
+                    transclusion.links.map((link) => {
+                      const isWebLink = (link.link_types || []).includes(6);
+                      const destUrl = link.destination_ref?.excerpt;
+                      const destTitle = isWebLink && destUrl
+                        ? destUrl
+                        : (link.destination_title || `Work 0x${link.destination.toString(16)}`);
+                      const typeNames = (link.link_types || []).map(
+                        (tid) => DEFAULT_LINK_TYPES.find((t) => t.type_id === tid)?.name || `type ${tid}`
+                      );
+                      return (
+                        <div
+                          key={link.link_id}
+                          className="ws-conn-item"
+                          onClick={() => !isWebLink && selectWork(link.destination)}
+                          title={isWebLink && destUrl ? destUrl : undefined}
+                        >
+                          <div className="ws-conn-title-row">
+                            <div className="ws-conn-title">
+                              {isWebLink ? "🔗 " : ""}{destTitle}
+                            </div>
+                            <button
+                              className="ws-conn-delete"
+                              title="Delete this link"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm("Delete this link?")) {
+                                  clientRef.current?.linkDelete(link.link_id).then(() => {
+                                    if (clientRef.current && workBeId !== null) {
+                                      void loadLinks(clientRef.current, workBeId, works);
+                                    }
+                                  });
+                                }
+                              }}
+                            >×</button>
+                          </div>
+                          {typeNames.length > 0 && (
+                            <div className="ws-conn-types">
+                              {typeNames.map((tn, i) => {
+                                const lt = DEFAULT_LINK_TYPES.find((t) => t.name === tn);
+                                return (
+                                  <span
+                                    key={i}
+                                    className="ws-conn-type-badge"
+                                    style={lt ? { background: lt.color + "20", color: lt.color, borderColor: lt.color + "60" } : {}}
+                                  >
+                                    {tn}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Backlinks */}
+                <div className="ws-conn-section">
+                  <div className="ws-conn-header">
+                    Backlinks ({transclusion.backlinks.length})
+                  </div>
+                  {transclusion.backlinks.length === 0 ? (
+                    <div className="ws-conn-empty">No inbound links from other works.</div>
+                  ) : (
+                    transclusion.backlinks.map((bl, i) => {
+                      const lt = DEFAULT_LINK_TYPES.find((t) => t.name === bl.link_type);
+                      return (
+                        <div
+                          key={i}
+                          className="ws-conn-item"
+                          onClick={() => selectWork(bl.source_work_id)}
+                        >
+                          <div className="ws-conn-title">{bl.title || `Work 0x${bl.source_work_id.toString(16)}`}</div>
+                          {bl.excerpt && <div className="ws-conn-excerpt">"{bl.excerpt.slice(0, 80)}{bl.excerpt.length > 80 ? "…" : ""}"</div>}
+                          <div className="ws-conn-types">
+                            <span
+                              className="ws-conn-type-badge"
+                              style={lt ? { background: lt.color + "20", color: lt.color, borderColor: lt.color + "60" } : {}}
+                            >
+                              {bl.link_type}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Transclusions in this work */}
+                <div className="ws-conn-section">
+                  <div className="ws-conn-header">
+                    Transclusions ({compound.spanRanges.length})
+                  </div>
+                  {compound.spanRanges.length === 0 ? (
+                    <div className="ws-conn-empty">No transclusions in this work.</div>
+                  ) : (
+                    compound.spanRanges.map((sr, i) => {
+                      const sourceTitle = compound.sourceTitles[sr.source_work_id] || `Work 0x${sr.source_work_id.toString(16)}`;
+                      return (
+                        <div
+                          key={i}
+                          className="ws-conn-item"
+                          onClick={() => selectWork(sr.source_work_id)}
+                        >
+                          <div className="ws-conn-title">↗ {sourceTitle}</div>
+                          <div className="ws-conn-excerpt">
+                            [{sr.char_start}:{sr.char_end}]
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               </div>
             )}
             {rightPanelTab === "trails" && (
@@ -1178,8 +1314,8 @@ export function WorkspaceShell() {
                   <div className="ws-placeholder"><div className="ws-placeholder-label">Loading…</div></div>
                 ) : trailsForWork.length === 0 ? (
                   <div className="ws-placeholder">
-                    <div className="ws-placeholder-label">No trails yet</div>
-                    <div className="ws-placeholder-sublabel">Select text and click "+ Trail" to start one</div>
+                    <div className="ws-placeholder-label">No stops on this work</div>
+                    <div className="ws-placeholder-sublabel">Your trails may have stops on other works. Click Manage to see all.</div>
                   </div>
                 ) : (
                   <ul className="ws-trail-list">
@@ -1189,13 +1325,36 @@ export function WorkspaceShell() {
                         .filter((s) => s.work_id === workBeId);
                       return (
                         <li key={t.trail_id} className="ws-trail-card">
-                          <div className="ws-trail-card-title">{t.name}</div>
+                          <div className="ws-trail-card-title-row">
+                            <span className="ws-trail-card-title">{t.name}</span>
+                            {t.published ? (
+                              <span className="ws-trail-badge published" title="Published — double-click to unpublish" onDoubleClick={async (e) => {
+                                e.stopPropagation();
+                                if (!confirm("Unpublish this trail?")) return;
+                                try {
+                                  await clientRef.current?.trailUnpublish(t.trail_id);
+                                  await loadTrailsForWork();
+                                } catch (err) {
+                                  alert(`Unpublish failed: ${err instanceof Error ? err.message : String(err)}`);
+                                }
+                              }}>Published</span>
+                            ) : (
+                              <span className="ws-trail-badge draft" title="Click to publish" onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  await clientRef.current?.trailPublish(t.trail_id);
+                                  await loadTrailsForWork();
+                                } catch (err) {
+                                  alert(`Publish failed: ${err instanceof Error ? err.message : String(err)}`);
+                                }
+                              }}>Draft</span>
+                            )}
+                          </div>
                           {t.introduction && (
                             <div className="ws-trail-card-intro">{t.introduction}</div>
                           )}
                           <div className="ws-trail-card-meta">
                             {t.stops.length} stops · {workStops.length} on this work
-                            {t.published && <span className="ws-trail-published">· published</span>}
                           </div>
                           {workStops.length > 0 && (
                             <ul className="ws-trail-stops">
@@ -1365,6 +1524,30 @@ export function WorkspaceShell() {
             <button onClick={() => setShowAdmin(false)}>Close</button>
           </div>
         </div>
+      )}
+
+      {transclusion.pendingLink && (
+        <LinkCreator
+          open={!!transclusion.pendingLink}
+          onClose={() => transclusion.clearPendingLink()}
+          source={{
+            workId: transclusion.pendingLink.sourceWorkId,
+            workTitle: transclusion.pendingLink.sourceWorkTitle,
+            start: transclusion.pendingLink.start,
+            end: transclusion.pendingLink.end,
+            text: transclusion.pendingLink.text,
+          }}
+          works={works}
+          currentWorkId={workBeId}
+          clientRef={clientRef}
+          onLinkCreated={() => {
+            transclusion.clearPendingLink();
+            if (rightPanelTab === "connections" && clientRef.current && workBeId !== null) {
+              void loadLinks(clientRef.current, workBeId, works);
+            }
+          }}
+          onSelectTextInOtherDoc={() => {}}
+        />
       )}
 
       {showTrailsPanel && (

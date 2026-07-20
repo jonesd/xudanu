@@ -6136,11 +6136,13 @@ impl Server {
         trail_id: BeId,
     ) -> Result<(), ServerError> {
         let owner = self.trail_owner_club(session_id)?;
+        tracing::info!("[trail_publish] trail_id={} owner={}", trail_id, owner);
         let t = self
             .trails
             .get_mut(&trail_id)
             .ok_or_else(|| ServerError::InvalidArgument("trail not found".into()))?;
         if t.owner_club != owner {
+            tracing::warn!("[trail_publish] ownership mismatch: trail.owner={} session.owner={}", t.owner_club, owner);
             return Err(ServerError::InvalidArgument("not your trail".into()));
         }
         t.published = true;

@@ -143,15 +143,17 @@ export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClos
 
   const handlePublish = (trailId: number) => {
     setTrails((prev) => patchTrail(prev, trailId, (t) => ({ ...t, published: true })));
-    client?.trailPublish(trailId).catch(() => {
+    client?.trailPublish(trailId).catch((e) => {
       setTrails((prev) => patchTrail(prev, trailId, (t) => ({ ...t, published: false })));
+      alert(`Publish failed: ${e instanceof Error ? e.message : String(e)}\n\nAre you signed in? Trail operations require authentication.`);
     });
   };
 
   const handleUnpublish = (trailId: number) => {
     setTrails((prev) => patchTrail(prev, trailId, (t) => ({ ...t, published: false })));
-    client?.trailUnpublish(trailId).catch(() => {
+    client?.trailUnpublish(trailId).catch((e) => {
       setTrails((prev) => patchTrail(prev, trailId, (t) => ({ ...t, published: true })));
+      alert(`Unpublish failed: ${e instanceof Error ? e.message : String(e)}`);
     });
   };
 

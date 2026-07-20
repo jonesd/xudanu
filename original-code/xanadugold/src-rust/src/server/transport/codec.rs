@@ -382,6 +382,7 @@ impl BinaryCodec {
             OperationCode::LabelCreate => Ok(WireRequest::LabelCreate),
             OperationCode::WorkGraph => Ok(WireRequest::WorkGraph),
             OperationCode::TrailList => Ok(WireRequest::TrailList),
+            OperationCode::TrailListCategories => Ok(WireRequest::TrailListCategories),
             _ => Err(FrameParseError::MissingPayload.into()),
         }
     }
@@ -682,6 +683,7 @@ impl JsonCodec {
                 OperationCode::SourcePatternList => Ok(WireRequest::SourcePatternList),
             OperationCode::WorkGraph => Ok(WireRequest::WorkGraph),
                 OperationCode::TrailList => Ok(WireRequest::TrailList),
+            OperationCode::TrailListCategories => Ok(WireRequest::TrailListCategories),
                 OperationCode::WorkListArchived => Ok(WireRequest::WorkListArchived),
                 OperationCode::ConnectionPinsGet => Ok(WireRequest::ConnectionPinsGet),
                 #[cfg(feature = "serde")]
@@ -3111,6 +3113,54 @@ impl JsonCodec {
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::TrailGet {
                     trail_id: args.trail_id,
+                })
+            }
+            OperationCode::TrailPublish => {
+                #[derive(Deserialize)]
+                struct Args {
+                    trail_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TrailPublish {
+                    trail_id: args.trail_id,
+                })
+            }
+            OperationCode::TrailUnpublish => {
+                #[derive(Deserialize)]
+                struct Args {
+                    trail_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TrailUnpublish {
+                    trail_id: args.trail_id,
+                })
+            }
+            OperationCode::TrailUpdate => {
+                #[derive(Deserialize)]
+                struct Args {
+                    trail_id: BeId,
+                    introduction: Option<String>,
+                    categories: Vec<String>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TrailUpdate {
+                    trail_id: args.trail_id,
+                    introduction: args.introduction,
+                    categories: args.categories,
+                })
+            }
+            OperationCode::TrailListPublished => {
+                #[derive(Deserialize)]
+                struct Args {
+                    category: Option<String>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TrailListPublished {
+                    category: args.category,
                 })
             }
             #[cfg(feature = "serde")]

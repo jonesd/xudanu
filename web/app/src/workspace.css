@@ -160,6 +160,16 @@
 }
 .ws-mode-compose .ws-left-rail { display: none; }
 
+/* Library mode: full-width list, no side panels */
+.ws-mode-library .ws-left-rail { display: none; }
+.ws-mode-library .ws-right-panel { display: none; }
+.ws-mode-library .ws-doc-surface {
+  max-width: none;
+}
+.ws-mode-library .ws-work-picker {
+  max-width: 1200px;
+}
+
 /* ── Left rail ── */
 .ws-left-rail {
   position: relative;
@@ -310,6 +320,97 @@
   color: var(--text-dim);
   padding: 4px 6px;
   font-style: italic;
+}
+
+/* ── Connections tab ── */
+.ws-connections-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ws-conn-section {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+.ws-conn-section:last-child {
+  border-bottom: none;
+}
+.ws-conn-header {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.ws-conn-empty {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+  padding: 4px 0;
+}
+.ws-conn-item {
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-bottom: 3px;
+  transition: background 0.1s;
+}
+.ws-conn-item:hover {
+  background: var(--bg-elevated);
+}
+.ws-conn-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.ws-conn-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ws-conn-title-row .ws-conn-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-conn-delete {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.ws-conn-delete:hover {
+  color: var(--red);
+}
+.ws-conn-excerpt {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 2px;
+  line-height: 1.3;
+}
+.ws-conn-types {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.ws-conn-type-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 /* ── Revision Timeline ── */
@@ -490,6 +591,22 @@
   gap: 6px 12px;
 }
 
+.ws-auth-warning {
+  width: 100%;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #92400e;
+  cursor: pointer;
+  margin-bottom: 4px;
+  transition: background 0.12s;
+}
+.ws-auth-warning:hover {
+  background: rgba(245, 158, 11, 0.15);
+}
+
 .ws-doc-title-row {
   display: flex;
   align-items: center;
@@ -619,6 +736,7 @@
   flex: 1;
   overflow: auto;
   padding: 32px 48px;
+  position: relative;
 }
 
 /* Reading-mode typography (Phase 2 polish) */
@@ -636,39 +754,30 @@
   font-family: 'Source Serif 4', Georgia, serif !important;
   font-size: 17px !important;
   line-height: 1.7 !important;
-  max-width: 38em;
-  margin: 0 auto;
 }
 .ws-doc-surface.editable .editor-content {
-  max-width: 38em;
-  margin: 0 auto;
+  /* full width of the document surface */
 }
 
-/* Transclusion styling — blockquote-style with colored left border */
+/* Transclusion styling — inline block, not full-width, doesn't swallow neighbors */
 .ws-doc-surface .inline-transclusion {
-  display: inline-block;
-  background: rgba(59, 130, 246, 0.06);
-  border-left: 3px solid var(--blue);
-  border-bottom: none;
-  border-radius: 0 4px 4px 0;
-  padding: 4px 10px;
-  margin: 4px 0;
+  display: inline;
+  background: rgba(59, 130, 246, 0.08);
+  border-left: 2px solid var(--blue);
+  border-radius: 0 3px 3px 0;
+  padding: 1px 6px;
+  margin: 0;
   font-style: italic;
   color: var(--doc-text-muted);
-  width: 100%;
-  box-sizing: border-box;
 }
 .ws-doc-surface .inline-transclusion::before {
-  content: "Transcluded";
-  display: block;
+  content: "↗";
   font-size: 10px;
-  font-weight: 600;
-  font-style: normal;
   color: var(--blue);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 2px;
-  opacity: 1;
+  margin-right: 3px;
+  opacity: 0.7;
+  font-weight: 700;
+  font-style: normal;
 }
 .ws-doc-surface .inline-transclusion:hover {
   background: rgba(59, 130, 246, 0.12);
@@ -677,10 +786,12 @@
   text-decoration: underline;
 }
 
-/* Selection action popover */
+/* Selection action popover — floats over text, doesn't shift layout */
 .ws-selection-actions {
-  position: sticky;
+  position: absolute;
   top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 10;
   display: flex;
   gap: 4px;
@@ -688,9 +799,7 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 4px;
-  margin: 0 auto 8px;
-  width: fit-content;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
 }
 .ws-sel-btn {
   background: none;
@@ -1617,6 +1726,41 @@
   font-weight: 600;
   color: var(--text);
   margin-bottom: 2px;
+}
+.ws-trail-card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.ws-trail-card-title-row .ws-trail-card-title {
+  margin-bottom: 0;
+  flex: 1;
+}
+.ws-trail-badge {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: filter 0.12s;
+}
+.ws-trail-badge:hover {
+  filter: brightness(1.15);
+}
+.ws-trail-badge.published {
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.ws-trail-badge.draft {
+  background: rgba(148, 163, 184, 0.15);
+  color: #64748b;
+  border: 1px solid rgba(148, 163, 184, 0.3);
 }
 .ws-trail-card-intro {
   font-size: 11px;
