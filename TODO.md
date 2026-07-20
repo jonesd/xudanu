@@ -47,6 +47,24 @@ Alternatively, snapshot the state (clone the serializable parts) and write async
 
 ## v0.2 (medium-term)
 
+### Related Concepts persistence
+
+**Problem:** Concept names show as "Concept 1129" instead of actual
+names ("Hypertext", "Transclusion") after page refresh. Root cause:
+the `conceptNameOverride` map is in-memory only and is lost on
+refresh. The graph fetch returns backend titles which are empty for
+works created during earlier failed seeding attempts.
+
+**Fix needed:**
+- [ ] Verify all seeded concepts have proper text content (via `work_set_text`)
+- [ ] Clean up stale empty concept works from failed seeding attempts
+- [ ] Consider adding `kind` to the `WorkListEntry` response so the work
+      picker doesn't need a separate graph fetch for kind data
+- [ ] Consider a dedicated `concept_list` wire op that returns concept
+      works with titles + link counts in one call (instead of deriving
+      from the full graph)
+- [ ] Test: seed concepts → refresh page → concept names persist correctly
+
 ### Club-based access control
 
 Wire up the existing Club/KeyMaster infrastructure for production use:
