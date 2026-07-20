@@ -680,7 +680,7 @@ impl JsonCodec {
                 OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
                 OperationCode::HistoricalAuthorList => Ok(WireRequest::HistoricalAuthorList),
                 OperationCode::SourcePatternList => Ok(WireRequest::SourcePatternList),
-                OperationCode::WorkGraph => Ok(WireRequest::WorkGraph),
+            OperationCode::WorkGraph => Ok(WireRequest::WorkGraph),
                 OperationCode::TrailList => Ok(WireRequest::TrailList),
                 OperationCode::WorkListArchived => Ok(WireRequest::WorkListArchived),
                 OperationCode::ConnectionPinsGet => Ok(WireRequest::ConnectionPinsGet),
@@ -3183,7 +3183,45 @@ impl JsonCodec {
                 Ok(WireRequest::CrossServerResolve {
                     tumbler: args.tumbler,
                     content_hash_hex: args.content_hash_hex,
-                })
+                 })
+             }
+            OperationCode::WorkKindGet => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkKindGet { work_id: args.work_id })
+            }
+            OperationCode::WorkKindSet => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    kind: crate::edition::WorkKind,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkKindSet { work_id: args.work_id, kind: args.kind })
+            }
+            OperationCode::WorkListByKind => {
+                #[derive(Deserialize)]
+                struct Args {
+                    kind: crate::edition::WorkKind,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkListByKind { kind: args.kind })
+            }
+            OperationCode::WorkSetText => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    text: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkSetText { work_id: args.work_id, text: args.text })
             }
             _ => Err(FrameParseError::MissingPayload.into()),
         }

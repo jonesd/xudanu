@@ -4,6 +4,52 @@ use super::backend::BeId;
 use super::edition::Edition;
 use super::endorsement::EndorsementSet;
 
+/// The type of a work — used for graph icons, filtering, and
+/// concept-as-work semantics. See docs/dev/FR-22-concepts-and-categorization.md.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
+pub enum WorkKind {
+    Document,
+    Note,
+    Person,
+    Concept,
+    Collection,
+    Commentary,
+}
+
+impl Default for WorkKind {
+    fn default() -> Self {
+        WorkKind::Document
+    }
+}
+
+impl WorkKind {
+    /// Lowercase string form used in wire serialization and JSON.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            WorkKind::Document => "document",
+            WorkKind::Note => "note",
+            WorkKind::Person => "person",
+            WorkKind::Concept => "concept",
+            WorkKind::Collection => "collection",
+            WorkKind::Commentary => "commentary",
+        }
+    }
+
+    /// Parse from a lowercase string; falls back to Document on miss.
+    pub fn from_str_loose(s: &str) -> Self {
+        match s.to_ascii_lowercase().as_str() {
+            "note" => WorkKind::Note,
+            "person" => WorkKind::Person,
+            "concept" => WorkKind::Concept,
+            "collection" => WorkKind::Collection,
+            "commentary" => WorkKind::Commentary,
+            _ => WorkKind::Document,
+        }
+    }
+}
+
 /// A lifecycle transition recorded on a Work (append-only history).
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -34,6 +80,7 @@ pub struct Work {
     endorsements: EndorsementSet,
     is_archived: bool,
     lifecycle_history: Vec<WorkLifecycleEvent>,
+    kind: WorkKind,
 }
 
 impl Work {
@@ -51,6 +98,7 @@ impl Work {
             endorsements: EndorsementSet::new(),
             is_archived: false,
             lifecycle_history: Vec::new(),
+            kind: WorkKind::Document,
         }
     }
 
@@ -68,6 +116,7 @@ impl Work {
             endorsements: EndorsementSet::new(),
             is_archived: false,
             lifecycle_history: Vec::new(),
+            kind: WorkKind::Document,
         }
     }
 
@@ -81,6 +130,16 @@ impl Work {
 
     pub fn set_owner(&mut self, owner: Option<BeId>) {
         self.owner = owner;
+    }
+
+    /// The work's kind (Document / Fragment / Person / Concept / Collection /
+    /// Commentary). See FR-22.
+    pub fn kind(&self) -> WorkKind {
+        self.kind
+    }
+
+    pub fn set_kind(&mut self, kind: WorkKind) {
+        self.kind = kind;
     }
 
     /// Current archive (soft-delete) state. Archived works are hidden from the

@@ -620,7 +620,7 @@ fn dispatch_inner(
             let (raw_nodes, raw_edges) = srv.build_work_graph(session_id);
             let nodes: Vec<super::protocol::GraphNodePayload> = raw_nodes
                 .into_iter()
-                .map(|(work_id, title, is_starred, is_source, revision_count)| {
+                .map(|(work_id, title, is_starred, is_source, revision_count, kind)| {
                     super::protocol::GraphNodePayload {
                         work_id,
                         title,
@@ -628,6 +628,7 @@ fn dispatch_inner(
                         is_source,
                         revision_count,
                         author_type: None,
+                        kind,
                     }
                 })
                 .collect();
@@ -645,6 +646,25 @@ fn dispatch_inner(
             Ok(ResponseValue::WorkGraphResult(
                 super::protocol::GraphPayload { nodes, edges },
             ))
+        }
+        WireRequest::WorkKindGet { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let kind = srv.work_kind_get(work_id)?;
+            Ok(ResponseValue::Humber(kind as u64))
+        }
+        WireRequest::WorkKindSet { work_id, kind } => {
+            srv.ensure_can_edit(session_id, work_id)?;
+            srv.work_kind_set(work_id, kind)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::WorkListByKind { kind: _ } => {
+            // Phase 3 will implement this properly with a Vec<WorkMeta> response.
+            // For now, return 0 to indicate "not yet supported".
+            Ok(ResponseValue::Humber(0))
+        }
+        WireRequest::WorkSetText { work_id, text } => {
+            srv.work_set_text(session_id, work_id, &text)?;
+            Ok(ResponseValue::Void)
         }
         WireRequest::TrailCreate {
             name,

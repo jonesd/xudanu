@@ -1,11 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { CrdtSyncClient, GraphEdge } from "../api/crdt_sync";
+import {
+  computeNodeScores,
+  selectTopNodes,
+  KIND_ICON,
+  KIND_COLOR,
+  KIND_ICON_COLOR,
+} from "../graph-scoring";
+import type { GraphNode } from "../graph-scoring";
 
 interface Props {
   client: CrdtSyncClient | null;
   onSelectWork: (workId: number) => void;
   currentWorkId: number | null;
   onClose: () => void;
+  embedded?: boolean;
 }
 
 interface SimNode {
@@ -23,7 +32,7 @@ function hexId(id: number): string {
   return id.toString(16).padStart(4, "0");
 }
 
-export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose }: Props) {
+export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose, embedded = false }: Props) {
   const [nodes, setNodes] = useState<SimNode[]>([]);
   const [edges, setEdges] = useState<GraphEdge[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,27 +48,44 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose 
   useEffect(() => {
     if (!client) return;
     setLoading(true);
-    client.workGraph().then((g) => {
-      const cx = 400;
-      const cy = 300;
-      const simNodes: SimNode[] = g.nodes.map((n, i) => {
-        const angle = (2 * Math.PI * i) / g.nodes.length;
-        const r = 150 + Math.random() * 80;
-        return {
-          id: n.work_id,
-          title: n.title || `Work ${hexId(n.work_id)}`,
-          isStarred: n.is_starred,
-          isSource: n.is_source,
-          x: cx + r * Math.cos(angle),
-          y: cy + r * Math.sin(angle),
-          vx: 0,
-          vy: 0,
-        };
-      });
-      setNodes(simNodes);
-      setEdges(g.edges);
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    let cancelled = false;
+
+    const fetchGraph = async (attempt: number) => {
+      try {
+        const g = await client.workGraph();
+        if (cancelled) return;
+        const cx = 200;
+        const cy = 200;
+        const simNodes: SimNode[] = g.nodes.map((n, i) => {
+          const angle = (2 * Math.PI * i) / Math.max(g.nodes.length, 1);
+          const r = 80 + Math.random() * 80;
+          return {
+            id: n.work_id,
+            title: n.title || `Work ${hexId(n.work_id)}`,
+            isStarred: n.is_starred,
+            isSource: n.is_source,
+            x: cx + r * Math.cos(angle),
+            y: cy + r * Math.sin(angle),
+            vx: 0,
+            vy: 0,
+          };
+        });
+        setNodes(simNodes);
+        setEdges(g.edges);
+        setLoading(false);
+      } catch (e) {
+        if (cancelled) return;
+        // Retry up to 3 times with backoff — likely auth race on first mount
+        if (attempt < 3) {
+          setTimeout(() => fetchGraph(attempt + 1), 500 * (attempt + 1));
+        } else {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchGraph(0);
+    return () => { cancelled = true; };
   }, [client]);
 
   const tick = useCallback(() => {
@@ -68,19 +94,22 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose 
     if (ns.length === 0) return;
 
     const alpha = 0.3;
-    const repulsion = 3000;
+    const repulsion = 800;   // reduced for more nodes
     const attraction = 0.005;
-    const centerForce = 0.01;
+    const centerForce = 0.02; // doubled
+    const currentForce = 0.08; // stronger pull on current node
     const damping = 0.85;
 
-    const cx = 400;
-    const cy = 300;
+    const cx = 200;
+    const cy = 200;
 
     const idxMap = new Map(ns.map((n, i) => [n.id, i]));
 
     for (let i = 0; i < ns.length; i++) {
-      ns[i].vx += (cx - ns[i].x) * centerForce;
-      ns[i].vy += (cy - ns[i].y) * centerForce;
+      const isCurrent = ns[i].id === currentWorkId;
+      const f = isCurrent ? currentForce : centerForce;
+      ns[i].vx += (cx - ns[i].x) * f;
+      ns[i].vy += (cy - ns[i].y) * f;
     }
 
     for (let i = 0; i < ns.length; i++) {
@@ -126,20 +155,36 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose 
       n.vy *= damping;
       n.x += n.vx * alpha;
       n.y += n.vy * alpha;
-      n.x = Math.max(30, Math.min(770, n.x));
+      // Clamp to viewBox bounds (400×600) with margin for node radius
+      n.x = Math.max(30, Math.min(370, n.x));
       n.y = Math.max(30, Math.min(570, n.y));
     }
 
     setNodes([...ns]);
-  }, [dragId]);
+  }, [dragId, currentWorkId]);
+
+  // When current work changes, kick the simulation so nodes visibly rearrange
+  useEffect(() => {
+    if (nodes.length === 0) return;
+    const kicked = nodes.map((n) => ({
+      ...n,
+      // Add small random velocity to break out of equilibrium
+      vx: n.vx + (Math.random() - 0.5) * 20,
+      vy: n.vy + (Math.random() - 0.5) * 20,
+    }));
+    setNodes(kicked);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentWorkId]);
 
   useEffect(() => {
     if (nodes.length === 0) return;
     let frame = 0;
-    const maxFrames = 300;
+    const maxFrames = 150;
     const run = () => {
       if (frame >= maxFrames) return;
       tick();
+      // Push updated positions to React state every frame for smooth animation
+      setNodes([...nodesRef.current]);
       frame++;
       animRef.current = requestAnimationFrame(run);
     };
@@ -171,6 +216,129 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose 
   }, [dragId]);
 
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+
+  if (embedded) {
+    const MAX_NODES = 9;
+
+    // Adapt SimNode[] to GraphNode[] for the pure scoring functions
+    const graphNodes: GraphNode[] = nodes.map((n) => ({
+      work_id: n.id,
+      title: n.title,
+      is_starred: n.isStarred,
+      is_source: n.isSource,
+    }));
+
+    // Score each node relative to current work (per FR-21)
+    const nodeScores = computeNodeScores(edges as GraphEdge[], currentWorkId);
+
+    // Select top N relevant nodes — fewer is better for clarity
+    const visibleGraphNodes = selectTopNodes(graphNodes, nodeScores, currentWorkId, MAX_NODES);
+    const visibleIds = new Set(visibleGraphNodes.map((n) => n.work_id));
+    const visibleEdges = edges.filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target));
+
+    return (
+      <div className="document-map-embedded">
+        {loading ? (
+          <div className="ws-placeholder"><div className="ws-placeholder-label">Loading graph…</div></div>
+        ) : visibleGraphNodes.length === 0 ? (
+          <div className="ws-placeholder"><div className="ws-placeholder-label">No works yet</div></div>
+        ) : (
+          <>
+            <svg
+              ref={svgRef}
+              className="document-map-svg-embedded"
+              viewBox="0 0 400 600"
+              preserveAspectRatio="xMidYMid slice"
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              style={{ cursor: "pointer" }}
+            >
+              {visibleEdges.map((e, i) => {
+                const a = nodeMap.get(e.source);
+                const b = nodeMap.get(e.target);
+                if (!a || !b) return null;
+                // All edges: simple light dotted line
+                const involvesCurrent = a.id === currentWorkId || b.id === currentWorkId;
+                return (
+                  <line
+                    key={`e-${i}`}
+                    x1={a.x}
+                    y1={a.y}
+                    x2={b.x}
+                    y2={b.y}
+                    stroke="#94a3b8"
+                    strokeWidth={involvesCurrent ? 1 : 0.5}
+                    strokeDasharray="3 4"
+                    opacity={involvesCurrent ? 0.7 : 0.4}
+                  />
+                );
+              })}
+              {visibleGraphNodes.map((gn) => {
+                const simNode = nodeMap.get(gn.work_id);
+                if (!simNode) return null;
+                void nodeScores.get(gn.work_id);
+                const isCurrent = gn.work_id === currentWorkId;
+                const kind = gn.kind || "document";
+                const fillColor = KIND_COLOR[kind];
+                const iconChar = KIND_ICON[kind];
+                const iconColor = KIND_ICON_COLOR[kind];
+                const r = 24;
+                return (
+                  <g
+                    key={gn.work_id}
+                    onMouseDown={handleMouseDown(gn.work_id)}
+                    onClick={() => onSelectWork(gn.work_id)}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <circle
+                      cx={simNode.x}
+                      cy={simNode.y}
+                      r={r}
+                      fill={fillColor}
+                      stroke={isCurrent ? "#1e3a8a" : "#fff"}
+                      strokeWidth={isCurrent ? 2 : 1}
+                    >
+                      <title>{`${gn.title}\n${kind}${isCurrent ? " · current" : ""}`}</title>
+                    </circle>
+                    {kind === "collection" ? (
+                      <circle
+                        cx={simNode.x}
+                        cy={simNode.y}
+                        r={r * 0.3}
+                        fill="#000000"
+                        style={{ pointerEvents: "none" }}
+                      />
+                    ) : (
+                      <text
+                        x={simNode.x}
+                        y={simNode.y}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fontSize={r * 1.2}
+                        fill={iconColor}
+                        style={{ pointerEvents: "none", userSelect: "none" }}
+                      >
+                        {iconChar}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+            </svg>
+            <div className="ws-graph-legend">
+              <span className="ws-legend-item"><span className="ws-legend-dot" style={{ background: KIND_COLOR.document }} />📄 Doc</span>
+              <span className="ws-legend-item"><span className="ws-legend-dot" style={{ background: KIND_COLOR.note }} />📝 Note</span>
+              <span className="ws-legend-item"><span className="ws-legend-dot" style={{ background: KIND_COLOR.person }} />👤 Person</span>
+              <span className="ws-legend-item"><span className="ws-legend-dot" style={{ background: KIND_COLOR.concept }} />💡 Concept</span>
+              <span className="ws-legend-item"><span className="ws-legend-dot" style={{ background: KIND_COLOR.collection }} />● Collection</span>
+              <span className="ws-legend-item"><span className="ws-legend-dot" style={{ background: KIND_COLOR.commentary }} />💬 Commentary</span>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="document-map-overlay">

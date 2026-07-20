@@ -347,6 +347,8 @@ export interface WorkListEntry {
   updated_at?: number;
 }
 
+export type WorkKind = "document" | "note" | "person" | "concept" | "collection" | "commentary";
+
 export interface GraphNode {
   work_id: number;
   title: string;
@@ -354,6 +356,7 @@ export interface GraphNode {
   is_source: boolean;
   revision_count: number;
   author_type?: string;
+  kind?: WorkKind;
 }
 
 export interface GraphEdge {
@@ -1157,6 +1160,21 @@ export class CrdtSyncClient {
   async workGraph(): Promise<WorkGraphPayload> {
     const resp = await this.sendRequest("work_graph");
     return extractValue(resp) as WorkGraphPayload;
+  }
+
+  async workKindGet(workId: number): Promise<WorkKind> {
+    const resp = await this.sendRequest("work_kind_get", { work_id: workId });
+    const val = extractValue(resp);
+    const idx = typeof val === "number" ? val : 0;
+    return (["document", "note", "person", "concept", "collection", "commentary"][idx] || "document") as WorkKind;
+  }
+
+  async workKindSet(workId: number, kind: WorkKind): Promise<void> {
+    await this.sendRequest("work_kind_set", { work_id: workId, kind });
+  }
+
+  async workSetText(workId: number, text: string): Promise<void> {
+    await this.sendRequest("work_set_text", { work_id: workId, text });
   }
 
   async trailCreate(name: string, introduction?: string, categories?: string[]): Promise<number> {

@@ -104,6 +104,7 @@ pub use transclusion::{
     TrailBlazer, TransclusionIndex, TransclusionQuery, TransclusionResult, WorkQuery,
 };
 pub use work::Work;
+pub use work::WorkKind;
 pub use wrapper::{
     check_hyperlink, check_hyperref, check_path, check_set, check_text, hyperlink_endorsement,
     hyperref_endorsement, path_endorsement, set_endorsement, text_endorsement, FeSet, FeSetError,

@@ -19,6 +19,8 @@ import { TrailsPanel } from "../TrailsPanel";
 import { DocumentSettings, loadDocPreferences } from "../DocumentSettings";
 import type { DocPreferences } from "../DocumentSettings";
 import type { WorkListEntry, CrossServerBacklinkPayload } from "../../api/crdt_sync";
+import { loadThemeState, saveThemeState, activePalette } from "../../theme";
+import type { ThemeMode } from "../../theme";
 import { TopBar } from "./TopBar";
 import { LeftRail } from "./LeftRail";
 import { BottomBar } from "./BottomBar";
@@ -71,9 +73,8 @@ export function AppShell() {
   }, []);
   const [linkDescription, setLinkDescription] = useState("");
   const [showCompare, setShowCompare] = useState(false);
-  const [isLightTheme, setIsLightTheme] = useState(() => {
-    try { return localStorage.getItem("xudanu_theme") === "light"; } catch { return false; }
-  });
+  const [themeState, setThemeState] = useState(() => loadThemeState());
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const [showPerspective, setShowPerspective] = useState(false);
   const [showCompoundBuilder, setShowCompoundBuilder] = useState(false);
@@ -895,8 +896,10 @@ export function AppShell() {
     [sendSelection]
   );
 
+  const activeCssClass = activePalette(themeState).cssClass;
+
   return (
-    <div className={`app-shell ${focusMode ? "focus-mode" : ""} ${isLightTheme ? "light-theme" : ""}`}>
+    <div className={`app-shell ${focusMode ? "focus-mode" : ""} ${activeCssClass}`}>
       <TopBar
         connected={connected}
         identityName={identityName}
@@ -908,12 +911,30 @@ export function AppShell() {
         onOpenIdentity={() => setShowIdentity(true)}
         onOpenAdmin={() => setShowAdmin(true)}
         isAdmin={crdtIsAdmin}
-        isLightTheme={isLightTheme}
-        onToggleTheme={() => {
-          const next = !isLightTheme;
-          setIsLightTheme(next);
-          try { localStorage.setItem("xudanu_theme", next ? "light" : "dark"); } catch {}
+        themeMode={themeState.mode}
+        themePickerOpen={themePickerOpen}
+        onToggleThemePicker={() => setThemePickerOpen((o) => !o)}
+        onSelectPalette={(paletteId, mode) => {
+          setThemeState((prev) => {
+            const next =
+              mode === "light"
+                ? { ...prev, mode: "light" as ThemeMode, lightPaletteId: paletteId }
+                : { ...prev, mode: "dark" as ThemeMode, darkPaletteId: paletteId };
+            saveThemeState(next);
+            return next;
+          });
+          setThemePickerOpen(false);
         }}
+        onQuickToggleMode={() => {
+          setThemeState((prev) => {
+            const nextMode: ThemeMode = prev.mode === "light" ? "dark" : "light";
+            const next = { ...prev, mode: nextMode };
+            saveThemeState(next);
+            return next;
+          });
+        }}
+        activeLightPaletteId={themeState.lightPaletteId}
+        activeDarkPaletteId={themeState.darkPaletteId}
       />
 
       <LeftRail

@@ -21,6 +21,7 @@ fn make_work_entry(
         is_archived: false,
         lifecycle_history: Vec::new(),
         history_club: None,
+        kind: crate::edition::WorkKind::Document,
     }
 }
 
@@ -590,6 +591,7 @@ mod tests {
             is_archived: false,
             lifecycle_history: Vec::new(),
             history_club: None,
+            kind: crate::edition::WorkKind::Document,
         });
         let path = manifest::manifest_path(&dir);
 
@@ -615,6 +617,7 @@ mod tests {
             is_archived: false,
             lifecycle_history: Vec::new(),
             history_club: None,
+            kind: crate::edition::WorkKind::Document,
         });
         manifest::write_manifest(&mut m, &path).unwrap();
         let b2 = manifest::backup_manifest_path(&dir, m.sequence);
@@ -659,6 +662,7 @@ mod tests {
             is_archived: false,
             lifecycle_history: Vec::new(),
             history_club: None,
+            kind: crate::edition::WorkKind::Document,
         });
         let path = manifest::manifest_path(&dir);
         manifest::write_manifest(&mut m, &path).unwrap();

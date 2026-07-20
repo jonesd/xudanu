@@ -540,6 +540,7 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
             is_archived: dw.is_archived,
             lifecycle_history: dw.lifecycle_history,
             history_club: dw.history_club,
+            kind: dw.work.kind(),
         });
     }
 
@@ -5704,7 +5705,7 @@ impl Server {
         &self,
         session_id: SessionId,
     ) -> (
-        Vec<(BeId, String, bool, bool, u64)>,
+        Vec<(BeId, String, bool, bool, u64, crate::edition::WorkKind)>,
         Vec<(BeId, BeId, String, u64)>,
     ) {
         let starred = self.starred_for_session(session_id);
@@ -5724,6 +5725,7 @@ impl Server {
                     starred.contains(id),
                     ws.is_source,
                     ws.work.revision_count(),
+                    ws.work.kind(),
                 ));
             }
         }
@@ -5756,7 +5758,7 @@ impl Server {
 
         let word_sets: Vec<(BeId, HashSet<String>)> = nodes
             .iter()
-            .filter_map(|(id, _, _, _, _)| {
+            .filter_map(|(id, _, _, _, _, _)| {
                 let text = self.work_text((*id).into()).ok()?;
                 let words: HashSet<String> = text
                     .to_ascii_lowercase()
@@ -5783,7 +5785,7 @@ impl Server {
                     continue;
                 }
                 let similarity = intersection as f64 / union as f64;
-                if similarity > 0.15 {
+                if similarity > 0.05 {
                     let key = if id_a < id_b {
                         (id_a, id_b)
                     } else {
@@ -8939,10 +8941,53 @@ impl Server {
         if let Err(e) = self.wal.append_annotation_delete(work_id, annotation_id) {
             tracing::warn!("WAL write failed for annotation_delete: {}", e);
         }
-
         self.auto_checkpoint();
         Ok(())
     }
+
+    /// Get the WorkKind for a work. Per FR-22.
+    pub fn work_kind_get(&self, work_id: BeId) -> Result<crate::edition::WorkKind, ServerError> {
+        let ws = self
+            .works
+            .get(&work_id)
+            .ok_or(ServerError::InvalidArgument("work not found".into()))?;
+        Ok(ws.work.kind())
+    }
+
+    /// Set the WorkKind for a work. Per FR-22. Requires edit access.
+    pub fn work_kind_set(
+        &mut self,
+        work_id: BeId,
+        kind: crate::edition::WorkKind,
+    ) -> Result<(), ServerError> {
+        let ws = self
+            .works
+            .get_mut(&work_id)
+            .ok_or(ServerError::InvalidArgument("work not found".into()))?;
+        ws.work.set_kind(kind);
+        ws.dirty_gen = ws.dirty_gen.wrapping_add(1);
+        self.auto_checkpoint();
+        Ok(())
+    }
+
+    /// Set the text content of a work in one shot (bypasses grab requirement).
+    /// Used for seeding concepts and other batch operations.
+    pub fn work_set_text(
+        &mut self,
+        session_id: SessionId,
+        work_id: BeId,
+        text: &str,
+    ) -> Result<(), ServerError> {
+        self.ensure_session(session_id)?;
+        if self.is_source_work(work_id) {
+            return Err(ServerError::InvalidArgument("source works are immutable".into()));
+        }
+        let edition = crate::edition::Edition::from_text_batched(text);
+        let author_club = self.resolve_author_club(session_id);
+        self.revise_work(work_id, session_id, edition, author_club)?;
+        Ok(())
+    }
+
 
     pub fn annotation_attach_node(
         &mut self,
@@ -14567,6 +14612,7 @@ pub(crate) mod persist_snapshot {
                         is_archived,
                         lifecycle_history,
                         history_club,
+                        kind: ws.work.kind(),
                     });
                 } else {
                     dirty_work_gens.push((*id, ws.dirty_gen));
@@ -14851,6 +14897,7 @@ pub(crate) mod persist_snapshot {
                     is_archived: ws.work.is_archived(),
                     lifecycle_history: ws.work.lifecycle_history().to_vec(),
                     history_club: ws.work.history_club(),
+                    kind: ws.work.kind(),
                 });
             }
 

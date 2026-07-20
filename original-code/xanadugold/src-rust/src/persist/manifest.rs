@@ -94,6 +94,11 @@ pub struct WorkEntry {
     pub lifecycle_history: Vec<crate::edition::work::WorkLifecycleEvent>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history_club: Option<BeId>,
+    /// Work type (Document / Fragment / Person / Concept / Collection / Commentary).
+    /// See docs/dev/FR-22-concepts-and-categorization.md. Defaults to Document
+    /// for backward compatibility with pre-FR-22 manifests.
+    #[serde(default)]
+    pub kind: crate::edition::WorkKind,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1246,6 +1251,7 @@ mod tests {
             is_archived: false,
             lifecycle_history: Vec::new(),
             history_club: None,
+            kind: crate::edition::WorkKind::Document,
         });
         manifest.links.push(LinkEntry {
             link_id: 50,

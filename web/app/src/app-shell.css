@@ -1,6 +1,12 @@
 @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300..700;1,8..60,400&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-:root {
+/* ── Theme variable defaults ──
+   The active palette class (one of .theme-dark-*, .theme-light-*) is applied
+   on .app-shell and overrides these defaults. Each palette sets the full set
+   of CSS variables so it is self-contained. */
+
+/* Dark palettes --------------------------------------------------------- */
+.theme-dark-midnight {
   --bg: #1a1a24;
   --bg-surface: #22222e;
   --bg-elevated: #2a2a38;
@@ -11,8 +17,8 @@
   --text: #e8e6e0;
   --text-muted: #8a8a96;
   --text-dim: #5a5a66;
-  --doc-text: #2a2a2e;
-  --doc-text-muted: #6a6a6e;
+  --doc-text: #000000;
+  --doc-text-muted: #5a5a5e;
   --amber: #d97706;
   --amber-light: #fef3c7;
   --amber-bg: rgba(217, 119, 6, 0.08);
@@ -28,8 +34,64 @@
   --accent-blue: #2f81f7;
 }
 
-/* Light theme — GitHub Primer light palette */
-.light-theme {
+.theme-dark-oled {
+  --bg: #000000;
+  --bg-surface: #0a0a0a;
+  --bg-elevated: #141414;
+  --bg-document: #ffffff;
+  --bg-document-margin: #f0f0f0;
+  --border: #2a2a2a;
+  --border-light: #e8e5de;
+  --text: #e6e6e6;
+  --text-muted: #888888;
+  --text-dim: #555555;
+  --doc-text: #000000;
+  --doc-text-muted: #666666;
+  --amber: #f59e0b;
+  --amber-light: #4a3508;
+  --amber-bg: rgba(245, 158, 11, 0.12);
+  --green: #10b981;
+  --green-light: #052e1f;
+  --blue: #3b82f6;
+  --blue-light: #0c1f3d;
+  --purple: #a78bfa;
+  --purple-light: #1e1430;
+  --teal: #14b8a6;
+  --red: #ef4444;
+  --rose: #f43f5e;
+  --accent-blue: #60a5fa;
+}
+
+.theme-dark-slate {
+  --bg: #0f172a;
+  --bg-surface: #1e293b;
+  --bg-elevated: #334155;
+  --bg-document: #f5f3ec;
+  --bg-document-margin: #e8e4d8;
+  --border: #334155;
+  --border-light: #cbd5e1;
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  --doc-text: #000000;
+  --doc-text-muted: #475569;
+  --amber: #f59e0b;
+  --amber-light: #fef3c7;
+  --amber-bg: rgba(245, 158, 11, 0.1);
+  --green: #10b981;
+  --green-light: #d1fae5;
+  --blue: #3b82f6;
+  --blue-light: #dbeafe;
+  --purple: #a78bfa;
+  --purple-light: #ede9fe;
+  --teal: #14b8a6;
+  --red: #ef4444;
+  --rose: #f43f5e;
+  --accent-blue: #60a5fa;
+}
+
+/* Light palettes -------------------------------------------------------- */
+.theme-light-github {
   --bg: #ffffff;
   --bg-surface: #f6f8fa;
   --bg-elevated: #eaeef2;
@@ -40,7 +102,7 @@
   --text: #1f2328;
   --text-muted: #656d76;
   --text-dim: #8c959f;
-  --doc-text: #1f2328;
+  --doc-text: #000000;
   --doc-text-muted: #656d76;
   --amber: #9a6700;
   --amber-light: #fff8c5;
@@ -56,6 +118,65 @@
   --rose: #d1242f;
   --accent-blue: #0969da;
 }
+
+.theme-light-solarized {
+  --bg: #fdf6e3;
+  --bg-surface: #eee8d5;
+  --bg-elevated: #e4dcc3;
+  --bg-document: #fefbf3;
+  --bg-document-margin: #eee8d5;
+  --border: #d6cdb0;
+  --border-light: #e0d8be;
+  --text: #586e75;
+  --text-muted: #839496;
+  --text-dim: #93a1a1;
+  --doc-text: #000000;
+  --doc-text-muted: #586e75;
+  --amber: #b58900;
+  --amber-light: #fee8c4;
+  --amber-bg: rgba(181, 137, 0, 0.1);
+  --green: #859900;
+  --green-light: #d9e8a6;
+  --blue: #268bd2;
+  --blue-light: #c5e3f4;
+  --purple: #6c71c4;
+  --purple-light: #d8d9ef;
+  --teal: #2aa198;
+  --red: #dc322f;
+  --rose: #d33682;
+  --accent-blue: #268bd2;
+}
+
+.theme-light-paper {
+  --bg: #f4f1ea;
+  --bg-surface: #ebe7dc;
+  --bg-elevated: #ddd7c6;
+  --bg-document: #fbf9f3;
+  --bg-document-margin: #ede9dc;
+  --border: #c9c2ad;
+  --border-light: #d9d3c0;
+  --text: #3a342a;
+  --text-muted: #6b6353;
+  --text-dim: #8f8674;
+  --doc-text: #000000;
+  --doc-text-muted: #5a5246;
+  --amber: #a16207;
+  --amber-light: #fde9c4;
+  --amber-bg: rgba(161, 98, 7, 0.08);
+  --green: #4d7c0f;
+  --green-light: #e3f0c4;
+  --blue: #1d4ed8;
+  --blue-light: #d4e1fb;
+  --purple: #7e22ce;
+  --purple-light: #ecd6f8;
+  --teal: #0f766e;
+  --red: #b91c1c;
+  --rose: #be123c;
+  --accent-blue: #1d4ed8;
+}
+
+/* Backward compat: .light-theme still works (aliased to github light). */
+.light-theme { }
 
 .app-shell {
   display: grid;
@@ -125,6 +246,92 @@
   gap: 10px;
   margin-left: auto;
 }
+
+/* ── Theme picker ── */
+.theme-picker-wrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.theme-icon-btn,
+.theme-chevron-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  transition: background 0.12s, color 0.12s;
+}
+.theme-icon-btn {
+  border-radius: 4px 0 0 4px;
+  padding: 4px 6px 4px 10px;
+}
+.theme-chevron-btn {
+  border-radius: 0 4px 4px 0;
+  padding: 4px 8px;
+  border-left: 1px solid var(--border);
+}
+.theme-icon-btn:hover,
+.theme-chevron-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+.theme-picker-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 220px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.2);
+  padding: 6px;
+  z-index: 100;
+  font-family: 'Inter', sans-serif;
+}
+.theme-picker-section { display: flex; flex-direction: column; gap: 1px; }
+.theme-picker-section-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-dim);
+  padding: 6px 8px 4px;
+}
+.theme-picker-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 5px -2px;
+}
+.theme-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  text-align: left;
+  transition: background 0.1s;
+}
+.theme-picker-item:hover { background: var(--bg); }
+.theme-picker-item.active { background: var(--blue-light); }
+.theme-picker-item-name { flex: 1; }
+.theme-picker-check { color: var(--accent-blue); flex-shrink: 0; }
 
 .write-toggle {
   display: flex;

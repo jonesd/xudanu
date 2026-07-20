@@ -127,6 +127,10 @@ pub enum OperationCode {
     ConnectionPinsGet,
     CrossServerBacklinksGet,
     WorkGraph,
+    WorkKindGet,
+    WorkKindSet,
+    WorkListByKind,
+    WorkSetText,
     TrailCreate,
     TrailDelete,
     TrailRename,
@@ -439,6 +443,10 @@ impl OperationCode {
             0x0336 => Some(OperationCode::WorkUnstar),
             0x0337 => Some(OperationCode::WorkIsStarred),
             0x0338 => Some(OperationCode::WorkGraph),
+            0x0B01 => Some(OperationCode::WorkKindGet),
+            0x0B02 => Some(OperationCode::WorkKindSet),
+            0x0B03 => Some(OperationCode::WorkListByKind),
+            0x0B04 => Some(OperationCode::WorkSetText),
             0x0339 => Some(OperationCode::TrailCreate),
             0x033a => Some(OperationCode::TrailDelete),
             0x033b => Some(OperationCode::TrailRename),
@@ -713,6 +721,10 @@ impl OperationCode {
             OperationCode::WorkUnstar => 0x0336,
             OperationCode::WorkIsStarred => 0x0337,
             OperationCode::WorkGraph => 0x0338,
+            OperationCode::WorkKindGet => 0x0B01,
+            OperationCode::WorkKindSet => 0x0B02,
+            OperationCode::WorkListByKind => 0x0B03,
+            OperationCode::WorkSetText => 0x0B04,
             OperationCode::TrailCreate => 0x0339,
             OperationCode::TrailDelete => 0x033a,
             OperationCode::TrailRename => 0x033b,
@@ -1110,6 +1122,23 @@ pub enum WireRequest {
         work_id: BeId,
     },
     WorkGraph,
+
+    WorkKindGet {
+        work_id: BeId,
+    },
+    WorkKindSet {
+        work_id: BeId,
+        kind: crate::edition::WorkKind,
+    },
+    WorkListByKind {
+        kind: crate::edition::WorkKind,
+    },
+    /// Set the text content of a work in one shot. Used for seeding concepts
+    /// and other batch operations where CRDT ops would be too slow.
+    WorkSetText {
+        work_id: BeId,
+        text: String,
+    },
 
     TrailCreate {
         name: String,
@@ -2798,6 +2827,10 @@ pub struct GraphNodePayload {
     pub revision_count: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author_type: Option<String>,
+    /// Work type from FR-22. Defaults to Document for backward compat
+    /// with older servers.
+    #[serde(default)]
+    pub kind: crate::edition::WorkKind,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

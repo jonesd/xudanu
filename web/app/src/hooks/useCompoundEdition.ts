@@ -69,7 +69,7 @@ export function useCompoundEdition(
       charStart: number,
       charEnd: number,
     ) => {
-      if (!client || workBeId === null) return;
+      if (!client || workBeId === null) return false;
       try {
         await client.elementInsert(workBeId, position, {
           type: "transclusion",
@@ -79,8 +79,12 @@ export function useCompoundEdition(
         });
         lastInsertedRef.current = { sourceWorkId, charStart, charEnd };
         await loadCompound();
+        return true;
       } catch (e) {
         console.error("useCompoundEdition: elementInsert failed", e);
+        const msg = e instanceof Error ? e.message : String(e);
+        alert(`Could not include passage: ${msg}\n\nThis usually means you don't have edit access to the destination work, or you're not logged in.`);
+        return false;
       }
     },
     [client, workBeId, loadCompound],
