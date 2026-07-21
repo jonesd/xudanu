@@ -7291,6 +7291,14 @@ impl Server {
                 );
             }
             self.compound_editions = manifest.compound_editions.into_iter().collect();
+            // FR-23: Restore revision metadata
+            self.revisions = manifest.revisions.clone();
+            let rev_total: usize = self.revisions.values().map(|v| v.len()).sum();
+            tracing::info!(
+                "[restore] revisions: {} works, {} total entries",
+                self.revisions.len(),
+                rev_total
+            );
             manifest.starred_works
         };
         {
@@ -15580,6 +15588,9 @@ pub(crate) mod persist_snapshot {
                 manifest.trails.clear();
                 manifest.compound_editions.clear();
             }
+
+            // ── FR-23: Write revision metadata ──
+            manifest.revisions = self.revisions.clone();
 
             // Write federation section (reconcile_store + federation snapshot) as a chunk
             if !manifest.reconcile_store.is_empty() || manifest.federation.is_some() {
