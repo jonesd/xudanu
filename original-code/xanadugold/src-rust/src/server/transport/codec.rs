@@ -2769,6 +2769,29 @@ impl JsonCodec {
                     skip_suffix_lines: args.skip_suffix_lines,
                 })
             }
+            OperationCode::ImportEpub => {
+                #[derive(Deserialize)]
+                struct Args {
+                    epub_data: Vec<u8>,
+                    #[serde(default)]
+                    title: Option<String>,
+                    #[serde(default)]
+                    author: Option<String>,
+                    #[serde(default)]
+                    skip_prefix_lines: u64,
+                    #[serde(default)]
+                    skip_suffix_lines: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ImportEpub {
+                    epub_data: args.epub_data,
+                    title: args.title,
+                    author: args.author,
+                    skip_prefix_lines: args.skip_prefix_lines,
+                    skip_suffix_lines: args.skip_suffix_lines,
+                })
+            }
             OperationCode::SourceDetect => {
                 #[derive(Deserialize)]
                 struct Args {

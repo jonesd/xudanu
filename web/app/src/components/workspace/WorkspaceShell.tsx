@@ -10,6 +10,8 @@ import { DocumentMapPanel } from "../DocumentMapPanel";
 import { TrailsPanel } from "../TrailsPanel";
 import { RevisionTimeline } from "../RevisionTimeline";
 import { LinkCreator } from "../LinkCreator";
+import { ImportWizard } from "../ImportWizard";
+import { AttributionPanel } from "../AttributionPanel";
 import { loadThemeState, saveThemeState, activePalette } from "../../theme";
 import type { ThemeMode } from "../../theme";
 import type { WorkListEntry, TrailPayload } from "../../api/crdt_sync";
@@ -65,6 +67,7 @@ export function WorkspaceShell() {
   const [worksLoading, setWorksLoading] = useState(false);
   const [worksError, setWorksError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"updated" | "title" | "revisions" | "id">("updated");
   const [invalidWorkId, setInvalidWorkId] = useState<number | null>(null);
   const [showInvite, setShowInvite] = useState(false);
   const [editClubMembers, setEditClubMembers] = useState<{ members: [number, string][]; total: number; truncated: boolean } | null>(null);
@@ -85,6 +88,10 @@ export function WorkspaceShell() {
   const [seedProgress, setSeedProgress] = useState(0);
   const [serverDomain, setServerDomain] = useState<string>("localhost");
   const [viewingRevision, setViewingRevision] = useState<{ id: number; text: string } | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [epubImporting, setEpubImporting] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState<string | undefined>(undefined);
 
   const crdt = useCrdtSync(WS_URL, workBeId);
   const {
@@ -98,15 +105,18 @@ export function WorkspaceShell() {
     sendSelection,
     canEdit,
     attributionSpans,
+    attributionLogStatus,
     createWork,
     fetchWorkList,
     clientRef,
     annotations,
     createAnnotation,
+    deleteAnnotation,
     awareness,
     login,
     createIdentity,
     logout,
+    refreshAttribution,
   } = crdt;
 
   const transclusion = useTransclusion();
@@ -197,6 +207,159 @@ export function WorkspaceShell() {
     if (!selectionRange) return;
     setAnnotationTarget({ start: selectionRange.start, end: selectionRange.end });
   }, [selectionRange]);
+
+  const handleToggleStyle = useCallback(
+    async (kind: string, start: number, end: number) => {
+      const existing = annotations.find(
+        (a) => a.kind === kind && a.char_start < end && a.char_end > start,
+      );
+      try {
+        if (existing) {
+          await deleteAnnotation(existing.annotation_id);
+        } else {
+          await createAnnotation(kind, "", start, end, false);
+        }
+      } catch (e) {
+        console.error("[handleToggleStyle] failed:", e);
+      }
+    },
+    [annotations, deleteAnnotation, createAnnotation],
+  );
+
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  const handleEpubImport = useCallback(async (file: File) => {
+    if (!clientRef.current) {
+      showToast("Not connected");
+      return;
+    }
+    setEpubImporting(true);
+    showToast("Extracting EPUB text…");
+    try {
+      const buf = await file.arrayBuffer();
+      // Phase 1: extract text + metadata (server-side)
+      const resp = await clientRef.current.sendRequest("extract_epub", {
+        epub_data: Array.from(new Uint8Array(buf)),
+      });
+      const val = (resp as Record<string, unknown>).value as Record<string, unknown> | undefined;
+      const text = (val?.text as string) || "";
+      const detectedTitle = (val?.title as string) || "";
+      const detectedAuthor = (val?.author as string) || "";
+
+      if (!text) {
+        showToast("EPUB text extraction returned empty");
+        return;
+      }
+
+      showToast(`✓ Extracted: ${detectedTitle || file.name} (${text.length.toLocaleString()} chars)`);
+
+      // Pre-fill author from EPUB metadata into the import text
+      // The ImportWizard's source_detect will try to find metadata,
+      // but for EPUB we already know it — prepend as header
+      const headerLines: string[] = [];
+      if (detectedTitle) headerLines.push(`Title: ${detectedTitle}`);
+      if (detectedAuthor) headerLines.push(`Author: ${detectedAuthor}`);
+      headerLines.push(`Source: EPUB import (${file.name})`);
+      headerLines.push("");
+      const fullText = headerLines.join("\n") + text;
+
+      // Feed into ImportWizard
+      setImportText(fullText);
+      setShowImport(true);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : typeof e === "object" ? JSON.stringify(e) : String(e);
+      showToast(`EPUB extraction failed: ${msg}`);
+    } finally {
+      setEpubImporting(false);
+    }
+  }, [clientRef, showToast]);
+
+  const handleMentionEntity = useCallback(
+    async (kind: WorkKind) => {
+      if (!selectionRange || workBeId === null) return;
+      const displayText = compound.resolvedText || text;
+      const rawText = displayText.slice(selectionRange.start, selectionRange.end).trim();
+      const normalized = rawText.replace(/\s+/g, " ");
+      if (!normalized || normalized.length > 100) {
+        const custom = prompt(`Enter the ${kind} name:`, normalized.slice(0, 100));
+        if (!custom) return;
+        return handleMentionEntityWith(custom.trim(), kind);
+      }
+      return handleMentionEntityWith(normalized, kind);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectionRange, workBeId, text, compound.resolvedText],
+  );
+
+  const handleMentionEntityWith = useCallback(
+    async (name: string, kind: WorkKind) => {
+      if (!selectionRange || workBeId === null || !clientRef.current) return;
+      const client = clientRef.current;
+      const selectedText = text.slice(selectionRange.start, selectionRange.end);
+
+      try {
+        // 1. Search for existing work with matching title + kind
+        const allWorks = await client.fetchWorkList();
+        const normalizedLower = name.toLowerCase();
+        const match = allWorks.find(
+          (w) => (w.title || "").toLowerCase() === normalizedLower &&
+                  (kindCache.get(w.work_id) || "document") === kind,
+        );
+
+        let targetWorkId: number;
+        let created: boolean;
+
+        if (match) {
+          targetWorkId = match.work_id;
+          created = false;
+        } else {
+          // 2. Create new work via direct API call (avoids CRDT session switching)
+          const createResp = await client.sendRequest("work_create", { edition: { text: name } });
+          const createVal = createResp as Record<string, unknown>;
+          targetWorkId = createVal.value as number;
+          if (!targetWorkId) {
+            showToast("Failed: could not create work");
+            return;
+          }
+          // Set kind — share the work first so we have edit access
+          try {
+            const pubClub = crdt.publicClubId || 1000;
+            await client.sendRequest("work_set_read_club", { work_id: targetWorkId, club_id: pubClub });
+            await client.sendRequest("work_set_edit_club", { work_id: targetWorkId, club_id: pubClub });
+          } catch { /* sharing is best-effort */ }
+          await client.workKindSet(targetWorkId, kind);
+          created = true;
+        }
+
+        // 3. Create typed link (matching LinkCreator's working pattern — no destination ref)
+        const linkId = await client.linkCreate(
+          workBeId,
+          targetWorkId,
+          { excerpt: selectedText, start: selectionRange.start, end: selectionRange.end },
+        );
+        if (linkId) {
+          try { await client.linkSetTypes(linkId, [5]); } catch { /* non-critical */ }
+        }
+
+        // 4. Feedback
+        const kindLabel = kind === "person" ? "Person" : "Concept";
+        showToast(created ? `✓ Created ${kindLabel}: ${name}` : `✓ Linked to ${name}`);
+        setSelectionRange(null);
+        // 5. Refresh work list so the new work appears in search/library
+        if (created && fetchWorkList) {
+          try { await fetchWorkList(); } catch { /* non-critical */ }
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : typeof e === "object" ? JSON.stringify(e) : String(e);
+        console.error("[mention] failed:", e);
+        showToast(`Failed: ${msg}`);
+      }
+    },
+    [selectionRange, workBeId, text, kindCache, showToast, fetchWorkList],
+  );
 
   const handleAnnotationSubmit = useCallback(async (annoText: string, isPrivate: boolean) => {
     if (!annotationTarget || !createAnnotation) return;
@@ -332,12 +495,14 @@ export function WorkspaceShell() {
   const loadLinks = transclusion.loadLinks;
   const loadBacklinks = transclusion.loadBacklinks;
   useEffect(() => {
-    if (!connected || workBeId === null || rightPanelTab !== "connections") return;
-    if (clientRef.current) {
+    if (!connected || workBeId === null) return;
+    // Refresh attribution on every work load (same as AppShell)
+    refreshAttribution();
+    if (rightPanelTab === "connections" && clientRef.current) {
       void loadLinks(clientRef.current, workBeId, works);
       void loadBacklinks(clientRef.current, workBeId);
     }
-  }, [connected, workBeId, rightPanelTab, clientRef, works, loadLinks, loadBacklinks]);
+  }, [connected, workBeId, rightPanelTab, clientRef, works, loadLinks, loadBacklinks, refreshAttribution]);
 
   // Fetch work kind when work changes
   useEffect(() => {
@@ -360,6 +525,10 @@ export function WorkspaceShell() {
       .then((data) => {
         if (data.public_address) {
           setServerDomain(data.public_address);
+        } else if (data.server_id) {
+          // Fall back to globally unique server ID (Ed25519 verifying key hash)
+          // Not human-readable, but unique per server — like a Tor onion address
+          setServerDomain(typeof data.server_id === "string" ? data.server_id : data.server_id.toString(16));
         }
       })
       .catch(() => {});
@@ -543,15 +712,28 @@ export function WorkspaceShell() {
 
   const filteredWorks = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const sorted = [...works].sort((a, b) => {
-      if (a.is_starred !== b.is_starred) return a.is_starred ? -1 : 1;
-      const at = a.updated_at || 0;
-      const bt = b.updated_at || 0;
-      return bt - at;
-    });
+    let sorted = [...works];
+    switch (sortBy) {
+      case "title":
+        sorted.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+        break;
+      case "revisions":
+        sorted.sort((a, b) => (b.revision_count || 0) - (a.revision_count || 0));
+        break;
+      case "id":
+        sorted.sort((a, b) => a.work_id - b.work_id);
+        break;
+      case "updated":
+      default:
+        sorted.sort((a, b) => {
+          if (a.is_starred !== b.is_starred) return a.is_starred ? -1 : 1;
+          return (b.updated_at || 0) - (a.updated_at || 0);
+        });
+        break;
+    }
     if (!q) return sorted;
     return sorted.filter((w) => (w.title || "").toLowerCase().includes(q));
-  }, [works, searchQuery]);
+  }, [works, searchQuery, sortBy]);
 
   const activeCssClass = activePalette(themeState).cssClass;
   const workIdDisplay = workBeId !== null ? `0x${workBeId.toString(16)}` : "";
@@ -582,7 +764,11 @@ export function WorkspaceShell() {
         activeNav={navTab}
         onNavChange={setNavTab}
         onOpenSearch={() => {
-          /* TODO Phase 1: command palette */
+          setNavTab("library");
+          setTimeout(() => {
+            const input = document.querySelector<HTMLInputElement>(".ws-picker-search");
+            input?.focus();
+          }, 100);
         }}
         onOpenIdentity={() => setShowIdentity(true)}
         onOpenAdmin={() => setShowAdmin(true)}
@@ -636,6 +822,7 @@ export function WorkspaceShell() {
           <div className="ws-rail-content">
             {leftRailMode === "graph" ? (
               <DocumentMapPanel
+                key={`graph-${workBeId}-${connected}`}
                 client={connected ? clientRef.current : null}
                 onSelectWork={selectWork}
                 currentWorkId={workBeId}
@@ -737,7 +924,31 @@ export function WorkspaceShell() {
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="ws-picker-search"
                   />
+                  <select
+                    className="ws-picker-sort"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                    title="Sort by"
+                  >
+                    <option value="updated">Recently updated</option>
+                    <option value="title">Title A-Z</option>
+                    <option value="revisions">Most revisions</option>
+                    <option value="id">Work ID</option>
+                  </select>
                   <button className="ws-empty-create" onClick={handleCreateWork}>+ New work</button>
+                  <label className={`ws-epub-import-btn ${epubImporting ? "importing" : ""}`}>
+                    {epubImporting ? "Importing…" : "📁 EPUB"}
+                    <input
+                      type="file"
+                      accept=".epub"
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void handleEpubImport(f);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
                 </div>
               </div>
               {worksError && <div className="ws-picker-error">Failed to load: {worksError}</div>}
@@ -972,6 +1183,30 @@ export function WorkspaceShell() {
                   </div>
                 ) : (
                   <>
+                {canEdit && selectionRange && (
+                  <button
+                    type="button"
+                    className="ws-sel-btn style"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handleToggleStyle("bold", selectionRange.start, selectionRange.end)}
+                    title="Bold (Ctrl+B)"
+                    style={{ fontWeight: 700 }}
+                  >
+                    B
+                  </button>
+                )}
+                {canEdit && selectionRange && (
+                  <button
+                    type="button"
+                    className="ws-sel-btn style"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handleToggleStyle("italic", selectionRange.start, selectionRange.end)}
+                    title="Italic (Ctrl+I)"
+                    style={{ fontStyle: "italic" }}
+                  >
+                    I
+                  </button>
+                )}
                 {selectionRange && !transclusion.pending && !transclusion.pendingLink && (
                   <div className="ws-selection-actions">
                     <button
@@ -1010,6 +1245,22 @@ export function WorkspaceShell() {
                       title="Add this passage to a curated trail"
                     >
                       + Trail
+                    </button>
+                    <button
+                      type="button"
+                      className="ws-sel-btn mention"
+                      onClick={() => handleMentionEntity("person")}
+                      title="Link to or create a Person work for this name"
+                    >
+                      👤 Mention
+                    </button>
+                    <button
+                      type="button"
+                      className="ws-sel-btn tag"
+                      onClick={() => handleMentionEntity("concept")}
+                      title="Link to or create a Concept work for this term"
+                    >
+                      💡 Tag
                     </button>
                   </div>
                 )}
@@ -1081,6 +1332,7 @@ export function WorkspaceShell() {
                   inlineResolvedText={compound.resolvedText || undefined}
                   annotations={annotations}
                    onCreateAnnotation={canEdit ? handleCreateAnnotation : undefined}
+                   onToggleStyle={canEdit ? handleToggleStyle : undefined}
                  />
                   </>
                 )}
@@ -1142,36 +1394,51 @@ export function WorkspaceShell() {
           </div>
           <div className="ws-tab-content">
             {rightPanelTab === "provenance" && (
-              <div className="ws-provenance">
-                <h4>Authorship</h4>
-                {authorStats.length === 0 ? (
-                  <div className="ws-placeholder-sublabel">No attribution data</div>
-                ) : (
-                  <ul className="ws-author-list">
-                    {authorStats.map((a) => (
-                      <li key={a.name} className="ws-author-row">
-                        <span className="ws-author-name">{a.name}</span>
-                        <span className="ws-author-bar">
-                          <span
-                            className="ws-author-bar-fill"
-                            style={{ width: `${Math.max(2, a.pct)}%`, background: authorColorPair(a.name).primary }}
-                          />
-                        </span>
-                        <span className="ws-author-pct">{a.pct.toFixed(0)}%</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <h4>Details</h4>
-                <dl className="ws-meta-list">
-                  <dt>Work ID</dt>
-                  <dd><code>{workIdDisplay}</code></dd>
-                  <dt>Persistent ID</dt>
-                  <dd><code>xan://{serverDomain}.{workIdDisplay}</code></dd>
-                  {workMeta?.publishedAt && (<><dt>Updated</dt><dd>{workMeta.publishedAt}</dd></>)}
-                </dl>
+              <div className="ws-provenance-full">
+                {/* Compact summary */}
+                <div className="ws-provenance-summary">
+                  <h4>Authorship</h4>
+                  {authorStats.length === 0 ? (
+                    <div className="ws-placeholder-sublabel">No attribution data</div>
+                  ) : (
+                    <ul className="ws-author-list">
+                      {authorStats.map((a) => (
+                        <li key={a.name} className="ws-author-row">
+                          <span className="ws-author-name">{a.name}</span>
+                          <span className="ws-author-bar">
+                            <span
+                              className="ws-author-bar-fill"
+                              style={{ width: `${Math.max(2, a.pct)}%`, background: authorColorPair(a.name).primary }}
+                            />
+                          </span>
+                          <span className="ws-author-pct">{a.pct.toFixed(0)}%</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {/* Full detailed attribution — security-critical view */}
+                <AttributionPanel
+                  spans={attributionSpans}
+                  logStatus={attributionLogStatus}
+                  documentLength={text.length}
+                  visible={true}
+                  workId={workBeId ?? undefined}
+                />
+
+                <div className="ws-provenance-details">
+                  <h4>Details</h4>
+                  <dl className="ws-meta-list">
+                    <dt>Work ID</dt>
+                    <dd><code>{workIdDisplay}</code></dd>
+                    <dt>Persistent ID</dt>
+                    <dd><code>xan://{serverDomain}.{workIdDisplay}</code></dd>
+                    {workMeta?.publishedAt && (<><dt>Updated</dt><dd>{workMeta.publishedAt}</dd></>)}
+                  </dl>
+                </div>
               </div>
-             )}
+            )}
             {rightPanelTab === "connections" && (
               <div className="ws-connections-tab">
                 {/* Outbound links */}
@@ -1248,7 +1515,11 @@ export function WorkspaceShell() {
                     <div className="ws-conn-empty">No inbound links from other works.</div>
                   ) : (
                     transclusion.backlinks.map((bl, i) => {
-                      const lt = DEFAULT_LINK_TYPES.find((t) => t.name === bl.link_type);
+                      const lt = DEFAULT_LINK_TYPES.find((t) =>
+                        t.name.toLowerCase() === (bl.link_type || "").toLowerCase().replace(/[\s_]/g, "") ||
+                        t.name.toLowerCase().replace(/\s/g, "") === (bl.link_type || "").toLowerCase().replace(/[\s_]/g, "")
+                      );
+                      const typeLabel = lt ? lt.name : (bl.link_type || "link").replace(/hyperlink_/g, "").replace(/_/g, " ");
                       return (
                         <div
                           key={i}
@@ -1262,7 +1533,7 @@ export function WorkspaceShell() {
                               className="ws-conn-type-badge"
                               style={lt ? { background: lt.color + "20", color: lt.color, borderColor: lt.color + "60" } : {}}
                             >
-                              {bl.link_type}
+                              {typeLabel}
                             </span>
                           </div>
                         </div>
@@ -1547,6 +1818,30 @@ export function WorkspaceShell() {
             }
           }}
           onSelectTextInOtherDoc={() => {}}
+        />
+      )}
+
+      {toast && (
+        <div className="ws-toast" onClick={() => setToast(null)}>
+          {toast}
+          <span className="ws-toast-close">×</span>
+        </div>
+      )}
+
+      {showImport && (
+        <ImportWizard
+          clientRef={clientRef}
+          visible={true}
+          initialText={importText}
+          onImported={(workId) => {
+            setShowImport(false);
+            setImportText(undefined);
+            selectWork(workId);
+          }}
+          onClose={() => {
+            setShowImport(false);
+            setImportText(undefined);
+          }}
         />
       )}
 

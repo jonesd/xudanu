@@ -362,6 +362,7 @@ pub enum OperationCode {
     HistoricalAuthorList,
 
     ImportSourceWork,
+    ImportEpub,
 
     SourceDetect,
     SourcePatternList,
@@ -652,6 +653,7 @@ impl OperationCode {
             0x0D0B => Some(OperationCode::HistoricalAuthorList),
 
             0x0D0C => Some(OperationCode::ImportSourceWork),
+            0x0D0D => Some(OperationCode::ImportEpub),
 
             0x0D0D => Some(OperationCode::SourceDetect),
             0x0D0E => Some(OperationCode::SourcePatternList),
@@ -949,6 +951,7 @@ impl OperationCode {
             OperationCode::HistoricalAuthorSearch => 0x0D0A,
             OperationCode::HistoricalAuthorList => 0x0D0B,
             OperationCode::ImportSourceWork => 0x0D0C,
+            OperationCode::ImportEpub => 0x0D0D,
             OperationCode::SourceDetect => 0x0D0D,
             OperationCode::SourcePatternList => 0x0D0E,
             OperationCode::WorkListByAuthor => 0x0D0F,
@@ -1894,6 +1897,25 @@ pub enum WireRequest {
         edition_info: String,
         skip_prefix_lines: u64,
         skip_suffix_lines: u64,
+    },
+
+    /// FR-EPUB: Import an EPUB file. Extracts text + metadata server-side.
+    ImportEpub {
+        epub_data: Vec<u8>,
+        #[serde(default)]
+        title: Option<String>,
+        #[serde(default)]
+        author: Option<String>,
+        #[serde(default)]
+        skip_prefix_lines: u64,
+        #[serde(default)]
+        skip_suffix_lines: u64,
+    },
+
+    /// Phase 1 of EPUB import: extract text + metadata without creating a work.
+    /// Client then feeds the text into the ImportWizard flow.
+    ExtractEpub {
+        epub_data: Vec<u8>,
     },
 
     SourceDetect {

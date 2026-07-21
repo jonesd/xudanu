@@ -241,3 +241,36 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 ### Versioning notes
 - Patch releases on the same day (e.g. v0.6.1–v0.6.4, v0.4.1–v0.4.3) were typically quick follow-up fixes to get a clean release build.
 - The v0.1.1 release encompassed the bulk of the foundational subsystem build (Phases 1–22).
+
+---
+
+## [v0.9.8] — 2026-07-20
+
+### EPUB Import
+- **feat(epub):** EPUB file import via `cli-epub-to-text` + `epub` crates. Server-side extraction of text + metadata (title, author) from EPUB OPF. New `import_epub` and `extract_epub` wire ops. Follows existing `import_source_work` pipeline for source work creation with full attribution.
+
+### Revision History Persistence Fix (critical)
+- **fix(checkpoint):** Revision history was lost on server restart because `mark_dirty()` cleared `chunk_ref` without preserving old history. Added `prev_chunk_history` field to `WorkState` — old chunk references are preserved through `mark_dirty()` and merged during checkpoint via new `work_to_chunks_with_history()`. Old revisions now survive restarts.
+
+### Attribution Panel
+- **feat(attribution):** Full `AttributionPanel` in workspace Provenance tab — coverage bar, derivation chains, signature validity, per-span timeline, author badges (historical/LLM/signed/unsigned). Security-critical view for verifying provenance.
+- **fix:** `refreshAttribution()` now called on every work load (was missing in workspace).
+
+### Persistent ID Fix
+- **fix:** Persistent IDs now use server's Ed25519 verifying key hash when no `--public-address` is configured. Globally unique (like Tor onion addresses) instead of `localhost`.
+
+### Mentions & Tags
+- **feat:** 👤 Mention and 💡 Tag buttons in selection popover. Lookup-or-create-and-link pattern for Person/Concept works. Toast notifications.
+
+### Trail Codec Fix (critical)
+- **fix(codec):** `TrailPublish`, `TrailUnpublish`, `TrailUpdate`, `TrailListPublished`, `TrailListCategories` were missing from codec.rs — trail publish silently failed. All 5 ops now have proper JSON codec handlers.
+
+### Other
+- **feat:** Library sort dropdown (recently updated, title A-Z, most revisions, work ID)
+- **feat:** Connections tab with links, backlinks, transclusions + delete
+- **feat:** LinkCreator wizard in workspace
+- **feat:** Anonymous warning banner
+- **feat:** Bold/Italic buttons restored in selection popover
+- **feat:** `work_set_text` wire op for batch text setting
+- **fix:** CompoundBuilder uses `textRange` instead of `crdt_sync_open` (anonymous users can load sources)
+- **test:** 2440 backend tests (+22 revision/history), 360 frontend tests

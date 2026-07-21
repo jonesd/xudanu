@@ -229,9 +229,29 @@ pub fn work_to_chunks_durable(
     store: &ChunkStore,
     durable: bool,
 ) -> Result<WorkChunkRef, ChunkSerError> {
+    work_to_chunks_with_history(work, store, durable, None)
+}
+
+/// Same as work_to_chunks_durable, but merges in preserved history from
+/// before a server restart. The prev_history map contains chunk references
+/// for revisions that existed before the current process started — these
+/// aren't in work.revision_history() (which is empty after restart) but
+/// their chunk data is still on disk.
+pub fn work_to_chunks_with_history(
+    work: &Work,
+    store: &ChunkStore,
+    durable: bool,
+    prev_history: Option<&BTreeMap<u64, EditionChunkRef>>,
+) -> Result<WorkChunkRef, ChunkSerError> {
     let current_root = edition_to_chunks_durable(work.edition(), store, durable)?;
 
-    let mut history = BTreeMap::new();
+    // Start with preserved history from before restart (if any)
+    let mut history: BTreeMap<u64, EditionChunkRef> = match prev_history {
+        Some(prev) => prev.clone(),
+        None => BTreeMap::new(),
+    };
+
+    // Merge in new revisions from in-memory history (post-restart)
     for (rev_num, edition) in work.revision_history() {
         let chunk_ref = edition_to_chunks_durable(edition, store, durable)?;
         history.insert(*rev_num, chunk_ref);

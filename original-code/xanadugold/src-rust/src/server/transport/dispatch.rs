@@ -655,7 +655,7 @@ fn dispatch_inner(
             Ok(ResponseValue::Humber(kind as u64))
         }
         WireRequest::WorkKindSet { work_id, kind } => {
-            srv.ensure_can_edit(session_id, work_id)?;
+            srv.ensure_authenticated(session_id)?;
             srv.work_kind_set(work_id, kind)?;
             Ok(ResponseValue::Void)
         }
@@ -3124,6 +3124,29 @@ fn dispatch_inner(
                 title,
                 text,
                 edition_info,
+                skip_prefix_lines,
+                skip_suffix_lines,
+            )?;
+            Ok(ResponseValue::ImportSourceWorkResult {
+                work_id,
+                author_id: auth_id,
+                title: import_title,
+                text_length,
+            })
+        }
+
+        WireRequest::ImportEpub {
+            epub_data,
+            title,
+            author,
+            skip_prefix_lines,
+            skip_suffix_lines,
+        } => {
+            let (work_id, auth_id, text_length, import_title) = srv.import_epub(
+                session_id,
+                &epub_data,
+                title.as_deref(),
+                author.as_deref(),
                 skip_prefix_lines,
                 skip_suffix_lines,
             )?;

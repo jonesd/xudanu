@@ -163,11 +163,16 @@
 /* Library mode: full-width list, no side panels */
 .ws-mode-library .ws-left-rail { display: none; }
 .ws-mode-library .ws-right-panel { display: none; }
+.ws-mode-library .ws-body {
+  grid-template-columns: 1fr;
+}
 .ws-mode-library .ws-doc-surface {
   max-width: none;
+  width: 100%;
 }
 .ws-mode-library .ws-work-picker {
   max-width: 1200px;
+  padding: 24px;
 }
 
 /* ── Left rail ── */
@@ -901,6 +906,27 @@
   cursor: pointer;
   font-family: 'Inter', sans-serif;
 }
+.ws-epub-import-btn {
+  display: inline-block;
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  transition: background 0.12s, border-color 0.12s;
+}
+.ws-epub-import-btn:hover {
+  background: var(--bg);
+  border-color: var(--accent-blue);
+}
+.ws-epub-import-btn.importing {
+  opacity: 0.6;
+  cursor: wait;
+}
 
 /* ── Right panel ── */
 .ws-right-panel {
@@ -1293,6 +1319,13 @@
   height: 100%;
   overflow-y: auto;
 }
+.ws-picker-header {
+  position: sticky;
+  top: 0;
+  background: var(--bg-document);
+  padding-bottom: 12px;
+  z-index: 5;
+}
 .ws-picker-header h2 {
   margin: 0 0 4px;
   font-size: 22px;
@@ -1308,16 +1341,31 @@
   display: flex;
   gap: 8px;
   margin-bottom: 20px;
+  align-items: center;
 }
-.ws-picker-search {
-  flex: 1;
-  background: var(--bg-document-margin);
-  border: 1px solid var(--border-light);
-  border-radius: 6px;
-  padding: 8px 12px;
+.ws-picker-sort {
+  background: var(--bg-document);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
   color: var(--doc-text);
   font-size: 13px;
   font-family: 'Inter', sans-serif;
+  cursor: pointer;
+}
+.ws-picker-search {
+  flex: 1;
+  background: var(--bg-document);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 16px;
+  color: var(--doc-text);
+  font-size: 15px;
+  font-family: 'Inter', sans-serif;
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 .ws-picker-search:focus {
   outline: none;
@@ -1591,9 +1639,78 @@
 }
 
 /* ── Trail picker (selection popover) ── */
-.ws-sel-btn.trail {
-  border-color: var(--purple);
-  color: var(--purple);
+.ws-sel-btn.mention {
+  border-color: var(--rose, #f43f5e);
+  color: var(--rose, #f43f5e);
+}
+.ws-sel-btn.tag {
+  border-color: #a371f7;
+  color: #a371f7;
+}
+
+/* ── Toast notification ── */
+.ws-toast {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent-blue);
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 13px;
+  color: var(--text);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  z-index: 1000;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ws-toast-close {
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+/* ── EPUB import modal ── */
+.ws-epub-modal {
+  min-width: 460px;
+}
+.ws-epub-filename {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 8px 0;
+}
+.ws-epub-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+.ws-epub-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ws-epub-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.ws-epub-fields input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
 }
 .ws-trail-picker {
   position: sticky;

@@ -11,11 +11,12 @@ interface ImportWizardProps {
   visible: boolean;
   onClose: () => void;
   onImported: (workId: number) => void;
+  initialText?: string;
 }
 
 type Step = "paste" | "detect" | "author" | "preview" | "importing" | "done";
 
-export function ImportWizard({ clientRef, visible, onClose, onImported }: ImportWizardProps) {
+export function ImportWizard({ clientRef, visible, onClose, onImported, initialText }: ImportWizardProps) {
   const [step, setStep] = useState<Step>("paste");
   const [rawText, setRawText] = useState("");
   const [detection, setDetection] = useState<SourceDetectResult | null>(null);
@@ -36,8 +37,13 @@ export function ImportWizard({ clientRef, visible, onClose, onImported }: Import
 
   useEffect(() => {
     if (visible) {
-      setStep("paste");
-      setRawText("");
+      if (initialText) {
+        setRawText(initialText);
+        setStep("detect");
+      } else {
+        setStep("paste");
+        setRawText("");
+      }
       setDetection(null);
       setSelectedAuthorId(null);
       setNewAuthorName("");
@@ -52,7 +58,7 @@ export function ImportWizard({ clientRef, visible, onClose, onImported }: Import
       setImportedWorkId(null);
       setContentText("");
     }
-  }, [visible]);
+  }, [visible, initialText]);
 
   useEffect(() => {
     if (step === "paste" && textAreaRef.current) {

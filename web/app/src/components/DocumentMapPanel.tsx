@@ -7,7 +7,7 @@ import {
   KIND_COLOR,
   KIND_ICON_COLOR,
 } from "../graph-scoring";
-import type { GraphNode } from "../graph-scoring";
+import type { GraphNode, WorkKind } from "../graph-scoring";
 
 interface Props {
   client: CrdtSyncClient | null;
@@ -22,6 +22,7 @@ interface SimNode {
   title: string;
   isStarred: boolean;
   isSource: boolean;
+  kind: string;
   x: number;
   y: number;
   vx: number;
@@ -64,6 +65,7 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose,
             title: n.title || `Work ${hexId(n.work_id)}`,
             isStarred: n.is_starred,
             isSource: n.is_source,
+            kind: (n.kind as string) || "document",
             x: cx + r * Math.cos(angle),
             y: cy + r * Math.sin(angle),
             vx: 0,
@@ -226,6 +228,7 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose,
       title: n.title,
       is_starred: n.isStarred,
       is_source: n.isSource,
+      kind: n.kind as WorkKind,
     }));
 
     // Score each node relative to current work (per FR-21)

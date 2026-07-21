@@ -282,6 +282,13 @@ impl Work {
         self.revision_history = history;
     }
 
+    /// Clear in-memory revision history while preserving revision_count.
+    /// Simulates what happens on server restart (history is on disk only).
+    #[cfg(test)]
+    pub fn clear_revision_history(&mut self) {
+        self.revision_history.clear();
+    }
+
     pub fn load_revision(&mut self, number: u64, edition: Edition) {
         if number != self.revision_count {
             self.revision_history.insert(number, edition);

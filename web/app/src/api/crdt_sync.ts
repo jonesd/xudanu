@@ -797,6 +797,30 @@ export class CrdtSyncClient {
     };
   }
 
+  async importEpub(
+    epubData: Uint8Array,
+    title?: string,
+    author?: string,
+    skipPrefixLines: number = 0,
+    skipSuffixLines: number = 0,
+  ): Promise<{ workId: number; authorId: number; title: string; textLength: number }> {
+    const payload: Record<string, unknown> = {
+      epub_data: Array.from(epubData),
+      skip_prefix_lines: skipPrefixLines,
+      skip_suffix_lines: skipSuffixLines,
+    };
+    if (title) payload.title = title;
+    if (author) payload.author = author;
+    const resp = await this.sendRequest("import_epub", payload);
+    const val = extractValue(resp) as Record<string, unknown>;
+    return {
+      workId: (val.work_id as number) || 0,
+      authorId: (val.author_id as number) || 0,
+      title: (val.title as string) || "",
+      textLength: (val.text_length as number) || 0,
+    };
+  }
+
   async detectSource(text: string): Promise<SourceDetectResult> {
     const resp = await this.sendRequest("source_detect", { text });
     return extractValue(resp) as SourceDetectResult;
