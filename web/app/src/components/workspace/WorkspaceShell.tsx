@@ -104,6 +104,7 @@ export function WorkspaceShell() {
     window.addEventListener("xudanu-open-import", handler);
     return () => window.removeEventListener("xudanu-open-import", handler);
   }, []);
+  // Track uploaded images locally for display
   const [imageEntries, setImageEntries] = useState<Array<{ hash: number; mime: string; width?: number; height?: number; url?: string; loading: boolean }>>([]);
 
   const crdt = useCrdtSync(WS_URL, workBeId);
@@ -140,12 +141,50 @@ export function WorkspaceShell() {
 
   const selectWork = useCallback((id: number) => {
     setWorkBeId(id);
-    setImageEntries([]);
+    setImageEntries([]); // will be repopulated by the load effect
     if (navTab === "library") setNavTab("explore");
     const url = new URL(window.location.href);
     url.searchParams.set("work", `0x${id.toString(16)}`);
     window.history.replaceState({}, "", url.toString());
   }, [navTab]);
+
+  // Load cached image entries from localStorage when work changes
+  useEffect(() => {
+    if (workBeId === null) {
+      setImageEntries([]);
+      return;
+    }
+    const key = `xudanu_images_${workBeId}`;
+    try {
+      const cached = localStorage.getItem(key);
+      if (cached && clientRef.current) {
+        const entries: Array<{ hash: number; mime: string; width?: number; height?: number }> = JSON.parse(cached);
+        const client = clientRef.current;
+        const withLoading = entries.map((e) => ({ ...e, loading: true }));
+        setImageEntries(withLoading);
+        withLoading.forEach((entry) => {
+          client.blobGetPreview(entry.hash).then((previewBytes) => {
+            const imgBytes = previewBytes || new Uint8Array();
+            const blob = new Blob([imgBytes as BlobPart], { type: entry.mime });
+            const url = URL.createObjectURL(blob);
+            setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, url, loading: false } : e));
+          }).catch(() => {
+            client.blobGet(entry.hash).then((fullBytes) => {
+              const blob = new Blob([fullBytes as BlobPart], { type: entry.mime });
+              const url = URL.createObjectURL(blob);
+              setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, url, loading: false } : e));
+            }).catch(() => {
+              setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, loading: false } : e));
+            });
+          });
+        });
+      } else {
+        setImageEntries([]);
+      }
+    } catch {
+      setImageEntries([]);
+    }
+  }, [workBeId, connected, clientRef]);
 
   // Single effect: fetch works list when connected; set work metadata if available
   useEffect(() => {
@@ -473,13 +512,24 @@ export function WorkspaceShell() {
       });
       showToast(`✓ Image uploaded (${meta.byte_size.toLocaleString()} bytes${meta.width ? `, ${meta.width}×${meta.height}` : ""})`);
       // Track the image locally for display
-      setImageEntries((prev) => [...prev, {
+      const newEntry = {
         hash: hashNum,
         mime: meta.mime_type,
         width: meta.width ?? undefined,
         height: meta.height ?? undefined,
         loading: true,
-      }]);
+      };
+      setImageEntries((prev) => {
+        const next = [...prev, newEntry];
+        // Persist to localStorage so images survive navigation
+        if (workBeId !== null) {
+          try {
+            const toCache = next.map((e) => ({ hash: e.hash, mime: e.mime, width: e.width, height: e.height }));
+            localStorage.setItem(`xudanu_images_${workBeId}`, JSON.stringify(toCache));
+          } catch {}
+        }
+        return next;
+      });
       // Fetch the preview image
       if (hashNum) {
         client.blobGetPreview(hashNum).then((previewBytes) => {
