@@ -92,6 +92,7 @@ export function WorkspaceShell() {
   const [epubImporting, setEpubImporting] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState<string | undefined>(undefined);
+  const [imageEntries, setImageEntries] = useState<Array<{ hash: number; mime: string; width?: number; height?: number; url?: string; loading: boolean }>>([]);
 
   const crdt = useCrdtSync(WS_URL, workBeId);
   const {
@@ -127,6 +128,7 @@ export function WorkspaceShell() {
 
   const selectWork = useCallback((id: number) => {
     setWorkBeId(id);
+    setImageEntries([]);
     if (navTab === "library") setNavTab("explore");
     const url = new URL(window.location.href);
     url.searchParams.set("work", `0x${id.toString(16)}`);
@@ -360,6 +362,56 @@ export function WorkspaceShell() {
     },
     [selectionRange, workBeId, text, kindCache, showToast, fetchWorkList],
   );
+
+  const handleImageUpload = useCallback(async (file: File) => {
+    if (!clientRef.current || workBeId === null) {
+      showToast("Not connected");
+      return;
+    }
+    const client = clientRef.current;
+    showToast("Uploading image…");
+    try {
+      const buf = await file.arrayBuffer();
+      const meta = await client.blobUpload(new Uint8Array(buf), file.type || "image/png");
+      const insertPos = text.length;
+      await client.elementInsert(workBeId, insertPos, {
+        type: "blob",
+        content_hash: typeof meta.content_hash === "number" ? meta.content_hash : 0,
+        mime_type: meta.mime_type,
+        byte_size: meta.byte_size,
+        width: meta.width ?? undefined,
+        height: meta.height ?? undefined,
+      });
+      showToast(`✓ Image uploaded (${meta.byte_size.toLocaleString()} bytes${meta.width ? `, ${meta.width}×${meta.height}` : ""})`);
+      // Track the image locally for display
+      const hashNum = typeof meta.content_hash === "number"
+        ? meta.content_hash
+        : Array.isArray(meta.content_hash)
+          ? meta.content_hash[0]
+          : 0;
+      setImageEntries((prev) => [...prev, {
+        hash: hashNum,
+        mime: meta.mime_type,
+        width: meta.width ?? undefined,
+        height: meta.height ?? undefined,
+        loading: true,
+      }]);
+      // Fetch the preview image
+      if (clientRef.current && hashNum) {
+        clientRef.current.blobGetPreview(hashNum).then((previewBytes) => {
+          const imgBytes = previewBytes || new Uint8Array();
+          const blob = new Blob([imgBytes as BlobPart], { type: meta.mime_type });
+          const url = URL.createObjectURL(blob);
+          setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, url, loading: false } : e));
+        }).catch(() => {
+          setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, loading: false } : e));
+        });
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : typeof e === "object" ? JSON.stringify(e) : String(e);
+      showToast(`Image upload failed: ${msg}`);
+    }
+  }, [clientRef, workBeId, text, showToast]);
 
   const handleAnnotationSubmit = useCallback(async (annoText: string, isPrivate: boolean) => {
     if (!annotationTarget || !createAnnotation) return;
@@ -1111,6 +1163,21 @@ export function WorkspaceShell() {
                   >
                     Save revision
                   </button>
+                  {canEdit && (
+                    <label className="ws-action-btn ws-image-upload-btn" title="Insert image">
+                      📷
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/gif,image/webp,image/bmp"
+                        style={{ display: "none" }}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) void handleImageUpload(f);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  )}
                   <div className="ws-more-wrap" ref={moreMenuRef}>
                     <button
                       className="ws-action-btn"
@@ -1669,6 +1736,37 @@ export function WorkspaceShell() {
             )}
             {rightPanelTab === "more" && (
               <div className="ws-more-tab">
+                {imageEntries.length > 0 && (
+                  <div className="ws-image-gallery">
+                    <div className="ws-conn-header">Images ({imageEntries.length})</div>
+                    {imageEntries.map((img) => (
+                      <div key={img.hash} className="ws-image-thumb" title={`${img.width || "?"}×${img.height || "?"}`}>
+                        {img.loading ? (
+                          <div className="ws-image-loading">Loading…</div>
+                        ) : img.url ? (
+                          <img
+                            src={img.url}
+                            alt=""
+                            style={{ maxWidth: "100%", borderRadius: "4px", cursor: "pointer" }}
+                            onClick={async () => {
+                              if (!clientRef.current) return;
+                              const fullBytes = await clientRef.current.blobGet(img.hash);
+                              const blob = new Blob([fullBytes as BlobPart], { type: img.mime });
+                              const url = URL.createObjectURL(blob);
+                              window.open(url, "_blank");
+                              setTimeout(() => URL.revokeObjectURL(url), 60000);
+                            }}
+                          />
+                        ) : (
+                          <div className="ws-image-error">Failed to load</div>
+                        )}
+                        <div className="ws-image-meta">
+                          {img.width && img.height ? `${img.width}×${img.height}` : "Unknown size"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <button
                   className="ws-more-tab-btn"
                   onClick={() => {

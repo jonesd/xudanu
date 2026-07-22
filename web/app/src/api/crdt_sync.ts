@@ -170,7 +170,8 @@ export interface SpanRangePayload {
 
 export type RangeElementPayload =
   | { type: "text"; text: string }
-  | { type: "transclusion"; transclusion_source: number; transclusion_start: number; transclusion_end: number };
+  | { type: "transclusion"; transclusion_source: number; transclusion_start: number; transclusion_end: number }
+  | { type: "blob"; content_hash: number; mime_type: string; byte_size: number; width?: number; height?: number };
 
 export interface AuthorContribution {
   club_id: number;

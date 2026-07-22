@@ -1588,6 +1588,44 @@
   border-color: var(--accent-blue);
 }
 
+/* ── Image gallery ── */
+.ws-image-gallery {
+  margin-bottom: 12px;
+}
+.ws-image-thumb {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.ws-image-thumb img {
+  display: block;
+  width: 100%;
+  transition: opacity 0.15s;
+}
+.ws-image-thumb img:hover {
+  opacity: 0.85;
+}
+.ws-image-loading {
+  padding: 20px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.ws-image-error {
+  padding: 20px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--red);
+}
+.ws-image-meta {
+  padding: 4px 8px;
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: 'JetBrains Mono', monospace;
+}
+
 /* ── Invite modal ── */
 .ws-invite-modal {
   min-width: 420px;
@@ -1632,10 +1670,38 @@
   padding: 2px 6px;
   border-radius: 3px;
 }
-.ws-invite-actions {
+.ws-image-upload-btn {
+  cursor: pointer;
   display: flex;
-  justify-content: flex-end;
-  margin-top: 12px;
+  align-items: center;
+  font-size: 14px;
+}
+
+/* ── Image lightbox ── */
+.ws-image-lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+  cursor: pointer;
+}
+.ws-image-lightbox img {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.ws-image-lightbox-title {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: white;
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
 }
 
 /* ── Trail picker (selection popover) ── */
