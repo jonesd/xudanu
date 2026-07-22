@@ -1548,9 +1548,10 @@ async fn blob_upload_handler(
 
     // Use the server's blob store directly via the shared state
     let data = body.to_vec();
-    match state.server.with_server(|srv| {
-        srv.blob_upload(session_id, data, content_type.clone())
-    }) {
+    match state
+        .server
+        .with_server(|srv| srv.blob_upload(session_id, data, content_type.clone()))
+    {
         Ok(meta) => {
             let hash_u64 = meta.hash_u64();
             axum::response::Json(serde_json::json!({
