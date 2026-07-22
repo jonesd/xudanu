@@ -463,6 +463,10 @@ export class CrdtSyncClient {
   private url: string;
   private workBeId: number;
   private sessionId: number | null = null;
+
+  getSessionId(): number | null {
+    return this.sessionId;
+  }
   private crdtReady = false;
   private deltaInFlight = false;
   private pendingServerText: string | null = null;

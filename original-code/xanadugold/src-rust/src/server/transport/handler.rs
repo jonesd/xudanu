@@ -23,6 +23,7 @@ use super::dispatch;
 use super::protocol::*;
 use super::shared::SharedState;
 use crate::edition::BeId;
+use crate::server::session::SessionId;
 
 static SUBSCRIPTION_COUNTER: AtomicU16 = AtomicU16::new(1);
 
@@ -44,6 +45,7 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/xudanu/", get(ws_handler))
         .route("/blobs/{hash}", get(blob_get_handler))
         .route("/blobs/{hash}/preview", get(blob_preview_handler))
+        .route("/api/blob/upload", post(blob_upload_handler))
         .route("/health", get(health_handler))
         .route("/.well-known/xudanu-server.json", get(well_known_handler))
         .route("/api/public/work/{work_id}", get(public_work_handler))
@@ -1516,4 +1518,51 @@ async fn handle_socket(
     }
     drop(out_tx_clone);
     state_cleanup.unregister_session_sender(&session_id_cleanup);
+}
+
+/// HTTP blob upload — accepts raw body as image data.
+/// Much more efficient than WebSocket for large binary files.
+async fn blob_upload_handler(
+    State(state): State<SharedState>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> axum::response::Json<serde_json::Value> {
+    let content_type = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/png")
+        .to_string();
+
+    let session_id: SessionId = match headers
+        .get("x-xudanu-session")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
+    {
+        Some(id) => SessionId(id),
+        None => {
+            return axum::response::Json(serde_json::json!({
+                "error": "missing X-Xudanu-Session header"
+            }));
+        }
+    };
+
+    // Use the server's blob store directly via the shared state
+    let data = body.to_vec();
+    match state.server.with_server(|srv| {
+        srv.blob_upload(session_id, data, content_type.clone())
+    }) {
+        Ok(meta) => {
+            let hash_u64 = meta.hash_u64();
+            axum::response::Json(serde_json::json!({
+                "content_hash": hash_u64,
+                "byte_size": meta.byte_size,
+                "mime_type": meta.mime_type,
+                "width": meta.width,
+                "height": meta.height,
+            }))
+        }
+        Err(e) => axum::response::Json(serde_json::json!({
+            "error": e.to_string()
+        })),
+    }
 }

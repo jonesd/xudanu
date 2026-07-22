@@ -15,7 +15,6 @@ import { AttributionPanel } from "../AttributionPanel";
 import { loadThemeState, saveThemeState, activePalette } from "../../theme";
 import type { ThemeMode } from "../../theme";
 import type { WorkListEntry, TrailPayload } from "../../api/crdt_sync";
-import { blobHashToU64 } from "../../api/crdt_sync";
 import type { WorkKind } from "../../graph-scoring";
 import { KIND_ICON, KIND_COLOR, KIND_ICON_COLOR } from "../../graph-scoring";
 import { SEED_CONCEPTS } from "../../concepts-seed";
@@ -446,8 +445,23 @@ export function WorkspaceShell() {
     showToast("Uploading image…");
     try {
       const buf = await file.arrayBuffer();
-      const meta = await client.blobUpload(new Uint8Array(buf), file.type || "image/png");
-      const hashNum = blobHashToU64(meta.content_hash);
+      // Use HTTP POST for binary upload (much faster than WebSocket byte array)
+      const sessionId = (client.getSessionId() ?? 0).toString();
+      const httpResp = await fetch("/api/blob/upload", {
+        method: "POST",
+        headers: {
+          "Content-Type": file.type || "image/png",
+          "X-Xudanu-Session": sessionId,
+        },
+        body: buf,
+      });
+      if (!httpResp.ok) {
+        const errBody = await httpResp.text();
+        showToast(`Upload failed: ${errBody}`);
+        return;
+      }
+      const meta = await httpResp.json() as { content_hash: number; byte_size: number; mime_type: string; width?: number; height?: number };
+      const hashNum = meta.content_hash;
       const insertPos = text.length;
       await client.elementInsert(workBeId, insertPos, {
         type: "blob",
