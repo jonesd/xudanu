@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Xudanu Storage & Rendering Architecture</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --bg-surface: #161b22;
+  --bg-elevated: #21262d;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --text-dim: #6e7681;
+  --blue: #58a6ff;
+  --green: #3fb950;
+  --amber: #d29922;
+  --red: #f85149;
+  --purple: #bc8cff;
+  --teal: #39d2c0;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+  padding: 0;
+}
+.hero {
+  background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+  border-bottom: 1px solid var(--border);
+  padding: 60px 20px 40px;
+  text-align: center;
+}
+.hero h1 {
+  font-size: 2.5em;
+  margin-bottom: 12px;
+  background: linear-gradient(90deg, #58a6ff, #bc8cff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.hero .subtitle {
+  color: var(--text-muted);
+  font-size: 1.2em;
+  max-width: 600px;
+  margin: 0 auto;
+}
+.container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 40px 20px;
+}
+.section {
+  margin-bottom: 60px;
+}
+.section h2 {
+  font-size: 1.6em;
+  color: var(--blue);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section h2 .num {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7em;
+  color: var(--text);
+}
+.section .intro {
+  color: var(--text-muted);
+  margin-bottom: 24px;
+  font-size: 0.95em;
+}
+
+/* Layer diagram */
+.layer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  align-items: center;
+}
+.layer {
+  width: 100%;
+  max-width: 700px;
+  border-radius: 12px;
+  padding: 20px 24px;
+  position: relative;
+  transition: transform 0.2s;
+}
+.layer:hover { transform: scale(1.01); }
+.layer-user {
+  background: linear-gradient(135deg, rgba(88,166,255,0.12), rgba(88,166,255,0.04));
+  border: 2px solid rgba(88,166,255,0.3);
+  z-index: 5;
+}
+.layer-frontend {
+  background: linear-gradient(135deg, rgba(63,185,80,0.1), rgba(63,185,80,0.03));
+  border: 1px solid rgba(63,185,80,0.25);
+}
+.layer-wire {
+  background: linear-gradient(135deg, rgba(210,153,34,0.1), rgba(210,153,34,0.03));
+  border: 1px solid rgba(210,153,34,0.25);
+}
+.layer-server {
+  background: linear-gradient(135deg, rgba(188,140,255,0.1), rgba(188,140,255,0.03));
+  border: 1px solid rgba(188,140,255,0.25);
+}
+.layer-storage {
+  background: linear-gradient(135deg, rgba(57,210,192,0.1), rgba(57,210,192,0.03));
+  border: 1px solid rgba(57,210,192,0.25);
+}
+.layer-title {
+  font-weight: 700;
+  font-size: 1.1em;
+  margin-bottom: 6px;
+}
+.layer-title .icon { margin-right: 8px; }
+.layer-desc {
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+.layer-tech {
+  display: inline-block;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.75em;
+  background: rgba(255,255,255,0.06);
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-top: 6px;
+  color: var(--text-dim);
+}
+.layer-arrow {
+  width: 2px;
+  height: 24px;
+  background: var(--border);
+  margin: -1px 0;
+  position: relative;
+}
+.layer-arrow::after {
+  content: '▼';
+  position: absolute;
+  bottom: -6px;
+  left: -6px;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+/* Flow diagram */
+.flow-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+.flow-step {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 20px;
+  transition: border-color 0.15s;
+}
+.flow-step:hover { border-color: var(--blue); }
+.flow-num {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 2px solid var(--blue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85em;
+  color: var(--blue);
+}
+.flow-content { flex: 1; }
+.flow-title { font-weight: 600; margin-bottom: 4px; }
+.flow-detail {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.flow-code {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.78em;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  color: var(--green);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* Storage layout */
+.storage-box {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  overflow-x: auto;
+}
+.storage-tree {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.82em;
+  line-height: 1.7;
+  color: var(--text-muted);
+  white-space: pre;
+}
+.storage-tree .dir { color: var(--blue); font-weight: 600; }
+.storage-tree .file { color: var(--green); }
+.storage-tree .hash { color: var(--amber); }
+.storage-tree .comment { color: var(--text-dim); font-style: italic; }
+
+/* Component cards */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.card:hover {
+  border-color: var(--blue);
+  transform: translateY(-2px);
+}
+.card-title {
+  font-weight: 700;
+  font-size: 1.05em;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-badge {
+  font-size: 0.7em;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.badge-ok { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge-partial { background: rgba(210,153,34,0.15); color: var(--amber); }
+.badge-todo { background: rgba(248,81,73,0.15); color: var(--red); }
+.card-desc {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.card-code {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.75em;
+  color: var(--text-dim);
+  margin-top: 8px;
+}
+
+/* Data model */
+.data-model {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.82em;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+.data-model .keyword { color: var(--purple); }
+.data-model .type { color: var(--teal); }
+.data-model .field { color: var(--blue); }
+.data-model .comment { color: var(--text-dim); }
+
+/* Table */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88em;
+}
+th, td {
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+th {
+  color: var(--blue);
+  font-weight: 600;
+  font-size: 0.82em;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+td { color: var(--text-muted); }
+td code {
+  font-family: monospace;
+  font-size: 0.9em;
+  color: var(--green);
+}
+
+/* Callout */
+.callout {
+  background: rgba(88,166,255,0.06);
+  border-left: 3px solid var(--blue);
+  border-radius: 0 8px 8px 0;
+  padding: 14px 20px;
+  margin: 20px 0;
+  font-size: 0.9em;
+}
+.callout-warn {
+  background: rgba(210,153,34,0.06);
+  border-left-color: var(--amber);
+}
+
+/* Disclaimer */
+.disclaimer {
+  text-align: center;
+  padding: 30px 20px;
+  font-size: 0.8em;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+  margin-top: 40px;
+}
+
+/* SVG diagram */
+.diagram-container {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  overflow-x: auto;
+  margin: 20px 0;
+}
+.diagram-caption {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.85em;
+  margin-top: 12px;
+  font-style: italic;
+}
+
+@media (max-width: 768px) {
+  .hero h1 { font-size: 1.8em; }
+  .card-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>Storage & Rendering Architecture</h1>
+  <p class="subtitle">How Xudanu stores documents, revisions, and images — and how they flow through the system to appear on your screen.</p>
+</div>
+
+<div class="container">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- Section 1: System Layers -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2><span class="num">1</span> System Layers</h2>
+  <p class="intro">Five layers, each with a single responsibility. Data flows top to bottom on write, bottom to top on read.</p>
+
+  <div class="layer-stack">
+    <div class="layer layer-user">
+      <div class="layer-title"><span class="icon">👤</span> User Interface</div>
+      <div class="layer-desc">What the user sees and interacts with — document text, images, graphs, panels</div>
+      <div class="layer-tech">React 19 · Vite 8 · CollaborativeEditor (contentEditable)</div>
+    </div>
+    <div class="layer-arrow"></div>
+
+    <div class="layer layer-frontend">
+      <div class="layer-title"><span class="icon"> TS</span> Frontend State (in memory)</div>
+      <div class="layer-desc">React state + hooks. Text in <code>useCrdtSync</code>, spans in <code>useCompoundEdition</code>, images in <code>imageEntries</code>. Lost on page refresh.</div>
+      <div class="layer-tech">WorkspaceShell.tsx · useCrdtSync.ts · useCompoundEdition.ts</div>
+    </div>
+    <div class="layer-arrow"></div>
+
+    <div class="layer layer-wire">
+      <div class="layer-title"><span class="icon">⚡</span> Wire Protocol</div>
+      <div class="layer-desc">WebSocket (JSON) for real-time CRDT ops + links + annotations. HTTP POST for binary uploads (images). HTTP GET for blob retrieval.</div>
+      <div class="layer-tech">WebSocket /xudanu · HTTP /api/blob/upload · HTTP /blobs/{hash}</div>
+    </div>
+    <div class="layer-arrow"></div>
+
+    <div class="layer layer-server">
+      <div class="layer-title"><span class="icon"> RS</span> Server (in memory)</div>
+      <div class="layer-desc">All works, editions, links, annotations, blob metadata loaded on startup. CRDT ops modify this in real time. Checkpointed to disk periodically.</div>
+      <div class="layer-tech">Server struct · HashMaps for works, links, annotations · O-tree CRDT</div>
+    </div>
+    <div class="layer-arrow"></div>
+
+    <div class="layer layer-storage">
+      <div class="layer-title"><span class="icon">💾</span> Disk Storage (permanent)</div>
+      <div class="layer-desc">Three storage systems: chunk store (editions), blob store (images), manifest (metadata). All content-addressed (BLAKE3). Survives restarts.</div>
+      <div class="layer-tech">data/chunks/ · data/blobs/ · data/manifest.json · data/wal.log</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- Section 2: Disk Layout -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2><span class="num">2</span> Disk Layout</h2>
+  <p class="intro">What's actually on disk. Three separate storage systems, each optimized for their data type.</p>
+
+  <div class="storage-box">
+<div class="storage-tree"><span class="dir">data/</span>
+├── <span class="dir">chunks/</span>                        <span class="comment"># O-tree edition chunks (postcard format)</span>
+│   ├── <span class="dir">a3/</span>                           <span class="comment"># First 2 hex chars = directory</span>
+│   │   └── <span class="file">a3f2b1c4....xchunk</span>          <span class="comment"># One edition (BLAKE3-addressed)</span>
+│   ├── <span class="dir">b7/</span>
+│   │   └── <span class="file">b7e9d1a2....xchunk</span>
+│   └── ...
+│
+├── <span class="dir">blobs/</span>                          <span class="comment"># Binary Large Objects (images, future: audio/video)</span>
+│   ├── <span class="dir">0a/</span>
+│   │   └── <span class="file">0a1b2c3d...</span>                 <span class="comment"># Optimized image (BLAKE3-addressed)</span>
+│   │   └── <span class="file">0a1b2c3d..._preview</span>         <span class="comment"># 400px WebP thumbnail</span>
+│   └── ...
+│
+├── <span class="dir">attribution/</span>                    <span class="comment"># Per-character attribution log</span>
+│   └── <span class="file">security.log.2026-07-20</span>       <span class="comment"># Tamper-evident, Ed25519-signed</span>
+│
+├── <span class="file">manifest.json</span>                   <span class="comment"># Server metadata + work entries + link entries</span>
+├── <span class="file">manifest_v212465.json</span>           <span class="comment"># Previous manifest version (dual-slot A/B)</span>
+├── <span class="file">wal.log</span>                         <span class="comment"># Write-Ahead Log (truncated on checkpoint)</span>
+├── <span class="file">server.key</span>                      <span class="comment"># Ed25519 signing key pair</span>
+├── <span class="file">key_history.json</span>                 <span class="comment"># Key rotation history</span>
+└── <span class="file">security.log.seed</span>               <span class="comment"># Initial seed for attribution chain</span>
+</div>
+  </div>
+
+  <div class="callout">
+    <strong>Content-addressed = deduplication for free.</strong> If two works share the same edition chunk or the same image is uploaded twice, only one copy is stored. The BLAKE3 hash is the filename — if the hash matches, the content is identical.
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- Section 3: Document Storage Flow -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2><span class="num">3</span> Document & Revision Storage</h2>
+  <p class="intro">How text gets from your keyboard to permanent disk, and how it comes back.</p>
+
+  <div class="diagram-container">
+<svg width="860" height="480" viewBox="0 0 860 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto">
+      <polygon points="0 0, 10 4, 0 8" fill="#8b949e"/>
+    </marker>
+    <marker id="arr-blue" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto">
+      <polygon points="0 0, 10 4, 0 8" fill="#58a6ff"/>
+    </marker>
+    <marker id="arr-green" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto">
+      <polygon points="0 0, 10 4, 0 8" fill="#3fb950"/>
+    </marker>
+  </defs>
+
+  <!-- WRITE FLOW (top half) -->
+  <text x="430" y="22" text-anchor="middle" fill="#58a6ff" font-size="14" font-weight="700">WRITE: User types → Disk</text>
+
+  <!-- User types -->
+  <rect x="20" y="40" width="120" height="50" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="80" y="62" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">User types</text>
+  <text x="80" y="78" text-anchor="middle" fill="#8b949e" font-size="10">"Hello world"</text>
+
+  <line x1="140" y1="65" x2="185" y2="65" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- CRDT op -->
+  <rect x="190" y="40" width="130" height="50" rx="8" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="255" y="62" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">CRDT Update</text>
+  <text x="255" y="78" text-anchor="middle" fill="#8b949e" font-size="10">work_revise_delta</text>
+
+  <line x1="320" y1="65" x2="365" y2="65" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Server in-memory -->
+  <rect x="370" y="40" width="140" height="50" rx="8" fill="#161b22" stroke="#bc8cff" stroke-width="1.5"/>
+  <text x="440" y="62" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">Server (RAM)</text>
+  <text x="440" y="78" text-anchor="middle" fill="#8b949e" font-size="10">revise_work()</text>
+
+  <!-- auto_checkpoint arrow down -->
+  <line x1="440" y1="90" x2="440" y2="130" stroke="#d29922" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="448" y="115" fill="#d29922" font-size="10">every 50 ops</text>
+
+  <!-- WAL -->
+  <rect x="370" y="135" width="140" height="40" rx="8" fill="#161b22" stroke="#d29922" stroke-width="1.5"/>
+  <text x="440" y="160" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">WAL (wal.log)</text>
+
+  <line x1="370" y1="155" x2="320" y2="155" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Edition → chunks -->
+  <rect x="180" y="135" width="130" height="40" rx="8" fill="#161b22" stroke="#39d2c0" stroke-width="1.5"/>
+  <text x="245" y="160" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">Edition → Chunks</text>
+
+  <line x1="180" y1="155" x2="140" y2="155" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- data/chunks + manifest -->
+  <rect x="20" y="135" width="110" height="40" rx="8" fill="#161b22" stroke="#39d2c0" stroke-width="1.5"/>
+  <text x="75" y="153" text-anchor="middle" fill="#39d2c0" font-size="11" font-weight="600">data/chunks/</text>
+  <text x="75" y="168" text-anchor="middle" fill="#8b949e" font-size="10">+ manifest.json</text>
+
+  <!-- Divider -->
+  <line x1="20" y1="200" x2="840" y2="200" stroke="#30363d" stroke-width="1" stroke-dasharray="5,5"/>
+
+  <!-- READ FLOW (bottom half) -->
+  <text x="430" y="222" text-anchor="middle" fill="#3fb950" font-size="14" font-weight="700">READ: Disk → User sees text</text>
+
+  <!-- Server startup -->
+  <rect x="20" y="240" width="120" height="50" rx="8" fill="#161b22" stroke="#39d2c0" stroke-width="1.5"/>
+  <text x="80" y="262" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">Server Start</text>
+  <text x="80" y="278" text-anchor="middle" fill="#8b949e" font-size="10">restore_from_dir</text>
+
+  <line x1="140" y1="265" x2="185" y2="265" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Load chunks -->
+  <rect x="190" y="240" width="130" height="50" rx="8" fill="#161b22" stroke="#39d2c0" stroke-width="1.5"/>
+  <text x="255" y="262" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">Load Chunks</text>
+  <text x="255" y="278" text-anchor="middle" fill="#8b949e" font-size="10">work_from_chunks_current</text>
+
+  <line x1="320" y1="265" x2="365" y2="265" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- In memory -->
+  <rect x="370" y="240" width="140" height="50" rx="8" fill="#161b22" stroke="#bc8cff" stroke-width="1.5"/>
+  <text x="440" y="262" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">Server (RAM)</text>
+  <text x="440" y="278" text-anchor="middle" fill="#8b949e" font-size="10">Works HashMap</text>
+
+  <!-- On-demand revision load arrow -->
+  <line x1="440" y1="290" x2="440" y2="325" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arr-blue)"/>
+  <text x="448" y="312" fill="#58a6ff" font-size="10">on demand</text>
+
+  <!-- Revision load -->
+  <rect x="370" y="330" width="140" height="40" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="440" y="355" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">work_load_revision</text>
+
+  <line x1="370" y1="350" x2="140" y2="350" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arr-blue)"/>
+
+  <rect x="20" y="330" width="110" height="40" rx="8" fill="#161b22" stroke="#39d2c0" stroke-width="1.5"/>
+  <text x="75" y="355" text-anchor="middle" fill="#39d2c0" font-size="11" font-weight="600">chunk store</text>
+
+  <!-- crdt_sync_open arrow right from RAM -->
+  <line x1="510" y1="265" x2="555" y2="265" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- WebSocket -->
+  <rect x="560" y="240" width="120" height="50" rx="8" fill="#161b22" stroke="#d29922" stroke-width="1.5"/>
+  <text x="620" y="262" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">WebSocket</text>
+  <text x="620" y="278" text-anchor="middle" fill="#8b949e" font-size="10">crdt_sync_open</text>
+
+  <line x1="680" y1="265" x2="725" y2="265" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Editor -->
+  <rect x="730" y="240" width="110" height="50" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="785" y="262" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">Editor</text>
+  <text x="785" y="278" text-anchor="middle" fill="#8b949e" font-size="10">renders text</text>
+
+  <!-- Current vs old revision note -->
+  <rect x="560" y="330" width="280" height="50" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="700" y="352" text-anchor="middle" fill="#58a6ff" font-size="11">Revision history: RAM (recent) + Disk (old)</text>
+  <text x="700" y="368" text-anchor="middle" fill="#8b949e" font-size="10">prev_chunk_history bridges the gap</text>
+
+  <!-- Attribution note -->
+  <rect x="20" y="400" width="400" height="60" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1"/>
+  <text x="220" y="422" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">Attribution</text>
+  <text x="220" y="438" text-anchor="middle" fill="#8b949e" font-size="10">Every character signed with Ed25519. Attribution log chained (tamper-evident).</text>
+  <text x="220" y="452" text-anchor="middle" fill="#8b949e" font-size="10">Span migration (Mapping) keeps links/annotations attached through edits.</text>
+
+  <!-- Revision storage note -->
+  <rect x="440" y="400" width="400" height="60" rx="8" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1"/>
+  <text x="640" y="422" text-anchor="middle" fill="#d29922" font-size="11" font-weight="600">Revision Storage (3 levels)</text>
+  <text x="640" y="438" text-anchor="middle" fill="#8b949e" font-size="10">1. RAM: revision_history (current session)</text>
+  <text x="640" y="452" text-anchor="middle" fill="#8b949e" font-size="10">2. Chunk store: WorkChunkRef.history (permanent)</text>
+</svg>
+  </div>
+  <p class="diagram-caption">Figure 1: Document write flow (top) and read flow (bottom). Yellow = WAL, purple = server RAM, teal = disk, blue = on-demand revision loading.</p>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- Section 4: Revision Storage Detail -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2><span class="num">4</span> Revision Storage — Three Levels</h2>
+  <p class="intro">Revisions exist at three levels of persistence. Each survives longer but costs more to access.</p>
+
+  <table>
+    <tr>
+      <th>Level</th>
+      <th>What's stored</th>
+      <th>Speed</th>
+      <th>Survives</th>
+    </tr>
+    <tr>
+      <td><strong>1. In-memory</strong></td>
+      <td>Full Edition objects (revision_history BTreeMap)</td>
+      <td>Instant (HashMap lookup)</td>
+      <td>Until server restart</td>
+    </tr>
+    <tr>
+      <td><strong>2. Chunk store</strong></td>
+      <td>Chunk references (WorkChunkRef.history map)</td>
+      <td>~10ms (read + deserialize)</td>
+      <td>Forever (content-addressed)</td>
+    </tr>
+    <tr>
+      <td><strong>3. Manifest</strong></td>
+      <td>Revision metadata (RevisionMeta: timestamps, descriptions)</td>
+      <td>Instant (loaded on startup)</td>
+      <td>Forever</td>
+    </tr>
+  </table>
+
+  <div class="callout callout-warn">
+    <strong>Recent fix:</strong> <code>prev_chunk_history</code> preserves old revision chunk references when <code>mark_dirty()</code> clears <code>chunk_ref</code>. Without this, editing a work after restart would lose all pre-restart revisions from the chunk store.
+  </div>
+
+  <div class="data-model">
+<span class="comment">// WorkChunkRef — stored in manifest per work</span>
+<span class="keyword">pub struct</span> <span class="type">WorkChunkRef</span> {
+    current_root: <span class="type">EditionChunkRef</span>,        <span class="comment">// → points to current edition's chunks</span>
+    history: <span class="type">BTreeMap&lt;u64, EditionChunkRef&gt;</span>,  <span class="comment">// → revision 0, 1, 2, ... each pointing to chunks</span>
+    revision_count: <span class="type">u64</span>,                 <span class="comment">// how many revisions exist</span>
+}
+
+<span class="comment">// RevisionMeta — stored in manifest (FR-23)</span>
+<span class="keyword">pub struct</span> <span class="type">RevisionMeta</span> {
+    revision_id: <span class="type">u64</span>,
+    parent: <span class="type">Option&lt;u64&gt;</span>,
+    created_at: <span class="type">u64</span>,               <span class="comment">// Unix timestamp</span>
+    created_by: <span class="type">Option&lt;BeId&gt;</span>,        <span class="comment">// which identity made this revision</span>
+    description: <span class="type">Option&lt;String&gt;</span>,     <span class="comment">// "Added section on transclusion"</span>
+    is_notable: <span class="type">bool</span>,              <span class="comment">// auto-detected or manual flag</span>
+    change_summary: <span class="type">String</span>,          <span class="comment">// "+450 chars, 15% changed"</span>
+}
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- Section 5: Image Storage Flow -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2><span class="num">5</span> Image Storage & Rendering Flow</h2>
+  <p class="intro">From drag-drop to rendered pixel. The image passes through 7 steps.</p>
+
+  <div class="flow-grid">
+
+    <div class="flow-step">
+      <div class="flow-num">1</div>
+      <div class="flow-content">
+        <div class="flow-title">User clicks 📷 / drag-drops image</div>
+        <div class="flow-detail">File read into <code>ArrayBuffer</code> in the browser. MIME type detected from file extension.</div>
+        <div class="flow-code">const buf = await file.arrayBuffer();
+// buf = raw PNG/JPEG bytes (e.g., 500KB)</div>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num">2</div>
+      <div class="flow-content">
+        <div class="flow-title">HTTP POST upload</div>
+        <div class="flow-detail">Raw bytes sent to <code>/api/blob/upload</code> with Content-Type header and session ID for auth. <strong>Not WebSocket</strong> — HTTP is 10× more efficient for binary.</div>
+        <div class="flow-code">POST /api/blob/upload
+Content-Type: image/png
+X-Xudanu-Session: 14372...
+
+[500KB raw bytes]</div>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num">3</div>
+      <div class="flow-content">
+        <div class="flow-title">Server: optimize + thumbnail</div>
+        <div class="flow-detail">
+          Server decodes the image (<code>image</code> crate), then:
+          <br>• <strong>PNG</strong> → oxipng lossless compression (40-70% smaller)
+          <br>• <strong>JPEG</strong> → re-encode at quality 80 (50% smaller)
+          <br>• <strong>WebP</strong> → kept as-is
+          <br>• Generates 400px WebP thumbnail (always)
+          <br>• Extracts width × height
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num">4</div>
+      <div class="flow-content">
+        <div class="flow-title">BlobStore: content-addressed storage</div>
+        <div class="flow-detail">BLAKE3 hash of image bytes = filename. Two files written: optimized image + thumbnail. Dedup is free (same hash = same file).</div>
+        <div class="flow-code">data/blobs/a3/a3f2b1c4...        ← optimized image
+data/blobs/a3/a3f2b1c4..._preview ← 400px thumbnail</div>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num">5</div>
+      <div class="flow-content">
+        <div class="flow-title">O-tree: insert blob element</div>
+        <div class="flow-detail">A <code>RangeElement::Blob</code> is inserted into the document's O-tree at the cursor position. This is how the image "knows" it belongs to this document at this position.</div>
+        <div class="flow-code">elementInsert(workId, position, {
+  type: "blob",
+  content_hash: 0xa3f2b1c4...,
+  mime_type: "image/png",
+  width: 800, height: 600
+})</div>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num">6</div>
+      <div class="flow-content">
+        <div class="flow-title">Client: fetch preview (progressive loading)</div>
+        <div class="flow-detail">Frontend fetches the thumbnail first (~15KB) via HTTP GET. Creates a temporary <code>Blob</code> + <code>blob:</code> URL in the browser. Image appears instantly.</div>
+        <div class="flow-code">GET /blobs/a3f2b1c4.../preview  → 15KB WebP
+Blob → URL.createObjectURL() → &lt;img src="blob:..."&gt;</div>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num">7</div>
+      <div class="flow-content">
+        <div class="flow-title">Client: fetch full image (on click)</div>
+        <div class="flow-detail">When user clicks the thumbnail, the full-resolution image is fetched. Opens in a new tab or lightbox.</div>
+        <div class="flow-code">GET /blobs/a3f2b1c4... → 250KB optimized PNG
+Opens full-resolution in new tab</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- Section 6: Image Data Model -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2><span class="num">6</span> Image Data Model</h2>
+  <p class="intro">How image data is structured at each layer.</p>
+
+  <div class="data-model">
+<span class="comment">// ── Disk: BlobStore files ──</span>
+<span class="comment">// data/blobs/{hash}/      ← directory per blob (BLAKE3 hash)</span>
+<span class="comment">//   ├── {hash}             ← optimized image bytes</span>
+<span class="comment">//   └── {hash}_preview     ← 400px WebP thumbnail</span>
+
+<span class="comment">// ── Server (Rust): BlobMeta ──</span>
+<span class="keyword">pub struct</span> <span class="type">BlobMeta</span> {
+    <span class="field">content_hash</span>: [<span class="type">u8</span>; <span class="type">32</span>],        <span class="comment">// BLAKE3 hash (permanent identity)</span>
+    <span class="field">byte_size</span>: <span class="type">u64</span>,               <span class="comment">// after optimization</span>
+    <span class="field">mime_type</span>: <span class="type">String</span>,            <span class="comment">// "image/png", "image/jpeg"</span>
+    <span class="field">preview_hash</span>: <span class="type">Option&lt;[u8; 32]&gt;</span>, <span class="comment">// hash of thumbnail</span>
+    <span class="field">width</span>: <span class="type">Option&lt;u32&gt;</span>,           <span class="comment">// original width in pixels</span>
+    <span class="field">height</span>: <span class="type">Option&lt;u32&gt;</span>,          <span class="comment">// original height</span>
+}
+
+<span class="comment">// ── O-tree: RangeElement::Blob ──</span>
+<span class="comment">// Lives in the edition alongside text and transclusion elements</span>
+<span class="keyword">pub enum</span> <span class="type">RangeElement</span> {
+    <span class="type">Text</span> { text: <span class="type">String</span> },
+    <span class="type">Transclusion</span> { source_work_id, char_start, char_end },
+    <span class="type">Blob</span> {
+        <span class="field">content_hash</span>: <span class="type">u64</span>,       <span class="comment">// hash_u64 (first 8 bytes of BLAKE3)</span>
+        <span class="field">mime_type</span>: <span class="type">String</span>,
+        <span class="field">byte_size</span>: <span class="type">u64</span>,
+        <span class="field">width</span>: <span class="type">Option&lt;u32&gt;</span>,
+        <span class="field">height</span>: <span class="type">Option&lt;u32&gt;</span>,
+    },
+    <span class="type">Overlay</span> { overlay: <span class="type">ImageOverlay</span> },  <span class="comment">// transforms: crop, resize, rotate</span>
+}
+
+<span class="comment">// ── Client (TypeScript): imageEntries ──</span>
+<span class="comment">// Frontend state in WorkspaceShell, cached in localStorage</span>
+<span class="keyword">interface</span> <span class="type">ImageEntry</span> {
+    <span class="field">hash</span>: <span class="type">number</span>;           <span class="comment">// blobHashToU64(content_hash)</span>
+    <span class="field">mime</span>: <span class="type">string</span>;
+    <span class="field">width</span>?: <span class="type">number</span>;
+    <span class="field">height</span>?: <span class="type">number</span>;
+    <span class="field">url</span>?: <span class="type">string</span>;          <span class="comment">// temporary blob: URL (not persisted)</span>
+    <span class="field">loading</span>: <span class="type">boolean</span>;
+}
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- Section 7: What's Stored Where -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2><span class="num">7</span> What's Stored Where — Summary</h2>
+  <p class="intro">The complete map of data in Xudanu.</p>
+
+  <table>
+    <tr>
+      <th>Data type</th>
+      <th>RAM (lost on restart)</th>
+      <th>Disk (permanent)</th>
+      <th>Access path</th>
+    </tr>
+    <tr>
+      <td><strong>Document text</strong></td>
+      <td>Works HashMap → Work → Edition</td>
+      <td>data/chunks/ (postcard format)</td>
+      <td>crdt_sync_open → text</td>
+    </tr>
+    <tr>
+      <td><strong>Revisions (old editions)</strong></td>
+      <td>Work.revision_history (current session only)</td>
+      <td>data/chunks/ (via WorkChunkRef.history)</td>
+      <td>work_text_at_revision()</td>
+    </tr>
+    <tr>
+      <td><strong>Revision metadata</strong></td>
+      <td>Server.revisions HashMap</td>
+      <td>manifest.json → revisions map</td>
+      <td>work_revisions_list()</td>
+    </tr>
+    <tr>
+      <td><strong>Typed links</strong></td>
+      <td>Server.links HashMap</td>
+      <td>manifest.json → links_hash → chunk</td>
+      <td>link_list_for_work()</td>
+    </tr>
+    <tr>
+      <td><strong>Annotations (bold, italic, notes)</strong></td>
+      <td>O-tree elements (part of edition)</td>
+      <td>data/chunks/ (part of edition)</td>
+      <td>annotation_list()</td>
+    </tr>
+    <tr>
+      <td><strong>Images</strong></td>
+      <td>— (not cached in RAM)</td>
+      <td>data/blobs/{hash} + data/blobs/{hash}_preview</td>
+      <td>GET /blobs/{hash}</td>
+    </tr>
+    <tr>
+      <td><strong>Image reference in document</strong></td>
+      <td>RangeElement::Blob (part of edition)</td>
+      <td>data/chunks/ (part of edition)</td>
+      <td>edition.all_entries()</td>
+    </tr>
+    <tr>
+      <td><strong>Attribution (who wrote what)</strong></td>
+      <td>— (queried on demand)</td>
+      <td>data/attribution/security.log.*</td>
+      <td>attribution_query_resolved()</td>
+    </tr>
+    <tr>
+      <td><strong>Trails</strong></td>
+      <td>Server.trails HashMap</td>
+      <td>manifest.json → social_chunk → chunk</td>
+      <td>trail_list()</td>
+    </tr>
+    <tr>
+      <td><strong>Starred works</strong></td>
+      <td>Server.starred_works HashMap</td>
+      <td>manifest.json → social_chunk → chunk</td>
+      <td>work_is_starred()</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- Section 8: Future Storage -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2><span class="num">8</span> Planned Storage Improvements</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">
+        Image position persistence
+        <span class="card-badge badge-todo">TODO</span>
+      </div>
+      <div class="card-desc">
+        Currently images are tracked in localStorage (frontend only). Need server-side query: "what blob elements exist in this edition?" A new <code>work_blob_list</code> wire op would scan the O-tree for RangeElement::Blob and return positions.
+      </div>
+      <div class="card-code">server.rs::work_blob_list()</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        Image overlays (crop, resize)
+        <span class="card-badge badge-partial">Scaffolded</span>
+      </div>
+      <div class="card-desc">
+        <code>RangeElement::Overlay</code> + <code>ImageOverlay</code> structs already exist. Would allow server-side crop/resize/rotate without duplicating the original image. The overlay references the base hash + list of operations.
+      </div>
+      <div class="card-code">range_element.rs::ImageOp</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        Chunk-level structural sharing
+        <span class="card-badge badge-todo">Deferred (FR-17)</span>
+      </div>
+      <div class="card-desc">
+        Currently each revision stores a full edition snapshot. Enfilade-style structural sharing would split editions into paragraph-level chunks, sharing unchanged chunks across revisions. Crossover at ~80 revisions.
+      </div>
+      <div class="card-code">docs/dev/FR-17.md</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        Revision eviction
+        <span class="card-badge badge-todo">Not needed yet</span>
+      </div>
+      <div class="card-desc">
+        Old editions load from disk on demand. For works with 1000+ revisions, we'd add eviction: keep recent N revisions in RAM, evict older ones. Loaded from chunk store when requested.
+      </div>
+      <div class="card-code">work_load_revision() fallback</div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="disclaimer">
+  <strong>Xudanu</strong> is independent open-source software (Apache 2.0). Not affiliated with Project Xanadu™ or the Udanax team.<br>
+  <a href="index.html" style="color: var(--blue);">← Back to Documentation</a>
+</div>
+
+<script src="github-links.js"></script>
+</body>
+</html>
