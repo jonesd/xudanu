@@ -246,6 +246,67 @@ export function WorkspaceShell() {
     setTimeout(() => setToast(null), 4000);
   }, []);
 
+  // Handle ?demo=1 — create demo work on load
+  const demoRan = useRef(false);
+  useEffect(() => {
+    if (demoRan.current) return;
+    if (!connected || !clientRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("demo") !== "1") return;
+    demoRan.current = true;
+    params.delete("demo");
+    const newParams = params.toString();
+    const newUrl = newParams ? `/explore?${newParams}` : "/explore";
+    window.history.replaceState({}, "", newUrl);
+
+    const demoText = [
+      "Welcome to Xudanu",
+      "",
+      "This interactive demo document shows the key features of the system.",
+      "Each concept below is connected to others through typed links.",
+      "",
+      "Typed Links",
+      "Typed links connect passages with coloured margin boxes.",
+      "Each type has a specific meaning: Comment, Reference, Disagreement, Quotation, See Also.",
+      "",
+      "Transclusion",
+      "Content can be reused across documents while maintaining its provenance.",
+      "When you transclude a passage, the original author is always credited.",
+      "",
+      "Provenance and Attribution",
+      "Every character carries cryptographic provenance via Ed25519 signatures.",
+      "",
+      "Comparison View",
+      "The comparison view shows shared passages between documents with bezier connections.",
+      "",
+      "Real-time Editing",
+      "Multiple users can edit the same document simultaneously.",
+      "Changes merge automatically using the O-tree CRDT without locks or conflicts.",
+      "",
+      "Cross-Server Networking",
+      "Documents on different servers can link to each other via domain tumblers.",
+      "BLAKE3 hash verification ensures content integrity across the network.",
+    ].join("\n");
+
+    (async () => {
+      try {
+        const resp = await clientRef.current!.sendRequest("work_create", { edition: { text: demoText } });
+        const val = resp as Record<string, unknown>;
+        const inner = val.value as Record<string, unknown> | undefined;
+        const id = (inner?.value as number) ?? (inner as unknown as number) ?? (val.value as number);
+        if (typeof id === "number" && id > 0) {
+          try { await clientRef.current!.workPublish(id); } catch {}
+          selectWork(id);
+          showToast("Demo document created");
+        } else {
+          showToast("Could not create demo — please sign in first");
+        }
+      } catch {
+        showToast("Could not create demo — please sign in first");
+      }
+    })();
+  }, [connected, clientRef, selectWork, showToast]);
+
   const handleEpubImport = useCallback(async (file: File) => {
     if (!clientRef.current) {
       showToast("Not connected");
