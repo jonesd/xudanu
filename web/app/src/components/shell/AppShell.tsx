@@ -1409,28 +1409,30 @@ export function AppShell() {
         )}
       </div>
 
-      <ContextPanel
-        awareness={awareness}
-        attributionSpans={attributionSpans}
-        attributionLogStatus={attributionLogStatus}
-        transclusionLinks={transclusion.links}
-        backlinks={transclusion.backlinks}
-        crossServerBacklinks={crossServerBacklinks}
-        compoundSpanRanges={compound.spanRanges}
-        compoundSourceTitles={compound.sourceTitles}
-        currentWorkId={workBeId}
-        documentLength={displayText.length}
-        onNavigateToWork={selectWork}
-        onOpenProvenance={() => setShowProvenance(true)}
-        onExportReport={handleExportReport}
-        onExportProvJson={handleExportProvJson}
-        focusMode={focusMode}
-        onToggleFocus={() => setFocusMode((f) => !f)}
-        onDeleteLink={editable ? handleDeleteLink : undefined}
-        onRetypeLink={editable ? handleRetypeLink : undefined}
-        pinnedKeys={pinnedKeys}
-        onTogglePin={handleTogglePin}
-      />
+      {workBeId !== null && (
+        <ContextPanel
+          awareness={awareness}
+          attributionSpans={attributionSpans}
+          attributionLogStatus={attributionLogStatus}
+          transclusionLinks={transclusion.links}
+          backlinks={transclusion.backlinks}
+          crossServerBacklinks={crossServerBacklinks}
+          compoundSpanRanges={compound.spanRanges}
+          compoundSourceTitles={compound.sourceTitles}
+          currentWorkId={workBeId}
+          documentLength={displayText.length}
+          onNavigateToWork={selectWork}
+          onOpenProvenance={() => setShowProvenance(true)}
+          onExportReport={handleExportReport}
+          onExportProvJson={handleExportProvJson}
+          focusMode={focusMode}
+          onToggleFocus={() => setFocusMode((f) => !f)}
+          onDeleteLink={editable ? handleDeleteLink : undefined}
+          onRetypeLink={editable ? handleRetypeLink : undefined}
+          pinnedKeys={pinnedKeys}
+          onTogglePin={handleTogglePin}
+        />
+      )}
 
       <BottomBar
         connected={connected}
