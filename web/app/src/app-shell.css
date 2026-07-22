@@ -559,12 +559,20 @@
 }
 
 .document-area {
+  grid-column: 2;
+  grid-row: 2;
   background: var(--bg-document);
   overflow: hidden;
   position: relative;
   display: flex;
   flex-direction: column;
   color: var(--doc-text);
+  min-width: 0;
+}
+
+/* When no LeftRail (welcome screen), document area spans full width */
+.app-shell:not(:has(.left-rail)) .document-area {
+  grid-column: 1 / -1;
 }
 
 .document-area > .transclude-btn {
