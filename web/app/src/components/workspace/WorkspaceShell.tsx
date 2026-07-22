@@ -15,6 +15,7 @@ import { AttributionPanel } from "../AttributionPanel";
 import { loadThemeState, saveThemeState, activePalette } from "../../theme";
 import type { ThemeMode } from "../../theme";
 import type { WorkListEntry, TrailPayload } from "../../api/crdt_sync";
+import { blobHashToU64 } from "../../api/crdt_sync";
 import type { WorkKind } from "../../graph-scoring";
 import { KIND_ICON, KIND_COLOR, KIND_ICON_COLOR } from "../../graph-scoring";
 import { SEED_CONCEPTS } from "../../concepts-seed";
@@ -373,10 +374,11 @@ export function WorkspaceShell() {
     try {
       const buf = await file.arrayBuffer();
       const meta = await client.blobUpload(new Uint8Array(buf), file.type || "image/png");
+      const hashNum = blobHashToU64(meta.content_hash);
       const insertPos = text.length;
       await client.elementInsert(workBeId, insertPos, {
         type: "blob",
-        content_hash: typeof meta.content_hash === "number" ? meta.content_hash : 0,
+        content_hash: hashNum,
         mime_type: meta.mime_type,
         byte_size: meta.byte_size,
         width: meta.width ?? undefined,
@@ -384,11 +386,6 @@ export function WorkspaceShell() {
       });
       showToast(`✓ Image uploaded (${meta.byte_size.toLocaleString()} bytes${meta.width ? `, ${meta.width}×${meta.height}` : ""})`);
       // Track the image locally for display
-      const hashNum = typeof meta.content_hash === "number"
-        ? meta.content_hash
-        : Array.isArray(meta.content_hash)
-          ? meta.content_hash[0]
-          : 0;
       setImageEntries((prev) => [...prev, {
         hash: hashNum,
         mime: meta.mime_type,
@@ -397,14 +394,21 @@ export function WorkspaceShell() {
         loading: true,
       }]);
       // Fetch the preview image
-      if (clientRef.current && hashNum) {
-        clientRef.current.blobGetPreview(hashNum).then((previewBytes) => {
+      if (hashNum) {
+        client.blobGetPreview(hashNum).then((previewBytes) => {
           const imgBytes = previewBytes || new Uint8Array();
           const blob = new Blob([imgBytes as BlobPart], { type: meta.mime_type });
           const url = URL.createObjectURL(blob);
           setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, url, loading: false } : e));
         }).catch(() => {
-          setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, loading: false } : e));
+          // Try full image if preview fails
+          client.blobGet(hashNum).then((fullBytes) => {
+            const blob = new Blob([fullBytes as BlobPart], { type: meta.mime_type });
+            const url = URL.createObjectURL(blob);
+            setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, url, loading: false } : e));
+          }).catch(() => {
+            setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, loading: false } : e));
+          });
         });
       }
     } catch (e) {
@@ -544,18 +548,17 @@ export function WorkspaceShell() {
     }
   }, [connected, rightPanelTab, loadTrailsForWork]);
 
-  // Load connections when Connections tab is active
+  // Load links + backlinks on every work change (needed for colored underlines in editor)
   const loadLinks = transclusion.loadLinks;
   const loadBacklinks = transclusion.loadBacklinks;
   useEffect(() => {
     if (!connected || workBeId === null) return;
-    // Refresh attribution on every work load (same as AppShell)
     refreshAttribution();
-    if (rightPanelTab === "connections" && clientRef.current) {
+    if (clientRef.current) {
       void loadLinks(clientRef.current, workBeId, works);
       void loadBacklinks(clientRef.current, workBeId);
     }
-  }, [connected, workBeId, rightPanelTab, clientRef, works, loadLinks, loadBacklinks, refreshAttribution]);
+  }, [connected, workBeId, clientRef, works, loadLinks, loadBacklinks, refreshAttribution]);
 
   // Fetch work kind when work changes
   useEffect(() => {

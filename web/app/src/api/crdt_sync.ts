@@ -362,12 +362,24 @@ export interface RevisionMeta {
 }
 
 export interface BlobMeta {
-  content_hash: number;
+  content_hash: number[] | number;
   byte_size: number;
   mime_type: string;
-  preview_hash?: number | null;
+  preview_hash?: number[] | number | null;
   width?: number | null;
   height?: number | null;
+}
+
+export function blobHashToU64(hash: number[] | number): number {
+  if (typeof hash === "number") return hash;
+  if (Array.isArray(hash) && hash.length >= 8) {
+    let result = 0;
+    for (let i = 0; i < 8; i++) {
+      result = result * 256 + (hash[i] || 0);
+    }
+    return result;
+  }
+  return 0;
 }
 
 export interface GraphNode {
