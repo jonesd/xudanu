@@ -329,137 +329,7 @@ export function AppShell() {
     }
   }, [createWork, selectWork, loadWorks]);
 
-  const handleCreateDemo = useCallback(async () => {
-    if (!clientRef.current) return;
-    if (!identity) {
-      setShowIdentity(true);
-      return;
-    }
-
-    const demoText = [
-      "Welcome to Xudanu",
-      "",
-      "This interactive demo document shows the key features of the system.",
-      "Each concept below is connected to others through typed links.",
-      "",
-      "Typed Links",
-      "Typed links connect passages with coloured margin boxes.",
-      "Each type has a specific meaning: Comment, Reference, Disagreement, Quotation, See Also.",
-      "Hover over the margin bars to see descriptions. Click Show Links to toggle boxes.",
-      "",
-      "Transclusion",
-      "Content can be reused across documents while maintaining its provenance.",
-      "When you transclude a passage, the original author is always credited.",
-      "",
-      "Provenance and Attribution",
-      "Every character carries cryptographic provenance via Ed25519 signatures.",
-      "Click Show Prov to see attribution spans and derivation chains.",
-      "",
-      "Comparison View",
-      "The comparison view shows shared passages between documents with bezier connections.",
-      "Click Compare in the toolbar to explore side-by-side and diff views.",
-      "",
-      "Real-time Editing",
-      "Multiple users can edit the same document simultaneously.",
-      "Changes merge automatically using the O-tree CRDT without locks or conflicts.",
-      "",
-      "Cross-Server Networking",
-      "Documents on different servers can link to each other via domain tumblers.",
-      "BLAKE3 hash verification ensures content integrity across the network.",
-    ].join("\n");
-
-    try {
-      if (!clientRef.current) return;
-      const resp = await clientRef.current.sendRequest("work_create", { edition: { text: demoText } });
-      const demoId = (resp as any)?.value?.value ?? (resp as any)?.value;
-      if (typeof demoId !== "number") return;
-
-      try { await clientRef.current.workPublish(demoId); } catch {}
-      selectWork(demoId);
-      loadWorks();
-      setShowLinkDesc(true);
-      setShowProvenance(true);
-
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      const client = clientRef.current;
-      if (!client) return;
-
-      const lines = demoText.split("\n");
-      const findPos = (lineIdx: number, phrase: string): { start: number; end: number } => {
-        let pos = 0;
-        for (let i = 0; i < lineIdx; i++) pos += lines[i].length + 1;
-        const lineText = lines[lineIdx];
-        const rel = lineText.indexOf(phrase);
-        if (rel === -1) return { start: pos, end: pos + phrase.length };
-        return { start: pos + rel, end: pos + rel + phrase.length };
-      };
-
-      const links: Array<{ srcLine: number; srcPhrase: string; dstLine: number; dstPhrase: string; type: number; desc: string }> = [
-        { srcLine: 6, srcPhrase: "Typed links connect passages with coloured margin boxes.", dstLine: 10, dstPhrase: "Content can be reused across documents", type: 5, desc: "See Also: transclusion is another way to connect content" },
-        { srcLine: 7, srcPhrase: "Each type has a specific meaning", dstLine: 15, dstPhrase: "Every character carries cryptographic provenance", type: 2, desc: "Reference: provenance is a core principle that underpins all link types" },
-        { srcLine: 8, srcPhrase: "Click Show Links to toggle boxes.", dstLine: 18, dstPhrase: "The comparison view shows shared passages", type: 1, desc: "Comment: the Compare button is another toolbar feature worth exploring" },
-        { srcLine: 23, srcPhrase: "Changes merge automatically using the O-tree CRDT", dstLine: 6, dstPhrase: "Typed links connect passages", type: 3, desc: "Disagreement: CRDT editing trades deep versioning for concurrency — unlike the original Xanadu model" },
-        { srcLine: 10, srcPhrase: "the original author is always credited", dstLine: 14, dstPhrase: "Every character carries cryptographic provenance", type: 4, desc: "Quotation: this principle is guaranteed by the attribution system" },
-      ];
-
-      let annId = Date.now();
-      for (const link of links) {
-        try {
-          const srcPos = findPos(link.srcLine, link.srcPhrase);
-          const dstPos = findPos(link.dstLine, link.dstPhrase);
-          const linkId = await client.linkCreate(
-            demoId, demoId,
-            { excerpt: link.srcPhrase, start: srcPos.start, end: srcPos.end },
-            { excerpt: link.dstPhrase, start: dstPos.start, end: dstPos.end },
-          );
-          await client.linkSetTypes(linkId, [link.type]);
-          if (link.desc) {
-            await client.annotationCreate(
-              demoId, annId++,
-              "link-description",
-              JSON.stringify({ link_id: linkId, text: link.desc }),
-              srcPos.start, srcPos.end,
-            );
-          }
-        } catch (e) {
-          console.warn("[demo] link creation failed:", e);
-        }
-      }
-
-      const boldTitles = [0, 6, 10, 14, 18, 22, 26];
-      for (const lineIdx of boldTitles) {
-        const pos = findPos(lineIdx, lines[lineIdx]);
-        try {
-          await client.annotationCreate(demoId, annId++, "bold", "", pos.start, pos.end);
-        } catch {}
-      }
-
-      const italicPhrases: Array<{ line: number; phrase: string }> = [
-        { line: 7, phrase: "Comment, Reference, Disagreement, Quotation, See Also" },
-        { line: 11, phrase: "the original author is always credited" },
-        { line: 15, phrase: "Ed25519 signatures" },
-        { line: 19, phrase: "bezier connections" },
-        { line: 23, phrase: "O-tree CRDT" },
-        { line: 27, phrase: "BLAKE3 hash verification" },
-      ];
-      for (const { line, phrase } of italicPhrases) {
-        const pos = findPos(line, phrase);
-        try {
-          await client.annotationCreate(demoId, annId++, "italic", "", pos.start, pos.end);
-        } catch {}
-      }
-
-      await refreshAnnotations();
-      await transclusion.loadLinks(client, demoId, works);
-      refreshAttribution();
-
-    } catch (e) {
-      const err = e as Error;
-      console.error("[demo] Failed:", err);
-      alert("Failed to create demo: " + (err.message || "unknown error"));
-    }
-  }, [createWork, selectWork, loadWorks, setShowLinkDesc, setShowProvenance, identity, refreshAnnotations, transclusion, works]);
+  // handleCreateDemo removed — demo creation is now inline in the welcome button
 
   const currentWorkMeta = works.find((w) => w.work_id === workBeId);
   const isSourceWork = currentWorkMeta?.is_source === true;
@@ -1071,9 +941,47 @@ export function AppShell() {
             </div>
             <div className="welcome-actions">
               <button className="welcome-btn" style={{ borderColor: "var(--accent-blue)", color: "var(--accent-blue)" }} onClick={async () => {
-                await handleCreateDemo();
-                window.history.pushState({}, "", `/explore?work=0x${(workBeId ?? 0).toString(16)}`);
-                window.dispatchEvent(new PopStateEvent("popstate"));
+                if (!clientRef.current) return;
+                const demoText = [
+                  "Welcome to Xudanu",
+                  "",
+                  "This interactive demo document shows the key features of the system.",
+                  "Each concept below is connected to others through typed links.",
+                  "",
+                  "Typed Links",
+                  "Typed links connect passages with coloured margin boxes.",
+                  "Each type has a specific meaning: Comment, Reference, Disagreement, Quotation, See Also.",
+                  "",
+                  "Transclusion",
+                  "Content can be reused across documents while maintaining its provenance.",
+                  "When you transclude a passage, the original author is always credited.",
+                  "",
+                  "Provenance and Attribution",
+                  "Every character carries cryptographic provenance via Ed25519 signatures.",
+                  "",
+                  "Comparison View",
+                  "The comparison view shows shared passages between documents with bezier connections.",
+                  "",
+                  "Real-time Editing",
+                  "Multiple users can edit the same document simultaneously.",
+                  "Changes merge automatically using the O-tree CRDT without locks or conflicts.",
+                  "",
+                  "Cross-Server Networking",
+                  "Documents on different servers can link to each other via domain tumblers.",
+                  "BLAKE3 hash verification ensures content integrity across the network.",
+                ].join("\n");
+                try {
+                  const resp = await clientRef.current.sendRequest("work_create", { edition: { text: demoText } });
+                  const demoId = (resp as Record<string, unknown>)?.value as Record<string, unknown> | undefined;
+                  const id = (demoId?.value as number) ?? (demoId as unknown as number);
+                  if (typeof id === "number" && id > 0) {
+                    try { await clientRef.current.workPublish(id); } catch {}
+                    window.history.pushState({}, "", `/explore?work=0x${id.toString(16)}`);
+                    window.dispatchEvent(new PopStateEvent("popstate"));
+                  }
+                } catch (e) {
+                  alert("Could not create demo. Please sign in first.");
+                }
               }}>
                 {"\u25B6 Try the Interactive Demo"}
               </button>
