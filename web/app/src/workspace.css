@@ -896,7 +896,7 @@
   margin-bottom: 8px;
 }
 .ws-empty-create {
-  margin-top: 16px;
+  margin-top: 0;
   background: var(--accent-blue);
   color: white;
   border: none;
@@ -905,6 +905,8 @@
   font-weight: 600;
   cursor: pointer;
   font-family: 'Inter', sans-serif;
+  display: inline-flex;
+  align-items: center;
 }
 .ws-epub-import-btn {
   display: inline-block;
