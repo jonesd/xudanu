@@ -4,6 +4,7 @@
 (function() {
   var RUST_BASE = 'original-code/xanadugold/src-rust/';
   var WEB_BASE = 'web/app/';
+  var GITHUB_BASE = 'https://github.com/jonesd/xudanu/blob/main/';
 
   // Map of short filenames to full paths relative to repo root
   var FILE_MAP = {
@@ -96,11 +97,34 @@
     'ComparePanel.tsx': WEB_BASE + 'src/components/ComparePanel.tsx',
     'link-markers.ts': WEB_BASE + 'src/link-markers.ts',
     'app-shell.css': WEB_BASE + 'src/app-shell.css',
+    'workspace.css': WEB_BASE + 'src/workspace.css',
+    'theme.ts': WEB_BASE + 'src/theme.ts',
+    'graph-scoring.ts': WEB_BASE + 'src/graph-scoring.ts',
+    'concepts-seed.ts': WEB_BASE + 'src/concepts-seed.ts',
+    'RevisionTimeline.tsx': WEB_BASE + 'src/components/RevisionTimeline.tsx',
+    'AttributionPanel.tsx': WEB_BASE + 'src/components/AttributionPanel.tsx',
+    'ImportWizard.tsx': WEB_BASE + 'src/components/ImportWizard.tsx',
+    'DocumentMapPanel.tsx': WEB_BASE + 'src/components/DocumentMapPanel.tsx',
+    'TrailsPanel.tsx': WEB_BASE + 'src/components/TrailsPanel.tsx',
+    'WorkspaceShell.tsx': WEB_BASE + 'src/components/workspace/WorkspaceShell.tsx',
+    'WorkspaceTopBar.tsx': WEB_BASE + 'src/components/workspace/WorkspaceTopBar.tsx',
+    'blob_store.rs': RUST_BASE + 'src/edition/blob_store.rs',
+    'work.rs': RUST_BASE + 'src/edition/work.rs',
+    'region_index.rs': RUST_BASE + 'src/edition/region_index.rs',
+    'mapping.rs': RUST_BASE + 'src/edition/mapping.rs',
+    'xn_region.rs': RUST_BASE + 'src/edition/xn_region.rs',
+    'space_bridge.rs': RUST_BASE + 'src/edition/space_bridge.rs',
+    'tumbler.rs': RUST_BASE + 'src/edition/tumbler.rs',
+    'compound.rs': RUST_BASE + 'src/edition/compound.rs',
+    'server_directory.rs': RUST_BASE + 'src/server/server_directory.rs',
+    'snapshot.rs': RUST_BASE + 'src/server/transport/snapshot.rs',
+    'crdt_manager.rs': RUST_BASE + 'src/server/crdt_manager.rs',
+    'wait_barrier.rs': RUST_BASE + 'src/server/wait_barrier.rs',
   };
 
-  function makeLink(href, text) {
+  function makeLink(path, text) {
     var a = document.createElement('a');
-    a.href = href;
+    a.href = GITHUB_BASE + path;
     a.textContent = text;
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
