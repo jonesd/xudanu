@@ -6,8 +6,21 @@ interface ConnectionOverlayProps {
 export function ConnectionOverlay({ connected, reconnectAttempt }: ConnectionOverlayProps) {
   if (connected) return null;
 
+  const isInitialConnect = reconnectAttempt === 0;
   const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), 30000);
   const delayText = delay >= 1000 ? `${Math.round(delay / 1000)}s` : "soon";
+
+  const styles = isInitialConnect
+    ? {
+        background: "rgba(88, 166, 255, 0.95)",
+        message: "Connecting to Xudanu…",
+        showRetry: false,
+      }
+    : {
+        background: "rgba(248, 81, 73, 0.95)",
+        message: `Connection lost — reconnecting (attempt ${reconnectAttempt}, next in ${delayText})`,
+        showRetry: true,
+      };
 
   return (
     <div
@@ -17,16 +30,16 @@ export function ConnectionOverlay({ connected, reconnectAttempt }: ConnectionOve
         left: 0,
         right: 0,
         zIndex: 9999,
-        background: "rgba(248, 81, 73, 0.95)",
+        background: styles.background,
         color: "#fff",
-        padding: "12px 20px",
+        padding: "10px 20px",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         gap: "12px",
-        fontSize: "14px",
+        fontSize: "13px",
         fontWeight: 500,
-        boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
         backdropFilter: "blur(4px)",
       }}
     >
@@ -39,24 +52,24 @@ export function ConnectionOverlay({ connected, reconnectAttempt }: ConnectionOve
           animation: "conn-pulse 1s ease-in-out infinite",
         }}
       />
-      <span>
-        Connection lost &mdash; reconnecting {reconnectAttempt > 0 ? `(attempt ${reconnectAttempt}, next in ${delayText})` : "…"}
-      </span>
-      <button
-        type="button"
-        onClick={() => window.location.reload()}
-        style={{
-          background: "rgba(255,255,255,0.2)",
-          border: "1px solid rgba(255,255,255,0.4)",
-          borderRadius: "4px",
-          padding: "2px 10px",
-          color: "#fff",
-          fontSize: "12px",
-          cursor: "pointer",
-        }}
-      >
-        Retry now
-      </button>
+      <span>{styles.message}</span>
+      {styles.showRetry && (
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          style={{
+            background: "rgba(255,255,255,0.2)",
+            border: "1px solid rgba(255,255,255,0.4)",
+            borderRadius: "4px",
+            padding: "2px 10px",
+            color: "#fff",
+            fontSize: "12px",
+            cursor: "pointer",
+          }}
+        >
+          Retry now
+        </button>
+      )}
       <style>{`
         @keyframes conn-pulse {
           0%, 100% { opacity: 0.4; }
