@@ -581,6 +581,7 @@ fn generate_preview(data: &[u8], mime_type: &str) -> Option<Vec<u8>> {
         "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/bmp" => {
             generate_image_preview(data)
         }
+        "image/heic" | "image/heif" => generate_heic_preview(data),
         _ => None,
     }
 }
@@ -657,12 +658,79 @@ fn optimize_jpeg(data: &[u8]) -> Option<Vec<u8>> {
 pub fn image_dimensions(data: &[u8]) -> Option<(u32, u32)> {
     #[cfg(feature = "image")]
     {
-        let reader = image::io::Reader::new(std::io::Cursor::new(data));
-        let reader = reader.with_guessed_format().ok()?;
-        let (w, h) = reader.into_dimensions().ok()?;
-        Some((w, h))
+        // Try standard image crate first
+        if let Some(dims) = image_dimensions_standard(data) {
+            return Some(dims);
+        }
     }
-    #[cfg(not(feature = "image"))]
+    // Try HEIC/HEIF
+    #[cfg(feature = "heif-rs")]
+    {
+        if let Some(dims) = heic_dimensions(data) {
+            return Some(dims);
+        }
+    }
+    None
+}
+
+#[cfg(feature = "image")]
+fn image_dimensions_standard(data: &[u8]) -> Option<(u32, u32)> {
+    let reader = image::io::Reader::new(std::io::Cursor::new(data));
+    let reader = reader.with_guessed_format().ok()?;
+    let (w, h) = reader.into_dimensions().ok()?;
+    Some((w, h))
+}
+
+#[cfg(feature = "libheif-rs")]
+fn heic_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+    use libheif_rs::HeifContext;
+    let ctx = HeifContext::read_from_bytes(data).ok()?;
+    let handle = ctx.primary_image_handle().ok()?;
+    Some((handle.width(), handle.height()))
+}
+
+/// Decode HEIC/HEIF image and generate a PNG preview thumbnail.
+fn generate_heic_preview(data: &[u8]) -> Option<Vec<u8>> {
+    #[cfg(all(feature = "libheif-rs", feature = "image"))]
+    {
+        use libheif_rs::{ColorSpace, HeifContext, LibHeif, RgbChroma};
+        let ctx = HeifContext::read_from_bytes(data).ok()?;
+        let handle = ctx.primary_image_handle().ok()?;
+        let lib = LibHeif::new();
+        let heif_img = lib
+            .decode(&handle, ColorSpace::Rgb(RgbChroma::Rgb), None)
+            .ok()?;
+        let planes = heif_img.planes();
+        let plane = planes.interleaved?;
+        let w = plane.width;
+        let h = plane.height;
+        let stride = plane.stride;
+        // Build RGB buffer from interleaved data (R,G,B,R,G,B,...)
+        let mut rgb_buf = Vec::with_capacity((w * h * 3) as usize);
+        for y in 0..h as usize {
+            for x in 0..w as usize {
+                let idx = y * stride + x * 3;
+                if idx + 2 < plane.data.len() {
+                    rgb_buf.push(plane.data[idx]);
+                    rgb_buf.push(plane.data[idx + 1]);
+                    rgb_buf.push(plane.data[idx + 2]);
+                }
+            }
+        }
+        let img_buf = image::RgbImage::from_raw(w, h, rgb_buf)?;
+        let dyn_img = image::DynamicImage::ImageRgb8(img_buf);
+        let thumb = dyn_img.resize(400, 400, image::imageops::FilterType::Lanczos3);
+        let mut buf = Vec::new();
+        thumb
+            .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .ok()?;
+        if buf.is_empty() {
+            None
+        } else {
+            Some(buf)
+        }
+    }
+    #[cfg(not(all(feature = "libheif-rs", feature = "image")))]
     {
         let _ = data;
         None
