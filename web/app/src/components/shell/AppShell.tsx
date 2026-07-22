@@ -937,12 +937,14 @@ export function AppShell() {
         activeDarkPaletteId={themeState.darkPaletteId}
       />
 
-      <LeftRail
-        activeItem={activeRail}
-        onNavigate={handleRailNav}
-        onOpenLibrary={() => setLibraryOpen((o) => !o)}
-        onOpenSearch={() => setSearchOpen(true)}
-      />
+      {workBeId !== null && (
+        <LeftRail
+          activeItem={activeRail}
+          onNavigate={handleRailNav}
+          onOpenLibrary={() => setLibraryOpen((o) => !o)}
+          onOpenSearch={() => setSearchOpen(true)}
+        />
+      )}
 
       <div className="document-area">
         {workBeId !== null && selectionRange && !transclusion.pending && !transclusion.pendingLink && !linkCreatorSource && (

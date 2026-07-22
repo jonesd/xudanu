@@ -187,6 +187,11 @@
   color: var(--text);
 }
 
+/* When no LeftRail rendered (welcome screen), expand document area */
+.app-shell:not(:has(.left-rail)) {
+  grid-template-columns: 0 1fr 0;
+}
+
 .app-shell.focus-mode {
   grid-template-columns: 52px 1fr 0px;
 }
