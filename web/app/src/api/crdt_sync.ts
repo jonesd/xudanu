@@ -360,6 +360,15 @@ export interface RevisionMeta {
   change_summary?: string;
 }
 
+export interface BlobMeta {
+  content_hash: number;
+  byte_size: number;
+  mime_type: string;
+  preview_hash?: number | null;
+  width?: number | null;
+  height?: number | null;
+}
+
 export interface GraphNode {
   work_id: number;
   title: string;
@@ -1321,6 +1330,48 @@ export class CrdtSyncClient {
   async trailListCategories(): Promise<string[]> {
     const resp = await this.sendRequest("trail_list_categories");
     return extractValue(resp) as string[];
+  }
+
+  // ── Blob / Image API ──
+
+  async blobUpload(data: Uint8Array, mimeType: string): Promise<BlobMeta> {
+    const resp = await this.sendRequest("blob_upload", {
+      data: Array.from(data),
+      mime_type: mimeType,
+    });
+    return extractValue(resp) as BlobMeta;
+  }
+
+  async blobGet(hashU64: number): Promise<Uint8Array> {
+    const resp = await this.sendRequest("blob_get", { content_hash: hashU64 });
+    const val = extractValue(resp);
+    if (val instanceof Uint8Array) return val;
+    const arr = val as number[];
+    return new Uint8Array(arr);
+  }
+
+  async blobGetPreview(hashU64: number): Promise<Uint8Array | null> {
+    const resp = await this.sendRequest("blob_get_preview", { content_hash: hashU64 });
+    const val = extractValue(resp);
+    if (val === null || val === undefined) return null;
+    if (val instanceof Uint8Array) return val;
+    const arr = val as number[];
+    return arr.length > 0 ? new Uint8Array(arr) : null;
+  }
+
+  async blobExists(hashU64: number): Promise<boolean> {
+    const resp = await this.sendRequest("blob_exists", { content_hash: hashU64 });
+    return extractValue(resp) as boolean;
+  }
+
+  async blobInfo(hashU64: number): Promise<BlobMeta> {
+    const resp = await this.sendRequest("blob_info", { content_hash: hashU64 });
+    return extractValue(resp) as BlobMeta;
+  }
+
+  async blobStats(): Promise<{ total_blobs: number; total_bytes: number }> {
+    const resp = await this.sendRequest("blob_stats");
+    return extractValue(resp) as { total_blobs: number; total_bytes: number };
   }
 
   async workSummary(workId: number): Promise<WorkSummary> {

@@ -324,9 +324,9 @@ export function WorkspaceShell() {
             showToast("Failed: could not create work");
             return;
           }
-          // Set kind — share the work first so we have edit access
+          // Share the work so it's readable/editable
+          const pubClub = crdt.publicClubId || 1000;
           try {
-            const pubClub = crdt.publicClubId || 1000;
             await client.sendRequest("work_set_read_club", { work_id: targetWorkId, club_id: pubClub });
             await client.sendRequest("work_set_edit_club", { work_id: targetWorkId, club_id: pubClub });
           } catch { /* sharing is best-effort */ }
@@ -441,6 +441,7 @@ export function WorkspaceShell() {
       const clubId = await clientRef.current.getEditClub(workBeId);
       if (clubId === 0) {
         setEditClubMembers({ members: [], total: 0, truncated: false });
+        setInviteError(null);
       } else {
         const roster = await clientRef.current.clubRoster(clubId);
         setEditClubMembers(roster);

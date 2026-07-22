@@ -10949,9 +10949,61 @@ impl Server {
                 MAX_BLOB_COUNT
             )));
         }
-        self.blob_store
-            .store(&data, mime_type)
-            .map_err(|e| ServerError::Internal(e.to_string()))
+
+        // Optimize images server-side before storing
+        let is_image = mime_type.starts_with("image/");
+        let final_data = if is_image {
+            // Try to optimize
+            let optimized = crate::edition::blob_store::optimize_image(&data, &mime_type);
+            if let Some(ref opt) = optimized {
+                tracing::info!(
+                    "[blob_upload] image optimized: {} → {} bytes ({:.0}% reduction)",
+                    data.len(),
+                    opt.len(),
+                    (1.0 - opt.len() as f64 / data.len() as f64) * 100.0
+                );
+                optimized
+            } else {
+                Some(data.clone())
+            }
+        } else {
+            None
+        };
+
+        // Extract dimensions for images
+        let dims = if is_image {
+            let src = final_data
+                .as_ref()
+                .map(|d| d.as_slice())
+                .unwrap_or(data.as_slice());
+            crate::edition::blob_store::image_dimensions(src)
+        } else {
+            None
+        };
+
+        // Store the (possibly optimized) data
+        let store_data = final_data
+            .as_ref()
+            .map(|d| d.as_slice())
+            .unwrap_or(data.as_slice());
+        let store_mime = if final_data.is_some() && mime_type == "image/png" {
+            "image/png".to_string()
+        } else {
+            mime_type.clone()
+        };
+
+        let mut meta = self
+            .blob_store
+            .store(store_data, store_mime)
+            .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+        // Add dimensions to metadata
+        if let Some((w, h)) = dims {
+            meta.width = Some(w);
+            meta.height = Some(h);
+        }
+
+        Ok(meta)
     }
 
     pub fn blob_get(&self, hash_u64: u64) -> Result<Vec<u8>, ServerError> {

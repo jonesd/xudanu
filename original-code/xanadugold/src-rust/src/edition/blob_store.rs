@@ -9,6 +9,8 @@ pub struct BlobMeta {
     pub mime_type: String,
     pub preview_hash: Option<[u8; 32]>,
     pub metadata: HashMap<String, String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
 }
 
 impl BlobMeta {
@@ -19,6 +21,8 @@ impl BlobMeta {
             mime_type,
             preview_hash: None,
             metadata: HashMap::new(),
+            width: None,
+            height: None,
         }
     }
 
@@ -574,14 +578,95 @@ pub fn base64_decode(input: &str) -> Option<Vec<u8>> {
 
 fn generate_preview(data: &[u8], mime_type: &str) -> Option<Vec<u8>> {
     match mime_type {
-        "image/png" | "image/jpeg" | "image/gif" | "image/webp" => generate_image_preview(data),
+        "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/bmp" => {
+            generate_image_preview(data)
+        }
         _ => None,
     }
 }
 
 fn generate_image_preview(data: &[u8]) -> Option<Vec<u8>> {
-    let _ = data;
-    None
+    #[cfg(feature = "image")]
+    {
+        let img = image::load_from_memory(data).ok()?;
+        let thumb = img.resize(400, 400, image::imageops::FilterType::Lanczos3);
+        let mut buf = Vec::new();
+        thumb
+            .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .ok()?;
+        if buf.is_empty() {
+            None
+        } else {
+            Some(buf)
+        }
+    }
+    #[cfg(not(feature = "image"))]
+    {
+        let _ = data;
+        None
+    }
+}
+
+/// Optimize an image: re-encode at smaller size without visible quality loss.
+/// Returns the optimized bytes (or None if optimization didn't help or failed).
+pub fn optimize_image(data: &[u8], mime_type: &str) -> Option<Vec<u8>> {
+    match mime_type {
+        "image/png" => optimize_png(data),
+        "image/jpeg" => optimize_jpeg(data),
+        _ => None,
+    }
+}
+
+fn optimize_png(data: &[u8]) -> Option<Vec<u8>> {
+    #[cfg(all(feature = "image", feature = "oxipng"))]
+    {
+        let opts = oxipng::Options::from_preset(3);
+        match oxipng::optimize_from_memory(data, &opts) {
+            Ok(optimized) if optimized.len() < data.len() => Some(optimized),
+            _ => None,
+        }
+    }
+    #[cfg(not(all(feature = "image", feature = "oxipng")))]
+    {
+        let _ = data;
+        None
+    }
+}
+
+fn optimize_jpeg(data: &[u8]) -> Option<Vec<u8>> {
+    #[cfg(feature = "image")]
+    {
+        let img = image::load_from_memory(data).ok()?;
+        let mut buf = Vec::new();
+        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 80);
+        encoder.encode_image(&img).ok()?;
+        if buf.len() < data.len() {
+            Some(buf)
+        } else {
+            None
+        }
+    }
+    #[cfg(not(feature = "image"))]
+    {
+        let _ = data;
+        None
+    }
+}
+
+/// Extract image dimensions (width, height) from raw image data.
+pub fn image_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+    #[cfg(feature = "image")]
+    {
+        let reader = image::io::Reader::new(std::io::Cursor::new(data));
+        let reader = reader.with_guessed_format().ok()?;
+        let (w, h) = reader.into_dimensions().ok()?;
+        Some((w, h))
+    }
+    #[cfg(not(feature = "image"))]
+    {
+        let _ = data;
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
