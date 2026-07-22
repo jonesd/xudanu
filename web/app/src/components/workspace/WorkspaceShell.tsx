@@ -1988,7 +1988,8 @@ export function WorkspaceShell() {
           clientRef={clientRef}
           onLinkCreated={() => {
             transclusion.clearPendingLink();
-            if (rightPanelTab === "connections" && clientRef.current && workBeId !== null) {
+            // Always reload links so colored underlines appear immediately
+            if (clientRef.current && workBeId !== null) {
               void loadLinks(clientRef.current, workBeId, works);
             }
           }}
