@@ -45,7 +45,12 @@ export function WorkspaceShell() {
     }
     return null;
   });
-  const [navTab, setNavTab] = useState<WorkspaceNavTab>("explore");
+  const [navTab, setNavTab] = useState<WorkspaceNavTab>(() => {
+    const nav = new URLSearchParams(window.location.search).get("nav");
+    if (nav === "library") return "library";
+    if (nav === "compose") return "compose";
+    return "explore";
+  });
   const [leftRailMode, setLeftRailMode] = useState<LeftRailMode>("graph");
   const [leftRailHidden, setLeftRailHidden] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("provenance");
@@ -93,6 +98,13 @@ export function WorkspaceShell() {
   const [epubImporting, setEpubImporting] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState<string | undefined>(undefined);
+
+  // Listen for import requests from welcome page
+  useEffect(() => {
+    const handler = () => setShowImport(true);
+    window.addEventListener("xudanu-open-import", handler);
+    return () => window.removeEventListener("xudanu-open-import", handler);
+  }, []);
   const [imageEntries, setImageEntries] = useState<Array<{ hash: number; mime: string; width?: number; height?: number; url?: string; loading: boolean }>>([]);
 
   const crdt = useCrdtSync(WS_URL, workBeId);

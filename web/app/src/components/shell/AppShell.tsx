@@ -1044,18 +1044,35 @@ export function AppShell() {
               </div>
             </div>
             <div className="welcome-actions">
-              <button className="welcome-btn primary" onClick={handleCreate}>
+              <button className="welcome-btn primary" onClick={() => {
+                window.history.pushState({}, "", "/explore");
+                window.dispatchEvent(new PopStateEvent("popstate"));
+              }}>
                 New Document
               </button>
-              <button className="welcome-btn" onClick={() => setShowImport(true)}>
+              <button className="welcome-btn" onClick={() => {
+                window.history.pushState({}, "", "/explore");
+                window.dispatchEvent(new PopStateEvent("popstate"));
+                setTimeout(() => {
+                  const evt = new CustomEvent("xudanu-open-import");
+                  window.dispatchEvent(evt);
+                }, 500);
+              }}>
                 Import Source
               </button>
-              <button className="welcome-btn" onClick={() => setLibraryOpen(true)}>
+              <button className="welcome-btn" onClick={() => {
+                window.history.pushState({}, "", "/explore?nav=library");
+                window.dispatchEvent(new PopStateEvent("popstate"));
+              }}>
                 Browse Library
               </button>
             </div>
             <div className="welcome-actions">
-              <button className="welcome-btn" style={{ borderColor: "var(--accent-blue)", color: "var(--accent-blue)" }} onClick={handleCreateDemo}>
+              <button className="welcome-btn" style={{ borderColor: "var(--accent-blue)", color: "var(--accent-blue)" }} onClick={async () => {
+                await handleCreateDemo();
+                window.history.pushState({}, "", `/explore?work=0x${(workBeId ?? 0).toString(16)}`);
+                window.dispatchEvent(new PopStateEvent("popstate"));
+              }}>
                 {"\u25B6 Try the Interactive Demo"}
               </button>
               <button
@@ -1074,8 +1091,8 @@ export function AppShell() {
             )}
             {!identity && (
               <div className="welcome-hint">
-                Tip: Click the person icon in the left rail to create an identity.
-                You need an identity to edit documents.
+                Tip: You need an identity to edit documents.
+                Click <strong>New Document</strong> to get started.
               </div>
             )}
             <div style={{ marginTop: 32, fontSize: 10, color: "var(--text-dim)", textAlign: "center", maxWidth: 400 }}>
