@@ -55,6 +55,18 @@ pub struct OutlineEntry {
     pub char_offset: u64,
 }
 
+/// A blob (image) element found in an edition, with its character position.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct BlobEntry {
+    pub char_position: usize,
+    pub content_hash: u64,
+    pub mime_type: String,
+    pub byte_size: u64,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
+
 pub struct SearchMatch {
     pub char_offset: u64,
     pub line: u64,
@@ -505,6 +517,43 @@ impl Edition {
                 if let Some(s) = carrier.element.as_text() {
                     result.push_str(s);
                 }
+            }
+        }
+        result
+    }
+
+    /// Scan edition for RangeElement::Blob entries and return their
+    /// character position + metadata. Character position is the offset
+    /// in the rendered text string where the image should appear.
+    pub fn blob_entries(&self) -> Vec<BlobEntry> {
+        let mut result = Vec::new();
+        let mut char_pos = 0usize;
+        for (_, carrier) in self.all_entries().iter() {
+            match &carrier.element {
+                crate::edition::range_element::RangeElement::Blob {
+                    content_hash,
+                    mime_type,
+                    byte_size,
+                    width,
+                    height,
+                } => {
+                    result.push(BlobEntry {
+                        char_position: char_pos,
+                        content_hash: *content_hash,
+                        mime_type: mime_type.clone(),
+                        byte_size: *byte_size,
+                        width: *width,
+                        height: *height,
+                    });
+                }
+                crate::edition::range_element::RangeElement::Text { text } => {
+                    char_pos += text.chars().count();
+                }
+                crate::edition::range_element::RangeElement::Transclusion { .. } => {
+                    // Transclusion elements don't contribute to text length
+                    // in the flat representation
+                }
+                _ => {}
             }
         }
         result

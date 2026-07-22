@@ -370,6 +370,15 @@ export interface BlobMeta {
   height?: number | null;
 }
 
+export interface BlobEntry {
+  char_position: number;
+  content_hash: number;
+  mime_type: string;
+  byte_size: number;
+  width?: number | null;
+  height?: number | null;
+}
+
 export function blobHashToU64(hash: number[] | number): number {
   if (typeof hash === "number") return hash;
   if (Array.isArray(hash) && hash.length >= 8) {
@@ -1389,6 +1398,11 @@ export class CrdtSyncClient {
   async blobStats(): Promise<{ total_blobs: number; total_bytes: number }> {
     const resp = await this.sendRequest("blob_stats");
     return extractValue(resp) as { total_blobs: number; total_bytes: number };
+  }
+
+  async workBlobList(workId: number): Promise<BlobEntry[]> {
+    const resp = await this.sendRequest("work_blob_list", { work_id: workId });
+    return extractValue(resp) as BlobEntry[];
   }
 
   async workSummary(workId: number): Promise<WorkSummary> {

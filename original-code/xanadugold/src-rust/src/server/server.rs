@@ -9158,6 +9158,18 @@ impl Server {
 
     // ── FR-23: Revision methods ──
 
+    /// List blob elements in a work's edition (image positions).
+    pub fn work_blob_list(
+        &self,
+        work_id: BeId,
+    ) -> Result<Vec<crate::edition::edition::BlobEntry>, ServerError> {
+        let ws = self
+            .works
+            .get(&work_id)
+            .ok_or(ServerError::InvalidArgument("work not found".into()))?;
+        Ok(ws.work.edition().blob_entries())
+    }
+
     /// List all revisions for a work with metadata.
     pub fn work_revisions_list(
         &self,

@@ -3315,6 +3315,17 @@ impl JsonCodec {
                     work_id: args.work_id,
                 })
             }
+            OperationCode::WorkBlobList => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkBlobList {
+                    work_id: args.work_id,
+                })
+            }
             OperationCode::WorkTextAtRevision => {
                 #[derive(Deserialize)]
                 struct Args {

@@ -105,7 +105,7 @@ export function WorkspaceShell() {
     return () => window.removeEventListener("xudanu-open-import", handler);
   }, []);
   // Track uploaded images locally for display
-  const [imageEntries, setImageEntries] = useState<Array<{ hash: number; mime: string; width?: number; height?: number; url?: string; loading: boolean }>>([]);
+  const [imageEntries, setImageEntries] = useState<Array<{ hash: number; mime: string; width?: number; height?: number; url?: string; loading: boolean; charPos?: number; caption?: string }>>([]);
 
   const crdt = useCrdtSync(WS_URL, workBeId);
   const {
@@ -133,6 +133,42 @@ export function WorkspaceShell() {
     refreshAttribution,
   } = crdt;
 
+  // Load blob elements from server when work changes
+  useEffect(() => {
+    if (!connected || workBeId === null || !clientRef.current) {
+      setImageEntries([]);
+      return;
+    }
+    const client = clientRef.current;
+    client.workBlobList(workBeId).then((blobs) => {
+      if (blobs.length === 0) { setImageEntries([]); return; }
+      const entries = blobs.map((b) => ({
+        hash: b.content_hash,
+        mime: b.mime_type,
+        width: b.width ?? undefined,
+        height: b.height ?? undefined,
+        charPos: b.char_position,
+        loading: true,
+      }));
+      setImageEntries(entries);
+      entries.forEach((entry) => {
+        client.blobGetPreview(entry.hash).then((previewBytes) => {
+          const blob = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: entry.mime });
+          const url = URL.createObjectURL(blob);
+          setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, url, loading: false } : e));
+        }).catch(() => {
+          client.blobGet(entry.hash).then((fullBytes) => {
+            const blob = new Blob([fullBytes as BlobPart], { type: entry.mime });
+            const url = URL.createObjectURL(blob);
+            setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, url, loading: false } : e));
+          }).catch(() => {
+            setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, loading: false } : e));
+          });
+        });
+      });
+    }).catch(() => setImageEntries([]));
+  }, [connected, workBeId, clientRef]);
+
   const transclusion = useTransclusion();
   const compound = useCompoundEdition(connected ? clientRef.current : null, workBeId);
 
@@ -147,44 +183,6 @@ export function WorkspaceShell() {
     url.searchParams.set("work", `0x${id.toString(16)}`);
     window.history.replaceState({}, "", url.toString());
   }, [navTab]);
-
-  // Load cached image entries from localStorage when work changes
-  useEffect(() => {
-    if (workBeId === null) {
-      setImageEntries([]);
-      return;
-    }
-    const key = `xudanu_images_${workBeId}`;
-    try {
-      const cached = localStorage.getItem(key);
-      if (cached && clientRef.current) {
-        const entries: Array<{ hash: number; mime: string; width?: number; height?: number }> = JSON.parse(cached);
-        const client = clientRef.current;
-        const withLoading = entries.map((e) => ({ ...e, loading: true }));
-        setImageEntries(withLoading);
-        withLoading.forEach((entry) => {
-          client.blobGetPreview(entry.hash).then((previewBytes) => {
-            const imgBytes = previewBytes || new Uint8Array();
-            const blob = new Blob([imgBytes as BlobPart], { type: entry.mime });
-            const url = URL.createObjectURL(blob);
-            setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, url, loading: false } : e));
-          }).catch(() => {
-            client.blobGet(entry.hash).then((fullBytes) => {
-              const blob = new Blob([fullBytes as BlobPart], { type: entry.mime });
-              const url = URL.createObjectURL(blob);
-              setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, url, loading: false } : e));
-            }).catch(() => {
-              setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, loading: false } : e));
-            });
-          });
-        });
-      } else {
-        setImageEntries([]);
-      }
-    } catch {
-      setImageEntries([]);
-    }
-  }, [workBeId, connected, clientRef]);
 
   // Single effect: fetch works list when connected; set work metadata if available
   useEffect(() => {
@@ -1541,8 +1539,72 @@ export function WorkspaceShell() {
                   annotations={annotations}
                    onCreateAnnotation={canEdit ? handleCreateAnnotation : undefined}
                    onToggleStyle={canEdit ? handleToggleStyle : undefined}
-                 />
+                  />
                   </>
+                 )}
+
+                {/* Inline image rendering */}
+                {imageEntries.length > 0 && (
+                  <div className="ws-doc-images">
+                    {imageEntries.map((img) => (
+                      <div key={img.hash} className="ws-doc-image-block">
+                        <div className="ws-doc-image-controls">
+                          <span className="ws-doc-image-info">
+                            {img.width && img.height ? `${img.width}×${img.height}` : "Image"}
+                            {img.charPos != null ? ` · at char ${img.charPos}` : ""}
+                          </span>
+                          <button
+                            className="ws-doc-image-action"
+                            onClick={async () => {
+                              if (!clientRef.current) return;
+                              const fullBytes = await clientRef.current.blobGet(img.hash);
+                              const blob = new Blob([fullBytes as BlobPart], { type: img.mime });
+                              const url = URL.createObjectURL(blob);
+                              window.open(url, "_blank");
+                              setTimeout(() => URL.revokeObjectURL(url), 60000);
+                            }}
+                            title="View full size"
+                          >
+                            Full size
+                          </button>
+                        </div>
+                        {img.loading ? (
+                          <div className="ws-image-loading">Loading…</div>
+                        ) : img.url ? (
+                          <img
+                            src={img.url}
+                            alt=""
+                            className="ws-doc-image"
+                            style={{
+                              maxWidth: "100%",
+                              borderRadius: "6px",
+                              cursor: "pointer",
+                              display: "block",
+                            }}
+                            onClick={async () => {
+                              if (!clientRef.current) return;
+                              const fullBytes = await clientRef.current.blobGet(img.hash);
+                              const blob = new Blob([fullBytes as BlobPart], { type: img.mime });
+                              const url = URL.createObjectURL(blob);
+                              window.open(url, "_blank");
+                              setTimeout(() => URL.revokeObjectURL(url), 60000);
+                            }}
+                          />
+                        ) : (
+                          <div className="ws-image-error">Failed to load</div>
+                        )}
+                        <input
+                          type="text"
+                          className="ws-doc-image-caption"
+                          placeholder="Add caption…"
+                          defaultValue={img.caption || ""}
+                          onBlur={(e) => {
+                            setImageEntries((prev) => prev.map((e2) => e2.hash === img.hash ? { ...e2, caption: e.target.value } : e2));
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 

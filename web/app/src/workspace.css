@@ -1626,6 +1626,67 @@
   font-family: 'JetBrains Mono', monospace;
 }
 
+/* ── Inline document images ── */
+.ws-doc-images {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.ws-doc-image-block {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.ws-doc-image-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+.ws-doc-image-info {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: 'JetBrains Mono', monospace;
+}
+.ws-doc-image-action {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+}
+.ws-doc-image-action:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+.ws-doc-image {
+  width: 100%;
+  height: auto;
+}
+.ws-doc-image:hover { opacity: 0.92; }
+.ws-doc-image-caption {
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--border);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-muted);
+  background: transparent;
+  font-family: 'Inter', sans-serif;
+}
+.ws-doc-image-caption:focus {
+  outline: none;
+  background: var(--bg-elevated);
+}
+
 /* ── Invite modal ── */
 .ws-invite-modal {
   min-width: 420px;

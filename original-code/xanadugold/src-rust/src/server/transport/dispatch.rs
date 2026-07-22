@@ -673,6 +673,11 @@ fn dispatch_inner(
             let revisions = srv.work_revisions_list(session_id, work_id)?;
             Ok(ResponseValue::RevisionListResult(revisions))
         }
+        WireRequest::WorkBlobList { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let blobs = srv.work_blob_list(work_id)?;
+            Ok(ResponseValue::BlobListResult(blobs))
+        }
         WireRequest::WorkTextAtRevision {
             work_id,
             revision_id,

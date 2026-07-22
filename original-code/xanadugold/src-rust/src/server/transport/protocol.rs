@@ -132,6 +132,7 @@ pub enum OperationCode {
     WorkListByKind,
     WorkSetText,
     WorkRevisionsList,
+    WorkBlobList,
     WorkTextAtRevision,
     WorkRevisionDescribe,
     WorkRevisionMarkNotable,
@@ -454,6 +455,7 @@ impl OperationCode {
             0x0B03 => Some(OperationCode::WorkListByKind),
             0x0B04 => Some(OperationCode::WorkSetText),
             0x0C01 => Some(OperationCode::WorkRevisionsList),
+            0x0C07 => Some(OperationCode::WorkBlobList),
             0x0C02 => Some(OperationCode::WorkTextAtRevision),
             0x0C03 => Some(OperationCode::WorkRevisionDescribe),
             0x0C04 => Some(OperationCode::WorkRevisionMarkNotable),
@@ -738,6 +740,7 @@ impl OperationCode {
             OperationCode::WorkListByKind => 0x0B03,
             OperationCode::WorkSetText => 0x0B04,
             OperationCode::WorkRevisionsList => 0x0C01,
+            OperationCode::WorkBlobList => 0x0C07,
             OperationCode::WorkTextAtRevision => 0x0C02,
             OperationCode::WorkRevisionDescribe => 0x0C03,
             OperationCode::WorkRevisionMarkNotable => 0x0C04,
@@ -1160,6 +1163,10 @@ pub enum WireRequest {
 
     /// FR-23: Revision wire ops
     WorkRevisionsList {
+        work_id: BeId,
+    },
+    /// Query blob elements in an edition (image positions)
+    WorkBlobList {
         work_id: BeId,
     },
     WorkTextAtRevision {
@@ -2205,6 +2212,8 @@ pub enum ResponseValue {
     AnnotationListResult(Vec<AnnotationPayload>),
     /// FR-23: Revision metadata list
     RevisionListResult(Vec<crate::persist::manifest::RevisionMeta>),
+    /// Image blob positions in edition
+    BlobListResult(Vec<crate::edition::edition::BlobEntry>),
     /// FR-23: Text at a specific revision
     TextResult(String),
     LinkInfo(LinkPayload),
