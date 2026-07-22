@@ -462,17 +462,41 @@ export function useCrdtSync(
     const client = clientRef.current;
     if (!client || workBeId === null) return;
     const id = Date.now();
-    await client.annotationCreate(workBeId, id, kind, payload, charStart, charEnd, isPrivate);
-    refreshAnnotations();
+    // Optimistic update — add to local state immediately for instant feedback
+    setAnnotations((prev) => [...prev, {
+      annotation_id: id,
+      kind,
+      payload,
+      char_start: charStart,
+      char_end: charEnd,
+      is_private: isPrivate,
+      created_by: null,
+      created_by_name: null,
+      created_at: Math.floor(Date.now() / 1000),
+    }]);
+    // Send to server (don't block on response)
+    client.annotationCreate(workBeId, id, kind, payload, charStart, charEnd, isPrivate)
+      .then(() => refreshAnnotations())
+      .catch(() => {
+        // Revert on failure
+        setAnnotations((prev) => prev.filter((a) => a.annotation_id !== id));
+      });
   }, [workBeId, refreshAnnotations]);
 
   const deleteAnnotation = useCallback(async (annotationId: number) => {
     const client = clientRef.current;
     if (!client || workBeId === null) return;
     if (!client.isConnected()) return;
-    await client.annotationDelete(workBeId, annotationId);
-    refreshAnnotations();
-  }, [workBeId, refreshAnnotations]);
+    // Optimistic update — remove locally immediately
+    const existing = annotations.find((a) => a.annotation_id === annotationId);
+    setAnnotations((prev) => prev.filter((a) => a.annotation_id !== annotationId));
+    client.annotationDelete(workBeId, annotationId)
+      .then(() => refreshAnnotations())
+      .catch(() => {
+        // Revert on failure
+        if (existing) setAnnotations((prev) => [...prev, existing]);
+      });
+  }, [workBeId, annotations, refreshAnnotations]);
 
   return {
     text, connected, authenticated, reconnectAttempt, awareness, setText, setTextLocal, sendCursor, sendSelection,
