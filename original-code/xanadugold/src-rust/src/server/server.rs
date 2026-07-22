@@ -9161,7 +9161,7 @@ impl Server {
     /// List all revisions for a work with metadata.
     pub fn work_revisions_list(
         &self,
-        session_id: SessionId,
+        _session_id: SessionId,
         work_id: BeId,
     ) -> Result<Vec<crate::persist::manifest::RevisionMeta>, ServerError> {
         let ws = self
@@ -9197,7 +9197,7 @@ impl Server {
     /// Get the text content of a specific revision.
     pub fn work_text_at_revision(
         &self,
-        session_id: SessionId,
+        _session_id: SessionId,
         work_id: BeId,
         revision_id: u64,
     ) -> Result<String, ServerError> {
@@ -9234,7 +9234,7 @@ impl Server {
     /// Set or update the description on a revision.
     pub fn work_revision_describe(
         &mut self,
-        session_id: SessionId,
+        _session_id: SessionId,
         work_id: BeId,
         revision_id: u64,
         description: String,
@@ -9265,7 +9265,7 @@ impl Server {
     /// Mark a revision as notable (or unmark).
     pub fn work_revision_mark_notable(
         &mut self,
-        session_id: SessionId,
+        _session_id: SessionId,
         work_id: BeId,
         revision_id: u64,
         notable: bool,
