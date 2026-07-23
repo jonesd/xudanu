@@ -621,7 +621,7 @@ fn dispatch_inner(
             let nodes: Vec<super::protocol::GraphNodePayload> = raw_nodes
                 .into_iter()
                 .map(
-                    |(work_id, title, is_starred, is_source, revision_count, kind)| {
+                    |(work_id, title, is_starred, is_source, revision_count, kind, license)| {
                         super::protocol::GraphNodePayload {
                             work_id,
                             title,
@@ -630,6 +630,7 @@ fn dispatch_inner(
                             revision_count,
                             author_type: None,
                             kind,
+                            license,
                         }
                     },
                 )
@@ -657,6 +658,16 @@ fn dispatch_inner(
         WireRequest::WorkKindSet { work_id, kind } => {
             srv.ensure_authenticated(session_id)?;
             srv.work_kind_set(work_id, kind)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::WorkLicenseGet { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let license = srv.work_license_get(work_id)?;
+            Ok(ResponseValue::Humber(license as u64))
+        }
+        WireRequest::WorkLicenseSet { work_id, license } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.work_license_set(work_id, license)?;
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkListByKind { kind: _ } => {
@@ -1953,6 +1964,20 @@ fn dispatch_inner(
                 )
             })?;
             let rev = srv.element_insert(session_id, work_id, position, elem)?;
+            Ok(ResponseValue::Humber(rev))
+        }
+        WireRequest::ElementUpdate {
+            work_id,
+            char_position,
+            element,
+        } => {
+            srv.ensure_can_edit(session_id, work_id)?;
+            let elem = element.to_range_element().ok_or_else(|| {
+                crate::server::ServerError::InvalidArgument(
+                    "cannot convert payload to RangeElement".into(),
+                )
+            })?;
+            let rev = srv.element_update(session_id, work_id, char_position, elem)?;
             Ok(ResponseValue::Humber(rev))
         }
         WireRequest::ContentSharedRegion { work_a, work_b } => {

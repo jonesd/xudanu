@@ -18,8 +18,10 @@
 - **Visible typed links** — Six link types (Comment, Reference, Disagreement, Quotation, See Also, Web) with coloured description boxes and connecting lines
 - **Real transclusion** — Content from one document appears live in another, with provenance tracing back to the source
 - **Real-time CRDT collaboration** — Multiple users editing the same document without locks
+- **Transcopyright licensing** — First system to natively support Ted Nelson's Transcopyright License (TCo). Per-work license metadata with compliance badges and attribution stamping
 - **Cross-server federation** — Documents link across independent servers via BLAKE3-verified tumblers
 - **Compound document builder** — Assemble new documents from passages of existing works
+- **Image support** — Upload, crop, resize, caption persistence, layout mode with inline positioning
 - **Perspective view** — Spatial document landscape showing connected works
 
 ![Compound Builder](docs/screenshots/compound-builder.png)

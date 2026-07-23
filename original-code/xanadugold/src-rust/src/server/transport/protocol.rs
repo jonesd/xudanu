@@ -129,6 +129,8 @@ pub enum OperationCode {
     WorkGraph,
     WorkKindGet,
     WorkKindSet,
+    WorkLicenseGet,
+    WorkLicenseSet,
     WorkListByKind,
     WorkSetText,
     WorkRevisionsList,
@@ -233,6 +235,7 @@ pub enum OperationCode {
     EditionRetrieve,
     EditionCost,
     ElementInsert,
+    ElementUpdate,
     RenderTransclusions,
 
     AnnotationCreate,
@@ -452,6 +455,8 @@ impl OperationCode {
             0x0338 => Some(OperationCode::WorkGraph),
             0x0B01 => Some(OperationCode::WorkKindGet),
             0x0B02 => Some(OperationCode::WorkKindSet),
+            0x0B05 => Some(OperationCode::WorkLicenseGet),
+            0x0B06 => Some(OperationCode::WorkLicenseSet),
             0x0B03 => Some(OperationCode::WorkListByKind),
             0x0B04 => Some(OperationCode::WorkSetText),
             0x0C01 => Some(OperationCode::WorkRevisionsList),
@@ -548,6 +553,7 @@ impl OperationCode {
             0x0c01 => Some(OperationCode::EditionRetrieve),
             0x0c02 => Some(OperationCode::EditionCost),
             0x0c0B => Some(OperationCode::ElementInsert),
+            0x0c0C => Some(OperationCode::ElementUpdate),
             0x0c0C => Some(OperationCode::RenderTransclusions),
             0x0c03 => Some(OperationCode::AnnotationCreate),
             0x0c04 => Some(OperationCode::AnnotationDelete),
@@ -737,6 +743,8 @@ impl OperationCode {
             OperationCode::WorkGraph => 0x0338,
             OperationCode::WorkKindGet => 0x0B01,
             OperationCode::WorkKindSet => 0x0B02,
+            OperationCode::WorkLicenseGet => 0x0B05,
+            OperationCode::WorkLicenseSet => 0x0B06,
             OperationCode::WorkListByKind => 0x0B03,
             OperationCode::WorkSetText => 0x0B04,
             OperationCode::WorkRevisionsList => 0x0C01,
@@ -846,6 +854,7 @@ impl OperationCode {
             OperationCode::EditionRetrieve => 0x0c01,
             OperationCode::EditionCost => 0x0c02,
             OperationCode::ElementInsert => 0x0c0B,
+            OperationCode::ElementUpdate => 0x0c0C,
             OperationCode::RenderTransclusions => 0x0c0C,
             OperationCode::AnnotationCreate => 0x0c03,
             OperationCode::AnnotationDelete => 0x0c04,
@@ -1150,6 +1159,13 @@ pub enum WireRequest {
     WorkKindSet {
         work_id: BeId,
         kind: crate::edition::WorkKind,
+    },
+    WorkLicenseGet {
+        work_id: BeId,
+    },
+    WorkLicenseSet {
+        work_id: BeId,
+        license: crate::edition::License,
     },
     WorkListByKind {
         kind: crate::edition::WorkKind,
@@ -1575,6 +1591,11 @@ pub enum WireRequest {
     ElementInsert {
         work_id: BeId,
         position: i64,
+        element: RangeElementPayload,
+    },
+    ElementUpdate {
+        work_id: BeId,
+        char_position: usize,
         element: RangeElementPayload,
     },
     RenderTransclusions {
@@ -2900,10 +2921,10 @@ pub struct GraphNodePayload {
     pub revision_count: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author_type: Option<String>,
-    /// Work type from FR-22. Defaults to Document for backward compat
-    /// with older servers.
     #[serde(default)]
     pub kind: crate::edition::WorkKind,
+    #[serde(default)]
+    pub license: crate::edition::License,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3160,6 +3181,12 @@ pub struct RangeElementPayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blob_size: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blob_width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blob_height: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blob_caption: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transclusion_source: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transclusion_start: Option<usize>,
@@ -3186,7 +3213,14 @@ impl RangeElementPayload {
             "blob" => self.blob_hash.map(|h| {
                 let mime = self.blob_mime.clone().unwrap_or_default();
                 let size = self.blob_size.unwrap_or(0);
-                crate::edition::RangeElement::blob(h, mime, size)
+                crate::edition::RangeElement::blob_with_caption(
+                    h,
+                    mime,
+                    size,
+                    self.blob_width,
+                    self.blob_height,
+                    self.blob_caption.clone(),
+                )
             }),
             "transclusion" => {
                 if let (Some(src), Some(start), Some(end)) = (
@@ -3215,6 +3249,9 @@ impl RangeElementPayload {
                 blob_hash: None,
                 blob_mime: None,
                 blob_size: None,
+                blob_width: None,
+                blob_height: None,
+                blob_caption: None,
                 transclusion_source: None,
                 transclusion_start: None,
                 transclusion_end: None,
@@ -3229,6 +3266,9 @@ impl RangeElementPayload {
                 blob_hash: None,
                 blob_mime: None,
                 blob_size: None,
+                blob_width: None,
+                blob_height: None,
+                blob_caption: None,
                 transclusion_source: None,
                 transclusion_start: None,
                 transclusion_end: None,
@@ -3243,6 +3283,9 @@ impl RangeElementPayload {
                 blob_hash: None,
                 blob_mime: None,
                 blob_size: None,
+                blob_width: None,
+                blob_height: None,
+                blob_caption: None,
                 transclusion_source: None,
                 transclusion_start: None,
                 transclusion_end: None,
@@ -3257,6 +3300,9 @@ impl RangeElementPayload {
                 blob_hash: None,
                 blob_mime: None,
                 blob_size: None,
+                blob_width: None,
+                blob_height: None,
+                blob_caption: None,
                 transclusion_source: None,
                 transclusion_start: None,
                 transclusion_end: None,
@@ -3271,6 +3317,9 @@ impl RangeElementPayload {
                 blob_hash: None,
                 blob_mime: None,
                 blob_size: None,
+                blob_width: None,
+                blob_height: None,
+                blob_caption: None,
                 transclusion_source: None,
                 transclusion_start: None,
                 transclusion_end: None,
@@ -3279,7 +3328,9 @@ impl RangeElementPayload {
                 content_hash,
                 mime_type,
                 byte_size,
-                ..
+                width,
+                height,
+                caption,
             } => RangeElementPayload {
                 elem_type: "blob".to_string(),
                 text: None,
@@ -3290,6 +3341,9 @@ impl RangeElementPayload {
                 blob_hash: Some(*content_hash),
                 blob_mime: Some(mime_type.clone()),
                 blob_size: Some(*byte_size),
+                blob_width: *width,
+                blob_height: *height,
+                blob_caption: caption.clone(),
                 transclusion_source: None,
                 transclusion_start: None,
                 transclusion_end: None,
@@ -3309,6 +3363,9 @@ impl RangeElementPayload {
                 blob_hash: None,
                 blob_mime: None,
                 blob_size: None,
+                blob_width: None,
+                blob_height: None,
+                blob_caption: None,
                 transclusion_source: Some(*source_work_id),
                 transclusion_start: Some(*char_start),
                 transclusion_end: Some(*char_end),
@@ -3323,6 +3380,9 @@ impl RangeElementPayload {
                 blob_hash: None,
                 blob_mime: None,
                 blob_size: None,
+                blob_width: None,
+                blob_height: None,
+                blob_caption: None,
                 transclusion_source: None,
                 transclusion_start: None,
                 transclusion_end: None,

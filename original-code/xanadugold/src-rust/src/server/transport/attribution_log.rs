@@ -30,6 +30,8 @@ pub struct AttributionEntry {
     pub server_id_hex: String,
     pub work_id: u64,
     pub revision: u64,
+    pub source_work_id: Option<u64>,
+    pub source_license: Option<String>,
 }
 
 impl AttributionLog {
@@ -118,7 +120,7 @@ impl AttributionLog {
 
 impl FileAttributionLog {
     pub fn append(&mut self, entry: &AttributionEntry) -> Result<(), std::io::Error> {
-        let line = format!(
+        let mut line = format!(
             "{{\"seq\":{},\"ts\":{},\"author\":\"{}\",\"span_fp\":\"{}\",\"sig\":\"{}\",\"server\":\"{}\",\"work\":{},\"rev\":{}}}",
             entry.sequence,
             entry.timestamp,
@@ -129,6 +131,14 @@ impl FileAttributionLog {
             entry.work_id,
             entry.revision,
         );
+        if let Some(swid) = entry.source_work_id {
+            line = format!(
+                "{},\"src_work\":{},\"src_lic\":\"{}\"}}",
+                &line[..line.len() - 1],
+                swid,
+                entry.source_license.as_deref().unwrap_or(""),
+            );
+        }
 
         let chain_input = format!("{}{}", self.prev_hash, line);
         let chain_hash = sha256_hex(chain_input.as_bytes());
@@ -148,7 +158,7 @@ impl FileAttributionLog {
 
 impl InMemoryAttributionLog {
     fn append(&mut self, entry: &AttributionEntry) {
-        let line = format!(
+        let mut line = format!(
             "{{\"seq\":{},\"ts\":{},\"author\":\"{}\",\"span_fp\":\"{}\",\"sig\":\"{}\",\"server\":\"{}\",\"work\":{},\"rev\":{}}}",
             entry.sequence,
             entry.timestamp,
@@ -159,6 +169,14 @@ impl InMemoryAttributionLog {
             entry.work_id,
             entry.revision,
         );
+        if let Some(swid) = entry.source_work_id {
+            line = format!(
+                "{},\"src_work\":{},\"src_lic\":\"{}\"}}",
+                &line[..line.len() - 1],
+                swid,
+                entry.source_license.as_deref().unwrap_or(""),
+            );
+        }
 
         let chain_input = format!("{}{}", self.prev_hash, line);
         self.prev_hash = sha256_hex(chain_input.as_bytes());
@@ -252,6 +270,8 @@ mod tests {
             server_id_hex: "dd".repeat(64),
             work_id: 42,
             revision: 1,
+            source_work_id: None,
+            source_license: None,
         })
         .unwrap();
 
@@ -264,6 +284,8 @@ mod tests {
             server_id_hex: "22".repeat(64),
             work_id: 43,
             revision: 2,
+            source_work_id: None,
+            source_license: None,
         })
         .unwrap();
 
@@ -294,6 +316,8 @@ mod tests {
             server_id_hex: "dd".repeat(64),
             work_id: 42,
             revision: 1,
+            source_work_id: None,
+            source_license: None,
         })
         .unwrap();
 
@@ -324,6 +348,8 @@ mod tests {
             server_id_hex: "dd".repeat(64),
             work_id: 42,
             revision: 1,
+            source_work_id: None,
+            source_license: None,
         })
         .unwrap();
 
@@ -336,6 +362,8 @@ mod tests {
             server_id_hex: "22".repeat(64),
             work_id: 43,
             revision: 2,
+            source_work_id: None,
+            source_license: None,
         })
         .unwrap();
 
@@ -369,6 +397,8 @@ mod tests {
             server_id_hex: "dd".repeat(64),
             work_id: 42,
             revision: 1,
+            source_work_id: None,
+            source_license: None,
         })
         .unwrap();
         drop(log);
@@ -384,6 +414,8 @@ mod tests {
             server_id_hex: "22".repeat(64),
             work_id: 43,
             revision: 2,
+            source_work_id: None,
+            source_license: None,
         })
         .unwrap();
         drop(log2);
@@ -411,6 +443,8 @@ mod tests {
             server_id_hex: "dd".repeat(64),
             work_id: 42,
             revision: 1,
+            source_work_id: None,
+            source_license: None,
         })
         .unwrap();
 
@@ -425,6 +459,8 @@ mod tests {
             server_id_hex: "22".repeat(64),
             work_id: 43,
             revision: 2,
+            source_work_id: None,
+            source_license: None,
         })
         .unwrap();
 

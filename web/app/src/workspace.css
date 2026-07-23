@@ -644,6 +644,124 @@
 .ws-kind-icon {
   display: inline-block;
 }
+.ws-license-picker-wrap {
+  position: relative;
+}
+.ws-license-menu {
+  right: 0;
+  left: auto;
+  min-width: 220px;
+}
+.ws-license-help-btn {
+  width: 100%;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border);
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  text-align: center;
+  font-family: 'Inter', sans-serif;
+}
+.ws-license-help-btn:hover {
+  color: var(--accent-blue);
+}
+.ws-license-help {
+  max-width: 640px;
+  padding: 24px;
+}
+.ws-license-help h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+.ws-license-help-intro {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+.ws-license-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+.ws-license-table th {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 2px solid var(--border);
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.ws-license-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+.ws-license-table td:first-child {
+  white-space: nowrap;
+}
+.ws-license-help-notes {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.ws-license-help-notes p {
+  margin: 8px 0;
+}
+.ws-license-help-actions {
+  margin-top: 16px;
+  text-align: right;
+}
+
+/* ── Compliance badges ── */
+.ws-compliance-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.ws-compliance-badge.compliant {
+  background: rgba(63, 185, 80, 0.12);
+  border: 1px solid rgba(63, 185, 80, 0.35);
+  color: #3fb950;
+}
+.ws-compliance-badge.warning {
+  background: rgba(210, 153, 34, 0.12);
+  border: 1px solid rgba(210, 153, 34, 0.35);
+  color: #d29922;
+}
+.ws-license-link {
+  margin-left: auto;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 12px;
+  line-height: 1;
+}
+.ws-license-link:hover {
+  color: var(--accent-blue);
+}
+.ws-work-license-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  font-size: 9px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  color: var(--text-muted);
+  line-height: 1.2;
+  margin-left: 4px;
+}
 .ws-kind-menu {
   position: absolute;
   top: calc(100% + 4px);
@@ -1687,6 +1805,179 @@
 .ws-doc-image-caption:focus {
   outline: none;
   background: var(--bg-elevated);
+}
+
+/* ── Layout mode (inline images at char positions) ── */
+.ws-doc-layout {
+  max-width: 42em;
+  margin: 0 auto;
+  padding: 16px 0;
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.ws-layout-text {
+  margin-bottom: 4px;
+}
+.ws-layout-figure {
+  margin: 20px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+}
+.ws-layout-fig-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.ws-layout-fig-dims {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: 'JetBrains Mono', monospace;
+}
+.ws-layout-fig-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  margin-left: auto;
+}
+.ws-layout-fig-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+.ws-layout-img-wrap {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  padding: 8px;
+}
+.ws-layout-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  cursor: zoom-in;
+}
+.ws-layout-img:hover { opacity: 0.94; }
+.ws-resize-handle {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  background: linear-gradient(
+    135deg,
+    transparent 40%,
+    var(--text-dim) 41%,
+    var(--text-dim) 47%,
+    transparent 48%,
+    transparent 60%,
+    var(--text-dim) 61%,
+    var(--text-dim) 67%,
+    transparent 68%,
+    transparent 80%,
+    var(--text-dim) 81%,
+    var(--text-dim) 87%,
+    transparent 88%
+  );
+  border-radius: 0 0 4px 0;
+  opacity: 0.5;
+}
+.ws-resize-handle:hover { opacity: 1; }
+.ws-layout-fig-caption input {
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--border);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-muted);
+  background: transparent;
+  font-family: 'Inter', sans-serif;
+}
+.ws-layout-fig-caption input:focus {
+  outline: none;
+  background: var(--bg);
+}
+
+/* ── Lightbox bar ── */
+.ws-image-lightbox-bar {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 20px;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+  font-family: 'Inter', sans-serif;
+  cursor: default;
+}
+.ws-image-lightbox-caption {
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.6);
+}
+.ws-image-lightbox-bar button {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ws-image-lightbox-bar button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ── Action button active state ── */
+.ws-action-btn.active {
+  background: var(--accent-blue);
+  color: white;
+  border-color: var(--accent-blue);
+}
+
+/* ── Crop overlay ── */
+.ws-crop-overlay {
+  padding: 8px;
+}
+.ws-crop-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 4px 4px;
+  font-size: 11px;
+  font-family: 'Inter', sans-serif;
+  color: var(--text-muted);
+}
+.ws-crop-controls label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ws-crop-dims {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-dim);
+  margin-left: auto;
 }
 
 /* ── Invite modal ── */

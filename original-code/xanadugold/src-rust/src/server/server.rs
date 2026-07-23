@@ -560,6 +560,7 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
             lifecycle_history: dw.lifecycle_history,
             history_club: dw.history_club,
             kind: dw.work.kind(),
+            license: dw.work.license(),
         });
     }
 
@@ -2296,6 +2297,8 @@ impl Server {
                         ),
                         work_id: work_be_id,
                         revision,
+                        source_work_id: None,
+                        source_license: None,
                     },
                 ) {
                     tracing::error!("attribution log write failed: {}", e);
@@ -5856,7 +5859,15 @@ impl Server {
         &self,
         session_id: SessionId,
     ) -> (
-        Vec<(BeId, String, bool, bool, u64, crate::edition::WorkKind)>,
+        Vec<(
+            BeId,
+            String,
+            bool,
+            bool,
+            u64,
+            crate::edition::WorkKind,
+            crate::edition::License,
+        )>,
         Vec<(BeId, BeId, String, u64)>,
     ) {
         let starred = self.starred_for_session(session_id);
@@ -5877,6 +5888,7 @@ impl Server {
                     ws.is_source,
                     ws.work.revision_count(),
                     ws.work.kind(),
+                    ws.work.license(),
                 ));
             }
         }
@@ -5909,7 +5921,7 @@ impl Server {
 
         let word_sets: Vec<(BeId, HashSet<String>)> = nodes
             .iter()
-            .filter_map(|(id, _, _, _, _, _)| {
+            .filter_map(|(id, _, _, _, _, _, _)| {
                 let text = self.work_text((*id).into()).ok()?;
                 let words: HashSet<String> = text
                     .to_ascii_lowercase()
@@ -7499,6 +7511,8 @@ impl Server {
                         work_entry.is_archived,
                         work_entry.lifecycle_history.clone(),
                     );
+                    work.set_kind(work_entry.kind);
+                    work.set_license(work_entry.license);
                     if let Some(hc) = work_entry.history_club {
                         work.set_history_club(Some(hc));
                     }
@@ -8764,6 +8778,10 @@ impl Server {
                     .map(|ws| ws.work.revision_count())
                     .unwrap_or(0);
                 let server_id = self.server_keypair.signing_key.verifying_key().to_bytes();
+                let src_license = self
+                    .works
+                    .get(&origin_work_id)
+                    .map(|ws| ws.work.license().as_str().to_string());
                 let entry = crate::server::transport::attribution_log::AttributionEntry {
                     sequence: log.sequence(),
                     timestamp: source_prov.timestamp,
@@ -8773,12 +8791,12 @@ impl Server {
                     span_fp_hex: crate::edition::provenance::compute_span_fingerprint_hex(
                         &stamped_fps,
                     ),
-                    // Transclusion attribution is server-stamped from resolved
-                    // provenance, not author-signed; record a zero signature.
                     signature_hex: "0".repeat(128),
                     server_id_hex: crate::server::crdt_manager::bytes_to_hex(&server_id),
                     work_id: dest_work_id,
                     revision,
+                    source_work_id: Some(origin_work_id),
+                    source_license: src_license,
                 };
                 if let Err(e) = log.append(&entry) {
                     tracing::warn!("[attribution_log] transclusion append failed: {}", e);
@@ -9131,6 +9149,29 @@ impl Server {
             .get_mut(&work_id)
             .ok_or(ServerError::InvalidArgument("work not found".into()))?;
         ws.work.set_kind(kind);
+        ws.dirty_gen = ws.dirty_gen.wrapping_add(1);
+        self.auto_checkpoint();
+        Ok(())
+    }
+
+    pub fn work_license_get(&self, work_id: BeId) -> Result<crate::edition::License, ServerError> {
+        let ws = self
+            .works
+            .get(&work_id)
+            .ok_or(ServerError::InvalidArgument("work not found".into()))?;
+        Ok(ws.work.license())
+    }
+
+    pub fn work_license_set(
+        &mut self,
+        work_id: BeId,
+        license: crate::edition::License,
+    ) -> Result<(), ServerError> {
+        let ws = self
+            .works
+            .get_mut(&work_id)
+            .ok_or(ServerError::InvalidArgument("work not found".into()))?;
+        ws.work.set_license(license);
         ws.dirty_gen = ws.dirty_gen.wrapping_add(1);
         self.auto_checkpoint();
         Ok(())
@@ -10474,6 +10515,58 @@ impl Server {
             crate::edition::Edition::from_entries(new_entries)
         };
 
+        let author_club = self.resolve_author_club(session_id);
+        self.revise_work(work_id, session_id, new_edition, author_club)
+    }
+
+    /// Replace the element at the given char position with a new element.
+    /// Used for updating blob captions, crop metadata, etc.
+    pub fn element_update(
+        &mut self,
+        session_id: SessionId,
+        work_id: BeId,
+        char_position: usize,
+        new_element: RangeElement,
+    ) -> Result<u64, ServerError> {
+        self.ensure_session(session_id)?;
+        let new_edition = {
+            let ws = self
+                .works
+                .get(&work_id)
+                .ok_or(ServerError::WorkNotFound(work_id))?;
+            let edition = ws.work().current_edition().clone();
+            let entries = edition.cached_entries();
+            let mut new_entries: Vec<(
+                i64,
+                std::sync::Arc<crate::edition::range_element::Carrier>,
+            )> = Vec::with_capacity(entries.len());
+            let mut cum_char = 0usize;
+            let mut replaced = false;
+            let mut pos = 0i64;
+            for (_, c) in entries.iter() {
+                let entry_len = c.char_len();
+                if !replaced && c.element.is_blob() && cum_char == char_position {
+                    new_entries.push((
+                        pos,
+                        std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                            new_element.clone(),
+                        )),
+                    ));
+                    replaced = true;
+                } else {
+                    new_entries.push((pos, c.clone()));
+                }
+                pos += 1;
+                cum_char += entry_len;
+            }
+            if !replaced {
+                return Err(ServerError::InvalidArgument(format!(
+                    "no blob element at char position {}",
+                    char_position
+                )));
+            }
+            crate::edition::Edition::from_entries(new_entries)
+        };
         let author_club = self.resolve_author_club(session_id);
         self.revise_work(work_id, session_id, new_edition, author_club)
     }
@@ -15014,6 +15107,7 @@ pub(crate) mod persist_snapshot {
                         lifecycle_history,
                         history_club,
                         kind: ws.work.kind(),
+                        license: ws.work.license(),
                     });
                 } else {
                     dirty_work_gens.push((*id, ws.dirty_gen));
@@ -15305,6 +15399,7 @@ pub(crate) mod persist_snapshot {
                     lifecycle_history: ws.work.lifecycle_history().to_vec(),
                     history_club: ws.work.history_club(),
                     kind: ws.work.kind(),
+                    license: ws.work.license(),
                 });
             }
 
@@ -17541,6 +17636,7 @@ mod tests {
                         byte_size: 100,
                         width: Some(10),
                         height: Some(10),
+                        caption: None,
                     },
                     RangeElement::text("c"),
                 ]),
@@ -17558,6 +17654,7 @@ mod tests {
                         byte_size: 100,
                         width: Some(10),
                         height: Some(10),
+                        caption: None,
                     },
                     RangeElement::text("c"),
                 ]),
@@ -24629,6 +24726,109 @@ mod tests {
 
     #[test]
     #[cfg(feature = "server")]
+    fn checkpoint_restore_preserves_work_kind() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_kind_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let concept_id;
+        let person_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            concept_id = server
+                .create_work(sid, Edition::from_text("Hypertext"))
+                .unwrap();
+            server
+                .work_kind_set(concept_id, crate::edition::WorkKind::Concept)
+                .unwrap();
+
+            person_id = server
+                .create_work(sid, Edition::from_text("Ted Nelson"))
+                .unwrap();
+            server
+                .work_kind_set(person_id, crate::edition::WorkKind::Person)
+                .unwrap();
+
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            assert_eq!(
+                server.work_kind_get(concept_id).unwrap(),
+                crate::edition::WorkKind::Concept,
+                "concept kind must survive restart"
+            );
+            assert_eq!(
+                server.work_kind_get(person_id).unwrap(),
+                crate::edition::WorkKind::Person,
+                "person kind must survive restart"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn checkpoint_restore_preserves_license() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_license_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let work_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            work_id = server
+                .create_work(sid, Edition::from_text("licensed content"))
+                .unwrap();
+            server
+                .work_license_set(work_id, crate::edition::License::Transcopyright)
+                .unwrap();
+
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            assert_eq!(
+                server.work_license_get(work_id).unwrap(),
+                crate::edition::License::Transcopyright,
+                "license must survive restart"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
     fn checkpoint_restore_preserves_stars() {
         let data_dir = std::env::temp_dir().join(format!(
             "xudanu_stars_test_{}_{}",
@@ -27093,14 +27293,69 @@ mod tests {
     #[test]
     fn range_element_payload_blob_round_trip() {
         use crate::server::transport::protocol::RangeElementPayload;
-        let re = RangeElement::blob(0xABCD, "image/png", 1024);
+        let re = RangeElement::blob_with_caption(
+            0xABCD,
+            "image/png",
+            1024,
+            Some(800),
+            Some(600),
+            Some("A caption".into()),
+        );
         let payload = RangeElementPayload::from_range_element(&re);
         assert_eq!(payload.elem_type, "blob");
         assert_eq!(payload.blob_hash, Some(0xABCD));
         assert_eq!(payload.blob_mime.as_deref(), Some("image/png"));
         assert_eq!(payload.blob_size, Some(1024));
+        assert_eq!(payload.blob_width, Some(800));
+        assert_eq!(payload.blob_height, Some(600));
+        assert_eq!(payload.blob_caption.as_deref(), Some("A caption"));
         let back = payload.to_range_element().expect("should convert back");
         assert_eq!(back.as_blob_hash(), Some(0xABCD));
+        assert_eq!(back.blob_caption(), Some("A caption"));
+    }
+
+    #[test]
+    fn element_update_changes_blob_caption() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work = server
+            .create_work(
+                sid,
+                Edition::from_text_elements(&[
+                    RangeElement::text("hello"),
+                    RangeElement::blob_with_dims(42, "image/png", 100, 10, 10),
+                ]),
+            )
+            .unwrap();
+
+        let blobs_before = server.work(work).unwrap().edition().blob_entries();
+        assert_eq!(blobs_before.len(), 1);
+        assert!(blobs_before[0].caption.is_none());
+
+        let updated = RangeElement::blob_with_caption(
+            42,
+            "image/png",
+            100,
+            Some(10),
+            Some(10),
+            Some("My caption".into()),
+        );
+        server.element_update(sid, work, 5, updated).unwrap();
+
+        let blobs_after = server.work(work).unwrap().edition().blob_entries();
+        assert_eq!(blobs_after.len(), 1);
+        assert_eq!(blobs_after[0].caption.as_deref(), Some("My caption"));
+        assert_eq!(blobs_after[0].content_hash, 42);
+    }
+
+    #[test]
+    fn element_update_no_blob_at_position_errors() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+
+        let result = server.element_update(sid, work, 3, RangeElement::blob(99, "image/png", 10));
+        assert!(result.is_err());
     }
 
     #[test]

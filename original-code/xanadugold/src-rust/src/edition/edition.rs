@@ -65,6 +65,8 @@ pub struct BlobEntry {
     pub byte_size: u64,
     pub width: Option<u32>,
     pub height: Option<u32>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub caption: Option<String>,
 }
 
 pub struct SearchMatch {
@@ -536,6 +538,7 @@ impl Edition {
                     byte_size,
                     width,
                     height,
+                    caption,
                 } => {
                     result.push(BlobEntry {
                         char_position: char_pos,
@@ -544,6 +547,7 @@ impl Edition {
                         byte_size: *byte_size,
                         width: *width,
                         height: *height,
+                        caption: caption.clone(),
                     });
                 }
                 crate::edition::range_element::RangeElement::Text { text } => {
@@ -1658,6 +1662,7 @@ mod tests {
                 byte_size: 100,
                 width: Some(10),
                 height: Some(10),
+                caption: None,
             },
             RangeElement::text("c"),
         ]);
@@ -1670,6 +1675,7 @@ mod tests {
                 byte_size: 100,
                 width: Some(10),
                 height: Some(10),
+                caption: None,
             },
             RangeElement::text("c"),
         ]);

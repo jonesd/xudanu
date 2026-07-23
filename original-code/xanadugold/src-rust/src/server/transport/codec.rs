@@ -1892,6 +1892,21 @@ impl JsonCodec {
                     element: args.element,
                 })
             }
+            OperationCode::ElementUpdate => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    char_position: usize,
+                    element: super::protocol::RangeElementPayload,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ElementUpdate {
+                    work_id: args.work_id,
+                    char_position: args.char_position,
+                    element: args.element,
+                })
+            }
             OperationCode::ResolveInlineTransclusions => {
                 #[derive(Deserialize)]
                 struct Args {
@@ -3280,6 +3295,30 @@ impl JsonCodec {
                 Ok(WireRequest::WorkKindSet {
                     work_id: args.work_id,
                     kind: args.kind,
+                })
+            }
+            OperationCode::WorkLicenseGet => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkLicenseGet {
+                    work_id: args.work_id,
+                })
+            }
+            OperationCode::WorkLicenseSet => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    license: crate::edition::License,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkLicenseSet {
+                    work_id: args.work_id,
+                    license: args.license,
                 })
             }
             OperationCode::WorkListByKind => {

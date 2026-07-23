@@ -22,6 +22,7 @@ fn make_work_entry(
         lifecycle_history: Vec::new(),
         history_club: None,
         kind: crate::edition::WorkKind::Document,
+        license: crate::edition::License::AllRightsReserved,
     }
 }
 
@@ -592,6 +593,7 @@ mod tests {
             lifecycle_history: Vec::new(),
             history_club: None,
             kind: crate::edition::WorkKind::Document,
+            license: crate::edition::License::AllRightsReserved,
         });
         let path = manifest::manifest_path(&dir);
 
@@ -618,6 +620,7 @@ mod tests {
             lifecycle_history: Vec::new(),
             history_club: None,
             kind: crate::edition::WorkKind::Document,
+            license: crate::edition::License::AllRightsReserved,
         });
         manifest::write_manifest(&mut m, &path).unwrap();
         let b2 = manifest::backup_manifest_path(&dir, m.sequence);
@@ -663,6 +666,7 @@ mod tests {
             lifecycle_history: Vec::new(),
             history_club: None,
             kind: crate::edition::WorkKind::Document,
+            license: crate::edition::License::AllRightsReserved,
         });
         let path = manifest::manifest_path(&dir);
         manifest::write_manifest(&mut m, &path).unwrap();

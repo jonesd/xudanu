@@ -658,12 +658,12 @@ fn optimize_jpeg(data: &[u8]) -> Option<Vec<u8>> {
 pub fn image_dimensions(data: &[u8]) -> Option<(u32, u32)> {
     #[cfg(feature = "image")]
     {
-        // Try standard image crate first
         if let Some(dims) = image_dimensions_standard(data) {
             return Some(dims);
         }
     }
-    // Try HEIC/HEIF
+    #[cfg(not(feature = "image"))]
+    let _ = data;
     #[cfg(feature = "heif-rs")]
     {
         if let Some(dims) = heic_dimensions(data) {

@@ -43,6 +43,8 @@ pub enum RangeElement {
         width: Option<u32>,
         #[cfg_attr(feature = "serde", serde(default))]
         height: Option<u32>,
+        #[cfg_attr(feature = "serde", serde(default))]
+        caption: Option<String>,
     },
     Overlay {
         overlay: ImageOverlay,
@@ -101,6 +103,7 @@ impl RangeElement {
             byte_size,
             width: None,
             height: None,
+            caption: None,
         }
     }
 
@@ -117,6 +120,25 @@ impl RangeElement {
             byte_size,
             width: Some(width),
             height: Some(height),
+            caption: None,
+        }
+    }
+
+    pub fn blob_with_caption(
+        content_hash: u64,
+        mime_type: impl Into<String>,
+        byte_size: u64,
+        width: Option<u32>,
+        height: Option<u32>,
+        caption: Option<String>,
+    ) -> Self {
+        RangeElement::Blob {
+            content_hash,
+            mime_type: mime_type.into(),
+            byte_size,
+            width,
+            height,
+            caption,
         }
     }
 
@@ -256,6 +278,7 @@ impl RangeElement {
                 byte_size,
                 width,
                 height,
+                ..
             } => Some((
                 *content_hash,
                 mime_type.as_str(),
@@ -263,6 +286,13 @@ impl RangeElement {
                 *width,
                 *height,
             )),
+            _ => None,
+        }
+    }
+
+    pub fn blob_caption(&self) -> Option<&str> {
+        match self {
+            RangeElement::Blob { caption, .. } => caption.as_deref(),
             _ => None,
         }
     }

@@ -6,6 +6,48 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.0.0] — 2026-07-23
+
+First stable release. All core Xanadu document model features implemented and tested.
+
+### Transcopyright Licensing (FR-24)
+- **feat(license):** Per-work license metadata — 5 options (All Rights Reserved, Transcopyright, CC-BY, CC-BY-SA, Public Domain/CC0). Defaults to ARR (Berne Convention). Wire ops `work_license_get/set` (0x0B05-06). License picker in document header with help modal and canonical license URL links.
+- **feat(compliance):** Transclusion compliance badges — green "✓ Licensed" when all transclusion sources permit reuse, amber "⚠ ARR source" when any source is ARR. Warning dialog when transcluding from ARR-licensed works.
+- **feat(attribution):** Source license stamped into attribution log entries (`src_work`, `src_lic` fields). Tamper-evident proof of license at time of transclusion. Backward-compatible with existing log format.
+- **feat(display):** License badges on work list cards, links, backlinks, and transclusion entries. Populated from graph data (zero extra API calls).
+- **design:** FR-24 design document with TCo vs CC comparison, architectural boundary (server never handles money), 4-phase rollout plan.
+
+### Image Rendering (Phase 3)
+- **feat(images):** Layout mode — toggle between edit and layout views. In layout mode, images render inline at their exact `char_position` in the document, interleaved with text segments.
+- **feat(crop):** Canvas-based crop tool with visual selection rectangle and range sliders. Crops client-side, uploads as new blob, replaces via `element_update`.
+- **feat(resize):** Drag-to-resize handle on each image. Display widths stored in component state.
+- **feat(lightbox):** Full-screen image overlay with dimensions, caption, and "Open full" button.
+- **feat(reorder):** ↑/↓ buttons to swap adjacent images in the document.
+- **feat(caption):** Caption persistence — captions stored in `RangeElement::Blob` and survive restarts via `element_update` wire op (0x0C0C).
+- **fix(payload):** `RangeElementPayload` was silently dropping blob width/height during wire serialization. Fixed to carry all blob metadata.
+
+### Critical Fixes
+- **fix(persistence):** `WorkKind` was not restored on server restart — `restore_from_data_dir` loaded `Work` from chunks (always defaults to Document) and never called `work.set_kind()`. Added `work.set_kind(work_entry.kind)` + `work.set_license(work_entry.license)`. Same pattern applied to License.
+- **fix(codeql):** Unused variable `data` in `image_dimensions()` when image feature disabled. Added `#[cfg(not(feature = "image"))] let _ = data;`.
+
+### Other Changes (since v0.9.7)
+- EPUB import (cli-epub-to-text + epub crate, HTTP upload)
+- Revision metadata persistence to manifest (created_at, description, is_notable)
+- `prev_chunk_history` preserves old chunk refs across restarts
+- AttributionPanel, Mention/Tag, Connections tab, LinkCreator in workspace
+- Connection overlay redesign (blue "Connecting…" on startup)
+- Persistent IDs use server Ed25519 key hash
+- HEIC/HEIF image support via libheif-rs
+- Dependabot/CodeQL fixes (npm audit, unused variables)
+- 6 palette themes, concept seeding, graph scoring with kind colors
+
+### Stats
+- **2444** backend tests (0 failures)
+- **360** frontend tests (1 pre-existing compound-panel failure)
+- **24** feature requirement documents (FR-1 through FR-24)
+
+---
+
 ## [v0.9.7] — 2026-07-20
 
 ### Workspace Shell (FR-18) — new UI at /explore

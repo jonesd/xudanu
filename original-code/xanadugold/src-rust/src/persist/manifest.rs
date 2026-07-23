@@ -99,6 +99,11 @@ pub struct WorkEntry {
     /// for backward compatibility with pre-FR-22 manifests.
     #[serde(default)]
     pub kind: crate::edition::WorkKind,
+    /// License under which the work is published.
+    /// See docs/dev/FR-24-transcopyright.md. Defaults to AllRightsReserved
+    /// for backward compatibility with pre-FR-24 manifests.
+    #[serde(default)]
+    pub license: crate::edition::License,
 }
 
 /// Metadata for a single revision of a work. Per FR-23.
@@ -1293,6 +1298,7 @@ mod tests {
             lifecycle_history: Vec::new(),
             history_club: None,
             kind: crate::edition::WorkKind::Document,
+            license: crate::edition::License::AllRightsReserved,
         });
         manifest.links.push(LinkEntry {
             link_id: 50,

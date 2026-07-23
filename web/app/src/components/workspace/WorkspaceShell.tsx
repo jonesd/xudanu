@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useCrdtSync } from "../../hooks/useCrdtSync";
 import { useTransclusion, DEFAULT_LINK_TYPES } from "../../hooks/useTransclusion";
 import { useCompoundEdition } from "../../hooks/useCompoundEdition";
@@ -15,6 +16,8 @@ import { AttributionPanel } from "../AttributionPanel";
 import { loadThemeState, saveThemeState, activePalette } from "../../theme";
 import type { ThemeMode } from "../../theme";
 import type { WorkListEntry, TrailPayload } from "../../api/crdt_sync";
+import type { License } from "../../api/crdt_sync";
+import { LICENSES } from "../../api/crdt_sync";
 import type { WorkKind } from "../../graph-scoring";
 import { KIND_ICON, KIND_COLOR, KIND_ICON_COLOR } from "../../graph-scoring";
 import { SEED_CONCEPTS } from "../../concepts-seed";
@@ -33,6 +36,49 @@ interface WorkMeta {
   collection: string | null;
   publishedAt: string | null;
   versionLabel: string | null;
+}
+
+function CropOverlay({ src, natW, natH, onApply, onCancel }: {
+  src: string;
+  natW: number;
+  natH: number;
+  onApply: (x: number, y: number, w: number, h: number) => void;
+  onCancel: () => void;
+}) {
+  const [cx, setCx] = useState(0);
+  const [cy, setCy] = useState(0);
+  const [cw, setCw] = useState(natW);
+  const [ch, setCh] = useState(natH);
+  const leftPct = (cx / natW) * 100;
+  const topPct = (cy / natH) * 100;
+  const wPct = (cw / natW) * 100;
+  const hPct = (ch / natH) * 100;
+  return (
+    <div className="ws-crop-overlay">
+      <div className="ws-crop-preview" style={{ position: "relative", display: "inline-block" }}>
+        <img src={src} alt="" style={{ maxWidth: "100%", display: "block", opacity: 0.4 }} />
+        <div style={{
+          position: "absolute",
+          left: `${leftPct}%`,
+          top: `${topPct}%`,
+          width: `${wPct}%`,
+          height: `${hPct}%`,
+          border: "2px solid #58a6ff",
+          background: "rgba(88,166,255,0.1)",
+          boxSizing: "border-box",
+        }} />
+      </div>
+      <div className="ws-crop-controls">
+        <label>X <input type="range" min={0} max={natW - 10} value={cx} onChange={(e) => setCx(+e.target.value)} style={{ width: 80 }} /></label>
+        <label>Y <input type="range" min={0} max={natH - 10} value={cy} onChange={(e) => setCy(+e.target.value)} style={{ width: 80 }} /></label>
+        <label>W <input type="range" min={10} max={natW} value={cw} onChange={(e) => setCw(Math.min(+e.target.value, natW - cx))} style={{ width: 80 }} /></label>
+        <label>H <input type="range" min={10} max={natH} value={ch} onChange={(e) => setCh(Math.min(+e.target.value, natH - cy))} style={{ width: 80 }} /></label>
+        <span className="ws-crop-dims">{cw}×{ch}px</span>
+        <button className="ws-layout-fig-btn" onClick={() => onApply(cx, cy, cw, ch)}>Apply</button>
+        <button className="ws-layout-fig-btn" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
 }
 
 export function WorkspaceShell() {
@@ -86,7 +132,11 @@ export function WorkspaceShell() {
   const [workKind, setWorkKind] = useState<WorkKind>("document");
   const [kindPickerOpen, setKindPickerOpen] = useState(false);
   const [kindCache, setKindCache] = useState<Map<number, WorkKind>>(new Map());
+  const [licenseCache, setLicenseCache] = useState<Map<number, License>>(new Map());
   const [pickerKindFor, setPickerKindFor] = useState<number | null>(null);
+  const [workLicense, setWorkLicense] = useState<License>("all-rights-reserved");
+  const [licensePickerOpen, setLicensePickerOpen] = useState(false);
+  const [licenseHelpOpen, setLicenseHelpOpen] = useState(false);
   const [concepts, setConcepts] = useState<Array<{ work_id: number; title: string; link_count: number }>>([]);
   const [conceptNameOverride, setConceptNameOverride] = useState<Map<number, string>>(new Map());
   const [seedingConcepts, setSeedingConcepts] = useState(false);
@@ -106,6 +156,11 @@ export function WorkspaceShell() {
   }, []);
   // Track uploaded images locally for display
   const [imageEntries, setImageEntries] = useState<Array<{ hash: number; mime: string; width?: number; height?: number; url?: string; loading: boolean; charPos?: number; caption?: string }>>([]);
+  const [cursorPos, setCursorPos] = useState<number | null>(null);
+  const [docMode, setDocMode] = useState<"edit" | "layout">("edit");
+  const [imageSizes, setImageSizes] = useState<Map<number, number>>(new Map());
+  const [lightboxHash, setLightboxHash] = useState<number | null>(null);
+  const [cropTarget, setCropTarget] = useState<number | null>(null);
 
   const crdt = useCrdtSync(WS_URL, workBeId);
   const {
@@ -148,6 +203,7 @@ export function WorkspaceShell() {
         width: b.width ?? undefined,
         height: b.height ?? undefined,
         charPos: b.char_position,
+        caption: b.caption ?? undefined,
         loading: true,
       }));
       setImageEntries(entries);
@@ -173,6 +229,15 @@ export function WorkspaceShell() {
   const compound = useCompoundEdition(connected ? clientRef.current : null, workBeId);
 
   const identityName = identity?.display_name || null;
+
+  const transclusionCompliance = useMemo(() => {
+    if (compound.spanRanges.length === 0) return "none" as const;
+    const hasArr = compound.spanRanges.some((sr) => {
+      const lic = licenseCache.get(sr.source_work_id) || "all-rights-reserved";
+      return lic === "all-rights-reserved";
+    });
+    return hasArr ? "warning" as const : "compliant" as const;
+  }, [compound.spanRanges, licenseCache]);
   const identityColor = identityName ? authorColorPair(identityName).primary : "#888";
 
   const selectWork = useCallback((id: number) => {
@@ -242,10 +307,16 @@ export function WorkspaceShell() {
 
   const handleTranscludeSelection = useCallback(() => {
     if (!selectionRange || workBeId === null) return;
+    const srcLicense = licenseCache.get(workBeId) || workLicense;
+    if (srcLicense === "all-rights-reserved") {
+      if (!confirm("This work is All Rights Reserved. Transcluding it may not be permitted without the author's consent.\n\nContinue anyway?")) {
+        return;
+      }
+    }
     const title = workMeta?.title || `Work 0x${workBeId.toString(16)}`;
     const selectedText = text.slice(selectionRange.start, selectionRange.end);
     transclusion.holdSelection(workBeId, title, selectionRange.start, selectionRange.end, selectedText);
-  }, [selectionRange, workBeId, workMeta, text, transclusion]);
+  }, [selectionRange, workBeId, workMeta, text, transclusion, licenseCache, workLicense]);
 
   const handleOpenLinkCreator = useCallback(() => {
     if (!selectionRange || workBeId === null) return;
@@ -499,7 +570,7 @@ export function WorkspaceShell() {
       }
       const meta = await httpResp.json() as { content_hash: number; byte_size: number; mime_type: string; width?: number; height?: number };
       const hashNum = meta.content_hash;
-      const insertPos = text.length;
+      const insertPos = cursorPos ?? text.length;
       await client.elementInsert(workBeId, insertPos, {
         type: "blob",
         content_hash: hashNum,
@@ -550,7 +621,116 @@ export function WorkspaceShell() {
       const msg = e instanceof Error ? e.message : typeof e === "object" ? JSON.stringify(e) : String(e);
       showToast(`Image upload failed: ${msg}`);
     }
-  }, [clientRef, workBeId, text, showToast]);
+  }, [clientRef, workBeId, text, showToast, cursorPos]);
+
+  const handleCaptionChange = useCallback(async (hash: number, caption: string) => {
+    if (!clientRef.current || workBeId === null) return;
+    const entry = imageEntries.find((e) => e.hash === hash);
+    if (!entry || entry.charPos == null) return;
+    try {
+      await clientRef.current.elementUpdate(workBeId, entry.charPos, {
+        type: "blob",
+        content_hash: hash,
+        mime_type: entry.mime,
+        byte_size: 0,
+        width: entry.width,
+        height: entry.height,
+        caption: caption || undefined,
+      });
+    } catch (e) {
+      console.error("Failed to persist caption:", e);
+    }
+  }, [clientRef, workBeId, imageEntries]);
+
+  const handleCropImage = useCallback(async (hash: number, cropX: number, cropY: number, cropW: number, cropH: number) => {
+    if (!clientRef.current || workBeId === null) return;
+    const entry = imageEntries.find((e) => e.hash === hash);
+    if (!entry || !entry.url || entry.charPos == null) return;
+    try {
+      const img = new Image();
+      img.src = entry.url;
+      await new Promise((res) => { img.onload = res; });
+      const canvas = document.createElement("canvas");
+      canvas.width = cropW;
+      canvas.height = cropH;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+      const blob: Blob = await new Promise((res) => canvas.toBlob((b) => res(b!), "image/png"));
+      const buf = await blob.arrayBuffer();
+      const sessionId = (clientRef.current.getSessionId() ?? 0).toString();
+      const httpResp = await fetch("/api/blob/upload", {
+        method: "POST",
+        headers: { "Content-Type": "image/png", "X-Xudanu-Session": sessionId },
+        body: buf,
+      });
+      if (!httpResp.ok) { showToast("Crop upload failed"); return; }
+      const meta = await httpResp.json() as { content_hash: number; byte_size: number; width?: number; height?: number };
+      await clientRef.current.elementUpdate(workBeId, entry.charPos, {
+        type: "blob",
+        content_hash: meta.content_hash,
+        mime_type: "image/png",
+        byte_size: meta.byte_size,
+        width: meta.width,
+        height: meta.height,
+        caption: entry.caption,
+      });
+      const previewBytes = await clientRef.current.blobGetPreview(meta.content_hash);
+      const previewBlob = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: "image/png" });
+      const newUrl = URL.createObjectURL(previewBlob);
+      setImageEntries((prev) => prev.map((e) => e.hash === hash ? {
+        ...e, hash: meta.content_hash, url: newUrl, width: meta.width, height: meta.height, mime: "image/png",
+      } : e));
+      showToast("Image cropped");
+    } catch (e) {
+      showToast(`Crop failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [clientRef, workBeId, imageEntries, showToast]);
+
+  const handleMoveImage = useCallback(async (hash: number, direction: "up" | "down") => {
+    if (!clientRef.current || workBeId === null) return;
+    const sorted = [...imageEntries].sort((a, b) => (a.charPos ?? 0) - (b.charPos ?? 0));
+    const idx = sorted.findIndex((e) => e.hash === hash);
+    if (idx < 0) return;
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const target = sorted[swapIdx];
+    const source = sorted[idx];
+    if (source.charPos == null || target.charPos == null) return;
+    const client = clientRef.current;
+    try {
+      await client.elementUpdate(workBeId, source.charPos, {
+        type: "blob",
+        content_hash: target.hash,
+        mime_type: target.mime,
+        byte_size: 0,
+        width: target.width,
+        height: target.height,
+        caption: target.caption,
+      });
+      await client.elementUpdate(workBeId, target.charPos, {
+        type: "blob",
+        content_hash: source.hash,
+        mime_type: source.mime,
+        byte_size: 0,
+        width: source.width,
+        height: source.height,
+        caption: source.caption,
+      });
+      showToast("Images swapped");
+      const blobs = await client.workBlobList(workBeId);
+      setImageEntries((prev) => {
+        const updated = [...prev];
+        for (const b of blobs) {
+          const i = updated.findIndex((e) => e.hash === b.content_hash);
+          if (i >= 0) updated[i] = { ...updated[i], charPos: b.char_position };
+        }
+        return updated;
+      });
+    } catch (e) {
+      showToast(`Move failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [clientRef, workBeId, imageEntries, showToast]);
 
   const handleAnnotationSubmit = useCallback(async (annoText: string, isPrivate: boolean) => {
     if (!annotationTarget || !createAnnotation) return;
@@ -709,6 +889,20 @@ export function WorkspaceShell() {
     return () => { cancelled = true; };
   }, [connected, workBeId, clientRef]);
 
+  // Fetch work license when work changes
+  useEffect(() => {
+    if (!connected || workBeId === null || !clientRef.current) {
+      setWorkLicense("all-rights-reserved");
+      return;
+    }
+    let cancelled = false;
+    clientRef.current
+      .workLicenseGet(workBeId)
+      .then((l) => { if (!cancelled) setWorkLicense(l); })
+      .catch(() => { if (!cancelled) setWorkLicense("all-rights-reserved"); });
+    return () => { cancelled = true; };
+  }, [connected, workBeId, clientRef]);
+
   // Fetch server's public address for persistent IDs
   useEffect(() => {
     fetch("/.well-known/xudanu-server.json")
@@ -734,10 +928,13 @@ export function WorkspaceShell() {
       .then((g) => {
         if (cancelled) return;
         const cache = new Map<number, WorkKind>();
+        const licCache = new Map<number, License>();
         for (const node of g.nodes) {
           if (node.kind) cache.set(node.work_id, node.kind);
+          if (node.license) licCache.set(node.work_id, node.license);
         }
         setKindCache(cache);
+        setLicenseCache(licCache);
         // Compute inbound link count per concept
         const linkCounts = new Map<number, number>();
         for (const edge of g.edges) {
@@ -828,6 +1025,19 @@ export function WorkspaceShell() {
       alert(`Could not change kind: ${e instanceof Error ? e.message : String(e)}`);
     }
   }, [workBeId, clientRef, workKind]);
+
+  const handleLicenseChange = useCallback(async (license: License) => {
+    if (workBeId === null || !clientRef.current) return;
+    const prev = workLicense;
+    setWorkLicense(license);
+    setLicensePickerOpen(false);
+    try {
+      await clientRef.current.workLicenseSet(workBeId, license);
+    } catch (e) {
+      setWorkLicense(prev);
+      alert(`Could not change license: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [workBeId, clientRef, workLicense]);
 
   const handlePickerKindChange = useCallback(async (workId: number, kind: WorkKind) => {
     if (!clientRef.current) return;
@@ -1152,9 +1362,11 @@ export function WorkspaceShell() {
                 </div>
               ) : (
                 <ul className="ws-work-list">
-                  {filteredWorks.map((w) => {
-                    const kind = kindCache.get(w.work_id) || "document";
-                    return (
+                   {filteredWorks.map((w) => {
+                     const kind = kindCache.get(w.work_id) || "document";
+                     const lic = licenseCache.get(w.work_id) || "all-rights-reserved";
+                     const licInfo = LICENSES.find((l) => l.value === lic);
+                     return (
                       <li
                         key={w.work_id}
                         className={`ws-work-item ${w.work_id === workBeId ? "active" : ""}`}
@@ -1180,6 +1392,11 @@ export function WorkspaceShell() {
                           {w.updated_at && <span>· updated {new Date(w.updated_at * 1000).toLocaleDateString()}</span>}
                           {w.revision_count > 0 && <span>· v{w.revision_count}</span>}
                           <span>· {kind}</span>
+                          {lic !== "all-rights-reserved" && licInfo && (
+                            <span className="ws-work-license-badge" title={licInfo.label}>
+                              {licInfo.short}
+                            </span>
+                          )}
                         </div>
                         {pickerKindFor === w.work_id && (
                           <div className="ws-picker-kind-menu" onClick={(e) => e.stopPropagation()}>
@@ -1206,8 +1423,8 @@ export function WorkspaceShell() {
                 </ul>
               )}
             </div>
-          ) : (
-            <>
+                ) : docMode === "layout" && imageEntries.length > 0 ? null : (
+                  <>
               <header className="ws-doc-header">
                 {!authenticated && (
                   <div className="ws-auth-warning" onClick={() => setShowIdentity(true)}>
@@ -1253,6 +1470,63 @@ export function WorkspaceShell() {
                   )}
                 </div>
                 <div className="ws-doc-actions">
+                  <div className="ws-license-picker-wrap">
+                    <button
+                      className="ws-action-btn"
+                      title={`License: ${LICENSES.find((l) => l.value === workLicense)?.label || workLicense} — click to change`}
+                      onClick={() => setLicensePickerOpen((o) => !o)}
+                    >
+                      {LICENSES.find((l) => l.value === workLicense)?.short || "\u00A9"}
+                    </button>
+                    {licensePickerOpen && (
+                      <div className="ws-kind-menu ws-license-menu" role="menu">
+                        {LICENSES.map((l) => (
+                          <button
+                            key={l.value}
+                            className={`ws-kind-item ${workLicense === l.value ? "active" : ""}`}
+                            onClick={() => handleLicenseChange(l.value)}
+                            title={l.label}
+                          >
+                            <span style={{ fontWeight: 600, fontSize: 11 }}>{l.short}</span>
+                            <span>{l.label}</span>
+                            {l.url && (
+                              <a
+                                href={l.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="ws-license-link"
+                                onClick={(e) => e.stopPropagation()}
+                                title="View full license text"
+                              >
+                                &#8599;
+                              </a>
+                            )}
+                            {workLicense === l.value && <span className="ws-kind-check">✓</span>}
+                          </button>
+                        ))}
+                        <button
+                          className="ws-license-help-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setLicensePickerOpen(false);
+                            setLicenseHelpOpen(true);
+                          }}
+                        >
+                          Help me choose
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {transclusionCompliance === "compliant" && (
+                    <span className="ws-compliance-badge compliant" title="All transclusion sources permit reuse">
+                      ✓ Licensed
+                    </span>
+                  )}
+                  {transclusionCompliance === "warning" && (
+                    <span className="ws-compliance-badge warning" title="One or more transclusion sources are All Rights Reserved">
+                      ⚠ ARR source
+                    </span>
+                  )}
                   <button
                     className={`ws-action-btn ${followState.following ? "active" : ""}`}
                     title={followState.following ? "Unstar this work" : "Star this work (adds to your library)"}
@@ -1315,6 +1589,15 @@ export function WorkspaceShell() {
                         }}
                       />
                     </label>
+                  )}
+                  {imageEntries.length > 0 && (
+                    <button
+                      className={`ws-action-btn ${docMode === "layout" ? "active" : ""}`}
+                      title={docMode === "edit" ? "Switch to layout view (images inline)" : "Switch to editor"}
+                      onClick={() => setDocMode(docMode === "edit" ? "layout" : "edit")}
+                    >
+                      {docMode === "edit" ? "🗔" : "✏️"}
+                    </button>
                   )}
                   <div className="ws-more-wrap" ref={moreMenuRef}>
                     <button
@@ -1516,7 +1799,10 @@ export function WorkspaceShell() {
                   text={text}
                   workId={workBeId ?? undefined}
                   onTextChange={canEdit ? setText : undefined}
-                  onCursorChange={sendCursor}
+                  onCursorChange={(idx) => {
+                    sendCursor(idx);
+                    setCursorPos(idx);
+                  }}
                   onSelectionChange={(s, e) => {
                     sendSelection(s, e);
                     if (s !== null && e !== null && s !== e) setSelectionRange({ start: s, end: e });
@@ -1543,7 +1829,131 @@ export function WorkspaceShell() {
                   </>
                  )}
 
-                {/* Inline image rendering */}
+                {/* Layout mode: inline images at their char positions */}
+                {docMode === "layout" && imageEntries.length > 0 ? (
+                  <div className="ws-doc-layout">
+                    {(() => {
+                      const sortedImages = [...imageEntries].sort((a, b) => (a.charPos ?? 0) - (b.charPos ?? 0));
+                      let pos = 0;
+                      const parts: Array<ReactNode> = [];
+                      for (const img of sortedImages) {
+                        const imgPos = img.charPos ?? pos;
+                        if (imgPos > pos) {
+                          parts.push(<div key={`t-${parts.length}`} className="ws-layout-text">{text.slice(pos, imgPos)}</div>);
+                        }
+                        const displayWidth = imageSizes.get(img.hash);
+                        parts.push(
+                          <figure key={`i-${img.hash}`} className="ws-layout-figure">
+                            <div className="ws-layout-fig-bar">
+                              <span className="ws-layout-fig-dims">
+                                {img.width && img.height ? `${img.width}×${img.height}` : "Image"}
+                              </span>
+                              {canEdit && (
+                                <>
+                                  <button
+                                    className="ws-layout-fig-btn"
+                                    title="Move image earlier in document"
+                                    onClick={() => handleMoveImage(img.hash, "up")}
+                                  >↑</button>
+                                  <button
+                                    className="ws-layout-fig-btn"
+                                    title="Move image later in document"
+                                    onClick={() => handleMoveImage(img.hash, "down")}
+                                  >↓</button>
+                                  <button
+                                    className="ws-layout-fig-btn"
+                                    title="Crop image"
+                                    onClick={() => setCropTarget(cropTarget === img.hash ? null : img.hash)}
+                                  >Crop</button>
+                                </>
+                              )}
+                              <button
+                                className="ws-layout-fig-btn"
+                                onClick={async () => {
+                                  if (!clientRef.current) return;
+                                  const fullBytes = await clientRef.current.blobGet(img.hash);
+                                  const blob = new Blob([fullBytes as BlobPart], { type: img.mime });
+                                  const url = URL.createObjectURL(blob);
+                                  window.open(url, "_blank");
+                                  setTimeout(() => URL.revokeObjectURL(url), 60000);
+                                }}
+                              >Full</button>
+                            </div>
+                            <div
+                              className="ws-layout-img-wrap"
+                              style={displayWidth ? { width: `${displayWidth}px` } : undefined}
+                            >
+                              {img.loading ? (
+                                <div className="ws-image-loading">Loading…</div>
+                              ) : img.url ? (
+                                cropTarget === img.hash && img.width && img.height ? (
+                                  <CropOverlay
+                                    src={img.url}
+                                    natW={img.width}
+                                    natH={img.height}
+                                    onApply={(x, y, w, h) => {
+                                      void handleCropImage(img.hash, x, y, w, h);
+                                      setCropTarget(null);
+                                    }}
+                                    onCancel={() => setCropTarget(null)}
+                                  />
+                                ) : (
+                                  <img
+                                    src={img.url}
+                                    alt={img.caption || ""}
+                                    className="ws-layout-img"
+                                    onClick={() => setLightboxHash(img.hash)}
+                                  />
+                                )
+                              ) : (
+                                <div className="ws-image-error">Failed to load</div>
+                              )}
+                              {cropTarget !== img.hash && (
+                                <div
+                                  className="ws-resize-handle"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    const startX = e.clientX;
+                                    const startWidth = displayWidth || e.currentTarget.parentElement?.offsetWidth || 600;
+                                    const onMove = (ev: MouseEvent) => {
+                                      const delta = ev.clientX - startX;
+                                      const newWidth = Math.max(120, Math.min(startWidth + delta, 1400));
+                                      setImageSizes((prev) => new Map(prev).set(img.hash, newWidth));
+                                    };
+                                    const onUp = () => {
+                                      document.removeEventListener("mousemove", onMove);
+                                      document.removeEventListener("mouseup", onUp);
+                                    };
+                                    document.addEventListener("mousemove", onMove);
+                                    document.addEventListener("mouseup", onUp);
+                                  }}
+                                />
+                              )}
+                            </div>
+                            <figcaption className="ws-layout-fig-caption">
+                              <input
+                                type="text"
+                                placeholder="Add caption…"
+                                defaultValue={img.caption || ""}
+                                onBlur={(e) => {
+                                  setImageEntries((prev) => prev.map((e2) => e2.hash === img.hash ? { ...e2, caption: e.target.value } : e2));
+                                  if (canEdit) void handleCaptionChange(img.hash, e.target.value);
+                                }}
+                              />
+                            </figcaption>
+                          </figure>
+                        );
+                        pos = imgPos;
+                      }
+                      if (pos < text.length) {
+                        parts.push(<div key={`t-${parts.length}`} className="ws-layout-text">{text.slice(pos)}</div>);
+                      }
+                      return parts;
+                    })()}
+                  </div>
+                ) : (
+                  <>
+                {/* Inline image rendering (below editor in edit mode) */}
                 {imageEntries.length > 0 && (
                   <div className="ws-doc-images">
                     {imageEntries.map((img) => (
@@ -1581,14 +1991,7 @@ export function WorkspaceShell() {
                               cursor: "pointer",
                               display: "block",
                             }}
-                            onClick={async () => {
-                              if (!clientRef.current) return;
-                              const fullBytes = await clientRef.current.blobGet(img.hash);
-                              const blob = new Blob([fullBytes as BlobPart], { type: img.mime });
-                              const url = URL.createObjectURL(blob);
-                              window.open(url, "_blank");
-                              setTimeout(() => URL.revokeObjectURL(url), 60000);
-                            }}
+                            onClick={() => setLightboxHash(img.hash)}
                           />
                         ) : (
                           <div className="ws-image-error">Failed to load</div>
@@ -1600,11 +2003,14 @@ export function WorkspaceShell() {
                           defaultValue={img.caption || ""}
                           onBlur={(e) => {
                             setImageEntries((prev) => prev.map((e2) => e2.hash === img.hash ? { ...e2, caption: e.target.value } : e2));
+                            if (canEdit) void handleCaptionChange(img.hash, e.target.value);
                           }}
                         />
                       </div>
                     ))}
                   </div>
+                )}
+                  </>
                 )}
               </div>
 
@@ -1738,6 +2144,11 @@ export function WorkspaceShell() {
                           <div className="ws-conn-title-row">
                             <div className="ws-conn-title">
                               {isWebLink ? "🔗 " : ""}{destTitle}
+                              {!isWebLink && (() => {
+                                const dl = licenseCache.get(link.destination);
+                                const di = dl ? LICENSES.find((l) => l.value === dl) : null;
+                                return di && dl !== "all-rights-reserved" ? <span className="ws-work-license-badge" title={di.label}>{di.short}</span> : null;
+                              })()}
                             </div>
                             <button
                               className="ws-conn-delete"
@@ -1767,16 +2178,16 @@ export function WorkspaceShell() {
                                     {tn}
                                   </span>
                                 );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+                               })}
+         </div>
+        )}
+      </div>
+                         );
+                      })
+                    )}
+                 </div>
 
-                {/* Backlinks */}
+                 {/* Backlinks */}
                 <div className="ws-conn-section">
                   <div className="ws-conn-header">
                     Backlinks ({transclusion.backlinks.length})
@@ -1796,7 +2207,14 @@ export function WorkspaceShell() {
                           className="ws-conn-item"
                           onClick={() => selectWork(bl.source_work_id)}
                         >
-                          <div className="ws-conn-title">{bl.title || `Work 0x${bl.source_work_id.toString(16)}`}</div>
+                          <div className="ws-conn-title">
+                            {bl.title || `Work 0x${bl.source_work_id.toString(16)}`}
+                            {(() => {
+                              const sl = licenseCache.get(bl.source_work_id);
+                              const si = sl ? LICENSES.find((l) => l.value === sl) : null;
+                              return si && sl !== "all-rights-reserved" ? <span className="ws-work-license-badge" title={si.label}>{si.short}</span> : null;
+                            })()}
+                          </div>
                           {bl.excerpt && <div className="ws-conn-excerpt">"{bl.excerpt.slice(0, 80)}{bl.excerpt.length > 80 ? "…" : ""}"</div>}
                           <div className="ws-conn-types">
                             <span
@@ -1822,13 +2240,20 @@ export function WorkspaceShell() {
                   ) : (
                     compound.spanRanges.map((sr, i) => {
                       const sourceTitle = compound.sourceTitles[sr.source_work_id] || `Work 0x${sr.source_work_id.toString(16)}`;
+                      const srcLic = licenseCache.get(sr.source_work_id);
+                      const srcLicInfo = srcLic ? LICENSES.find((l) => l.value === srcLic) : null;
                       return (
                         <div
                           key={i}
                           className="ws-conn-item"
                           onClick={() => selectWork(sr.source_work_id)}
                         >
-                          <div className="ws-conn-title">↗ {sourceTitle}</div>
+                          <div className="ws-conn-title">
+                            ↗ {sourceTitle}
+                            {srcLicInfo && srcLic !== "all-rights-reserved" && (
+                              <span className="ws-work-license-badge" title={srcLicInfo.label}>{srcLicInfo.short}</span>
+                            )}
+                          </div>
                           <div className="ws-conn-excerpt">
                             [{sr.char_start}:{sr.char_end}]
                           </div>
@@ -2159,6 +2584,114 @@ export function WorkspaceShell() {
           }}
         />
       )}
+
+      {licenseHelpOpen && (
+        <div className="modal-overlay" onClick={() => setLicenseHelpOpen(false)}>
+          <div className="modal-content ws-license-help" onClick={(e) => e.stopPropagation()}>
+            <h3>Which license should I choose?</h3>
+            <p className="ws-license-help-intro">
+              This sets the license for <strong>this work only</strong>. Other works are unaffected.
+              You can change it at any time — past transclusions keep the license they had.
+            </p>
+            <table className="ws-license-table">
+              <thead>
+                <tr>
+                  <th>License</th>
+                  <th>Transclude?</th>
+                  <th>Copy?</th>
+                  <th>Attribution?</th>
+                  <th>Commercial?</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>© All Rights Reserved</strong></td>
+                  <td>No</td>
+                  <td>No</td>
+                  <td>—</td>
+                  <td>—</td>
+                </tr>
+                <tr>
+                  <td><strong>TCo Transcopyright</strong></td>
+                  <td>Yes (by address)</td>
+                  <td>No</td>
+                  <td>Automatic</td>
+                  <td>Yes</td>
+                </tr>
+                <tr>
+                  <td><strong>CC-BY</strong></td>
+                  <td>Yes</td>
+                  <td>Yes</td>
+                  <td>Required</td>
+                  <td>Yes</td>
+                </tr>
+                <tr>
+                  <td><strong>CC-BY-SA</strong></td>
+                  <td>Yes</td>
+                  <td>Yes (must share alike)</td>
+                  <td>Required</td>
+                  <td>Yes</td>
+                </tr>
+                <tr>
+                  <td><strong>CC0 Public Domain</strong></td>
+                  <td>Yes</td>
+                  <td>Yes</td>
+                  <td>Not required</td>
+                  <td>Yes</td>
+                </tr>
+              </tbody>
+            </table>
+            <div className="ws-license-help-notes">
+              <p><strong>Transcopyright (TCo)</strong> is designed for transclusion-based systems like Xudanu.
+              Others can reference your content by address, but it always stays connected to your server.
+              Attribution is automatic. This is Xudanu's recommended license for collaborative content.</p>
+              <p><strong>CC-BY-SA</strong> requires that anyone who builds on your work must use the same license.
+              This prevents mixing with differently-licensed content.</p>
+              <p><strong>CC0</strong> waives all rights. Anyone can do anything with your content, without asking.</p>
+            </div>
+            <div className="ws-license-help-actions">
+              <button className="ws-anno-cancel" onClick={() => setLicenseHelpOpen(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {lightboxHash !== null && (
+        <div
+          className="ws-image-lightbox"
+          onClick={() => setLightboxHash(null)}
+        >
+          {(() => {
+            const img = imageEntries.find((e) => e.hash === lightboxHash);
+            if (!img || !img.url) return null;
+            return (
+              <>
+                <img src={img.url} alt={img.caption || ""} />
+                <div className="ws-image-lightbox-bar">
+                  <span>{img.width && img.height ? `${img.width}×${img.height}` : "Image"}</span>
+                  {img.caption && <span className="ws-image-lightbox-caption">{img.caption}</span>}
+                  <button
+                    className="ws-image-lightbox-full"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!clientRef.current) return;
+                      const fullBytes = await clientRef.current.blobGet(img.hash);
+                      const blob = new Blob([fullBytes as BlobPart], { type: img.mime });
+                      const url = URL.createObjectURL(blob);
+                      window.open(url, "_blank");
+                      setTimeout(() => URL.revokeObjectURL(url), 60000);
+                    }}
+                  >
+                    Open full
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); setLightboxHash(null); }}>Close</button>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }
+

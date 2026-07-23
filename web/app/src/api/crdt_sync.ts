@@ -171,7 +171,7 @@ export interface SpanRangePayload {
 export type RangeElementPayload =
   | { type: "text"; text: string }
   | { type: "transclusion"; transclusion_source: number; transclusion_start: number; transclusion_end: number }
-  | { type: "blob"; content_hash: number; mime_type: string; byte_size: number; width?: number; height?: number };
+  | { type: "blob"; content_hash: number; mime_type: string; byte_size: number; width?: number; height?: number; caption?: string };
 
 export interface AuthorContribution {
   club_id: number;
@@ -350,6 +350,16 @@ export interface WorkListEntry {
 
 export type WorkKind = "document" | "note" | "person" | "concept" | "collection" | "commentary";
 
+export type License = "all-rights-reserved" | "transcopyright" | "cc-by" | "cc-by-sa" | "public-domain";
+
+export const LICENSES: { value: License; label: string; short: string; url: string | null }[] = [
+  { value: "all-rights-reserved", label: "All Rights Reserved", short: "\u00A9", url: null },
+  { value: "transcopyright", label: "Transcopyright", short: "TCo", url: "https://xanadu.com/xuTco.html" },
+  { value: "cc-by", label: "CC-BY (Attribution)", short: "CC-BY", url: "https://creativecommons.org/licenses/by/4.0/" },
+  { value: "cc-by-sa", label: "CC-BY-SA (Share-Alike)", short: "CC-BY-SA", url: "https://creativecommons.org/licenses/by-sa/4.0/" },
+  { value: "public-domain", label: "Public Domain (CC0)", short: "CC0", url: "https://creativecommons.org/publicdomain/zero/1.0/" },
+];
+
 export interface RevisionMeta {
   revision_id: number;
   parent?: number;
@@ -377,6 +387,7 @@ export interface BlobEntry {
   byte_size: number;
   width?: number | null;
   height?: number | null;
+  caption?: string | null;
 }
 
 export function blobHashToU64(hash: number[] | number): number {
@@ -399,6 +410,7 @@ export interface GraphNode {
   revision_count: number;
   author_type?: string;
   kind?: WorkKind;
+  license?: License;
 }
 
 export interface GraphEdge {
@@ -1128,6 +1140,12 @@ export class CrdtSyncClient {
     return (val.revision as number) || 0;
   }
 
+  async elementUpdate(workId: number, charPosition: number, element: RangeElementPayload): Promise<number> {
+    const resp = await this.sendRequest("element_update", { work_id: workId, char_position: charPosition, element });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.revision as number) || 0;
+  }
+
   async elementRemoveTransclusion(workId: number, sourceWorkId: number, charStart: number, charEnd: number): Promise<boolean> {
     const resp = await this.sendRequest("element_remove_transclusion", {
       work_id: workId, source_work_id: sourceWorkId, char_start: charStart, char_end: charEnd,
@@ -1241,6 +1259,17 @@ export class CrdtSyncClient {
 
   async workKindSet(workId: number, kind: WorkKind): Promise<void> {
     await this.sendRequest("work_kind_set", { work_id: workId, kind });
+  }
+
+  async workLicenseGet(workId: number): Promise<License> {
+    const resp = await this.sendRequest("work_license_get", { work_id: workId });
+    const val = extractValue(resp);
+    const idx = typeof val === "number" ? val : 0;
+    return (LICENSES[idx]?.value || "all-rights-reserved") as License;
+  }
+
+  async workLicenseSet(workId: number, license: License): Promise<void> {
+    await this.sendRequest("work_license_set", { work_id: workId, license });
   }
 
   async workSetText(workId: number, text: string): Promise<void> {

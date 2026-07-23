@@ -103,6 +103,7 @@ pub use three_way::{
 pub use transclusion::{
     TrailBlazer, TransclusionIndex, TransclusionQuery, TransclusionResult, WorkQuery,
 };
+pub use work::License;
 pub use work::Work;
 pub use work::WorkKind;
 pub use wrapper::{

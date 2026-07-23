@@ -25,7 +25,6 @@ impl Default for WorkKind {
 }
 
 impl WorkKind {
-    /// Lowercase string form used in wire serialization and JSON.
     pub fn as_str(&self) -> &'static str {
         match self {
             WorkKind::Document => "document",
@@ -37,7 +36,6 @@ impl WorkKind {
         }
     }
 
-    /// Parse from a lowercase string; falls back to Document on miss.
     pub fn from_str_loose(s: &str) -> Self {
         match s.to_ascii_lowercase().as_str() {
             "note" => WorkKind::Note,
@@ -46,6 +44,51 @@ impl WorkKind {
             "collection" => WorkKind::Collection,
             "commentary" => WorkKind::Commentary,
             _ => WorkKind::Document,
+        }
+    }
+}
+
+/// The license under which a work is published. See FR-24.
+/// Defaults to AllRightsReserved (Berne Convention automatic copyright).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum License {
+    #[cfg_attr(feature = "serde", serde(rename = "all-rights-reserved"))]
+    AllRightsReserved,
+    #[cfg_attr(feature = "serde", serde(rename = "transcopyright"))]
+    Transcopyright,
+    #[cfg_attr(feature = "serde", serde(rename = "cc-by"))]
+    CreativeCommonsBy,
+    #[cfg_attr(feature = "serde", serde(rename = "cc-by-sa"))]
+    CreativeCommonsBySa,
+    #[cfg_attr(feature = "serde", serde(rename = "public-domain"))]
+    PublicDomain,
+}
+
+impl Default for License {
+    fn default() -> Self {
+        License::AllRightsReserved
+    }
+}
+
+impl License {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            License::AllRightsReserved => "all-rights-reserved",
+            License::Transcopyright => "transcopyright",
+            License::CreativeCommonsBy => "cc-by",
+            License::CreativeCommonsBySa => "cc-by-sa",
+            License::PublicDomain => "public-domain",
+        }
+    }
+
+    pub fn from_str_loose(s: &str) -> Self {
+        match s.to_ascii_lowercase().as_str() {
+            "transcopyright" | "tco" => License::Transcopyright,
+            "cc-by" => License::CreativeCommonsBy,
+            "cc-by-sa" => License::CreativeCommonsBySa,
+            "public-domain" | "cc0" | "pd" => License::PublicDomain,
+            _ => License::AllRightsReserved,
         }
     }
 }
@@ -81,6 +124,7 @@ pub struct Work {
     is_archived: bool,
     lifecycle_history: Vec<WorkLifecycleEvent>,
     kind: WorkKind,
+    license: License,
 }
 
 impl Work {
@@ -99,6 +143,7 @@ impl Work {
             is_archived: false,
             lifecycle_history: Vec::new(),
             kind: WorkKind::Document,
+            license: License::AllRightsReserved,
         }
     }
 
@@ -117,6 +162,7 @@ impl Work {
             is_archived: false,
             lifecycle_history: Vec::new(),
             kind: WorkKind::Document,
+            license: License::AllRightsReserved,
         }
     }
 
@@ -140,6 +186,14 @@ impl Work {
 
     pub fn set_kind(&mut self, kind: WorkKind) {
         self.kind = kind;
+    }
+
+    pub fn license(&self) -> License {
+        self.license
+    }
+
+    pub fn set_license(&mut self, license: License) {
+        self.license = license;
     }
 
     /// Current archive (soft-delete) state. Archived works are hidden from the

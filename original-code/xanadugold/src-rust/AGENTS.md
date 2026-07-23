@@ -17,7 +17,7 @@ frontend. The project is split across two trees:
 
 ## Technology
 
-**Backend** — Rust (edition 2021). Crate name `xudanu` (v0.9.0).
+**Backend** — Rust (edition 2021). Crate name `xudanu` (v1.0.0).
 - Async runtime: `tokio`; web framework: `axum` 0.8 (HTTP + WebSocket).
 - TLS: `rustls` / `axum-server`; crypto: `chacha20poly1305`, `x25519-dalek`,
   `ed25519-dalek`, `argon2`, `ring`, `blake3`, `hex`.
@@ -42,6 +42,10 @@ frontend. The project is split across two trees:
   See Also). Span migration survives edits.
 - **Annotations**: per-user, optionally private. Private annotations only
   visible to the creator (enforced server-side in `annotation_list`).
+- **Licensing (FR-24)**: per-work license metadata — 5 options (All Rights
+  Reserved, Transcopyright, CC-BY, CC-BY-SA, Public Domain). Transclusion
+  compliance badges, ARR warnings, source license stamping in attribution
+  log. Server never handles money (hard design rule).
 - **Persistent connection pins**: per-user pins stored in `SocialSection`
   chunk (same pattern as `starred_works`), WAL recovery, wire ops
   `0x0349-0x034B`.
@@ -107,11 +111,11 @@ Other subcommands: `init | verify | rebuild-manifest | verify-security-log | pre
 
 ```sh
 # Backend (from src-rust/) — integration & tls tests need the server feature
-cargo test --features server --lib     # 2331 tests
+cargo test --features server --lib     # 2444 tests
 cargo clippy --features server --all-targets
 
 # Frontend (from web/app/)
-npm test       # vitest run — 246 tests
+npm test       # vitest run — 360 tests
 npm run lint   # eslint
 ```
 
