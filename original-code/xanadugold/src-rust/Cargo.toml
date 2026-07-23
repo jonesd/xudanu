@@ -17,7 +17,8 @@ required-features = ["server"]
 [features]
 default = []
 wasm = ["wasm-bindgen", "console_error_panic_hook", "serde", "serde_json", "js-sys"]
-server = ["tokio", "axum", "postcard", "tracing", "tracing-subscriber", "tracing-appender", "serde", "serde_json", "futures-util", "tokio-tungstenite", "chacha20poly1305", "x25519-dalek", "ed25519-dalek", "sha2", "hmac", "hkdf", "argon2", "subtle", "rand", "zeroize", "mime_guess", "axum-server", "rustls-pemfile", "rustls", "ring", "base64", "reqwest", "oauth2", "webpki-roots", "hex", "epub", "cli-epub-to-text", "image", "oxipng", "libheif-rs"]
+server = ["tokio", "axum", "postcard", "tracing", "tracing-subscriber", "tracing-appender", "serde", "serde_json", "futures-util", "tokio-tungstenite", "chacha20poly1305", "x25519-dalek", "ed25519-dalek", "sha2", "hmac", "hkdf", "argon2", "subtle", "rand", "zeroize", "mime_guess", "axum-server", "rustls-pemfile", "rustls", "ring", "base64", "reqwest", "oauth2", "webpki-roots", "hex", "epub", "cli-epub-to-text", "image", "oxipng"]
+heif = ["libheif-rs"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
