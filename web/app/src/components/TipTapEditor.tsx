@@ -150,6 +150,7 @@ export function TipTapEditor({
   handleStyleToggleRef.current = handleStyleToggle;
 
   const loadedWorkId = useRef<number | null>(null);
+  const hasLoaded = useRef(false);
 
   useEffect(() => {
     if (!editor) return;
@@ -157,17 +158,12 @@ export function TipTapEditor({
   }, [editor, editable]);
 
   // Load doc when work changes AND text has arrived from CRDT.
-  // Waits for text to be non-null (initial state is "" before CRDT loads).
   useEffect(() => {
     if (!editor) return;
-    if (workId !== undefined && loadedWorkId.current === workId) return;
-    if (text.length === 0 && loadedWorkId.current !== null) {
-      loadedWorkId.current = workId ?? null;
-      editor.commands.setContent("<p></p>");
-      lastTextRef.current = "";
-      return;
-    }
-    loadedWorkId.current = workId ?? -1;
+    if (hasLoaded.current) return;
+    if (text.length === 0) return; // wait for CRDT to deliver text
+    hasLoaded.current = true;
+    loadedWorkId.current = workId ?? null;
     const doc = textToTipTapDoc(text, annotations ?? []);
     lastTextRef.current = text;
     isApplyingRemote.current = true;
