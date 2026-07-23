@@ -138,36 +138,39 @@ export function TipTapEditor({
   );
   handleStyleToggleRef.current = handleStyleToggle;
 
+  const loadedWorkId = useRef<number | null>(null);
+
   useEffect(() => {
     if (!editor) return;
     editor.setEditable(editable);
   }, [editor, editable]);
 
+  // Rebuild doc from text + annotations ONLY on initial load or work change.
+  // After that, TipTap manages its own state. Remote text changes trigger the
+  // text effect below. Annotation echoes from our own sync are ignored.
   useEffect(() => {
-    if (!editor || !annotations) return;
-    if (recentlyEdited.current) return;
-    const marks = extractAllMarks(annotations);
-    const marksKey = marks.map((m) => `${m.kind}:${m.start}:${m.end}`).join("|");
-    if (marksKey === lastMarksKey.current) return;
-    lastMarksKey.current = marksKey;
+    if (!editor) return;
+    if (loadedWorkId.current === null) {
+      loadedWorkId.current = -1;
+      const doc = textToTipTapDoc(text, annotations ?? []);
+      lastTextRef.current = text;
+      lastMarksKey.current = extractAllMarks(annotations ?? [])
+        .map((m) => `${m.kind}:${m.start}:${m.end}`).join("|");
+      isApplyingRemote.current = true;
+      editor.commands.setContent(doc);
+      isApplyingRemote.current = false;
+    }
+  }, [editor, text, annotations]);
 
-    const currentText = lastTextRef.current;
-    const doc = textToTipTapDoc(currentText, annotations);
-    isApplyingRemote.current = true;
-    const sel = editor.state.selection;
-    editor.commands.setContent(doc);
-    try {
-      editor.commands.setTextSelection({ from: sel.from, to: sel.to });
-    } catch {}
-    isApplyingRemote.current = false;
-  }, [editor, annotations]);
-
+  // Remote text change: rebuild doc (with latest annotations)
   useEffect(() => {
     if (!editor) return;
     if (text === lastTextRef.current) return;
     if (recentlyEdited.current) return;
     lastTextRef.current = text;
     const doc = textToTipTapDoc(text, annotations ?? []);
+    lastMarksKey.current = extractAllMarks(annotations ?? [])
+      .map((m) => `${m.kind}:${m.start}:${m.end}`).join("|");
     isApplyingRemote.current = true;
     const sel = editor.state.selection;
     editor.commands.setContent(doc);
