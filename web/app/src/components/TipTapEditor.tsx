@@ -3,7 +3,12 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { useEffect, useRef, useCallback } from "react";
 import type { AnnotationEntry } from "../api/crdt_sync";
-import { textToTipTapDoc, tiptapDocToText, extractMarkRanges } from "../tiptap-bridge";
+import {
+  textToTipTapDoc,
+  tiptapDocToText,
+  diffAnnotations,
+  extractAllMarks,
+} from "../tiptap-bridge";
 
 interface TipTapEditorProps {
   text: string;
@@ -12,6 +17,8 @@ interface TipTapEditorProps {
   onSelectionChange?: (start: number | null, end: number | null) => void;
   editable: boolean;
   annotations?: AnnotationEntry[];
+  onCreateAnnotation?: (kind: string, payload: string, start: number, end: number) => void;
+  onDeleteAnnotation?: (annotationId: number) => void;
   onToggleStyle?: (kind: string, start: number, end: number) => void;
   fontSize?: number;
   lineHeight?: number;
@@ -24,19 +31,24 @@ export function TipTapEditor({
   onSelectionChange,
   editable,
   annotations,
+  onCreateAnnotation,
+  onDeleteAnnotation,
   onToggleStyle,
   fontSize,
   lineHeight,
 }: TipTapEditorProps) {
   const lastTextRef = useRef(text);
+  const lastMarksKey = useRef("");
   const isApplyingRemote = useRef(false);
-  const skipNextUpdate = useRef(false);
   const handleStyleToggleRef = useRef<((kind: string) => void) | null>(null);
+  const annotationsRef = useRef(annotations || []);
+  annotationsRef.current = annotations || [];
 
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        heading: false,
+        heading: { levels: [1, 2, 3] },
+        codeBlock: { HTMLAttributes: { class: "tiptap-code-block" } },
       }),
       Placeholder.configure({
         placeholder: "Start typing…",
@@ -67,13 +79,17 @@ export function TipTapEditor({
       },
     },
     onUpdate: ({ editor }) => {
-      if (isApplyingRemote.current || skipNextUpdate.current) {
-        skipNextUpdate.current = false;
-        return;
-      }
-      const { text: newText } = tiptapDocToText(editor.getJSON() as never);
+      if (isApplyingRemote.current) return;
+
+      const { text: newText, marks } = tiptapDocToText(editor.getJSON() as never);
       lastTextRef.current = newText;
       onTextChange?.(newText);
+
+      const marksKey = marks.map((m) => `${m.kind}:${m.start}:${m.end}`).join("|");
+      if (marksKey !== lastMarksKey.current) {
+        lastMarksKey.current = marksKey;
+        syncAnnotations(marks);
+      }
     },
     onSelectionUpdate: ({ editor }) => {
       const { from, to } = editor.state.selection;
@@ -81,23 +97,35 @@ export function TipTapEditor({
         onCursorChange?.(from);
         onSelectionChange?.(null, null);
       } else {
-        const { text } = tiptapDocToText(editor.getJSON() as never);
-        const charPos = proseMirrorPosToCharPos(text, from);
-        const charPosEnd = proseMirrorPosToCharPos(text, to);
-        onCursorChange?.(charPos);
-        onSelectionChange?.(charPos, charPosEnd);
+        const { text: t } = tiptapDocToText(editor.getJSON() as never);
+        onCursorChange?.(proseMirrorPosToCharPos(t, from));
+        onSelectionChange?.(proseMirrorPosToCharPos(t, from), proseMirrorPosToCharPos(t, to));
       }
     },
   });
+
+  const syncAnnotations = useCallback(
+    (desiredMarks: Array<{ kind: string; start: number; end: number; payload?: string }>) => {
+      if (!onCreateAnnotation && !onDeleteAnnotation) return;
+      const { toCreate, toDelete } = diffAnnotations(annotationsRef.current, desiredMarks);
+      for (const m of toCreate) {
+        onCreateAnnotation?.(m.kind, m.payload || "", m.start, m.end);
+      }
+      for (const a of toDelete) {
+        onDeleteAnnotation?.(a.annotation_id);
+      }
+    },
+    [onCreateAnnotation, onDeleteAnnotation],
+  );
 
   const handleStyleToggle = useCallback(
     (kind: string) => {
       if (!editor || !onToggleStyle) return;
       const { from, to } = editor.state.selection;
       if (from === to) return;
-      const { text } = tiptapDocToText(editor.getJSON() as never);
-      const charStart = proseMirrorPosToCharPos(text, from);
-      const charEnd = proseMirrorPosToCharPos(text, to);
+      const { text: t } = tiptapDocToText(editor.getJSON() as never);
+      const charStart = proseMirrorPosToCharPos(t, from);
+      const charEnd = proseMirrorPosToCharPos(t, to);
       onToggleStyle(kind, charStart, charEnd);
     },
     [editor, onToggleStyle],
@@ -109,18 +137,21 @@ export function TipTapEditor({
     editor.setEditable(editable);
   }, [editor, editable]);
 
-  const marksRef = useRef("");
   useEffect(() => {
     if (!editor || !annotations) return;
-    const marks = extractMarkRanges(annotations);
+    const marks = extractAllMarks(annotations);
     const marksKey = marks.map((m) => `${m.kind}:${m.start}:${m.end}`).join("|");
-    if (marksKey === marksRef.current) return;
-    marksRef.current = marksKey;
+    if (marksKey === lastMarksKey.current) return;
+    lastMarksKey.current = marksKey;
 
     const currentText = lastTextRef.current;
     const doc = textToTipTapDoc(currentText, annotations);
     isApplyingRemote.current = true;
+    const sel = editor.state.selection;
     editor.commands.setContent(doc);
+    try {
+      editor.commands.setTextSelection({ from: sel.from, to: sel.to });
+    } catch {}
     isApplyingRemote.current = false;
   }, [editor, annotations]);
 
@@ -139,14 +170,43 @@ export function TipTapEditor({
   }, [editor, text, annotations]);
 
   useEffect(() => {
-    return () => {
-      editor?.destroy();
-    };
+    return () => editor?.destroy();
   }, [editor]);
 
   return (
     <div className="tiptap-editor-wrap">
+      {editor && <TipTapToolbar editor={editor} />}
       <EditorContent editor={editor} />
+    </div>
+  );
+}
+
+function TipTapToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
+  if (!editor) return null;
+
+  const blockTypes = [
+    { label: "P", action: () => editor.chain().focus().setParagraph().run(), active: editor.isActive("paragraph") },
+    { label: "H1", action: () => editor.chain().focus().setHeading({ level: 1 }).run(), active: editor.isActive("heading", { level: 1 }) },
+    { label: "H2", action: () => editor.chain().focus().setHeading({ level: 2 }).run(), active: editor.isActive("heading", { level: 2 }) },
+    { label: "H3", action: () => editor.chain().focus().setHeading({ level: 3 }).run(), active: editor.isActive("heading", { level: 3 }) },
+    { label: "• List", action: () => editor.chain().focus().toggleBulletList().run(), active: editor.isActive("bulletList") },
+    { label: "1. List", action: () => editor.chain().focus().toggleOrderedList().run(), active: editor.isActive("orderedList") },
+    { label: "❝", action: () => editor.chain().focus().toggleBlockquote().run(), active: editor.isActive("blockquote") },
+    { label: "< / >", action: () => editor.chain().focus().toggleCodeBlock().run(), active: editor.isActive("codeBlock") },
+  ];
+
+  return (
+    <div className="tiptap-toolbar">
+      {blockTypes.map((bt, i) => (
+        <button
+          key={i}
+          className={`tiptap-toolbar-btn ${bt.active ? "active" : ""}`}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={bt.action}
+        >
+          {bt.label}
+        </button>
+      ))}
     </div>
   );
 }

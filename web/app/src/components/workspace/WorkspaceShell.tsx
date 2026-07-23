@@ -1809,6 +1809,8 @@ export function WorkspaceShell() {
                     }}
                     editable={canEdit}
                     annotations={annotations}
+                    onCreateAnnotation={canEdit && createAnnotation ? (kind, payload, start, end) => void createAnnotation(kind, payload, start, end, false) : undefined}
+                    onDeleteAnnotation={canEdit ? deleteAnnotation : undefined}
                     onToggleStyle={canEdit ? handleToggleStyle : undefined}
                     fontSize={16}
                     lineHeight={1.7}
