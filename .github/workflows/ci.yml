@@ -41,6 +41,7 @@ jobs:
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
           workspaces: original-code/xanadugold/src-rust -> target
+      - run: sudo apt-get update && sudo apt-get install -y libheif-dev
       - run: cargo test --features server --lib
         working-directory: original-code/xanadugold/src-rust
 
@@ -58,5 +59,6 @@ jobs:
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
           workspaces: original-code/xanadugold/src-rust -> target
+      - run: sudo apt-get update && sudo apt-get install -y libheif-dev
       - run: cargo clippy --features server -- -W clippy::all -A clippy::large-enum-variant -A clippy::manual-range-contains -A clippy::borrowed-box -A clippy::unnecessary-sort-by -A clippy::indexing_slicing
         working-directory: original-code/xanadugold/src-rust
