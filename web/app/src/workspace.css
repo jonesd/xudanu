@@ -2,6 +2,78 @@
    Grid layout: top bar + 3-column body + bottom lens row.
    All zones collapsible; the document surface reclaims freed space. */
 
+/* ── TipTap editor (FR-25) ── */
+.tiptap-editor-wrap {
+  max-width: 42em;
+  margin: 0 auto;
+  padding: 16px 0;
+}
+.tiptap-editor-content {
+  outline: none;
+  min-height: 300px;
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--text);
+}
+.tiptap-editor-content p {
+  margin: 0 0 0.5em;
+}
+.tiptap-editor-content p:first-child {
+  margin-top: 0;
+}
+.tiptap-editor-content strong {
+  font-weight: 700;
+}
+.tiptap-editor-content em {
+  font-style: italic;
+}
+.tiptap-editor-content code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9em;
+  background: var(--bg-elevated);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.tiptap-editor-content pre {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  overflow-x: auto;
+}
+.tiptap-editor-content pre code {
+  background: none;
+  padding: 0;
+}
+.tiptap-editor-content blockquote {
+  border-left: 3px solid var(--accent-blue);
+  padding-left: 16px;
+  margin: 0 0 0.5em;
+  color: var(--text-muted);
+}
+.tiptap-editor-content ul,
+.tiptap-editor-content ol {
+  padding-left: 24px;
+  margin: 0 0 0.5em;
+}
+.tiptap-editor-content ul {
+  list-style: disc;
+}
+.tiptap-editor-content ol {
+  list-style: decimal;
+}
+.tiptap-editor-content li {
+  margin: 0;
+}
+.tiptap-editor-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--text-dim);
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
 .ws-shell {
   display: grid;
   grid-template-columns: 1fr;

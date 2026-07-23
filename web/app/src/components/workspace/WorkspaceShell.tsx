@@ -5,6 +5,7 @@ import { useTransclusion, DEFAULT_LINK_TYPES } from "../../hooks/useTransclusion
 import { useCompoundEdition } from "../../hooks/useCompoundEdition";
 import { authorColorPair } from "../../author-color";
 import { CollaborativeEditor } from "../CollaborativeEditor";
+import { TipTapEditor } from "../TipTapEditor";
 import { TransclusionBadge } from "../TransclusionBadge";
 import { IdentityPanel } from "../IdentityPanel";
 import { DocumentMapPanel } from "../DocumentMapPanel";
@@ -147,6 +148,7 @@ export function WorkspaceShell() {
   const [epubImporting, setEpubImporting] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState<string | undefined>(undefined);
+  const useTipTap = new URLSearchParams(window.location.search).has("tiptap");
 
   // Listen for import requests from welcome page
   useEffect(() => {
@@ -1795,6 +1797,23 @@ export function WorkspaceShell() {
                     onCancel={transclusion.clearPending}
                   />
                 )}
+                {useTipTap ? (
+                  <TipTapEditor
+                    text={text}
+                    onTextChange={canEdit ? setText : undefined}
+                    onCursorChange={sendCursor}
+                    onSelectionChange={(s, e) => {
+                      sendSelection(s, e);
+                      if (s !== null && e !== null && s !== e) setSelectionRange({ start: s, end: e });
+                      else setSelectionRange(null);
+                    }}
+                    editable={canEdit}
+                    annotations={annotations}
+                    onToggleStyle={canEdit ? handleToggleStyle : undefined}
+                    fontSize={16}
+                    lineHeight={1.7}
+                  />
+                ) : (
                 <CollaborativeEditor
                   text={text}
                   workId={workBeId ?? undefined}
@@ -1825,9 +1844,10 @@ export function WorkspaceShell() {
                   annotations={annotations}
                    onCreateAnnotation={canEdit ? handleCreateAnnotation : undefined}
                    onToggleStyle={canEdit ? handleToggleStyle : undefined}
-                  />
-                  </>
-                 )}
+                   />
+                )}
+                   </>
+                  )}
 
                 {/* Layout mode: inline images at their char positions */}
                 {docMode === "layout" && imageEntries.length > 0 ? (
