@@ -40,6 +40,8 @@ export function TipTapEditor({
   const lastTextRef = useRef(text);
   const lastMarksKey = useRef("");
   const isApplyingRemote = useRef(false);
+  const recentlyEdited = useRef(false);
+  const editTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleStyleToggleRef = useRef<((kind: string) => void) | null>(null);
   const annotationsRef = useRef(annotations || []);
   annotationsRef.current = annotations || [];
@@ -80,6 +82,10 @@ export function TipTapEditor({
     },
     onUpdate: ({ editor }) => {
       if (isApplyingRemote.current) return;
+
+      recentlyEdited.current = true;
+      if (editTimer.current) clearTimeout(editTimer.current);
+      editTimer.current = setTimeout(() => { recentlyEdited.current = false; }, 600);
 
       const { text: newText, marks } = tiptapDocToText(editor.getJSON() as never);
       lastTextRef.current = newText;
@@ -139,6 +145,7 @@ export function TipTapEditor({
 
   useEffect(() => {
     if (!editor || !annotations) return;
+    if (recentlyEdited.current) return;
     const marks = extractAllMarks(annotations);
     const marksKey = marks.map((m) => `${m.kind}:${m.start}:${m.end}`).join("|");
     if (marksKey === lastMarksKey.current) return;
@@ -158,6 +165,7 @@ export function TipTapEditor({
   useEffect(() => {
     if (!editor) return;
     if (text === lastTextRef.current) return;
+    if (recentlyEdited.current) return;
     lastTextRef.current = text;
     const doc = textToTipTapDoc(text, annotations ?? []);
     isApplyingRemote.current = true;
