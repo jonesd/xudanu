@@ -79,17 +79,19 @@ function flattenBlock(node: DocNode, state: FlattenState): void {
     }
 
     case "blockquote": {
+      const blockStart = state.pos;
       const inner = node.content || [];
       for (let i = 0; i < inner.length; i++) {
         if (i > 0) {
           state.text += "\n";
           state.pos++;
         }
-        const childStart = state.pos;
         flattenBlock(inner[i], state);
+      }
+      if (state.pos > blockStart) {
         state.blockMarks.push({
           kind: "blockquote",
-          start: childStart,
+          start: blockStart,
           end: state.pos,
         });
       }
@@ -98,13 +100,13 @@ function flattenBlock(node: DocNode, state: FlattenState): void {
 
     case "bulletList":
     case "orderedList": {
+      const listStart = state.pos;
       const items = node.content || [];
       for (let i = 0; i < items.length; i++) {
         if (i > 0) {
           state.text += "\n";
           state.pos++;
         }
-        const itemStart = state.pos;
         const listItem = items[i];
         const inner = listItem.content || [];
         for (const child of inner) {
@@ -114,9 +116,11 @@ function flattenBlock(node: DocNode, state: FlattenState): void {
             flattenBlock(child, state);
           }
         }
+      }
+      if (state.pos > listStart) {
         state.blockMarks.push({
           kind: "list_item",
-          start: itemStart,
+          start: listStart,
           end: state.pos,
           payload: JSON.stringify({
             type: node.type === "bulletList" ? "bullet" : "ordered",
@@ -203,25 +207,14 @@ export function textToTipTapDoc(text: string, annotations: AnnotationEntry[]): T
   let i = 0;
   while (i < lineInfos.length) {
     const info = lineInfos[i];
-    const inlineMarks = allMarks.filter(
-      (m) => INLINE_KINDS.has(m.kind) && m.start < info.offset + info.text.length && m.end > info.offset,
-    );
 
     if (info.blockKind === "heading") {
+      const inlineMarks = marksForLine(allMarks, info);
       const level = info.blockPayload ? (JSON.parse(info.blockPayload).level as number) || 1 : 1;
       content.push({
         type: "heading",
         attrs: { level },
         content: buildTextNodes(info.text, info.offset, inlineMarks),
-      });
-      i++;
-    } else if (info.blockKind === "blockquote") {
-      content.push({
-        type: "blockquote",
-        content: [{
-          type: "paragraph",
-          content: buildTextNodes(info.text, info.offset, inlineMarks),
-        }],
       });
       i++;
     } else if (info.blockKind === "code_block") {
@@ -233,21 +226,29 @@ export function textToTipTapDoc(text: string, annotations: AnnotationEntry[]): T
         content: info.text.length > 0 ? [{ type: "text", text: info.text }] : [],
       });
       i++;
+    } else if (info.blockKind === "blockquote") {
+      const paras: DocNode[] = [];
+      while (i < lineInfos.length && lineInfos[i].blockKind === "blockquote") {
+        const li = lineInfos[i];
+        paras.push({
+          type: "paragraph",
+          content: buildTextNodes(li.text, li.offset, marksForLine(allMarks, li)),
+        });
+        i++;
+      }
+      content.push({ type: "blockquote", content: paras });
     } else if (info.blockKind === "list_item") {
       const listType = info.blockPayload
         ? (JSON.parse(info.blockPayload).type as string) || "bullet"
         : "bullet";
       const items: DocNode[] = [];
       while (i < lineInfos.length && lineInfos[i].blockKind === "list_item") {
-        const liInfo = lineInfos[i];
-        const liMarks = allMarks.filter(
-          (m) => INLINE_KINDS.has(m.kind) && m.start < liInfo.offset + liInfo.text.length && m.end > liInfo.offset,
-        );
+        const li = lineInfos[i];
         items.push({
           type: "listItem",
           content: [{
             type: "paragraph",
-            content: buildTextNodes(liInfo.text, liInfo.offset, liMarks),
+            content: buildTextNodes(li.text, li.offset, marksForLine(allMarks, li)),
           }],
         });
         i++;
@@ -257,6 +258,7 @@ export function textToTipTapDoc(text: string, annotations: AnnotationEntry[]): T
         content: items,
       });
     } else {
+      const inlineMarks = marksForLine(allMarks, info);
       content.push({
         type: "paragraph",
         content: buildTextNodes(info.text, info.offset, inlineMarks),
@@ -269,6 +271,15 @@ export function textToTipTapDoc(text: string, annotations: AnnotationEntry[]): T
     content.push({ type: "paragraph", content: [] });
   }
   return { type: "doc", content };
+}
+
+function marksForLine(allMarks: MarkRange[], info: LineInfo): MarkRange[] {
+  return allMarks.filter(
+    (m) =>
+      INLINE_KINDS.has(m.kind) &&
+      m.start < info.offset + info.text.length &&
+      m.end > info.offset,
+  );
 }
 
 function buildTextNodes(
