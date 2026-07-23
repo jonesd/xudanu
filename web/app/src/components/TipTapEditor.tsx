@@ -7,7 +7,6 @@ import {
   textToTipTapDoc,
   tiptapDocToText,
   diffAnnotations,
-  extractAllMarks,
 } from "../tiptap-bridge";
 
 interface TipTapEditorProps {
@@ -145,38 +144,16 @@ export function TipTapEditor({
     editor.setEditable(editable);
   }, [editor, editable]);
 
-  // Rebuild doc from text + annotations ONLY on initial load or work change.
-  // After that, TipTap manages its own state. Remote text changes trigger the
-  // text effect below. Annotation echoes from our own sync are ignored.
+  // Load doc ONLY on initial mount. After that, TipTap owns the editing state.
+  // Remote edit reconciliation is Phase 5 (collaborative editing).
   useEffect(() => {
     if (!editor) return;
-    if (loadedWorkId.current === null) {
-      loadedWorkId.current = -1;
-      const doc = textToTipTapDoc(text, annotations ?? []);
-      lastTextRef.current = text;
-      lastMarksKey.current = extractAllMarks(annotations ?? [])
-        .map((m) => `${m.kind}:${m.start}:${m.end}`).join("|");
-      isApplyingRemote.current = true;
-      editor.commands.setContent(doc);
-      isApplyingRemote.current = false;
-    }
-  }, [editor, text, annotations]);
-
-  // Remote text change: rebuild doc (with latest annotations)
-  useEffect(() => {
-    if (!editor) return;
-    if (text === lastTextRef.current) return;
-    if (recentlyEdited.current) return;
-    lastTextRef.current = text;
+    if (loadedWorkId.current !== null) return;
+    loadedWorkId.current = -1;
     const doc = textToTipTapDoc(text, annotations ?? []);
-    lastMarksKey.current = extractAllMarks(annotations ?? [])
-      .map((m) => `${m.kind}:${m.start}:${m.end}`).join("|");
+    lastTextRef.current = text;
     isApplyingRemote.current = true;
-    const sel = editor.state.selection;
     editor.commands.setContent(doc);
-    try {
-      editor.commands.setTextSelection({ from: sel.from, to: sel.to });
-    } catch {}
     isApplyingRemote.current = false;
   }, [editor, text, annotations]);
 
