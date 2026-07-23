@@ -1800,6 +1800,7 @@ export function WorkspaceShell() {
                 {useTipTap ? (
                   <TipTapEditor
                     text={text}
+                    workId={workBeId ?? undefined}
                     onTextChange={canEdit ? setText : undefined}
                     onCursorChange={sendCursor}
                     onSelectionChange={(s, e) => {

@@ -20,8 +20,8 @@ export interface MarkRange {
   payload?: string;
 }
 
-const INLINE_KINDS = new Set(["bold", "italic", "code"]);
-const BLOCK_KINDS = new Set(["heading", "list_item", "blockquote", "code_block"]);
+const INLINE_KINDS = new Set(["bold", "italic", "code", "font_size", "font_family"]);
+const BLOCK_KINDS = new Set(["heading", "list_item", "blockquote", "code_block", "text_align"]);
 
 interface FlattenState {
   text: string;
@@ -65,6 +65,7 @@ function flattenBlock(node: DocNode, state: FlattenState): void {
   switch (node.type) {
     case "paragraph":
       flattenInline(node.content || [], state);
+      captureTextAlign(node, startPos, state.pos, state);
       break;
 
     case "heading": {
@@ -75,6 +76,7 @@ function flattenBlock(node: DocNode, state: FlattenState): void {
         end: state.pos,
         payload: JSON.stringify({ level: (node.attrs?.level as number) || 1 }),
       });
+      captureTextAlign(node, startPos, state.pos, state);
       break;
     }
 
@@ -152,6 +154,18 @@ function flattenBlock(node: DocNode, state: FlattenState): void {
   }
 }
 
+function captureTextAlign(node: DocNode, start: number, end: number, state: FlattenState): void {
+  const align = node.attrs?.textAlign as string | undefined;
+  if (align && align !== "left") {
+    state.blockMarks.push({
+      kind: "text_align",
+      start,
+      end,
+      payload: JSON.stringify({ align }),
+    });
+  }
+}
+
 function flattenInline(content: DocNode[], state: FlattenState): void {
   for (const node of content) {
     if (node.type === "text" && node.text) {
@@ -162,6 +176,27 @@ function flattenInline(content: DocNode[], state: FlattenState): void {
         for (const m of node.marks) {
           if (INLINE_KINDS.has(m.type)) {
             state.inlineMarks.push({ kind: m.type, start, end: state.pos });
+          }
+          if (m.type === "textStyle" && m.attrs) {
+            if (m.attrs.fontSize) {
+              const px = parseInt(String(m.attrs.fontSize).replace("px", ""), 10);
+              if (px > 0) {
+                state.inlineMarks.push({
+                  kind: "font_size",
+                  start,
+                  end: state.pos,
+                  payload: JSON.stringify({ px }),
+                });
+              }
+            }
+            if (m.attrs.fontFamily) {
+              state.inlineMarks.push({
+                kind: "font_family",
+                start,
+                end: state.pos,
+                payload: JSON.stringify({ family: m.attrs.fontFamily }),
+              });
+            }
           }
         }
       }
@@ -177,6 +212,7 @@ interface LineInfo {
   offset: number;
   blockKind?: string;
   blockPayload?: string;
+  textAlign?: string;
 }
 
 export function textToTipTapDoc(text: string, annotations: AnnotationEntry[]): TipTapDoc {
@@ -188,17 +224,20 @@ export function textToTipTapDoc(text: string, annotations: AnnotationEntry[]): T
   for (const line of lines) {
     const lineStart = lineOffset;
     const lineEnd = lineStart + line.length;
-    const blockMark = allMarks.find(
+    const lineBlockMarks = allMarks.filter(
       (m) =>
         BLOCK_KINDS.has(m.kind) &&
         m.start <= lineStart &&
         m.end >= lineEnd,
     );
+    const structMark = lineBlockMarks.find((m) => m.kind !== "text_align");
+    const alignMark = lineBlockMarks.find((m) => m.kind === "text_align");
     lineInfos.push({
       text: line,
       offset: lineStart,
-      blockKind: blockMark?.kind,
-      blockPayload: blockMark?.payload,
+      blockKind: structMark?.kind,
+      blockPayload: structMark?.payload,
+      textAlign: alignMark ? (JSON.parse(alignMark.payload || "{}").align as string) : undefined,
     });
     lineOffset = lineEnd + 1;
   }
@@ -213,7 +252,7 @@ export function textToTipTapDoc(text: string, annotations: AnnotationEntry[]): T
       const level = info.blockPayload ? (JSON.parse(info.blockPayload).level as number) || 1 : 1;
       content.push({
         type: "heading",
-        attrs: { level },
+        attrs: { level, ...(info.textAlign ? { textAlign: info.textAlign } : {}) },
         content: buildTextNodes(info.text, info.offset, inlineMarks),
       });
       i++;
@@ -232,6 +271,7 @@ export function textToTipTapDoc(text: string, annotations: AnnotationEntry[]): T
         const li = lineInfos[i];
         paras.push({
           type: "paragraph",
+          attrs: li.textAlign ? { textAlign: li.textAlign } : undefined,
           content: buildTextNodes(li.text, li.offset, marksForLine(allMarks, li)),
         });
         i++;
@@ -248,6 +288,7 @@ export function textToTipTapDoc(text: string, annotations: AnnotationEntry[]): T
           type: "listItem",
           content: [{
             type: "paragraph",
+            attrs: li.textAlign ? { textAlign: li.textAlign } : undefined,
             content: buildTextNodes(li.text, li.offset, marksForLine(allMarks, li)),
           }],
         });
@@ -261,6 +302,7 @@ export function textToTipTapDoc(text: string, annotations: AnnotationEntry[]): T
       const inlineMarks = marksForLine(allMarks, info);
       content.push({
         type: "paragraph",
+        attrs: info.textAlign ? { textAlign: info.textAlign } : undefined,
         content: buildTextNodes(info.text, info.offset, inlineMarks),
       });
       i++;
@@ -311,13 +353,25 @@ function buildTextNodes(
     const segText = lineText.slice(segStart, segEnd);
     if (!segText) continue;
 
-    const segMarks: Array<{ type: string }> = [];
+    const segMarks: Array<{ type: string; attrs?: Record<string, unknown> }> = [];
+    const textStyleAttrs: Record<string, unknown> = {};
     for (const m of active) {
       const mStart = Math.max(0, m.start - lineOffset);
       const mEnd = Math.min(lineText.length, m.end - lineOffset);
       if (mStart <= segStart && mEnd >= segEnd) {
-        segMarks.push({ type: m.kind });
+        if (m.kind === "font_size" && m.payload) {
+          const px = JSON.parse(m.payload).px as number;
+          if (px) textStyleAttrs.fontSize = `${px}px`;
+        } else if (m.kind === "font_family" && m.payload) {
+          const family = JSON.parse(m.payload).family as string;
+          if (family) textStyleAttrs.fontFamily = family;
+        } else {
+          segMarks.push({ type: m.kind });
+        }
       }
+    }
+    if (Object.keys(textStyleAttrs).length > 0) {
+      segMarks.push({ type: "textStyle", attrs: textStyleAttrs });
     }
     nodes.push({
       type: "text",

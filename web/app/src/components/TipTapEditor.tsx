@@ -1,8 +1,12 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
+import TextAlign from "@tiptap/extension-text-align";
+import FontFamily from "@tiptap/extension-font-family";
+import { TextStyle } from "@tiptap/extension-text-style";
 import { useEffect, useRef, useCallback } from "react";
 import type { AnnotationEntry } from "../api/crdt_sync";
+import { FontSize } from "../tiptap-extensions/font-size";
 import {
   textToTipTapDoc,
   tiptapDocToText,
@@ -11,6 +15,7 @@ import {
 
 interface TipTapEditorProps {
   text: string;
+  workId?: number;
   onTextChange?: (text: string) => void;
   onCursorChange?: (index: number | null) => void;
   onSelectionChange?: (start: number | null, end: number | null) => void;
@@ -25,6 +30,7 @@ interface TipTapEditorProps {
 
 export function TipTapEditor({
   text,
+  workId,
   onTextChange,
   onCursorChange,
   onSelectionChange,
@@ -53,6 +59,12 @@ export function TipTapEditor({
       }),
       Placeholder.configure({
         placeholder: "Start typing…",
+      }),
+      TextStyle,
+      FontSize,
+      FontFamily,
+      TextAlign.configure({
+        types: ["heading", "paragraph"],
       }),
     ],
     content: "<p></p>",
@@ -144,18 +156,24 @@ export function TipTapEditor({
     editor.setEditable(editable);
   }, [editor, editable]);
 
-  // Load doc ONLY on initial mount. After that, TipTap owns the editing state.
-  // Remote edit reconciliation is Phase 5 (collaborative editing).
+  // Load doc when work changes AND text has arrived from CRDT.
+  // Waits for text to be non-null (initial state is "" before CRDT loads).
   useEffect(() => {
     if (!editor) return;
-    if (loadedWorkId.current !== null) return;
-    loadedWorkId.current = -1;
+    if (workId !== undefined && loadedWorkId.current === workId) return;
+    if (text.length === 0 && loadedWorkId.current !== null) {
+      loadedWorkId.current = workId ?? null;
+      editor.commands.setContent("<p></p>");
+      lastTextRef.current = "";
+      return;
+    }
+    loadedWorkId.current = workId ?? -1;
     const doc = textToTipTapDoc(text, annotations ?? []);
     lastTextRef.current = text;
     isApplyingRemote.current = true;
     editor.commands.setContent(doc);
     isApplyingRemote.current = false;
-  }, [editor, text, annotations]);
+  }, [editor, text, workId, annotations]);
 
   useEffect(() => {
     return () => editor?.destroy();
@@ -195,8 +213,65 @@ function TipTapToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
           {bt.label}
         </button>
       ))}
+      <span className="tiptap-toolbar-sep" />
+      <select
+        className="tiptap-toolbar-select"
+        value={currentFontSize(editor)}
+        onChange={(e) => {
+          const px = parseInt(e.target.value, 10);
+          if (px > 0) editor.chain().focus().setMark("textStyle", { fontSize: `${px}px` }).run();
+          else editor.chain().focus().unsetMark("textStyle").run();
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+        title="Font size"
+      >
+        <option value="0">Size</option>
+        {[12, 13, 14, 15, 16, 18, 20, 24, 28, 32].map((px) => (
+          <option key={px} value={px}>{px}px</option>
+        ))}
+      </select>
+      <select
+        className="tiptap-toolbar-select"
+        value={currentFontFamily(editor)}
+        onChange={(e) => {
+          if (e.target.value) editor.chain().focus().setFontFamily(e.target.value).run();
+          else editor.chain().focus().unsetFontFamily().run();
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+        title="Font family"
+      >
+        <option value="">Font</option>
+        <option value="Source Serif 4, Georgia, serif">Serif</option>
+        <option value="Inter, sans-serif">Sans</option>
+        <option value="JetBrains Mono, monospace">Mono</option>
+      </select>
+      <span className="tiptap-toolbar-sep" />
+      {(["left", "center", "right"] as const).map((align) => (
+        <button
+          key={align}
+          className={`tiptap-toolbar-btn ${editor.isActive({ textAlign: align }) ? "active" : ""}`}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => editor.chain().focus().setTextAlign(align).run()}
+          title={`Align ${align}`}
+        >
+          {align === "left" ? "⬅" : align === "center" ? "↔" : "➡"}
+        </button>
+      ))}
     </div>
   );
+}
+
+function currentFontSize(editor: ReturnType<typeof useEditor>): string {
+  if (!editor) return "0";
+  const attrs = editor.getAttributes("textStyle");
+  const fs = attrs?.fontSize as string | undefined;
+  if (!fs) return "0";
+  return fs.replace("px", "");
+}
+
+function currentFontFamily(editor: ReturnType<typeof useEditor>): string {
+  if (!editor) return "";
+  return (editor.getAttributes("textStyle")?.fontFamily as string) || "";
 }
 
 function proseMirrorPosToCharPos(text: string, pmPos: number): number {

@@ -105,6 +105,39 @@
   color: white;
   border-color: var(--accent-blue);
 }
+.tiptap-toolbar-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+}
+.tiptap-toolbar-select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-family: 'Inter', sans-serif;
+  color: var(--text-muted);
+  cursor: pointer;
+  outline: none;
+}
+.tiptap-toolbar-select:hover {
+  border-color: var(--accent-blue);
+  color: var(--text);
+}
+.tiptap-editor-content p[style*="text-align: center"],
+.tiptap-editor-content h1[style*="text-align: center"],
+.tiptap-editor-content h2[style*="text-align: center"],
+.tiptap-editor-content h3[style*="text-align: center"] {
+  text-align: center;
+}
+.tiptap-editor-content p[style*="text-align: right"],
+.tiptap-editor-content h1[style*="text-align: right"],
+.tiptap-editor-content h2[style*="text-align: right"],
+.tiptap-editor-content h3[style*="text-align: right"] {
+  text-align: right;
+}
 .tiptap-editor-content h1 {
   font-size: 1.8em;
   font-weight: 700;
