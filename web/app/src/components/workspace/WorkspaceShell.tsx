@@ -1552,7 +1552,7 @@ export function WorkspaceShell() {
                   >
                     Save revision
                   </button>
-                  {canEdit && (
+                  {canEdit && !useTipTap && (
                     <label className="ws-action-btn ws-image-upload-btn" title="Insert image">
                       📷
                       <input
@@ -1998,67 +1998,7 @@ export function WorkspaceShell() {
                       return parts;
                     })()}
                   </div>
-                ) : (
-                  <>
-                {/* Inline image rendering (below editor in edit mode) */}
-                {imageEntries.length > 0 && (
-                  <div className="ws-doc-images">
-                    {imageEntries.map((img) => (
-                      <div key={img.hash} className="ws-doc-image-block">
-                        <div className="ws-doc-image-controls">
-                          <span className="ws-doc-image-info">
-                            {img.width && img.height ? `${img.width}×${img.height}` : "Image"}
-                            {img.charPos != null ? ` · at char ${img.charPos}` : ""}
-                          </span>
-                          <button
-                            className="ws-doc-image-action"
-                            onClick={async () => {
-                              if (!clientRef.current) return;
-                              const fullBytes = await clientRef.current.blobGet(img.hash);
-                              const blob = new Blob([fullBytes as BlobPart], { type: img.mime });
-                              const url = URL.createObjectURL(blob);
-                              window.open(url, "_blank");
-                              setTimeout(() => URL.revokeObjectURL(url), 60000);
-                            }}
-                            title="View full size"
-                          >
-                            Full size
-                          </button>
-                        </div>
-                        {img.loading ? (
-                          <div className="ws-image-loading">Loading…</div>
-                        ) : img.url ? (
-                          <img
-                            src={img.url}
-                            alt=""
-                            className="ws-doc-image"
-                            style={{
-                              maxWidth: "100%",
-                              borderRadius: "6px",
-                              cursor: "pointer",
-                              display: "block",
-                            }}
-                            onClick={() => setLightboxHash(img.hash)}
-                          />
-                        ) : (
-                          <div className="ws-image-error">Failed to load</div>
-                        )}
-                        <input
-                          type="text"
-                          className="ws-doc-image-caption"
-                          placeholder="Add caption…"
-                          defaultValue={img.caption || ""}
-                          onBlur={(e) => {
-                            setImageEntries((prev) => prev.map((e2) => e2.hash === img.hash ? { ...e2, caption: e.target.value } : e2));
-                            if (canEdit) void handleCaptionChange(img.hash, e.target.value);
-                          }}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-                  </>
-                )}
+                ) : null}
               </div>
 
               {annotationTarget && (
