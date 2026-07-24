@@ -5,6 +5,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import FontFamily from "@tiptap/extension-font-family";
 import { TextStyle } from "@tiptap/extension-text-style";
 import Image from "@tiptap/extension-image";
+import { TextSelection } from "@tiptap/pm/state";
 import { useEffect, useRef, useCallback } from "react";
 import type { AnnotationEntry } from "../api/crdt_sync";
 import { FontSize } from "../tiptap-extensions/font-size";
@@ -98,7 +99,7 @@ export function TipTapEditor({
         if (onImageUploadRef.current) {
           void onImageUploadRef.current(imgFile).then((src) => {
             if (src && editorRef.current) {
-              editorRef.current.chain().focus().setImage({ src }).atPosition(dropPos).run();
+              editorRef.current.chain().focus().setImage({ src }).atPosition(dropPos).insertContent(" ").run();
             }
           });
         }
@@ -114,6 +115,22 @@ export function TipTapEditor({
           event.preventDefault();
           handleStyleToggleRef.current?.("italic");
           return true;
+        }
+        if (event.key === "Enter" && !event.shiftKey) {
+          const { state, dispatch } = _view;
+          const { $from } = state.selection;
+          if ($from.parent.type.name === "paragraph" && $from.pos === $from.end()) {
+            let hasImage = false;
+            $from.parent.forEach((child) => { if (child.type.name === "image") hasImage = true; });
+            if (hasImage) {
+              const tr = state.tr;
+              tr.insert($from.after(), state.schema.nodes.paragraph.create());
+              tr.setSelection(TextSelection.near(tr.doc.resolve($from.after() + 1)));
+              dispatch(tr);
+              _view.scrollIntoView();
+              return true;
+            }
+          }
         }
         return false;
       },
@@ -291,7 +308,7 @@ function TipTapToolbar({ editor, onImageUpload }: { editor: ReturnType<typeof us
               const f = e.target.files?.[0];
               if (f) {
                 const src = await onImageUpload(f);
-                if (src) editor.chain().focus().setImage({ src }).run();
+                if (src) editor.chain().focus().setImage({ src }).insertContent(" ").scrollIntoView().run();
               }
               e.target.value = "";
             }}

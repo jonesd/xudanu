@@ -352,7 +352,8 @@ export function WorkspaceShell() {
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 4000);
+    const isErr = msg.startsWith("Upload failed") || msg.startsWith("Image error") || msg.startsWith("Crop failed") || msg.startsWith("Move failed");
+    setTimeout(() => setToast(null), isErr ? 15000 : 4000);
   }, []);
 
   // Handle ?demo=1 — create demo work on load
@@ -1818,23 +1819,30 @@ export function WorkspaceShell() {
                       try {
                         const buf = await file.arrayBuffer();
                         const sessionId = (clientRef.current.getSessionId() ?? 0).toString();
+                        console.log("[tiptap-image] uploading", file.name, file.type, file.size, "session:", sessionId);
                         showToast("Uploading image…");
                         const resp = await fetch("/api/blob/upload", {
                           method: "POST",
                           headers: { "Content-Type": file.type || "image/png", "X-Xudanu-Session": sessionId },
                           body: buf,
                         });
+                        console.log("[tiptap-image] response:", resp.status, resp.statusText);
                         if (!resp.ok) {
                           const errBody = await resp.text();
+                          console.error("[tiptap-image] upload failed:", resp.status, errBody);
                           showToast(`Upload failed: ${resp.status} ${errBody}`);
                           return null;
                         }
                         const meta = await resp.json() as { content_hash: number };
+                        console.log("[tiptap-image] uploaded, hash:", meta.content_hash);
                         const previewBytes = await clientRef.current.blobGetPreview(meta.content_hash);
                         const blob = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: file.type });
+                        const url = URL.createObjectURL(blob);
+                        console.log("[tiptap-image] preview URL created");
                         showToast("Image uploaded");
-                        return URL.createObjectURL(blob);
+                        return url;
                       } catch (e) {
+                        console.error("[tiptap-image] error:", e);
                         showToast(`Image error: ${e instanceof Error ? e.message : String(e)}`);
                         return null;
                       }
