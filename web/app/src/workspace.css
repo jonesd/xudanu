@@ -161,6 +161,16 @@
 .tiptap-editor-content h3:first-child {
   margin-top: 0;
 }
+.tiptap-editor-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  margin: 8px 0;
+  display: inline-block;
+}
+.tiptap-editor-content img:hover {
+  opacity: 0.95;
+}
 
 .ws-shell {
   display: grid;

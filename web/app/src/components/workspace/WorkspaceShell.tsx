@@ -1813,6 +1813,23 @@ export function WorkspaceShell() {
                     onCreateAnnotation={canEdit && createAnnotation ? (kind, payload, start, end) => void createAnnotation(kind, payload, start, end, false) : undefined}
                     onDeleteAnnotation={canEdit ? deleteAnnotation : undefined}
                     onToggleStyle={canEdit ? handleToggleStyle : undefined}
+                    onImageUpload={canEdit ? async (file: File) => {
+                      if (!clientRef.current || workBeId === null) return null;
+                      try {
+                        const buf = await file.arrayBuffer();
+                        const sessionId = (clientRef.current.getSessionId() ?? 0).toString();
+                        const resp = await fetch("/api/blob/upload", {
+                          method: "POST",
+                          headers: { "Content-Type": file.type || "image/png", "X-Xudanu-Session": sessionId },
+                          body: buf,
+                        });
+                        if (!resp.ok) return null;
+                        const meta = await resp.json() as { content_hash: number };
+                        const previewBytes = await clientRef.current.blobGetPreview(meta.content_hash);
+                        const blob = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: file.type });
+                        return URL.createObjectURL(blob);
+                      } catch { return null; }
+                    } : undefined}
                     fontSize={16}
                     lineHeight={1.7}
                   />

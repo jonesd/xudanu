@@ -4,6 +4,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import TextAlign from "@tiptap/extension-text-align";
 import FontFamily from "@tiptap/extension-font-family";
 import { TextStyle } from "@tiptap/extension-text-style";
+import Image from "@tiptap/extension-image";
 import { useEffect, useRef, useCallback } from "react";
 import type { AnnotationEntry } from "../api/crdt_sync";
 import { FontSize } from "../tiptap-extensions/font-size";
@@ -24,6 +25,7 @@ interface TipTapEditorProps {
   onCreateAnnotation?: (kind: string, payload: string, start: number, end: number) => void;
   onDeleteAnnotation?: (annotationId: number) => void;
   onToggleStyle?: (kind: string, start: number, end: number) => void;
+  onImageUpload?: (file: File) => Promise<string | null>;
   fontSize?: number;
   lineHeight?: number;
 }
@@ -39,6 +41,7 @@ export function TipTapEditor({
   onCreateAnnotation,
   onDeleteAnnotation,
   onToggleStyle,
+  onImageUpload,
   fontSize,
   lineHeight,
 }: TipTapEditorProps) {
@@ -48,6 +51,9 @@ export function TipTapEditor({
   const recentlyEdited = useRef(false);
   const editTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleStyleToggleRef = useRef<((kind: string) => void) | null>(null);
+  const onImageUploadRef = useRef<((file: File) => Promise<string | null>) | null>(null);
+  const editorRef = useRef<ReturnType<typeof useEditor>>(null);
+  onImageUploadRef.current = onImageUpload ?? null;
   const annotationsRef = useRef(annotations || []);
   annotationsRef.current = annotations || [];
 
@@ -63,6 +69,10 @@ export function TipTapEditor({
       TextStyle,
       FontSize,
       FontFamily,
+      Image.configure({
+        inline: true,
+        allowBase64: true,
+      }),
       TextAlign.configure({
         types: ["heading", "paragraph"],
       }),
@@ -76,6 +86,23 @@ export function TipTapEditor({
           fontSize ? `font-size: ${fontSize}px` : "",
           lineHeight ? `line-height: ${lineHeight}` : "",
         ].filter(Boolean).join("; "),
+      },
+      handleDrop: (view, event) => {
+        const files = event.dataTransfer?.files;
+        if (!files || files.length === 0) return false;
+        const imgFile = Array.from(files).find((f) => f.type.startsWith("image/"));
+        if (!imgFile) return false;
+        event.preventDefault();
+        const dropPos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+        if (dropPos === undefined) return true;
+        if (onImageUploadRef.current) {
+          void onImageUploadRef.current(imgFile).then((src) => {
+            if (src && editorRef.current) {
+              editorRef.current.chain().focus().setImage({ src }).atPosition(dropPos).run();
+            }
+          });
+        }
+        return true;
       },
       handleKeyDown: (_view, event) => {
         if ((event.ctrlKey || event.metaKey) && event.key === "b") {
@@ -148,9 +175,9 @@ export function TipTapEditor({
     [editor, onToggleStyle],
   );
   handleStyleToggleRef.current = handleStyleToggle;
+  editorRef.current = editor;
 
   const loadedWorkId = useRef<number | null>(null);
-  const hasLoaded = useRef(false);
 
   useEffect(() => {
     if (!editor) return;
@@ -160,10 +187,10 @@ export function TipTapEditor({
   // Load doc when work changes AND text has arrived from CRDT.
   useEffect(() => {
     if (!editor) return;
-    if (hasLoaded.current) return;
-    if (text.length === 0) return; // wait for CRDT to deliver text
-    hasLoaded.current = true;
-    loadedWorkId.current = workId ?? null;
+    const wid = workId ?? undefined;
+    if (loadedWorkId.current === wid) return; // already loaded this work
+    if (text.length === 0 && wid !== undefined) return; // wait for CRDT to deliver text
+    loadedWorkId.current = wid ?? null;
     const doc = textToTipTapDoc(text, annotations ?? []);
     lastTextRef.current = text;
     isApplyingRemote.current = true;
@@ -177,13 +204,13 @@ export function TipTapEditor({
 
   return (
     <div className="tiptap-editor-wrap">
-      {editor && <TipTapToolbar editor={editor} />}
+      {editor && <TipTapToolbar editor={editor} onImageUpload={onImageUpload} />}
       <EditorContent editor={editor} />
     </div>
   );
 }
 
-function TipTapToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
+function TipTapToolbar({ editor, onImageUpload }: { editor: ReturnType<typeof useEditor>; onImageUpload?: (file: File) => Promise<string | null> }) {
   if (!editor) return null;
 
   const blockTypes = [
@@ -253,6 +280,24 @@ function TipTapToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
           {align === "left" ? "⬅" : align === "center" ? "↔" : "➡"}
         </button>
       ))}
+      {onImageUpload && (
+        <label className="tiptap-toolbar-btn" title="Insert image">
+          {"📷"}
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp,image/bmp"
+            style={{ display: "none" }}
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (f) {
+                const src = await onImageUpload(f);
+                if (src) editor.chain().focus().setImage({ src }).run();
+              }
+              e.target.value = "";
+            }}
+          />
+        </label>
+      )}
     </div>
   );
 }
