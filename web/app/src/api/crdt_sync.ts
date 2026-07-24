@@ -1730,6 +1730,10 @@ export class CrdtSyncClient {
       try {
         const resp = await this.sendRequest("session_connect");
         this.sessionId = extractValue(resp) as number;
+        if (!this.sessionIdStr) {
+          this.sessionIdStr = this.sessionId?.toString() ?? null;
+          console.log("[session-debug] fallback sessionId from parsed:", this.sessionIdStr);
+        }
 
         const who = await this.checkWhoAmI();
         if (!who) {
@@ -1888,10 +1892,15 @@ export class CrdtSyncClient {
       return;
     }
 
-    // Capture large session ID from raw text before JSON.parse loses precision
-    const humberMatch = text.match(/"Humber":(\d{16,})/);
-    if (humberMatch) {
-      this.sessionIdStr = humberMatch[1];
+    // Capture session ID from raw text before JSON.parse loses precision.
+    // Only capture the FIRST "type":"id" response (session_connect).
+    // Subsequent "type":"id" responses are annotation creates etc.
+    if (!this.sessionIdStr) {
+      const idMatch = text.match(/"type":"id","value":(\d{10,})/);
+      if (idMatch) {
+        this.sessionIdStr = idMatch[1];
+        console.log("[session-debug] captured sessionId:", this.sessionIdStr);
+      }
     }
 
     try {

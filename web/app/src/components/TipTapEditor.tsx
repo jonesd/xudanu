@@ -200,18 +200,25 @@ export function TipTapEditor({
     editor.setEditable(editable);
   }, [editor, editable]);
 
-  // Load doc when work changes AND text has arrived from CRDT.
+  // Load doc when work changes — wait for BOTH text and annotations to arrive.
+  // Uses a 300ms debounce so text+annotations that arrive close together
+  // are applied in a single load, preserving formatting.
   useEffect(() => {
     if (!editor) return;
     const wid = workId ?? undefined;
-    if (loadedWorkId.current === wid) return; // already loaded this work
-    if (text.length === 0 && wid !== undefined) return; // wait for CRDT to deliver text
-    loadedWorkId.current = wid ?? null;
-    const doc = textToTipTapDoc(text, annotations ?? []);
-    lastTextRef.current = text;
-    isApplyingRemote.current = true;
-    editor.commands.setContent(doc);
-    isApplyingRemote.current = false;
+    if (loadedWorkId.current === wid) return;
+    if (text.length === 0 && wid !== undefined) return;
+    // Defer to let annotations arrive after text
+    const timer = setTimeout(() => {
+      if (loadedWorkId.current === wid) return;
+      loadedWorkId.current = wid ?? null;
+      const doc = textToTipTapDoc(text, annotations ?? []);
+      lastTextRef.current = text;
+      isApplyingRemote.current = true;
+      editor.commands.setContent(doc);
+      isApplyingRemote.current = false;
+    }, 300);
+    return () => clearTimeout(timer);
   }, [editor, text, workId, annotations]);
 
   useEffect(() => {

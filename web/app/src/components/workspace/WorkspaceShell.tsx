@@ -1852,12 +1852,29 @@ export function WorkspaceShell() {
                           showToast("Upload succeeded but hash missing in response");
                           return null;
                         }
-                        const previewBytes = await clientRef.current.blobGetPreview(hashNum);
-                        const blob = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: file.type });
-                        const url = URL.createObjectURL(blob);
-                        console.log("[tiptap-image] preview URL created");
+                        let imgSrc: string | null = null;
+                        try {
+                          const previewResp = await fetch(`/blobs/${hashNum}/preview`);
+                          if (previewResp.ok) {
+                            const buf = await previewResp.arrayBuffer();
+                            imgSrc = URL.createObjectURL(new Blob([buf], { type: file.type }));
+                          }
+                        } catch {}
+                        if (!imgSrc) {
+                          try {
+                            const fullResp = await fetch(`/blobs/${hashNum}`);
+                            if (fullResp.ok) {
+                              const buf = await fullResp.arrayBuffer();
+                              imgSrc = URL.createObjectURL(new Blob([buf], { type: file.type }));
+                            }
+                          } catch {}
+                        }
+                        if (!imgSrc) {
+                          showToast("Image uploaded but could not load preview");
+                          return null;
+                        }
                         showToast("Image uploaded");
-                        return url;
+                        return imgSrc;
                       } catch (e) {
                         console.error("[tiptap-image] error:", e);
                         showToast(`Image error: ${e instanceof Error ? e.message : String(e)}`);
