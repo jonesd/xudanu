@@ -214,20 +214,32 @@ export function TipTapEditor({
     editor.setEditable(editable);
   }, [editor, editable]);
 
-  // Load doc when work changes — wait for BOTH text and annotations to arrive.
-  // Uses a 300ms debounce so text+annotations that arrive close together
-  // are applied in a single load, preserving formatting.
-  // For empty/new docs: load after 300ms even if text is empty, so the
-  // onUpdate guard is lifted and user edits can sync.
+  // Load doc when work changes.
+  // Phase 1: wait for text to arrive from CRDT (non-empty)
+  // Phase 2: once text arrives, wait 800ms for annotations, then load
+  // Fallback: 3-second timeout for genuinely empty new docs
   useEffect(() => {
     if (!editor) return;
     const wid = workId ?? undefined;
     if (loadedWorkId.current === wid) return;
-    // Wait for CRDT to deliver data, but don't block forever on empty docs
-    const hasData = text.length > 0 || (annotations ?? []).length > 0;
+
+    // If no data yet, wait up to 3 seconds for CRDT to deliver it
+    if (text.length === 0 && (annotations ?? []).length === 0) {
+      const emptyTimer = setTimeout(() => {
+        if (loadedWorkId.current === wid) return;
+        loadedWorkId.current = wid ?? -1;
+        const doc = textToTipTapDoc(text, annotations ?? []);
+        lastTextRef.current = text;
+        isApplyingRemote.current = true;
+        editor.commands.setContent(doc);
+        isApplyingRemote.current = false;
+      }, 5000);
+      return () => clearTimeout(emptyTimer);
+    }
+
+    // Data has arrived — debounce 800ms for annotations
     const timer = setTimeout(() => {
       if (loadedWorkId.current === wid) return;
-      console.log("[tiptap-load] work:", wid, "text:", text.length, "chars", "annotations:", (annotations ?? []).length, "kinds:", (annotations ?? []).map(a => a.kind).join(","));
       loadedWorkId.current = wid ?? -1;
       const doc = textToTipTapDoc(text, annotations ?? []);
       lastTextRef.current = text;
