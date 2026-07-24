@@ -557,7 +557,7 @@ export function WorkspaceShell() {
     try {
       const buf = await file.arrayBuffer();
       // Use HTTP POST for binary upload (much faster than WebSocket byte array)
-      const sessionId = (client.getSessionId() ?? 0).toString();
+      const sessionId = (client.getSessionId() ?? "0").toString();
       const httpResp = await fetch("/api/blob/upload", {
         method: "POST",
         headers: {
@@ -661,7 +661,7 @@ export function WorkspaceShell() {
       ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
       const blob: Blob = await new Promise((res) => canvas.toBlob((b) => res(b!), "image/png"));
       const buf = await blob.arrayBuffer();
-      const sessionId = (clientRef.current.getSessionId() ?? 0).toString();
+      const sessionId = (clientRef.current.getSessionId() ?? "0").toString();
       const httpResp = await fetch("/api/blob/upload", {
         method: "POST",
         headers: { "Content-Type": "image/png", "X-Xudanu-Session": sessionId },
@@ -1816,9 +1816,13 @@ export function WorkspaceShell() {
                     onToggleStyle={canEdit ? handleToggleStyle : undefined}
                     onImageUpload={canEdit ? async (file: File) => {
                       if (!clientRef.current || workBeId === null) return null;
+                      if (file.size > 2_000_000) {
+                        showToast(`Image too large (${(file.size / 1_000_000).toFixed(1)}MB). Please use images under 2MB.`);
+                        return null;
+                      }
                       try {
                         const buf = await file.arrayBuffer();
-                        const sessionId = (clientRef.current.getSessionId() ?? 0).toString();
+                        const sessionId = (clientRef.current.getSessionId() ?? "0").toString();
                         console.log("[tiptap-image] uploading", file.name, file.type, file.size, "session:", sessionId);
                         showToast("Uploading image…");
                         const resp = await fetch("/api/blob/upload", {
@@ -1833,9 +1837,22 @@ export function WorkspaceShell() {
                           showToast(`Upload failed: ${resp.status} ${errBody}`);
                           return null;
                         }
-                        const meta = await resp.json() as { content_hash: number };
-                        console.log("[tiptap-image] uploaded, hash:", meta.content_hash);
-                        const previewBytes = await clientRef.current.blobGetPreview(meta.content_hash);
+                        const respText = await resp.text();
+                        console.log("[tiptap-image] raw response:", respText);
+                        const parsed = JSON.parse(respText) as { content_hash?: number; hash?: number[]; error?: string };
+                        if (parsed.error) {
+                          const msg = parsed.error.includes("session")
+                            ? "Your session has expired. Please refresh the page and sign in again."
+                            : parsed.error;
+                          showToast(msg);
+                          return null;
+                        }
+                        const hashNum = typeof parsed.content_hash === "number" ? parsed.content_hash : 0;
+                        if (!hashNum) {
+                          showToast("Upload succeeded but hash missing in response");
+                          return null;
+                        }
+                        const previewBytes = await clientRef.current.blobGetPreview(hashNum);
                         const blob = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: file.type });
                         const url = URL.createObjectURL(blob);
                         console.log("[tiptap-image] preview URL created");

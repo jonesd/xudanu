@@ -67,7 +67,6 @@ export function TipTapEditor({
       Placeholder.configure({
         placeholder: "Start typing…",
       }),
-      TextStyle,
       FontSize,
       FontFamily,
       Image.configure({
@@ -99,7 +98,7 @@ export function TipTapEditor({
         if (onImageUploadRef.current) {
           void onImageUploadRef.current(imgFile).then((src) => {
             if (src && editorRef.current) {
-              editorRef.current.chain().focus().setImage({ src }).atPosition(dropPos).insertContent(" ").run();
+              editorRef.current.chain().focus().setImage({ src }).atPosition(dropPos).run();
             }
           });
         }
@@ -308,7 +307,7 @@ function TipTapToolbar({ editor, onImageUpload }: { editor: ReturnType<typeof us
               const f = e.target.files?.[0];
               if (f) {
                 const src = await onImageUpload(f);
-                if (src) editor.chain().focus().setImage({ src }).insertContent(" ").scrollIntoView().run();
+                if (src) editor.chain().focus().setImage({ src }).run();
               }
               e.target.value = "";
             }}

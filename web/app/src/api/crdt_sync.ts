@@ -484,9 +484,10 @@ export class CrdtSyncClient {
   private url: string;
   private workBeId: number;
   private sessionId: number | null = null;
+  private sessionIdStr: string | null = null;
 
-  getSessionId(): number | null {
-    return this.sessionId;
+  getSessionId(): string | null {
+    return this.sessionIdStr;
   }
   private crdtReady = false;
   private deltaInFlight = false;
@@ -1885,6 +1886,12 @@ export class CrdtSyncClient {
       text = data;
     } else {
       return;
+    }
+
+    // Capture large session ID from raw text before JSON.parse loses precision
+    const humberMatch = text.match(/"Humber":(\d{16,})/);
+    if (humberMatch) {
+      this.sessionIdStr = humberMatch[1];
     }
 
     try {
