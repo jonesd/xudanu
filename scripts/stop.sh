@@ -6,14 +6,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 echo "==> Stopping Xudanu servers..."
 
 # ── Stop backend (port 8080) ──────────────────────────────────────────────
-BACKEND_PID=$(lsof -ti :8080 2>/dev/null || true)
-if [ -n "$BACKEND_PID" ]; then
-  echo "==> Sending SIGTERM to backend (PID $BACKEND_PID)..."
-  kill "$BACKEND_PID" 2>/dev/null || true
+BACKEND_PIDS=$(lsof -ti :8080 2>/dev/null || true)
+if [ -n "$BACKEND_PIDS" ]; then
+  echo "==> Sending SIGTERM to backend (PIDs: $(echo "$BACKEND_PIDS" | tr '\n' ' '))..."
+  echo "$BACKEND_PIDS" | xargs kill 2>/dev/null || true
 
   # Wait up to 10 seconds for clean shutdown (checkpoint)
   for i in $(seq 1 10); do
-    if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+    if ! lsof -ti :8080 >/dev/null 2>&1; then
       echo "    Backend stopped cleanly."
       break
     fi
@@ -21,9 +21,9 @@ if [ -n "$BACKEND_PID" ]; then
   done
 
   # Force kill if still running
-  if kill -0 "$BACKEND_PID" 2>/dev/null; then
+  if lsof -ti :8080 >/dev/null 2>&1; then
     echo "    Backend did not stop in 10s — force killing..."
-    kill -9 "$BACKEND_PID" 2>/dev/null || true
+    lsof -ti :8080 2>/dev/null | xargs kill -9 2>/dev/null || true
     sleep 1
   fi
 else
@@ -31,13 +31,13 @@ else
 fi
 
 # ── Stop frontend (port 5173) ─────────────────────────────────────────────
-FRONTEND_PID=$(lsof -ti :5173 2>/dev/null || true)
-if [ -n "$FRONTEND_PID" ]; then
-  echo "==> Stopping frontend (PID $FRONTEND_PID)..."
-  kill "$FRONTEND_PID" 2>/dev/null || true
-  sleep 1
-  if kill -0 "$FRONTEND_PID" 2>/dev/null; then
-    kill -9 "$FRONTEND_PID" 2>/dev/null || true
+FRONTEND_PIDS=$(lsof -ti :5173 2>/dev/null || true)
+if [ -n "$FRONTEND_PIDS" ]; then
+  echo "==> Stopping frontend (PIDs: $(echo "$FRONTEND_PIDS" | tr '\n' ' '))..."
+  echo "$FRONTEND_PIDS" | xargs kill 2>/dev/null || true
+  sleep 2
+  if lsof -ti :5173 >/dev/null 2>&1; then
+    lsof -ti :5173 2>/dev/null | xargs kill -9 2>/dev/null || true
   fi
   echo "    Frontend stopped."
 else
