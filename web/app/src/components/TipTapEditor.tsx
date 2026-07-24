@@ -148,14 +148,16 @@ export function TipTapEditor({
       lastTextRef.current = newText;
       onTextChange?.(newText);
 
-      const marksKey = marks.map((m) => `${m.kind}:${m.start}:${m.end}`).join("|");
-      if (marksKey !== lastMarksKey.current) {
-        lastMarksKey.current = marksKey;
-        // Debounce annotation sync — don't flood server on every keystroke
+      // Only sync annotations when STRUCTURE changes (mark added/removed),
+      // not when positions shift due to typing. Server span migration handles
+      // position changes for existing annotations automatically.
+      const structuralKey = marks.map(m => `${m.kind}:${m.payload || ""}`).sort().join("|");
+      if (structuralKey !== lastMarksKey.current) {
+        lastMarksKey.current = structuralKey;
         if (syncTimer.current) clearTimeout(syncTimer.current);
         syncTimer.current = setTimeout(() => {
           syncAnnotations(marks);
-        }, 500);
+        }, 300);
       }
     },
     onSelectionUpdate: ({ editor }) => {
