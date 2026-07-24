@@ -1847,14 +1847,17 @@ export function WorkspaceShell() {
                           showToast(msg);
                           return null;
                         }
-                        const hashNum = typeof parsed.content_hash === "number" ? parsed.content_hash : 0;
-                        if (!hashNum) {
+                        // Extract hash from raw text (JSON.parse truncates large u64)
+                        const hashMatch = respText.match(/"content_hash":(\d+)/);
+                        const hashStr = hashMatch ? hashMatch[1] : null;
+                        if (!hashStr) {
                           showToast("Upload succeeded but hash missing in response");
                           return null;
                         }
+                        const hashHex = BigInt(hashStr).toString(16);
                         let imgSrc: string | null = null;
                         try {
-                          const previewResp = await fetch(`/blobs/${hashNum}/preview`);
+                          const previewResp = await fetch(`/blobs/${hashHex}/preview`);
                           if (previewResp.ok) {
                             const buf = await previewResp.arrayBuffer();
                             imgSrc = URL.createObjectURL(new Blob([buf], { type: file.type }));
@@ -1862,7 +1865,7 @@ export function WorkspaceShell() {
                         } catch {}
                         if (!imgSrc) {
                           try {
-                            const fullResp = await fetch(`/blobs/${hashNum}`);
+                            const fullResp = await fetch(`/blobs/${hashHex}`);
                             if (fullResp.ok) {
                               const buf = await fullResp.arrayBuffer();
                               imgSrc = URL.createObjectURL(new Blob([buf], { type: file.type }));

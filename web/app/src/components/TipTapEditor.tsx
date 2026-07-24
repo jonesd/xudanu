@@ -98,7 +98,7 @@ export function TipTapEditor({
         if (onImageUploadRef.current) {
           void onImageUploadRef.current(imgFile).then((src) => {
             if (src && editorRef.current) {
-              editorRef.current.chain().focus().setImage({ src }).atPosition(dropPos).run();
+              editorRef.current.chain().focus().insertContentAt(dropPos, { type: "image", attrs: { src } }).run();
             }
           });
         }

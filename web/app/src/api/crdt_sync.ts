@@ -2066,6 +2066,7 @@ export class CrdtSyncClient {
     this.crdtOpenedThisConnection = false;
     this.deltaInFlight = false;
     this.pendingServerText = null;
+    this.sessionIdStr = null; // force recapture on reconnect
     if (this.awarenessSendTimer !== null) {
       clearTimeout(this.awarenessSendTimer);
       this.awarenessSendTimer = null;
