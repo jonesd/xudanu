@@ -52,6 +52,7 @@ export function TipTapEditor({
   const isApplyingRemote = useRef(false);
   const recentlyEdited = useRef(false);
   const editTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleStyleToggleRef = useRef<((kind: string) => void) | null>(null);
   const onImageUploadRef = useRef<((file: File) => Promise<string | null>) | null>(null);
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
@@ -150,7 +151,11 @@ export function TipTapEditor({
       const marksKey = marks.map((m) => `${m.kind}:${m.start}:${m.end}`).join("|");
       if (marksKey !== lastMarksKey.current) {
         lastMarksKey.current = marksKey;
-        syncAnnotations(marks);
+        // Debounce annotation sync — don't flood server on every keystroke
+        if (syncTimer.current) clearTimeout(syncTimer.current);
+        syncTimer.current = setTimeout(() => {
+          syncAnnotations(marks);
+        }, 500);
       }
     },
     onSelectionUpdate: ({ editor }) => {
@@ -170,6 +175,9 @@ export function TipTapEditor({
     (desiredMarks: Array<{ kind: string; start: number; end: number; payload?: string }>) => {
       if (!onCreateAnnotation && !onDeleteAnnotation) return;
       const { toCreate, toDelete } = diffAnnotations(annotationsRef.current, desiredMarks);
+      if (toCreate.length > 0 || toDelete.length > 0) {
+        console.log("[tiptap-sync] creating:", toCreate.length, "deleting:", toDelete.length, "marks:", desiredMarks.map(m => `${m.kind}@${m.start}-${m.end}`));
+      }
       for (const m of toCreate) {
         onCreateAnnotation?.(m.kind, m.payload || "", m.start, m.end);
       }
@@ -215,13 +223,14 @@ export function TipTapEditor({
     const hasData = text.length > 0 || (annotations ?? []).length > 0;
     const timer = setTimeout(() => {
       if (loadedWorkId.current === wid) return;
+      console.log("[tiptap-load] work:", wid, "text:", text.length, "chars", "annotations:", (annotations ?? []).length, "kinds:", (annotations ?? []).map(a => a.kind).join(","));
       loadedWorkId.current = wid ?? -1;
       const doc = textToTipTapDoc(text, annotations ?? []);
       lastTextRef.current = text;
       isApplyingRemote.current = true;
       editor.commands.setContent(doc);
       isApplyingRemote.current = false;
-    }, 300);
+    }, 800);
     return () => clearTimeout(timer);
   }, [editor, text, workId, annotations]);
 
