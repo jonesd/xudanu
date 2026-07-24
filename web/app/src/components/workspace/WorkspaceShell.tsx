@@ -157,7 +157,7 @@ export function WorkspaceShell() {
     return () => window.removeEventListener("xudanu-open-import", handler);
   }, []);
   // Track uploaded images locally for display
-  const [imageEntries, setImageEntries] = useState<Array<{ hash: number; mime: string; width?: number; height?: number; url?: string; loading: boolean; charPos?: number; caption?: string }>>([]);
+  const [imageEntries, setImageEntries] = useState<Array<{ hash: number; hashHex?: string; mime: string; width?: number; height?: number; url?: string; loading: boolean; charPos?: number; caption?: string }>>([]);
   const [cursorPos, setCursorPos] = useState<number | null>(null);
   const [docMode, setDocMode] = useState<"edit" | "layout">("edit");
   const [imageSizes, setImageSizes] = useState<Map<number, number>>(new Map());
@@ -200,30 +200,17 @@ export function WorkspaceShell() {
     client.workBlobList(workBeId).then((blobs) => {
       if (blobs.length === 0) { setImageEntries([]); return; }
       const entries = blobs.map((b) => ({
-        hash: b.content_hash,
+        hash: 0,
+        hashHex: b.content_hash_hex,
         mime: b.mime_type,
         width: b.width ?? undefined,
         height: b.height ?? undefined,
         charPos: b.char_position,
         caption: b.caption ?? undefined,
-        loading: true,
+        url: `/blobs/${b.content_hash_hex}`,
+        loading: false,
       }));
       setImageEntries(entries);
-      entries.forEach((entry) => {
-        client.blobGetPreview(entry.hash).then((previewBytes) => {
-          const blob = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: entry.mime });
-          const url = URL.createObjectURL(blob);
-          setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, url, loading: false } : e));
-        }).catch(() => {
-          client.blobGet(entry.hash).then((fullBytes) => {
-            const blob = new Blob([fullBytes as BlobPart], { type: entry.mime });
-            const url = URL.createObjectURL(blob);
-            setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, url, loading: false } : e));
-          }).catch(() => {
-            setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, loading: false } : e));
-          });
-        });
-      });
     }).catch(() => setImageEntries([]));
   }, [connected, workBeId, clientRef]);
 

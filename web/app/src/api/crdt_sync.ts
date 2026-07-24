@@ -382,7 +382,7 @@ export interface BlobMeta {
 
 export interface BlobEntry {
   char_position: number;
-  content_hash: number;
+  content_hash_hex: string;
   mime_type: string;
   byte_size: number;
   width?: number | null;

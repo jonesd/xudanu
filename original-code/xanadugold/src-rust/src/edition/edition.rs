@@ -60,7 +60,7 @@ pub struct OutlineEntry {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BlobEntry {
     pub char_position: usize,
-    pub content_hash: u64,
+    pub content_hash_hex: String,
     pub mime_type: String,
     pub byte_size: u64,
     pub width: Option<u32>,
@@ -542,7 +542,7 @@ impl Edition {
                 } => {
                     result.push(BlobEntry {
                         char_position: char_pos,
-                        content_hash: *content_hash,
+                        content_hash_hex: format!("{:x}", *content_hash),
                         mime_type: mime_type.clone(),
                         byte_size: *byte_size,
                         width: *width,
