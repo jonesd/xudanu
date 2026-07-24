@@ -155,9 +155,9 @@ export function TipTapEditor({
       syncTimer.current = setTimeout(() => {
         if (!editorRef.current) return;
         const { marks: currentMarks } = tiptapDocToText(editorRef.current.getJSON() as never);
-        const structuralKey = currentMarks.map(m => `${m.kind}:${m.payload || ""}`).sort().join("|");
-        if (structuralKey !== lastMarksKey.current) {
-          lastMarksKey.current = structuralKey;
+        const currentKey = currentMarks.map(m => `${m.kind}:${m.start}:${m.end}`).join("|");
+        if (currentKey !== lastMarksKey.current) {
+          lastMarksKey.current = currentKey;
           syncAnnotations(currentMarks);
         }
       }, 1000);
