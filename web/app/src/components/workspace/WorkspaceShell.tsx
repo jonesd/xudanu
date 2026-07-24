@@ -571,8 +571,13 @@ export function WorkspaceShell() {
         showToast(`Upload failed: ${errBody}`);
         return;
       }
-      const meta = await httpResp.json() as { content_hash: number; byte_size: number; mime_type: string; width?: number; height?: number };
-      const hashNum = meta.content_hash;
+      const respText = await httpResp.text();
+      const hashMatch = respText.match(/"content_hash":(\d+)/);
+      const hashStr = hashMatch ? hashMatch[1] : null;
+      if (!hashStr) { showToast("Upload succeeded but hash missing"); return; }
+      const hashHex = BigInt(hashStr).toString(16);
+      const meta = JSON.parse(respText) as { byte_size: number; mime_type: string; width?: number; height?: number };
+      const hashNum = parseInt(hashStr.slice(0, 15), 10);
       const insertPos = cursorPos ?? text.length;
       await client.elementInsert(workBeId, insertPos, {
         type: "blob",
@@ -583,7 +588,6 @@ export function WorkspaceShell() {
         blob_height: meta.height ?? undefined,
       });
       showToast(`✓ Image uploaded (${meta.byte_size.toLocaleString()} bytes${meta.width ? `, ${meta.width}×${meta.height}` : ""})`);
-      // Track the image locally for display
       const newEntry = {
         hash: hashNum,
         mime: meta.mime_type,
@@ -593,7 +597,6 @@ export function WorkspaceShell() {
       };
       setImageEntries((prev) => {
         const next = [...prev, newEntry];
-        // Persist to localStorage so images survive navigation
         if (workBeId !== null) {
           try {
             const toCache = next.map((e) => ({ hash: e.hash, mime: e.mime, width: e.width, height: e.height }));
@@ -602,24 +605,13 @@ export function WorkspaceShell() {
         }
         return next;
       });
-      // Fetch the preview image
-      if (hashNum) {
-        client.blobGetPreview(hashNum).then((previewBytes) => {
-          const imgBytes = previewBytes || new Uint8Array();
-          const blob = new Blob([imgBytes as BlobPart], { type: meta.mime_type });
-          const url = URL.createObjectURL(blob);
-          setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, url, loading: false } : e));
-        }).catch(() => {
-          // Try full image if preview fails
-          client.blobGet(hashNum).then((fullBytes) => {
-            const blob = new Blob([fullBytes as BlobPart], { type: meta.mime_type });
-            const url = URL.createObjectURL(blob);
-            setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, url, loading: false } : e));
-          }).catch(() => {
-            setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, loading: false } : e));
-          });
-        });
-      }
+      // Fetch image via HTTP (not WebSocket — avoids timeout)
+      fetch(`/blobs/${hashHex}`).then((r) => r.arrayBuffer()).then((buf) => {
+        const url = URL.createObjectURL(new Blob([buf], { type: meta.mime_type }));
+        setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, url, loading: false } : e));
+      }).catch(() => {
+        setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, loading: false } : e));
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : typeof e === "object" ? JSON.stringify(e) : String(e);
       showToast(`Image upload failed: ${msg}`);
