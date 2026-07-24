@@ -228,7 +228,23 @@ interface LineInfo {
 
 export function textToTipTapDoc(text: string, annotations: AnnotationEntry[]): TipTapDoc {
   const lines = text.split("\n");
-  const allMarks = extractAllMarks(annotations);
+
+  // Expand zero-width block annotations to cover their full line.
+  // Zero-width annotations happen when a heading/list/etc is created
+  // on an empty line, then text is typed. Span migration doesn't grow
+  // zero-width regions, so we fix it on load.
+  const fixedAnnotations = annotations.map(a => {
+    if (BLOCK_KINDS.has(a.kind) && a.char_start === a.char_end) {
+      const lineEnd = text.indexOf("\n", a.char_start);
+      const expandedEnd = lineEnd === -1 ? text.length : lineEnd;
+      if (expandedEnd > a.char_start) {
+        return { ...a, char_end: expandedEnd };
+      }
+    }
+    return a;
+  });
+
+  const allMarks = extractAllMarks(fixedAnnotations);
 
   const lineInfos: LineInfo[] = [];
   let lineOffset = 0;
