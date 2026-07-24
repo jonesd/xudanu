@@ -35,6 +35,10 @@ export default defineConfig({
         target: "http://localhost:8080",
         changeOrigin: true,
       },
+      "/blobs": {
+        target: "http://localhost:8080",
+        changeOrigin: true,
+      },
     },
   },
   test: {
