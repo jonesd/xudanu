@@ -205,16 +205,17 @@ export function TipTapEditor({
   // Load doc when work changes — wait for BOTH text and annotations to arrive.
   // Uses a 300ms debounce so text+annotations that arrive close together
   // are applied in a single load, preserving formatting.
+  // For empty/new docs: load after 300ms even if text is empty, so the
+  // onUpdate guard is lifted and user edits can sync.
   useEffect(() => {
     if (!editor) return;
     const wid = workId ?? undefined;
     if (loadedWorkId.current === wid) return;
-    if (text.length === 0 && (annotations ?? []).length === 0 && wid !== undefined) return;
-    // Defer to let annotations arrive after text
+    // Wait for CRDT to deliver data, but don't block forever on empty docs
+    const hasData = text.length > 0 || (annotations ?? []).length > 0;
     const timer = setTimeout(() => {
       if (loadedWorkId.current === wid) return;
-      console.log("[tiptap-load] loading work", wid, "text length:", text.length, "annotations:", (annotations ?? []).length);
-      loadedWorkId.current = wid ?? null;
+      loadedWorkId.current = wid ?? -1;
       const doc = textToTipTapDoc(text, annotations ?? []);
       lastTextRef.current = text;
       isApplyingRemote.current = true;
