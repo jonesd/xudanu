@@ -1119,6 +1119,10 @@
   border-color: var(--amber);
   color: var(--amber);
 }
+.ws-sel-btn.trail {
+  border-color: #39d2c0;
+  color: #39d2c0;
+}
 
 /* Annotation modal */
 .ws-anno-modal {

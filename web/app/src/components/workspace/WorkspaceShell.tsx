@@ -1818,17 +1818,26 @@ export function WorkspaceShell() {
                       try {
                         const buf = await file.arrayBuffer();
                         const sessionId = (clientRef.current.getSessionId() ?? 0).toString();
+                        showToast("Uploading image…");
                         const resp = await fetch("/api/blob/upload", {
                           method: "POST",
                           headers: { "Content-Type": file.type || "image/png", "X-Xudanu-Session": sessionId },
                           body: buf,
                         });
-                        if (!resp.ok) return null;
+                        if (!resp.ok) {
+                          const errBody = await resp.text();
+                          showToast(`Upload failed: ${resp.status} ${errBody}`);
+                          return null;
+                        }
                         const meta = await resp.json() as { content_hash: number };
                         const previewBytes = await clientRef.current.blobGetPreview(meta.content_hash);
                         const blob = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: file.type });
+                        showToast("Image uploaded");
                         return URL.createObjectURL(blob);
-                      } catch { return null; }
+                      } catch (e) {
+                        showToast(`Image error: ${e instanceof Error ? e.message : String(e)}`);
+                        return null;
+                      }
                     } : undefined}
                     fontSize={16}
                     lineHeight={1.7}
