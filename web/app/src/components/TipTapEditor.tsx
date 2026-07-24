@@ -138,7 +138,7 @@ export function TipTapEditor({
     },
     onUpdate: ({ editor }) => {
       if (isApplyingRemote.current) return;
-      if (!loadedWorkId.current) return; // don't sync until initial load completes
+      if (!loadedWorkId.current) return;
 
       recentlyEdited.current = true;
       if (editTimer.current) clearTimeout(editTimer.current);
@@ -148,17 +148,19 @@ export function TipTapEditor({
       lastTextRef.current = newText;
       onTextChange?.(newText);
 
-      // Only sync annotations when STRUCTURE changes (mark added/removed),
-      // not when positions shift due to typing. Server span migration handles
-      // position changes for existing annotations automatically.
-      const structuralKey = marks.map(m => `${m.kind}:${m.payload || ""}`).sort().join("|");
-      if (structuralKey !== lastMarksKey.current) {
-        lastMarksKey.current = structuralKey;
-        if (syncTimer.current) clearTimeout(syncTimer.current);
-        syncTimer.current = setTimeout(() => {
-          syncAnnotations(marks);
-        }, 300);
-      }
+      // Debounce annotation sync by 1 second.
+      // Re-read marks from editor when timer fires (positions are current).
+      // Only sync when structure changes (kind/payload), not position shifts.
+      if (syncTimer.current) clearTimeout(syncTimer.current);
+      syncTimer.current = setTimeout(() => {
+        if (!editorRef.current) return;
+        const { marks: currentMarks } = tiptapDocToText(editorRef.current.getJSON() as never);
+        const structuralKey = currentMarks.map(m => `${m.kind}:${m.payload || ""}`).sort().join("|");
+        if (structuralKey !== lastMarksKey.current) {
+          lastMarksKey.current = structuralKey;
+          syncAnnotations(currentMarks);
+        }
+      }, 1000);
     },
     onSelectionUpdate: ({ editor }) => {
       const { from, to } = editor.state.selection;
