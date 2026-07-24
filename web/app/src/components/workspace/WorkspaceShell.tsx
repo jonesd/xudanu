@@ -1856,7 +1856,7 @@ export function WorkspaceShell() {
                         }
                         const hashHex = BigInt(hashStr).toString(16);
                         showToast("Image uploaded");
-                        return `/blobs/${hashHex}/preview`;
+                        return `/blobs/${hashHex}`;
                       } catch (e) {
                         console.error("[tiptap-image] error:", e);
                         showToast(`Image error: ${e instanceof Error ? e.message : String(e)}`);

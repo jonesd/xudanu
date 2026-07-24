@@ -205,7 +205,7 @@ function flattenInline(content: DocNode[], state: FlattenState): void {
       state.pos++;
     } else if (node.type === "image" && node.attrs?.src) {
       const src = node.attrs.src as string;
-      const hashMatch = src.match(/\/blobs\/([0-9a-f]+)\/preview/);
+      const hashMatch = src.match(/\/blobs\/([0-9a-f]+)(?:\/preview)?$/);
       if (hashMatch) {
         state.inlineMarks.push({
           kind: "image",
@@ -354,7 +354,7 @@ function buildTextNodes(
   if (lineText.length === 0) {
     return imageMarks.map((m) => {
       const p = JSON.parse(m.payload || "{}");
-      return { type: "image", attrs: { src: `/blobs/${p.hash}/preview` } };
+      return { type: "image", attrs: { src: `/blobs/${p.hash}` } };
     });
   }
 

@@ -1732,7 +1732,6 @@ export class CrdtSyncClient {
         this.sessionId = extractValue(resp) as number;
         if (!this.sessionIdStr) {
           this.sessionIdStr = this.sessionId?.toString() ?? null;
-          console.log("[session-debug] fallback sessionId from parsed:", this.sessionIdStr);
         }
 
         const who = await this.checkWhoAmI();
@@ -1899,7 +1898,6 @@ export class CrdtSyncClient {
       const idMatch = text.match(/"type":"id","value":(\d{10,})/);
       if (idMatch) {
         this.sessionIdStr = idMatch[1];
-        console.log("[session-debug] captured sessionId:", this.sessionIdStr);
       }
     }
 
