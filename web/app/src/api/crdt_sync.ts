@@ -1803,6 +1803,7 @@ export class CrdtSyncClient {
 
         if (wasInitialOpen) {
           this.text = (inner.current_text as string) || "";
+          console.log("[CRDT-DIAG] crdt_sync_open text length:", this.text.length, "first 50:", this.text.slice(0, 50));
         }
 
         this.crdtReady = true;
