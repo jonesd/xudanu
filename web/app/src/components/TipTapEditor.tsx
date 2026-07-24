@@ -215,17 +215,17 @@ export function TipTapEditor({
   }, [editor, editable]);
 
   // Load doc when work changes.
-  // Phase 1: wait for text to arrive from CRDT (non-empty)
-  // Phase 2: once text arrives, wait 800ms for annotations, then load
-  // Fallback: 3-second timeout for genuinely empty new docs
+  // Wait for text to transition from empty → non-empty (CRDT delivered data).
+  // Then debounce 800ms for annotations. Load once, then own the editing state.
+  // Fallback: 5s timeout for genuinely empty new documents.
   useEffect(() => {
     if (!editor) return;
     const wid = workId ?? undefined;
     if (loadedWorkId.current === wid) return;
 
-    // If no data yet, wait up to 3 seconds for CRDT to deliver it
-    if (text.length === 0 && (annotations ?? []).length === 0) {
-      const emptyTimer = setTimeout(() => {
+    if (text.length > 0) {
+      // Text arrived — wait for annotations, then load
+      const timer = setTimeout(() => {
         if (loadedWorkId.current === wid) return;
         loadedWorkId.current = wid ?? -1;
         const doc = textToTipTapDoc(text, annotations ?? []);
@@ -233,12 +233,13 @@ export function TipTapEditor({
         isApplyingRemote.current = true;
         editor.commands.setContent(doc);
         isApplyingRemote.current = false;
-      }, 5000);
-      return () => clearTimeout(emptyTimer);
+      }, 800);
+      return () => clearTimeout(timer);
     }
 
-    // Data has arrived — debounce 800ms for annotations
-    const timer = setTimeout(() => {
+    // No text yet — wait for CRDT to deliver it.
+    // 5s fallback for genuinely empty docs (so user can type).
+    const fallback = setTimeout(() => {
       if (loadedWorkId.current === wid) return;
       loadedWorkId.current = wid ?? -1;
       const doc = textToTipTapDoc(text, annotations ?? []);
@@ -246,8 +247,8 @@ export function TipTapEditor({
       isApplyingRemote.current = true;
       editor.commands.setContent(doc);
       isApplyingRemote.current = false;
-    }, 800);
-    return () => clearTimeout(timer);
+    }, 5000);
+    return () => clearTimeout(fallback);
   }, [editor, text, workId, annotations]);
 
   useEffect(() => {
