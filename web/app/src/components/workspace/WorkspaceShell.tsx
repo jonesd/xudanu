@@ -576,11 +576,11 @@ export function WorkspaceShell() {
       const insertPos = cursorPos ?? text.length;
       await client.elementInsert(workBeId, insertPos, {
         type: "blob",
-        content_hash: hashNum,
-        mime_type: meta.mime_type,
-        byte_size: meta.byte_size,
-        width: meta.width ?? undefined,
-        height: meta.height ?? undefined,
+        blob_hash: hashNum,
+        blob_mime: meta.mime_type,
+        blob_size: meta.byte_size,
+        blob_width: meta.width ?? undefined,
+        blob_height: meta.height ?? undefined,
       });
       showToast(`✓ Image uploaded (${meta.byte_size.toLocaleString()} bytes${meta.width ? `, ${meta.width}×${meta.height}` : ""})`);
       // Track the image locally for display
@@ -633,12 +633,12 @@ export function WorkspaceShell() {
     try {
       await clientRef.current.elementUpdate(workBeId, entry.charPos, {
         type: "blob",
-        content_hash: hash,
-        mime_type: entry.mime,
-        byte_size: 0,
-        width: entry.width,
-        height: entry.height,
-        caption: caption || undefined,
+        blob_hash: hash,
+        blob_mime: entry.mime,
+        blob_size: 0,
+        blob_width: entry.width,
+        blob_height: entry.height,
+        blob_caption: caption || undefined,
       });
     } catch (e) {
       console.error("Failed to persist caption:", e);
@@ -671,12 +671,12 @@ export function WorkspaceShell() {
       const meta = await httpResp.json() as { content_hash: number; byte_size: number; width?: number; height?: number };
       await clientRef.current.elementUpdate(workBeId, entry.charPos, {
         type: "blob",
-        content_hash: meta.content_hash,
-        mime_type: "image/png",
-        byte_size: meta.byte_size,
-        width: meta.width,
-        height: meta.height,
-        caption: entry.caption,
+        blob_hash: meta.content_hash,
+        blob_mime: "image/png",
+        blob_size: meta.byte_size,
+        blob_width: meta.width,
+        blob_height: meta.height,
+        blob_caption: entry.caption,
       });
       const previewBytes = await clientRef.current.blobGetPreview(meta.content_hash);
       const previewBlob = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: "image/png" });
@@ -704,21 +704,21 @@ export function WorkspaceShell() {
     try {
       await client.elementUpdate(workBeId, source.charPos, {
         type: "blob",
-        content_hash: target.hash,
-        mime_type: target.mime,
-        byte_size: 0,
-        width: target.width,
-        height: target.height,
-        caption: target.caption,
+        blob_hash: target.hash,
+        blob_mime: target.mime,
+        blob_size: 0,
+        blob_width: target.width,
+        blob_height: target.height,
+        blob_caption: target.caption,
       });
       await client.elementUpdate(workBeId, target.charPos, {
         type: "blob",
-        content_hash: source.hash,
-        mime_type: source.mime,
-        byte_size: 0,
-        width: source.width,
-        height: source.height,
-        caption: source.caption,
+        blob_hash: source.hash,
+        blob_mime: source.mime,
+        blob_size: 0,
+        blob_width: source.width,
+        blob_height: source.height,
+        blob_caption: source.caption,
       });
       showToast("Images swapped");
       const blobs = await client.workBlobList(workBeId);
