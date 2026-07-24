@@ -208,7 +208,7 @@ export function TipTapEditor({
     if (!editor) return;
     const wid = workId ?? undefined;
     if (loadedWorkId.current === wid) return;
-    if (text.length === 0 && wid !== undefined) return;
+    if (text.length === 0 && (annotations ?? []).length === 0 && wid !== undefined) return;
     // Defer to let annotations arrive after text
     const timer = setTimeout(() => {
       if (loadedWorkId.current === wid) return;
