@@ -595,8 +595,10 @@ export function WorkspaceShell() {
         height: meta.height ?? undefined,
         loading: true,
       };
+      // Use server URL directly — no need to fetch and create blob URL
+      const imgUrl = `/blobs/${hashHex}`;
       setImageEntries((prev) => {
-        const next = [...prev, newEntry];
+        const next = [...prev, { ...newEntry, url: imgUrl, loading: false }];
         if (workBeId !== null) {
           try {
             const toCache = next.map((e) => ({ hash: e.hash, mime: e.mime, width: e.width, height: e.height }));
@@ -604,13 +606,6 @@ export function WorkspaceShell() {
           } catch {}
         }
         return next;
-      });
-      // Fetch image via HTTP (not WebSocket — avoids timeout)
-      fetch(`/blobs/${hashHex}`).then((r) => r.arrayBuffer()).then((buf) => {
-        const url = URL.createObjectURL(new Blob([buf], { type: meta.mime_type }));
-        setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, url, loading: false } : e));
-      }).catch(() => {
-        setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, loading: false } : e));
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : typeof e === "object" ? JSON.stringify(e) : String(e);
