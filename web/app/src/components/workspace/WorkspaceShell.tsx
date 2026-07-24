@@ -1855,29 +1855,8 @@ export function WorkspaceShell() {
                           return null;
                         }
                         const hashHex = BigInt(hashStr).toString(16);
-                        let imgSrc: string | null = null;
-                        try {
-                          const previewResp = await fetch(`/blobs/${hashHex}/preview`);
-                          if (previewResp.ok) {
-                            const buf = await previewResp.arrayBuffer();
-                            imgSrc = URL.createObjectURL(new Blob([buf], { type: file.type }));
-                          }
-                        } catch {}
-                        if (!imgSrc) {
-                          try {
-                            const fullResp = await fetch(`/blobs/${hashHex}`);
-                            if (fullResp.ok) {
-                              const buf = await fullResp.arrayBuffer();
-                              imgSrc = URL.createObjectURL(new Blob([buf], { type: file.type }));
-                            }
-                          } catch {}
-                        }
-                        if (!imgSrc) {
-                          showToast("Image uploaded but could not load preview");
-                          return null;
-                        }
                         showToast("Image uploaded");
-                        return imgSrc;
+                        return `/blobs/${hashHex}/preview`;
                       } catch (e) {
                         console.error("[tiptap-image] error:", e);
                         showToast(`Image error: ${e instanceof Error ? e.message : String(e)}`);

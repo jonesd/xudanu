@@ -20,7 +20,7 @@ export interface MarkRange {
   payload?: string;
 }
 
-const INLINE_KINDS = new Set(["bold", "italic", "code", "font_size", "font_family"]);
+const INLINE_KINDS = new Set(["bold", "italic", "code", "font_size", "font_family", "image"]);
 const BLOCK_KINDS = new Set(["heading", "list_item", "blockquote", "code_block", "text_align"]);
 
 interface FlattenState {
@@ -203,6 +203,17 @@ function flattenInline(content: DocNode[], state: FlattenState): void {
     } else if (node.type === "hardBreak") {
       state.text += "\n";
       state.pos++;
+    } else if (node.type === "image" && node.attrs?.src) {
+      const src = node.attrs.src as string;
+      const hashMatch = src.match(/\/blobs\/([0-9a-f]+)\/preview/);
+      if (hashMatch) {
+        state.inlineMarks.push({
+          kind: "image",
+          start: state.pos,
+          end: state.pos,
+          payload: JSON.stringify({ hash: hashMatch[1] }),
+        });
+      }
     }
   }
 }
@@ -317,10 +328,15 @@ export function textToTipTapDoc(text: string, annotations: AnnotationEntry[]): T
 
 function marksForLine(allMarks: MarkRange[], info: LineInfo): MarkRange[] {
   return allMarks.filter(
-    (m) =>
-      INLINE_KINDS.has(m.kind) &&
-      m.start < info.offset + info.text.length &&
-      m.end > info.offset,
+    (m) => {
+      if (m.kind === "image") {
+        // Zero-width: position must be within the line
+        return m.start >= info.offset && m.start <= info.offset + info.text.length;
+      }
+      return INLINE_KINDS.has(m.kind) &&
+        m.start < info.offset + info.text.length &&
+        m.end > info.offset;
+    },
   );
 }
 
@@ -329,13 +345,25 @@ function buildTextNodes(
   lineOffset: number,
   marks: MarkRange[],
 ): DocNode[] {
-  if (lineText.length === 0) return [];
+  if (lineText.length === 0 && marks.length === 0) return [];
 
-  const active = marks.filter((m) => m.start < lineOffset + lineText.length && m.end > lineOffset);
-  if (active.length === 0) {
+  const imageMarks = marks.filter((m) => m.kind === "image");
+  const textMarks = marks.filter((m) => m.kind !== "image");
+
+  // Handle lines with only images (no text)
+  if (lineText.length === 0) {
+    return imageMarks.map((m) => {
+      const p = JSON.parse(m.payload || "{}");
+      return { type: "image", attrs: { src: `/blobs/${p.hash}/preview` } };
+    });
+  }
+
+  const active = textMarks.filter((m) => m.start < lineOffset + lineText.length && m.end > lineOffset);
+  if (active.length === 0 && imageMarks.length === 0) {
     return [{ type: "text", text: lineText }];
   }
 
+  // Build boundary points from text marks AND image positions
   const boundaries = new Set<number>();
   boundaries.add(0);
   boundaries.add(lineText.length);
@@ -343,11 +371,29 @@ function buildTextNodes(
     boundaries.add(Math.max(0, m.start - lineOffset));
     boundaries.add(Math.min(lineText.length, m.end - lineOffset));
   }
+  // Image positions are points (zero-width) — add them as boundaries
+  for (const m of imageMarks) {
+    const imgPos = m.start - lineOffset;
+    if (imgPos >= 0 && imgPos <= lineText.length) {
+      boundaries.add(imgPos);
+    }
+  }
   const points = [...boundaries].sort((a, b) => a - b);
   const nodes: DocNode[] = [];
 
-  for (let j = 0; j < points.length - 1; j++) {
+  for (let j = 0; j < points.length; j++) {
     const segStart = points[j];
+
+    // Check for images at this position
+    for (const m of imageMarks) {
+      const imgPos = m.start - lineOffset;
+      if (imgPos === segStart) {
+        const p = JSON.parse(m.payload || "{}");
+        nodes.push({ type: "image", attrs: { src: `/blobs/${p.hash}/preview` } });
+      }
+    }
+
+    if (j >= points.length - 1) break;
     const segEnd = points[j + 1];
     if (segStart >= segEnd) continue;
     const segText = lineText.slice(segStart, segEnd);
@@ -378,6 +424,15 @@ function buildTextNodes(
       text: segText,
       ...(segMarks.length > 0 ? { marks: segMarks } : {}),
     });
+  }
+
+  // Check for images at the very end
+  for (const m of imageMarks) {
+    const imgPos = m.start - lineOffset;
+    if (imgPos === lineText.length) {
+      const p = JSON.parse(m.payload || "{}");
+      nodes.push({ type: "image", attrs: { src: `/blobs/${p.hash}/preview` } });
+    }
   }
 
   return nodes.length > 0 ? nodes : [{ type: "text", text: lineText }];

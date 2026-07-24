@@ -3,11 +3,12 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import TextAlign from "@tiptap/extension-text-align";
 import FontFamily from "@tiptap/extension-font-family";
-import { TextStyle } from "@tiptap/extension-text-style";
 import Image from "@tiptap/extension-image";
 import { TextSelection } from "@tiptap/pm/state";
 import { useEffect, useRef, useCallback } from "react";
 import type { AnnotationEntry } from "../api/crdt_sync";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import type { TextStyle as _TextStyle } from "@tiptap/extension-text-style";
 import { FontSize } from "../tiptap-extensions/font-size";
 import {
   textToTipTapDoc,
@@ -126,7 +127,7 @@ export function TipTapEditor({
               tr.insert($from.after(), state.schema.nodes.paragraph.create());
               tr.setSelection(TextSelection.near(tr.doc.resolve($from.after() + 1)));
               dispatch(tr);
-              _view.scrollIntoView();
+              (_view as unknown as { scrollIntoView: () => void }).scrollIntoView?.();
               return true;
             }
           }
