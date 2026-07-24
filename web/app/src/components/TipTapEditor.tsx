@@ -138,7 +138,6 @@ export function TipTapEditor({
     },
     onUpdate: ({ editor }) => {
       if (isApplyingRemote.current) return;
-      if (!loadedWorkId.current) return;
 
       recentlyEdited.current = true;
       if (editTimer.current) clearTimeout(editTimer.current);
@@ -227,13 +226,14 @@ export function TipTapEditor({
       // Text arrived — wait for annotations, then load
       const timer = setTimeout(() => {
         if (loadedWorkId.current === wid) return;
+        console.log("[tiptap-load] text:", text.length, "chars, annotations:", (annotations ?? []).length, (annotations ?? []).map(a => `${a.kind}@${a.char_start}-${a.char_end}`).join(", "));
         loadedWorkId.current = wid ?? -1;
         const doc = textToTipTapDoc(text, annotations ?? []);
         lastTextRef.current = text;
         isApplyingRemote.current = true;
         editor.commands.setContent(doc);
         isApplyingRemote.current = false;
-      }, 800);
+      }, 2000);
       return () => clearTimeout(timer);
     }
 
