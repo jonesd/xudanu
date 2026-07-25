@@ -350,11 +350,12 @@ export function WorkspaceShell() {
 
   const handleToggleBlock = useCallback(
     async (kind: string, payload: string) => {
-      if (!selectionRange || workBeId === null) return;
-      const start = selectionRange.start;
-      // Find the line boundaries for the current selection
-      const lineStart = text.lastIndexOf("\n", start - 1) + 1;
-      const lineEndIdx = text.indexOf("\n", start);
+      if (workBeId === null) return;
+      // Use selection start or cursor position — whichever is available
+      const pos = selectionRange?.start ?? cursorPos ?? 0;
+      // Find the line boundaries
+      const lineStart = text.lastIndexOf("\n", pos - 1) + 1;
+      const lineEndIdx = text.indexOf("\n", pos);
       const lineEnd = lineEndIdx === -1 ? text.length : lineEndIdx;
 
       // Check if this line already has this block kind
@@ -371,7 +372,7 @@ export function WorkspaceShell() {
         console.error("[handleToggleBlock] failed:", e);
       }
     },
-    [selectionRange, text, annotations, deleteAnnotation, createAnnotation, workBeId],
+    [selectionRange, cursorPos, text, annotations, deleteAnnotation, createAnnotation, workBeId],
   );
 
   const showToast = useCallback((msg: string) => {
@@ -1698,28 +1699,16 @@ export function WorkspaceShell() {
                   </div>
                 ) : (
                   <>
-                {canEdit && selectionRange && (
+                {canEdit && (
                   <div className="ws-format-bar">
-                    <button
-                      type="button"
-                      className="ws-sel-btn style"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => handleToggleStyle("bold", selectionRange.start, selectionRange.end)}
-                      title="Bold (Ctrl+B)"
-                      style={{ fontWeight: 700 }}
-                    >
-                      B
-                    </button>
-                    <button
-                      type="button"
-                      className="ws-sel-btn style"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => handleToggleStyle("italic", selectionRange.start, selectionRange.end)}
-                      title="Italic (Ctrl+I)"
-                      style={{ fontStyle: "italic" }}
-                    >
-                      I
-                    </button>
+                    <button type="button" className="ws-sel-btn style" onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => selectionRange && handleToggleStyle("bold", selectionRange.start, selectionRange.end)}
+                      title="Bold (Ctrl+B)" style={{ fontWeight: 700 }}
+                      disabled={!selectionRange}>B</button>
+                    <button type="button" className="ws-sel-btn style" onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => selectionRange && handleToggleStyle("italic", selectionRange.start, selectionRange.end)}
+                      title="Italic (Ctrl+I)" style={{ fontStyle: "italic" }}
+                      disabled={!selectionRange}>I</button>
                     <span className="ws-sel-sep" />
                     <button type="button" className="ws-sel-btn style" onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleToggleBlock("heading", JSON.stringify({ level: 1 }))}
