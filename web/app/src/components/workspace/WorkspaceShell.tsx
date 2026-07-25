@@ -1699,93 +1699,50 @@ export function WorkspaceShell() {
                 ) : (
                   <>
                 {canEdit && selectionRange && (
-                  <button
-                    type="button"
-                    className="ws-sel-btn style"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleToggleStyle("bold", selectionRange.start, selectionRange.end)}
-                    title="Bold (Ctrl+B)"
-                    style={{ fontWeight: 700 }}
-                  >
-                    B
-                  </button>
-                )}
-                {canEdit && selectionRange && (
-                  <button
-                    type="button"
-                    className="ws-sel-btn style"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleToggleStyle("italic", selectionRange.start, selectionRange.end)}
-                    title="Italic (Ctrl+I)"
-                    style={{ fontStyle: "italic" }}
-                  >
-                    I
-                  </button>
-                )}
-                {canEdit && selectionRange && (
-                  <>
+                  <div className="ws-format-bar">
+                    <button
+                      type="button"
+                      className="ws-sel-btn style"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleToggleStyle("bold", selectionRange.start, selectionRange.end)}
+                      title="Bold (Ctrl+B)"
+                      style={{ fontWeight: 700 }}
+                    >
+                      B
+                    </button>
+                    <button
+                      type="button"
+                      className="ws-sel-btn style"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleToggleStyle("italic", selectionRange.start, selectionRange.end)}
+                      title="Italic (Ctrl+I)"
+                      style={{ fontStyle: "italic" }}
+                    >
+                      I
+                    </button>
                     <span className="ws-sel-sep" />
-                    <button
-                      type="button"
-                      className="ws-sel-btn style"
-                      onMouseDown={(e) => e.preventDefault()}
+                    <button type="button" className="ws-sel-btn style" onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleToggleBlock("heading", JSON.stringify({ level: 1 }))}
-                      title="Heading 1"
-                      style={{ fontWeight: 700, fontSize: 14 }}
-                    >
-                      H1
-                    </button>
-                    <button
-                      type="button"
-                      className="ws-sel-btn style"
-                      onMouseDown={(e) => e.preventDefault()}
+                      title="Heading 1" style={{ fontWeight: 700, fontSize: 13 }}>H1</button>
+                    <button type="button" className="ws-sel-btn style" onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleToggleBlock("heading", JSON.stringify({ level: 2 }))}
-                      title="Heading 2"
-                      style={{ fontWeight: 700, fontSize: 13 }}
-                    >
-                      H2
-                    </button>
-                    <button
-                      type="button"
-                      className="ws-sel-btn style"
-                      onMouseDown={(e) => e.preventDefault()}
+                      title="Heading 2" style={{ fontWeight: 700, fontSize: 12 }}>H2</button>
+                    <button type="button" className="ws-sel-btn style" onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleToggleBlock("heading", JSON.stringify({ level: 3 }))}
-                      title="Heading 3"
-                      style={{ fontWeight: 600, fontSize: 12 }}
-                    >
-                      H3
-                    </button>
-                    <button
-                      type="button"
-                      className="ws-sel-btn"
-                      onMouseDown={(e) => e.preventDefault()}
+                      title="Heading 3" style={{ fontWeight: 600, fontSize: 11 }}>H3</button>
+                    <button type="button" className="ws-sel-btn" onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleToggleBlock("list_item", JSON.stringify({ type: "bullet" }))}
-                      title="Bullet list"
-                    >
-                      &bull; List
-                    </button>
-                    <button
-                      type="button"
-                      className="ws-sel-btn"
-                      onMouseDown={(e) => e.preventDefault()}
+                      title="Bullet list">&bull;</button>
+                    <button type="button" className="ws-sel-btn" onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleToggleBlock("blockquote", "")}
-                      title="Blockquote"
-                    >
-                      &#10078;
-                    </button>
-                    <button
-                      type="button"
-                      className="ws-sel-btn"
-                      onMouseDown={(e) => e.preventDefault()}
+                      title="Blockquote">&#10078;</button>
+                    <button type="button" className="ws-sel-btn" onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleToggleBlock("code_block", "")}
-                      title="Code block"
-                    >
-                      &lt;/&gt;
-                    </button>
-                  </>
+                      title="Code block">&lt;/&gt;</button>
+                  </div>
                 )}
                 {selectionRange && !transclusion.pending && !transclusion.pendingLink && (
-                  <div className="ws-selection-actions">
+                  <div className="ws-selection-actions" style={{ marginTop: 4 }}>
                     <button
                       type="button"
                       className="ws-sel-btn transclude"

@@ -11,6 +11,14 @@
   margin: 0 2px;
   vertical-align: middle;
 }
+.ws-format-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+  margin-bottom: 4px;
+}
 .editor-content h1, .tiptap-editor-content h1 {
   font-size: 1.8em;
   font-weight: 700;
@@ -979,7 +987,7 @@
 /* Selection action popover — floats over text, doesn't shift layout */
 .ws-selection-actions {
   position: absolute;
-  top: 8px;
+  top: 44px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
