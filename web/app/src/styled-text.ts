@@ -48,7 +48,7 @@ interface Boundary {
   openPos: number;
 }
 
-// === ORIGINAL buildStyledText — untouched, handles inline marks only ===
+// === ORIGINAL inline marks logic — untouched ===
 function buildInlineHtml(text: string, marks: StyleMark[]): string {
   if (marks.length === 0 || text.length === 0) {
     return escapeHtml(text);
@@ -101,23 +101,35 @@ function buildInlineHtml(text: string, marks: StyleMark[]): string {
   return result;
 }
 
-// === Block-aware buildStyledText ===
-// If no block marks, delegates to original inline-only logic.
-// If block marks exist, wraps lines in block tags, applies inline marks within each line.
-export function buildStyledText(text: string, marks: StyleMark[]): string {
-  if (marks.length === 0 || text.length === 0) {
-    return escapeHtml(text);
+// Detect block type from line prefix (Markdown-style markers in the text itself)
+interface LineBlock {
+  type: "heading" | "list_item" | "blockquote" | "code_block" | null;
+  level?: number;
+  listType?: "bullet" | "ordered";
+  contentStart: number;
+}
+
+function detectLineBlock(line: string): LineBlock {
+  if (line.startsWith("### ")) return { type: "heading", level: 3, contentStart: 4 };
+  if (line.startsWith("## ")) return { type: "heading", level: 2, contentStart: 3 };
+  if (line.startsWith("# ")) return { type: "heading", level: 1, contentStart: 2 };
+  if (line.startsWith("- ") || line.startsWith("* ")) return { type: "list_item", listType: "bullet", contentStart: 2 };
+  if (/^\d+\.\s/.test(line)) {
+    const match = line.match(/^(\d+)\.\s/);
+    return { type: "list_item", listType: "ordered", contentStart: match![0].length };
   }
+  if (line.startsWith("> ")) return { type: "blockquote", contentStart: 2 };
+  if (line.startsWith("```")) return { type: "code_block", contentStart: 3 };
+  return { type: null, contentStart: 0 };
+}
+
+export function buildStyledText(text: string, marks: StyleMark[]): string {
+  if (text.length === 0) return "";
 
   const inlineMarks = marks.filter((m) => INLINE_KINDS.has(m.kind));
-  const blockMarks = marks.filter((m) => BLOCK_KINDS.has(m.kind));
+  const annBlockMarks = marks.filter((m) => BLOCK_KINDS.has(m.kind));
 
-  // No block marks — use original inline logic exactly
-  if (blockMarks.length === 0) {
-    return buildInlineHtml(text, inlineMarks);
-  }
-
-  // Split into lines and determine block type for each
+  // Split into lines
   const lines = text.split("\n");
   let html = "";
   let inList = false;
@@ -129,42 +141,63 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
     const lineStart = lineOffset;
     const lineEnd = lineStart + lineText.length;
 
-    const blockMark = blockMarks.find(
-      (m) => m.char_start <= lineEnd && m.char_end >= lineStart,
-    );
+    // Determine block type: try marker prefix first, then annotation
+    const marker = detectLineBlock(lineText);
+    let blockType = marker.type;
+    let level = marker.level;
+    let listKind = marker.listType;
+    let contentStart = marker.contentStart;
+
+    if (!blockType && annBlockMarks.length > 0) {
+      const ann = annBlockMarks.find(
+        (m) => m.char_start <= lineEnd && m.char_end >= lineStart,
+      );
+      if (ann) {
+        blockType = ann.kind as any;
+        if (ann.kind === "heading") {
+          try { level = JSON.parse(ann.payload || "{}").level || 1; } catch { level = 1; }
+        }
+        if (ann.kind === "list_item") {
+          try { listKind = JSON.parse(ann.payload || "{}").type === "ordered" ? "ordered" : "bullet"; } catch { listKind = "bullet"; }
+        }
+      }
+    }
 
     // Close list if current line is not a list item
-    if (inList && blockMark?.kind !== "list_item") {
+    if (inList && blockType !== "list_item") {
       html += `</${listType}>`;
       inList = false;
     }
 
-    // Apply inline marks to this line's text
-    const lineHtml = inlineMarks.length > 0
-      ? buildInlineHtml(lineText, inlineMarks.map((m) => ({
-          ...m,
-          char_start: m.char_start - lineStart,
-          char_end: m.char_end - lineStart,
-        })))
-      : escapeHtml(lineText);
+    // The visible text (strip marker prefix if detected from marker)
+    const displayText = marker.type ? lineText.slice(contentStart) : lineText;
+    const displayOffset = marker.type ? lineStart + contentStart : lineStart;
 
-    if (blockMark?.kind === "heading") {
-      const level = blockMark.payload ? (() => { try { return JSON.parse(blockMark.payload!).level || 1; } catch { return 1; } })() : 1;
-      html += `<h${level}>${lineHtml}</h${level}>`;
-    } else if (blockMark?.kind === "list_item") {
-      let type = "ul";
-      try { if (JSON.parse(blockMark.payload || "{}").type === "ordered") type = "ol"; } catch {}
-      if (!inList || listType !== type) {
+    // Apply inline marks to the display text
+    const lineHtml = inlineMarks.length > 0
+      ? buildInlineHtml(displayText, inlineMarks.map((m) => ({
+          ...m,
+          char_start: m.char_start - displayOffset,
+          char_end: m.char_end - displayOffset,
+        })).filter((m) => m.char_end > 0 && m.char_start < displayText.length))
+      : escapeHtml(displayText);
+
+    if (blockType === "heading") {
+      const lv = level || 1;
+      html += `<h${lv}>${lineHtml}</h${lv}>`;
+    } else if (blockType === "list_item") {
+      const lt = listKind === "ordered" ? "ol" : "ul";
+      if (!inList || listType !== lt) {
         if (inList) html += `</${listType}>`;
-        html += `<${type}>`;
+        html += `<${lt}>`;
         inList = true;
-        listType = type;
+        listType = lt;
       }
       html += `<li>${lineHtml}</li>`;
-    } else if (blockMark?.kind === "blockquote") {
+    } else if (blockType === "blockquote") {
       html += `<blockquote>${lineHtml}</blockquote>`;
-    } else if (blockMark?.kind === "code_block") {
-      html += `<pre><code>${escapeHtml(lineText)}</code></pre>`;
+    } else if (blockType === "code_block") {
+      html += `<pre><code>${escapeHtml(displayText)}</code></pre>`;
     } else {
       html += `<p>${lineHtml}</p>`;
     }

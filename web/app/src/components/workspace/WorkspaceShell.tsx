@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useCrdtSync } from "../../hooks/useCrdtSync";
+import { getCursorOffset } from "../../styled-text";
 import { useTransclusion, DEFAULT_LINK_TYPES } from "../../hooks/useTransclusion";
 import { useCompoundEdition } from "../../hooks/useCompoundEdition";
 import { authorColorPair } from "../../author-color";
@@ -387,38 +388,68 @@ export function WorkspaceShell() {
   );
 
   const handleToggleBlock = useCallback(
-    async (kind: string, payload: string) => {
+    async (kind: string, _payload: string) => {
       if (workBeId === null) return;
-      // Read cursor position directly from the editor DOM — not stale React state
+      // Read cursor position directly from the editor DOM
       const editorEl = document.querySelector(".editor-content") as HTMLElement | null;
       let pos = 0;
       if (editorEl) {
         pos = getCursorOffset(editorEl);
       } else {
-        pos = selectionRange?.start ?? cursorPos ?? 0;
+        pos = cursorPos ?? 0;
       }
       // If cursor is on a newline, move to next line
       if (text[pos] === "\n") pos += 1;
       const lineStart = text.lastIndexOf("\n", pos - 1) + 1;
       const lineEndIdx = text.indexOf("\n", pos);
       const lineEnd = lineEndIdx === -1 ? text.length : lineEndIdx;
+      const lineText = text.slice(lineStart, lineEnd);
 
-      const existing = annotations.find(
-        (a) => a.kind === kind && a.char_start <= lineEnd && a.char_end >= lineStart,
-      );
-      try {
-        if (existing) {
-          await deleteAnnotation(existing.annotation_id);
-        } else {
-          const annEnd = lineEnd > lineStart ? lineEnd : Math.min(lineStart + 1, text.length);
-          await createAnnotation(kind, payload, lineStart, annEnd, false);
-        }
-      } catch (e) {
-        console.error("[handleToggleBlock] failed:", e);
+      // Determine the marker prefix for this block type
+      let prefix = "";
+      if (kind === "heading") {
+        try { const lv = JSON.parse(_payload).level; prefix = "#".repeat(lv) + " "; } catch { prefix = "# "; }
+      } else if (kind === "list_item") {
+        prefix = "- ";
+      } else if (kind === "blockquote") {
+        prefix = "> ";
+      } else if (kind === "code_block") {
+        prefix = "```";
       }
+
+      // Check if line already has this marker
+      const hasMarker = lineText.startsWith(prefix);
+      // Also check if line has ANY block marker (to replace it)
+      const existingMarker = detectExistingMarker(lineText);
+
+      let newLine: string;
+      if (hasMarker) {
+        // Toggle off — remove the prefix
+        newLine = lineText.slice(prefix.length);
+      } else if (existingMarker) {
+        // Replace existing marker
+        newLine = prefix + lineText.slice(existingMarker.length);
+      } else {
+        // Add new marker
+        newLine = prefix + lineText;
+      }
+
+      const newText = text.slice(0, lineStart) + newLine + text.slice(lineEnd);
+      setText(newText);
     },
-    [text, annotations, deleteAnnotation, createAnnotation, workBeId],
+    [text, workBeId, cursorPos],
   );
+
+  function detectExistingMarker(line: string): string {
+    if (line.startsWith("### ")) return "### ";
+    if (line.startsWith("## ")) return "## ";
+    if (line.startsWith("# ")) return "# ";
+    if (line.startsWith("- ") || line.startsWith("* ")) return line.slice(0, 2);
+    if (/^\d+\.\s/.test(line)) { const m = line.match(/^\d+\.\s/); return m![0]; }
+    if (line.startsWith("> ")) return "> ";
+    if (line.startsWith("```")) return "```";
+    return "";
+  }
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -1879,54 +1910,44 @@ export function WorkspaceShell() {
                   workId={workBeId ?? undefined}
                   onTextChange={canEdit ? (newText: string) => {
                     setText(newText);
-                    // Auto-continue lists
-                    if (workBeId !== null && createAnnotation) {
-                      const prevText = text;
-                      if (newText.length > prevText.length) {
-                        // Find the first position where text differs
-                        let diffPos = 0;
-                        while (diffPos < prevText.length && newText[diffPos] === prevText[diffPos]) {
-                          diffPos++;
+                    // Auto-continue lists: if Enter pressed after a "- " line, add "- " to new line
+                    if (newText.length > text.length) {
+                      const diffPos = newText.slice(0, newText.length - (newText.length - text.length)).length;
+                      // Simple check: did a newline get added?
+                      const addedNewlines = newText.split("\n").length - text.split("\n").length;
+                      if (addedNewlines > 0) {
+                        // Find the new line's position
+                        const lines = newText.split("\n");
+                        // Find which line index changed
+                        let prevLines = text.split("\n");
+                        let changeIdx = -1;
+                        for (let i = 0; i < lines.length; i++) {
+                          if (i >= prevLines.length || lines[i] !== prevLines[i]) {
+                            changeIdx = i;
+                            break;
+                          }
                         }
-                        // Build line map
-                        const lines: Array<{ start: number; end: number; text: string }> = [];
-                        let pos = 0;
-                        for (const line of newText.split("\n")) {
-                          lines.push({ start: pos, end: pos + line.length, text: line });
-                          pos += line.length + 1;
-                        }
-                        // Find which line the diff is on
-                        const curLineIdx = lines.findIndex((l) => diffPos >= l.start && diffPos <= l.end);
-                        // If diff is at end of line and next char is \n, move to next line
-                        const adjustedLineIdx = (curLineIdx >= 0 && diffPos === lines[curLineIdx].end && newText[diffPos] === "\n")
-                          ? curLineIdx + 1 : curLineIdx;
-                        if (adjustedLineIdx > 0) {
-                          const curLine = lines[adjustedLineIdx];
-                          const prevLine = lines[adjustedLineIdx - 1];
-                          // Check if previous line is a list item
-                          const prevListAnn = annotations.find(
-                            (a) => a.kind === "list_item" && a.char_start <= prevLine.end && a.char_end >= prevLine.start,
-                          );
-                          if (prevListAnn) {
-                            // Check if current line already has a list_item (by start position)
-                            const curHasList = annotations.some(
-                              (a) => a.kind === "list_item" && a.char_start >= curLine.start && a.char_start <= curLine.end,
-                            );
-                            if (!curHasList) {
-                              if (prevLine.text.length === 0) {
-                                // Previous line was EMPTY list item → user pressed Enter on empty bullet → EXIT
-                                void deleteAnnotation(prevListAnn.annotation_id);
-                              } else {
-                                // Previous line had text → user pressed Enter → create bullet for new line immediately
-                                void createAnnotation(
-                                  "list_item",
-                                  prevListAnn.payload || JSON.stringify({ type: "bullet" }),
-                                  curLine.start,
-                                  Math.max(curLine.start + 1, curLine.end),
-                                  false,
-                                );
+                        if (changeIdx > 0) {
+                          const prevLine = lines[changeIdx - 1];
+                          const curLine = lines[changeIdx] || "";
+                          // If previous line was a bullet ("- " or "* ") and current line is empty
+                          if ((prevLine.startsWith("- ") || prevLine.startsWith("* ")) && curLine === "") {
+                            // Check if there's a DOUBLE empty (exit list)
+                            if (changeIdx >= 2) {
+                              const prevPrev = lines[changeIdx - 2] || "";
+                              if (prevPrev === "") {
+                                // Double Enter — remove the previous "- " line (exit list)
+                                const offset = lines.slice(0, changeIdx - 1).join("\n").length + 1;
+                                const lineEnd = offset + prevLine.length;
+                                const updated = newText.slice(0, offset) + newText.slice(lineEnd);
+                                setText(updated);
+                                return;
                               }
                             }
+                            // Single Enter — add "- " prefix to new line
+                            const insertPos = newText.lastIndexOf("\n", newText.length - 1) + 1;
+                            const updated = newText.slice(0, insertPos) + "- " + newText.slice(insertPos);
+                            setText(updated);
                           }
                         }
                       }
