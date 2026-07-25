@@ -990,19 +990,15 @@
 
 /* Selection action popover — floats over text, doesn't shift layout */
 .ws-selection-actions {
-  position: absolute;
-  top: -40px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 20;
   display: flex;
   gap: 4px;
   background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  border: 1px solid var(--accent-blue, #58a6ff);
   border-radius: 6px;
   padding: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  white-space: nowrap;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  margin-bottom: 4px;
+  flex-wrap: wrap;
 }
 .ws-sel-btn {
   background: none;
