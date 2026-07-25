@@ -1832,7 +1832,46 @@ export function WorkspaceShell() {
                 <CollaborativeEditor
                   text={text}
                   workId={workBeId ?? undefined}
-                  onTextChange={canEdit ? setText : undefined}
+                  onTextChange={canEdit ? (newText: string) => {
+                    setText(newText);
+                    // Auto-continue lists: if Enter pressed after a list item, create list_item for new line
+                    if (workBeId !== null && createAnnotation) {
+                      const prevText = text;
+                      if (newText.length > prevText.length && newText.includes("\n")) {
+                        // Find where the new line was added
+                        const cursorIdx = cursorPos ?? newText.length;
+                        const lineStart = newText.lastIndexOf("\n", cursorIdx - 1) + 1;
+                        const prevLineEnd = lineStart - 1;
+                        const prevLineStart = newText.lastIndexOf("\n", prevLineEnd - 1) + 1;
+                        if (prevLineStart >= 0 && prevLineEnd > prevLineStart) {
+                          const prevLineIsListItem = annotations.some(
+                            (a) => a.kind === "list_item" && a.char_start < prevLineEnd && a.char_end > prevLineStart,
+                          );
+                          const newLineText = newText.slice(lineStart).split("\n")[0];
+                          const newLineEnd = lineStart + newLineText.length;
+                          if (prevLineIsListItem && newLineText.length === 0) {
+                            // Empty line after list item — exit the list (delete the previous item's annotation)
+                            const prevAnn = annotations.find(
+                              (a) => a.kind === "list_item" && a.char_start < prevLineEnd && a.char_end > prevLineStart,
+                            );
+                            if (prevAnn) void deleteAnnotation(prevAnn.annotation_id);
+                          } else if (prevLineIsListItem && newLineText.length > 0) {
+                            // Continue the list — create list_item for new line
+                            const existing = annotations.some(
+                              (a) => a.kind === "list_item" && a.char_start < newLineEnd && a.char_end > lineStart,
+                            );
+                            if (!existing) {
+                              const prevAnn = annotations.find(
+                                (a) => a.kind === "list_item" && a.char_start < prevLineEnd && a.char_end > prevLineStart,
+                              );
+                              const payload = prevAnn?.payload || JSON.stringify({ type: "bullet" });
+                              void createAnnotation("list_item", payload, lineStart, newLineEnd, false);
+                            }
+                          }
+                        }
+                      }
+                    }
+                  } : undefined}
                   onCursorChange={(idx) => {
                     sendCursor(idx);
                     setCursorPos(idx);
