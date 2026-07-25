@@ -411,10 +411,6 @@ export function WorkspaceShell() {
     },
     [selectionRange, cursorPos, text, annotations, deleteAnnotation, createAnnotation, workBeId],
   );
-      }
-    },
-    [selectionRange, cursorPos, text, annotations, deleteAnnotation, createAnnotation, workBeId],
-  );
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
