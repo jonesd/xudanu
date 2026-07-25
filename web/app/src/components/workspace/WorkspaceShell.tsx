@@ -389,25 +389,28 @@ export function WorkspaceShell() {
   const handleToggleBlock = useCallback(
     async (kind: string, payload: string) => {
       if (workBeId === null) return;
-      // Use selection start or cursor position — whichever is available
       const pos = selectionRange?.start ?? cursorPos ?? 0;
-      // Find the line boundaries
       const lineStart = text.lastIndexOf("\n", pos - 1) + 1;
       const lineEndIdx = text.indexOf("\n", pos);
       const lineEnd = lineEndIdx === -1 ? text.length : lineEndIdx;
 
-      // Check if this line already has this block kind
       const existing = annotations.find(
-        (a) => a.kind === kind && a.char_start < lineEnd && a.char_end > lineStart,
+        (a) => a.kind === kind && a.char_start <= lineEnd && a.char_end >= lineStart,
       );
       try {
         if (existing) {
           await deleteAnnotation(existing.annotation_id);
         } else {
-          await createAnnotation(kind, payload, lineStart, lineEnd, false);
+          // For empty lines, use lineStart+1 so the annotation isn't zero-width
+          const annEnd = lineEnd > lineStart ? lineEnd : Math.min(lineStart + 1, text.length);
+          await createAnnotation(kind, payload, lineStart, annEnd, false);
         }
       } catch (e) {
         console.error("[handleToggleBlock] failed:", e);
+      }
+    },
+    [selectionRange, cursorPos, text, annotations, deleteAnnotation, createAnnotation, workBeId],
+  );
       }
     },
     [selectionRange, cursorPos, text, annotations, deleteAnnotation, createAnnotation, workBeId],

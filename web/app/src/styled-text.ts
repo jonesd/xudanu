@@ -130,7 +130,7 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
     const lineEnd = lineStart + lineText.length;
 
     const blockMark = blockMarks.find(
-      (m) => m.char_start < lineEnd && m.char_end > lineStart,
+      (m) => m.char_start <= lineEnd && m.char_end >= lineStart,
     );
 
     // Close list if current line is not a list item
