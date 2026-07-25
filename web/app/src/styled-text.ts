@@ -132,8 +132,6 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
   // Split into lines
   const lines = text.split("\n");
   let html = "";
-  let inList = false;
-  let listType = "";
   let lineOffset = 0;
 
   for (let i = 0; i < lines.length; i++) {
@@ -163,12 +161,6 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
       }
     }
 
-    // Close list if current line is not a list item
-    if (inList && blockType !== "list_item") {
-      html += `</${listType}>`;
-      inList = false;
-    }
-
     // The visible text (strip marker prefix if detected from marker)
     const displayText = marker.type ? lineText.slice(contentStart) : lineText;
     // Wrap the marker in a hidden span so textContent preserves it
@@ -184,30 +176,26 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
         })).filter((m) => m.char_end > 0 && m.char_start < displayText.length))
       : escapeHtml(displayText);
 
+    // Use inline spans — NOT block tags. Block tags break contentEditable Enter behavior.
     if (blockType === "heading") {
       const lv = level || 1;
-      html += `<h${lv}>${markerHtml}${lineHtml}</h${lv}>`;
+      const sizes: Record<number, string> = { 1: "1.8em", 2: "1.5em", 3: "1.2em" };
+      const weights: Record<number, string> = { 1: "700", 2: "700", 3: "600" };
+      html += `<span style="display:none">${escapeHtml(lineText.slice(0, contentStart))}</span><span style="font-size:${sizes[lv] || "1.8em"};font-weight:${weights[lv] || "700"}">${lineHtml}</span>`;
     } else if (blockType === "list_item") {
-      const lt = listKind === "ordered" ? "ol" : "ul";
-      if (!inList || listType !== lt) {
-        if (inList) html += `</${listType}>`;
-        html += `<${lt}>`;
-        inList = true;
-        listType = lt;
-      }
-      html += `<li>${markerHtml}${lineHtml}</li>`;
+      const bullet = listKind === "ordered" ? "&#9312;" : "&bull;";
+      html += `<span style="display:none">${escapeHtml(lineText.slice(0, contentStart))}</span><span style="display:inline-block;width:20px;">${bullet}</span><span>${lineHtml}</span>`;
     } else if (blockType === "blockquote") {
-      html += `<blockquote>${markerHtml}${lineHtml}</blockquote>`;
+      html += `<span style="display:none">${escapeHtml(lineText.slice(0, contentStart))}</span><span style="border-left:3px solid #58a6ff;padding-left:12px;color:#999;">${lineHtml}</span>`;
     } else if (blockType === "code_block") {
-      html += `<pre><code>${markerHtml}${escapeHtml(displayText)}</code></pre>`;
+      html += `<span style="display:none">${escapeHtml(lineText.slice(0, contentStart))}</span><span style="font-family:monospace;background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:3px;">${escapeHtml(displayText)}</span>`;
     } else {
-      html += `<p>${lineHtml}</p>`;
+      // Plain line — no wrapper, just the text (preserves pre-wrap newline behavior)
+      html += `${markerHtml}${lineHtml}`;
     }
 
     lineOffset = lineEnd + 1;
   }
-
-  if (inList) html += `</${listType}>`;
 
   return html;
 }
