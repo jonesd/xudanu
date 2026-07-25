@@ -973,12 +973,6 @@ export function CollaborativeEditor({
         if (displayText.endsWith("\n")) {
           el.appendChild(document.createTextNode("\u200B"));
         }
-      } else {
-        el.textContent = displayText;
-        if (displayText.endsWith("\n")) {
-          el.appendChild(document.createTextNode("\u200B"));
-        }
-      }
       setCursorOffset(el, savedCursor);
     } catch (e) {
       console.error("[style-marks] rebuild failed, falling back to plain text:", e);
