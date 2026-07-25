@@ -1461,7 +1461,6 @@ export function CollaborativeEditor({
 
     if (sel.isCollapsed) {
       onCursorChange(start);
-      onSelectionChange(null, null);
     } else {
       const preEnd = document.createRange();
       preEnd.selectNodeContents(el);
@@ -2037,6 +2036,12 @@ export function CollaborativeEditor({
             onClick={handleEditorClick}
             onMouseMove={handleEditorMouseMove}
             onMouseLeave={() => setPlacementIndicator(null)}
+            onMouseUp={() => {
+              const sel = window.getSelection();
+              if (!sel || sel.isCollapsed) {
+                onSelectionChange(null, null);
+              }
+            }}
             onCompositionStart={() => { isComposing.current = true; }}
             onCompositionEnd={() => {
               isComposing.current = false;
