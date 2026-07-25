@@ -6,6 +6,7 @@ import { useTransclusion, DEFAULT_LINK_TYPES } from "../../hooks/useTransclusion
 import { useCompoundEdition } from "../../hooks/useCompoundEdition";
 import { authorColorPair } from "../../author-color";
 import { CollaborativeEditor } from "../CollaborativeEditor";
+import { EasyMDEEditor } from "../EasyMDEEditor";
 import { TransclusionBadge } from "../TransclusionBadge";
 import { IdentityPanel } from "../IdentityPanel";
 import { DocumentMapPanel } from "../DocumentMapPanel";
@@ -148,6 +149,7 @@ export function WorkspaceShell() {
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [citeFeedback, setCiteFeedback] = useState<string | null>(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const useMDE = new URLSearchParams(window.location.search).has("mde");
   const [followState, setFollowState] = useState<{ following: boolean; busy: boolean; error: string | null }>({
     following: false,
     busy: false,
@@ -1905,54 +1907,17 @@ export function WorkspaceShell() {
                     onCancel={transclusion.clearPending}
                   />
                 )}
+                {useMDE ? (
+                  <EasyMDEEditor
+                    text={text}
+                    onTextChange={canEdit ? setText : undefined}
+                    editable={canEdit}
+                  />
+                ) : (
                 <CollaborativeEditor
                   text={text}
                   workId={workBeId ?? undefined}
-                  onTextChange={canEdit ? (newText: string) => {
-                    setText(newText);
-                    // Auto-continue lists: if Enter pressed after a "- " line, add "- " to new line
-                    if (newText.length > text.length) {
-                      const diffPos = newText.slice(0, newText.length - (newText.length - text.length)).length;
-                      // Simple check: did a newline get added?
-                      const addedNewlines = newText.split("\n").length - text.split("\n").length;
-                      if (addedNewlines > 0) {
-                        // Find the new line's position
-                        const lines = newText.split("\n");
-                        // Find which line index changed
-                        let prevLines = text.split("\n");
-                        let changeIdx = -1;
-                        for (let i = 0; i < lines.length; i++) {
-                          if (i >= prevLines.length || lines[i] !== prevLines[i]) {
-                            changeIdx = i;
-                            break;
-                          }
-                        }
-                        if (changeIdx > 0) {
-                          const prevLine = lines[changeIdx - 1];
-                          const curLine = lines[changeIdx] || "";
-                          // If previous line was a bullet ("- " or "* ") and current line is empty
-                          if ((prevLine.startsWith("- ") || prevLine.startsWith("* ")) && curLine === "") {
-                            // Check if there's a DOUBLE empty (exit list)
-                            if (changeIdx >= 2) {
-                              const prevPrev = lines[changeIdx - 2] || "";
-                              if (prevPrev === "") {
-                                // Double Enter — remove the previous "- " line (exit list)
-                                const offset = lines.slice(0, changeIdx - 1).join("\n").length + 1;
-                                const lineEnd = offset + prevLine.length;
-                                const updated = newText.slice(0, offset) + newText.slice(lineEnd);
-                                setText(updated);
-                                return;
-                              }
-                            }
-                            // Single Enter — add "- " prefix to new line
-                            const insertPos = newText.lastIndexOf("\n", newText.length - 1) + 1;
-                            const updated = newText.slice(0, insertPos) + "- " + newText.slice(insertPos);
-                            setText(updated);
-                          }
-                        }
-                      }
-                    }
-                  } : undefined}
+                  onTextChange={canEdit ? setText : undefined}
                   onCursorChange={(idx) => {
                     sendCursor(idx);
                     setCursorPos(idx);
@@ -1980,6 +1945,7 @@ export function WorkspaceShell() {
                    onCreateAnnotation={canEdit ? handleCreateAnnotation : undefined}
                    onToggleStyle={canEdit ? handleToggleStyle : undefined}
                   />
+                )}
                   </>
                  )}
 
