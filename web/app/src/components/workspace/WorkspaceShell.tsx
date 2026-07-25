@@ -389,7 +389,9 @@ export function WorkspaceShell() {
   const handleToggleBlock = useCallback(
     async (kind: string, payload: string) => {
       if (workBeId === null) return;
-      const pos = selectionRange?.start ?? cursorPos ?? 0;
+      let pos = selectionRange?.start ?? cursorPos ?? 0;
+      // If cursor is on a newline character, move to the next line
+      if (text[pos] === "\n") pos += 1;
       const lineStart = text.lastIndexOf("\n", pos - 1) + 1;
       const lineEndIdx = text.indexOf("\n", pos);
       const lineEnd = lineEndIdx === -1 ? text.length : lineEndIdx;
