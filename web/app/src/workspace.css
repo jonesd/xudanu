@@ -986,10 +986,10 @@
 
 /* Selection action popover — floats over text, doesn't shift layout */
 .ws-selection-actions {
-  position: absolute;
-  top: 44px;
-  left: 50%;
-  transform: translateX(-50%);
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
   z-index: 10;
   display: flex;
   gap: 4px;
@@ -998,6 +998,8 @@
   border-radius: 6px;
   padding: 4px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  margin: 8px auto;
+  width: fit-content;
 }
 .ws-sel-btn {
   background: none;
