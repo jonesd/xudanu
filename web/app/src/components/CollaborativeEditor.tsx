@@ -958,12 +958,12 @@ export function CollaborativeEditor({
   useEffect(() => {
     const el = editorRef.current;
     if (!el || hasInlineTransclusions || !displayText) return;
-    const marksKey = styleMarks.map((m) => `${m.kind}:${m.char_start}:${m.char_end}`).join("|");
+    // Include text in the key so marker-based formatting (#, -, >) triggers rebuild
+    const marksKey = displayText.length + ":" + styleMarks.map((m) => `${m.kind}:${m.char_start}:${m.char_end}`).join("|");
     if (marksKey === lastMarksRef.current) return;
     lastMarksRef.current = marksKey;
     const savedCursor = getCursorOffset(el);
     try {
-      if (styleMarks.length > 0) {
         const html = buildStyledText(displayText, styleMarks);
         if (html && html.length > 0) {
           el.innerHTML = html;
