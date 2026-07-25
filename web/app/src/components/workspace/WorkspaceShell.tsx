@@ -1872,38 +1872,56 @@ export function WorkspaceShell() {
                   workId={workBeId ?? undefined}
                   onTextChange={canEdit ? (newText: string) => {
                     setText(newText);
-                    // Auto-continue lists: if Enter pressed after a list item, create list_item for new line
+                    // Auto-continue lists
                     if (workBeId !== null && createAnnotation) {
                       const prevText = text;
-                      if (newText.length > prevText.length && newText.includes("\n")) {
-                        // Find where the new line was added
-                        const cursorIdx = cursorPos ?? newText.length;
-                        const lineStart = newText.lastIndexOf("\n", cursorIdx - 1) + 1;
-                        const prevLineEnd = lineStart - 1;
-                        const prevLineStart = newText.lastIndexOf("\n", prevLineEnd - 1) + 1;
-                        if (prevLineStart >= 0 && prevLineEnd > prevLineStart) {
-                          const prevLineIsListItem = annotations.some(
-                            (a) => a.kind === "list_item" && a.char_start < prevLineEnd && a.char_end > prevLineStart,
+                      // Only when text grew (typing or Enter)
+                      if (newText.length > prevText.length) {
+                        // Find all lines in the new text
+                        const lines: Array<{ start: number; end: number; text: string }> = [];
+                        let pos = 0;
+                        for (const line of newText.split("\n")) {
+                          lines.push({ start: pos, end: pos + line.length, text: line });
+                          pos += line.length + 1;
+                        }
+                        // Find the line the cursor is likely on (last changed area)
+                        // Use a simple heuristic: find the first difference
+                        let diffPos = 0;
+                        while (diffPos < prevText.length && diffPos < newText.length && prevText[diffPos] === newText[diffPos]) {
+                          diffPos++;
+                        }
+                        // Find which line diffPos is on
+                        const curLineIdx = lines.findIndex((l) => diffPos >= l.start && diffPos <= l.end);
+                        if (curLineIdx > 0) {
+                          const curLine = lines[curLineIdx];
+                          const prevLine = lines[curLineIdx - 1];
+                          // Check if previous line is a list item
+                          const prevListItemAnn = annotations.find(
+                            (a) => a.kind === "list_item" && a.char_start < prevLine.end && a.char_end > prevLine.start,
                           );
-                          const newLineText = newText.slice(lineStart).split("\n")[0];
-                          const newLineEnd = lineStart + newLineText.length;
-                          if (prevLineIsListItem && newLineText.length === 0) {
-                            // Empty line after list item — exit the list (delete the previous item's annotation)
-                            const prevAnn = annotations.find(
-                              (a) => a.kind === "list_item" && a.char_start < prevLineEnd && a.char_end > prevLineStart,
-                            );
-                            if (prevAnn) void deleteAnnotation(prevAnn.annotation_id);
-                          } else if (prevLineIsListItem && newLineText.length > 0) {
-                            // Continue the list — create list_item for new line
-                            const existing = annotations.some(
-                              (a) => a.kind === "list_item" && a.char_start < newLineEnd && a.char_end > lineStart,
-                            );
-                            if (!existing) {
-                              const prevAnn = annotations.find(
-                                (a) => a.kind === "list_item" && a.char_start < prevLineEnd && a.char_end > prevLineStart,
+                          if (prevListItemAnn) {
+                            if (curLine.text.length === 0) {
+                              // Empty new line after list item — this is Enter
+                              // Check if the PREVIOUS line was also empty (double Enter = exit)
+                              if (curLineIdx >= 2) {
+                                const prevPrevLine = lines[curLineIdx - 2];
+                                if (prevPrevLine.text.length === 0) {
+                                  // Double Enter on empty list lines — exit list
+                                  const emptyAnn = annotations.find(
+                                    (a) => a.kind === "list_item" && a.char_start < prevLine.end && a.char_end > prevLine.start,
+                                  );
+                                  if (emptyAnn) void deleteAnnotation(emptyAnn.annotation_id);
+                                }
+                              }
+                              // Single Enter on empty line — do nothing, wait for text
+                            } else {
+                              // User typed text on a new line after a list item — continue list
+                              const existing = annotations.some(
+                                (a) => a.kind === "list_item" && a.char_start < curLine.end && a.char_end > curLine.start,
                               );
-                              const payload = prevAnn?.payload || JSON.stringify({ type: "bullet" });
-                              void createAnnotation("list_item", payload, lineStart, newLineEnd, false);
+                              if (!existing) {
+                                void createAnnotation("list_item", prevListItemAnn.payload || JSON.stringify({ type: "bullet" }), curLine.start, curLine.end, false);
+                              }
                             }
                           }
                         }
