@@ -389,8 +389,15 @@ export function WorkspaceShell() {
   const handleToggleBlock = useCallback(
     async (kind: string, payload: string) => {
       if (workBeId === null) return;
-      let pos = selectionRange?.start ?? cursorPos ?? 0;
-      // If cursor is on a newline character, move to the next line
+      // Read cursor position directly from the editor DOM — not stale React state
+      const editorEl = document.querySelector(".editor-content") as HTMLElement | null;
+      let pos = 0;
+      if (editorEl) {
+        pos = getCursorOffset(editorEl);
+      } else {
+        pos = selectionRange?.start ?? cursorPos ?? 0;
+      }
+      // If cursor is on a newline, move to next line
       if (text[pos] === "\n") pos += 1;
       const lineStart = text.lastIndexOf("\n", pos - 1) + 1;
       const lineEndIdx = text.indexOf("\n", pos);
@@ -403,7 +410,6 @@ export function WorkspaceShell() {
         if (existing) {
           await deleteAnnotation(existing.annotation_id);
         } else {
-          // For empty lines, use lineStart+1 so the annotation isn't zero-width
           const annEnd = lineEnd > lineStart ? lineEnd : Math.min(lineStart + 1, text.length);
           await createAnnotation(kind, payload, lineStart, annEnd, false);
         }
@@ -411,7 +417,7 @@ export function WorkspaceShell() {
         console.error("[handleToggleBlock] failed:", e);
       }
     },
-    [selectionRange, cursorPos, text, annotations, deleteAnnotation, createAnnotation, workBeId],
+    [text, annotations, deleteAnnotation, createAnnotation, workBeId],
   );
 
   const showToast = useCallback((msg: string) => {
@@ -1890,18 +1896,21 @@ export function WorkspaceShell() {
                           pos += line.length + 1;
                         }
                         // Find which line the diff is on
-                        const curLineIdx = lines.findIndex((l) => diffPos >= l.start && diffPos <= l.end + 1);
-                        if (curLineIdx > 0) {
-                          const curLine = lines[curLineIdx];
-                          const prevLine = lines[curLineIdx - 1];
+                        const curLineIdx = lines.findIndex((l) => diffPos >= l.start && diffPos <= l.end);
+                        // If diff is at end of line and next char is \n, move to next line
+                        const adjustedLineIdx = (curLineIdx >= 0 && diffPos === lines[curLineIdx].end && newText[diffPos] === "\n")
+                          ? curLineIdx + 1 : curLineIdx;
+                        if (adjustedLineIdx > 0) {
+                          const curLine = lines[adjustedLineIdx];
+                          const prevLine = lines[adjustedLineIdx - 1];
                           // Check if previous line is a list item
                           const prevListAnn = annotations.find(
-                            (a) => a.kind === "list_item" && a.char_start < prevLine.end && a.char_end > prevLine.start,
+                            (a) => a.kind === "list_item" && a.char_start <= prevLine.end && a.char_end >= prevLine.start,
                           );
                           if (prevListAnn) {
-                            // Check if current line already has a list_item annotation
+                            // Check if current line already has a list_item (by start position)
                             const curHasList = annotations.some(
-                              (a) => a.kind === "list_item" && a.char_start < curLine.end && a.char_end > curLine.start,
+                              (a) => a.kind === "list_item" && a.char_start >= curLine.start && a.char_start <= curLine.end,
                             );
                             if (!curHasList) {
                               if (prevLine.text.length === 0) {
