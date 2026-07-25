@@ -171,6 +171,8 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
 
     // The visible text (strip marker prefix if detected from marker)
     const displayText = marker.type ? lineText.slice(contentStart) : lineText;
+    // Wrap the marker in a hidden span so textContent preserves it
+    const markerHtml = marker.type ? `<span style="display:none">${escapeHtml(lineText.slice(0, contentStart))}</span>` : "";
     const displayOffset = marker.type ? lineStart + contentStart : lineStart;
 
     // Apply inline marks to the display text
@@ -184,7 +186,7 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
 
     if (blockType === "heading") {
       const lv = level || 1;
-      html += `<h${lv}>${lineHtml}</h${lv}>`;
+      html += `<h${lv}>${markerHtml}${lineHtml}</h${lv}>`;
     } else if (blockType === "list_item") {
       const lt = listKind === "ordered" ? "ol" : "ul";
       if (!inList || listType !== lt) {
@@ -193,11 +195,11 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
         inList = true;
         listType = lt;
       }
-      html += `<li>${lineHtml}</li>`;
+      html += `<li>${markerHtml}${lineHtml}</li>`;
     } else if (blockType === "blockquote") {
-      html += `<blockquote>${lineHtml}</blockquote>`;
+      html += `<blockquote>${markerHtml}${lineHtml}</blockquote>`;
     } else if (blockType === "code_block") {
-      html += `<pre><code>${escapeHtml(displayText)}</code></pre>`;
+      html += `<pre><code>${markerHtml}${escapeHtml(displayText)}</code></pre>`;
     } else {
       html += `<p>${lineHtml}</p>`;
     }
