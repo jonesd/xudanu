@@ -76,8 +76,42 @@ function CropOverlay({ src, natW, natH, onApply, onCancel }: {
         <span className="ws-crop-dims">{cw}×{ch}px</span>
         <button className="ws-layout-fig-btn" onClick={() => onApply(cx, cy, cw, ch)}>Apply</button>
         <button className="ws-layout-fig-btn" onClick={onCancel}>Cancel</button>
-      </div>
-    </div>
+            </div>
+
+            {/* Recent Documents */}
+            <div className="ws-concepts-panel">
+              <div className="ws-concepts-header">
+                <span className="ws-concepts-title">Recent</span>
+              </div>
+              {(() => {
+                const recent = [...works]
+                  .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0))
+                  .slice(0, 15);
+                if (recent.length === 0) {
+                  return <div className="ws-concepts-empty">No documents yet.</div>;
+                }
+                return (
+                  <ul className="ws-concepts-list">
+                    {recent.map((w) => {
+                      const title = w.title || `Work 0x${w.work_id.toString(16)}`;
+                      const kind = kindCache.get(w.work_id) || "document";
+                      return (
+                        <li
+                          key={w.work_id}
+                          className={`ws-concept-item ${w.work_id === workBeId ? "active" : ""}`}
+                          onClick={() => selectWork(w.work_id)}
+                          title={w.updated_at ? `Updated ${new Date(w.updated_at * 1000).toLocaleDateString()}` : undefined}
+                        >
+                          <span style={{ color: KIND_COLOR[kind], fontSize: 11, marginRight: 4 }}>{KIND_ICON[kind]}</span>
+                          <span className="ws-concept-name">{title.length > 24 ? title.slice(0, 22) + "…" : title}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                );
+              })()}
+            </div>
+          </div>
   );
 }
 
