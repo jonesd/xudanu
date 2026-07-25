@@ -48,17 +48,23 @@ interface Boundary {
   openPos: number;
 }
 
-function applyInlineMarks(textSegment: string, marks: StyleMark[], segStart: number): string {
+// === ORIGINAL buildStyledText — untouched, handles inline marks only ===
+function buildInlineHtml(text: string, marks: StyleMark[]): string {
+  if (marks.length === 0 || text.length === 0) {
+    return escapeHtml(text);
+  }
+
   const clamped = marks
-    .filter((m) => INLINE_KINDS.has(m.kind))
     .map((m) => ({
       ...m,
-      char_start: Math.max(0, Math.min(m.char_start - segStart, textSegment.length)),
-      char_end: Math.max(0, Math.min(m.char_end - segStart, textSegment.length)),
+      char_start: Math.max(0, Math.min(m.char_start, text.length)),
+      char_end: Math.max(0, Math.min(m.char_end, text.length)),
     }))
     .filter((m) => m.char_end > m.char_start);
 
-  if (clamped.length === 0) return escapeHtml(textSegment);
+  if (clamped.length === 0) {
+    return escapeHtml(text);
+  }
 
   const boundaries: Boundary[] = [];
   for (const m of clamped) {
@@ -79,7 +85,7 @@ function applyInlineMarks(textSegment: string, marks: StyleMark[], segStart: num
 
   for (const b of boundaries) {
     if (b.pos > pos) {
-      result += escapeHtml(textSegment.slice(pos, b.pos));
+      result += escapeHtml(text.slice(pos, b.pos));
       pos = b.pos;
     }
     const tag = b.kind === "bold"
@@ -88,78 +94,66 @@ function applyInlineMarks(textSegment: string, marks: StyleMark[], segStart: num
     result += tag;
   }
 
-  if (pos < textSegment.length) {
-    result += escapeHtml(textSegment.slice(pos));
+  if (pos < text.length) {
+    result += escapeHtml(text.slice(pos));
   }
 
   return result;
 }
 
-interface LineInfo {
-  text: string;
-  offset: number;
-  blockKind?: string;
-  blockPayload?: string;
-}
-
+// === Block-aware buildStyledText ===
+// If no block marks, delegates to original inline-only logic.
+// If block marks exist, wraps lines in block tags, applies inline marks within each line.
 export function buildStyledText(text: string, marks: StyleMark[]): string {
-  if (text.length === 0) return "";
+  if (marks.length === 0 || text.length === 0) {
+    return escapeHtml(text);
+  }
 
-  // If no marks at all, just escape
-  if (marks.length === 0) return escapeHtml(text);
+  const inlineMarks = marks.filter((m) => INLINE_KINDS.has(m.kind));
+  const blockMarks = marks.filter((m) => BLOCK_KINDS.has(m.kind));
 
-  const hasBlock = marks.some((m) => BLOCK_KINDS.has(m.kind));
-  const hasInline = marks.some((m) => INLINE_KINDS.has(m.kind));
-
-  // If only inline marks (no block), use the original inline-only path
-  if (!hasBlock) {
-    return applyInlineMarks(text, marks, 0);
+  // No block marks — use original inline logic exactly
+  if (blockMarks.length === 0) {
+    return buildInlineHtml(text, inlineMarks);
   }
 
   // Split into lines and determine block type for each
   const lines = text.split("\n");
-  const lineInfos: LineInfo[] = [];
-  let lineOffset = 0;
-  for (const line of lines) {
-    const lineStart = lineOffset;
-    const lineEnd = lineStart + line.length;
-    const blockMark = marks.find(
-      (m) => BLOCK_KINDS.has(m.kind) && m.char_start < lineEnd && m.char_end > lineStart,
-    );
-    lineInfos.push({
-      text: line,
-      offset: lineStart,
-      blockKind: blockMark?.kind,
-      blockPayload: blockMark?.payload,
-    });
-    lineOffset = lineEnd + 1;
-  }
-
-  // Build HTML, grouping consecutive list items
   let html = "";
-  let i = 0;
   let inList = false;
   let listType = "";
+  let lineOffset = 0;
 
-  while (i < lineInfos.length) {
-    const info = lineInfos[i];
+  for (let i = 0; i < lines.length; i++) {
+    const lineText = lines[i];
+    const lineStart = lineOffset;
+    const lineEnd = lineStart + lineText.length;
+
+    const blockMark = blockMarks.find(
+      (m) => m.char_start < lineEnd && m.char_end > lineStart,
+    );
 
     // Close list if current line is not a list item
-    if (inList && info.blockKind !== "list_item") {
+    if (inList && blockMark?.kind !== "list_item") {
       html += `</${listType}>`;
       inList = false;
     }
 
-    const lineHtml = hasInline
-      ? applyInlineMarks(info.text, marks, info.offset)
-      : escapeHtml(info.text);
+    // Apply inline marks to this line's text
+    const lineHtml = inlineMarks.length > 0
+      ? buildInlineHtml(lineText, inlineMarks.map((m) => ({
+          ...m,
+          char_start: m.char_start - lineStart,
+          char_end: m.char_end - lineStart,
+        })))
+      : escapeHtml(lineText);
 
-    if (info.blockKind === "heading") {
-      const level = info.blockPayload ? (JSON.parse(info.blockPayload).level as number) || 1 : 1;
+    if (blockMark?.kind === "heading") {
+      const level = blockMark.payload ? (() => { try { return JSON.parse(blockMark.payload!).level || 1; } catch { return 1; } })() : 1;
       html += `<h${level}>${lineHtml}</h${level}>`;
-    } else if (info.blockKind === "list_item") {
-      const payload = info.blockPayload ? JSON.parse(info.blockPayload) : { type: "bullet" };
-      const type = payload.type === "ordered" ? "ol" : "ul";
+    } else if (blockMark?.kind === "list_item") {
+      let type = "ul";
+      try { if (JSON.parse(blockMark.payload || "{}").type === "ordered") type = "ol"; } catch {}
       if (!inList || listType !== type) {
         if (inList) html += `</${listType}>`;
         html += `<${type}>`;
@@ -167,14 +161,15 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
         listType = type;
       }
       html += `<li>${lineHtml}</li>`;
-    } else if (info.blockKind === "blockquote") {
+    } else if (blockMark?.kind === "blockquote") {
       html += `<blockquote>${lineHtml}</blockquote>`;
-    } else if (info.blockKind === "code_block") {
-      html += `<pre><code>${escapeHtml(info.text)}</code></pre>`;
+    } else if (blockMark?.kind === "code_block") {
+      html += `<pre><code>${escapeHtml(lineText)}</code></pre>`;
     } else {
       html += `<p>${lineHtml}</p>`;
     }
-    i++;
+
+    lineOffset = lineEnd + 1;
   }
 
   if (inList) html += `</${listType}>`;
