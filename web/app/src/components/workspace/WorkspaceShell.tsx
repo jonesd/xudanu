@@ -1785,8 +1785,8 @@ export function WorkspaceShell() {
                     }}
                     editable={canEdit}
                     annotations={annotations}
-                    onCreateAnnotation={canEdit && createAnnotation ? (kind, payload, start, end) => void createAnnotation(kind, payload, start, end, false) : undefined}
-                    onDeleteAnnotation={canEdit ? deleteAnnotation : undefined}
+                    onCreateAnnotation={createAnnotation ? (kind, payload, start, end) => void createAnnotation(kind, payload, start, end, false) : undefined}
+                    onDeleteAnnotation={deleteAnnotation}
                     onToggleStyle={canEdit ? handleToggleStyle : undefined}
                     onImageUpload={canEdit ? async (file: File) => {
                       if (!clientRef.current || workBeId === null) return null;
