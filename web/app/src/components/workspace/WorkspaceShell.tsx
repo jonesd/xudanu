@@ -348,6 +348,32 @@ export function WorkspaceShell() {
     [annotations, deleteAnnotation, createAnnotation],
   );
 
+  const handleToggleBlock = useCallback(
+    async (kind: string, payload: string) => {
+      if (!selectionRange || workBeId === null) return;
+      const start = selectionRange.start;
+      // Find the line boundaries for the current selection
+      const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+      const lineEndIdx = text.indexOf("\n", start);
+      const lineEnd = lineEndIdx === -1 ? text.length : lineEndIdx;
+
+      // Check if this line already has this block kind
+      const existing = annotations.find(
+        (a) => a.kind === kind && a.char_start < lineEnd && a.char_end > lineStart,
+      );
+      try {
+        if (existing) {
+          await deleteAnnotation(existing.annotation_id);
+        } else {
+          await createAnnotation(kind, payload, lineStart, lineEnd, false);
+        }
+      } catch (e) {
+        console.error("[handleToggleBlock] failed:", e);
+      }
+    },
+    [selectionRange, text, annotations, deleteAnnotation, createAnnotation, workBeId],
+  );
+
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 4000);
@@ -1695,6 +1721,68 @@ export function WorkspaceShell() {
                   >
                     I
                   </button>
+                )}
+                {canEdit && selectionRange && (
+                  <>
+                    <span className="ws-sel-sep" />
+                    <button
+                      type="button"
+                      className="ws-sel-btn style"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleToggleBlock("heading", JSON.stringify({ level: 1 }))}
+                      title="Heading 1"
+                      style={{ fontWeight: 700, fontSize: 14 }}
+                    >
+                      H1
+                    </button>
+                    <button
+                      type="button"
+                      className="ws-sel-btn style"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleToggleBlock("heading", JSON.stringify({ level: 2 }))}
+                      title="Heading 2"
+                      style={{ fontWeight: 700, fontSize: 13 }}
+                    >
+                      H2
+                    </button>
+                    <button
+                      type="button"
+                      className="ws-sel-btn style"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleToggleBlock("heading", JSON.stringify({ level: 3 }))}
+                      title="Heading 3"
+                      style={{ fontWeight: 600, fontSize: 12 }}
+                    >
+                      H3
+                    </button>
+                    <button
+                      type="button"
+                      className="ws-sel-btn"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleToggleBlock("list_item", JSON.stringify({ type: "bullet" }))}
+                      title="Bullet list"
+                    >
+                      &bull; List
+                    </button>
+                    <button
+                      type="button"
+                      className="ws-sel-btn"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleToggleBlock("blockquote", "")}
+                      title="Blockquote"
+                    >
+                      &#10078;
+                    </button>
+                    <button
+                      type="button"
+                      className="ws-sel-btn"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleToggleBlock("code_block", "")}
+                      title="Code block"
+                    >
+                      &lt;/&gt;
+                    </button>
+                  </>
                 )}
                 {selectionRange && !transclusion.pending && !transclusion.pendingLink && (
                   <div className="ws-selection-actions">

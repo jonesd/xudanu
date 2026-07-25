@@ -2,6 +2,73 @@
    Grid layout: top bar + 3-column body + bottom lens row.
    All zones collapsible; the document surface reclaims freed space. */
 
+/* ── Block formatting in editor ── */
+.ws-sel-sep {
+  display: inline-block;
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 2px;
+  vertical-align: middle;
+}
+.editor-content h1, .tiptap-editor-content h1 {
+  font-size: 1.8em;
+  font-weight: 700;
+  margin: 0.6em 0 0.3em;
+  line-height: 1.3;
+}
+.editor-content h2, .tiptap-editor-content h2 {
+  font-size: 1.5em;
+  font-weight: 700;
+  margin: 0.5em 0 0.25em;
+  line-height: 1.3;
+}
+.editor-content h3, .tiptap-editor-content h3 {
+  font-size: 1.2em;
+  font-weight: 600;
+  margin: 0.4em 0 0.2em;
+  line-height: 1.3;
+}
+.editor-content ul, .tiptap-editor-content ul {
+  list-style: disc;
+  padding-left: 24px;
+  margin: 0 0 0.5em;
+}
+.editor-content ol, .tiptap-editor-content ol {
+  list-style: decimal;
+  padding-left: 24px;
+  margin: 0 0 0.5em;
+}
+.editor-content li, .tiptap-editor-content li {
+  margin: 0;
+}
+.editor-content blockquote, .tiptap-editor-content blockquote {
+  border-left: 3px solid var(--accent-blue, #58a6ff);
+  padding-left: 16px;
+  margin: 0 0 0.5em;
+  color: var(--text-muted);
+}
+.editor-content pre, .tiptap-editor-content pre {
+  background: var(--bg-elevated, #161b22);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  margin: 0 0 0.5em;
+}
+.editor-content pre code, .tiptap-editor-content pre code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9em;
+  background: none;
+  padding: 0;
+}
+.editor-content p, .tiptap-editor-content p {
+  margin: 0 0 0.5em;
+}
+.editor-content p:first-child, .tiptap-editor-content p:first-child {
+  margin-top: 0;
+}
+
 .ws-shell {
   display: grid;
   grid-template-columns: 1fr;
