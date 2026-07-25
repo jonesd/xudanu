@@ -84,9 +84,12 @@ function CropOverlay({ src, natW, natH, onApply, onCancel }: {
                 <span className="ws-concepts-title">Recent</span>
               </div>
               {(() => {
-                const recent = [...works]
+                const pinned = works.filter((w) => w.is_starred);
+                const recentUnpinned = works
+                  .filter((w) => !w.is_starred)
                   .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0))
-                  .slice(0, 15);
+                  .slice(0, 15 - pinned.length);
+                const recent = [...pinned, ...recentUnpinned].slice(0, 15);
                 if (recent.length === 0) {
                   return <div className="ws-concepts-empty">No documents yet.</div>;
                 }
@@ -100,10 +103,11 @@ function CropOverlay({ src, natW, natH, onApply, onCancel }: {
                           key={w.work_id}
                           className={`ws-concept-item ${w.work_id === workBeId ? "active" : ""}`}
                           onClick={() => selectWork(w.work_id)}
-                          title={w.updated_at ? `Updated ${new Date(w.updated_at * 1000).toLocaleDateString()}` : undefined}
+                          title={w.updated_at ? `${w.is_starred ? "★ Pinned · " : ""}Updated ${new Date(w.updated_at * 1000).toLocaleDateString()}` : (w.is_starred ? "★ Pinned" : undefined)}
                         >
+                          {w.is_starred && <span style={{ color: "#d29922", fontSize: 10 }}>★</span>}
                           <span style={{ color: KIND_COLOR[kind], fontSize: 11, marginRight: 4 }}>{KIND_ICON[kind]}</span>
-                          <span className="ws-concept-name">{title.length > 24 ? title.slice(0, 22) + "…" : title}</span>
+                          <span className="ws-concept-name">{title.length > 22 ? title.slice(0, 20) + "…" : title}</span>
                         </li>
                       );
                     })}
