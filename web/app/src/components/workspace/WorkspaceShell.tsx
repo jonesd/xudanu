@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useCrdtSync } from "../../hooks/useCrdtSync";
-import { getCursorOffset } from "../../styled-text";
+import { useWorkStore } from "../../store/work-store";
 import { useTransclusion, DEFAULT_LINK_TYPES } from "../../hooks/useTransclusion";
 import { useCompoundEdition } from "../../hooks/useCompoundEdition";
 import { authorColorPair } from "../../author-color";
@@ -172,8 +172,8 @@ export function WorkspaceShell() {
   const [userTrails, setUserTrails] = useState<TrailPayload[]>([]);
   const [workKind, setWorkKind] = useState<WorkKind>("document");
   const [kindPickerOpen, setKindPickerOpen] = useState(false);
-  const [kindCache, setKindCache] = useState<Map<number, WorkKind>>(new Map());
-  const [licenseCache, setLicenseCache] = useState<Map<number, License>>(new Map());
+  const kindCache = useWorkStore(s => s.kindCache);
+  const licenseCache = useWorkStore(s => s.licenseCache);
   const [pickerKindFor, setPickerKindFor] = useState<number | null>(null);
   const [workLicense, setWorkLicense] = useState<License>("all-rights-reserved");
   const [licensePickerOpen, setLicensePickerOpen] = useState(false);
@@ -882,9 +882,11 @@ export function WorkspaceShell() {
       if (wasFollowing) {
         await clientRef.current.workUnstar(workBeId);
         setFollowState({ following: false, busy: false, error: null });
+        useWorkStore.getState().applyWorkUpdate(workBeId, { is_starred: false });
       } else {
         await clientRef.current.workStar(workBeId);
         setFollowState({ following: true, busy: false, error: null });
+        useWorkStore.getState().applyWorkUpdate(workBeId, { is_starred: true });
       }
     } catch (e) {
       setFollowState({
@@ -1024,7 +1026,7 @@ export function WorkspaceShell() {
       .catch(() => {});
   }, []);
 
-  // Populate kind cache from graph data (so work picker can show kinds without N fetches)
+  // Populate store from graph data
   useEffect(() => {
     if (!connected || !clientRef.current) return;
     let cancelled = false;
@@ -1032,14 +1034,7 @@ export function WorkspaceShell() {
       .workGraph()
       .then((g) => {
         if (cancelled) return;
-        const cache = new Map<number, WorkKind>();
-        const licCache = new Map<number, License>();
-        for (const node of g.nodes) {
-          if (node.kind) cache.set(node.work_id, node.kind);
-          if (node.license) licCache.set(node.work_id, node.license);
-        }
-        setKindCache(cache);
-        setLicenseCache(licCache);
+        useWorkStore.getState().setGraph(g.nodes, g.edges);
         // Compute inbound link count per concept
         const linkCounts = new Map<number, number>();
         for (const edge of g.edges) {
@@ -1122,11 +1117,12 @@ export function WorkspaceShell() {
     const prev = workKind;
     setWorkKind(kind);
     setKindPickerOpen(false);
-    setKindCache((prev) => new Map(prev).set(workBeId, kind));
+    useWorkStore.getState().applyKindChange(workBeId, kind);
     try {
       await clientRef.current.workKindSet(workBeId, kind);
     } catch (e) {
       setWorkKind(prev);
+      useWorkStore.getState().applyKindChange(workBeId, prev);
       alert(`Could not change kind: ${e instanceof Error ? e.message : String(e)}`);
     }
   }, [workBeId, clientRef, workKind]);
@@ -1136,26 +1132,28 @@ export function WorkspaceShell() {
     const prev = workLicense;
     setWorkLicense(license);
     setLicensePickerOpen(false);
+    useWorkStore.getState().applyLicenseChange(workBeId, license);
     try {
       await clientRef.current.workLicenseSet(workBeId, license);
     } catch (e) {
       setWorkLicense(prev);
+      useWorkStore.getState().applyLicenseChange(workBeId, prev);
       alert(`Could not change license: ${e instanceof Error ? e.message : String(e)}`);
     }
   }, [workBeId, clientRef, workLicense]);
 
   const handlePickerKindChange = useCallback(async (workId: number, kind: WorkKind) => {
     if (!clientRef.current) return;
-    const prev = kindCache.get(workId) || "document";
-    setKindCache((c) => new Map(c).set(workId, kind));
+    const prev = useWorkStore.getState().kindCache.get(workId) || "document";
+    useWorkStore.getState().applyKindChange(workId, kind);
     setPickerKindFor(null);
     try {
       await clientRef.current.workKindSet(workId, kind);
     } catch (e) {
-      setKindCache((c) => new Map(c).set(workId, prev));
+      useWorkStore.getState().applyKindChange(workId, prev);
       alert(`Could not change kind: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [clientRef, kindCache]);
+  }, [clientRef]);
 
   const handleAddSelectionToTrail = useCallback(async (trailId: number) => {
     if (!selectionRange || workBeId === null || !clientRef.current) return;
