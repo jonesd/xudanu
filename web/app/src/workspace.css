@@ -16,8 +16,12 @@
   align-items: center;
   gap: 2px;
   flex-wrap: wrap;
-  padding: 4px 0;
-  margin-bottom: 4px;
+  padding: 6px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  margin-bottom: 0;
 }
 .editor-content h1, .tiptap-editor-content h1 {
   font-size: 1.8em;
