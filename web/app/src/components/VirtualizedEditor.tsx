@@ -131,7 +131,7 @@ function VirtualizedEditorInner({
         const isLlm = span.author_type === "llm";
         const isHistorical = span.author_type === "historical";
         const name = span.author_display_name || "unknown";
-        const color = isLlm ? "#7c4dff" : isHistorical ? "#c4a35a" : authorColor(name);
+        const color = isLlm ? "#d4a017" : isHistorical ? "#c4a35a" : authorColor(name);
         map.set(key, {
           color,
           name,

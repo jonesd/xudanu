@@ -242,7 +242,7 @@ export function WorkspacePage() {
       if (seen.has(key)) continue;
       const isHistorical = span.author_type === "historical";
       const isLlm = span.author_type === "llm";
-      const color = isHistorical ? "#c4a35a" : isLlm ? "#7c4dff" : authorColor(name);
+      const color = isHistorical ? "#c4a35a" : isLlm ? "#d4a017" : authorColor(name);
       seen.set(key, { name, color });
     }
     return Array.from(seen.values());

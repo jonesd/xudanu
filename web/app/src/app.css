@@ -1913,7 +1913,9 @@ body {
 
 .llm-name {
   font-style: italic;
-  color: #7c4dff;
+  color: #d4a017;
+  cursor: help;
+  border-bottom: 1px dotted #d4a017;
 }
 
 .author-type-badge {
