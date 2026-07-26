@@ -17,7 +17,7 @@ frontend. The project is split across two trees:
 
 ## Technology
 
-**Backend** — Rust (edition 2021). Crate name `xudanu` (v1.0.0).
+**Backend** — Rust (edition 2021). Crate name `xudanu` (v1.0.1).
 - Async runtime: `tokio`; web framework: `axum` 0.8 (HTTP + WebSocket).
 - TLS: `rustls` / `axum-server`; crypto: `chacha20poly1305`, `x25519-dalek`,
   `ed25519-dalek`, `argon2`, `ring`, `blake3`, `hex`.

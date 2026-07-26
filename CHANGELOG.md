@@ -6,6 +6,54 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.0.1] — 2026-07-25
+
+### Block Formatting (Headings, Lists, Blockquotes, Code Blocks)
+- **feat(editor):** Format bar with H1/H2/H3, bullet list, blockquote, code block buttons — always visible above editor
+- **feat(styled-text):** `buildStyledText` detects Markdown markers (`# `, `## `, `### `, `- `, `> `, ```` ``` ````) at line start, renders with inline spans (no block tags — preserves contentEditable behavior)
+- **feat(editor):** Hidden marker spans — `# ` etc. invisible but preserved in `textContent` for round-trip editing
+- **feat(editor):** Auto-continue bullet lists — Enter after `- item` adds `- ` to new line; double Enter exits list
+- **feat(editor):** `handleToggleBlock` reads cursor from DOM directly (no stale React state)
+
+### Reactive UI (Zustand Store)
+- **feat(store):** Global `useWorkStore` with reactive updates — kind/license changes, star/unstar, work creation all propagate instantly to graph, work list, and panels. No page reload needed.
+- **feat(ui):** Recent Documents panel in left rail — top 15 most recently updated works, starred works pinned to top
+
+### Selection UX
+- **fix(editor):** Transclude/Link bar only appears on text selection, positioned above format bar
+- **fix(editor):** Selection cleared on mouseup (no flicker during drag-select)
+
+### Image Rendering
+- **fix(blob):** `RangeElementPayload` field names corrected (`blob_hash`/`blob_mime`/`blob_size`) — elementInsert was silently failing
+- **fix(blob):** Blob hash hex conversion via BigInt (was truncated by JSON.parse)
+- **fix(blob):** `BlobEntry.content_hash` sent as hex string to avoid JS precision loss
+- **fix(blob):** `/blobs` proxy added to Vite config (was missing — all images broken)
+- **fix(blob):** Session ID preserved as string for HTTP blob uploads (u64 precision loss)
+
+### Authentication Fixes
+- **fix(auth):** Session ID captured from raw WebSocket text before JSON.parse
+- **fix(auth):** Session reset on WebSocket close (recaptured on reconnect)
+- **fix(auth):** Annotations re-fetched after login
+
+### Persistence Fixes
+- **fix(persist):** WorkKind and License now restored on server restart (`work.set_kind()` + `work.set_license()`)
+- **fix(persist):** CRDT text fallback to edition text when CRDT returns empty
+- **fix(persist):** Source license stamped into attribution log for transclusion irrevocability
+
+### Transcopyright Licensing (FR-24)
+- **feat(license):** Phase 3 complete — ARR warning on transclusion, compliance badges, source license stamping
+- **docs:** FR-24 design document with architectural boundary (server never handles money)
+
+### Markdown Editor Option
+- **feat(editor):** `?mde` flag activates `@uiw/react-md-editor` — split view (edit + preview), toolbar, Markdown text persists directly via CRDT
+
+### Other
+- **feat(scripts):** `./scripts/stop.sh` for clean server shutdown (SIGTERM, 10s wait, force kill)
+- **fix(ci):** HEIC support moved to separate `heif` feature (not part of `server`)
+- **test:** 412 frontend tests (+52 block formatting), 2444 backend tests
+
+---
+
 ## [v1.0.0] — 2026-07-23
 
 First stable release. All core Xanadu document model features implemented and tested.
