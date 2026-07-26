@@ -839,16 +839,16 @@ All trademarks belong to their respective owners.
 <tr><td>2</td><td>Server can operate independently or in a network</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003;</td></tr>
 <tr><td>3</td><td>Every user uniquely and securely identified</td><td class="neutral" style="text-align:center">Session</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Club + OAuth</td></tr>
 <tr><td>4</td><td>Users can search, retrieve, create, store documents</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">View only</td><td class="pro" style="text-align:center">&#10003;</td></tr>
-<tr><td>5</td><td>Documents can contain any data type</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">Text only</td><td class="neutral" style="text-align:center">Text + blobs</td></tr>
+<tr><td>5</td><td>Documents can contain any data type</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">Text only</td><td class="pro" style="text-align:center">&#10003; Text + images + blobs</td></tr>
 <tr><td>6</td><td>Documents can contain links/transclusions to any other</td><td class="pro" style="text-align:center">&#10003;</td><td class="neutral" style="text-align:center">Display</td><td class="pro" style="text-align:center">&#10003;</td></tr>
 <tr><td>7</td><td>Links visible and followable from all endpoints</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Backlinks</td></tr>
 <tr><td>8</td><td>Permission to link granted by act of publication</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Publish/unpublish</td></tr>
-<tr><td>9</td><td>Royalty mechanism at any granularity</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">&mdash;</td><td class="neutral" style="text-align:center">Byte tracking</td></tr>
+<tr><td>9</td><td>Royalty mechanism at any granularity</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">&mdash;</td><td class="neutral" style="text-align:center">Byte tracking + TCo license</td></tr>
 <tr><td>10</td><td>Every document uniquely and securely identified</td><td class="pro" style="text-align:center">&#10003; Tumblers</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Tumblers + hash</td></tr>
 <tr><td>11</td><td>Secure access controls on documents</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Read/edit clubs</td></tr>
 <tr><td>12</td><td>Rapid search, store, retrieve without knowing location</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Global search</td></tr>
 <tr><td>13</td><td>Documents moved to storage appropriate to access frequency</td><td class="con" style="text-align:center">&mdash;</td><td class="con" style="text-align:center">&mdash;</td><td class="con" style="text-align:center">&mdash;</td></tr>
-<tr><td>14</td><td>Documents stored redundantly for disaster recovery</td><td class="con" style="text-align:center">&mdash;</td><td class="con" style="text-align:center">&mdash;</td><td class="neutral" style="text-align:center">Chunk store + WAL</td></tr>
+<tr><td>14</td><td>Documents stored redundantly for disaster recovery</td><td class="con" style="text-align:center">&mdash;</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Chunk store + WAL + offsite backup</td></tr>
 <tr><td>15</td><td>Service providers can charge for storage/retrieval</td><td class="pro" style="text-align:center">&#10003;</td><td class="con" style="text-align:center">&mdash;</td><td class="con" style="text-align:center">&mdash;</td></tr>
 <tr><td>16</td><td>Transactions secure and auditable only by parties</td><td class="con" style="text-align:center">&mdash;</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Audit log</td></tr>
 <tr><td>17</td><td>Client-server protocol is openly published</td><td class="neutral" style="text-align:center">Source</td><td class="con" style="text-align:center">&mdash;</td><td class="pro" style="text-align:center">&#10003; Open source</td></tr>
@@ -856,7 +856,7 @@ All trademarks belong to their respective owners.
   <td colspan="2"><strong>Score (fully meets)</strong></td>
   <td style="text-align:center"><strong>10 / 17</strong></td>
   <td style="text-align:center"><strong>0 / 17</strong></td>
-  <td style="text-align:center"><strong>11 / 17</strong></td>
+  <td style="text-align:center"><strong>13 / 17</strong></td>
 </tr>
 </table>
 
@@ -879,9 +879,9 @@ All trademarks belong to their respective owners.
 <h3 class="accent-green">Xudanu</h3>
 <p><strong>The practical implementation.</strong> It takes the concepts that Gold proved and OpenXanadu visualized, and makes them <strong>buildable, deployable, and usable</strong>. The trade-offs are clear: enfilades replaced by CRDTs (concurrency over deep versioning), custom protocol replaced by HTTP (accessibility over purity), theoretical royalties replaced by byte tracking (accountability without payments).</p>
 
-<p>Xudanu doesn't claim to be "true Xanadu" &mdash; it's an independent interpretation of the concepts, built with modern tools, released under a proper open-source license, and designed to be actually used rather than merely admired. The 17-rules scorecard shows it meeting 11 of 17 fully, with clear paths forward for the rest.</p>
+<p>Xudanu doesn't claim to be "true Xanadu" &mdash; it's an independent interpretation of the concepts, built with modern tools, released under a proper open-source license, and designed to be actually used rather than merely admired. The 17-rules scorecard shows it meeting 13 of 17 fully, with clear paths forward for the rest.</p>
 
-<p>The biggest gaps &mdash; intercomparison and the royalty payment system &mdash; are acknowledged limitations with planned roadmaps. The biggest advantages &mdash; real-time CRDT collaboration, modern cryptography, cross-server hash verification, and the visual link description system &mdash; are features that neither Gold nor OpenXanadu ever had.</p>
+<p>The biggest gaps &mdash; automatic storage tiering (Rule 13) and the royalty payment system (Rule 9) &mdash; are acknowledged limitations with planned roadmaps. The biggest advantages &mdash; real-time CRDT collaboration, modern cryptography, cross-server hash verification, intercomparison with bezier connections, and the visual link description system &mdash; are features that neither Gold nor OpenXanadu ever had.</p>
 </div>
 
 <div class="footer">
