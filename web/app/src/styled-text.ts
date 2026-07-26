@@ -194,6 +194,11 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
       html += `${markerHtml}${lineHtml}`;
     }
 
+    // Add newline between lines (not after the last one)
+    if (i < lines.length - 1) {
+      html += "\n";
+    }
+
     lineOffset = lineEnd + 1;
   }
 

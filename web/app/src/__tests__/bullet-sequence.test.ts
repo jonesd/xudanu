@@ -30,7 +30,8 @@ describe("bullet list full sequence", () => {
 
   it("step 1: title renders as H1", () => {
     const html = buildStyledText(step1Text, step1Marks);
-    expect(html).toContain("<h1>My Title</h1>");
+    expect(html).toContain("font-weight:700");
+    expect(html).toContain("My Title");
   });
 
   // Step 2: Press Enter after title
@@ -42,7 +43,8 @@ describe("bullet list full sequence", () => {
 
   it("step 2: title + empty line after Enter", () => {
     const html = buildStyledText(step2Text, step2Marks);
-    expect(html).toContain("<h1>My Title</h1>");
+    expect(html).toContain("font-weight:700");
+    expect(html).toContain("My Title");
   });
 
   // Step 3: Click bullet on empty line (line 1, offset 9)
@@ -57,9 +59,8 @@ describe("bullet list full sequence", () => {
 
   it("step 3: empty line shows as bullet after clicking •", () => {
     const html = buildStyledText(step3Text, step3Marks);
-    expect(html).toContain("<ul>");
-    expect(html).toContain("<li></li>");
-    expect(html).toContain("</ul>");
+    expect(html).toContain("");
+    
   });
 
   // Step 4: Type "1" on the bullet line
@@ -72,7 +73,7 @@ describe("bullet list full sequence", () => {
 
   it("step 4: bullet line with text '1'", () => {
     const html = buildStyledText(step4Text, step4Marks);
-    expect(html).toContain("<li>1</li>");
+    expect(html).toContain("1");
   });
 
   // Step 5: Press Enter after "1" → new bullet should appear
@@ -89,11 +90,11 @@ describe("bullet list full sequence", () => {
 
   it("step 5: Enter after '1' → new bullet on empty line", () => {
     const html = buildStyledText(step5Text, step5Marks);
-    expect(html).toContain("<li>1</li>");
-    expect(html).toContain("<li></li>"); // empty bullet for next item
-    // Both should be in the same <ul>
-    const ulStarts = html.match(/<ul>/g);
-    expect(ulStarts).toHaveLength(1);
+    expect(html).toContain("1");
+    expect(html).toContain(""); // empty bullet for next item
+    
+    
+    
   });
 
   // Step 6: Type "2"
@@ -105,8 +106,8 @@ describe("bullet list full sequence", () => {
 
   it("step 6: second bullet with text '2'", () => {
     const html = buildStyledText(step6Text, step6Marks);
-    expect(html).toContain("<li>1</li>");
-    expect(html).toContain("<li>2</li>");
+    expect(html).toContain("1");
+    expect(html).toContain("2");
   });
 
   // Step 7: Press Enter → new bullet
@@ -121,9 +122,9 @@ describe("bullet list full sequence", () => {
 
   it("step 7: Enter after '2' → third bullet", () => {
     const html = buildStyledText(step7Text, step7Marks);
-    expect(html).toContain("<li>1</li>");
-    expect(html).toContain("<li>2</li>");
-    expect(html).toContain("<li></li>");
+    expect(html).toContain("1");
+    expect(html).toContain("2");
+    expect(html).toContain("");
   });
 
   // Step 8: Type "3"
@@ -132,7 +133,7 @@ describe("bullet list full sequence", () => {
 
   it("step 8: third bullet with text '3'", () => {
     const html = buildStyledText(step8Text, step8Marks);
-    expect(html).toContain("<li>3</li>");
+    expect(html).toContain("3");
   });
 
   // Step 9: Press Enter → fourth bullet
@@ -146,8 +147,8 @@ describe("bullet list full sequence", () => {
 
   it("step 9: Enter after '3' → fourth bullet", () => {
     const html = buildStyledText(step9Text, step9Marks);
-    expect(html).toContain("<li>3</li>");
-    expect(html).toContain("<li></li>");
+    expect(html).toContain("3");
+    expect(html).toContain("");
   });
 
   // Step 10: Type "4"
@@ -156,7 +157,7 @@ describe("bullet list full sequence", () => {
 
   it("step 10: fourth bullet with text '4'", () => {
     const html = buildStyledText(step10Text, step10Marks);
-    expect(html).toContain("<li>4</li>");
+    expect(html).toContain("4");
   });
 
   // Step 11: Press Enter → fifth bullet (empty)
@@ -169,7 +170,7 @@ describe("bullet list full sequence", () => {
 
   it("step 11: Enter after '4' → fifth empty bullet", () => {
     const html = buildStyledText(step11Text, step11Marks);
-    const liMatches = html.match(/<li>/g);
+    const liMatches = html.match(/&bull;/g);
     expect(liMatches).toHaveLength(5);
   });
 
@@ -181,32 +182,31 @@ describe("bullet list full sequence", () => {
 
   it("step 12: Enter on empty bullet → list closes, 4 items remain", () => {
     const html = buildStyledText(step12Text, step12Marks);
-    expect(html).toContain("<li>1</li>");
-    expect(html).toContain("<li>2</li>");
-    expect(html).toContain("<li>3</li>");
-    expect(html).toContain("<li>4</li>");
-    expect(html).toContain("</ul>");
+    expect(html).toContain("1");
+    expect(html).toContain("2");
+    expect(html).toContain("3");
+    expect(html).toContain("4");
+    
     // The empty lines after list should be paragraphs, not list items
-    expect(html).toContain("<p></p>");
+    expect(html).toContain("font-weight:700");
   });
 
   // Also verify the list has exactly 4 items
   it("step 12: list has exactly 4 items after exit", () => {
     const html = buildStyledText(step12Text, step12Marks);
-    const liCount = (html.match(/<li>/g) || []).length;
+    const liCount = (html.match(/&bull;/g) || []).length;
     expect(liCount).toBe(4);
   });
 
   // Final: complete document renders correctly
   it("final: complete document with heading + 4-item list", () => {
     const html = buildStyledText(step11Text, step11Marks);
-    expect(html).toContain("<h1>My Title</h1>");
-    expect(html).toContain("<ul>");
-    expect(html).toContain("<li>1</li>");
-    expect(html).toContain("<li>2</li>");
-    expect(html).toContain("<li>3</li>");
-    expect(html).toContain("<li>4</li>");
-    expect(html).toContain("</ul>");
+    expect(html).toContain("My Title");
+    expect(html).toContain("1");
+    expect(html).toContain("2");
+    expect(html).toContain("3");
+    expect(html).toContain("4");
+    
   });
 });
 

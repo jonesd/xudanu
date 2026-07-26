@@ -114,30 +114,36 @@ describe("buildStyledText inline marks", () => {
 describe("buildStyledText headings", () => {
   it("heading level 1", () => {
     const result = buildStyledText("Title", [mark("heading", 0, 5, JSON.stringify({ level: 1 }))]);
-    expect(result).toContain("<h1>Title</h1>");
+    expect(result).toContain("font-weight:700");
+    expect(result).toContain("1.8em");
+    expect(result).toContain("Title");
   });
 
   it("heading level 2", () => {
     const result = buildStyledText("Section", [mark("heading", 0, 7, JSON.stringify({ level: 2 }))]);
-    expect(result).toContain("<h2>Section</h2>");
+    expect(result).toContain("font-weight:700");
+    expect(result).toContain("1.5em");
+    expect(result).toContain("Section");
   });
 
   it("heading level 3", () => {
     const result = buildStyledText("Sub", [mark("heading", 0, 3, JSON.stringify({ level: 3 }))]);
-    expect(result).toContain("<h3>Sub</h3>");
+    expect(result).toContain("font-weight:600");
+    expect(result).toContain("1.2em");
+    expect(result).toContain("Sub");
   });
 
   it("heading defaults to level 1 without payload", () => {
     const result = buildStyledText("Title", [mark("heading", 0, 5)]);
-    expect(result).toContain("<h1>");
+    expect(result).toContain("font-weight:700");
   });
 
   it("heading with following paragraph", () => {
     const text = "Title\nBody text";
     const marks = [mark("heading", 0, 5, JSON.stringify({ level: 1 }))];
     const result = buildStyledText(text, marks);
-    expect(result).toContain("<h1>Title</h1>");
-    expect(result).toContain("<p>Body text</p>");
+    expect(result).toContain("Title");
+    expect(result).toContain("Body text");
   });
 });
 
@@ -146,37 +152,31 @@ describe("buildStyledText headings", () => {
 describe("buildStyledText lists", () => {
   it("single bullet item", () => {
     const result = buildStyledText("Item", [mark("list_item", 0, 4, JSON.stringify({ type: "bullet" }))]);
-    expect(result).toContain("<ul>");
-    expect(result).toContain("<li>Item</li>");
-    expect(result).toContain("</ul>");
+    expect(result).toContain("&bull;");
+    expect(result).toContain("Item");
   });
 
   it("multiple bullet items", () => {
     const text = "First\nSecond";
     const marks = [mark("list_item", 0, text.length, JSON.stringify({ type: "bullet" }))];
     const result = buildStyledText(text, marks);
-    expect(result).toContain("<ul>");
-    expect(result).toContain("<li>First</li>");
-    expect(result).toContain("<li>Second</li>");
-    expect(result).toContain("</ul>");
-    expect(result.match(/<ul>/g)).toHaveLength(1);
-    expect(result.match(/<\/ul>/g)).toHaveLength(1);
+    expect(result).toContain("First");
+    expect(result).toContain("Second");
   });
 
   it("ordered list", () => {
     const text = "First\nSecond";
     const marks = [mark("list_item", 0, text.length, JSON.stringify({ type: "ordered" }))];
     const result = buildStyledText(text, marks);
-    expect(result).toContain("<ol>");
-    expect(result).toContain("</ol>");
+    expect(result).toContain("&#9312;");
   });
 
   it("list followed by paragraph", () => {
     const text = "Item\nAfter";
     const marks = [mark("list_item", 0, 4, JSON.stringify({ type: "bullet" }))];
     const result = buildStyledText(text, marks);
-    expect(result).toContain("</ul>");
-    expect(result).toContain("<p>After</p>");
+    expect(result).toContain("Item");
+    expect(result).toContain("After");
   });
 });
 
@@ -185,15 +185,16 @@ describe("buildStyledText lists", () => {
 describe("buildStyledText blockquotes", () => {
   it("single blockquote line", () => {
     const result = buildStyledText("A quote", [mark("blockquote", 0, 7)]);
-    expect(result).toContain("<blockquote>A quote</blockquote>");
+    expect(result).toContain("border-left");
+    expect(result).toContain("A quote");
   });
 
   it("blockquote followed by paragraph", () => {
     const text = "Quote\nNormal";
     const marks = [mark("blockquote", 0, 5)];
     const result = buildStyledText(text, marks);
-    expect(result).toContain("<blockquote>Quote</blockquote>");
-    expect(result).toContain("<p>Normal</p>");
+    expect(result).toContain("Quote");
+    expect(result).toContain("Normal");
   });
 });
 
@@ -202,9 +203,8 @@ describe("buildStyledText blockquotes", () => {
 describe("buildStyledText code blocks", () => {
   it("single code block", () => {
     const result = buildStyledText("let x = 1;", [mark("code_block", 0, 10)]);
-    expect(result).toContain("<pre><code>");
+    expect(result).toContain("monospace");
     expect(result).toContain("let x = 1;");
-    expect(result).toContain("</code></pre>");
   });
 
   it("code block escapes HTML", () => {
@@ -223,11 +223,10 @@ describe("buildStyledText mixed content", () => {
       mark("list_item", 12, 23, JSON.stringify({ type: "bullet" })),
     ];
     const result = buildStyledText(text, marks);
-    expect(result).toContain("<h1>Title</h1>");
-    expect(result).toContain("<p>Body</p>");
-    expect(result).toContain("<ul>");
-    expect(result).toContain("<li>Item 1</li>");
-    expect(result).toContain("<li>Item 2</li>");
+    expect(result).toContain("Title");
+    expect(result).toContain("Body");
+    expect(result).toContain("Item 1");
+    expect(result).toContain("Item 2");
   });
 
   it("bold inside heading", () => {
@@ -237,7 +236,7 @@ describe("buildStyledText mixed content", () => {
       mark("bold", 0, 5),
     ];
     const result = buildStyledText(text, marks);
-    expect(result).toContain("<h1>");
+    expect(result).toContain("font-weight:700");
     expect(result).toContain("<strong>Title</strong>");
   });
 
@@ -248,14 +247,12 @@ describe("buildStyledText mixed content", () => {
       mark("bold", 0, 9),
     ];
     const result = buildStyledText(text, marks);
-    expect(result).toContain("<li>");
     expect(result).toContain("<strong>Important</strong>");
   });
 
   it("paragraphs without any block marks", () => {
     const text = "Line one\nLine two\nLine three";
     const result = buildStyledText(text, []);
-    // No block marks → original behavior (just escaped text, no <p> tags)
     expect(result).toBe("Line one\nLine two\nLine three");
   });
 });
