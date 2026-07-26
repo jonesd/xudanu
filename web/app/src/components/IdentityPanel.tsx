@@ -14,6 +14,14 @@ interface IdentityPanelProps {
   onCreateIdentity: (displayName: string, password: string) => Promise<void>;
   onLogout: () => void;
   rosters?: Record<number, Roster>;
+  llmEnabled?: boolean;
+  llmUsage?: {
+    total_requests: number;
+    total_prompt_chars: number;
+    total_response_chars: number;
+    by_feature?: Record<string, { requests?: number; prompt_chars?: number; response_chars?: number; count?: number }>;
+    recent?: Array<{ feature: string; prompt_chars: number; response_chars: number; timestamp_secs: number }>;
+  } | null;
 }
 
 const MIN_PASSWORD_LENGTH = 10;
@@ -39,7 +47,7 @@ export function passwordStrength(pw: string): { score: number; label: string; co
   return { score, label: "Strong", color: "#27ae60" };
 }
 
-export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, onLogout, rosters }: IdentityPanelProps) {
+export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, onLogout, rosters, llmEnabled, llmUsage }: IdentityPanelProps) {
   const [mode, setMode] = useState<"closed" | "login" | "create">("closed");
   const [clubName, setClubName] = useState("");
   const [password, setPassword] = useState("");
@@ -251,6 +259,54 @@ export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, 
           )}
         </p>
       </form>
+      {identity && llmEnabled !== undefined && (
+        <div className="llm-usage-panel">
+          <div className="llm-usage-header">
+            <span className="llm-usage-title">LLM Activity</span>
+            <span className={`llm-usage-badge ${llmEnabled ? "active" : "inactive"}`}>
+              {llmEnabled ? "Enabled" : "Disabled"}
+            </span>
+          </div>
+          {llmEnabled && llmUsage ? (
+            <>
+              <div className="llm-usage-stats">
+                <div className="llm-usage-stat">
+                  <span className="llm-usage-number">{llmUsage.total_requests}</span>
+                  <span className="llm-usage-label">requests</span>
+                </div>
+                <div className="llm-usage-stat">
+                  <span className="llm-usage-number">{Math.round(llmUsage.total_prompt_chars / 4).toLocaleString()}</span>
+                  <span className="llm-usage-label">tokens sent</span>
+                </div>
+                <div className="llm-usage-stat">
+                  <span className="llm-usage-number">{Math.round(llmUsage.total_response_chars / 4).toLocaleString()}</span>
+                  <span className="llm-usage-label">tokens received</span>
+                </div>
+              </div>
+              {llmUsage.by_feature && Object.keys(llmUsage.by_feature).length > 0 && (
+                <div className="llm-usage-features">
+                  {Object.entries(llmUsage.by_feature).map(([feature, stats]) => {
+                    const count = stats.count || stats.requests || 0;
+                    return (
+                      <div key={feature} className="llm-usage-feature">
+                        <span className="llm-usage-feature-name">{feature}</span>
+                        <span className="llm-usage-feature-count">{count}×</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="llm-usage-disclaimer">
+                Token counts are estimates (~4 chars/token). Actual cost depends on your LLM provider.
+              </p>
+            </>
+          ) : llmEnabled ? null : (
+            <p className="llm-usage-hint">
+              Enable with <code>--ollama-url</code> flag on the server.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

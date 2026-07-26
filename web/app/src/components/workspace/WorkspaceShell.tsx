@@ -2577,6 +2577,9 @@ export function WorkspaceShell() {
               onLogin={login}
               onCreateIdentity={createIdentity}
               onLogout={logout}
+              llmEnabled={crdt.llmEnabled}
+              llmUsage={llmUsage}
+              llmUsage={llmUsage}
             />
             <div style={{ textAlign: "right", marginTop: 12 }}>
               <button className="ws-anno-cancel" onClick={() => setShowIdentity(false)}>Close</button>

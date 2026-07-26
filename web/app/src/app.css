@@ -1918,6 +1918,94 @@ body {
   border-bottom: 1px dotted #d4a017;
 }
 
+/* LLM Usage Panel */
+.llm-usage-panel {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated, rgba(255,255,255,0.03));
+}
+.llm-usage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.llm-usage-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #d4a017;
+}
+.llm-usage-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.llm-usage-badge.active {
+  background: rgba(212, 160, 23, 0.15);
+  color: #d4a017;
+}
+.llm-usage-badge.inactive {
+  background: rgba(138, 138, 150, 0.15);
+  color: #8a8a96;
+}
+.llm-usage-stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.llm-usage-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.llm-usage-number {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+.llm-usage-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+.llm-usage-features {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+.llm-usage-feature {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.llm-usage-feature-count {
+  color: #d4a017;
+  font-weight: 600;
+}
+.llm-usage-disclaimer {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin: 4px 0 0;
+  line-height: 1.3;
+}
+.llm-usage-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 4px 0 0;
+}
+.llm-usage-hint code {
+  font-size: 10px;
+  background: var(--bg-elevated);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
 .author-type-badge {
   font-size: 10px;
   padding: 1px 6px;
