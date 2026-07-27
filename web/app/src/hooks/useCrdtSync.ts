@@ -27,6 +27,7 @@ export interface CrdtSyncState {
   unshareWork: () => Promise<void>;
   narrateDiff: () => Promise<{ text: string; model: string; updatedText: string }>;
   getWritingFeedback: () => Promise<{ text: string; model: string }>;
+  suggestTitle: () => Promise<string>;
   llmEnabled: boolean;
   llmUsage: LlmUsageSummary | null;
   fetchWorkList: () => Promise<WorkListEntry[]>;
@@ -153,9 +154,6 @@ export function useCrdtSync(
         const tryAuth = async () => {
           if (storedTicket) {
             const ok = await client!.sessionTicketRedeem(storedTicket);
-            if (!ok) {
-              try { localStorage.removeItem("xudanu_session_ticket"); } catch {}
-            }
           }
           const id = await client!.checkWhoAmI();
           if (id) {
@@ -437,6 +435,17 @@ export function useCrdtSync(
     }
   }, [workBeId]);
 
+  const suggestTitle = useCallback(async (): Promise<string> => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected() || workBeId === null) return "";
+    try {
+      return await client.suggestTitle(workBeId);
+    } catch (e) {
+      console.error("Failed to suggest title:", e);
+      return `Error: ${e}`;
+    }
+  }, [workBeId]);
+
   const fetchWorkList = useCallback(async (): Promise<WorkListEntry[]> => {
     const client = clientRef.current;
     if (!client || !client.isConnected()) return [];
@@ -542,7 +551,7 @@ export function useCrdtSync(
     attributionSpans, attributionLogStatus, refreshAttribution,
     refreshAwareness,
     identity, login, createIdentity, createWork, shareWork, unshareWork, narrateDiff,
-    getWritingFeedback, llmEnabled, llmUsage, fetchWorkList,     setVisibility, getReadClub, getEditClub, publicClubId, logout,
+    getWritingFeedback, llmEnabled, llmUsage, suggestTitle, fetchWorkList,     setVisibility, getReadClub, getEditClub, publicClubId, logout,
     annotations, refreshAnnotations, createAnnotation, deleteAnnotation,
     connectionEpoch,
     isAdmin,

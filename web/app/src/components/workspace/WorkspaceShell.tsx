@@ -22,6 +22,7 @@ import type { License } from "../../api/crdt_sync";
 import { LICENSES } from "../../api/crdt_sync";
 import type { WorkKind } from "../../graph-scoring";
 import { KIND_ICON, KIND_COLOR, KIND_ICON_COLOR } from "../../graph-scoring";
+import { DataIntegrityBanner } from "../DataIntegrityBanner";
 import { getCursorOffset, setCursorOffset } from "../../styled-text";
 import { SEED_CONCEPTS } from "../../concepts-seed";
 import { WorkspaceTopBar } from "./WorkspaceTopBar";
@@ -187,6 +188,12 @@ export function WorkspaceShell() {
   const [serverDomain, setServerDomain] = useState<string>("localhost");
   const [viewingRevision, setViewingRevision] = useState<{ id: number; text: string } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [narrating, setNarrating] = useState(false);
+  const [narration, setNarration] = useState<string | null>(null);
+  const [loadingFeedback, setLoadingFeedback] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [suggestingTitle, setSuggestingTitle] = useState(false);
+  const [suggestedTitle, setSuggestedTitle] = useState<string | null>(null);
   const [epubImporting, setEpubImporting] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState<string | undefined>(undefined);
@@ -1274,6 +1281,7 @@ export function WorkspaceShell() {
 
   return (
     <div className={`ws-shell ${activeCssClass} ${navTab === "compose" ? "ws-mode-compose" : ""} ${navTab === "library" ? "ws-mode-library" : ""}`}>
+      <DataIntegrityBanner />
       <WorkspaceTopBar
         connected={connected}
         identityName={identityName}
@@ -1532,8 +1540,35 @@ export function WorkspaceShell() {
                                 {kind === k && <span className="ws-kind-check">✓</span>}
                               </button>
                             ))}
-                          </div>
-                        )}
+                  </div>
+                )}
+                {narration && (
+                  <div className="llm-result-panel">
+                    <div className="llm-result-header">
+                      <span>Summary</span>
+                      <button type="button" className="llm-result-close" onClick={() => setNarration(null)}>close</button>
+                    </div>
+                    <p style={{ whiteSpace: "pre-wrap" }}>{narration}</p>
+                  </div>
+                )}
+                {feedback && (
+                  <div className="llm-result-panel">
+                    <div className="llm-result-header">
+                      <span>Writing Feedback</span>
+                      <button type="button" className="llm-result-close" onClick={() => setFeedback(null)}>close</button>
+                    </div>
+                    <p style={{ whiteSpace: "pre-wrap" }}>{feedback}</p>
+                  </div>
+                )}
+                {suggestedTitle && (
+                  <div className="llm-result-panel">
+                    <div className="llm-result-header">
+                      <span>Suggested Title</span>
+                      <button type="button" className="llm-result-close" onClick={() => setSuggestedTitle(null)}>close</button>
+                    </div>
+                    <p style={{ fontSize: 16, fontWeight: 600 }}>{suggestedTitle}</p>
+                  </div>
+                )}
                       </li>
                     );
                   })}
@@ -1873,6 +1908,46 @@ export function WorkspaceShell() {
                     <button type="button" className="ws-sel-btn" onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleToggleBlock("code_block", "")}
                       title="Code block">&lt;/&gt;</button>
+                    <span className="ws-sel-sep" />
+                    <button type="button" className="ws-sel-btn" onMouseDown={(e) => e.preventDefault()}
+                      disabled={narrating}
+                      onClick={async () => {
+                        setNarrating(true);
+                        setNarration(null);
+                        const result = await crdt.narrateDiff();
+                        setNarration(result.text);
+                        setNarrating(false);
+                      }}
+                      title="Summarize changes with AI"
+                      style={{ color: "#d4a017" }}>
+                      {narrating ? "Summarizing\u2026" : "\u2728 Summarize"}
+                    </button>
+                    <button type="button" className="ws-sel-btn" onMouseDown={(e) => e.preventDefault()}
+                      disabled={loadingFeedback}
+                      onClick={async () => {
+                        setLoadingFeedback(true);
+                        setFeedback(null);
+                        const result = await crdt.getWritingFeedback();
+                        setFeedback(result.text);
+                        setLoadingFeedback(false);
+                      }}
+                      title="Get AI writing feedback"
+                      style={{ color: "#d4a017" }}>
+                      {loadingFeedback ? "Reviewing\u2026" : "\u2728 Feedback"}
+                    </button>
+                    <button type="button" className="ws-sel-btn" onMouseDown={(e) => e.preventDefault()}
+                      disabled={suggestingTitle}
+                      onClick={async () => {
+                        setSuggestingTitle(true);
+                        setSuggestedTitle(null);
+                        const title = await crdt.suggestTitle();
+                        setSuggestedTitle(title);
+                        setSuggestingTitle(false);
+                      }}
+                      title="Generate a title with AI"
+                      style={{ color: "#d4a017" }}>
+                      {suggestingTitle ? "Thinking\u2026" : "\u2728 Title"}
+                    </button>
                   </div>
                 )}
                 {addToSelector && selectionRange && (

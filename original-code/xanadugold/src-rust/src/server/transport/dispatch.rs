@@ -31,6 +31,10 @@ pub fn dispatch(
         return dispatch_writing_feedback(state, session_id, request);
     }
 
+    if matches!(request, WireRequest::WorkSuggestTitle { .. }) {
+        return dispatch_suggest_title(state, session_id, request);
+    }
+
     let is_work_create = matches!(request, WireRequest::WorkCreate { .. });
     let is_read = request.is_readonly();
 
@@ -293,6 +297,61 @@ fn dispatch_writing_feedback(
     })
 }
 
+fn dispatch_suggest_title(
+    state: &SharedState,
+    session_id: crate::server::SessionId,
+    request: WireRequest,
+) -> Result<ResponseValue, crate::server::ServerError> {
+    let work_id = match &request {
+        WireRequest::WorkSuggestTitle { work_id } => *work_id,
+        _ => unreachable!(),
+    };
+
+    let text = state.server.with_server(|srv| {
+        let _ = state.server.bump_operation_atomic();
+        srv.ensure_can_read(session_id, work_id)?;
+        let text = if srv.crdt_is_active(work_id) {
+            srv.crdt_current_text(work_id).unwrap_or_default()
+        } else {
+            String::new()
+        };
+        Ok::<_, crate::server::ServerError>(text)
+    })?;
+
+    if text.is_empty() {
+        return Ok(ResponseValue::String(
+            "(No content to generate a title from.)".to_string(),
+        ));
+    }
+
+    let llm = match crate::server::ollama::get_client() {
+        Some(c) => c,
+        None => return Ok(ResponseValue::String(
+            "(LLM features are disabled.)".to_string(),
+        )),
+    };
+    let prompt = crate::server::ollama::build_title_prompt(&text);
+
+    let title = match tokio::task::block_in_place(|| {
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(async {
+            let _permit = llm_semaphore().acquire().await.map_err(|e| e.to_string())?;
+            tokio::time::timeout(
+                LLM_TIMEOUT,
+                llm.generate_tracked(crate::server::ollama::LlmFeature::AutoTitle, &prompt),
+            )
+            .await
+            .map_err(|_| format!("(LLM request timed out after {} seconds)", LLM_TIMEOUT.as_secs()))
+            .and_then(|r| r.map_err(|e| e.to_string()))
+        })
+    }) {
+        Ok(text) => text.trim().trim_matches('"').to_string(),
+        Err(e) => format!("(LLM unavailable: {})", e),
+    };
+
+    Ok(ResponseValue::String(title))
+}
+
 fn dispatch_inner(
     srv: &mut Server,
     session_id: crate::server::SessionId,
@@ -342,7 +401,9 @@ fn dispatch_inner(
             ))
         }
         WireRequest::SessionTicketIssue => {
+            tracing::info!("SessionTicketIssue dispatch, session={:?}", session_id);
             let ticket = srv.issue_session_ticket(session_id)?;
+            tracing::info!("SessionTicketIssue OK, ticket len={}", ticket.len());
             Ok(ResponseValue::Ticket {
                 clubs: vec![],
                 ticket,

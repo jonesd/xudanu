@@ -192,7 +192,7 @@ pub enum OperationCode {
     WorkReviseDelta,
     WorkDiffNarration,
     WorkWritingFeedback,
-
+    WorkSuggestTitle,
     WorkBacklinks,
 
     LinkCreate,
@@ -488,6 +488,7 @@ impl OperationCode {
             0x034c => Some(OperationCode::CrossServerBacklinksGet),
             0x0341 => Some(OperationCode::WorkDiffNarration),
             0x0342 => Some(OperationCode::WorkWritingFeedback),
+            0x034e => Some(OperationCode::WorkSuggestTitle),
             0x0343 => Some(OperationCode::WorkBacklinks),
 
             0x0208 => Some(OperationCode::ClubSetDefaultReadClub),
@@ -816,6 +817,7 @@ impl OperationCode {
             OperationCode::WorkReviseDelta => 0x0316,
             OperationCode::WorkDiffNarration => 0x0341,
             OperationCode::WorkWritingFeedback => 0x0342,
+            OperationCode::WorkSuggestTitle => 0x034e,
             OperationCode::WorkBacklinks => 0x0343,
 
             OperationCode::LinkCreate => 0x0701,
@@ -1430,6 +1432,9 @@ pub enum WireRequest {
     },
 
     WorkWritingFeedback {
+        work_id: BeId,
+    },
+    WorkSuggestTitle {
         work_id: BeId,
     },
 

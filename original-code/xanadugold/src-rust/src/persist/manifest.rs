@@ -336,8 +336,8 @@ pub struct Manifest {
     pub compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub social_chunk_hash: Option<[u8; 32]>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ticket_nonces_chunk_hash: Option<[u8; 32]>,
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub ticket_nonces: std::collections::HashMap<String, u64>,
     // ── v5+ (future additions go here with version annotation) ──
 
     // ── FR-23: revision metadata ──
@@ -1100,7 +1100,7 @@ pub fn create_empty_manifest(
         trail_counter: 10_000,
         compound_editions: Vec::new(),
         social_chunk_hash: None,
-        ticket_nonces_chunk_hash: None,
+        ticket_nonces: std::collections::HashMap::new(),
         revisions: std::collections::HashMap::new(),
     }
 }

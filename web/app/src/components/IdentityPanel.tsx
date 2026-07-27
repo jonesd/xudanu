@@ -259,7 +259,7 @@ export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, 
           )}
         </p>
       </form>
-      {identity && llmEnabled !== undefined && (
+      {identity && (
         <div className="llm-usage-panel">
           <div className="llm-usage-header">
             <span className="llm-usage-title">LLM Activity</span>

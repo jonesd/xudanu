@@ -756,6 +756,12 @@ export class CrdtSyncClient {
     return { text: (val.feedback as string) || "", model: (val.llm_model as string) || "" };
   }
 
+  async suggestTitle(workId: number): Promise<string> {
+    const resp = await this.sendRequest("work_suggest_title", { work_id: workId });
+    const val = (resp as Record<string, unknown>)?.value as Record<string, unknown> | undefined;
+    return (val as unknown as string) || (resp as unknown as string) || "";
+  }
+
   async llmUsage(): Promise<LlmUsageSummary | null> {
     const resp = await this.sendRequest("server_stats");
     const val = (resp as Record<string, unknown>)?.value as Record<string, unknown> | undefined;
@@ -1628,9 +1634,8 @@ export class CrdtSyncClient {
   async sessionTicketIssue(): Promise<Uint8Array | null> {
     try {
       const resp = await this.sendRequest("session_ticket_issue");
-      const obj = resp as Record<string, unknown>;
-      const ticketObj = (obj?.Ticket as Record<string, unknown>) || obj;
-      const ticketArr = ticketObj?.ticket as number[] | undefined;
+      const val = (resp as Record<string, unknown>)?.value as Record<string, unknown> | undefined;
+      const ticketArr = val?.ticket as number[] | undefined;
       if (ticketArr && ticketArr.length > 0) return new Uint8Array(ticketArr);
       return null;
     } catch {
@@ -1643,9 +1648,8 @@ export class CrdtSyncClient {
       const resp = await this.sendRequest("session_ticket_redeem", {
         ticket: Array.from(ticket),
       });
-      const obj = resp as Record<string, unknown>;
-      const ticketObj = (obj?.Ticket as Record<string, unknown>) || obj;
-      const newTicketArr = ticketObj?.ticket as number[] | undefined;
+      const val = (resp as Record<string, unknown>)?.value as Record<string, unknown> | undefined;
+      const newTicketArr = val?.ticket as number[] | undefined;
       if (newTicketArr && newTicketArr.length > 0) {
         const newTicket = new Uint8Array(newTicketArr);
         const b64 = btoa(String.fromCharCode(...newTicket));

@@ -373,6 +373,7 @@ pub struct Server {
     pub(crate) public_address: Option<String>,
     server_directory: crate::server::server_directory::ServerDirectory,
     ticket_nonces: std::collections::HashMap<[u8; 16], u64>,
+    tickets_dirty: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -505,6 +506,7 @@ pub(crate) struct CheckpointPayload {
     trail_counter: BeId,
     compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
     key_history: Option<crate::persist::manifest::KeyHistoryEntry>,
+    ticket_nonces_data: Option<Vec<u8>>,
 }
 
 #[cfg(feature = "server")]
@@ -639,6 +641,12 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         None
     };
 
+    let ticket_nonces_inline: std::collections::HashMap<String, u64> = if let Some(ref td) = payload.ticket_nonces_data {
+        serde_json::from_slice(td).unwrap_or_default()
+    } else {
+        std::collections::HashMap::new()
+    };
+
     let next_slot = if payload.manifest_slot == 'a' {
         'b'
     } else {
@@ -684,7 +692,7 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         trail_counter: payload.trail_counter,
         compound_editions: payload.compound_editions,
         social_chunk_hash: None,
-        ticket_nonces_chunk_hash: None,
+        ticket_nonces: ticket_nonces_inline,
         revisions: std::collections::HashMap::new(),
     };
 
@@ -902,6 +910,7 @@ impl Server {
             public_address: None,
             server_directory: crate::server::server_directory::ServerDirectory::new(),
             ticket_nonces: HashMap::new(),
+            tickets_dirty: false,
             // TODO: Annotations use a simple HashMap for pragmatic first implementation.
             // Migrate to Ent/AssertionStore (src/ent/content.rs) for proper versioning,
             // transclusion survival, and materialize_annotation_indexed support.
@@ -7331,43 +7340,22 @@ impl Server {
             );
         }
 
-        self.ticket_nonces = if let Some(hash) = manifest.ticket_nonces_chunk_hash {
-            match chunk_store.read_chunk(&hash) {
-                Ok(data) => match crate::persist::chunk_store::untag_chunk_data(&data) {
-                    Ok((_, json)) => {
-                        let parsed: Result<Vec<(String, u64)>, _> = serde_json::from_slice(json);
-                        match parsed {
-                            Ok(tickets) => {
-                                let now = crate::server::session_ticket::now_secs();
-                                let map: std::collections::HashMap<[u8; 16], u64> = tickets
-                                    .into_iter()
-                                    .filter(|(_, exp)| *exp > now)
-                                    .filter_map(|(hex, exp)| {
-                                        let bytes = hex::decode(&hex).ok()?;
-                                        if bytes.len() == 16 {
-                                            let mut arr = [0u8; 16];
-                                            arr.copy_from_slice(&bytes);
-                                            Some((arr, exp))
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .collect();
-                                tracing::info!("[restore] session tickets: {} active", map.len());
-                                map
-                            }
-                            Err(_) => Default::default(),
-                        }
-                    }
-                    Err(_) => Default::default(),
-                },
-                Err(e) => {
-                    tracing::warn!("ticket chunk read error: {}", e);
-                    Default::default()
-                }
-            }
-        } else {
-            Default::default()
+        self.ticket_nonces = {
+            let now = crate::server::session_ticket::now_secs();
+            let map: std::collections::HashMap<[u8; 16], u64> = manifest.ticket_nonces.iter()
+                .filter(|(_, exp)| **exp > now)
+                .filter_map(|(hex, exp)| {
+                    let bytes = hex::decode(hex).ok()?;
+                    if bytes.len() == 16 {
+                        let mut arr = [0u8; 16];
+                        arr.copy_from_slice(&bytes);
+                        Some((arr, *exp))
+                    } else { None }
+                })
+                .collect();
+            tracing::info!("[restore] session tickets: {} active", map.len());
+            self.tickets_dirty = false;
+            map
         };
 
         self.reconcile_store = if let Some(hash) = manifest.federation_chunk_hash {
@@ -7847,6 +7835,7 @@ impl Server {
                     }
                     Err(e) => {
                         tracing::warn!("annotations chunk read failed: {}", e);
+                        self.restore_errors.push(format!("annotations chunk: {}", e));
                     }
                 }
             }
@@ -8299,6 +8288,12 @@ impl Server {
 
     pub fn last_checkpoint_time(&self) -> u64 {
         self.last_checkpoint_time
+    }
+
+    pub fn take_tickets_dirty(&mut self) -> bool {
+        let d = self.tickets_dirty;
+        self.tickets_dirty = false;
+        d
     }
 
     pub fn operation_count(&self) -> u64 {
@@ -9864,8 +9859,15 @@ impl Server {
             .unwrap_or_default()
             .as_secs();
         let since_checkpoint = now.saturating_sub(self.last_checkpoint_time);
+        let has_restore_errors = !self.restore_errors.is_empty();
+        let chain_valid = if self.attribution_log.is_in_memory() {
+            true
+        } else {
+            self.verify_attribution_log_chain()
+        };
+        let status = if has_restore_errors || !chain_valid { "degraded" } else { "ok" };
         serde_json::json!({
-            "status": "ok",
+            "status": status,
             "works": self.works.len(),
             "clubs": self.clubs.len(),
             "links": self.link_count(),
@@ -9876,6 +9878,14 @@ impl Server {
             "operations": ops,
             "last_checkpoint_ago_secs": since_checkpoint,
             "server_id": self.server_keypair.identity_id().to_string(),
+            "chain_valid": chain_valid,
+            "restore_errors": if has_restore_errors {
+                serde_json::Value::Array(
+                    self.restore_errors.iter().map(|e| serde_json::Value::String(e.clone())).collect()
+                )
+            } else {
+                serde_json::Value::Null
+            },
         })
         .to_string()
     }
@@ -11721,6 +11731,14 @@ impl Server {
         session_id: SessionId,
         work_be_id: BeId,
     ) -> Result<(), ServerError> {
+        if !self.restore_errors.is_empty() {
+            return Err(ServerError::Internal(
+                "Server is in read-only mode due to data integrity issues. \
+                 Run 'xudanu-cli verify data' and see docs/dev/incident-response.md. \
+                 Admin can clear restore_errors after investigation to re-enable editing."
+                    .to_string(),
+            ));
+        }
         self.ensure_session(session_id)?;
         let session = self
             .sessions
@@ -12353,6 +12371,7 @@ impl Server {
             signature: sig,
         };
         self.ticket_nonces.insert(nonce, expires_at);
+        self.tickets_dirty = true;
         tracing::debug!(
             "issued session ticket for club {:x}, expires in {}s",
             club_id,
@@ -15017,6 +15036,7 @@ pub(crate) mod persist_snapshot {
                 public_address: None,
                 server_directory: crate::server::server_directory::ServerDirectory::new(),
                 ticket_nonces: HashMap::new(),
+                tickets_dirty: false,
             };
             for club_snap in &snapshot.clubs {
                 let work = club_snap
@@ -15425,6 +15445,14 @@ pub(crate) mod persist_snapshot {
                 trail_counter: self.trail_counter,
                 compound_editions,
                 key_history,
+                ticket_nonces_data: {
+                    let now = crate::server::session_ticket::now_secs();
+                    let tickets: std::collections::HashMap<String, u64> = self.ticket_nonces.iter()
+                        .filter(|(_, &exp)| exp > now)
+                        .map(|(nonce, &exp)| (nonce.iter().map(|b| format!("{:02x}", b)).collect(), exp))
+                        .collect();
+                    if tickets.is_empty() { None } else { Some(serde_json::to_vec(&tickets).ok()).unwrap_or(None) }
+                },
             })
         }
 
@@ -15820,7 +15848,7 @@ pub(crate) mod persist_snapshot {
                     .map(|(id, c)| (*id, c.clone()))
                     .collect(),
                 social_chunk_hash: None,
-                ticket_nonces_chunk_hash: None,
+                ticket_nonces: std::collections::HashMap::new(),
                 revisions: std::collections::HashMap::new(),
             };
 
@@ -15874,31 +15902,6 @@ pub(crate) mod persist_snapshot {
                 manifest.starred_works.clear();
                 manifest.trails.clear();
                 manifest.compound_editions.clear();
-            }
-
-            // ── Session tickets ──
-            if !self.ticket_nonces.is_empty() {
-                let now = crate::server::session_ticket::now_secs();
-                let tickets: Vec<(String, u64)> = self
-                    .ticket_nonces
-                    .iter()
-                    .filter(|(_, &exp)| exp > now)
-                    .map(|(nonce, &exp)| {
-                        (nonce.iter().map(|b| format!("{:02x}", b)).collect(), exp)
-                    })
-                    .collect();
-                let json = serde_json::to_vec(&tickets).unwrap_or_default();
-                if json.len() > 4 {
-                    let tagged = crate::persist::chunk_store::tag_chunk_data(
-                        crate::persist::chunk_store::CHUNK_FORMAT_JSON,
-                        &json,
-                    );
-                    if let Ok(hash) = chunk_store.write_chunk(&tagged) {
-                        manifest.ticket_nonces_chunk_hash = Some(hash);
-                    }
-                }
-            } else {
-                manifest.ticket_nonces_chunk_hash = None;
             }
 
             // ── FR-23: Write revision metadata ──

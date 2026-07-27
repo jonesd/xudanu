@@ -13,6 +13,7 @@ import { CompoundPanel } from "../CompoundPanel";
 import { AttributionPanel } from "../AttributionPanel";
 import { SourceTextViewer } from "../SourceTextViewer";
 import { ConnectionOverlay } from "../ConnectionOverlay";
+import { DataIntegrityBanner } from "../DataIntegrityBanner";
 import { IdentityPanel } from "../IdentityPanel";
 import { ImportWizard } from "../ImportWizard";
 import { TrailsPanel } from "../TrailsPanel";
@@ -1382,6 +1383,7 @@ export function AppShell() {
         lastSavedSeconds={null}
       />
 
+      <DataIntegrityBanner />
       <ConnectionOverlay connected={connected} reconnectAttempt={reconnectAttempt} />
 
       {libraryOpen && (
