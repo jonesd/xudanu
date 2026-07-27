@@ -727,6 +727,8 @@
 }
 .ws-license-picker-wrap {
   position: relative;
+  display: flex;
+  align-items: center;
 }
 .ws-license-menu {
   right: 0;
@@ -901,6 +903,7 @@
 
 .ws-doc-actions {
   display: flex;
+  align-items: center;
   gap: 6px;
 }
 .ws-action-btn {
