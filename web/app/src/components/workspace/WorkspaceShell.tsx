@@ -1089,7 +1089,7 @@ export function WorkspaceShell() {
       const newId = await createWork();
       if (typeof newId !== "number") return;
       await clientRef.current.workKindSet(newId, "concept");
-      setKindCache((c) => new Map(c).set(newId, "concept"));
+      useWorkStore.getState().applyKindChange(newId, "concept");
       setConceptNameOverride((prev) => new Map(prev).set(newId, name));
       setConcepts((prev) => [...prev, { work_id: newId, title: name, link_count: 0 }]);
       selectWork(newId);
@@ -1119,7 +1119,7 @@ export function WorkspaceShell() {
         await clientRef.current!.workKindSet(newId, "concept");
         // Write the concept name + description as text so the title is correct
         await clientRef.current!.workSetText(newId, `${concept.name}\n\n${concept.description}`);
-        setKindCache((c) => new Map(c).set(newId, "concept"));
+        useWorkStore.getState().applyKindChange(newId, "concept");
         setConceptNameOverride((prev) => new Map(prev).set(newId, concept.name));
         newConcepts.push({ work_id: newId, title: concept.name, link_count: 0 });
         setSeedProgress(i + 1);
@@ -2001,7 +2001,7 @@ export function WorkspaceShell() {
                           onClick={async () => {
                             const titleToSet = suggestedTitle.startsWith("Copied to clipboard: ") ? suggestedTitle.substring(21) : suggestedTitle;
                             try {
-                              await clientRef.current?.workSetTitle(workBeId!, titleToSet);
+                              await crdt.setWorkTitle(titleToSet);
                               setWorkMeta((m) => m ? { ...m, title: titleToSet } : m);
                               setSuggestedTitle(null);
                             } catch (e) {

@@ -28,6 +28,7 @@ export interface CrdtSyncState {
   narrateDiff: () => Promise<{ text: string; model: string; updatedText: string }>;
   getWritingFeedback: () => Promise<{ text: string; model: string }>;
   suggestTitle: () => Promise<string>;
+  setWorkTitle: (title: string) => Promise<void>;
   autoTag: () => Promise<{ new: Array<{name: string; id: number}>; linked: Array<{name: string; id: number}> }>;
   llmEnabled: boolean;
   llmUsage: LlmUsageSummary | null;
@@ -447,6 +448,16 @@ export function useCrdtSync(
     }
   }, [workBeId]);
 
+  const setWorkTitle = useCallback(async (title: string) => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected() || workBeId === null) return;
+    try {
+      await client.workSetTitle(workBeId, title);
+    } catch (e) {
+      console.error("Failed to set work title:", e);
+    }
+  }, [workBeId]);
+
   const autoTag = useCallback(async (): Promise<{ new: Array<{name: string; id: number}>; linked: Array<{name: string; id: number}> }> => {
     const client = clientRef.current;
     if (!client || !client.isConnected() || workBeId === null) return { new: [], linked: [] };
@@ -563,7 +574,7 @@ export function useCrdtSync(
     attributionSpans, attributionLogStatus, refreshAttribution,
     refreshAwareness,
     identity, login, createIdentity, createWork, shareWork, unshareWork, narrateDiff,
-    getWritingFeedback, llmEnabled, llmUsage, suggestTitle, autoTag, fetchWorkList,     setVisibility, getReadClub, getEditClub, publicClubId, logout,
+    getWritingFeedback, llmEnabled, llmUsage, suggestTitle, setWorkTitle, autoTag, fetchWorkList,     setVisibility, getReadClub, getEditClub, publicClubId, logout,
     annotations, refreshAnnotations, createAnnotation, deleteAnnotation,
     connectionEpoch,
     isAdmin,
