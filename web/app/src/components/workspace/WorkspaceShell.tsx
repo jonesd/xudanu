@@ -194,6 +194,8 @@ export function WorkspaceShell() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [suggestingTitle, setSuggestingTitle] = useState(false);
   const [suggestedTitle, setSuggestedTitle] = useState<string | null>(null);
+  const [autoTagging, setAutoTagging] = useState(false);
+  const [tagResult, setTagResult] = useState<{ new: Array<{name: string; id: number}>; linked: Array<{name: string; id: number}> } | null>(null);
   const [epubImporting, setEpubImporting] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState<string | undefined>(undefined);
@@ -1542,33 +1544,6 @@ export function WorkspaceShell() {
                             ))}
                   </div>
                 )}
-                {narration && (
-                  <div className="llm-result-panel">
-                    <div className="llm-result-header">
-                      <span>Summary</span>
-                      <button type="button" className="llm-result-close" onClick={() => setNarration(null)}>close</button>
-                    </div>
-                    <p style={{ whiteSpace: "pre-wrap" }}>{narration}</p>
-                  </div>
-                )}
-                {feedback && (
-                  <div className="llm-result-panel">
-                    <div className="llm-result-header">
-                      <span>Writing Feedback</span>
-                      <button type="button" className="llm-result-close" onClick={() => setFeedback(null)}>close</button>
-                    </div>
-                    <p style={{ whiteSpace: "pre-wrap" }}>{feedback}</p>
-                  </div>
-                )}
-                {suggestedTitle && (
-                  <div className="llm-result-panel">
-                    <div className="llm-result-header">
-                      <span>Suggested Title</span>
-                      <button type="button" className="llm-result-close" onClick={() => setSuggestedTitle(null)}>close</button>
-                    </div>
-                    <p style={{ fontSize: 16, fontWeight: 600 }}>{suggestedTitle}</p>
-                  </div>
-                )}
                       </li>
                     );
                   })}
@@ -1938,15 +1913,30 @@ export function WorkspaceShell() {
                     <button type="button" className="ws-sel-btn" onMouseDown={(e) => e.preventDefault()}
                       disabled={suggestingTitle}
                       onClick={async () => {
+                        console.log("[LLM] Title button clicked, calling suggestTitle...");
                         setSuggestingTitle(true);
                         setSuggestedTitle(null);
                         const title = await crdt.suggestTitle();
-                        setSuggestedTitle(title);
+                        console.log("[LLM] suggestTitle returned:", JSON.stringify(title));
+                        setSuggestedTitle(title || "(No title generated)");
                         setSuggestingTitle(false);
                       }}
                       title="Generate a title with AI"
                       style={{ color: "#d4a017" }}>
                       {suggestingTitle ? "Thinking\u2026" : "\u2728 Title"}
+                    </button>
+                    <button type="button" className="ws-sel-btn" onMouseDown={(e) => e.preventDefault()}
+                      disabled={autoTagging}
+                      onClick={async () => {
+                        setAutoTagging(true);
+                        setTagResult(null);
+                        const result = await crdt.autoTag();
+                        setTagResult(result);
+                        setAutoTagging(false);
+                      }}
+                      title="Auto-tag concepts with AI"
+                      style={{ color: "#d4a017" }}>
+                      {autoTagging ? "Tagging\u2026" : "\u2728 Auto-Tag"}
                     </button>
                   </div>
                 )}
@@ -1982,6 +1972,69 @@ export function WorkspaceShell() {
                     >
                       + New trail from this passage
                     </button>
+                  </div>
+                )}
+                {narration && (
+                  <div className="llm-result-panel">
+                    <div className="llm-result-header">
+                      <span>Summary</span>
+                      <button type="button" className="llm-result-close" onClick={() => setNarration(null)}>close</button>
+                    </div>
+                    <p style={{ whiteSpace: "pre-wrap" }}>{narration}</p>
+                  </div>
+                )}
+                {feedback && (
+                  <div className="llm-result-panel">
+                    <div className="llm-result-header">
+                      <span>Writing Feedback</span>
+                      <button type="button" className="llm-result-close" onClick={() => setFeedback(null)}>close</button>
+                    </div>
+                    <p style={{ whiteSpace: "pre-wrap" }}>{feedback}</p>
+                  </div>
+                )}
+                {suggestedTitle && (
+                  <div className="llm-result-panel">
+                    <div className="llm-result-header">
+                      <span>Suggested Title</span>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button type="button" className="ws-sel-btn" style={{ fontSize: 10, padding: "2px 8px", color: "var(--green)" }}
+                          onClick={async () => {
+                            const titleToSet = suggestedTitle.startsWith("Copied to clipboard: ") ? suggestedTitle.substring(21) : suggestedTitle;
+                            try {
+                              await clientRef.current?.workSetTitle(workBeId!, titleToSet);
+                              setWorkMeta((m) => m ? { ...m, title: titleToSet } : m);
+                              setSuggestedTitle(null);
+                            } catch (e) {
+                              console.error("Failed to set title:", e);
+                            }
+                          }}>
+                          Use
+                        </button>
+                        <button type="button" className="llm-result-close" onClick={() => setSuggestedTitle(null)}>Dismiss</button>
+                      </div>
+                    </div>
+                    <p style={{ fontSize: 16, fontWeight: 600 }}>{suggestedTitle}</p>
+                  </div>
+                )}
+                {tagResult && (
+                  <div className="llm-result-panel">
+                    <div className="llm-result-header">
+                      <span>Auto-Tagged Concepts</span>
+                      <button type="button" className="llm-result-close" onClick={() => setTagResult(null)}>close</button>
+                    </div>
+                    {tagResult.new.length > 0 && (
+                      <p style={{ fontSize: 12, color: "var(--green)" }}>
+                        Created: {tagResult.new.map(t => t.name).join(", ")}
+                      </p>
+                    )}
+                    {tagResult.linked.length > 0 && (
+                      <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                        Linked: {tagResult.linked.map(t => t.name).join(", ")}
+                      </p>
+                    )}
+                    {tagResult.new.length === 0 && tagResult.linked.length === 0 && (
+                      <p style={{ fontSize: 12, color: "var(--text-muted)" }}>(No concepts suggested)</p>
+                    )}
                   </div>
                 )}
                 {transclusion.pending && (

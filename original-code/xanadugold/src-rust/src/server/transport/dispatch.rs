@@ -35,6 +35,10 @@ pub fn dispatch(
         return dispatch_suggest_title(state, session_id, request);
     }
 
+    if matches!(request, WireRequest::WorkAutoTag { .. }) {
+        return dispatch_auto_tag(state, session_id, request);
+    }
+
     let is_work_create = matches!(request, WireRequest::WorkCreate { .. });
     let is_read = request.is_readonly();
 
@@ -352,6 +356,127 @@ fn dispatch_suggest_title(
     Ok(ResponseValue::String(title))
 }
 
+fn dispatch_auto_tag(
+    state: &SharedState,
+    session_id: crate::server::SessionId,
+    request: WireRequest,
+) -> Result<ResponseValue, crate::server::ServerError> {
+    let work_id = match &request {
+        WireRequest::WorkAutoTag { work_id } => *work_id,
+        _ => unreachable!(),
+    };
+
+    let (text, existing_concepts) = state.server.with_server(|srv| {
+        let _ = state.server.bump_operation_atomic();
+        srv.ensure_can_read(session_id, work_id)?;
+        let text = if srv.crdt_is_active(work_id) {
+            srv.crdt_current_text(work_id).unwrap_or_default()
+        } else {
+            String::new()
+        };
+        let concepts: Vec<String> = srv.works.iter()
+            .filter(|(_, ws)| ws.kind() == crate::edition::WorkKind::Concept)
+            .filter_map(|(_, ws)| {
+                let t = ws.cached_title().trim();
+                if t.is_empty() { None } else { Some(t.to_string()) }
+            })
+            .collect();
+        Ok::<_, crate::server::ServerError>((text, concepts))
+    })?;
+
+    if text.is_empty() {
+        return Ok(ResponseValue::String("[]".to_string()));
+    }
+
+    let llm = match crate::server::ollama::get_client() {
+        Some(c) => c,
+        None => return Ok(ResponseValue::String("[]".to_string())),
+    };
+    let prompt = crate::server::ollama::build_categorization_prompt(&text, &existing_concepts);
+
+    let response = match tokio::task::block_in_place(|| {
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(async {
+            let _permit = llm_semaphore().acquire().await.map_err(|e| e.to_string())?;
+            tokio::time::timeout(
+                LLM_TIMEOUT,
+                llm.generate_tracked(crate::server::ollama::LlmFeature::FindRelated, &prompt),
+            )
+            .await
+            .map_err(|_| format!("(timed out after {}s)", LLM_TIMEOUT.as_secs()))
+            .and_then(|r| r.map_err(|e| e.to_string()))
+        })
+    }) {
+        Ok(text) => text,
+        Err(e) => {
+            tracing::warn!("auto-tag LLM failed: {}", e);
+            return Ok(ResponseValue::String("[]".to_string()));
+        }
+    };
+
+    let response_clean = {
+        let r = response.trim();
+        let r = r.strip_prefix("```json").or_else(|| r.strip_prefix("```")).unwrap_or(r).trim();
+        let r = r.strip_suffix("```").unwrap_or(r).trim();
+        r.to_string()
+    };
+    let concepts: Vec<String> = serde_json::from_str::<Vec<String>>(&response_clean)
+        .unwrap_or_else(|e| {
+            tracing::warn!("auto-tag response not JSON array: {} — raw: {:?}", e, &response[..response.len().min(200)]);
+            response_clean.lines()
+                .filter_map(|l| {
+                    let t = l.trim().trim_start_matches("- ").trim_start_matches("\"").trim_end_matches("\"").trim();
+                    if t.is_empty() || t.starts_with('[') || t.starts_with(']') { None } else { Some(t.to_string()) }
+                })
+                .take(5)
+                .collect()
+        })
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .take(5)
+        .collect();
+
+    tracing::info!("auto-tag for work {:x}: {} concepts: {:?}", work_id, concepts.len(), concepts);
+
+    let (created, linked) = state.server.with_server(|srv| {
+        let mut created = Vec::new();
+        let mut linked = Vec::new();
+
+        for concept_name in &concepts {
+            let existing = srv.works.iter()
+                .filter(|(_, ws)| ws.kind() == crate::edition::WorkKind::Concept)
+                .find(|(_, ws)| ws.cached_title().eq_ignore_ascii_case(concept_name))
+                .map(|(id, _)| *id);
+
+            match existing {
+                Some(concept_id) => linked.push((concept_name.clone(), concept_id)),
+                None => {
+                    match srv.create_work(session_id, crate::edition::Edition::from_text(concept_name.as_str())) {
+                        Ok(concept_id) => {
+                            let _ = srv.work_kind_set(concept_id, crate::edition::WorkKind::Concept);
+                            srv.set_work_title(concept_id, concept_name.clone());
+                            created.push((concept_name.clone(), concept_id));
+                        }
+                        Err(e) => tracing::warn!("failed to create concept '{}': {}", concept_name, e),
+                    }
+                }
+            }
+        }
+
+        for (_, concept_id) in created.iter().chain(linked.iter()) {
+            let _ = srv.create_link(session_id, work_id, *concept_id, None, None);
+        }
+
+        Ok::<_, crate::server::ServerError>((created, linked))
+    })?;
+
+    let result = serde_json::json!({
+        "new": created.iter().map(|(n, id)| serde_json::json!({"name": n, "id": id})).collect::<Vec<_>>(),
+        "linked": linked.iter().map(|(n, id)| serde_json::json!({"name": n, "id": id})).collect::<Vec<_>>(),
+    });
+    Ok(ResponseValue::String(result.to_string()))
+}
+
 fn dispatch_inner(
     srv: &mut Server,
     session_id: crate::server::SessionId,
@@ -649,6 +774,14 @@ fn dispatch_inner(
         }
         WireRequest::WorkStar { work_id } => {
             srv.work_star(session_id, work_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::WorkSetTitle { work_id, title } => {
+            srv.ensure_can_edit(session_id, work_id)?;
+            srv.set_work_title(work_id, title);
+            if let Some(ws) = srv.works.get_mut(&work_id) {
+                ws.mark_dirty();
+            }
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkUnstar { work_id } => {

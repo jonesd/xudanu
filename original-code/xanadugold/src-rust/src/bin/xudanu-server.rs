@@ -921,9 +921,9 @@ async fn main() {
                         }
 
                         // Checkpoint when there are dirty works OR dirty session tickets.
-                        let tickets_dirty = autosave_state.server.with_server(|srv| {
-                            srv.take_tickets_dirty()
-                        });
+                        let tickets_dirty = autosave_state
+                            .server
+                            .with_server(|srv| srv.take_tickets_dirty());
                         if saved > 0 || tickets_dirty {
                             let should_checkpoint = autosave_state.server.with_server_ref(|srv| {
                                 if srv.chunk_store().is_some() {

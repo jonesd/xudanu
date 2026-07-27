@@ -193,6 +193,8 @@ pub enum OperationCode {
     WorkDiffNarration,
     WorkWritingFeedback,
     WorkSuggestTitle,
+    WorkSetTitle,
+    WorkAutoTag,
     WorkBacklinks,
 
     LinkCreate,
@@ -489,6 +491,8 @@ impl OperationCode {
             0x0341 => Some(OperationCode::WorkDiffNarration),
             0x0342 => Some(OperationCode::WorkWritingFeedback),
             0x034e => Some(OperationCode::WorkSuggestTitle),
+            0x034f => Some(OperationCode::WorkSetTitle),
+            0x0350 => Some(OperationCode::WorkAutoTag),
             0x0343 => Some(OperationCode::WorkBacklinks),
 
             0x0208 => Some(OperationCode::ClubSetDefaultReadClub),
@@ -818,6 +822,8 @@ impl OperationCode {
             OperationCode::WorkDiffNarration => 0x0341,
             OperationCode::WorkWritingFeedback => 0x0342,
             OperationCode::WorkSuggestTitle => 0x034e,
+            OperationCode::WorkSetTitle => 0x034f,
+            OperationCode::WorkAutoTag => 0x0350,
             OperationCode::WorkBacklinks => 0x0343,
 
             OperationCode::LinkCreate => 0x0701,
@@ -1435,6 +1441,13 @@ pub enum WireRequest {
         work_id: BeId,
     },
     WorkSuggestTitle {
+        work_id: BeId,
+    },
+    WorkSetTitle {
+        work_id: BeId,
+        title: String,
+    },
+    WorkAutoTag {
         work_id: BeId,
     },
 

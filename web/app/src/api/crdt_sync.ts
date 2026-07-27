@@ -762,6 +762,21 @@ export class CrdtSyncClient {
     return (val as unknown as string) || (resp as unknown as string) || "";
   }
 
+  async workSetTitle(workId: number, title: string): Promise<void> {
+    await this.sendRequest("work_set_title", { work_id: workId, title });
+  }
+
+  async workAutoTag(workId: number): Promise<{ new: Array<{name: string; id: number}>; linked: Array<{name: string; id: number}> }> {
+    const resp = await this.sendRequest("work_auto_tag", { work_id: workId });
+    const val = (resp as Record<string, unknown>)?.value as string | undefined;
+    const json = typeof val === 'string' ? val : JSON.stringify(resp);
+    try {
+      return JSON.parse(json);
+    } catch {
+      return { new: [], linked: [] };
+    }
+  }
+
   async llmUsage(): Promise<LlmUsageSummary | null> {
     const resp = await this.sendRequest("server_stats");
     const val = (resp as Record<string, unknown>)?.value as Record<string, unknown> | undefined;

@@ -23,6 +23,7 @@ fn make_work_entry(
         history_club: None,
         kind: crate::edition::WorkKind::Document,
         license: crate::edition::License::AllRightsReserved,
+        custom_title: None,
     }
 }
 

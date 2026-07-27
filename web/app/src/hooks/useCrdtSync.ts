@@ -28,6 +28,7 @@ export interface CrdtSyncState {
   narrateDiff: () => Promise<{ text: string; model: string; updatedText: string }>;
   getWritingFeedback: () => Promise<{ text: string; model: string }>;
   suggestTitle: () => Promise<string>;
+  autoTag: () => Promise<{ new: Array<{name: string; id: number}>; linked: Array<{name: string; id: number}> }>;
   llmEnabled: boolean;
   llmUsage: LlmUsageSummary | null;
   fetchWorkList: () => Promise<WorkListEntry[]>;
@@ -446,6 +447,17 @@ export function useCrdtSync(
     }
   }, [workBeId]);
 
+  const autoTag = useCallback(async (): Promise<{ new: Array<{name: string; id: number}>; linked: Array<{name: string; id: number}> }> => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected() || workBeId === null) return { new: [], linked: [] };
+    try {
+      return await client.workAutoTag(workBeId);
+    } catch (e) {
+      console.error("Failed to auto-tag:", e);
+      return { new: [], linked: [] };
+    }
+  }, [workBeId]);
+
   const fetchWorkList = useCallback(async (): Promise<WorkListEntry[]> => {
     const client = clientRef.current;
     if (!client || !client.isConnected()) return [];
@@ -551,7 +563,7 @@ export function useCrdtSync(
     attributionSpans, attributionLogStatus, refreshAttribution,
     refreshAwareness,
     identity, login, createIdentity, createWork, shareWork, unshareWork, narrateDiff,
-    getWritingFeedback, llmEnabled, llmUsage, suggestTitle, fetchWorkList,     setVisibility, getReadClub, getEditClub, publicClubId, logout,
+    getWritingFeedback, llmEnabled, llmUsage, suggestTitle, autoTag, fetchWorkList,     setVisibility, getReadClub, getEditClub, publicClubId, logout,
     annotations, refreshAnnotations, createAnnotation, deleteAnnotation,
     connectionEpoch,
     isAdmin,

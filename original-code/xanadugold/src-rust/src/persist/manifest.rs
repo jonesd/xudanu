@@ -104,6 +104,9 @@ pub struct WorkEntry {
     /// for backward compatibility with pre-FR-24 manifests.
     #[serde(default)]
     pub license: crate::edition::License,
+    /// User-set title (overrides auto-extracted title from first line).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_title: Option<String>,
 }
 
 /// Metadata for a single revision of a work. Per FR-23.

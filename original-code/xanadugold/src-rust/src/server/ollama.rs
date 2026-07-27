@@ -565,6 +565,30 @@ pub fn build_title_prompt(content: &str) -> String {
     )
 }
 
+pub fn build_categorization_prompt(content: &str, existing_concepts: &[String]) -> String {
+    let truncated = &content[..content.len().min(2000)];
+    let concepts_list = if existing_concepts.is_empty() {
+        "(none yet)".to_string()
+    } else {
+        existing_concepts.iter().map(|c| format!("- {c}")).collect::<Vec<_>>().join("\n")
+    };
+    format!(
+        r#"You are categorizing a document. Suggest 1-3 concept tags as a JSON array of strings.
+
+Reuse existing concepts when they fit. Suggest new concepts only when no existing concept applies.
+
+EXISTING CONCEPTS:
+{concepts_list}
+
+DOCUMENT:
+---
+{truncated}
+---
+
+Return ONLY a JSON array of concept name strings, e.g. ["Concept A", "Concept B"]"#
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

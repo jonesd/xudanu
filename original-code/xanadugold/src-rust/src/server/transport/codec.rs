@@ -1088,6 +1088,30 @@ impl JsonCodec {
                     work_id: args.work_id,
                 })
             }
+            OperationCode::WorkSetTitle => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    title: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkSetTitle {
+                    work_id: args.work_id,
+                    title: args.title,
+                })
+            }
+            OperationCode::WorkAutoTag => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkAutoTag {
+                    work_id: args.work_id,
+                })
+            }
             OperationCode::WorkBacklinks => {
                 #[derive(Deserialize)]
                 struct Args {

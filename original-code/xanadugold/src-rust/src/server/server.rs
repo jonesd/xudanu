@@ -120,6 +120,10 @@ impl WorkState {
         &self.cached_title
     }
 
+    pub(crate) fn kind(&self) -> crate::edition::WorkKind {
+        self.work.kind()
+    }
+
     pub(crate) fn is_source(&self) -> bool {
         self.is_source
     }
@@ -144,7 +148,7 @@ impl WorkState {
         self.revision_timestamps.values().copied().max()
     }
 
-    fn mark_dirty(&mut self) {
+    pub(crate) fn mark_dirty(&mut self) {
         // Preserve old chunk history before clearing — needed by checkpoint
         // to merge with new revisions instead of overwriting.
         if let Some(ref old_ref) = self.chunk_ref {
@@ -460,6 +464,7 @@ struct DirtyWorkData {
     is_archived: bool,
     lifecycle_history: Vec<crate::edition::work::WorkLifecycleEvent>,
     history_club: Option<BeId>,
+    cached_title: String,
     /// Preserved chunk history from before mark_dirty (survives restarts)
     prev_chunk_history:
         Option<std::collections::BTreeMap<u64, crate::persist::edition_chunks::EditionChunkRef>>,
@@ -564,6 +569,10 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
             history_club: dw.history_club,
             kind: dw.work.kind(),
             license: dw.work.license(),
+            custom_title: {
+                let auto = Server::extract_title(&dw.work.current_edition());
+                if dw.cached_title != auto { Some(dw.cached_title.clone()) } else { None }
+            },
         });
     }
 
@@ -7544,6 +7553,8 @@ impl Server {
                     );
                     work.set_kind(work_entry.kind);
                     work.set_license(work_entry.license);
+                    let title = work_entry.custom_title.clone()
+                        .unwrap_or_else(|| Self::extract_title(&work.current_edition()));
                     if let Some(hc) = work_entry.history_club {
                         work.set_history_club(Some(hc));
                     }
@@ -7560,7 +7571,7 @@ impl Server {
                         revision_timestamps: std::collections::HashMap::new(),
                         status_detectors: DetectorList::new(),
                         revision_detectors: DetectorList::new(),
-                        cached_title: Self::extract_title(work.current_edition()),
+                        cached_title: title,
                         is_source: work_entry.is_source,
                         source_author_id: work_entry.source_author_id,
                         source_edition_info: work_entry.source_edition_info.clone(),
@@ -15251,10 +15262,14 @@ pub(crate) mod persist_snapshot {
                         content_end_line: ws.content_end_line,
                         source_fingerprint: ws.source_fingerprint.map(|fp| fp.to_vec()),
                         is_archived,
-                        lifecycle_history,
+                        lifecycle_history: lifecycle_history.clone(),
                         history_club,
                         kind: ws.work.kind(),
                         license: ws.work.license(),
+                        custom_title: {
+                            let auto = Server::extract_title(&ws.work.current_edition());
+                            if ws.cached_title != auto { Some(ws.cached_title.clone()) } else { None }
+                        },
                     });
                 } else {
                     dirty_work_gens.push((*id, ws.dirty_gen));
@@ -15270,6 +15285,7 @@ pub(crate) mod persist_snapshot {
                         is_archived,
                         lifecycle_history,
                         history_club,
+                        cached_title: ws.cached_title.clone(),
                         prev_chunk_history: ws.prev_chunk_history.clone(),
                     });
                 }
@@ -15555,6 +15571,10 @@ pub(crate) mod persist_snapshot {
                     history_club: ws.work.history_club(),
                     kind: ws.work.kind(),
                     license: ws.work.license(),
+                    custom_title: {
+                        let auto = Server::extract_title(&ws.work.current_edition());
+                        if ws.cached_title != auto { Some(ws.cached_title.clone()) } else { None }
+                    },
                 });
             }
 
