@@ -19,9 +19,9 @@
   padding: 6px 12px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-bottom: none;
-  border-radius: 6px 6px 0 0;
-  margin-bottom: 0;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 .editor-content h1, .tiptap-editor-content h1 {
   font-size: 1.8em;
@@ -662,13 +662,15 @@
   overflow: hidden;
   background: var(--bg-document);
   min-width: 0;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
 }
 .ws-doc-surface.lens-expanded { display: none; }
 
 .ws-doc-header {
   padding: 12px 48px;
-  border-bottom: 1px solid var(--border-light);
-  background: var(--bg-document-margin);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -937,7 +939,7 @@
 .ws-doc-scroll {
   flex: 1;
   overflow: auto;
-  padding: 32px 48px;
+  padding: 8px 48px 32px;
   position: relative;
 }
 
@@ -957,8 +959,20 @@
   font-size: 17px !important;
   line-height: 1.7 !important;
 }
+.ws-doc-surface .editor-content,
 .ws-doc-surface.editable .editor-content {
-  /* full width of the document surface */
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  min-height: auto !important;
+}
+.ws-doc-surface .collaborative-editor {
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+.ws-doc-surface .editor-container {
+  overflow: visible !important;
 }
 
 /* Transclusion styling — inline block, not full-width, doesn't swallow neighbors */
@@ -993,12 +1007,22 @@
   display: flex;
   gap: 4px;
   background: var(--bg-elevated);
-  border: 1px solid var(--accent-blue, #58a6ff);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 4px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
-  margin-bottom: 4px;
+  padding: 6px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+  margin-bottom: 2px;
   flex-wrap: wrap;
+  transition: height 0.15s, opacity 0.15s;
+}
+.ws-selection-actions[style*="visibility: hidden"] {
+  height: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  overflow: hidden;
+  visibility: visible !important;
+  opacity: 0;
 }
 .ws-sel-btn {
   background: none;
@@ -1014,16 +1038,19 @@
 }
 .ws-sel-btn:hover { background: var(--bg); }
 .ws-sel-btn.transclude {
+  background: var(--blue);
   border-color: var(--blue);
-  color: var(--blue);
+  color: #fff;
 }
 .ws-sel-btn.link {
+  background: var(--green);
   border-color: var(--green);
-  color: var(--green);
+  color: #fff;
 }
 .ws-sel-btn.note {
+  background: var(--amber);
   border-color: var(--amber);
-  color: var(--amber);
+  color: #fff;
 }
 
 /* Annotation modal */
@@ -1692,6 +1719,11 @@
 }
 .ws-more-item:hover {
   background: var(--bg);
+}
+.ws-more-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
 }
 
 /* ── Right panel: Provenance tab ── */

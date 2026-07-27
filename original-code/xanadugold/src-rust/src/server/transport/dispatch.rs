@@ -464,7 +464,13 @@ fn dispatch_auto_tag(
         }
 
         for (_, concept_id) in created.iter().chain(linked.iter()) {
-            let _ = srv.create_link(session_id, work_id, *concept_id, None, None);
+            match srv.create_link(session_id, work_id, *concept_id, None, None) {
+                Ok(link_id) => {
+                    let _ = srv.link_set_types(session_id, link_id, vec![5]);
+                    tracing::info!("auto-tag: linked work {:x} → concept {:x} (link {}, type=See Also)", work_id, concept_id, link_id);
+                }
+                Err(e) => tracing::warn!("auto-tag: failed to link to concept {:x}: {}", concept_id, e),
+            }
         }
 
         Ok::<_, crate::server::ServerError>((created, linked))

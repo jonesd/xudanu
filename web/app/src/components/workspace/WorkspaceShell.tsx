@@ -23,10 +23,23 @@ import { LICENSES } from "../../api/crdt_sync";
 import type { WorkKind } from "../../graph-scoring";
 import { KIND_ICON, KIND_COLOR, KIND_ICON_COLOR } from "../../graph-scoring";
 import { DataIntegrityBanner } from "../DataIntegrityBanner";
+import { WelcomeScreen } from "../WelcomeScreen";
+import { ConnectionOverlay } from "../ConnectionOverlay";
+import { RelatedFooter } from "../RelatedFooter";
+import { SearchOverlay } from "../shell/SearchOverlay";
+import { PerspectiveView } from "../PerspectiveView";
+import { CompoundBuilder } from "../CompoundBuilder";
+import { MergePanel } from "../MergePanel";
+import { AdminDashboard } from "../AdminDashboard";
+import { DocumentSettings, loadDocPreferences } from "../DocumentSettings";
+import type { DocPreferences } from "../DocumentSettings";
+import type { CrossServerBacklinkPayload } from "../../api/crdt_sync";
 import { getCursorOffset, setCursorOffset } from "../../styled-text";
 import { SEED_CONCEPTS } from "../../concepts-seed";
 import { WorkspaceTopBar } from "./WorkspaceTopBar";
 import type { WorkspaceNavTab } from "./WorkspaceTopBar";
+import "../../app.css";
+import "../../app-shell.css";
 import "../../workspace.css";
 
 const WS_URL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/xudanu`;
@@ -198,6 +211,14 @@ export function WorkspaceShell() {
   const [tagResult, setTagResult] = useState<{ new: Array<{name: string; id: number}>; linked: Array<{name: string; id: number}> } | null>(null);
   const [epubImporting, setEpubImporting] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [demoTrigger, setDemoTrigger] = useState(false);
+  const [crossServerBacklinks, setCrossServerBacklinks] = useState<CrossServerBacklinkPayload[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [showPerspective, setShowPerspective] = useState(false);
+  const [showCompoundBuilder, setShowCompoundBuilder] = useState(false);
+  const [showMerge, setShowMerge] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [docPrefs, setDocPrefs] = useState<DocPreferences>(loadDocPreferences());
   const [importText, setImportText] = useState<string | undefined>(undefined);
 
   // Listen for import requests from welcome page
@@ -238,6 +259,7 @@ export function WorkspaceShell() {
     createIdentity,
     logout,
     refreshAttribution,
+    reconnectAttempt,
   } = crdt;
 
   // Load blob elements from server when work changes
@@ -486,7 +508,7 @@ export function WorkspaceShell() {
     if (demoRan.current) return;
     if (!connected || !clientRef.current) return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get("demo") !== "1") return;
+    if (params.get("demo") !== "1" && !demoTrigger) return;
     demoRan.current = true;
     params.delete("demo");
     const newParams = params.toString();
@@ -539,7 +561,7 @@ export function WorkspaceShell() {
         showToast("Could not create demo — please sign in first");
       }
     })();
-  }, [connected, clientRef, selectWork, showToast]);
+  }, [connected, clientRef, selectWork, showToast, demoTrigger]);
 
   const handleEpubImport = useCallback(async (file: File) => {
     if (!clientRef.current) {
@@ -1004,6 +1026,29 @@ export function WorkspaceShell() {
     }
   }, [connected, workBeId, clientRef, works, loadLinks, loadBacklinks, refreshAttribution]);
 
+  useEffect(() => {
+    if (connected && workBeId !== null && clientRef.current) {
+      clientRef.current.crossServerBacklinksGet(workBeId).then(setCrossServerBacklinks).catch(() => setCrossServerBacklinks([]));
+    } else {
+      setCrossServerBacklinks([]);
+    }
+  }, [connected, workBeId]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchOpen((s) => !s);
+      }
+      if (e.key === "Escape") {
+        setSearchOpen(false);
+        setShowIdentity(false);
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
+
   // Fetch work kind when work changes
   useEffect(() => {
     if (!connected || workBeId === null || !clientRef.current) {
@@ -1082,6 +1127,29 @@ export function WorkspaceShell() {
     return () => { cancelled = true; };
   }, [connected, clientRef]);
 
+  const refreshGraph = useCallback(async () => {
+    if (!clientRef.current) return;
+    try {
+      const g = await clientRef.current.workGraph();
+      useWorkStore.getState().setGraph(g.nodes, g.edges);
+      const linkCounts = new Map<number, number>();
+      for (const edge of g.edges) {
+        linkCounts.set(edge.target, (linkCounts.get(edge.target) || 0) + 1);
+      }
+      const conceptList = g.nodes
+        .filter((n) => n.kind === "concept")
+        .map((n) => {
+          const override = conceptNameOverride.get(n.work_id);
+          const backendTitle = n.title || "";
+          const isGenericTitle = !backendTitle || backendTitle.startsWith("Concept ") || backendTitle.startsWith("Work ");
+          const title = override && isGenericTitle ? override : (backendTitle || `Concept ${n.work_id}`);
+          return { work_id: n.work_id, title, link_count: linkCounts.get(n.work_id) || 0 };
+        })
+        .sort((a, b) => b.link_count - a.link_count);
+      setConcepts(conceptList);
+    } catch {}
+  }, [clientRef, conceptNameOverride]);
+
   const handleAddConcept = useCallback(async () => {
     const name = prompt("New concept name:", "");
     if (!name || !clientRef.current) return;
@@ -1093,6 +1161,7 @@ export function WorkspaceShell() {
       setConceptNameOverride((prev) => new Map(prev).set(newId, name));
       setConcepts((prev) => [...prev, { work_id: newId, title: name, link_count: 0 }]);
       selectWork(newId);
+      refreshGraph();
     } catch (e) {
       alert(`Could not create concept: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -1438,6 +1507,20 @@ export function WorkspaceShell() {
                 Browse works
               </button>
             </div>
+          ) : workBeId === null && navTab !== "library" ? (
+            <WelcomeScreen
+              workCount={works.length}
+              hasIdentity={!!identity}
+              onNewDocument={() => handleCreateWork()}
+              onBrowseLibrary={() => setNavTab("library")}
+              onImport={() => setShowImport(true)}
+              onDemo={() => {
+                const url = new URL(window.location.href);
+                url.searchParams.set("demo", "1");
+                window.history.replaceState({}, "", url.toString());
+                setDemoTrigger(true);
+              }}
+            />
           ) : workBeId === null || navTab === "library" ? (
             <div className="ws-work-picker">
               <div className="ws-picker-header">
@@ -1771,6 +1854,31 @@ export function WorkspaceShell() {
                         >
                           Open in classic editor
                         </button>
+                        <div className="ws-more-sep" />
+                        <button
+                          className="ws-more-item"
+                          onClick={() => { setShowPerspective(true); setMoreMenuOpen(false); }}
+                        >
+                          Perspective View
+                        </button>
+                        <button
+                          className="ws-more-item"
+                          onClick={() => { setShowCompoundBuilder(true); setMoreMenuOpen(false); }}
+                        >
+                          Compound Builder
+                        </button>
+                        <button
+                          className="ws-more-item"
+                          onClick={() => { setShowMerge(true); setMoreMenuOpen(false); }}
+                        >
+                          3-Way Merge
+                        </button>
+                        <button
+                          className="ws-more-item"
+                          onClick={() => { setShowSettings(true); setMoreMenuOpen(false); }}
+                        >
+                          Document Settings
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1933,6 +2041,7 @@ export function WorkspaceShell() {
                         const result = await crdt.autoTag();
                         setTagResult(result);
                         setAutoTagging(false);
+                        refreshGraph();
                       }}
                       title="Auto-tag concepts with AI"
                       style={{ color: "#d4a017" }}>
@@ -2019,8 +2128,8 @@ export function WorkspaceShell() {
                 {tagResult && (
                   <div className="llm-result-panel">
                     <div className="llm-result-header">
-                      <span>Auto-Tagged Concepts</span>
-                      <button type="button" className="llm-result-close" onClick={() => setTagResult(null)}>close</button>
+                      <span>Tags Applied</span>
+                      <button type="button" className="ws-sel-btn" style={{ fontSize: 10, padding: "2px 12px", color: "var(--green)" }} onClick={() => setTagResult(null)}>OK</button>
                     </div>
                     {tagResult.new.length > 0 && (
                       <p style={{ fontSize: 12, color: "var(--green)" }}>
@@ -2304,6 +2413,17 @@ export function WorkspaceShell() {
                 </div>
               )}
             </>
+          )}
+          {workBeId !== null && (
+            <RelatedFooter
+              backlinks={transclusion.backlinks}
+              outgoingLinks={transclusion.links}
+              compoundSpanRanges={compound.spanRanges}
+              compoundSourceTitles={compound.sourceTitles}
+              crossServerBacklinks={crossServerBacklinks}
+              currentWorkId={workBeId}
+              onNavigateToWork={selectWork}
+            />
           )}
         </main>
 
@@ -2773,15 +2893,9 @@ export function WorkspaceShell() {
         </div>
       )}
 
-      {showAdmin && (
-        <div className="modal-overlay" onClick={() => setShowAdmin(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Admin Dashboard</h3>
-            <p>Phase 2 (reuse AdminDashboard component)</p>
-            <button onClick={() => setShowAdmin(false)}>Close</button>
-          </div>
-        </div>
-      )}
+      <div style={{ display: showAdmin ? "block" : "none" }}>
+        <AdminDashboard onClose={() => setShowAdmin(false)} />
+      </div>
 
       {transclusion.pendingLink && (
         <LinkCreator
@@ -2951,6 +3065,76 @@ export function WorkspaceShell() {
           })()}
         </div>
       )}
+      {searchOpen && (
+        <SearchOverlay
+          onClose={() => setSearchOpen(false)}
+          clientRef={clientRef}
+          currentWorkId={workBeId}
+          works={works}
+          onSelectWork={(id) => { selectWork(id); setSearchOpen(false); }}
+        />
+      )}
+      {showSettings && (
+        <DocumentSettings
+          visible={true}
+          prefs={docPrefs}
+          onPrefsChange={setDocPrefs}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+      {showPerspective && workBeId !== null && (
+        <PerspectiveView
+          centerWorkId={workBeId}
+          centerText={text}
+          centerTitle={workMeta?.title || `Work 0x${workBeId.toString(16)}`}
+          links={transclusion.links}
+          works={works}
+          onClose={() => setShowPerspective(false)}
+          onNavigateToWork={selectWork}
+          onFetchWorkText={async (workId) => {
+            if (!clientRef.current) return null;
+            try {
+              const resp = await clientRef.current.sendRequest("crdt_sync_open", { work_id: workId });
+              const r = resp as Record<string, unknown>;
+              const inner = (r.value as Record<string, unknown> | undefined) ?? r;
+              return (inner?.current_text as string) || null;
+            } catch { return null; }
+          }}
+        />
+      )}
+      {showCompoundBuilder && workBeId !== null && (
+        <CompoundBuilder
+          centerWorkId={workBeId}
+          centerText={text}
+          centerTitle={workMeta?.title || `Work 0x${workBeId.toString(16)}`}
+          compoundSpanRanges={compound.spanRanges}
+          compoundSourceTitles={compound.sourceTitles}
+          works={works}
+          client={clientRef.current}
+          onClose={() => setShowCompoundBuilder(false)}
+          onPlaceTransclusion={(sourceWorkId, sourceWorkTitle, start, end, txt) => {
+            transclusion.holdSelection(sourceWorkId, sourceWorkTitle, start, end, txt);
+            handlePlaceTransclusion(text.length).then(() => {
+              if (clientRef.current && workBeId !== null) {
+                clientRef.current.migrateCompoundToInline(workBeId).then(() => {
+                  compound.reload();
+                }).catch(() => {});
+              }
+            });
+          }}
+          onReloadCompound={() => compound.reload()}
+        />
+      )}
+      {showMerge && workBeId !== null && (
+        <MergePanel
+          client={clientRef.current}
+          currentWorkId={workBeId}
+          works={works}
+          onClose={() => setShowMerge(false)}
+          onMerged={(newWorkId) => { setShowMerge(false); selectWork(newWorkId); }}
+        />
+      )}
+      <ConnectionOverlay connected={connected} reconnectAttempt={reconnectAttempt} />
     </div>
   );
 }

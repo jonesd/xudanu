@@ -1312,6 +1312,7 @@ export function CollaborativeEditor({
     if (newText === "\n" && !el.querySelector("DIV") && !el.querySelector("P")) {
       newText = "";
     }
+    newText = newText.replace(/^\n+/, "");
     if (newText !== lastText.current) {
       pushUndo(lastText.current);
       lastText.current = newText;
