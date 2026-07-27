@@ -840,6 +840,8 @@
   transition: background 0.1s;
 }
 .tools-menu-item:hover { background: var(--bg-elevated); }
+.tools-menu-item:disabled { opacity: 0.4; cursor: default; }
+.tools-menu-item:disabled:hover { background: none; }
 
 .ctx-badge.risk { background: rgba(248,81,73,0.15); color: var(--red); }
 
@@ -1022,6 +1024,7 @@
 .library-item:hover { background: var(--bg-elevated); }
 .library-item.active { background: var(--bg-elevated); border-left: 3px solid var(--amber); }
 .library-item-title { font-size: 13px; font-weight: 500; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.library-source-icon { margin-right: 4px; font-size: 12px; }
 .library-item-id { font-size: 10px; font-family: 'JetBrains Mono', monospace; color: var(--text-dim); }
 .library-item-row { display: flex; align-items: center; gap: 4px; }
 .library-star { background: none; border: none; cursor: pointer; font-size: 14px; padding: 0 2px; color: var(--text-dim); line-height: 1; }

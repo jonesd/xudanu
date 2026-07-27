@@ -22,6 +22,7 @@ import type { License } from "../../api/crdt_sync";
 import { LICENSES } from "../../api/crdt_sync";
 import type { WorkKind } from "../../graph-scoring";
 import { KIND_ICON, KIND_COLOR, KIND_ICON_COLOR } from "../../graph-scoring";
+import { getCursorOffset, setCursorOffset } from "../../styled-text";
 import { SEED_CONCEPTS } from "../../concepts-seed";
 import { WorkspaceTopBar } from "./WorkspaceTopBar";
 import type { WorkspaceNavTab } from "./WorkspaceTopBar";
@@ -108,6 +109,7 @@ function CropOverlay({ src, natW, natH, onApply, onCancel }: {
                           title={w.updated_at ? `${w.is_starred ? "★ Pinned · " : ""}Updated ${new Date(w.updated_at * 1000).toLocaleDateString()}` : (w.is_starred ? "★ Pinned" : undefined)}
                         >
                           {w.is_starred && <span style={{ color: "#d29922", fontSize: 10 }}>★</span>}
+                          {w.is_source && <span style={{ fontSize: 11, marginRight: 2 }}>{"\u{1F4D6}"}</span>}
                           <span style={{ color: KIND_COLOR[kind], fontSize: 11, marginRight: 4 }}>{KIND_ICON[kind]}</span>
                           <span className="ws-concept-name">{title.length > 22 ? title.slice(0, 20) + "…" : title}</span>
                         </li>
@@ -438,6 +440,17 @@ export function WorkspaceShell() {
 
       const newText = text.slice(0, lineStart) + newLine + text.slice(lineEnd);
       setText(newText);
+      if (!hasMarker) {
+        const newCursorPos = lineStart + prefix.length;
+        setCursorPos(newCursorPos);
+        setTimeout(() => {
+          const el = document.querySelector(".editor-content") as HTMLElement | null;
+          if (el) {
+            el.focus();
+            setCursorOffset(el, newCursorPos);
+          }
+        }, 50);
+      }
     },
     [text, workBeId, cursorPos],
   );
@@ -1440,8 +1453,8 @@ export function WorkspaceShell() {
                     <option value="id">Work ID</option>
                   </select>
                   <button className="ws-empty-create" onClick={handleCreateWork}>+ New work</button>
-                  <label className={`ws-epub-import-btn ${epubImporting ? "importing" : ""}`}>
-                    {epubImporting ? "Importing…" : "📁 EPUB"}
+                  <label className={`ws-epub-import-btn ${epubImporting ? "importing" : ""}`} title="Import a document from an EPUB file">
+                    {epubImporting ? "Importing…" : "Import EPUB"}
                     <input
                       type="file"
                       accept=".epub"
@@ -1488,6 +1501,7 @@ export function WorkspaceShell() {
                             <span style={{ color: KIND_ICON_COLOR[kind] }}>{KIND_ICON[kind]}</span>
                           </span>
                           {w.is_starred && <span className="ws-star">★</span>}
+                          {w.is_source && <span title="Imported source work" style={{ marginRight: 2 }}>{"\u{1F4D6}"}</span>}
                           {w.title || `Work 0x${w.work_id.toString(16)}`}
                         </div>
                         <div className="ws-work-meta">
@@ -1503,7 +1517,7 @@ export function WorkspaceShell() {
                         </div>
                         {pickerKindFor === w.work_id && (
                           <div className="ws-picker-kind-menu" onClick={(e) => e.stopPropagation()}>
-                            {(["document", "note", "person", "concept", "collection", "commentary"] as const).map((k) => (
+                            {(["document", "book", "note", "person", "concept", "collection", "commentary"] as const).map((k) => (
                               <button
                                 key={k}
                                 className={`ws-kind-item ${kind === k ? "active" : ""}`}
@@ -1546,11 +1560,11 @@ export function WorkspaceShell() {
                     </button>
                     {kindPickerOpen && (
                       <div className="ws-kind-menu" role="menu">
-                        {(["document", "note", "person", "concept", "collection", "commentary"] as const).map((k) => (
-                          <button
-                            key={k}
-                            className={`ws-kind-item ${workKind === k ? "active" : ""}`}
-                            onClick={() => handleKindChange(k)}
+                        {(["document", "book", "note", "person", "concept", "collection", "commentary"] as const).map((k) => (
+                            <button
+                              key={k}
+                              className={`ws-kind-item ${workKind === k ? "active" : ""}`}
+                              onClick={() => handleKindChange(k)}
                             title={k.charAt(0).toUpperCase() + k.slice(1)}
                           >
                             <span style={{ color: KIND_COLOR[k] }}>{KIND_ICON[k]}</span>
@@ -1775,16 +1789,15 @@ export function WorkspaceShell() {
                   </div>
                 ) : (
                   <>
-                {selectionRange && !transclusion.pending && !transclusion.pendingLink && (
-                  <div className="ws-selection-actions">
-                    <button
-                      type="button"
-                      className="ws-sel-btn transclude"
-                      onClick={handleTranscludeSelection}
-                      title="Hold this selection as a transclusion to insert elsewhere"
-                    >
-                      Transclude
-                    </button>
+                <div className="ws-selection-actions" style={(!selectionRange || transclusion.pending || transclusion.pendingLink) ? { visibility: "hidden" } : undefined}>
+                  <button
+                    type="button"
+                    className="ws-sel-btn transclude"
+                    onClick={handleTranscludeSelection}
+                    title="Hold this selection as a transclusion to insert elsewhere"
+                  >
+                    Transclude
+                  </button>
                     <button
                       type="button"
                       className="ws-sel-btn link"
@@ -1831,7 +1844,6 @@ export function WorkspaceShell() {
                       💡 Tag
                     </button>
                   </div>
-                )}
                 {canEdit && (
                   <div className="ws-format-bar">
                     <button type="button" className="ws-sel-btn style" onMouseDown={(e) => e.preventDefault()}
@@ -2578,8 +2590,7 @@ export function WorkspaceShell() {
               onCreateIdentity={createIdentity}
               onLogout={logout}
               llmEnabled={crdt.llmEnabled}
-              llmUsage={llmUsage}
-              llmUsage={llmUsage}
+              llmUsage={crdt.llmUsage}
             />
             <div style={{ textAlign: "right", marginTop: 12 }}>
               <button className="ws-anno-cancel" onClick={() => setShowIdentity(false)}>Close</button>

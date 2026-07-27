@@ -186,7 +186,14 @@ function WorkItem({
             {work.is_starred ? "\u2605" : "\u2606"}
           </button>
         )}
-        <span className="library-item-title">{work.title || "Untitled"}</span>
+        <span className="library-item-title">
+          {work.is_source && (
+            <span className="library-source-icon" title="Imported source work">
+              {"\u{1F4D6}"}
+            </span>
+          )}
+          {work.title || "Untitled"}
+        </span>
         <span className="library-item-id">{work.work_id.toString(16).padStart(4, "0")}</span>
       </div>
       <div className="library-detail">

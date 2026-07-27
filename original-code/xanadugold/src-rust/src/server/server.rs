@@ -372,6 +372,7 @@ pub struct Server {
     pub dev_mode: bool,
     pub(crate) public_address: Option<String>,
     server_directory: crate::server::server_directory::ServerDirectory,
+    ticket_nonces: std::collections::HashMap<[u8; 16], u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -683,6 +684,7 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         trail_counter: payload.trail_counter,
         compound_editions: payload.compound_editions,
         social_chunk_hash: None,
+        ticket_nonces_chunk_hash: None,
         revisions: std::collections::HashMap::new(),
     };
 
@@ -899,6 +901,7 @@ impl Server {
             dev_mode: false,
             public_address: None,
             server_directory: crate::server::server_directory::ServerDirectory::new(),
+            ticket_nonces: HashMap::new(),
             // TODO: Annotations use a simple HashMap for pragmatic first implementation.
             // Migrate to Ent/AssertionStore (src/ent/content.rs) for proper versioning,
             // transclusion survival, and materialize_annotation_indexed support.
@@ -7327,6 +7330,46 @@ impl Server {
                 pin_total
             );
         }
+
+        self.ticket_nonces = if let Some(hash) = manifest.ticket_nonces_chunk_hash {
+            match chunk_store.read_chunk(&hash) {
+                Ok(data) => match crate::persist::chunk_store::untag_chunk_data(&data) {
+                    Ok((_, json)) => {
+                        let parsed: Result<Vec<(String, u64)>, _> = serde_json::from_slice(json);
+                        match parsed {
+                            Ok(tickets) => {
+                                let now = crate::server::session_ticket::now_secs();
+                                let map: std::collections::HashMap<[u8; 16], u64> = tickets
+                                    .into_iter()
+                                    .filter(|(_, exp)| *exp > now)
+                                    .filter_map(|(hex, exp)| {
+                                        let bytes = hex::decode(&hex).ok()?;
+                                        if bytes.len() == 16 {
+                                            let mut arr = [0u8; 16];
+                                            arr.copy_from_slice(&bytes);
+                                            Some((arr, exp))
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect();
+                                tracing::info!("[restore] session tickets: {} active", map.len());
+                                map
+                            }
+                            Err(_) => Default::default(),
+                        }
+                    }
+                    Err(_) => Default::default(),
+                },
+                Err(e) => {
+                    tracing::warn!("ticket chunk read error: {}", e);
+                    Default::default()
+                }
+            }
+        } else {
+            Default::default()
+        };
+
         self.reconcile_store = if let Some(hash) = manifest.federation_chunk_hash {
             match chunk_store.read_chunk(&hash) {
                 Ok(data) => match crate::persist::chunk_store::untag_chunk_data(&data) {
@@ -12282,6 +12325,89 @@ impl Server {
             .map_err(|_| ServerError::InvalidArgument("signature verification failed".into()))
     }
 
+    pub fn issue_session_ticket(&mut self, session_id: SessionId) -> Result<Vec<u8>, ServerError> {
+        let session = self
+            .sessions
+            .get(&session_id)
+            .ok_or(ServerError::SessionNotFound(session_id))?;
+        let club_id = session.initial_login().ok_or(ServerError::NotAuthorized)?;
+        self.issue_session_ticket_for_club(club_id)
+    }
+
+    fn issue_session_ticket_for_club(&mut self, club_id: BeId) -> Result<Vec<u8>, ServerError> {
+        let now = crate::server::session_ticket::now_secs();
+        let expires_at = now + crate::server::session_ticket::TICKET_TTL_SECS;
+        let mut nonce = [0u8; 16];
+        use rand::RngCore;
+        rand::rngs::OsRng.fill_bytes(&mut nonce);
+        let claims = crate::server::session_ticket::SessionTicketClaims {
+            club_id,
+            key_id: self.server_key_id(),
+            issued_at: now,
+            expires_at,
+            nonce,
+        };
+        let sig = self.sign_data(&claims.canonical_bytes());
+        let ticket = crate::server::session_ticket::SessionTicket {
+            claims,
+            signature: sig,
+        };
+        self.ticket_nonces.insert(nonce, expires_at);
+        tracing::debug!(
+            "issued session ticket for club {:x}, expires in {}s",
+            club_id,
+            expires_at - now
+        );
+        Ok(ticket.encode())
+    }
+
+    pub fn redeem_session_ticket(
+        &mut self,
+        session_id: SessionId,
+        ticket_bytes: &[u8],
+    ) -> Result<(Vec<BeId>, Vec<u8>), ServerError> {
+        if ticket_bytes.len() > crate::server::session_ticket::MAX_TICKET_LEN {
+            return Err(ServerError::InvalidArgument("ticket too large".into()));
+        }
+        let ticket = crate::server::session_ticket::SessionTicket::decode(ticket_bytes)
+            .ok_or_else(|| ServerError::InvalidArgument("invalid ticket format".into()))?;
+        self.verify_server_signature_with_key(
+            Some(ticket.claims.key_id),
+            &ticket.claims.canonical_bytes(),
+            &ticket.signature,
+        )?;
+        let now = crate::server::session_ticket::now_secs();
+        if ticket.is_expired(now) {
+            self.ticket_nonces.remove(&ticket.claims.nonce);
+            return Err(ServerError::InvalidArgument("ticket expired".into()));
+        }
+        if !self.ticket_nonces.contains_key(&ticket.claims.nonce) {
+            return Err(ServerError::InvalidArgument(
+                "ticket revoked or unknown".into(),
+            ));
+        }
+        let club_id = ticket.claims.club_id;
+        if !self.clubs.contains_key(&club_id) {
+            self.ticket_nonces.remove(&ticket.claims.nonce);
+            return Err(ServerError::ClubNotFound(club_id));
+        }
+        let lock = super::lock::BooLock::new(club_id);
+        let km = self.authenticate(session_id, &lock, &super::lock::LockCredential::Boo)?;
+        let clubs: Vec<BeId> = km.actual_authority().into_iter().collect();
+        self.ticket_nonces.remove(&ticket.claims.nonce);
+        let new_ticket = self.issue_session_ticket_for_club(club_id)?;
+        tracing::info!(
+            target: "security",
+            "SECURITY:ticket_redeemed club={:x} key_id={:x}",
+            club_id, ticket.claims.key_id
+        );
+        tracing::info!(
+            "redeemed session ticket for club {:x} (rolling renewal)",
+            club_id
+        );
+        Ok((clubs, new_ticket))
+    }
+
     fn validate_endorsement(
         &self,
         session_id: SessionId,
@@ -14890,6 +15016,7 @@ pub(crate) mod persist_snapshot {
                 dev_mode: false,
                 public_address: None,
                 server_directory: crate::server::server_directory::ServerDirectory::new(),
+                ticket_nonces: HashMap::new(),
             };
             for club_snap in &snapshot.clubs {
                 let work = club_snap
@@ -15693,6 +15820,7 @@ pub(crate) mod persist_snapshot {
                     .map(|(id, c)| (*id, c.clone()))
                     .collect(),
                 social_chunk_hash: None,
+                ticket_nonces_chunk_hash: None,
                 revisions: std::collections::HashMap::new(),
             };
 
@@ -15746,6 +15874,31 @@ pub(crate) mod persist_snapshot {
                 manifest.starred_works.clear();
                 manifest.trails.clear();
                 manifest.compound_editions.clear();
+            }
+
+            // ── Session tickets ──
+            if !self.ticket_nonces.is_empty() {
+                let now = crate::server::session_ticket::now_secs();
+                let tickets: Vec<(String, u64)> = self
+                    .ticket_nonces
+                    .iter()
+                    .filter(|(_, &exp)| exp > now)
+                    .map(|(nonce, &exp)| {
+                        (nonce.iter().map(|b| format!("{:02x}", b)).collect(), exp)
+                    })
+                    .collect();
+                let json = serde_json::to_vec(&tickets).unwrap_or_default();
+                if json.len() > 4 {
+                    let tagged = crate::persist::chunk_store::tag_chunk_data(
+                        crate::persist::chunk_store::CHUNK_FORMAT_JSON,
+                        &json,
+                    );
+                    if let Ok(hash) = chunk_store.write_chunk(&tagged) {
+                        manifest.ticket_nonces_chunk_hash = Some(hash);
+                    }
+                }
+            } else {
+                manifest.ticket_nonces_chunk_hash = None;
             }
 
             // ── FR-23: Write revision metadata ──

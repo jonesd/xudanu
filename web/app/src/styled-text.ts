@@ -164,7 +164,7 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
     // The visible text (strip marker prefix if detected from marker)
     const displayText = marker.type ? lineText.slice(contentStart) : lineText;
     // Wrap the marker in a hidden span so textContent preserves it
-    const markerHtml = marker.type ? `<span style="display:none">${escapeHtml(lineText.slice(0, contentStart))}</span>` : "";
+    const markerHtml = marker.type ? `<span style="display:none" contenteditable="false">${escapeHtml(lineText.slice(0, contentStart))}</span>` : "";
     const displayOffset = marker.type ? lineStart + contentStart : lineStart;
 
     // Apply inline marks to the display text
@@ -177,18 +177,20 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
       : escapeHtml(displayText);
 
     // Use inline spans — NOT block tags. Block tags break contentEditable Enter behavior.
+    // All decorative/marker spans get contenteditable="false" so the cursor can't land
+    // inside them and corrupt the text.
     if (blockType === "heading") {
       const lv = level || 1;
       const sizes: Record<number, string> = { 1: "1.8em", 2: "1.5em", 3: "1.2em" };
       const weights: Record<number, string> = { 1: "700", 2: "700", 3: "600" };
-      html += `<span style="display:none">${escapeHtml(lineText.slice(0, contentStart))}</span><span style="font-size:${sizes[lv] || "1.8em"};font-weight:${weights[lv] || "700"}">${lineHtml}</span>`;
+      html += `<span style="display:none" contenteditable="false">${escapeHtml(lineText.slice(0, contentStart))}</span><span style="font-size:${sizes[lv] || "1.8em"};font-weight:${weights[lv] || "700"}">${lineHtml}</span>`;
     } else if (blockType === "list_item") {
       const bullet = listKind === "ordered" ? "&#9312;" : "&bull;";
-      html += `<span style="display:none">${escapeHtml(lineText.slice(0, contentStart))}</span><span style="display:inline-block;width:20px;">${bullet}</span><span>${lineHtml}</span>`;
+      html += `<span style="display:none" contenteditable="false">${escapeHtml(lineText.slice(0, contentStart))}</span><span style="display:inline-block;width:20px;user-select:none;" contenteditable="false">${bullet}</span><span>${lineHtml}</span>`;
     } else if (blockType === "blockquote") {
-      html += `<span style="display:none">${escapeHtml(lineText.slice(0, contentStart))}</span><span style="border-left:3px solid #58a6ff;padding-left:12px;color:#999;">${lineHtml}</span>`;
+      html += `<span style="display:none" contenteditable="false">${escapeHtml(lineText.slice(0, contentStart))}</span><span style="border-left:3px solid #58a6ff;padding-left:12px;color:#999;">${lineHtml}</span>`;
     } else if (blockType === "code_block") {
-      html += `<span style="display:none">${escapeHtml(lineText.slice(0, contentStart))}</span><span style="font-family:monospace;background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:3px;">${escapeHtml(displayText)}</span>`;
+      html += `<span style="display:none" contenteditable="false">${escapeHtml(lineText.slice(0, contentStart))}</span><span style="font-family:monospace;background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:3px;">${escapeHtml(displayText)}</span>`;
     } else {
       // Plain line — no wrapper, just the text (preserves pre-wrap newline behavior)
       html += `${markerHtml}${lineHtml}`;

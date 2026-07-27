@@ -341,6 +341,20 @@ fn dispatch_inner(
                 km.login_authority().iter().next().copied().unwrap_or(0),
             ))
         }
+        WireRequest::SessionTicketIssue => {
+            let ticket = srv.issue_session_ticket(session_id)?;
+            Ok(ResponseValue::Ticket {
+                clubs: vec![],
+                ticket,
+            })
+        }
+        WireRequest::SessionTicketRedeem { ticket } => {
+            let (clubs, new_ticket) = srv.redeem_session_ticket(session_id, &ticket)?;
+            Ok(ResponseValue::Ticket {
+                clubs,
+                ticket: new_ticket,
+            })
+        }
 
         WireRequest::ServerGetById { id } => {
             let id_obj = crate::edition::Id::global(id as i64);

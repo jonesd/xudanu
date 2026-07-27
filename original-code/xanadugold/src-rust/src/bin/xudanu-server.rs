@@ -920,21 +920,25 @@ async fn main() {
                             tracing::info!("auto-save: materialized {} work(s)", saved);
                         }
 
-                        let should_checkpoint = autosave_state.server.with_server_ref(|srv| {
-                            if srv.chunk_store().is_some() {
-                                let now = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_secs();
-                                let elapsed = now.saturating_sub(srv.last_checkpoint_time());
-                                elapsed >= 5
-                            } else {
-                                false
-                            }
-                        });
-                        if should_checkpoint {
-                            if let Err(_e) = autosave_state.server.checkpoint_async().await {
-                                tracing::error!("periodic checkpoint failed");
+                        // Only checkpoint when there are dirty works to save.
+                        // Avoids ~2s I/O stall every 5s when nothing changed.
+                        if saved > 0 {
+                            let should_checkpoint = autosave_state.server.with_server_ref(|srv| {
+                                if srv.chunk_store().is_some() {
+                                    let now = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs();
+                                    let elapsed = now.saturating_sub(srv.last_checkpoint_time());
+                                    elapsed >= 5
+                                } else {
+                                    false
+                                }
+                            });
+                            if should_checkpoint {
+                                if let Err(_e) = autosave_state.server.checkpoint_async().await {
+                                    tracing::error!("periodic checkpoint failed");
+                                }
                             }
                         }
                     }

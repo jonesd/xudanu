@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CrdtSyncClient, type AwarenessState, type ContentMatch, type AttributionSpan, type AttributionLogStatus, type WhoAmIEntry, type WorkListEntry, type AnnotationEntry, type ChangeHighlight } from "../api/crdt_sync";
+import { CrdtSyncClient, type AwarenessState, type ContentMatch, type AttributionSpan, type AttributionLogStatus, type WhoAmIEntry, type WorkListEntry, type AnnotationEntry, type ChangeHighlight, type LlmUsageSummary } from "../api/crdt_sync";
 
 export interface CrdtSyncState {
   text: string;
@@ -28,6 +28,7 @@ export interface CrdtSyncState {
   narrateDiff: () => Promise<{ text: string; model: string; updatedText: string }>;
   getWritingFeedback: () => Promise<{ text: string; model: string }>;
   llmEnabled: boolean;
+  llmUsage: LlmUsageSummary | null;
   fetchWorkList: () => Promise<WorkListEntry[]>;
   setVisibility: (workId: number, publicClubId: number | null) => Promise<void>;
   getReadClub: (workId: number) => Promise<number>;
@@ -63,6 +64,7 @@ export function useCrdtSync(
   const [identity, setIdentity] = useState<WhoAmIEntry | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [llmEnabled, setLlmEnabled] = useState(false);
+  const [llmUsage, setLlmUsage] = useState<LlmUsageSummary | null>(null);
   const [publicClubId, setPublicClubId] = useState(0);
   const [authenticated, setAuthenticated] = useState(false);
   const [annotations, setAnnotations] = useState<AnnotationEntry[]>([]);
@@ -130,11 +132,49 @@ export function useCrdtSync(
           if (r && "value" in r) {
             const val = r.value as Record<string, unknown>;
             setLlmEnabled(val?.llm_enabled === true);
+            setLlmUsage((val?.llm_usage as LlmUsageSummary) || null);
             if (typeof val?.public_club_id === "number") {
               setPublicClubId(val.public_club_id);
             }
           }
         }).catch(() => {});
+
+        const storedTicket = (() => {
+          try {
+            const b64 = localStorage.getItem("xudanu_session_ticket");
+            if (!b64) return null;
+            const binary = atob(b64);
+            const arr = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+            return arr;
+          } catch { return null; }
+        })();
+
+        const tryAuth = async () => {
+          if (storedTicket) {
+            const ok = await client!.sessionTicketRedeem(storedTicket);
+            if (!ok) {
+              try { localStorage.removeItem("xudanu_session_ticket"); } catch {}
+            }
+          }
+          const id = await client!.checkWhoAmI();
+          if (id) {
+            setAuthenticated(true);
+            setIdentity(id);
+            client!.sessionTicketIssue().then((ticket) => {
+              if (ticket) {
+                try {
+                  const b64 = btoa(String.fromCharCode(...ticket));
+                  localStorage.setItem("xudanu_session_ticket", b64);
+                } catch {}
+              }
+            }).catch(() => {});
+          } else {
+            setAuthenticated(false);
+          }
+          setIsAdmin(client!.getIsAdmin());
+        };
+        tryAuth().catch(() => setAuthenticated(false));
       }
     });
 
@@ -181,7 +221,7 @@ export function useCrdtSync(
       clientRef.current?.sendAwareness(null, null, false);
     }, 500);
     return () => clearTimeout(t);
-  }, [workBeId, connected]);
+  }, [workBeId, connected, authenticated]);
 
   // Low-frequency awareness reconciliation (30s safety net).
   // Primary awareness updates arrive via push events (crdt_awareness_update)
@@ -221,24 +261,6 @@ export function useCrdtSync(
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [workBeId]);
-
-  useEffect(() => {
-    if (!connected) {
-      setAuthenticated(false);
-      return;
-    }
-    const client = clientRef.current;
-    if (!client) return;
-    client.checkWhoAmI().then((id) => {
-      if (id) {
-        setAuthenticated(true);
-        setIdentity(id);
-      }
-      setIsAdmin(client.getIsAdmin());
-    }).catch(() => {
-      setAuthenticated(false);
-    });
-  }, [connected]);
 
   useEffect(() => {
     if (!connected || !workBeId) {
@@ -322,6 +344,14 @@ export function useCrdtSync(
       await client.loginByName(clubName, password);
     }
     setAuthenticated(true);
+    client?.sessionTicketIssue().then((ticket) => {
+      if (ticket) {
+        try {
+          const b64 = btoa(String.fromCharCode(...ticket));
+          localStorage.setItem("xudanu_session_ticket", b64);
+        } catch {}
+      }
+    }).catch(() => {});
   }, []);
 
   const createIdentity = useCallback(async (displayName: string, password: string) => {
@@ -335,6 +365,14 @@ export function useCrdtSync(
     });
     if (!resp.ok) throw new Error("identity created but session login failed");
     setAuthenticated(true);
+    client.sessionTicketIssue().then((ticket) => {
+      if (ticket) {
+        try {
+          const b64 = btoa(String.fromCharCode(...ticket));
+          localStorage.setItem("xudanu_session_ticket", b64);
+        } catch {}
+      }
+    }).catch(() => {});
   }, []);
 
   const createWork = useCallback(async (): Promise<number | null> => {
@@ -504,7 +542,7 @@ export function useCrdtSync(
     attributionSpans, attributionLogStatus, refreshAttribution,
     refreshAwareness,
     identity, login, createIdentity, createWork, shareWork, unshareWork, narrateDiff,
-    getWritingFeedback, llmEnabled, fetchWorkList,     setVisibility, getReadClub, getEditClub, publicClubId, logout,
+    getWritingFeedback, llmEnabled, llmUsage, fetchWorkList,     setVisibility, getReadClub, getEditClub, publicClubId, logout,
     annotations, refreshAnnotations, createAnnotation, deleteAnnotation,
     connectionEpoch,
     isAdmin,

@@ -89,6 +89,12 @@ export function AppShell() {
   const [docPrefs, setDocPrefs] = useState<DocPreferences>(loadDocPreferences());
   const [linkCreatorSource, setLinkCreatorSource] = useState<LinkCreatorSource | null>(null);
   const [pinnedKeys, setPinnedKeys] = useState<Set<string>>(new Set());
+  const [narrating, setNarrating] = useState(false);
+  const [narration, setNarration] = useState<string | null>(null);
+  const [narrationModel, setNarrationModel] = useState("");
+  const [loadingFeedback, setLoadingFeedback] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackModel, setFeedbackModel] = useState("");
   const lastTypingRef = useRef(0);
 
   useEffect(() => {
@@ -123,6 +129,10 @@ export function AppShell() {
     canEdit,
     reconnectAttempt,
     fetchWorkList,
+    narrateDiff,
+    getWritingFeedback,
+    llmEnabled,
+    llmUsage,
   } = crdt;
 
   const transclusion = useTransclusion();
@@ -1050,6 +1060,45 @@ export function AppShell() {
                       <button type="button" className="tools-menu-item" onClick={() => { setShowCompoundBuilder(true); setToolsMenuOpen(false); }}>
                         Compound Builder
                       </button>
+                      <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
+                      <button
+                        type="button"
+                        className="tools-menu-item"
+                        disabled={!llmEnabled || narrating}
+                        onClick={async () => {
+                          setToolsMenuOpen(false);
+                          setNarrating(true);
+                          setNarration(null);
+                          setNarrationModel("");
+                          const result = await narrateDiff();
+                          setNarration(result.text);
+                          setNarrationModel(result.model);
+                          if (result.updatedText) {
+                            setText(result.updatedText);
+                            setTimeout(() => refreshAttribution(), 300);
+                          }
+                          setNarrating(false);
+                        }}
+                      >
+                        {narrating ? "Summarizing\u2026" : "Summarize Changes"}
+                      </button>
+                      <button
+                        type="button"
+                        className="tools-menu-item"
+                        disabled={!llmEnabled || loadingFeedback}
+                        onClick={async () => {
+                          setToolsMenuOpen(false);
+                          setLoadingFeedback(true);
+                          setFeedback(null);
+                          setFeedbackModel("");
+                          const result = await getWritingFeedback();
+                          setFeedback(result.text);
+                          setFeedbackModel(result.model);
+                          setLoadingFeedback(false);
+                        }}
+                      >
+                        {loadingFeedback ? "Reviewing\u2026" : "Writing Feedback"}
+                      </button>
                     </div>
                   </>
                 )}
@@ -1187,6 +1236,26 @@ export function AppShell() {
                 onToggleStyle={editable ? handleToggleStyle : undefined}
               />
             </div>
+            {narration && (
+              <div className="llm-result-panel">
+                <div className="llm-result-header">
+                  <span>Summary</span>
+                  <button type="button" className="llm-result-close" onClick={() => setNarration(null)}>close</button>
+                </div>
+                <p style={{ whiteSpace: "pre-wrap" }}>{narration}</p>
+                {narrationModel && <p className="llm-provenance">&mdash; via {narrationModel}</p>}
+              </div>
+            )}
+            {feedback && (
+              <div className="llm-result-panel">
+                <div className="llm-result-header">
+                  <span>Writing Feedback</span>
+                  <button type="button" className="llm-result-close" onClick={() => setFeedback(null)}>close</button>
+                </div>
+                <p style={{ whiteSpace: "pre-wrap" }}>{feedback}</p>
+                {feedbackModel && <p className="llm-provenance">&mdash; via {feedbackModel}</p>}
+              </div>
+            )}
             {showProvenance && (
               <div className="provenance-split">
                 <div className="provenance-split-header">
@@ -1349,6 +1418,8 @@ export function AppShell() {
               onCreateIdentity={createIdentity}
               onLogout={logout}
               rosters={rosters}
+              llmEnabled={llmEnabled}
+              llmUsage={llmUsage}
             />
           </div>
         </div>

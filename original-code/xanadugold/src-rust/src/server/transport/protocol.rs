@@ -81,6 +81,8 @@ pub enum OperationCode {
     SessionLoginByName,
     SessionAuthenticate,
     SessionLoginPublic,
+    SessionTicketIssue,
+    SessionTicketRedeem,
 
     ServerGetById,
     ServerGetByBeId,
@@ -397,6 +399,8 @@ impl OperationCode {
             0x0004 => Some(OperationCode::SessionLoginByName),
             0x0005 => Some(OperationCode::SessionAuthenticate),
             0x0006 => Some(OperationCode::SessionLoginPublic),
+            0x0007 => Some(OperationCode::SessionTicketIssue),
+            0x0008 => Some(OperationCode::SessionTicketRedeem),
 
             0x0101 => Some(OperationCode::ServerGetById),
             0x0102 => Some(OperationCode::ServerGetByBeId),
@@ -699,6 +703,8 @@ impl OperationCode {
             OperationCode::SessionLoginByName => 0x0004,
             OperationCode::SessionAuthenticate => 0x0005,
             OperationCode::SessionLoginPublic => 0x0006,
+            OperationCode::SessionTicketIssue => 0x0007,
+            OperationCode::SessionTicketRedeem => 0x0008,
 
             OperationCode::ServerGetById => 0x0101,
             OperationCode::ServerGetByBeId => 0x0102,
@@ -1054,6 +1060,10 @@ pub enum WireRequest {
         credential: LockCredential,
     },
     SessionLoginPublic,
+    SessionTicketIssue,
+    SessionTicketRedeem {
+        ticket: Vec<u8>,
+    },
 
     ServerGetById {
         id: u64,
@@ -2200,6 +2210,10 @@ pub enum ResponseValue {
     Humber(u64),
     Boolean(bool),
     String(String),
+    Ticket {
+        clubs: Vec<BeId>,
+        ticket: Vec<u8>,
+    },
     Edition(EditionPayload),
     RangeElement(Option<RangeElement>),
     Region(XnRegion),

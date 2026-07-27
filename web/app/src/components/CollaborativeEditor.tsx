@@ -1042,7 +1042,7 @@ export function CollaborativeEditor({
             el.appendChild(document.createTextNode("\u200B"));
           }
         } else {
-          el.textContent = displayText;
+          el.innerHTML = buildStyledText(displayText, []);
           if (displayText.endsWith("\n")) {
             el.appendChild(document.createTextNode("\u200B"));
           }
@@ -2195,12 +2195,38 @@ export function CollaborativeEditor({
   );
 }
 
+function isHiddenMarker(node: Node | null): boolean {
+  let n = node;
+  while (n && n.nodeType !== Node.DOCUMENT_NODE) {
+    if (n.nodeType === Node.ELEMENT_NODE) {
+      const el = n as Element;
+      const style = el.getAttribute && el.getAttribute("style");
+      if (style && style.includes("display:none")) return true;
+    }
+    n = n.parentNode;
+  }
+  return false;
+}
+
+function isDecorativeNode(node: Node | null): boolean {
+  let n = node;
+  while (n && n.nodeType !== Node.DOCUMENT_NODE) {
+    if (n.nodeType === Node.ELEMENT_NODE) {
+      const el = n as Element;
+      if (el.getAttribute && el.getAttribute("contenteditable") === "false" && !isHiddenMarker(el)) return true;
+    }
+    n = n.parentNode;
+  }
+  return false;
+}
+
 function getTextContent(el: HTMLElement): string {
   let result = "";
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
   let node: Node | null;
   while ((node = walker.nextNode())) {
     if (node.nodeType === Node.TEXT_NODE) {
+      if (isDecorativeNode(node)) continue;
       result += node.textContent || "";
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const tag = (node as Element).tagName;

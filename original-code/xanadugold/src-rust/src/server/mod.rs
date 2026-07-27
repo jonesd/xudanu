@@ -31,6 +31,8 @@ pub mod server_directory;
 #[cfg(feature = "server")]
 pub mod session;
 #[cfg(feature = "server")]
+pub mod session_ticket;
+#[cfg(feature = "server")]
 pub mod source_matcher;
 
 #[cfg(feature = "server")]

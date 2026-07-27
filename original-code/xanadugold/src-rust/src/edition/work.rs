@@ -16,6 +16,7 @@ pub enum WorkKind {
     Concept,
     Collection,
     Commentary,
+    Book,
 }
 
 impl Default for WorkKind {
@@ -33,6 +34,7 @@ impl WorkKind {
             WorkKind::Concept => "concept",
             WorkKind::Collection => "collection",
             WorkKind::Commentary => "commentary",
+            WorkKind::Book => "book",
         }
     }
 
@@ -43,6 +45,7 @@ impl WorkKind {
             "concept" => WorkKind::Concept,
             "collection" => WorkKind::Collection,
             "commentary" => WorkKind::Commentary,
+            "book" => WorkKind::Book,
             _ => WorkKind::Document,
         }
     }

@@ -248,6 +248,7 @@ impl BinaryCodec {
             OperationCode::SessionConnect => Ok(WireRequest::SessionConnect),
             OperationCode::SessionDisconnect => Ok(WireRequest::SessionDisconnect),
             OperationCode::SessionLoginPublic => Ok(WireRequest::SessionLoginPublic),
+            OperationCode::SessionTicketIssue => Ok(WireRequest::SessionTicketIssue),
             OperationCode::WorkGrab
             | OperationCode::WorkRelease
             | OperationCode::WorkIsGrabbed
@@ -348,6 +349,7 @@ impl BinaryCodec {
             OperationCode::SessionConnect => Ok(WireRequest::SessionConnect),
             OperationCode::SessionDisconnect => Ok(WireRequest::SessionDisconnect),
             OperationCode::SessionLoginPublic => Ok(WireRequest::SessionLoginPublic),
+            OperationCode::SessionTicketIssue => Ok(WireRequest::SessionTicketIssue),
             OperationCode::ClubNames => Ok(WireRequest::ClubNames {
                 offset: None,
                 limit: None,
@@ -617,7 +619,7 @@ impl JsonCodec {
             OperationCode::SessionConnect,
             OperationCode::SessionDisconnect,
             OperationCode::SessionLoginPublic,
-            OperationCode::AdminIsAcceptingConnections,
+            OperationCode::SessionTicketIssue,
             OperationCode::AdminActiveSessions,
             OperationCode::AdminShutdown,
             OperationCode::AdminGrants,
@@ -654,6 +656,7 @@ impl JsonCodec {
                 OperationCode::SessionConnect => Ok(WireRequest::SessionConnect),
                 OperationCode::SessionDisconnect => Ok(WireRequest::SessionDisconnect),
                 OperationCode::SessionLoginPublic => Ok(WireRequest::SessionLoginPublic),
+                OperationCode::SessionTicketIssue => Ok(WireRequest::SessionTicketIssue),
                 OperationCode::AdminIsAcceptingConnections => {
                     Ok(WireRequest::AdminIsAcceptingConnections)
                 }
@@ -727,6 +730,17 @@ impl JsonCodec {
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::SessionAuthenticate {
                     credential: a.credential,
+                })
+            }
+            OperationCode::SessionTicketRedeem => {
+                #[derive(Deserialize)]
+                struct Args {
+                    ticket: Vec<u8>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::SessionTicketRedeem {
+                    ticket: args.ticket,
                 })
             }
             OperationCode::ServerGetById => {

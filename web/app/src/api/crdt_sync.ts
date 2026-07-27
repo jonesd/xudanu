@@ -1625,6 +1625,38 @@ export class CrdtSyncClient {
     return this.isAdmin;
   }
 
+  async sessionTicketIssue(): Promise<Uint8Array | null> {
+    try {
+      const resp = await this.sendRequest("session_ticket_issue");
+      const obj = resp as Record<string, unknown>;
+      const ticketObj = (obj?.Ticket as Record<string, unknown>) || obj;
+      const ticketArr = ticketObj?.ticket as number[] | undefined;
+      if (ticketArr && ticketArr.length > 0) return new Uint8Array(ticketArr);
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async sessionTicketRedeem(ticket: Uint8Array): Promise<boolean> {
+    try {
+      const resp = await this.sendRequest("session_ticket_redeem", {
+        ticket: Array.from(ticket),
+      });
+      const obj = resp as Record<string, unknown>;
+      const ticketObj = (obj?.Ticket as Record<string, unknown>) || obj;
+      const newTicketArr = ticketObj?.ticket as number[] | undefined;
+      if (newTicketArr && newTicketArr.length > 0) {
+        const newTicket = new Uint8Array(newTicketArr);
+        const b64 = btoa(String.fromCharCode(...newTicket));
+        try { localStorage.setItem("xudanu_session_ticket", b64); } catch {}
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private async checkAdminStatus(): Promise<void> {
     try {
       await this.sendRequest("admin_grants");
@@ -1789,14 +1821,6 @@ export class CrdtSyncClient {
           this.crdtOpenedThisConnection = true;
         }
 
-        if (this.currentIdentity) {
-          try {
-            await this.sendRequest("crdt_register_author", { work_id: this.workBeId });
-          } catch (e) {
-            console.warn("crdt_sync: register_author failed:", e);
-          }
-        }
-
         if (wasInitialOpen) {
           this.text = (inner.current_text as string) || "";
         }
@@ -1805,6 +1829,12 @@ export class CrdtSyncClient {
         loaded = true;
         if (wasInitialOpen) {
           this.textListeners.forEach((cb) => cb(this.text));
+        }
+
+        // Register author non-blocking — don't delay text display
+        if (this.currentIdentity) {
+          this.sendRequest("crdt_register_author", { work_id: this.workBeId })
+            .catch((e) => console.warn("crdt_sync: register_author failed:", e));
         }
 
         this.sendRequest("crdt_awareness_get", {
@@ -1855,12 +1885,9 @@ export class CrdtSyncClient {
     if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
     // Close the old work's CRDT channel (keeps the WebSocket alive)
+    // Fire-and-forget — don't block the new work from opening
     if (this.crdtReady && this.workBeId) {
-      try {
-        await this.sendRequest("crdt_sync_close", { work_id: this.workBeId });
-      } catch {
-        // ignore close errors during switch
-      }
+      this.sendRequest("crdt_sync_close", { work_id: this.workBeId }).catch(() => {});
       this.crdtReady = false;
     }
 
