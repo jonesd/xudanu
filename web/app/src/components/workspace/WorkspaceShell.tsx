@@ -39,7 +39,7 @@ import { SEED_CONCEPTS } from "../../concepts-seed";
 import { WorkspaceTopBar } from "./WorkspaceTopBar";
 import type { WorkspaceNavTab } from "./WorkspaceTopBar";
 import "../../app.css";
-import "../../app-shell.css";
+import "../../theme.css";
 import "../../workspace.css";
 
 const WS_URL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/xudanu`;
