@@ -2131,8 +2131,45 @@ export function WorkspaceShell() {
                           Use
                         </button>
                         <button type="button" className="llm-result-close" onClick={() => setSuggestedTitle(null)}>Dismiss</button>
-                      </div>
-                    </div>
+                </div>
+
+                {/* Trail links */}
+                <div className="ws-conn-section">
+                  <div className="ws-conn-header">
+                    Trails ({annotations.filter((a) => a.kind === "trail-link").length})
+                  </div>
+                  {annotations.filter((a) => a.kind === "trail-link").length === 0 ? (
+                    <div className="ws-conn-empty">No trail links. Select text and click "+ Trail" to add this passage to a trail.</div>
+                  ) : (
+                    annotations.filter((a) => a.kind === "trail-link").map((a) => {
+                      let trailName = "trail";
+                      let trailId = 0;
+                      try {
+                        const parsed = JSON.parse(a.payload);
+                        trailName = parsed.trail_name || "trail";
+                        trailId = parsed.trail_id || 0;
+                      } catch {}
+                      return (
+                        <div
+                          key={a.annotation_id}
+                          className="ws-conn-item"
+                          onClick={() => { setShowTrailsPanel(true); }}
+                          title="Open trails panel"
+                        >
+                          <div className="ws-conn-title">
+                            <span style={{ color: "#f97316" }}>{"\u2691"}</span> {trailName}
+                          </div>
+                          <div className="ws-conn-types">
+                            <span className="ws-conn-type-badge" style={{ background: "#f9731620", color: "#f97316", borderColor: "#f9731660" }}>
+                              Trail
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
                     <p style={{ fontSize: 16, fontWeight: 600 }}>{suggestedTitle}</p>
                   </div>
                 )}
