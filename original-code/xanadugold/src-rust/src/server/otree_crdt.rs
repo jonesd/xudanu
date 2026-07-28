@@ -149,6 +149,9 @@ struct OtreeWorkDoc {
     narration_snapshot: Option<String>,
     subscribers: HashMap<SessionId, OtreeSyncSessionId>,
     author_keys: HashMap<SessionId, OtreeAuthorIdentity>,
+    /// Authors who have disconnected but whose text still exists in the edition.
+    /// Kept so materialization can correctly attribute their edits.
+    historical_authors: HashMap<SessionId, OtreeAuthorIdentity>,
     club_signing_keys: HashMap<BeId, SigningKey>,
     last_change_timestamp: u64,
     awareness: HashMap<SessionId, OtreeAwarenessState>,
@@ -207,6 +210,8 @@ pub struct OtreeCrdtManager {
     orphaned_annotations: HashMap<BeId, Vec<OtreeAnnotation>>,
     session_counter: u64,
     debounce_secs: u64,
+    /// Persistent signing keys per (work, club) — survives doc eviction
+    persistent_signing_keys: HashMap<(BeId, BeId), SigningKey>,
 }
 
 fn find_entry_for_char(entry_char_start: &[usize], char_pos: usize) -> usize {
@@ -513,6 +518,7 @@ impl OtreeCrdtManager {
             orphaned_annotations: HashMap::new(),
             session_counter: 0,
             debounce_secs,
+            persistent_signing_keys: HashMap::new(),
         }
     }
 
@@ -543,6 +549,7 @@ impl OtreeCrdtManager {
                     narration_snapshot: None,
                     subscribers: HashMap::new(),
                     author_keys: HashMap::new(),
+                    historical_authors: HashMap::new(),
                     club_signing_keys: HashMap::new(),
                     last_change_timestamp: 0,
                     awareness: HashMap::new(),
@@ -590,10 +597,18 @@ impl OtreeCrdtManager {
             .get_mut(&work_id)
             .ok_or(OtreeError::WorkNotFound(work_id))?;
         wd.subscribers.remove(&session_id);
-        wd.author_keys.remove(&session_id);
+        // Preserve author identity for attribution even after disconnect
+        if let Some(author) = wd.author_keys.remove(&session_id) {
+            wd.historical_authors.insert(session_id, author);
+        }
         wd.awareness.remove(&session_id);
         wd.session_bases.remove(&session_id);
         if wd.subscribers.is_empty() {
+            // Materialize pending changes before evicting
+            if wd.pending_edition.is_some() {
+                wd.base_edition = wd.current_edition.clone();
+                wd.pending_edition = None;
+            }
             if !wd.annotations.is_empty() {
                 self.orphaned_annotations
                     .insert(work_id, std::mem::take(&mut wd.annotations));
@@ -1057,6 +1072,7 @@ impl OtreeCrdtManager {
                 narration_snapshot: None,
                 subscribers: HashMap::new(),
                 author_keys: HashMap::new(),
+                historical_authors: HashMap::new(),
                 club_signing_keys: HashMap::new(),
                 last_change_timestamp: 0,
                 awareness: HashMap::new(),
@@ -1118,11 +1134,18 @@ impl OtreeCrdtManager {
             .docs
             .get(&work_id)
             .ok_or(OtreeError::WorkNotFound(work_id))?;
-        Ok(wd
+        let mut result: Vec<(SessionId, OtreeAuthorIdentity)> = wd
             .author_keys
             .iter()
             .map(|(sid, ai)| (*sid, ai.clone()))
-            .collect())
+            .collect();
+        // Include historical authors (disconnected but their text persists)
+        for (sid, ai) in &wd.historical_authors {
+            if !wd.author_keys.contains_key(sid) {
+                result.push((*sid, ai.clone()));
+            }
+        }
+        Ok(result)
     }
 
     pub fn get_subscribed_sessions(&self, work_id: BeId) -> Result<Vec<SessionId>, OtreeError> {
@@ -1139,17 +1162,19 @@ impl OtreeCrdtManager {
         club_be_id: BeId,
         signing_key: SigningKey,
     ) {
+        self.persistent_signing_keys.insert((work_id, club_be_id), signing_key.clone());
         if let Some(wd) = self.docs.get_mut(&work_id) {
             wd.club_signing_keys.insert(club_be_id, signing_key);
         }
     }
 
     pub fn get_club_signing_key(&self, work_id: BeId, club_be_id: BeId) -> Option<SigningKey> {
-        self.docs
-            .get(&work_id)?
-            .club_signing_keys
-            .get(&club_be_id)
-            .cloned()
+        if let Some(wd) = self.docs.get(&work_id) {
+            if let Some(sk) = wd.club_signing_keys.get(&club_be_id) {
+                return Some(sk.clone());
+            }
+        }
+        self.persistent_signing_keys.get(&(work_id, club_be_id)).cloned()
     }
 
     pub fn update_awareness(

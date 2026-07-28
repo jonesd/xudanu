@@ -1026,6 +1026,15 @@ export function WorkspaceShell() {
     }
   }, [connected, workBeId, clientRef, works, loadLinks, loadBacklinks, refreshAttribution]);
 
+  // Debounced attribution refresh after text changes
+  useEffect(() => {
+    if (!connected || workBeId === null || !text) return;
+    const timer = setTimeout(() => {
+      refreshAttribution();
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [text, connected, workBeId, refreshAttribution]);
+
   useEffect(() => {
     if (connected && workBeId !== null && clientRef.current) {
       clientRef.current.crossServerBacklinksGet(workBeId).then(setCrossServerBacklinks).catch(() => setCrossServerBacklinks([]));
