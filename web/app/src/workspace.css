@@ -1729,6 +1729,40 @@
   margin: 4px 0;
 }
 
+/* Identity badge in top bar */
+.identity-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-elevated);
+  border-radius: 20px;
+  padding: 3px 10px 3px 4px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.identity-badge:hover {
+  border-color: var(--text-dim);
+}
+.identity-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+.identity-name {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+
 /* ── Right panel: Provenance tab ── */
 .ws-provenance h4 {
   margin: 12px 0 6px;
