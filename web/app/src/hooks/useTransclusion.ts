@@ -25,6 +25,7 @@ export const DEFAULT_LINK_TYPES: { type_id: number; name: string; color: string;
   { type_id: 4, name: "Quotation", color: "#a371f7", lineStyle: "dotted" },
   { type_id: 5, name: "See Also", color: "#d29922", lineStyle: "dashed" },
   { type_id: 6, name: "Web Link", color: "#39d2c0", lineStyle: "dashed" },
+  { type_id: 7, name: "Trail", color: "#f97316", lineStyle: "solid" },
 ];
 
 export interface TransclusionState {

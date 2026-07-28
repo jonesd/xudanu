@@ -8,6 +8,8 @@ const LINK_TYPE_DESCRIPTIONS: Record<number, string> = {
   3: "Mark a contested claim or counter-argument",
   4: "This passage quotes another source",
   5: "Related reading path or similar work",
+  6: "External web link",
+  7: "This passage is part of a curated trail",
 };
 
 export interface LinkCreatorSource {

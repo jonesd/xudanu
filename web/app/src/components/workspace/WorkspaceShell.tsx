@@ -1257,14 +1257,25 @@ export function WorkspaceShell() {
         selectionRange.end,
         selectedText.length > 80 ? selectedText.slice(0, 80) + "…" : selectedText
       );
+      const trailName = userTrails.find((t) => t.trail_id === trailId)?.name || "trail";
+      try {
+        await createAnnotation(
+          "trail-link",
+          JSON.stringify({ trail_id: trailId, trail_name: trailName }),
+          selectionRange.start,
+          selectionRange.end,
+          false,
+        );
+      } catch {}
       setAddToSelector(null);
       setSelectionRange(null);
-      // Refresh trails for work if visible
       if (rightPanelTab === "trails") await loadTrailsForWork();
+      refreshAttribution();
+      showToast(`Added to "${trailName}"`);
     } catch (e) {
       alert(`Could not add to trail: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [selectionRange, workBeId, clientRef, text, rightPanelTab, loadTrailsForWork]);
+  }, [selectionRange, workBeId, clientRef, text, rightPanelTab, loadTrailsForWork, userTrails, createAnnotation, refreshAttribution, showToast]);
 
   const handleCreateTrailFromSelection = useCallback(async () => {
     if (!selectionRange || workBeId === null || !clientRef.current) return;

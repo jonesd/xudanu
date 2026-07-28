@@ -155,7 +155,7 @@ export function useCrdtSync(
 
         const tryAuth = async () => {
           if (storedTicket) {
-            const ok = await client!.sessionTicketRedeem(storedTicket);
+            await client!.sessionTicketRedeem(storedTicket);
           }
           const id = await client!.checkWhoAmI();
           if (id) {

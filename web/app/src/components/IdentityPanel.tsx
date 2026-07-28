@@ -121,6 +121,45 @@ export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, 
           Your private signing key is encrypted at rest and never shown. Your
           public verifying key can be shared so others can confirm your signatures.
         </div>
+        <div className="llm-usage-panel">
+          <div className="llm-usage-header">
+            <span className="llm-usage-title">LLM Activity</span>
+            <span className={`llm-usage-badge ${llmEnabled ? "active" : "inactive"}`}>
+              {llmEnabled ? "Enabled" : "Disabled"}
+            </span>
+          </div>
+          {llmEnabled && llmUsage ? (
+            <>
+              <div className="llm-usage-stats">
+                <div className="llm-usage-stat">
+                  <span className="llm-usage-stat-value">{llmUsage.total_requests}</span>
+                  <span className="llm-usage-stat-label">requests</span>
+                </div>
+                <div className="llm-usage-stat">
+                  <span className="llm-usage-stat-value">{Math.round(llmUsage.total_prompt_chars / 4)}</span>
+                  <span className="llm-usage-stat-label">tokens sent</span>
+                </div>
+                <div className="llm-usage-stat">
+                  <span className="llm-usage-stat-value">{Math.round(llmUsage.total_response_chars / 4)}</span>
+                  <span className="llm-usage-stat-label">tokens received</span>
+                </div>
+              </div>
+              {llmUsage.by_feature && Object.keys(llmUsage.by_feature).length > 0 && (
+                <div className="llm-usage-features">
+                  {Object.entries(llmUsage.by_feature).map(([feature, data]) => (
+                    <div key={feature} className="llm-usage-feature">
+                      <span className="llm-usage-feature-name">{feature}</span>
+                      <span className="llm-usage-feature-count">{data.count}x</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="llm-usage-disclaimer">Token counts are estimates (~4 chars/token). Per-feature breakdown shows usage by LLM capability.</p>
+            </>
+          ) : (
+            <p className="llm-usage-disabled">Enable with <code>--ollama-url</code> flag on the server.</p>
+          )}
+        </div>
         <button type="button" className="identity-logout" onClick={onLogout}>Sign Out</button>
       </div>
     );
@@ -259,54 +298,6 @@ export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, 
           )}
         </p>
       </form>
-      {identity && (
-        <div className="llm-usage-panel">
-          <div className="llm-usage-header">
-            <span className="llm-usage-title">LLM Activity</span>
-            <span className={`llm-usage-badge ${llmEnabled ? "active" : "inactive"}`}>
-              {llmEnabled ? "Enabled" : "Disabled"}
-            </span>
-          </div>
-          {llmEnabled && llmUsage ? (
-            <>
-              <div className="llm-usage-stats">
-                <div className="llm-usage-stat">
-                  <span className="llm-usage-number">{llmUsage.total_requests}</span>
-                  <span className="llm-usage-label">requests</span>
-                </div>
-                <div className="llm-usage-stat">
-                  <span className="llm-usage-number">{Math.round(llmUsage.total_prompt_chars / 4).toLocaleString()}</span>
-                  <span className="llm-usage-label">tokens sent</span>
-                </div>
-                <div className="llm-usage-stat">
-                  <span className="llm-usage-number">{Math.round(llmUsage.total_response_chars / 4).toLocaleString()}</span>
-                  <span className="llm-usage-label">tokens received</span>
-                </div>
-              </div>
-              {llmUsage.by_feature && Object.keys(llmUsage.by_feature).length > 0 && (
-                <div className="llm-usage-features">
-                  {Object.entries(llmUsage.by_feature).map(([feature, stats]) => {
-                    const count = stats.count || stats.requests || 0;
-                    return (
-                      <div key={feature} className="llm-usage-feature">
-                        <span className="llm-usage-feature-name">{feature}</span>
-                        <span className="llm-usage-feature-count">{count}×</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              <p className="llm-usage-disclaimer">
-                Token counts are estimates (~4 chars/token). Actual cost depends on your LLM provider.
-              </p>
-            </>
-          ) : llmEnabled ? null : (
-            <p className="llm-usage-hint">
-              Enable with <code>--ollama-url</code> flag on the server.
-            </p>
-          )}
-        </div>
-      )}
     </div>
   );
 }
