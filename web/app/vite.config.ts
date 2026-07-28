@@ -1,6 +1,8 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
+const backend = `http://localhost:${process.env.BACKEND_PORT || "8080"}`;
+
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
@@ -9,11 +11,11 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": {
-        target: "http://localhost:8080",
+        target: backend,
         changeOrigin: true,
       },
       "/xudanu": {
-        target: "http://localhost:8080",
+        target: backend,
         ws: true,
         changeOrigin: true,
         configure: (proxy) => {
@@ -23,19 +25,19 @@ export default defineConfig({
         },
       },
       "/csrf-token": {
-        target: "http://localhost:8080",
+        target: backend,
         changeOrigin: true,
       },
       "/health": {
-        target: "http://localhost:8080",
+        target: backend,
         changeOrigin: true,
       },
       "/.well-known": {
-        target: "http://localhost:8080",
+        target: backend,
         changeOrigin: true,
       },
       "/auth": {
-        target: "http://localhost:8080",
+        target: backend,
         changeOrigin: true,
       },
     },

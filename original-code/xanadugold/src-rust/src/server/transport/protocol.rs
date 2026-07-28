@@ -1242,6 +1242,8 @@ pub enum WireRequest {
         char_start: Option<u64>,
         char_end: Option<u64>,
         note: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        server_domain: Option<String>,
     },
     TrailRemoveStop {
         trail_id: BeId,
@@ -2985,6 +2987,8 @@ pub struct TrailStopPayload {
     pub note: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_domain: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

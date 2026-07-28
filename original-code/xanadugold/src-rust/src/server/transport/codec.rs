@@ -3154,6 +3154,8 @@ impl JsonCodec {
                     char_end: Option<u64>,
                     #[serde(default)]
                     note: Option<String>,
+                    #[serde(default)]
+                    server_domain: Option<String>,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
@@ -3163,6 +3165,7 @@ impl JsonCodec {
                     char_start: args.char_start,
                     char_end: args.char_end,
                     note: args.note,
+                    server_domain: args.server_domain,
                 })
             }
             OperationCode::TrailRemoveStop => {

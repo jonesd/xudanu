@@ -3312,10 +3312,10 @@ canvas._bridge {
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
   max-width: 700px;
   width: 90%;
-  max-height: 80vh;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .modal-header {

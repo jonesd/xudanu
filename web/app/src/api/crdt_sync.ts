@@ -431,6 +431,7 @@ export interface TrailStop {
   char_end?: number;
   note?: string;
   title: string;
+  server_domain?: string;
 }
 
 export interface TrailPayload {
@@ -1370,11 +1371,12 @@ export class CrdtSyncClient {
     await this.sendRequest("trail_unpublish", { trail_id: trailId });
   }
 
-  async trailAddStop(trailId: number, workId: number, charStart?: number, charEnd?: number, note?: string): Promise<void> {
+  async trailAddStop(trailId: number, workId: number, charStart?: number, charEnd?: number, note?: string, serverDomain?: string): Promise<void> {
     const payload: Record<string, unknown> = { trail_id: trailId, work_id: workId };
     if (charStart !== undefined) payload.char_start = charStart;
     if (charEnd !== undefined) payload.char_end = charEnd;
     if (note) payload.note = note;
+    if (serverDomain) payload.server_domain = serverDomain;
     await this.sendRequest("trail_add_stop", payload);
   }
 

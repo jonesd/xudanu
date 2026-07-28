@@ -962,9 +962,10 @@ fn dispatch_inner(
             char_start,
             char_end,
             note,
+            server_domain,
         } => {
             srv.ensure_authenticated(session_id)?;
-            srv.trail_add_stop(session_id, trail_id, work_id, char_start, char_end, note)?;
+            srv.trail_add_stop(session_id, trail_id, work_id, char_start, char_end, note, server_domain)?;
             Ok(ResponseValue::Void)
         }
         WireRequest::TrailRemoveStop {

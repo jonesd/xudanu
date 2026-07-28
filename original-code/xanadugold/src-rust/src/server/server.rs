@@ -386,6 +386,7 @@ struct TrailStop {
     char_start: Option<u64>,
     char_end: Option<u64>,
     note: Option<String>,
+    server_domain: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -5786,6 +5787,7 @@ impl Server {
                 char_start,
                 char_end,
                 note,
+                server_domain: None,
             });
         }
     }
@@ -6011,6 +6013,7 @@ impl Server {
                     char_end: s.char_end,
                     note: s.note.clone(),
                     title,
+                    server_domain: s.server_domain.clone(),
                 }
             })
             .collect();
@@ -6124,9 +6127,12 @@ impl Server {
         char_start: Option<u64>,
         char_end: Option<u64>,
         note: Option<String>,
+        server_domain: Option<String>,
     ) -> Result<(), ServerError> {
         let owner = self.trail_owner_club(session_id)?;
-        self.work(work_id)?;
+        if server_domain.is_none() {
+            self.work(work_id)?;
+        }
         let t = self
             .trails
             .get_mut(&trail_id)
@@ -6139,6 +6145,7 @@ impl Server {
             char_start,
             char_end,
             note: note.clone(),
+            server_domain: server_domain.clone(),
         });
         t.updated_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -7256,6 +7263,7 @@ impl Server {
                                                         char_start: s.char_start,
                                                         char_end: s.char_end,
                                                         note: s.note,
+                                                        server_domain: s.server_domain.clone(),
                                                     })
                                                     .collect(),
                                                 created_at: t.created_at,
@@ -7316,6 +7324,7 @@ impl Server {
                                 char_start: s.char_start,
                                 char_end: s.char_end,
                                 note: s.note,
+                                server_domain: None,
                             })
                             .collect(),
                         created_at: t.created_at,
@@ -15021,6 +15030,7 @@ pub(crate) mod persist_snapshot {
                                         char_start: s.char_start,
                                         char_end: s.char_end,
                                         note: s.note.clone(),
+                                        server_domain: None,
                                     })
                                     .collect(),
                                 created_at: ts.created_at,
@@ -15403,6 +15413,7 @@ pub(crate) mod persist_snapshot {
                             char_start: s.char_start,
                             char_end: s.char_end,
                             note: s.note.clone(),
+                            server_domain: s.server_domain.clone(),
                         })
                         .collect(),
                     created_at: t.created_at,
@@ -15855,6 +15866,7 @@ pub(crate) mod persist_snapshot {
                                 char_start: s.char_start,
                                 char_end: s.char_end,
                                 note: s.note.clone(),
+                                server_domain: s.server_domain.clone(),
                             })
                             .collect(),
                         created_at: t.created_at,
