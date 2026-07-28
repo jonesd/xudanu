@@ -4,3 +4,4 @@ lcov.info
 *.wasm
 *. DS_Store
 --data-dir/
+data-node*/
