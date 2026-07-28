@@ -1307,6 +1307,7 @@ mod tests {
             history_club: None,
             kind: crate::edition::WorkKind::Document,
             license: crate::edition::License::AllRightsReserved,
+            custom_title: None,
         });
         manifest.links.push(LinkEntry {
             link_id: 50,

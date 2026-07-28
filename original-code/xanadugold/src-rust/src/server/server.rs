@@ -25087,7 +25087,7 @@ mod tests {
                 .trail_create(sid, "My Trail".to_string(), None, vec![])
                 .unwrap();
             server
-                .trail_add_stop(sid, trail, doc1, None, None, None)
+                .trail_add_stop(sid, trail, doc1, None, None, None, None)
                 .unwrap();
             server
                 .trail_add_stop(
@@ -25097,6 +25097,7 @@ mod tests {
                     Some(10),
                     Some(50),
                     Some("note".to_string()),
+                    None,
                 )
                 .unwrap();
 
@@ -25322,13 +25323,13 @@ mod tests {
 
         // Add stops
         server
-            .trail_add_stop(sid, t1, doc1, None, None, None)
+            .trail_add_stop(sid, t1, doc1, None, None, None, None)
             .unwrap();
         server
-            .trail_add_stop(sid, t1, doc2, Some(5), Some(20), Some("middle".into()))
+            .trail_add_stop(sid, t1, doc2, Some(5), Some(20), Some("middle".into()), None)
             .unwrap();
         server
-            .trail_add_stop(sid, t1, doc3, None, None, Some("end".into()))
+            .trail_add_stop(sid, t1, doc3, None, None, Some("end".into()), None)
             .unwrap();
 
         // Get
@@ -25387,6 +25388,7 @@ mod tests {
                 Some(6),
                 Some(11),
                 Some("the word 'world'".to_string()),
+                None,
             )
             .unwrap();
 
@@ -25409,10 +25411,39 @@ mod tests {
         let before = server.trail_get(sid, trail).unwrap().updated_at;
         std::thread::sleep(std::time::Duration::from_secs(1));
         server
-            .trail_add_stop(sid, trail, doc, None, None, None)
+            .trail_add_stop(sid, trail, doc, None, None, None, None)
             .unwrap();
         let after = server.trail_get(sid, trail).unwrap().updated_at;
         assert!(after > before, "updated_at should change on modification");
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn trail_cross_server_stop_stores_domain() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let doc = server.create_work(sid, Edition::from_text("local doc")).unwrap();
+        let trail = server.trail_create(sid, "Cross-server".to_string(), None, vec![]).unwrap();
+
+        // Add a local stop
+        server.trail_add_stop(sid, trail, doc, None, None, None, None).unwrap();
+
+        // Add a remote stop (work doesn't exist locally, but server_domain is set)
+        let remote_work_id: BeId = 0x5;
+        server.trail_add_stop(sid, trail, remote_work_id, Some(10), Some(50), Some("remote passage".to_string()), Some("localhost:8092".to_string())).unwrap();
+
+        let t = server.trail_get(sid, trail).unwrap();
+        assert_eq!(t.stops.len(), 2);
+        // Local stop
+        assert_eq!(t.stops[0].work_id, doc);
+        assert!(t.stops[0].server_domain.is_none(), "local stop should have no server_domain");
+        // Remote stop
+        assert_eq!(t.stops[1].work_id, remote_work_id);
+        assert_eq!(t.stops[1].server_domain.as_deref(), Some("localhost:8092"));
+        assert_eq!(t.stops[1].char_start, Some(10));
+        assert_eq!(t.stops[1].char_end, Some(50));
+        assert_eq!(t.stops[1].note.as_deref(), Some("remote passage"));
     }
 
     #[test]
@@ -26094,7 +26125,7 @@ mod tests {
                 .trail_create(sid, "My Trail".to_string(), None, vec![])
                 .unwrap();
             server
-                .trail_add_stop(sid, trail, doc1, None, None, None)
+                .trail_add_stop(sid, trail, doc1, None, None, None, None)
                 .unwrap();
             server
                 .trail_add_stop(
@@ -26104,6 +26135,7 @@ mod tests {
                     Some(5),
                     Some(10),
                     Some("note".to_string()),
+                    None,
                 )
                 .unwrap();
 
@@ -26247,7 +26279,7 @@ mod tests {
                 .trail_create(sid, "Trail".to_string(), None, vec![])
                 .unwrap();
             server
-                .trail_add_stop(sid, trail, doc1, None, None, None)
+                .trail_add_stop(sid, trail, doc1, None, None, None, None)
                 .unwrap();
         }
 

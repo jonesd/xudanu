@@ -41,6 +41,9 @@ export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClos
   const [newIntro, setNewIntro] = useState("");
   const [newCategories, setNewCategories] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [remoteStopTrailId, setRemoteStopTrailId] = useState<number | null>(null);
+  const [remoteServer, setRemoteServer] = useState("");
+  const [remoteWorkId, setRemoteWorkId] = useState("");
 
   const loadedOnce = useRef(false);
 
@@ -120,6 +123,22 @@ export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClos
     client.trailAddStop(trailId, currentWorkId).catch(() => refreshMine());
   };
 
+  const handleAddRemoteStop = (trailId: number) => {
+    if (!client || !remoteServer.trim() || !remoteWorkId.trim()) return;
+    const workId = remoteWorkId.trim().startsWith("0x")
+      ? parseInt(remoteWorkId.trim(), 16)
+      : parseInt(remoteWorkId.trim(), 10);
+    if (isNaN(workId)) { alert("Invalid work ID"); return; }
+    const server = remoteServer.trim();
+    setTrails((prev) => patchTrail(prev, trailId, (t) => ({
+      ...t,
+      stops: [...t.stops, { work_id: workId, char_start: undefined, char_end: undefined, note: undefined, title: `Remote: ${server}`, server_domain: server }],
+    })));
+    client.trailAddStop(trailId, workId, undefined, undefined, undefined, server)
+      .then(() => { setRemoteStopTrailId(null); setRemoteServer(""); setRemoteWorkId(""); })
+      .catch((e) => { alert(`Failed: ${e instanceof Error ? e.message : String(e)}`); refreshMine(); });
+  };
+
   const handleRemoveStop = (trailId: number, stopIndex: number) => {
     const snapshot = trails;
     setTrails((prev) => patchTrail(prev, trailId, (t) => ({
@@ -176,12 +195,19 @@ export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClos
     return trail.stops.map((stop, idx) => (
       <div key={idx} className="trail-stop">
         <span className="trail-stop-number">{idx + 1}</span>
-        <span
-          className={`trail-stop-title ${stop.work_id === currentWorkId ? "active" : ""}`}
-          onClick={() => { onSelectWork(stop.work_id); }}
-        >
-          {workLabel(stop.work_id, stop.title, works)}
-        </span>
+        {stop.server_domain ? (
+          <span className="trail-stop-title remote" title={`Remote: ${stop.server_domain}`}>
+            {"\u{1F310}"} {stop.title || `0x${hexId(stop.work_id)}`}
+            <span className="trail-stop-server">{stop.server_domain}</span>
+          </span>
+        ) : (
+          <span
+            className={`trail-stop-title ${stop.work_id === currentWorkId ? "active" : ""}`}
+            onClick={() => { onSelectWork(stop.work_id); }}
+          >
+            {workLabel(stop.work_id, stop.title, works)}
+          </span>
+        )}
         {stop.note && (
           <span className="trail-stop-note" title={stop.note}>
             {stop.note.length > 20 ? stop.note.slice(0, 20) + "\u2026" : stop.note}
@@ -226,6 +252,15 @@ export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClos
           {interactive && (
             <button
               type="button"
+              className="trail-add-remote-btn"
+              onClick={(e) => { e.stopPropagation(); setRemoteStopTrailId(remoteStopTrailId === trail.trail_id ? null : trail.trail_id); setRemoteServer(""); setRemoteWorkId(""); }}
+              title="Add cross-server stop"
+              style={{ fontSize: 11, background: "none", border: "1px solid #f97316", color: "#f97316", borderRadius: 3, cursor: "pointer", padding: "0 4px", marginLeft: 2 }}
+            >{"\u{1F310}"}</button>
+          )}
+          {interactive && (
+            <button
+              type="button"
               className="trail-delete-btn"
               onClick={(e) => { e.stopPropagation(); handleDelete(trail.trail_id); }}
               title="Delete trail"
@@ -253,6 +288,33 @@ export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClos
               />
             )}
             <div className="trail-stops">{renderStops(trail, interactive)}</div>
+            {remoteStopTrailId === trail.trail_id && (
+              <div style={{ padding: "8px 12px", background: "rgba(249,115,22,0.06)", borderRadius: 6, margin: "4px 0" }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "#f97316", marginBottom: 6 }}>Add Cross-Server Stop</div>
+                <div style={{ display: "flex", gap: 6, flexDirection: "column" }}>
+                  <input
+                    type="text"
+                    placeholder="Server domain (e.g. localhost:8092)"
+                    value={remoteServer}
+                    onChange={(e) => setRemoteServer(e.target.value)}
+                    style={{ fontSize: 12, padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-surface)", color: "var(--text)" }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Work ID (e.g. 0x5)"
+                    value={remoteWorkId}
+                    onChange={(e) => setRemoteWorkId(e.target.value)}
+                    style={{ fontSize: 12, padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-surface)", color: "var(--text)" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAddRemoteStop(trail.trail_id)}
+                    disabled={!remoteServer.trim() || !remoteWorkId.trim()}
+                    style={{ fontSize: 11, padding: "4px 12px", background: "#f97316", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", opacity: (!remoteServer.trim() || !remoteWorkId.trim()) ? 0.4 : 1 }}
+                  >Add Remote Stop</button>
+                </div>
+              </div>
+            )}
             {interactive && (
               <div className="trail-card-actions">
                 <button type="button" className="trail-action-btn" onClick={() => setEditingId(isEditing ? null : trail.trail_id)}>

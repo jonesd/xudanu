@@ -595,6 +595,7 @@ mod tests {
             history_club: None,
             kind: crate::edition::WorkKind::Document,
             license: crate::edition::License::AllRightsReserved,
+            custom_title: None,
         });
         let path = manifest::manifest_path(&dir);
 
@@ -622,6 +623,7 @@ mod tests {
             history_club: None,
             kind: crate::edition::WorkKind::Document,
             license: crate::edition::License::AllRightsReserved,
+            custom_title: None,
         });
         manifest::write_manifest(&mut m, &path).unwrap();
         let b2 = manifest::backup_manifest_path(&dir, m.sequence);
@@ -668,6 +670,7 @@ mod tests {
             history_club: None,
             kind: crate::edition::WorkKind::Document,
             license: crate::edition::License::AllRightsReserved,
+            custom_title: None,
         });
         let path = manifest::manifest_path(&dir);
         manifest::write_manifest(&mut m, &path).unwrap();
