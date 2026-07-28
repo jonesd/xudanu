@@ -24,8 +24,6 @@
 - **Image support** — Upload, crop, resize, caption persistence, layout mode with inline positioning
 - **Perspective view** — Spatial document landscape showing connected works
 
-![Compound Builder](docs/screenshots/compound-builder.png)
-
 ---
 
 ## Naming
