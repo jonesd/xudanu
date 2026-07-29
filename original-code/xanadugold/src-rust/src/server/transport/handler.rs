@@ -48,6 +48,7 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/api/blob/upload", post(blob_upload_handler))
         .route("/health", get(health_handler))
         .route("/.well-known/xudanu-server.json", get(well_known_handler))
+        .route("/.well-known/xanadu-server.json", get(well_known_handler))
         .route("/api/public/work/{work_id}", get(public_work_handler))
         .route(
             "/api/public/work/{work_id}/range/{start}/{end}",
