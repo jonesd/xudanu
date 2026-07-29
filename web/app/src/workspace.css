@@ -92,6 +92,7 @@
   width: 100vw;
   overflow: hidden;
   color: var(--text);
+  background: var(--bg);
   font-family: 'Inter', -apple-system, sans-serif;
 }
 
@@ -660,7 +661,8 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--bg-document);
+  background: #ffffff !important;
+  color: #000000 !important;
   min-width: 0 !important;
   max-width: 100%;
   border-left: 1px solid var(--border);
@@ -965,16 +967,10 @@
   font-size: 17px !important;
   line-height: 1.7 !important;
 }
-.ws-doc-surface .editor-content,
-.ws-doc-surface.editable .editor-content {
-  padding: 0 !important;
-  border: none !important;
-  background: transparent !important;
-}
 .ws-doc-surface .collaborative-editor {
   border: none !important;
   border-radius: 0 !important;
-  background: transparent !important;
+  background: #ffffff !important;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -984,6 +980,13 @@
   overflow: visible !important;
   flex: 1;
   min-height: 0;
+}
+.ws-doc-surface .editor-content,
+.ws-doc-surface.editable .editor-content {
+  padding: 0 !important;
+  border: none !important;
+  background: #ffffff !important;
+  color: #000000 !important;
 }
 
 /* Transclusion styling — inline block, not full-width, doesn't swallow neighbors */

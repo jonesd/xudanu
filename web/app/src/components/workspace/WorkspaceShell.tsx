@@ -1347,7 +1347,12 @@ export function WorkspaceShell() {
         break;
     }
     if (!q) return sorted;
-    return sorted.filter((w) => (w.title || "").toLowerCase().includes(q));
+    return sorted.filter((w) => {
+      const title = (w.title || "").toLowerCase();
+      const hexId = `0x${w.work_id.toString(16)}`;
+      const decId = w.work_id.toString();
+      return title.includes(q) || hexId.includes(q) || decId.includes(q);
+    });
   }, [works, searchQuery, sortBy]);
 
   const activeCssClass = activePalette(themeState).cssClass;

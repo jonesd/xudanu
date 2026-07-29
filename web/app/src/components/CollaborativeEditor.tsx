@@ -789,7 +789,24 @@ function drawOverlay(
 }
 
 function findTextNodeAt(root: Node, targetOffset: number): { node: Text; offset: number } | null {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      let n: Node | null = node;
+      while (n && n.nodeType !== Node.DOCUMENT_NODE) {
+        if (n.nodeType === Node.ELEMENT_NODE) {
+          const el = n as Element;
+          if (el.getAttribute && el.getAttribute("contenteditable") === "false") {
+            const style = el.getAttribute("style");
+            if (!style || !style.includes("display:none")) {
+              return NodeFilter.FILTER_REJECT;
+            }
+          }
+        }
+        n = n.parentNode;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
   let current = 0;
   let node: Node | null;
   while ((node = walker.nextNode())) {
