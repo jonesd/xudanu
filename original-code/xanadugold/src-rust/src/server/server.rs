@@ -1104,18 +1104,17 @@ impl Server {
         let vk_bytes = self.server_keypair.signing_verifying_key().to_bytes();
         let vk_hex: String = vk_bytes.iter().map(|b| format!("{:02x}", b)).collect();
         serde_json::json!({
+            "protocol": "xcp",
             "protocol_version": 1,
             "api_version": 1,
-            "server_id": self.server_namespace_id(),
-            "public_address": self.public_address,
-            "tumbler_prefix": self.server_tumbler_prefix(),
             "implementation": "xudanu",
+            "server_name": self.server_name,
+            "server_description": self.server_description,
+            "public_address": self.public_address,
+            "server_id": vk_hex,
+            "tumbler_prefix": self.server_tumbler_prefix(),
             "content_api": "/api/public/work/{id}",
             "hash_algorithm": "blake3",
-            "address": "",
-            "verifying_key_ed25519": vk_hex,
-            "name": self.server_name,
-            "description": self.server_description,
             "public_content": true,
             "started_at": self.start_time,
             "stats": {
@@ -4794,7 +4793,7 @@ impl Server {
             "hash_algorithm": "blake3",
             "tumbler": format!("{}.0x{:x}.{}", self.server_tumbler_prefix(), work_be_id, revision),
             "span_provenance": span_provenance,
-            "license": format!("{:?}", ws.work.license()),
+            "license": ws.work.license().as_str(),
             "server_namespace_id": self.server_namespace_id(),
             "server_public_key": server_pub_key_hex,
             "server_signature": server_sig_hex,
