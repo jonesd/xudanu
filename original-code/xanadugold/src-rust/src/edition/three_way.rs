@@ -841,16 +841,28 @@ fn assemble_merge_lww(
                         .binary_search_by_key(b_pos, |(p, _)| *p)
                         .ok()
                         .map(|idx| b_entries[idx].1.clone());
-                    let carrier = a_carrier.or(b_carrier).unwrap_or_else(|| {
-                        let mut c = Carrier::new(RangeElement::text(""));
-                        if let Some(prev) = merged_entries
-                            .last()
-                            .and_then(|(_, c)| c.provenance.clone())
-                        {
-                            c = c.with_provenance(prev);
+                    let carrier = match (a_carrier.as_ref(), b_carrier.as_ref()) {
+                        // Prefer the carrier that has provenance — preserves correct attribution
+                        (Some(a), Some(b)) => {
+                            if b.provenance.is_some() && a.provenance.is_none() {
+                                b.clone()
+                            } else {
+                                a.clone()
+                            }
                         }
-                        Arc::new(c)
-                    });
+                        (Some(a), None) => a.clone(),
+                        (None, Some(b)) => b.clone(),
+                        (None, None) => {
+                            let mut c = Carrier::new(RangeElement::text(""));
+                            if let Some(prev) = merged_entries
+                                .last()
+                                .and_then(|(_, c)| c.provenance.clone())
+                            {
+                                c = c.with_provenance(prev);
+                            }
+                            Arc::new(c)
+                        }
+                    };
                     let m_pos = next_pos;
                     merged_entries.push((m_pos, carrier));
                     next_pos += 1;
@@ -891,7 +903,10 @@ fn assemble_merge_lww(
             AssemblyPiece::Conflict { a_span, b_span, .. } => {
                 let a_entries = collect_range(a.cached_entries(), a_span.0, a_span.1);
                 let b_entries = collect_range(b.cached_entries(), b_span.0, b_span.1);
-                let (source, from_a) = if a_entries.len() >= b_entries.len() {
+                // Prefer the side that has more entries with provenance — preserves attribution
+                let a_prov_count = a_entries.iter().filter(|(_, c)| c.provenance.is_some()).count();
+                let b_prov_count = b_entries.iter().filter(|(_, c)| c.provenance.is_some()).count();
+                let (source, from_a) = if a_prov_count >= b_prov_count {
                     (a_entries, true)
                 } else {
                     (b_entries, false)
