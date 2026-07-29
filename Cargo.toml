@@ -13,8 +13,8 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-license = "MIT"
-authors = ["Jonesd"]
+license = "Apache-2.0"
+authors = ["David Jones <david@dgjones.info>"]
 
 [workspace.dependencies]
 xudanu-types = { path = "crates/types" }

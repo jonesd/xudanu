@@ -60,6 +60,7 @@ interface CollaborativeEditorProps {
   annotations?: AnnotationEntry[];
   onCreateAnnotation?: (charStart: number, charEnd: number) => void;
   onToggleStyle?: (kind: string, start: number, end: number) => void;
+  onDeleteAnnotation?: (annotationId: number) => void;
   compoundSpanRanges?: SpanRangePayload[];
   remoteCursors?: AwarenessState[];
   compoundSourceTitles?: Record<number, string>;
@@ -843,6 +844,7 @@ export function CollaborativeEditor({
   annotations = [],
   onCreateAnnotation,
   onToggleStyle,
+  onDeleteAnnotation,
   compoundSpanRanges = [],
   remoteCursors = [],
   compoundSourceTitles: compoundSourceTitles = {},
@@ -871,6 +873,8 @@ export function CollaborativeEditor({
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [showBoilerplate, setShowBoilerplate] = useState(false);
   const [hoveredMarker, setHoveredMarker] = useState<TransclusionMarker | null>(null);
+  const [hoveredAnnotation, setHoveredAnnotation] = useState<{ text: string; x: number; y: number; id: number } | null>(null);
+  const annotationHitZonesRef = useRef<Array<{ x: number; y: number; width: number; height: number; text: string; id: number }>>([]);
   const [remoteContent, setRemoteContent] = useState<{ title: string; text: string; cached: boolean } | null>(null);
   const [resolving, setResolving] = useState(false);
   const [provenanceChain, setProvenanceChain] = useState<AgainHop[] | null>(null);
@@ -1139,6 +1143,61 @@ export function CollaborativeEditor({
     return () => clearInterval(interval);
   }, [recentChanges, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, showAttributionColors, expandedClusters]);
 
+  // Build annotation hit zones for hover tooltips (runs on scroll + redraw)
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) { annotationHitZonesRef.current = []; return; }
+    const container = el.parentElement;
+    if (!container) { annotationHitZonesRef.current = []; return; }
+
+    const buildZones = () => {
+      const rect = container.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const zones: Array<{ x: number; y: number; width: number; height: number; text: string }> = [];
+      const textLen = el.textContent?.length ?? 0;
+
+      for (const ann of annotations) {
+        if (ann.kind !== "note") continue;
+        if (ann.char_start >= ann.char_end) continue;
+        const drawStart = Math.max(ann.char_start, 0);
+        const drawEnd = Math.min(ann.char_end, textLen);
+        if (drawStart >= drawEnd) continue;
+        if (!ann.payload) continue;
+
+        const range = document.createRange();
+        try {
+          const sn = findTextNodeAt(el, drawStart);
+          const en = findTextNodeAt(el, drawEnd - 1);
+          if (!sn || !en) continue;
+          range.setStart(sn.node, sn.offset);
+          range.setEnd(en.node, en.offset + 1);
+        } catch { continue; }
+
+        const rangeRects = range.getClientRects();
+        for (const r of rangeRects) {
+          const y = r.top - rect.top;
+          if (y + r.height < container.scrollTop - 50 || y > container.scrollTop + rect.height + 50) continue;
+          zones.push({ x: r.left - rect.left, y, width: r.width, height: r.height, text: ann.payload, id: ann.annotation_id });
+        }
+      }
+      annotationHitZonesRef.current = zones;
+    };
+
+    buildZones();
+    const scrollEl = container;
+    const onScroll = () => requestAnimationFrame(buildZones);
+    scrollEl.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver(() => requestAnimationFrame(buildZones));
+    ro.observe(container);
+    const timer = setTimeout(buildZones, 500);
+
+    return () => {
+      scrollEl.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+      clearTimeout(timer);
+    };
+  }, [annotations]);
+
   const hideTooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scheduleHideTooltip = useCallback(() => {
@@ -1167,6 +1226,22 @@ export function CollaborativeEditor({
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+
+    // Check annotation hit zones first
+    const annHit = annotationHitZonesRef.current.find((hz) =>
+      x >= hz.x && x <= hz.x + hz.width && y >= hz.y && y <= hz.y + hz.height
+    );
+    if (annHit) {
+      setHoveredAnnotation({ text: annHit.text, x: e.clientX, y: e.clientY, id: annHit.id });
+      setHoveredMarker(null);
+      setTooltipPos(null);
+      e.currentTarget.style.cursor = "help";
+      return;
+    }
+    if (hoveredAnnotation) {
+      setHoveredAnnotation(null);
+    }
+
     const hit = hitZonesRef.current.find((hz) =>
       x >= hz.x && x <= hz.x + hz.width && y >= hz.y && y <= hz.y + hz.height
     );
@@ -1183,7 +1258,7 @@ export function CollaborativeEditor({
         scheduleHideTooltip();
       }
     }
-  }, [hoveredMarker, scheduleHideTooltip, pendingTransclusion]);
+  }, [hoveredMarker, hoveredAnnotation, scheduleHideTooltip, pendingTransclusion]);
 
   const handleOverlayMouseLeave = useCallback(() => {
     scheduleHideTooltip();
@@ -1908,6 +1983,47 @@ export function CollaborativeEditor({
                     {"\u00d7"} Delete
                   </button>
                 </div>
+              )}
+            </div>
+          )}
+          {hoveredAnnotation && (
+            <div
+              className="marker-tooltip"
+              style={{
+                position: "fixed",
+                zIndex: 1000,
+                maxWidth: 300,
+                background: "rgba(13, 17, 23, 0.97)",
+                border: "1px solid rgba(255, 196, 0, 0.4)",
+                borderRadius: 8,
+                padding: "10px 14px",
+                boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+                fontSize: 13,
+                lineHeight: 1.5,
+                color: "#e8e6e0",
+                ...(hoveredAnnotation.x > window.innerWidth - 320
+                  ? { right: window.innerWidth - hoveredAnnotation.x + 10 }
+                  : { left: hoveredAnnotation.x + 10 }),
+                top: Math.min(hoveredAnnotation.y - 10, window.innerHeight - 200),
+              }}
+              onMouseEnter={() => { if (hideTooltipTimer.current) { clearTimeout(hideTooltipTimer.current); hideTooltipTimer.current = null; } }}
+              onMouseLeave={() => setHoveredAnnotation(null)}
+            >
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: "rgba(255, 196, 0, 0.8)", marginBottom: 4 }}>Note</div>
+              <div style={{ whiteSpace: "pre-wrap" }}>{hoveredAnnotation.text}</div>
+              {onDeleteAnnotation && hoveredAnnotation.id && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteAnnotation(hoveredAnnotation.id);
+                    setHoveredAnnotation(null);
+                  }}
+                  style={{
+                    marginTop: 8, fontSize: 11, color: "#f85149", background: "none",
+                    border: "1px solid #f8514960", borderRadius: 4, padding: "2px 10px",
+                    cursor: "pointer",
+                  }}
+                >{"\u00d7"} Delete note</button>
               )}
             </div>
           )}

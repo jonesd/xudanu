@@ -2,6 +2,9 @@
 name = "xudanu"
 version = "1.0.2"
 edition = "2021"
+license = "Apache-2.0"
+authors = ["David Jones <david@dgjones.info>"]
+description = "Hypertext document store with collaborative CRDT editing"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

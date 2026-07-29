@@ -252,6 +252,7 @@ export function WorkspaceShell() {
     fetchWorkList,
     clientRef,
     annotations,
+    refreshAnnotations,
     createAnnotation,
     deleteAnnotation,
     awareness,
@@ -1020,11 +1021,12 @@ export function WorkspaceShell() {
   useEffect(() => {
     if (!connected || workBeId === null) return;
     refreshAttribution();
+    refreshAnnotations();
     if (clientRef.current) {
       void loadLinks(clientRef.current, workBeId, works);
       void loadBacklinks(clientRef.current, workBeId);
     }
-  }, [connected, workBeId, clientRef, works, loadLinks, loadBacklinks, refreshAttribution]);
+  }, [connected, workBeId, clientRef, works, loadLinks, loadBacklinks, refreshAttribution, refreshAnnotations]);
 
   // Debounced attribution refresh after text changes
   useEffect(() => {
@@ -1932,11 +1934,12 @@ export function WorkspaceShell() {
                   </div>
                 ) : (
                   <>
-                <div className="ws-selection-actions" style={(!selectionRange || transclusion.pending || transclusion.pendingLink) ? { visibility: "hidden" } : undefined}>
-                  <button
-                    type="button"
-                    className="ws-sel-btn transclude"
-                    onClick={handleTranscludeSelection}
+                <div className={`ws-selection-actions ${(!selectionRange || transclusion.pending || transclusion.pendingLink) ? "ws-sel-hidden" : ""}`}>
+                    <button
+                      type="button"
+                      className="ws-sel-btn transclude"
+                      disabled={!selectionRange}
+                      onClick={handleTranscludeSelection}
                     title="Hold this selection as a transclusion to insert elsewhere"
                   >
                     Transclude
@@ -1944,6 +1947,7 @@ export function WorkspaceShell() {
                     <button
                       type="button"
                       className="ws-sel-btn link"
+                      disabled={!selectionRange}
                       onClick={handleOpenLinkCreator}
                       title="Create a typed link from this selection"
                     >
@@ -2208,6 +2212,54 @@ export function WorkspaceShell() {
                     )}
                   </div>
                 )}
+                {transclusion.pendingLink && (
+                  <div className="link-action-bar">
+                    {!selectionRange ? (
+                      <span className="link-action-text">
+                        Linking from &ldquo;{transclusion.pendingLink.sourceWorkTitle}&rdquo; &mdash; select target text
+                      </span>
+                    ) : (
+                      <>
+                        <span className="link-action-text">Link type:</span>
+                        <input
+                          type="text"
+                          className="link-description-input"
+                          placeholder="Description (appears in margin box)..."
+                          value={linkDescription}
+                          onChange={(e) => setLinkDescription(e.target.value)}
+                          style={{
+                            background: "rgba(13, 17, 23, 0.9)",
+                            border: "1px solid #30363d",
+                            borderRadius: 4,
+                            color: "#c9d1d9",
+                            fontSize: 12,
+                            padding: "3px 8px",
+                            width: 260,
+                            flexShrink: 0,
+                          }}
+                        />
+                        {DEFAULT_LINK_TYPES.map((t) => (
+                          <button
+                            key={t.type_id}
+                            type="button"
+                            className="link-type-btn"
+                            style={{ border: `1px solid ${t.color}`, color: t.color }}
+                            onClick={() => handleCreateLinkTarget(t.type_id)}
+                          >
+                            {t.name}
+                          </button>
+                        ))}
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      className="link-cancel-btn"
+                      onClick={() => { transclusion.clearPendingLink(); setLinkDescription(""); }}
+                    >
+                      cancel
+                    </button>
+                  </div>
+                )}
                 {transclusion.pending && (
                   <TransclusionBadge
                     pending={transclusion.pending}
@@ -2253,6 +2305,7 @@ export function WorkspaceShell() {
                   annotations={annotations}
                    onCreateAnnotation={canEdit ? handleCreateAnnotation : undefined}
                    onToggleStyle={canEdit ? handleToggleStyle : undefined}
+                   onDeleteAnnotation={deleteAnnotation}
                   />
                 )}
                   </>
