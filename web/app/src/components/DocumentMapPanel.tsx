@@ -283,9 +283,10 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose,
                 void nodeScores.get(gn.work_id);
                 const isCurrent = gn.work_id === currentWorkId;
                 const kind = gn.kind || "document";
-                const fillColor = KIND_COLOR[kind];
-                const iconChar = KIND_ICON[kind];
-                const iconColor = KIND_ICON_COLOR[kind];
+                const fillColor = gn.isSource ? "#c4a35a" : KIND_COLOR[kind];
+                const displayKind = gn.isSource ? "book" : kind;
+                const iconChar = gn.isSource ? "📖" : KIND_ICON[kind];
+                const iconColor = gn.isSource ? "#fff" : KIND_ICON_COLOR[kind];
                 const r = 24;
                 return (
                   <g
@@ -302,7 +303,7 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose,
                       stroke={isCurrent ? "#1e3a8a" : "#fff"}
                       strokeWidth={isCurrent ? 2 : 1}
                     >
-                      <title>{`${gn.title}\n${kind}${isCurrent ? " · current" : ""}`}</title>
+                      <title>{`${gn.title}\n${displayKind}${isCurrent ? " · current" : ""}${gn.isSource ? " · source" : ""}`}</title>
                     </circle>
                     {kind === "collection" ? (
                       <circle
