@@ -875,6 +875,17 @@ impl OtreeCrdtManager {
         Ok(edition)
     }
 
+    #[cfg(test)]
+    pub fn test_build_provenance(
+        edition: &Edition,
+        fallback_signing_key: &SigningKey,
+        server_id_bytes: &[u8; 32],
+        timestamp: u64,
+        author_signing_keys: &std::collections::HashMap<BeId, SigningKey>,
+    ) -> Vec<crate::edition::SpanProvenance> {
+        Self::build_edition_provenance(edition, fallback_signing_key, server_id_bytes, timestamp, author_signing_keys)
+    }
+
     fn build_edition_provenance(
         edition: &Edition,
         fallback_signing_key: &SigningKey,
@@ -914,13 +925,38 @@ impl OtreeCrdtManager {
         let mut i = 0;
         while i < entries.len() {
             let (start_pos, carrier) = &entries[i];
-            let ep = match &carrier.provenance {
-                Some(p) => p,
-                None => {
-                    i += 1;
-                    continue;
+
+            // Handle entries without provenance: group consecutive ones into
+            // a fallback span (attributed to the server, not any specific author)
+            if carrier.provenance.is_none() {
+                let mut fingerprints = Vec::new();
+                let mut end_pos = *start_pos + 1;
+                let mut j = i;
+                while j < entries.len() {
+                    if entries[j].1.provenance.is_some() {
+                        break;
+                    }
+                    fingerprints.push(entries[j].1.element.content_fingerprint());
+                    end_pos = entries[j].0 + 1;
+                    j += 1;
                 }
-            };
+                if !fingerprints.is_empty() {
+                    spans.push(SpanProvenance {
+                        start: *start_pos,
+                        end: end_pos,
+                        provenance: sign_span(
+                            fallback_signing_key,
+                            &fingerprints,
+                            timestamp,
+                            server_id_bytes,
+                        ),
+                    });
+                }
+                i = j;
+                continue;
+            }
+
+            let ep = carrier.provenance.as_ref().unwrap();
 
             let author_key = ep.author_club_id;
             let author_type = ep.author_type.clone();
@@ -949,9 +985,9 @@ impl OtreeCrdtManager {
                     }
                     Some(_) => break,
                     None => {
-                        fingerprints.push(c.element.content_fingerprint());
-                        end_pos = *pos + 1;
-                        j += 1;
+                        // Do NOT absorb unattributed entries into this author's span.
+                        // They will get their own span (signed by fallback) below.
+                        break;
                     }
                 }
             }
