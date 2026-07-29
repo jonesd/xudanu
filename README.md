@@ -157,6 +157,61 @@ Or right-click the binary → Open → click Open again in the dialog.
 
 Go to **http://127.0.0.1:8080** — you'll see the document editor.
 
+### 5. (Optional) Enable LLM features
+
+Xudanu supports AI-powered features: document summarization, writing feedback, title suggestions, and auto-tagging. These use a local LLM via [Ollama](https://ollama.ai) — no data leaves your machine.
+
+**Install Ollama:**
+
+```bash
+# macOS
+brew install ollama
+ollama serve &
+
+# Linux
+curl -fsSL https://ollama.ai/install.sh | sh
+```
+
+**Pull a model:**
+
+```bash
+# Small and fast (recommended for testing):
+ollama pull qwen2.5:1.5b
+
+# Larger, better quality:
+ollama pull qwen2.5:7b
+# or
+ollama pull llama3.1:8b
+```
+
+**Start the server with LLM enabled:**
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434 \
+OLLAMA_MODEL=qwen2.5:1.5b \
+./target/debug/xudanu-server run 127.0.0.1:8080 data \
+  --allowed-origin http://localhost:5173 \
+  --csrf-token
+```
+
+Or use the included script:
+
+```bash
+cd original-code/xanadugold/src-rust
+./scripts/start-llm.sh
+```
+
+Once enabled, open any document and you'll see gold sparkle buttons in the format bar:
+
+| Feature | Description |
+|---|---|
+| **Summarize** | Describes what changed between document versions |
+| **Feedback** | AI writing coach — clarity, structure, persuasiveness |
+| **Title** | Generates a title from document content |
+| **Auto-Tag** | Suggests concept tags, creates links to existing concepts |
+
+LLM-authored text is tagged with gold/amber attribution in the provenance panel.
+
 ### Next steps
 
 - **[Technical Architecture](http://dgjones.info/xudanu/technical-architecture.html)** — a detailed walkthrough of the core data structures, algorithms, and performance characteristics (O-trees, GrandMap, Canopy pruning, H-trees, transclusion queries, DagWood concurrent edits). Recommended for all developers and architects.
