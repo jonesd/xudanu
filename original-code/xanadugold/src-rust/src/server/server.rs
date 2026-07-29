@@ -5898,6 +5898,26 @@ impl Server {
         )>,
         Vec<(BeId, BeId, String, u64)>,
     ) {
+        self.build_work_graph_filtered(session_id, None, 0)
+    }
+
+    pub fn build_work_graph_filtered(
+        &self,
+        session_id: SessionId,
+        current_work_id: Option<BeId>,
+        max_nodes: usize,
+    ) -> (
+        Vec<(
+            BeId,
+            String,
+            bool,
+            bool,
+            u64,
+            crate::edition::WorkKind,
+            crate::edition::License,
+        )>,
+        Vec<(BeId, BeId, String, u64)>,
+    ) {
         let starred = self.starred_for_session(session_id);
         let mut visible: HashSet<BeId> = HashSet::new();
         let mut nodes = Vec::new();
@@ -5994,7 +6014,120 @@ impl Server {
             }
         }
 
+        // Apply relevance filtering if requested
+        let (nodes, edges) = if let Some(center) = current_work_id {
+            if max_nodes > 0 {
+                self.filter_graph_by_relevance(nodes, edges, center, max_nodes)
+            } else {
+                (nodes, edges)
+            }
+        } else {
+            (nodes, edges)
+        };
+
         (nodes, edges)
+    }
+
+    /// Filter the graph to show only the most relevant works from `center_work`.
+    fn filter_graph_by_relevance(
+        &self,
+        nodes: Vec<(
+            BeId,
+            String,
+            bool,
+            bool,
+            u64,
+            crate::edition::WorkKind,
+            crate::edition::License,
+        )>,
+        edges: Vec<(BeId, BeId, String, u64)>,
+        center_work: BeId,
+        max_nodes: usize,
+    ) -> (
+        Vec<(
+            BeId,
+            String,
+            bool,
+            bool,
+            u64,
+            crate::edition::WorkKind,
+            crate::edition::License,
+        )>,
+        Vec<(BeId, BeId, String, u64)>,
+    ) {
+        let node_map: HashMap<BeId, _> = nodes.iter().cloned().map(|n| (n.0, n)).collect();
+        if !node_map.contains_key(&center_work) {
+            return (nodes, edges);
+        }
+
+        let mut scores: HashMap<BeId, u64> = HashMap::new();
+        scores.insert(center_work, 1000);
+
+        let mut neighbors_1hop: HashSet<BeId> = HashSet::new();
+        for &(a, b, ref edge_type, weight) in &edges {
+            let other = if a == center_work {
+                Some(b)
+            } else if b == center_work {
+                Some(a)
+            } else {
+                None
+            };
+            if let Some(other) = other {
+                neighbors_1hop.insert(other);
+                let bonus = if edge_type == "link" {
+                    100
+                } else {
+                    weight.min(50)
+                };
+                *scores.entry(other).or_insert(0) += bonus;
+            }
+        }
+
+        let mut neighbors_2hop: HashSet<BeId> = HashSet::new();
+        for &(a, b, _, _) in &edges {
+            let candidate = if neighbors_1hop.contains(&a)
+                && b != center_work
+                && !neighbors_1hop.contains(&b)
+            {
+                Some(b)
+            } else if neighbors_1hop.contains(&b)
+                && a != center_work
+                && !neighbors_1hop.contains(&a)
+            {
+                Some(a)
+            } else {
+                None
+            };
+            if let Some(n) = candidate {
+                neighbors_2hop.insert(n);
+                *scores.entry(n).or_insert(0) += 30;
+            }
+        }
+
+        if let Some(center_ws) = self.works.get(&center_work) {
+            if let Some(center_author) = center_ws.last_revision_author {
+                for &id in &neighbors_1hop {
+                    if let Some(ws) = self.works.get(&id) {
+                        if ws.last_revision_author == Some(center_author) {
+                            *scores.entry(id).or_insert(0) += 20;
+                        }
+                    }
+                }
+            }
+        }
+
+        let max = if max_nodes < 2 { 20 } else { max_nodes };
+        let mut scored: Vec<(BeId, u64)> = scores.into_iter().collect();
+        scored.sort_by(|a, b| b.1.cmp(&a.1));
+        let keep: HashSet<BeId> = scored.iter().take(max).map(|(id, _)| *id).collect();
+
+        let filtered_nodes: Vec<_> = nodes.into_iter().filter(|n| keep.contains(&n.0)).collect();
+        let filtered_edges: Vec<_> = edges
+            .into_iter()
+            .filter(|(a, b, _, _)| keep.contains(a) && keep.contains(b))
+            .collect();
+
+        (filtered_nodes, filtered_edges)
     }
 
     fn trail_owner_club(&self, session_id: SessionId) -> Result<BeId, ServerError> {
@@ -25338,6 +25471,116 @@ mod tests {
         }
 
         let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn graph_filter_returns_center_and_neighbors() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let a = server
+            .create_work(sid, Edition::from_text("alpha"))
+            .unwrap();
+        let b = server.create_work(sid, Edition::from_text("beta")).unwrap();
+        let c = server
+            .create_work(sid, Edition::from_text("gamma"))
+            .unwrap();
+        let d = server
+            .create_work(sid, Edition::from_text("delta unrelated"))
+            .unwrap();
+
+        // Link A→B, A→C (D is isolated)
+        server.create_link(sid, a, b, None, None).unwrap();
+        server.create_link(sid, a, c, None, None).unwrap();
+
+        // Filter from A, max 10 nodes
+        let (nodes, edges) = server.build_work_graph_filtered(sid, Some(a), 10);
+        let node_ids: HashSet<BeId> = nodes.iter().map(|n| n.0).collect();
+
+        assert!(node_ids.contains(&a), "center work should be in graph");
+        assert!(node_ids.contains(&b), "1-hop neighbor B should be in graph");
+        assert!(node_ids.contains(&c), "1-hop neighbor C should be in graph");
+        assert!(
+            !node_ids.contains(&d),
+            "unrelated work D should be filtered out"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn graph_filter_respects_max_nodes() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let center = server
+            .create_work(sid, Edition::from_text("center"))
+            .unwrap();
+
+        // Create 10 linked works
+        let mut neighbors = Vec::new();
+        for i in 0..10 {
+            let w = server
+                .create_work(sid, Edition::from_text(&format!("work {}", i)))
+                .unwrap();
+            server.create_link(sid, center, w, None, None).unwrap();
+            neighbors.push(w);
+        }
+
+        // Request max 5 nodes
+        let (nodes, _) = server.build_work_graph_filtered(sid, Some(center), 5);
+        assert!(
+            nodes.len() <= 5,
+            "should return at most 5 nodes, got {}",
+            nodes.len()
+        );
+        assert!(
+            nodes.iter().any(|n| n.0 == center),
+            "center should always be included"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn graph_filter_2hop_connections() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let a = server
+            .create_work(sid, Edition::from_text("alpha"))
+            .unwrap();
+        let b = server.create_work(sid, Edition::from_text("beta")).unwrap();
+        let c = server
+            .create_work(sid, Edition::from_text("gamma"))
+            .unwrap();
+        let z = server
+            .create_work(sid, Edition::from_text("zeta unrelated"))
+            .unwrap();
+
+        // A→B→C (C is 2-hop from A)
+        server.create_link(sid, a, b, None, None).unwrap();
+        server.create_link(sid, b, c, None, None).unwrap();
+
+        let (nodes, _) = server.build_work_graph_filtered(sid, Some(a), 10);
+        let node_ids: HashSet<BeId> = nodes.iter().map(|n| n.0).collect();
+
+        assert!(node_ids.contains(&c), "2-hop neighbor C should be in graph");
+        assert!(!node_ids.contains(&z), "unrelated Z should be filtered out");
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn graph_unfiltered_returns_all() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let a = server
+            .create_work(sid, Edition::from_text("alpha"))
+            .unwrap();
+        let b = server.create_work(sid, Edition::from_text("beta")).unwrap();
+
+        let (nodes, _) = server.build_work_graph(sid);
+        assert_eq!(nodes.len(), 2, "unfiltered graph should return all works");
     }
 
     #[test]

@@ -1109,7 +1109,7 @@ export function WorkspaceShell() {
     if (!connected || !clientRef.current) return;
     let cancelled = false;
     clientRef.current
-      .workGraph()
+      .workGraph(workBeId ?? undefined, 20)
       .then((g) => {
         if (cancelled) return;
         useWorkStore.getState().setGraph(g.nodes, g.edges);

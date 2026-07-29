@@ -1267,8 +1267,11 @@ export class CrdtSyncClient {
     return extractValue(resp) as boolean;
   }
 
-  async workGraph(): Promise<WorkGraphPayload> {
-    const resp = await this.sendRequest("work_graph");
+  async workGraph(centerWorkId?: number, maxNodes?: number): Promise<WorkGraphPayload> {
+    const params: Record<string, unknown> = {};
+    if (centerWorkId !== undefined) params.center_work_id = centerWorkId;
+    if (maxNodes !== undefined) params.max_nodes = maxNodes;
+    const resp = await this.sendRequest("work_graph", Object.keys(params).length > 0 ? params : undefined);
     return extractValue(resp) as WorkGraphPayload;
   }
 

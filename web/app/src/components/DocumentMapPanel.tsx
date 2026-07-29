@@ -53,7 +53,7 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose,
 
     const fetchGraph = async (attempt: number) => {
       try {
-        const g = await client.workGraph();
+        const g = await client.workGraph(currentWorkId ?? undefined, 20);
         if (cancelled) return;
         const cx = 200;
         const cy = 200;

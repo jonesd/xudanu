@@ -382,7 +382,10 @@ impl BinaryCodec {
             }),
             OperationCode::BlobStats => Ok(WireRequest::BlobStats),
             OperationCode::LabelCreate => Ok(WireRequest::LabelCreate),
-            OperationCode::WorkGraph => Ok(WireRequest::WorkGraph),
+            OperationCode::WorkGraph => Ok(WireRequest::WorkGraph {
+                center_work_id: None,
+                max_nodes: 0,
+            }),
             OperationCode::TrailList => Ok(WireRequest::TrailList),
             OperationCode::TrailListCategories => Ok(WireRequest::TrailListCategories),
             _ => Err(FrameParseError::MissingPayload.into()),
@@ -684,7 +687,10 @@ impl JsonCodec {
                 OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
                 OperationCode::HistoricalAuthorList => Ok(WireRequest::HistoricalAuthorList),
                 OperationCode::SourcePatternList => Ok(WireRequest::SourcePatternList),
-                OperationCode::WorkGraph => Ok(WireRequest::WorkGraph),
+                OperationCode::WorkGraph => Ok(WireRequest::WorkGraph {
+                    center_work_id: None,
+                    max_nodes: 0,
+                }),
                 OperationCode::TrailList => Ok(WireRequest::TrailList),
                 OperationCode::TrailListCategories => Ok(WireRequest::TrailListCategories),
                 OperationCode::WorkListArchived => Ok(WireRequest::WorkListArchived),

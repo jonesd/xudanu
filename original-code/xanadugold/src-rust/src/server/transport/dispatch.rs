@@ -882,9 +882,16 @@ fn dispatch_inner(
                 .collect();
             Ok(ResponseValue::CrossServerBacklinksResult(payloads))
         }
-        WireRequest::WorkGraph => {
+        WireRequest::WorkGraph {
+            center_work_id,
+            max_nodes,
+        } => {
             srv.ensure_authenticated(session_id)?;
-            let (raw_nodes, raw_edges) = srv.build_work_graph(session_id);
+            let (raw_nodes, raw_edges) = if let Some(center) = center_work_id {
+                srv.build_work_graph_filtered(session_id, Some(center), max_nodes as usize)
+            } else {
+                srv.build_work_graph(session_id)
+            };
             let nodes: Vec<super::protocol::GraphNodePayload> = raw_nodes
                 .into_iter()
                 .map(

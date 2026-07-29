@@ -1169,7 +1169,12 @@ pub enum WireRequest {
     CrossServerBacklinksGet {
         work_id: BeId,
     },
-    WorkGraph,
+    WorkGraph {
+        #[serde(default)]
+        center_work_id: Option<BeId>,
+        #[serde(default)]
+        max_nodes: u64,
+    },
 
     WorkKindGet {
         work_id: BeId,
