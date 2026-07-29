@@ -883,7 +883,13 @@ impl OtreeCrdtManager {
         timestamp: u64,
         author_signing_keys: &std::collections::HashMap<BeId, SigningKey>,
     ) -> Vec<crate::edition::SpanProvenance> {
-        Self::build_edition_provenance(edition, fallback_signing_key, server_id_bytes, timestamp, author_signing_keys)
+        Self::build_edition_provenance(
+            edition,
+            fallback_signing_key,
+            server_id_bytes,
+            timestamp,
+            author_signing_keys,
+        )
     }
 
     fn build_edition_provenance(
@@ -1198,7 +1204,8 @@ impl OtreeCrdtManager {
         club_be_id: BeId,
         signing_key: SigningKey,
     ) {
-        self.persistent_signing_keys.insert((work_id, club_be_id), signing_key.clone());
+        self.persistent_signing_keys
+            .insert((work_id, club_be_id), signing_key.clone());
         if let Some(wd) = self.docs.get_mut(&work_id) {
             wd.club_signing_keys.insert(club_be_id, signing_key);
         }
@@ -1210,7 +1217,9 @@ impl OtreeCrdtManager {
                 return Some(sk.clone());
             }
         }
-        self.persistent_signing_keys.get(&(work_id, club_be_id)).cloned()
+        self.persistent_signing_keys
+            .get(&(work_id, club_be_id))
+            .cloned()
     }
 
     pub fn update_awareness(

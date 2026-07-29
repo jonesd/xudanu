@@ -330,9 +330,11 @@ fn dispatch_suggest_title(
 
     let llm = match crate::server::ollama::get_client() {
         Some(c) => c,
-        None => return Ok(ResponseValue::String(
-            "(LLM features are disabled.)".to_string(),
-        )),
+        None => {
+            return Ok(ResponseValue::String(
+                "(LLM features are disabled.)".to_string(),
+            ))
+        }
     };
     let prompt = crate::server::ollama::build_title_prompt(&text);
 
@@ -345,7 +347,12 @@ fn dispatch_suggest_title(
                 llm.generate_tracked(crate::server::ollama::LlmFeature::AutoTitle, &prompt),
             )
             .await
-            .map_err(|_| format!("(LLM request timed out after {} seconds)", LLM_TIMEOUT.as_secs()))
+            .map_err(|_| {
+                format!(
+                    "(LLM request timed out after {} seconds)",
+                    LLM_TIMEOUT.as_secs()
+                )
+            })
             .and_then(|r| r.map_err(|e| e.to_string()))
         })
     }) {
@@ -374,11 +381,17 @@ fn dispatch_auto_tag(
         } else {
             String::new()
         };
-        let concepts: Vec<String> = srv.works.iter()
+        let concepts: Vec<String> = srv
+            .works
+            .iter()
             .filter(|(_, ws)| ws.kind() == crate::edition::WorkKind::Concept)
             .filter_map(|(_, ws)| {
                 let t = ws.cached_title().trim();
-                if t.is_empty() { None } else { Some(t.to_string()) }
+                if t.is_empty() {
+                    None
+                } else {
+                    Some(t.to_string())
+                }
             })
             .collect();
         Ok::<_, crate::server::ServerError>((text, concepts))
@@ -416,17 +429,35 @@ fn dispatch_auto_tag(
 
     let response_clean = {
         let r = response.trim();
-        let r = r.strip_prefix("```json").or_else(|| r.strip_prefix("```")).unwrap_or(r).trim();
+        let r = r
+            .strip_prefix("```json")
+            .or_else(|| r.strip_prefix("```"))
+            .unwrap_or(r)
+            .trim();
         let r = r.strip_suffix("```").unwrap_or(r).trim();
         r.to_string()
     };
     let concepts: Vec<String> = serde_json::from_str::<Vec<String>>(&response_clean)
         .unwrap_or_else(|e| {
-            tracing::warn!("auto-tag response not JSON array: {} — raw: {:?}", e, &response[..response.len().min(200)]);
-            response_clean.lines()
+            tracing::warn!(
+                "auto-tag response not JSON array: {} — raw: {:?}",
+                e,
+                &response[..response.len().min(200)]
+            );
+            response_clean
+                .lines()
                 .filter_map(|l| {
-                    let t = l.trim().trim_start_matches("- ").trim_start_matches("\"").trim_end_matches("\"").trim();
-                    if t.is_empty() || t.starts_with('[') || t.starts_with(']') { None } else { Some(t.to_string()) }
+                    let t = l
+                        .trim()
+                        .trim_start_matches("- ")
+                        .trim_start_matches("\"")
+                        .trim_end_matches("\"")
+                        .trim();
+                    if t.is_empty() || t.starts_with('[') || t.starts_with(']') {
+                        None
+                    } else {
+                        Some(t.to_string())
+                    }
                 })
                 .take(5)
                 .collect()
@@ -436,14 +467,21 @@ fn dispatch_auto_tag(
         .take(5)
         .collect();
 
-    tracing::info!("auto-tag for work {:x}: {} concepts: {:?}", work_id, concepts.len(), concepts);
+    tracing::info!(
+        "auto-tag for work {:x}: {} concepts: {:?}",
+        work_id,
+        concepts.len(),
+        concepts
+    );
 
     let (created, linked) = state.server.with_server(|srv| {
         let mut created = Vec::new();
         let mut linked = Vec::new();
 
         for concept_name in &concepts {
-            let existing = srv.works.iter()
+            let existing = srv
+                .works
+                .iter()
                 .filter(|(_, ws)| ws.kind() == crate::edition::WorkKind::Concept)
                 .find(|(_, ws)| ws.cached_title().eq_ignore_ascii_case(concept_name))
                 .map(|(id, _)| *id);
@@ -451,13 +489,19 @@ fn dispatch_auto_tag(
             match existing {
                 Some(concept_id) => linked.push((concept_name.clone(), concept_id)),
                 None => {
-                    match srv.create_work(session_id, crate::edition::Edition::from_text(concept_name.as_str())) {
+                    match srv.create_work(
+                        session_id,
+                        crate::edition::Edition::from_text(concept_name.as_str()),
+                    ) {
                         Ok(concept_id) => {
-                            let _ = srv.work_kind_set(concept_id, crate::edition::WorkKind::Concept);
+                            let _ =
+                                srv.work_kind_set(concept_id, crate::edition::WorkKind::Concept);
                             srv.set_work_title(concept_id, concept_name.clone());
                             created.push((concept_name.clone(), concept_id));
                         }
-                        Err(e) => tracing::warn!("failed to create concept '{}': {}", concept_name, e),
+                        Err(e) => {
+                            tracing::warn!("failed to create concept '{}': {}", concept_name, e)
+                        }
                     }
                 }
             }
@@ -467,9 +511,18 @@ fn dispatch_auto_tag(
             match srv.create_link(session_id, work_id, *concept_id, None, None) {
                 Ok(link_id) => {
                     let _ = srv.link_set_types(session_id, link_id, vec![5]);
-                    tracing::info!("auto-tag: linked work {:x} → concept {:x} (link {}, type=See Also)", work_id, concept_id, link_id);
+                    tracing::info!(
+                        "auto-tag: linked work {:x} → concept {:x} (link {}, type=See Also)",
+                        work_id,
+                        concept_id,
+                        link_id
+                    );
                 }
-                Err(e) => tracing::warn!("auto-tag: failed to link to concept {:x}: {}", concept_id, e),
+                Err(e) => tracing::warn!(
+                    "auto-tag: failed to link to concept {:x}: {}",
+                    concept_id,
+                    e
+                ),
             }
         }
 
@@ -965,7 +1018,15 @@ fn dispatch_inner(
             server_domain,
         } => {
             srv.ensure_authenticated(session_id)?;
-            srv.trail_add_stop(session_id, trail_id, work_id, char_start, char_end, note, server_domain)?;
+            srv.trail_add_stop(
+                session_id,
+                trail_id,
+                work_id,
+                char_start,
+                char_end,
+                note,
+                server_domain,
+            )?;
             Ok(ResponseValue::Void)
         }
         WireRequest::TrailRemoveStop {

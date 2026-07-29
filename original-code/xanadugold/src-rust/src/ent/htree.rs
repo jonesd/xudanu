@@ -1,7 +1,7 @@
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::edition::canopy::{compute_join, is_le, BertCanopy, CanopyCrumData};
 use crate::edition::props::PropFinder;
@@ -10,9 +10,11 @@ use crate::ent::trace::TracePosition;
 static HCRUM_SEQUENCE: AtomicU32 = AtomicU32::new(0);
 
 fn next_hcrum_sequence() -> u32 {
-    HCRUM_SEQUENCE.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
-        Some((v.wrapping_add(1)) & 0x07FFFFFF)
-    }).unwrap_or(1)
+    HCRUM_SEQUENCE
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+            Some((v.wrapping_add(1)) & 0x07FFFFFF)
+        })
+        .unwrap_or(1)
 }
 
 pub trait HPart: std::fmt::Debug + Send {
@@ -457,7 +459,9 @@ mod tests {
 
         let n_threads = 8;
         let n_per_thread = 1000;
-        let results = Arc::new(std::sync::Mutex::new(Vec::with_capacity(n_threads * n_per_thread)));
+        let results = Arc::new(std::sync::Mutex::new(Vec::with_capacity(
+            n_threads * n_per_thread,
+        )));
 
         let handles: Vec<_> = (0..n_threads)
             .map(|_| {
@@ -484,7 +488,11 @@ mod tests {
         let mut sorted = all.clone();
         sorted.sort();
         let dupes = sorted.windows(2).filter(|w| w[0] == w[1]).count();
-        assert_eq!(dupes, 0, "concurrent hcrum sequence generated {} duplicates", dupes);
+        assert_eq!(
+            dupes, 0,
+            "concurrent hcrum sequence generated {} duplicates",
+            dupes
+        );
     }
 
     #[test]

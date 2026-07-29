@@ -572,7 +572,11 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
             license: dw.work.license(),
             custom_title: {
                 let auto = Server::extract_title(&dw.work.current_edition());
-                if dw.cached_title != auto { Some(dw.cached_title.clone()) } else { None }
+                if dw.cached_title != auto {
+                    Some(dw.cached_title.clone())
+                } else {
+                    None
+                }
             },
         });
     }
@@ -651,11 +655,12 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         None
     };
 
-    let ticket_nonces_inline: std::collections::HashMap<String, u64> = if let Some(ref td) = payload.ticket_nonces_data {
-        serde_json::from_slice(td).unwrap_or_default()
-    } else {
-        std::collections::HashMap::new()
-    };
+    let ticket_nonces_inline: std::collections::HashMap<String, u64> =
+        if let Some(ref td) = payload.ticket_nonces_data {
+            serde_json::from_slice(td).unwrap_or_default()
+        } else {
+            std::collections::HashMap::new()
+        };
 
     let next_slot = if payload.manifest_slot == 'a' {
         'b'
@@ -7360,7 +7365,9 @@ impl Server {
 
         self.ticket_nonces = {
             let now = crate::server::session_ticket::now_secs();
-            let map: std::collections::HashMap<[u8; 16], u64> = manifest.ticket_nonces.iter()
+            let map: std::collections::HashMap<[u8; 16], u64> = manifest
+                .ticket_nonces
+                .iter()
                 .filter(|(_, exp)| **exp > now)
                 .filter_map(|(hex, exp)| {
                     let bytes = hex::decode(hex).ok()?;
@@ -7368,7 +7375,9 @@ impl Server {
                         let mut arr = [0u8; 16];
                         arr.copy_from_slice(&bytes);
                         Some((arr, *exp))
-                    } else { None }
+                    } else {
+                        None
+                    }
                 })
                 .collect();
             tracing::info!("[restore] session tickets: {} active", map.len());
@@ -7562,7 +7571,9 @@ impl Server {
                     );
                     work.set_kind(work_entry.kind);
                     work.set_license(work_entry.license);
-                    let title = work_entry.custom_title.clone()
+                    let title = work_entry
+                        .custom_title
+                        .clone()
                         .unwrap_or_else(|| Self::extract_title(&work.current_edition()));
                     if let Some(hc) = work_entry.history_club {
                         work.set_history_club(Some(hc));
@@ -7855,7 +7866,8 @@ impl Server {
                     }
                     Err(e) => {
                         tracing::warn!("annotations chunk read failed: {}", e);
-                        self.restore_errors.push(format!("annotations chunk: {}", e));
+                        self.restore_errors
+                            .push(format!("annotations chunk: {}", e));
                     }
                 }
             }
@@ -9885,7 +9897,11 @@ impl Server {
         } else {
             self.verify_attribution_log_chain()
         };
-        let status = if has_restore_errors || !chain_valid { "degraded" } else { "ok" };
+        let status = if has_restore_errors || !chain_valid {
+            "degraded"
+        } else {
+            "ok"
+        };
         serde_json::json!({
             "status": status,
             "works": self.works.len(),
@@ -15278,7 +15294,11 @@ pub(crate) mod persist_snapshot {
                         license: ws.work.license(),
                         custom_title: {
                             let auto = Server::extract_title(&ws.work.current_edition());
-                            if ws.cached_title != auto { Some(ws.cached_title.clone()) } else { None }
+                            if ws.cached_title != auto {
+                                Some(ws.cached_title.clone())
+                            } else {
+                                None
+                            }
                         },
                     });
                 } else {
@@ -15474,11 +15494,19 @@ pub(crate) mod persist_snapshot {
                 key_history,
                 ticket_nonces_data: {
                     let now = crate::server::session_ticket::now_secs();
-                    let tickets: std::collections::HashMap<String, u64> = self.ticket_nonces.iter()
+                    let tickets: std::collections::HashMap<String, u64> = self
+                        .ticket_nonces
+                        .iter()
                         .filter(|(_, &exp)| exp > now)
-                        .map(|(nonce, &exp)| (nonce.iter().map(|b| format!("{:02x}", b)).collect(), exp))
+                        .map(|(nonce, &exp)| {
+                            (nonce.iter().map(|b| format!("{:02x}", b)).collect(), exp)
+                        })
                         .collect();
-                    if tickets.is_empty() { None } else { Some(serde_json::to_vec(&tickets).ok()).unwrap_or(None) }
+                    if tickets.is_empty() {
+                        None
+                    } else {
+                        Some(serde_json::to_vec(&tickets).ok()).unwrap_or(None)
+                    }
                 },
             })
         }
@@ -15584,7 +15612,11 @@ pub(crate) mod persist_snapshot {
                     license: ws.work.license(),
                     custom_title: {
                         let auto = Server::extract_title(&ws.work.current_edition());
-                        if ws.cached_title != auto { Some(ws.cached_title.clone()) } else { None }
+                        if ws.cached_title != auto {
+                            Some(ws.cached_title.clone())
+                        } else {
+                            None
+                        }
                     },
                 });
             }
@@ -20891,8 +20923,20 @@ mod tests {
         };
 
         let entries = vec![
-            (0i64, Arc::new(Carrier::new(RangeElement::text("Alice's text".to_string())).with_provenance(prov1.clone()))),
-            (1i64, Arc::new(Carrier::new(RangeElement::text("Bob's text".to_string())).with_provenance(prov2.clone()))),
+            (
+                0i64,
+                Arc::new(
+                    Carrier::new(RangeElement::text("Alice's text".to_string()))
+                        .with_provenance(prov1.clone()),
+                ),
+            ),
+            (
+                1i64,
+                Arc::new(
+                    Carrier::new(RangeElement::text("Bob's text".to_string()))
+                        .with_provenance(prov2.clone()),
+                ),
+            ),
         ];
 
         let edition = Edition::from_entries(entries);
@@ -20902,10 +20946,19 @@ mod tests {
         let server_id = [0u8; 32];
         let author_keys = std::collections::HashMap::new();
         let spans = crate::server::otree_crdt::OtreeCrdtManager::test_build_provenance(
-            &edition, &signing_key, &server_id, 5000, &author_keys,
+            &edition,
+            &signing_key,
+            &server_id,
+            5000,
+            &author_keys,
         );
 
-        assert_eq!(spans.len(), 2, "should have 2 spans (one per author), got {}", spans.len());
+        assert_eq!(
+            spans.len(),
+            2,
+            "should have 2 spans (one per author), got {}",
+            spans.len()
+        );
         // Both spans may be signed by fallback key (no real signing keys in test),
         // but the KEY thing is they are SEPARATE spans — not one giant span absorbing all text.
         assert!(spans[0].end <= spans[1].start, "spans should not overlap");
@@ -20932,9 +20985,23 @@ mod tests {
         };
 
         let entries = vec![
-            (0i64, Arc::new(Carrier::new(RangeElement::text("no-prov-start".to_string())))),
-            (1i64, Arc::new(Carrier::new(RangeElement::text("alice-text".to_string())).with_provenance(prov.clone()))),
-            (2i64, Arc::new(Carrier::new(RangeElement::text("no-prov-end".to_string())))),
+            (
+                0i64,
+                Arc::new(Carrier::new(RangeElement::text(
+                    "no-prov-start".to_string(),
+                ))),
+            ),
+            (
+                1i64,
+                Arc::new(
+                    Carrier::new(RangeElement::text("alice-text".to_string()))
+                        .with_provenance(prov.clone()),
+                ),
+            ),
+            (
+                2i64,
+                Arc::new(Carrier::new(RangeElement::text("no-prov-end".to_string()))),
+            ),
         ];
 
         let edition = Edition::from_entries(entries);
@@ -20942,12 +21009,20 @@ mod tests {
         let server_id = [0u8; 32];
         let author_keys = std::collections::HashMap::new();
         let spans = crate::server::otree_crdt::OtreeCrdtManager::test_build_provenance(
-            &edition, &signing_key, &server_id, 5000, &author_keys,
+            &edition,
+            &signing_key,
+            &server_id,
+            5000,
+            &author_keys,
         );
 
         // Should have 3 spans: unattributed + alice + unattributed
-        assert_eq!(spans.len(), 3,
-            "should have 3 spans (unattributed + attributed + unattributed), got {}", spans.len());
+        assert_eq!(
+            spans.len(),
+            3,
+            "should have 3 spans (unattributed + attributed + unattributed), got {}",
+            spans.len()
+        );
     }
 
     #[test]
@@ -20994,12 +21069,27 @@ mod tests {
 
         // Three authors: Alice, Bob, Carol
         let entries = vec![
-            (0i64, Arc::new(Carrier::new(RangeElement::text("Alice wrote this".to_string()))
-                .with_provenance(mk_prov(1, "alice", 1001)))),
-            (1i64, Arc::new(Carrier::new(RangeElement::text("Bob added this".to_string()))
-                .with_provenance(mk_prov(2, "bob", 1002)))),
-            (2i64, Arc::new(Carrier::new(RangeElement::text("Carol contributed this".to_string()))
-                .with_provenance(mk_prov(3, "carol", 1003)))),
+            (
+                0i64,
+                Arc::new(
+                    Carrier::new(RangeElement::text("Alice wrote this".to_string()))
+                        .with_provenance(mk_prov(1, "alice", 1001)),
+                ),
+            ),
+            (
+                1i64,
+                Arc::new(
+                    Carrier::new(RangeElement::text("Bob added this".to_string()))
+                        .with_provenance(mk_prov(2, "bob", 1002)),
+                ),
+            ),
+            (
+                2i64,
+                Arc::new(
+                    Carrier::new(RangeElement::text("Carol contributed this".to_string()))
+                        .with_provenance(mk_prov(3, "carol", 1003)),
+                ),
+            ),
         ];
 
         let edition = Edition::from_entries(entries);
@@ -21007,21 +21097,42 @@ mod tests {
         let server_id = [0u8; 32];
         let author_keys = std::collections::HashMap::new();
         let spans = crate::server::otree_crdt::OtreeCrdtManager::test_build_provenance(
-            &edition, &signing_key, &server_id, 5000, &author_keys,
+            &edition,
+            &signing_key,
+            &server_id,
+            5000,
+            &author_keys,
         );
 
-        assert_eq!(spans.len(), 3,
-            "should have 3 spans (one per author), got {}", spans.len());
+        assert_eq!(
+            spans.len(),
+            3,
+            "should have 3 spans (one per author), got {}",
+            spans.len()
+        );
 
         // Verify spans don't overlap and cover the full document
-        assert!(spans[0].end <= spans[1].start, "span 0 should end before span 1 starts");
-        assert!(spans[1].end <= spans[2].start, "span 1 should end before span 2 starts");
+        assert!(
+            spans[0].end <= spans[1].start,
+            "span 0 should end before span 1 starts"
+        );
+        assert!(
+            spans[1].end <= spans[2].start,
+            "span 1 should end before span 2 starts"
+        );
 
         // Verify the distinct author_club_ids are preserved in element provenance
-        let clubs: std::collections::HashSet<_> = edition.all_entries().iter()
+        let clubs: std::collections::HashSet<_> = edition
+            .all_entries()
+            .iter()
             .filter_map(|(_, c)| c.provenance.as_ref().map(|p| p.author_club_id))
             .collect();
-        assert_eq!(clubs.len(), 3, "should have 3 distinct author clubs: {:?}", clubs);
+        assert_eq!(
+            clubs.len(),
+            3,
+            "should have 3 distinct author clubs: {:?}",
+            clubs
+        );
         assert!(clubs.contains(&1001), "alice should be present");
         assert!(clubs.contains(&1002), "bob should be present");
         assert!(clubs.contains(&1003), "carol should be present");
@@ -25495,7 +25606,15 @@ mod tests {
             .trail_add_stop(sid, t1, doc1, None, None, None, None)
             .unwrap();
         server
-            .trail_add_stop(sid, t1, doc2, Some(5), Some(20), Some("middle".into()), None)
+            .trail_add_stop(
+                sid,
+                t1,
+                doc2,
+                Some(5),
+                Some(20),
+                Some("middle".into()),
+                None,
+            )
             .unwrap();
         server
             .trail_add_stop(sid, t1, doc3, None, None, Some("end".into()), None)
@@ -25592,21 +25711,40 @@ mod tests {
         let mut server = Server::new();
         let sid = server.connect();
         server.login_public(sid).unwrap();
-        let doc = server.create_work(sid, Edition::from_text("local doc")).unwrap();
-        let trail = server.trail_create(sid, "Cross-server".to_string(), None, vec![]).unwrap();
+        let doc = server
+            .create_work(sid, Edition::from_text("local doc"))
+            .unwrap();
+        let trail = server
+            .trail_create(sid, "Cross-server".to_string(), None, vec![])
+            .unwrap();
 
         // Add a local stop
-        server.trail_add_stop(sid, trail, doc, None, None, None, None).unwrap();
+        server
+            .trail_add_stop(sid, trail, doc, None, None, None, None)
+            .unwrap();
 
         // Add a remote stop (work doesn't exist locally, but server_domain is set)
         let remote_work_id: BeId = 0x5;
-        server.trail_add_stop(sid, trail, remote_work_id, Some(10), Some(50), Some("remote passage".to_string()), Some("localhost:8092".to_string())).unwrap();
+        server
+            .trail_add_stop(
+                sid,
+                trail,
+                remote_work_id,
+                Some(10),
+                Some(50),
+                Some("remote passage".to_string()),
+                Some("localhost:8092".to_string()),
+            )
+            .unwrap();
 
         let t = server.trail_get(sid, trail).unwrap();
         assert_eq!(t.stops.len(), 2);
         // Local stop
         assert_eq!(t.stops[0].work_id, doc);
-        assert!(t.stops[0].server_domain.is_none(), "local stop should have no server_domain");
+        assert!(
+            t.stops[0].server_domain.is_none(),
+            "local stop should have no server_domain"
+        );
         // Remote stop
         assert_eq!(t.stops[1].work_id, remote_work_id);
         assert_eq!(t.stops[1].server_domain.as_deref(), Some("localhost:8092"));

@@ -570,7 +570,11 @@ pub fn build_categorization_prompt(content: &str, existing_concepts: &[String]) 
     let concepts_list = if existing_concepts.is_empty() {
         "(none yet)".to_string()
     } else {
-        existing_concepts.iter().map(|c| format!("- {c}")).collect::<Vec<_>>().join("\n")
+        existing_concepts
+            .iter()
+            .map(|c| format!("- {c}"))
+            .collect::<Vec<_>>()
+            .join("\n")
     };
     format!(
         r#"You are categorizing a document. Suggest 1-3 concept tags as a JSON array of strings.

@@ -904,8 +904,14 @@ fn assemble_merge_lww(
                 let a_entries = collect_range(a.cached_entries(), a_span.0, a_span.1);
                 let b_entries = collect_range(b.cached_entries(), b_span.0, b_span.1);
                 // Prefer the side that has more entries with provenance — preserves attribution
-                let a_prov_count = a_entries.iter().filter(|(_, c)| c.provenance.is_some()).count();
-                let b_prov_count = b_entries.iter().filter(|(_, c)| c.provenance.is_some()).count();
+                let a_prov_count = a_entries
+                    .iter()
+                    .filter(|(_, c)| c.provenance.is_some())
+                    .count();
+                let b_prov_count = b_entries
+                    .iter()
+                    .filter(|(_, c)| c.provenance.is_some())
+                    .count();
                 let (source, from_a) = if a_prov_count >= b_prov_count {
                     (a_entries, true)
                 } else {
