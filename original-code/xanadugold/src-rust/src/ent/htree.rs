@@ -449,4 +449,51 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner())
             .any_passes(&finder));
     }
+
+    #[test]
+    fn hcrum_sequence_concurrent_no_duplicates() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let n_threads = 8;
+        let n_per_thread = 1000;
+        let results = Arc::new(std::sync::Mutex::new(Vec::with_capacity(n_threads * n_per_thread)));
+
+        let handles: Vec<_> = (0..n_threads)
+            .map(|_| {
+                let results = Arc::clone(&results);
+                thread::spawn(move || {
+                    let mut local = Vec::with_capacity(n_per_thread);
+                    for _ in 0..n_per_thread {
+                        local.push(next_hcrum_sequence());
+                    }
+                    results.lock().unwrap().extend(local);
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        let all = results.lock().unwrap();
+        assert_eq!(all.len(), n_threads * n_per_thread);
+
+        // With the old static mut, concurrent calls could return the same value.
+        // With AtomicU32, every value should be unique.
+        let mut sorted = all.clone();
+        sorted.sort();
+        let dupes = sorted.windows(2).filter(|w| w[0] == w[1]).count();
+        assert_eq!(dupes, 0, "concurrent hcrum sequence generated {} duplicates", dupes);
+    }
+
+    #[test]
+    fn hcrum_sequence_wraps_at_mask() {
+        // The sequence wraps at 0x07FFFFFF (27-bit mask).
+        // Just verify it produces values in the valid range.
+        for _ in 0..10000 {
+            let seq = next_hcrum_sequence();
+            assert!(seq <= 0x07FFFFFF, "sequence {} exceeds 27-bit mask", seq);
+        }
+    }
 }
