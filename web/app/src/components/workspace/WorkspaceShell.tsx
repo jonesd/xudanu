@@ -2161,11 +2161,9 @@ export function WorkspaceShell() {
                   ) : (
                     annotations.filter((a) => a.kind === "trail-link").map((a) => {
                       let trailName = "trail";
-                      let trailId = 0;
                       try {
                         const parsed = JSON.parse(a.payload);
                         trailName = parsed.trail_name || "trail";
-                        trailId = parsed.trail_id || 0;
                       } catch {}
                       return (
                         <div
