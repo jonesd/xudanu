@@ -1,18 +1,18 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::edition::canopy::{compute_join, is_le, BertCanopy, CanopyCrumData};
 use crate::edition::props::PropFinder;
 use crate::ent::trace::TracePosition;
 
-static mut HCRUM_SEQUENCE: u32 = 0;
+static HCRUM_SEQUENCE: AtomicU32 = AtomicU32::new(0);
 
 fn next_hcrum_sequence() -> u32 {
-    unsafe {
-        HCRUM_SEQUENCE = (HCRUM_SEQUENCE.wrapping_add(1)) & 0x07FFFFFF;
-        HCRUM_SEQUENCE
-    }
+    HCRUM_SEQUENCE.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+        Some((v.wrapping_add(1)) & 0x07FFFFFF)
+    }).unwrap_or(1)
 }
 
 pub trait HPart: std::fmt::Debug + Send {
