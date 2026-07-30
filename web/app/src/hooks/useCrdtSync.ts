@@ -147,6 +147,13 @@ export function useCrdtSync(
             const b64 = localStorage.getItem("xudanu_session_ticket");
             if (!b64) return null;
             const binary = atob(b64);
+            // Ticket format changed (added key_id field): old=104 bytes, new=112 bytes
+            // Clear stale tickets that can't be decoded by the new server
+            if (binary.length !== 112) {
+              console.warn("[session] stale ticket format detected (" + binary.length + " bytes, expected 112) — clearing");
+              localStorage.removeItem("xudanu_session_ticket");
+              return null;
+            }
             const arr = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
             return arr;
