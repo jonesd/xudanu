@@ -1720,7 +1720,7 @@ export function WorkspaceShell() {
                 ) : docMode === "layout" && imageEntries.length > 0 ? null : (
                   <>
               <header className="ws-doc-header">
-                {!authenticated && (
+                {!authenticated && !identity && (
                   <div className="ws-auth-warning" onClick={() => setShowIdentity(true)}>
                     ⚠ You're browsing anonymously. Sign in to save links, edits, and revisions.
                   </div>
