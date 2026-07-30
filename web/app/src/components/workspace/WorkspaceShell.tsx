@@ -1950,6 +1950,19 @@ export function WorkspaceShell() {
                         >
                           Document Settings
                         </button>
+                        <button
+                          className="ws-more-item"
+                          onClick={() => {
+                            setShowLinkDesc((prev) => {
+                              const next = !prev;
+                              try { localStorage.setItem("xudanu_showLinkDesc", String(next)); } catch {}
+                              return next;
+                            });
+                            setMoreMenuOpen(false);
+                          }}
+                        >
+                          {showLinkDesc ? "\u2713 " : ""}Link Descriptions
+                        </button>
                       </div>
                     )}
                   </div>
