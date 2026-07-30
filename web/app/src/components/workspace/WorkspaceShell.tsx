@@ -1061,10 +1061,11 @@ export function WorkspaceShell() {
 
   // Load links + backlinks on every work change (needed for colored underlines in editor)
   // Deferred 200ms after text is visible so text renders first
+  // Gated on authenticated so nothing fires during the ticket-redeem window
   const loadLinks = transclusion.loadLinks;
   const loadBacklinks = transclusion.loadBacklinks;
   useEffect(() => {
-    if (!connected || workBeId === null) return;
+    if (!connected || !authenticated || workBeId === null) return;
     refreshAttribution();
     refreshAnnotations();
     const linkTimer = setTimeout(() => {
@@ -1074,7 +1075,7 @@ export function WorkspaceShell() {
       }
     }, 200);
     return () => clearTimeout(linkTimer);
-  }, [connected, workBeId, clientRef, works, loadLinks, loadBacklinks, refreshAttribution, refreshAnnotations]);
+  }, [connected, authenticated, workBeId, clientRef, works, loadLinks, loadBacklinks, refreshAttribution, refreshAnnotations]);
 
   // Debounced attribution refresh after text changes
   useEffect(() => {
@@ -1086,7 +1087,7 @@ export function WorkspaceShell() {
   }, [text, connected, workBeId, refreshAttribution]);
 
   useEffect(() => {
-    if (!connected || workBeId === null) {
+    if (!connected || !authenticated || workBeId === null) {
       setCrossServerBacklinks([]);
       return;
     }
@@ -1160,7 +1161,7 @@ export function WorkspaceShell() {
   // Populate store from graph data
   // Deferred 1.5s — graph is the lowest priority panel
   useEffect(() => {
-    if (!connected || !clientRef.current) return;
+    if (!connected || !authenticated || !clientRef.current) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       clientRef.current
@@ -1192,7 +1193,7 @@ export function WorkspaceShell() {
       .catch(() => {});
     }, 1500);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [connected, clientRef, workBeId, conceptNameOverride]);
+  }, [connected, authenticated, clientRef, workBeId, conceptNameOverride]);
 
   const refreshGraph = useCallback(async () => {
     if (!clientRef.current) return;
