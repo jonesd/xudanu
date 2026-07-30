@@ -651,7 +651,10 @@ function drawOverlay(
 
       ctx.fillStyle = isResolved ? "#484f58" : "#8b949e";
       ctx.font = `${isResolved ? "italic " : ""}11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
-      const descText = descEntry?.text || "";
+      const descText = descEntry?.text
+        || (desc.marker.excerpt ? desc.marker.excerpt.slice(0, 80) : "")
+        || desc.marker.otherWorkTitle
+        || "";
       const wrapped = wrapText(ctx, descText, DESC_BOX_WIDTH - 16, 2);
       for (let li = 0; li < wrapped.length; li++) {
         ctx.fillText(wrapped[li], boxX + 8, boxY + 20 + li * 13);
