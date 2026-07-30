@@ -263,14 +263,11 @@ export function useCrdtSync(
   }, [workBeId]);
 
   useEffect(() => {
-    if (!connected || !workBeId) {
-      setCanEdit(false);
-      return;
-    }
+    if (!connected || !workBeId || !authenticated) return;
     const client = clientRef.current;
     if (!client) return;
-    client.canEdit(workBeId).then(setCanEdit).catch(() => setCanEdit(false));
-  }, [connected, workBeId, authenticated, connectionEpoch]);
+    client.canEdit(workBeId).then(setCanEdit).catch(() => {});
+  }, [connected, workBeId, authenticated]);
 
   const setText = useCallback((newText: string) => {
     clientRef.current?.setText(newText);

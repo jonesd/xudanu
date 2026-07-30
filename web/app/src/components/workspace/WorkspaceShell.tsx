@@ -2048,7 +2048,7 @@ export function WorkspaceShell() {
                       💡 Tag
                     </button>
                   </div>
-                {canEdit && (
+                {workBeId !== null && (
                   <div className="ws-format-bar">
                     <button type="button" className="ws-sel-btn style" onMouseDown={(e) => e.preventDefault()}
                       onClick={() => selectionRange && handleToggleStyle("bold", selectionRange.start, selectionRange.end)}
