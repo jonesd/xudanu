@@ -215,6 +215,10 @@ export function WorkspaceShell() {
   const [crossServerBacklinks, setCrossServerBacklinks] = useState<CrossServerBacklinkPayload[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeLinkTypes, setActiveLinkTypes] = useState<Set<number>>(new Set());
+  const [showLinkDesc, setShowLinkDesc] = useState(() => {
+    try { return localStorage.getItem("xudanu_showLinkDesc") !== "false"; }
+    catch { return true; }
+  });
   const [showPerspective, setShowPerspective] = useState(false);
   const [showCompoundBuilder, setShowCompoundBuilder] = useState(false);
   const [showMerge, setShowMerge] = useState(false);
@@ -423,6 +427,45 @@ export function WorkspaceShell() {
     },
     [annotations, deleteAnnotation, createAnnotation],
   );
+
+  const handleResolveLinkDescription = useCallback(async (linkId: number, resolved: boolean) => {
+    if (workBeId === null) return;
+    const existing = annotations.find((a) => {
+      if (a.kind !== "link-description" && a.kind !== "link-description-resolved") return false;
+      try { const parsed = JSON.parse(a.payload); return parsed.link_id === linkId; } catch { return false; }
+    });
+    if (!existing) return;
+    if (resolved === ("delete" as unknown)) {
+      await deleteAnnotation(existing.annotation_id);
+      return;
+    }
+    const newKind = resolved ? "link-description-resolved" : "link-description";
+    if (existing.kind === newKind) return;
+    try {
+      const parsed = JSON.parse(existing.payload);
+      await deleteAnnotation(existing.annotation_id);
+      await createAnnotation(newKind, JSON.stringify(parsed), existing.char_start, existing.char_end);
+    } catch (e) {
+      console.error("Failed to update link description:", e);
+    }
+  }, [workBeId, annotations, deleteAnnotation, createAnnotation]);
+
+  const handleEditLinkDescription = useCallback(async (linkId: number, newText: string) => {
+    if (workBeId === null) return;
+    const existing = annotations.find((a) => {
+      if (a.kind !== "link-description" && a.kind !== "link-description-resolved") return false;
+      try { const parsed = JSON.parse(a.payload); return parsed.link_id === linkId; } catch { return false; }
+    });
+    if (!existing) return;
+    try {
+      const parsed = JSON.parse(existing.payload);
+      const updatedPayload = JSON.stringify({ ...parsed, text: newText });
+      await deleteAnnotation(existing.annotation_id);
+      await createAnnotation(existing.kind, updatedPayload, existing.char_start, existing.char_end);
+    } catch (e) {
+      console.error("Failed to edit link description:", e);
+    }
+  }, [workBeId, annotations, deleteAnnotation, createAnnotation]);
 
   const handleToggleBlock = useCallback(
     async (kind: string, _payload: string) => {
@@ -2302,9 +2345,12 @@ export function WorkspaceShell() {
                   compoundSourceTitles={compound.sourceTitles}
                   inlineResolvedText={compound.resolvedText || undefined}
                   annotations={annotations}
-                   onCreateAnnotation={canEdit ? handleCreateAnnotation : undefined}
-                   onToggleStyle={canEdit ? handleToggleStyle : undefined}
-                   onDeleteAnnotation={deleteAnnotation}
+                    onCreateAnnotation={canEdit ? handleCreateAnnotation : undefined}
+                    onToggleStyle={canEdit ? handleToggleStyle : undefined}
+                    onDeleteAnnotation={deleteAnnotation}
+                    showLinkDescriptions={showLinkDesc}
+                    onResolveLinkDescription={handleResolveLinkDescription}
+                    onEditLinkDescription={handleEditLinkDescription}
                   />
                 )}
                   </>
