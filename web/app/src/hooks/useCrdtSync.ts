@@ -232,8 +232,9 @@ export function useCrdtSync(
   }, [wsUrl]);
 
   // Switch works on the persistent connection (no WebSocket reconnect).
-  // Replaces the old behavior of tearing down + recreating the entire
-  // connection on every document switch.
+  // Fires immediately on connect for public works. If the work is private,
+  // CRDT open fails with PermissionDenied but the authenticated dependency
+  // triggers a retry when auth completes.
   useEffect(() => {
     if (!connected || workBeId === null) return;
     clientRef.current?.switchWork(workBeId);
@@ -242,7 +243,14 @@ export function useCrdtSync(
       clientRef.current?.sendAwareness(null, null, false);
     }, 500);
     return () => clearTimeout(t);
-  }, [workBeId, connected, authenticated]);
+  }, [workBeId, connected]);
+
+  // Retry switchWork after authentication completes (for private works that
+  // failed during the anonymous window)
+  useEffect(() => {
+    if (!connected || !authenticated || workBeId === null) return;
+    clientRef.current?.switchWork(workBeId);
+  }, [authenticated, connected, workBeId]);
 
   // Low-frequency awareness reconciliation (30s safety net).
   // Primary awareness updates arrive via push events (crdt_awareness_update)
