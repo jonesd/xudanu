@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transclusion Architecture &mdash; Xudanu</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+code{font-family:'JetBrains Mono',monospace;font-size:.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.green{background:rgba(63,185,80,0.06);border-left:3px solid #3fb950;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.green strong{color:#3fb950}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.badge-done{background:rgba(63,185,80,0.15);color:#3fb950}
+.badge-building{background:rgba(88,166,255,0.15);color:#58a6ff}
+.badge-future{background:rgba(110,118,129,0.15);color:#8b949e}
+.badge-gap{background:rgba(248,81,73,0.15);color:#f85149}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Transclusion Architecture</h1>
+<p class="subtitle">How content reuse works in Xudanu &mdash; what we built, what we're building, and how it connects to the Xanadu lineage</p>
+
+<div class="gold">
+<strong>Xanadu Lineage:</strong> Transclusion is Ted Nelson's term for reusing content from one document inside another &mdash; not by copying, but by reference. The original passage maintains its bond to the source, carrying full provenance. Xudanu implements this concept using modern Rust and web technology, building on the open-source Udanax Gold release (1999).
+</div>
+
+<h2>How It Works Today</h2>
+
+<div class="diagram-container">
+<svg viewBox="0 0 800 280" xmlns="http://www.w3.org/2000/svg">
+<!-- Source document -->
+<rect x="20" y="20" width="200" height="240" rx="8" fill="#161b22" stroke="#3fb950" stroke-width="2"/>
+<text x="120" y="45" text-anchor="middle" fill="#3fb950" font-size="14" font-weight="600" font-family="Inter">Source Document</text>
+<rect x="40" y="60" width="160" height="30" rx="4" fill="rgba(63,185,80,0.1)" stroke="#3fb950" stroke-width="1" stroke-dasharray="4,2"/>
+<text x="120" y="80" text-anchor="middle" fill="#8b949e" font-size="11" font-family="JetBrains Mono">chars 100&ndash;200</text>
+<text x="120" y="130" text-anchor="middle" fill="#6e7681" font-size="11">The passage being</text>
+<text x="120" y="145" text-anchor="middle" fill="#6e7681" font-size="11">transcluded...</text>
+<text x="120" y="220" text-anchor="middle" fill="#3fb950" font-size="10" font-family="JetBrains Mono">BLAKE3 hash stored</text>
+<text x="120" y="235" text-anchor="middle" fill="#3fb950" font-size="10" font-family="JetBrains Mono">Revision pinned</text>
+
+<!-- Arrow -->
+<line x1="240" y1="75" x2="360" y2="75" stroke="#58a6ff" stroke-width="2" stroke-dasharray="6,3"/>
+<polygon points="360,75 350,70 350,80" fill="#58a6ff"/>
+<text x="300" y="65" text-anchor="middle" fill="#58a6ff" font-size="11">reference</text>
+
+<!-- Compound document -->
+<rect x="370" y="20" width="410" height="240" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
+<text x="575" y="45" text-anchor="middle" fill="#58a6ff" font-size="14" font-weight="600" font-family="Inter">Compound Document</text>
+
+<!-- Own text -->
+<rect x="390" y="60" width="370" height="24" rx="3" fill="rgba(88,166,255,0.05)"/>
+<text x="400" y="77" fill="#8b949e" font-size="11">Original text written here...</text>
+
+<!-- Transclusion block -->
+<rect x="390" y="90" width="370" height="40" rx="4" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+<text x="400" y="108" fill="#3fb950" font-size="11" font-family="JetBrains Mono">&#x25A3; transclusion [source:100-200]</text>
+<text x="400" y="122" fill="#6e7681" font-size="10" font-style="italic">The passage being transcluded...</text>
+
+<!-- More own text -->
+<rect x="390" y="140" width="370" height="24" rx="3" fill="rgba(88,166,255,0.05)"/>
+<text x="400" y="157" fill="#8b949e" font-size="11">More original text...</text>
+
+<!-- Provenance badge -->
+<rect x="390" y="185" width="370" height="55" rx="4" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1" stroke-dasharray="3,2"/>
+<text x="400" y="205" fill="#a371f7" font-size="11" font-weight="600">Provenance</text>
+<text x="400" y="222" fill="#8b949e" font-size="10">Original author: <tspan fill="#a371f7">Jane Austen</tspan> (historical)</text>
+<text x="400" y="235" fill="#8b949e" font-size="10">Hash verified: <tspan fill="#3fb950">&#x2713</tspan>  Source revision: 3</text>
+</svg>
+<div class="diagram-caption">A transclusion in a compound document. The green block is live content from another work. Provenance flows through automatically.</div>
+</div>
+
+<h3>Current Implementation</h3>
+
+<table>
+<tr><th>Feature</th><th>Status</th><th>Details</th></tr>
+<tr><td>Range-based transclusion</td><td><span class="badge badge-done">Working</span></td><td>Stores <code>(source_work_id, char_start, char_end)</code></td></tr>
+<tr><td>Recursive resolution</td><td><span class="badge badge-done">Working</span></td><td>32-level depth with cycle detection</td></tr>
+<tr><td>Span migration</td><td><span class="badge badge-done">Working</span></td><td>Transclusion positions update when source is edited</td></tr>
+<tr><td>Provenance propagation</td><td><span class="badge badge-done">Working</span></td><td>Original author attribution flows through transclusion chains</td></tr>
+<tr><td>Content hash (BLAKE3)</td><td><span class="badge badge-building">FR-26 Phase 1</span></td><td>Hash stored at creation, verified on resolution</td></tr>
+<tr><td>Version pinning</td><td><span class="badge badge-building">FR-26 Phase 2</span></td><td>Source revision recorded, original version retrievable</td></tr>
+<tr><td>Immutable snapshots</td><td><span class="badge badge-future">FR-26 Phase 3</span></td><td>Blob store preserves exact content at creation time</td></tr>
+<tr><td>Cross-server transclusion</td><td><span class="badge badge-future">FR-6 + FR-26</span></td><td>Transclusions from remote servers via XCP gateway</td></tr>
+<tr><td>Spanfilade</td><td><span class="badge badge-future">Future</span></td><td>I-stream transclusion &mdash; see below</td></tr>
+</table>
+
+<h2>Content-Addressed Transclusion (FR-26)</h2>
+
+<p>As of v1.1, every new transclusion stores a <strong>BLAKE3 content hash</strong> alongside the range reference. This means:</p>
+
+<ul style="margin:16px 0 16px 24px;color:#8b949e;font-size:15px">
+<li><strong style="color:#e6edf3">Tamper detection</strong> &mdash; if the source passage is edited after transclusion, the hash mismatch is logged</li>
+<li><strong style="color:#e6edf3">Version awareness</strong> &mdash; the source revision is recorded, so "what was this when I transcluded it?" is answerable</li>
+<li><strong style="color:#e6edf3">Future immutability</strong> &mdash; Phase 3 will snapshot content to the blob store, so transclusions survive even if the source is deleted</li>
+</ul>
+
+<div class="diagram-container">
+<svg viewBox="0 0 700 200" xmlns="http://www.w3.org/2000/svg">
+<!-- Timeline -->
+<line x1="50" y1="100" x2="650" y2="100" stroke="#30363d" stroke-width="2"/>
+
+<!-- Creation -->
+<circle cx="100" cy="100" r="8" fill="#3fb950"/>
+<text x="100" y="80" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="600">Created</text>
+<text x="100" y="130" text-anchor="middle" fill="#8b949e" font-size="10">BLAKE3 hash computed</text>
+<text x="100" y="145" text-anchor="middle" fill="#8b949e" font-size="10">Revision pinned</text>
+
+<!-- Source edit -->
+<circle cx="300" cy="100" r="8" fill="#d29922"/>
+<text x="300" y="80" text-anchor="middle" fill="#d29922" font-size="12" font-weight="600">Source edited</text>
+<text x="300" y="130" text-anchor="middle" fill="#8b949e" font-size="10">Hash mismatch detected</text>
+<text x="300" y="145" text-anchor="middle" fill="#8b949e" font-size="10">Warning logged</text>
+
+<!-- Verification -->
+<circle cx="500" cy="100" r="8" fill="#58a6ff"/>
+<text x="500" y="80" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="600">Resolution</text>
+<text x="500" y="130" text-anchor="middle" fill="#8b949e" font-size="10">Shows current text</text>
+<text x="500" y="145" text-anchor="middle" fill="#8b949e" font-size="10">+ "source changed" indicator</text>
+
+<!-- Phase 3: snapshot -->
+<circle cx="620" cy="100" r="8" fill="none" stroke="#f85149" stroke-width="2"/>
+<text x="620" y="80" text-anchor="middle" fill="#f85149" font-size="12" font-weight="600">Phase 3</text>
+<text x="620" y="130" text-anchor="middle" fill="#8b949e" font-size="10">Blob snapshot</text>
+<text x="620" y="145" text-anchor="middle" fill="#8b949e" font-size="10">survives deletion</text>
+
+<!-- Connecting arrows -->
+<line x1="108" y1="100" x2="292" y2="100" stroke="#30363d" stroke-width="1" stroke-dasharray="3,3"/>
+<line x1="308" y1="100" x2="492" y2="100" stroke="#30363d" stroke-width="1" stroke-dasharray="3,3"/>
+<line x1="508" y1="100" x2="612" y2="100" stroke="#30363d" stroke-width="1" stroke-dasharray="3,3"/>
+</svg>
+<div class="diagram-caption">Transclusion lifecycle: creation &rarr; source change &rarr; resolution &rarr; (future) immutable snapshot</div>
+</div>
+
+<h2>Recursive Resolution</h2>
+
+<p>Transclusions can chain: Document A transcludes from B, which transcludes from C. Xudanu resolves these chains recursively up to 32 levels deep, with automatic cycle detection.</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 600 200" xmlns="http://www.w3.org/2000/svg">
+<!-- Doc A -->
+<rect x="20" y="80" width="120" height="60" rx="6" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+<text x="80" y="105" text-anchor="middle" fill="#58a6ff" font-size="13" font-weight="600">Doc A</text>
+<text x="80" y="125" text-anchor="middle" fill="#6e7681" font-size="10">compound</text>
+
+<!-- Arrow A->B -->
+<line x1="140" y1="110" x2="200" y2="110" stroke="#3fb950" stroke-width="1.5"/>
+<polygon points="200,110 192,106 192,114" fill="#3fb950"/>
+<text x="170" y="100" text-anchor="middle" fill="#3fb950" font-size="9">transcludes</text>
+
+<!-- Doc B -->
+<rect x="200" y="80" width="120" height="60" rx="6" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+<text x="260" y="105" text-anchor="middle" fill="#3fb950" font-size="13" font-weight="600">Doc B</text>
+<text x="260" y="125" text-anchor="middle" fill="#6e7681" font-size="10">also compound</text>
+
+<!-- Arrow B->C -->
+<line x1="320" y1="110" x2="380" y2="110" stroke="#3fb950" stroke-width="1.5"/>
+<polygon points="380,110 372,106 372,114" fill="#3fb950"/>
+<text x="350" y="100" text-anchor="middle" fill="#3fb950" font-size="9">transcludes</text>
+
+<!-- Doc C -->
+<rect x="380" y="80" width="120" height="60" rx="6" fill="#161b22" stroke="#d29922" stroke-width="1.5"/>
+<text x="440" y="105" text-anchor="middle" fill="#d29922" font-size="13" font-weight="600">Doc C</text>
+<text x="440" y="125" text-anchor="middle" fill="#6e7681" font-size="10">source work</text>
+
+<!-- Depth label -->
+<text x="80" y="165" text-anchor="middle" fill="#8b949e" font-size="10">depth 0</text>
+<text x="260" y="165" text-anchor="middle" fill="#8b949e" font-size="10">depth 1</text>
+<text x="440" y="165" text-anchor="middle" fill="#8b949e" font-size="10">depth 2</text>
+
+<!-- Provenance arrow back -->
+<path d="M 440 70 Q 440 30 80 30 Q 80 50 80 80" fill="none" stroke="#a371f7" stroke-width="1" stroke-dasharray="4,2"/>
+<text x="260" y="25" text-anchor="middle" fill="#a371f7" font-size="10">provenance flows back through chain</text>
+</svg>
+<div class="diagram-caption">Three-level transclusion chain with provenance propagation</div>
+</div>
+
+<h2>Span Migration</h2>
+
+<p>When a source document is edited, the character positions of transclusions referencing it need to update. Xudanu uses <strong>delta-based span migration</strong>: the text delta (insert/delete operations) is used to compute new positions for all affected transclusion ranges.</p>
+
+<div class="green">
+<strong>What this means:</strong> If you transclude characters 100&ndash;200 from a document, then someone inserts 50 characters at position 50, your transclusion automatically shifts to 150&ndash;250. No manual updating needed.
+</div>
+
+<h2>What We Don't Have (Yet)</h2>
+
+<h3>Spanfilade</h3>
+<p>Gold's spanfilade is a fundamentally different model. Instead of referencing character positions, it inserts content at the <strong>I-stream level</strong> &mdash; a layer below character offsets. This means:</p>
+
+<ul style="margin:16px 0 16px 24px;color:#8b949e;font-size:15px">
+<li>Transclusions survive arbitrary restructuring of the source (not just inserts/deletes)</li>
+<li>Transcluded content can be from a <strong>specific version</strong> that's been superseded</li>
+<li>The enfilade tree preserves all versions simultaneously &mdash; no separate revision history needed</li>
+</ul>
+
+<div class="note">
+<strong>Our path:</strong> FR-26 Phase 3 (blob snapshots) provides the key property &mdash; transclusions become permanent references that survive source deletion. It's not spanfilade, but it gives 80% of the practical value. Full spanfilade would require reimplementing the enfilade data structure (months of work), but the <code>ent/</code> module already has the crum/HTree machinery to support it.
+</div>
+
+<h3>Cross-Server Transclusion</h3>
+<p>Currently transclusions only work within a single server. Cross-server transclusion is planned via the <a href="https://github.com/jonesd/xcp">XCP (Xanadu Content Protocol)</a>: a transclusion references a tumbler <code>"server.domain".work_id.revision.start-end</code>, and the content is fetched via the content gateway API with BLAKE3 hash verification.</p>
+
+<h2>The Xanadu Connection</h2>
+
+<div class="gold">
+<strong>Design heritage:</strong> Xudanu's transclusion model is inspired by but not identical to Udanax Gold's. The <code>ent/</code> module has inline citations to specific Gold source files (<code>entx.cxx</code>, <code>dagwoodx.cxx</code>, <code>branchx.cxx</code>). The design decision to use range-based transclusion instead of spanfilade is documented in <code>docs/dev/FR-17-storage-architecture.md</code>.
+</div>
+
+<p>The key architectural choices:</p>
+
+<table>
+<tr><th>Concept</th><th>Gold</th><th>Xudanu</th></tr>
+<tr><td>Content reference</td><td>Enfilade/I-stream position</td><td>Character range + BLAKE3 hash</td></tr>
+<tr><td>Version persistence</td><td>Enfilade preserves all versions</td><td>Revision history (FR-23) + blob snapshots (FR-26 P3)</td></tr>
+<tr><td>Provenance</td><td>Crum-based</td><td>Ed25519 signatures + span provenance</td></tr>
+<tr><td>Cross-server</td><td>Cosmic tumblers + FeBe</td><td>DNS-anchored tumblers + XCP/HTTP</td></tr>
+<tr><td>Live updates</td><td>Built into enfilade</td><td>O-tree CRDT delta + span migration</td></tr>
+</table>
+
+<h2>Try It Yourself</h2>
+
+<pre>
+# Clone and build
+git clone https://github.com/jonesd/xudanu.git
+cd xudanu
+cargo build --features server -p xudanu
+
+# Start the server
+./target/debug/xudanu-server run 127.0.0.1:8080
+
+# Open http://localhost:5173
+# 1. Create a document with some text
+# 2. Select a passage, click "Transclude"
+# 3. Create another document
+# 4. Place the transclusion in the new document
+# 5. Edit the source — watch the transclusion update live
+</pre>
+
+<p style="margin-top:48px;color:#484f58;font-size:12px">
+Xudanu is an independent open-source project (Apache 2.0), not affiliated with Project Xanadu&trade; or the Udanax team.
+Transclusion concept &copy; Ted Nelson. Udanax Gold released under X11 license (1999).
+</p>
+
+</div>
+</body>
+</html>
