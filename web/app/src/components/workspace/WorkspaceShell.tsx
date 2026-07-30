@@ -214,6 +214,7 @@ export function WorkspaceShell() {
   const [demoTrigger, setDemoTrigger] = useState(false);
   const [crossServerBacklinks, setCrossServerBacklinks] = useState<CrossServerBacklinkPayload[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [activeLinkTypes, setActiveLinkTypes] = useState<Set<number>>(new Set());
   const [showPerspective, setShowPerspective] = useState(false);
   const [showCompoundBuilder, setShowCompoundBuilder] = useState(false);
   const [showMerge, setShowMerge] = useState(false);
@@ -2608,15 +2609,60 @@ export function WorkspaceShell() {
             )}
             {rightPanelTab === "connections" && (
               <div className="ws-connections-tab">
+                {/* Link type filter */}
+                {transclusion.links.length > 0 && (
+                  <div className="ws-link-filters">
+                    {DEFAULT_LINK_TYPES.map((t) => {
+                      const count = transclusion.links.filter((l) => (l.link_types || []).includes(t.type_id)).length;
+                      if (count === 0) return null;
+                      const active = activeLinkTypes.has(t.type_id);
+                      return (
+                        <button
+                          key={t.type_id}
+                          type="button"
+                          className={`ws-link-filter-btn ${active ? "active" : ""}`}
+                          style={active ? { background: t.color, borderColor: t.color } : { borderColor: t.color + "60", color: t.color }}
+                          onClick={() => setActiveLinkTypes((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(t.type_id)) next.delete(t.type_id);
+                            else next.add(t.type_id);
+                            return next;
+                          })}
+                          title={`${t.name} (${count})`}
+                        >
+                          {t.name} ({count})
+                        </button>
+                      );
+                    })}
+                    {activeLinkTypes.size > 0 && (
+                      <button
+                        type="button"
+                        className="ws-link-filter-clear"
+                        onClick={() => setActiveLinkTypes(new Set())}
+                      >
+                        clear
+                      </button>
+                    )}
+                  </div>
+                )}
                 {/* Outbound links */}
                 <div className="ws-conn-section">
                   <div className="ws-conn-header">
-                    Links ({transclusion.links.length})
+                    Links ({(() => {
+                      const filtered = activeLinkTypes.size === 0
+                        ? transclusion.links
+                        : transclusion.links.filter((l) => (l.link_types || []).some((t) => activeLinkTypes.has(t)));
+                      return filtered.length;
+                    })()})
                   </div>
-                  {transclusion.links.length === 0 ? (
-                    <div className="ws-conn-empty">No outbound links. Select text and click "Link" to create one.</div>
-                  ) : (
-                    transclusion.links.map((link) => {
+                  {(() => {
+                    const filteredLinks = activeLinkTypes.size === 0
+                      ? transclusion.links
+                      : transclusion.links.filter((l) => (l.link_types || []).some((t) => activeLinkTypes.has(t)));
+                    return filteredLinks.length === 0 ? (
+                      <div className="ws-conn-empty">{transclusion.links.length === 0 ? 'No outbound links. Select text and click "Link" to create one.' : 'No links match the active filter.'}</div>
+                    ) : (
+                      filteredLinks.map((link) => {
                       const isWebLink = (link.link_types || []).includes(6);
                       const destUrl = link.destination_ref?.excerpt;
                       const destTitle = isWebLink && destUrl
@@ -2669,16 +2715,17 @@ export function WorkspaceShell() {
                                     {tn}
                                   </span>
                                 );
-                               })}
-         </div>
-        )}
-      </div>
-                         );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
                       })
-                    )}
-                 </div>
+                    );
+                  })()}
+                  </div>
 
-                 {/* Backlinks */}
+                  {/* Backlinks */}
                 <div className="ws-conn-section">
                   <div className="ws-conn-header">
                     Backlinks ({transclusion.backlinks.length})

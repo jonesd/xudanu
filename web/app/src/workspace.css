@@ -1740,6 +1740,38 @@
   margin: 4px 0;
 }
 
+/* Link type filter buttons */
+.ws-link-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 0;
+  margin-bottom: 4px;
+}
+.ws-link-filter-btn {
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid;
+  background: none;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.ws-link-filter-btn:hover { opacity: 0.8; }
+.ws-link-filter-btn.active { color: #fff !important; }
+.ws-link-filter-clear {
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  padding: 2px 8px;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 /* Identity badge in top bar */
 .identity-badge {
   display: flex;
