@@ -353,8 +353,36 @@ td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
   <strong>Key insight:</strong> The Bert Canopy's flag-based pruning is what makes transclusion queries feasible at scale. Without it, every query would need to scan all editions. With it, only editions in subtrees whose flags overlap with the query are visited.
 </div>
 
+<h2 id="fr26">10. Content-Addressed Transclusion (FR-26)</h2>
+
+<p>As of v1.1, every transclusion stores a <strong>BLAKE3 content hash</strong> alongside the range reference. This closes a key gap with Gold's spanfilade model:</p>
+
+<table>
+  <tr><th>Property</th><th>Before FR-26</th><th>After FR-26</th></tr>
+  <tr><td>Reference type</td><td>Position only (<code>work_id, start, end</code>)</td><td>Position + content hash + revision</td></tr>
+  <tr><td>Source edit detection</td><td>None (positions silently shift)</td><td>Hash mismatch logged on resolution</td></tr>
+  <tr><td>Version pinning</td><td>No</td><td>Source revision recorded at creation</td></tr>
+  <tr><td>Immutable fallback</td><td>No</td><td>Phase 3: blob snapshot preserves exact content</td></tr>
+</table>
+
+<div class="note">
+  <strong>For Gold/Green interop:</strong> The content hash enables cross-verification.
+  A transclusion from a Gold server can be verified via XCP's <code>content_hash_blake3</code> field.
+  See <a href="transclusion-architecture.html">Transclusion Architecture</a> for the full lifecycle diagram
+  and <a href="https://github.com/jonesd/xcp">XCP spec</a> for cross-server content addressing.
+</div>
+
+<h3>Phases</h3>
+<table>
+  <tr><th>Phase</th><th>Status</th><th>What it provides</th></tr>
+  <tr><td>1: Hash verification</td><td style="color:#3fb950">Done</td><td>BLAKE3 stored on creation, verified on resolution</td></tr>
+  <tr><td>2: Version pinning</td><td style="color:#58a6ff">Building</td><td>Source revision stored, original retrievable from history</td></tr>
+  <tr><td>3: Immutable snapshots</td><td style="color:#d29922">Planned</td><td>Content stored to blob store, survives source deletion</td></tr>
+  <tr><td>4: Spanfish / full spanfilade</td><td style="color:#f85149">Future</td><td>I-stream insertion without range references</td></tr>
+</table>
+
 <div class="footer">
-  <a href="index.html">Back to Documentation</a> &mdash; Xudanu v0.7.0 &mdash; <a href="https://github.com/jonesd/xudanu">github.com/jonesd/xudanu</a>
+  <a href="index.html">Back to Documentation</a> &mdash; Xudanu v1.1 &mdash; <a href="transclusion-architecture.html">Transclusion Architecture</a> &mdash; <a href="https://github.com/jonesd/xudanu">github.com/jonesd/xudanu</a>
 </div>
 </div>
 <script src="github-links.js"></script>
