@@ -155,20 +155,29 @@ export function useCrdtSync(
 
         const tryAuth = async () => {
           if (storedTicket) {
-            await client!.sessionTicketRedeem(storedTicket);
+            const ok = await client!.sessionTicketRedeem(storedTicket);
+            if (!ok) {
+              console.warn("[session] ticket redeem failed — ticket may be stale");
+            }
           }
           const id = await client!.checkWhoAmI();
           if (id) {
             setAuthenticated(true);
             setIdentity(id);
-            client!.sessionTicketIssue().then((ticket) => {
-              if (ticket) {
+            // Issue new ticket immediately (synchronous — don't fire-and-forget)
+            try {
+              const newTicket = await client!.sessionTicketIssue();
+              if (newTicket) {
                 try {
-                  const b64 = btoa(String.fromCharCode(...ticket));
+                  const b64 = btoa(String.fromCharCode(...newTicket));
                   localStorage.setItem("xudanu_session_ticket", b64);
                 } catch {}
+              } else {
+                console.warn("[session] sessionTicketIssue returned null — no new ticket stored");
               }
-            }).catch(() => {});
+            } catch (e) {
+              console.error("[session] sessionTicketIssue failed:", e);
+            }
           } else {
             setAuthenticated(false);
           }
