@@ -10645,18 +10645,32 @@ impl Server {
             ..
         } = &element
         {
+            let src_id = *source_work_id;
+            let cs = *char_start;
+            let ce = *char_end;
             let placed_at = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
             let placed_by = self.resolve_author_club(session_id);
             element = crate::edition::RangeElement::transclusion_with_meta(
-                *source_work_id,
-                *char_start,
-                *char_end,
-                placed_at,
-                placed_by,
+                src_id, cs, ce, placed_at, placed_by,
             );
+
+            // Compute BLAKE3 hash of the source content at creation time
+            if let Ok(src_text) = self.work_text(src_id.into()) {
+                let chars: Vec<char> = src_text.chars().collect();
+                let s = cs.min(chars.len());
+                let e = ce.min(chars.len());
+                if s < e {
+                    let excerpt: String = chars[s..e].iter().collect();
+                    let hash = blake3::hash(excerpt.as_bytes());
+                    if let Some(ws) = self.works.get(&work_id) {
+                        let rev = ws.work.revision_count();
+                        element.set_transclusion_hash(hash.into(), rev as u64);
+                    }
+                }
+            }
         }
 
         let new_edition = {
@@ -10996,6 +11010,8 @@ impl Server {
                 char_end,
                 placed_at,
                 placed_by,
+                content_hash: stored_hash,
+                source_revision: _,
             } = &carrier.element
             {
                 let src_id = *source_work_id;
@@ -11018,6 +11034,22 @@ impl Server {
                 let end = c_end.min(src_chars.len());
                 let content: String = src_chars[start..end].iter().collect();
                 let content_len = content.chars().count();
+
+                // Verify content hash if stored (FR-26)
+                if let Some(expected_hash) = stored_hash {
+                    let actual_hash = blake3::hash(content.as_bytes());
+                    if actual_hash.as_bytes() != &expected_hash[..] {
+                        tracing::warn!(
+                            "[FR-26] transclusion content hash mismatch for source {:x} [{}..{}]: \
+                             stored={} actual={} — source may have been edited since transclusion",
+                            src_id,
+                            c_start,
+                            c_end,
+                            hex::encode(expected_hash),
+                            hex::encode(actual_hash.as_bytes())
+                        );
+                    }
+                }
 
                 span_ranges.push(crate::edition::compound::SpanRange {
                     source_work_id: src_id,

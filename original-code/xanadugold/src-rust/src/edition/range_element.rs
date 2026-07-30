@@ -55,6 +55,10 @@ pub enum RangeElement {
         char_end: usize,
         placed_at: u64,
         placed_by: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        content_hash: Option<[u8; 32]>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source_revision: Option<u64>,
     },
 }
 
@@ -170,6 +174,30 @@ impl RangeElement {
             char_end: end,
             placed_at,
             placed_by,
+            content_hash: None,
+            source_revision: None,
+        }
+    }
+
+    /// Set the content hash and source revision on a Transclusion element.
+    pub fn set_transclusion_hash(&mut self, content_hash: [u8; 32], source_revision: u64) {
+        if let RangeElement::Transclusion {
+            content_hash: ref mut ch,
+            source_revision: ref mut sr,
+            ..
+        } = self
+        {
+            *ch = Some(content_hash);
+            *sr = Some(source_revision);
+        }
+    }
+
+    /// Get the content hash from a Transclusion element, if set.
+    pub fn transclusion_content_hash(&self) -> Option<[u8; 32]> {
+        if let RangeElement::Transclusion { content_hash, .. } = self {
+            *content_hash
+        } else {
+            None
         }
     }
 
@@ -245,6 +273,8 @@ impl RangeElement {
                 char_end,
                 placed_at,
                 placed_by,
+                content_hash: _,
+                source_revision: _,
             } => Some((
                 *source_work_id,
                 *char_start,
