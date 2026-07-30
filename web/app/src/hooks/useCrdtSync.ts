@@ -154,19 +154,30 @@ export function useCrdtSync(
         })();
 
         const tryAuth = async () => {
+          const t0 = performance.now();
           if (storedTicket) {
+            const t1 = performance.now();
             const ok = await client!.sessionTicketRedeem(storedTicket);
-            if (!ok) {
+            console.log(`[perf] ticket redeem: ${(performance.now() - t1).toFixed(0)}ms ok=${ok}`);
+            if (ok) {
+              // Ticket redeemed — we're authenticated. Set immediately,
+              // don't wait for checkWhoAmI.
+              setAuthenticated(true);
+            } else {
               console.warn("[session] ticket redeem failed — ticket may be stale");
             }
           }
+          const t2 = performance.now();
           const id = await client!.checkWhoAmI();
+          console.log(`[perf] checkWhoAmI: ${(performance.now() - t2).toFixed(0)}ms identity=${!!id}`);
           if (id) {
             setAuthenticated(true);
             setIdentity(id);
             // Issue new ticket immediately (synchronous — don't fire-and-forget)
+            const t3 = performance.now();
             try {
               const newTicket = await client!.sessionTicketIssue();
+              console.log(`[perf] ticket issue: ${(performance.now() - t3).toFixed(0)}ms got=${!!newTicket}`);
               if (newTicket) {
                 try {
                   const b64 = btoa(String.fromCharCode(...newTicket));
@@ -182,6 +193,7 @@ export function useCrdtSync(
             setAuthenticated(false);
           }
           setIsAdmin(client!.getIsAdmin());
+          console.log(`[perf] total auth: ${(performance.now() - t0).toFixed(0)}ms`);
         };
         tryAuth().catch(() => setAuthenticated(false));
       }
