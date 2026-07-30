@@ -570,7 +570,7 @@ function drawOverlay(
       });
     }
 
-    if (showLinkDescriptions && typeStyle && linkDescMap.has(marker.linkId)) {
+    if (showLinkDescriptions && typeStyle) {
       const textRightX = lastRect.right - rect.left;
       pendingDescs.push({
         firstTop,
