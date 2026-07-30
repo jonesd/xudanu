@@ -64,12 +64,20 @@ export function useCrdtSync(
   const subscriptionIdRef = useRef<number | null>(null);
   const [attributionSpans, setAttributionSpans] = useState<AttributionSpan[]>([]);
   const [attributionLogStatus, setAttributionLogStatus] = useState<AttributionLogStatus | null>(null);
-  const [identity, setIdentity] = useState<WhoAmIEntry | null>(null);
+  const [identity, setIdentity] = useState<WhoAmIEntry | null>(() => {
+    try {
+      const cached = localStorage.getItem("xudanu_identity_cache");
+      if (cached) return JSON.parse(cached) as WhoAmIEntry;
+    } catch {}
+    return null;
+  });
   const [isAdmin, setIsAdmin] = useState(false);
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [llmUsage, setLlmUsage] = useState<LlmUsageSummary | null>(null);
   const [publicClubId, setPublicClubId] = useState(0);
-  const [authenticated, setAuthenticated] = useState(false);
+  const [authenticated, setAuthenticated] = useState(() => {
+    return !!localStorage.getItem("xudanu_session_ticket");
+  });
   const [annotations, setAnnotations] = useState<AnnotationEntry[]>([]);
   const [connectionEpoch, setConnectionEpoch] = useState(0);
   const epochRef = useRef(0);
@@ -124,6 +132,7 @@ export function useCrdtSync(
     });
     const unsubIdentity = client.onIdentityChange((id) => {
       setIdentity(id);
+      try { localStorage.setItem("xudanu_identity_cache", JSON.stringify(id)); } catch {}
       setIsAdmin(client!.getIsAdmin());
     });
     const unsubChanges = client.onChangeHighlights(setRecentChanges);
@@ -180,6 +189,7 @@ export function useCrdtSync(
           if (id) {
             setAuthenticated(true);
             setIdentity(id);
+            try { localStorage.setItem("xudanu_identity_cache", JSON.stringify(id)); } catch {}
             // Issue new ticket immediately (synchronous — don't fire-and-forget)
             const t3 = performance.now();
             try {
