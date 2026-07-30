@@ -1060,16 +1060,20 @@ export function WorkspaceShell() {
   }, [connected, rightPanelTab, loadTrailsForWork]);
 
   // Load links + backlinks on every work change (needed for colored underlines in editor)
+  // Deferred 200ms after text is visible so text renders first
   const loadLinks = transclusion.loadLinks;
   const loadBacklinks = transclusion.loadBacklinks;
   useEffect(() => {
     if (!connected || workBeId === null) return;
     refreshAttribution();
     refreshAnnotations();
-    if (clientRef.current) {
-      void loadLinks(clientRef.current, workBeId, works);
-      void loadBacklinks(clientRef.current, workBeId);
-    }
+    const linkTimer = setTimeout(() => {
+      if (clientRef.current) {
+        void loadLinks(clientRef.current, workBeId, works);
+        void loadBacklinks(clientRef.current, workBeId);
+      }
+    }, 200);
+    return () => clearTimeout(linkTimer);
   }, [connected, workBeId, clientRef, works, loadLinks, loadBacklinks, refreshAttribution, refreshAnnotations]);
 
   // Debounced attribution refresh after text changes
@@ -1082,11 +1086,16 @@ export function WorkspaceShell() {
   }, [text, connected, workBeId, refreshAttribution]);
 
   useEffect(() => {
-    if (connected && workBeId !== null && clientRef.current) {
-      clientRef.current.crossServerBacklinksGet(workBeId).then(setCrossServerBacklinks).catch(() => setCrossServerBacklinks([]));
-    } else {
+    if (!connected || workBeId === null) {
       setCrossServerBacklinks([]);
+      return;
     }
+    const timer = setTimeout(() => {
+      if (clientRef.current) {
+        clientRef.current.crossServerBacklinksGet(workBeId).then(setCrossServerBacklinks).catch(() => setCrossServerBacklinks([]));
+      }
+    }, 500);
+    return () => clearTimeout(timer);
   }, [connected, workBeId]);
 
   useEffect(() => {
@@ -1149,12 +1158,14 @@ export function WorkspaceShell() {
   }, []);
 
   // Populate store from graph data
+  // Deferred 1.5s — graph is the lowest priority panel
   useEffect(() => {
     if (!connected || !clientRef.current) return;
     let cancelled = false;
-    clientRef.current
-      .workGraph(workBeId ?? undefined, 20)
-      .then((g) => {
+    const timer = setTimeout(() => {
+      clientRef.current
+        .workGraph(workBeId ?? undefined, 20)
+        .then((g) => {
         if (cancelled) return;
         useWorkStore.getState().setGraph(g.nodes, g.edges);
         // Compute inbound link count per concept
@@ -1179,8 +1190,9 @@ export function WorkspaceShell() {
         setConcepts(conceptList);
       })
       .catch(() => {});
-    return () => { cancelled = true; };
-  }, [connected, clientRef]);
+    }, 1500);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [connected, clientRef, workBeId, conceptNameOverride]);
 
   const refreshGraph = useCallback(async () => {
     if (!clientRef.current) return;
