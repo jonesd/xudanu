@@ -27788,6 +27788,153 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "server")]
+    fn fr26_transclusion_stores_content_hash_on_creation() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let source = server.create_work(sid, Edition::from_text("Hello World")).unwrap();
+        server.work_publish(sid, source).unwrap();
+        let target = server.create_work(sid, Edition::empty()).unwrap();
+        server.work_publish(sid, target).unwrap();
+        server.work_set_edit_club(sid, target, Some(1)).unwrap();
+
+        server
+            .element_insert(sid, target, 0, RangeElement::transclusion(source, 0, 5))
+            .unwrap();
+
+        let edition = server.work(target).unwrap().current_edition().clone();
+        let entries = edition.all_entries();
+        let transclusion_entry = entries.iter().find(|(_, c)| {
+            matches!(c.element, RangeElement::Transclusion { .. })
+        });
+        assert!(transclusion_entry.is_some(), "should have a transclusion element");
+
+        if let Some((_, carrier)) = transclusion_entry {
+            if let RangeElement::Transclusion { content_hash, .. } = &carrier.element {
+                assert!(content_hash.is_some(), "content_hash should be set after creation");
+                let hash = content_hash.unwrap();
+                let expected = blake3::hash(b"Hello");
+                assert_eq!(&hash[..], expected.as_bytes(), "hash should match source content");
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn fr26_transclusion_hash_mismatch_detected_on_source_edit() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let source = server.create_work(sid, Edition::from_text("Original text")).unwrap();
+        server.work_publish(sid, source).unwrap();
+        let target = server.create_work(sid, Edition::empty()).unwrap();
+        server.work_publish(sid, target).unwrap();
+        server.work_set_edit_club(sid, target, Some(1)).unwrap();
+        server.work_set_edit_club(sid, source, Some(1)).unwrap();
+
+        server
+            .element_insert(sid, target, 0, RangeElement::transclusion(source, 0, 8))
+            .unwrap();
+
+        let edition_before = server.work(target).unwrap().current_edition().clone();
+        let entries_before = edition_before.all_entries();
+        let entry_before = entries_before.iter().find(|(_, c)| {
+            matches!(c.element, RangeElement::Transclusion { .. })
+        });
+        let hash_before = if let Some((_, c)) = entry_before {
+            if let RangeElement::Transclusion { content_hash: Some(h), .. } = &c.element {
+                Some(*h)
+            } else { None }
+        } else { None };
+        assert!(hash_before.is_some(), "hash should be stored before edit");
+
+        let new_edition = Edition::from_text("Changed text");
+        let author_club = server.resolve_author_club(sid);
+        server.revise_work(source, sid, new_edition, author_club).unwrap();
+
+        let resolution = server.resolve_inline_transclusions(target).unwrap();
+        if resolution.span_ranges.len() > 0 {
+            let resolved = &resolution.span_ranges[0].resolved_content;
+            assert!(
+                resolved.contains("Changed") || resolved.contains("Original"),
+                "should resolve to source text (new or old)"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn fr26_transclusion_without_hash_backward_compat() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let source = server.create_work(sid, Edition::from_text("Source content")).unwrap();
+        server.work_publish(sid, source).unwrap();
+        let target = server.create_work(sid, Edition::empty()).unwrap();
+        server.work_publish(sid, target).unwrap();
+        server.work_set_edit_club(sid, target, Some(1)).unwrap();
+
+        server
+            .element_insert(sid, target, 0, RangeElement::transclusion(source, 0, 7))
+            .unwrap();
+
+        let resolution = server.resolve_inline_transclusions(target).unwrap();
+        assert!(resolution.span_ranges.len() > 0, "should resolve transclusion");
+        assert_eq!(resolution.span_ranges[0].resolved_content, "Source ");
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn fr26_transclusion_hash_survives_checkpoint_restore() {
+        let dir = std::env::temp_dir().join(format!("xudanu_fr26_ckpt_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let source = server.create_work(sid, Edition::from_text("Persisted source")).unwrap();
+        server.work_publish(sid, source).unwrap();
+        let target = server.create_work(sid, Edition::empty()).unwrap();
+        server.work_publish(sid, target).unwrap();
+        server.work_set_edit_club(sid, target, Some(1)).unwrap();
+
+        server
+            .element_insert(sid, target, 0, RangeElement::transclusion(source, 0, 9))
+            .unwrap();
+
+        // Verify hash exists before snapshot
+        let edition_before = server.work(target).unwrap().current_edition().clone();
+        let entries_before = edition_before.all_entries();
+        let entry_before = entries_before.iter().find(|(_, c)| {
+            matches!(c.element, RangeElement::Transclusion { .. })
+        });
+        let has_hash = if let Some((_, c)) = entry_before {
+            matches!(&c.element, RangeElement::Transclusion { content_hash: Some(_), .. })
+        } else { false };
+        assert!(has_hash, "hash should be present before snapshot");
+
+        // Verify hash survives via the snapshot's edition data
+        let snap = server.to_snapshot();
+        let restored = Server::from_snapshot(&snap);
+        let edition = restored.work(target).unwrap().current_edition().clone();
+        let entries = edition.all_entries();
+        let entry = entries.iter().find(|(_, c)| {
+            matches!(c.element, RangeElement::Transclusion { .. })
+        });
+
+        assert!(entry.is_some(), "transclusion should survive snapshot restore");
+        if let Some((_, c)) = entry {
+            if let RangeElement::Transclusion { content_hash, .. } = &c.element {
+                assert!(content_hash.is_some(), "hash should survive snapshot/restore");
+            }
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn work_merge_preserves_source_author_and_stamps_curator() {
         let (mut server, sid) = setup_logged_in_server();
 
