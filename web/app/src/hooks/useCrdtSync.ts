@@ -84,6 +84,8 @@ export function useCrdtSync(
   const [canEdit, setCanEdit] = useState(false);
   const [recentChanges, setRecentChanges] = useState<ChangeHighlight[]>([]);
   const authInitiatedRef = useRef(false);
+  const attributionEpochRef = useRef(0);
+  const annotationEpochRef = useRef(0);
   useEffect(() => {
     if (!wsUrl) return;
 
@@ -224,6 +226,8 @@ export function useCrdtSync(
     setAttributionLogStatus(null);
     setAwareness([]);
     setRecentChanges([]);
+    attributionEpochRef.current++;
+    annotationEpochRef.current++;
   }, [workBeId]);
 
   // Deferred identity sync: after text loads, sync identity into React state.
@@ -285,7 +289,9 @@ export function useCrdtSync(
     if (!connected || !workBeId || !authenticated) return;
     const client = clientRef.current;
     if (!client) return;
-    client.canEdit(workBeId).then(setCanEdit).catch(() => {});
+    let cancelled = false;
+    client.canEdit(workBeId).then((ok) => { if (!cancelled) setCanEdit(ok); }).catch(() => {});
+    return () => { cancelled = true; };
   }, [connected, workBeId, authenticated]);
 
   const setText = useCallback((newText: string) => {
@@ -330,13 +336,18 @@ export function useCrdtSync(
   const refreshAttribution = useCallback(() => {
     const client = clientRef.current;
     if (!client || !client.isConnected() || workBeId === null) return;
+    const epoch = ++attributionEpochRef.current;
     client
       .attributionQueryResolved(workBeId)
-      .then(setAttributionSpans)
+      .then((spans) => { if (epoch === attributionEpochRef.current) setAttributionSpans(spans); })
       .catch(() => {
-        client.attributionQuery(workBeId).then(setAttributionSpans).catch(() => {});
+        client.attributionQuery(workBeId)
+          .then((spans) => { if (epoch === attributionEpochRef.current) setAttributionSpans(spans); })
+          .catch(() => {});
       });
-    client.attributionLogStatus().then(setAttributionLogStatus).catch(() => {});
+    client.attributionLogStatus()
+      .then((status) => { if (epoch === attributionEpochRef.current) setAttributionLogStatus(status); })
+      .catch(() => {});
   }, [workBeId]);
 
   const refreshAwareness = useCallback(() => {
@@ -547,7 +558,10 @@ export function useCrdtSync(
   const refreshAnnotations = useCallback(() => {
     const client = clientRef.current;
     if (!client || workBeId === null) return;
-    client.annotationList(workBeId).then(setAnnotations).catch(() => {});
+    const epoch = ++annotationEpochRef.current;
+    client.annotationList(workBeId)
+      .then((anns) => { if (epoch === annotationEpochRef.current) setAnnotations(anns); })
+      .catch(() => {});
   }, [workBeId]);
 
   const createAnnotation = useCallback(async (kind: string, payload: string, charStart: number, charEnd: number, isPrivate = false) => {

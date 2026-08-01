@@ -1928,34 +1928,50 @@ export class CrdtSyncClient {
     }
   }
 
+  private switching = false;
+  private pendingSwitchId: number | null = null;
+
   /**
-   * Switch to a different work WITHOUT reconnecting the WebSocket.
-   * Closes the old work's CRDT channel and opens the new one on the same
-   * persistent connection — eliminates the reconnect gap that caused the
-   * two-click bug and transclusion race conditions.
-   */
+    * Switch to a different work WITHOUT reconnecting the WebSocket.
+    * Guards against overlapping calls — if a new switch is requested
+    * while one is in progress, the latest request is queued.
+    */
   async switchWork(newWorkId: number): Promise<void> {
     if (this.workBeId === newWorkId && this.crdtReady) return;
     if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
-    // Close the old work's CRDT channel (keeps the WebSocket alive)
-    // Fire-and-forget — don't block the new work from opening
-    if (this.crdtReady && this.workBeId) {
-      this.sendRequest("crdt_sync_close", { work_id: this.workBeId }).catch(() => {});
-      this.crdtReady = false;
+    if (this.switching) {
+      this.pendingSwitchId = newWorkId;
+      return;
     }
+    this.switching = true;
 
-    // Clear local state for the new work
-    this.text = "";
-    this.skipCrdt = false;
-    this.crdtOpenedThisConnection = false;
-    this.awarenessMap.clear();
-    this.recentChanges = [];
-    this.textListeners.forEach((cb) => cb(""));
+    try {
+      // Close the old work's CRDT channel (keeps the WebSocket alive)
+      if (this.crdtReady && this.workBeId) {
+        this.sendRequest("crdt_sync_close", { work_id: this.workBeId }).catch(() => {});
+        this.crdtReady = false;
+      }
 
-    // Open the new work's CRDT channel on the SAME connection
-    this.workBeId = newWorkId;
-    await this.tryOpenWork();
+      // Clear local state for the new work
+      this.text = "";
+      this.skipCrdt = false;
+      this.crdtOpenedThisConnection = false;
+      this.awarenessMap.clear();
+      this.recentChanges = [];
+      this.textListeners.forEach((cb) => cb(""));
+
+      // Open the new work's CRDT channel on the SAME connection
+      this.workBeId = newWorkId;
+      await this.tryOpenWork();
+    } finally {
+      this.switching = false;
+      if (this.pendingSwitchId !== null) {
+        const next = this.pendingSwitchId;
+        this.pendingSwitchId = null;
+        this.switchWork(next);
+      }
+    }
   }
 
   private onMessage(data: unknown): void {

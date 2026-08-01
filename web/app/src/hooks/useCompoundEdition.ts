@@ -10,19 +10,20 @@ export function useCompoundEdition(
   const [sourceTitles, setSourceTitles] = useState<Record<number, string>>({});
   const [resolvedText, setResolvedText] = useState<string>("");
   const lastInsertedRef = useRef<{ sourceWorkId: number; charStart: number; charEnd: number } | null>(null);
+  const epochRef = useRef(0);
 
   const loadCompound = useCallback(async () => {
     if (!client || workBeId === null) return;
+    const epoch = ++epochRef.current;
     try {
       const inline = await client.resolveInlineTransclusions(workBeId);
+      if (epoch !== epochRef.current) return;
       if (inline.spanRanges.length > 0) {
         setHasCompound(true);
         setSpanRanges(inline.spanRanges);
         setSourceTitles(inline.sourceTitles);
         setResolvedText(inline.text);
-      } else if (!hasCompound) {
-        // Only clear if we didn't have compound before — avoids race condition
-        // where a transient empty response wipes valid compound state
+      } else {
         setHasCompound(false);
         setSpanRanges([]);
         setSourceTitles({});
@@ -31,7 +32,7 @@ export function useCompoundEdition(
     } catch {
       // Expected during identity transitions or connection changes
     }
-  }, [client, workBeId, hasCompound]);
+  }, [client, workBeId]);
 
   useEffect(() => {
     loadCompound();
@@ -40,9 +41,11 @@ export function useCompoundEdition(
   useEffect(() => {
     if (hasCompound && client && workBeId !== null) {
       const refresh = () => {
+        const epoch = ++epochRef.current;
         client
           .resolveInlineTransclusions(workBeId!)
           .then((result) => {
+            if (epoch !== epochRef.current) return;
             if (result.spanRanges.length > 0) {
               setSpanRanges(result.spanRanges);
               setSourceTitles(result.sourceTitles);
@@ -60,6 +63,7 @@ export function useCompoundEdition(
       return () => {
         unsubSourceChange();
         clearInterval(pollRef);
+        epochRef.current++;
       };
     }
   }, [hasCompound, client, workBeId]);
@@ -101,14 +105,20 @@ export function useCompoundEdition(
       const removed = await client.elementRemoveTransclusion(workBeId, sourceWorkId, charStart, charEnd);
       if (removed) {
         lastInsertedRef.current = null;
-        await loadCompound();
+        const epoch = ++epochRef.current;
+        const inline = await client.resolveInlineTransclusions(workBeId);
+        if (epoch !== epochRef.current) return true;
+        setHasCompound(inline.spanRanges.length > 0);
+        setSpanRanges(inline.spanRanges);
+        setSourceTitles(inline.sourceTitles);
+        setResolvedText(inline.text);
       }
       return removed;
     } catch (e) {
       console.error("useCompoundEdition: undo insert failed", e);
       return false;
     }
-  }, [client, workBeId, loadCompound]);
+  }, [client, workBeId]);
 
   const removeTransclusion = useCallback(
     async (sourceWorkId: number, charStart: number, charEnd: number): Promise<boolean> => {
@@ -116,7 +126,9 @@ export function useCompoundEdition(
       try {
         const removed = await client.elementRemoveTransclusion(workBeId, sourceWorkId, charStart, charEnd);
         if (removed) {
+          const epoch = ++epochRef.current;
           const inline = await client.resolveInlineTransclusions(workBeId);
+          if (epoch !== epochRef.current) return true;
           setHasCompound(inline.spanRanges.length > 0);
           setSpanRanges(inline.spanRanges);
           setSourceTitles(inline.sourceTitles);
@@ -133,6 +145,7 @@ export function useCompoundEdition(
 
   useEffect(() => {
     if (!client || workBeId === null) {
+      epochRef.current++;
       setHasCompound(false);
       setSpanRanges([]);
       setSourceTitles({});
