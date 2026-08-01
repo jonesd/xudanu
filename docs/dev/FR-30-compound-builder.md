@@ -35,7 +35,10 @@ Compound Builder is where that utility is demonstrated.
 8. **Single placement mode** — no inline vs block choice
 9. **No source preview thumbnails** — sources are text-only
 10. **No mobile/responsive layout**
-11. **Dark theme only** — doesn't respect user's theme preference
+11. **Dark theme only** — doesn't respect user's theme preference. Must support
+    both light AND dark themes, consistent with the rest of the app (6 palettes
+    in theme.css: 3 dark, 3 light). The compound document editing surface stays
+    white/light for readability regardless of theme.
 12. **10M char source limit** — large sources not paginated
 
 ## Proposed Features
@@ -49,12 +52,21 @@ Compound Builder is where that utility is demonstrated.
 - Empty state with example workflow illustration
 - "Try a demo" button that loads sample sources
 
-#### 1.2 Inline Text Editing
-- The compound document area is editable (contentEditable)
-- Users can type original text between transclusion blocks
-- Transclusion blocks remain non-editable (contenteditable=false)
-- Keyboard: Enter creates new paragraph, Backspace at start of transclusion
-  offers to remove it
+#### 1.2 Content Model: Transclusion-First with Optional Glue
+- Default mode: all content is transcluded from sources (Nelson's pure model)
+- Optional: users can type original "glue" text — headings, transitions, commentary
+- Original text is visually distinct (lighter weight, different marker than transclusion blocks)
+- Pure-transclusion documents are valid and encouraged
+- Images (Blob elements) are treated as immutable references — stronger than
+  transclusion because the content hash guarantees they can never change.
+  Multiple documents share the same blob bytes (stored once in blob store).
+
+Content types in the compound builder:
+| Type | Source | Mutable | Visual marker |
+|------|--------|---------|---------------|
+| Transclusion | Live reference to another document's passage | Source can change (⚠ badge) | Colored left border + arrow |
+| Original text | Typed by user in this document | Fully editable | No marker (plain text) |
+| Image/Blob | Immutable hash-addressed binary | Never changes | Thumbnail with hash badge |
 
 #### 1.3 Drag-and-Drop Reordering
 - Each section in the structure panel is draggable
@@ -165,9 +177,12 @@ Compound Builder is where that utility is demonstrated.
 - No separate "compound" data structure — it's inline in the edition
 
 ### Theme Support
-- Respect user's theme preference (dark/light/palette)
-- Use CSS variables from theme.css
-- Compound document area always has white/light background for readability
+- Support both light and dark themes — same system as the rest of the app
+- Use CSS variables from theme.css (`--bg`, `--bg-surface`, `--text`, `--text-muted`, `--border`)
+- All 6 palettes should work (3 dark, 3 light)
+- Compound document editing surface stays white/light for readability
+- Source pool and structure panels follow the active theme
+- No hardcoded hex colors — use `var(--xxx)` throughout
 
 ### Accessibility
 - Keyboard navigation between panels (Tab/Shift+Tab)
