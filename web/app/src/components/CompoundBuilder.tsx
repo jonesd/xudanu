@@ -111,8 +111,11 @@ export function CompoundBuilder({
     setSources((prev) => [...prev, { workId, title, text: "", loading: true }]);
     if (client) {
       try {
-        const result = await client.textRange(workId, 0, 10_000_000);
-        setSources((prev) => prev.map((s) => s.workId === workId ? { ...s, text: result.text, loading: false } : s));
+        const resp = await client.sendRequest("work_get_edition", { work_id: workId });
+        const val = (resp as Record<string, unknown>);
+        const inner = (val && "value" in val) ? val.value as Record<string, unknown> : val;
+        const text = (inner?.text as string) || (inner?.value as string) || "";
+        setSources((prev) => prev.map((s) => s.workId === workId ? { ...s, text, loading: false } : s));
       } catch {
         setSources((prev) => prev.map((s) => s.workId === workId ? { ...s, text: "(failed to load)", loading: false } : s));
       }
