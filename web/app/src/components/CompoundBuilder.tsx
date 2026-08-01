@@ -206,7 +206,7 @@ export function CompoundBuilder({
   }, [compoundSpanRanges, centerText, centerTitle, centerWorkId, compoundSourceTitles]);
 
   const structure = useMemo(() => {
-    const items: Array<{ type: "original" | "transclusion"; label: string; preview: string; changed?: boolean }> = [];
+    const items: Array<{ type: "original" | "transclusion"; label: string; preview: string; changed?: boolean; origin?: string }> = [];
     if (compoundSpanRanges.length === 0) {
       items.push({ type: "original", label: "Original", preview: centerText.slice(0, 60) });
       return items;
@@ -219,8 +219,9 @@ export function CompoundBuilder({
         items.push({ type: "original", label: "Original", preview: centerText.slice(pos, Math.min(pos + 60, span.flat_start)) });
       }
       const title = compoundSourceTitles[span.source_work_id] || `Work ${span.source_work_id.toString(16)}`;
+      const origin = sourceOriginMap.get(span.source_work_id);
       const preview = span.resolved_content?.slice(0, 60) || centerText.slice(span.flat_start, Math.min(span.flat_end, span.flat_start + 60));
-      items.push({ type: "transclusion", label: title, preview, changed: span.source_changed });
+      items.push({ type: "transclusion", label: title, preview, changed: span.source_changed, origin });
       pos = Math.max(pos, span.flat_end);
     }
     if (pos < centerText.length) {
@@ -230,6 +231,18 @@ export function CompoundBuilder({
   }, [compoundSpanRanges, compoundSourceTitles, centerText]);
 
   const transclusionSourceIds = useMemo(() => new Set(compoundSpanRanges.map((s) => s.source_work_id)), [compoundSpanRanges]);
+
+  const sourceOriginMap = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const w of works) {
+      if (w.is_source && (w.source_edition_info || w.source_author_id)) {
+        const parts: string[] = [];
+        if (w.source_edition_info) parts.push(w.source_edition_info);
+        m.set(w.work_id, parts.join(" · "));
+      }
+    }
+    return m;
+  }, [works]);
 
   const otherWorks = useMemo(() => {
     const q = sourceFilter.trim().toLowerCase();
@@ -436,6 +449,7 @@ export function CompoundBuilder({
                   {item.type === "transclusion" ? "\u21D7" : "\u00B7"} {item.label}
                   {item.changed && <span className="cb-changed-badge" title="Source edited">&#x26A0;</span>}
                 </div>
+                {item.origin && <div className="cb-structure-origin" title={item.origin}>{item.origin}</div>}
                 <div className="cb-structure-preview">{item.preview}</div>
               </div>
             ))}

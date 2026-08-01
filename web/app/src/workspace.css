@@ -2590,6 +2590,7 @@
 .cb-structure-num { font-size: 10px; font-weight: 600; font-family: 'Inter', sans-serif; color: var(--text-muted, #6e7681); margin-bottom: 2px; }
 .cb-structure-item.transclusion .cb-structure-num { color: #38a6ff; }
 .cb-structure-preview { font-size: 11px; color: var(--text-muted, #8b949e); line-height: 1.4; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.cb-structure-origin { font-size: 9px; color: #d29922; margin: 1px 0 2px; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cb-changed-badge { color: #d29922; margin-left: 4px; }
 .cb-structure-footer { padding: 8px 12px; border-top: 1px solid var(--border, #30363d); color: var(--text-muted, #6e7681); font-size: 10px; }
 .cb-transclusion-span { cursor: pointer; transition: filter 0.15s; }
