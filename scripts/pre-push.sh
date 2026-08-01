@@ -27,6 +27,17 @@ step() { echo ""; echo "=== $1 ==="; }
 ok()   { echo "OK"; PASSED=$((PASSED + 1)); }
 skip() { echo "SKIP: $1"; SKIPPED=$((SKIPPED + 1)); }
 
+# ── 0. Security scan — catch plaintext credentials before push ──────────────
+step "0/7. Security scan (plaintext credentials)"
+if rg -q 'localStorage\.setItem.*password|localStorage\.setItem.*secret|localStorage\.setItem.*credential|sessionStorage\.setItem.*password' \
+    "$WEB_APP/src/" --type ts -i 2>/dev/null; then
+    echo "FAIL: Plaintext credentials detected in localStorage/sessionStorage:"
+    rg -n 'localStorage\.setItem.*password|localStorage\.setItem.*secret|localStorage\.setItem.*credential' \
+        "$WEB_APP/src/" --type ts -i
+    exit 1
+fi
+ok
+
 # ── 1. cargo fmt --check (ci.yml: fmt job) ──────────────────────────────────
 step "1/6. cargo fmt --check"
 cd "$SRC_RUST"
@@ -64,8 +75,15 @@ else
     fi
 fi
 
-# ── 5. TypeScript type check (release.yml: tsc -b) ───────────────────────────
-step "5/6. TypeScript type check (tsc -b)"
+# ── 5. ESLint with security rules (catches credential leaks, eval, etc.) ─────
+step "5/8. ESLint (security + recommended)"
+cd "$WEB_APP"
+if npx eslint . 2>&1; then ok; else
+    echo ""; echo "FAIL: ESLint errors (may include security issues)."; exit 1
+fi
+
+# ── 6. TypeScript type check (release.yml: tsc -b) ───────────────────────────
+step "6/8. TypeScript type check (tsc -b)"
 cd "$WEB_APP"
 if npx tsc -b 2>&1; then ok; else
     echo ""; echo "FAIL: TypeScript errors. These WILL fail the release build."; exit 1
@@ -73,10 +91,10 @@ fi
 
 # ── 6. Frontend build (release.yml: vite build) ─────────────────────────────
 if [ "$QUICK" = true ]; then
-    step "6/6. Frontend build (vite build)"
+    step "7/8. Frontend build (vite build)"
     skip "(--quick mode)"
 else
-    step "6/6. Frontend build (vite build)"
+    step "7/8. Frontend build (vite build)"
     if npx vite build 2>&1; then ok; else
         echo ""; echo "FAIL: Vite build failed. This WILL fail the release build."; exit 1
     fi

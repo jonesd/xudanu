@@ -371,7 +371,8 @@ export function useCrdtSync(
       const body = await resp.json().catch(() => ({}));
       throw new Error(body.error || "login failed");
     }
-    try { localStorage.setItem("xudanu_login", JSON.stringify({ clubName, password })); } catch {}
+    try { localStorage.setItem("xudanu_login_club", clubName); } catch {}
+    void password;
     const client = clientRef.current;
     if (client && client.isConnected()) {
       await client.loginByName(clubName, password);

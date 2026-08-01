@@ -1672,26 +1672,8 @@ export class CrdtSyncClient {
       }
     } catch {}
 
-    // Ticket failed — try credential re-login
-    try {
-      const raw = localStorage.getItem("xudanu_login");
-      if (!raw) return false;
-      const { clubName, password } = JSON.parse(raw);
-      if (!clubName || !password) return false;
-      await this.loginByName(clubName, password);
-      console.log("[auth] re-login succeeded for", clubName);
-      this.sessionTicketIssue().then((newTicket) => {
-        if (newTicket) {
-          try {
-            const b = btoa(String.fromCharCode(...newTicket));
-            localStorage.setItem("xudanu_session_ticket", b);
-          } catch {}
-        }
-      }).catch(() => {});
-      return true;
-    } catch {
-      return false;
-    }
+    // Ticket failed — no stored credentials (security: never store passwords)
+    return false;
   }
 
   getIdentity(): WhoAmIEntry | null {
