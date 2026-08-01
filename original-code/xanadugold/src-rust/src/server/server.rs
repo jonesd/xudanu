@@ -7523,9 +7523,13 @@ impl Server {
             if let Some(ref dir) = self.data_dir {
                 let sidecar = dir.join("ticket_nonces.json");
                 if let Ok(data) = std::fs::read_to_string(&sidecar) {
-                    if let Ok(parsed) = serde_json::from_str::<std::collections::HashMap<String, u64>>(&data) {
+                    if let Ok(parsed) =
+                        serde_json::from_str::<std::collections::HashMap<String, u64>>(&data)
+                    {
                         for (hex, exp) in parsed {
-                            if exp <= now { continue; }
+                            if exp <= now {
+                                continue;
+                            }
                             if let Ok(bytes) = hex::decode(&hex) {
                                 if bytes.len() == 16 {
                                     let mut arr = [0u8; 16];
@@ -8489,17 +8493,16 @@ impl Server {
     /// This avoids triggering a full checkpoint (which serializes all works,
     /// links, and clubs) just to save a few ticket nonces.
     pub fn persist_ticket_nonces(&self) -> std::io::Result<()> {
-        let data_dir = self.data_dir.as_ref().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::NotFound, "data_dir not set")
-        })?;
+        let data_dir = self
+            .data_dir
+            .as_ref()
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "data_dir not set"))?;
         let now = crate::server::session_ticket::now_secs();
         let tickets: std::collections::HashMap<String, u64> = self
             .ticket_nonces
             .iter()
             .filter(|(_, &exp)| exp > now)
-            .map(|(nonce, &exp)| {
-                (nonce.iter().map(|b| format!("{:02x}", b)).collect(), exp)
-            })
+            .map(|(nonce, &exp)| (nonce.iter().map(|b| format!("{:02x}", b)).collect(), exp))
             .collect();
 
         let json = serde_json::to_string(&tickets)

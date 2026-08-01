@@ -1467,15 +1467,25 @@ fn dispatch_inner(
             let mut entries: Vec<super::protocol::WorkListEntry> = Vec::new();
             for (id, ws) in srv.works_iter() {
                 if ws.work().is_archived() {
-                    if *id == 0x586 { tracing::info!("[worklist] 0x586 is ARCHIVED"); }
+                    if *id == 0x586 {
+                        tracing::info!("[worklist] 0x586 is ARCHIVED");
+                    }
                     continue;
                 }
                 let read_club = ws.work().read_club();
                 if !srv.work_is_readable(session_id, &ws.work()) {
-                    if *id == 0x586 { tracing::info!("[worklist] 0x586 NOT readable — read_club={:?} edit_club={:?}", read_club, ws.work().edit_club()); }
+                    if *id == 0x586 {
+                        tracing::info!(
+                            "[worklist] 0x586 NOT readable — read_club={:?} edit_club={:?}",
+                            read_club,
+                            ws.work().edit_club()
+                        );
+                    }
                     continue;
                 }
-                if *id == 0x586 { tracing::info!("[worklist] 0x586 INCLUDED — read_club={:?}", read_club); }
+                if *id == 0x586 {
+                    tracing::info!("[worklist] 0x586 INCLUDED — read_club={:?}", read_club);
+                }
                 total += 1;
                 if total > offset_val as u64 && entries.len() < limit_val {
                     entries.push(super::protocol::WorkListEntry {
@@ -4085,15 +4095,25 @@ fn dispatch_inner_read(
             let mut entries: Vec<super::protocol::WorkListEntry> = Vec::new();
             for (id, ws) in srv.works_iter() {
                 if ws.work().is_archived() {
-                    if *id == 0x586 { tracing::info!("[worklist] 0x586 is ARCHIVED"); }
+                    if *id == 0x586 {
+                        tracing::info!("[worklist] 0x586 is ARCHIVED");
+                    }
                     continue;
                 }
                 let read_club = ws.work().read_club();
                 if !srv.work_is_readable(session_id, &ws.work()) {
-                    if *id == 0x586 { tracing::info!("[worklist] 0x586 NOT readable — read_club={:?} edit_club={:?}", read_club, ws.work().edit_club()); }
+                    if *id == 0x586 {
+                        tracing::info!(
+                            "[worklist] 0x586 NOT readable — read_club={:?} edit_club={:?}",
+                            read_club,
+                            ws.work().edit_club()
+                        );
+                    }
                     continue;
                 }
-                if *id == 0x586 { tracing::info!("[worklist] 0x586 INCLUDED — read_club={:?}", read_club); }
+                if *id == 0x586 {
+                    tracing::info!("[worklist] 0x586 INCLUDED — read_club={:?}", read_club);
+                }
                 total += 1;
                 if total > offset_val as u64 && entries.len() < limit_val {
                     entries.push(super::protocol::WorkListEntry {
