@@ -12,6 +12,7 @@ interface CompoundBuilderProps {
   onClose: () => void;
   onPlaceTransclusion: (sourceWorkId: number, sourceWorkTitle: string, start: number, end: number, text: string) => void;
   onReloadCompound: () => void;
+  onFetchSourceText?: (workId: number) => Promise<string | null>;
 }
 
 interface SourceDoc {
@@ -34,8 +35,13 @@ function renderCompoundText(
   text: string,
   spans: SpanRangePayload[],
   sourceTitles: Record<number, string>,
+  searchTerm?: string,
 ): string {
-  if (spans.length === 0) return escapeHtml(text);
+  if (spans.length === 0) {
+    let html = escapeHtml(text);
+    if (searchTerm) html = highlightSearch(html, searchTerm);
+    return html;
+  }
   const sorted = [...spans].sort((a, b) => a.flat_start - b.flat_start);
   let html = "";
   let pos = 0;
@@ -44,16 +50,32 @@ function renderCompoundText(
     const start = span.flat_start;
     const end = Math.min(span.flat_end, text.length);
     if (start < pos) continue;
-    if (start > pos) html += escapeHtml(text.slice(pos, start));
+    if (start > pos) {
+      let chunk = escapeHtml(text.slice(pos, start));
+      if (searchTerm) chunk = highlightSearch(chunk, searchTerm);
+      html += chunk;
+    }
     const title = sourceTitles[span.source_work_id] || `Work ${span.source_work_id.toString(16)}`;
     const color = BRIDGE_COLORS[i % BRIDGE_COLORS.length];
-    html += `<span style="background:${color}20;border-left:3px solid ${color};padding-left:4px;margin-left:-4px;" title="From: ${escapeHtml(title)} — click to highlight source" data-span-idx="${i}">`;
+    const changedBadge = span.source_changed ? ' <span style="color:#d29922;font-size:10px;">&#x26A0;</span>' : "";
+    html += `<span class="cb-transclusion-span" style="background:${color}20;border-left:3px solid ${color};padding-left:4px;margin-left:-4px;" title="From: ${escapeHtml(title)}${span.source_changed ? ' (source changed)' : ''} — click to highlight source" data-span-idx="${i}">`;
     html += escapeHtml(text.slice(start, end));
+    html += changedBadge;
     html += `</span>`;
     pos = Math.max(pos, end);
   }
-  if (pos < text.length) html += escapeHtml(text.slice(pos));
+  if (pos < text.length) {
+    let chunk = escapeHtml(text.slice(pos));
+    if (searchTerm) chunk = highlightSearch(chunk, searchTerm);
+    html += chunk;
+  }
   return html;
+}
+
+function highlightSearch(html: string, term: string): string {
+  if (!term || term.length < 2) return html;
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return html.replace(new RegExp(`(${escaped})`, "gi"), '<mark style="background:#fff3a0;color:inherit;">$1</mark>');
 }
 
 export function CompoundBuilder({
@@ -67,10 +89,14 @@ export function CompoundBuilder({
   onClose,
   onPlaceTransclusion,
   onReloadCompound,
+  onFetchSourceText,
 }: CompoundBuilderProps) {
+  void onFetchSourceText;
   const [sources, setSources] = useState<SourceDoc[]>([]);
   const [activeSourceId, setActiveSourceId] = useState<number | null>(null);
   const [selectedText, setSelectedText] = useState<{ start: number; end: number; text: string } | null>(null);
+  const [sourceSearch, setSourceSearch] = useState("");
+  const [placementMode, setPlacementMode] = useState<"inline" | "block" | "auto">("auto");
   const sourceTextRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -118,6 +144,12 @@ export function CompoundBuilder({
     setSelectedText({ start, end, text: sel.toString() });
   }, []);
 
+  const effectiveMode = useMemo(() => {
+    if (placementMode !== "auto") return placementMode;
+    if (!selectedText) return "inline";
+    return selectedText.text.includes("\n") || selectedText.text.length > 100 ? "block" : "inline";
+  }, [placementMode, selectedText]);
+
   const handleInclude = useCallback(() => {
     if (!selectedText || activeSourceId === null) return;
     const source = sources.find((s) => s.workId === activeSourceId);
@@ -129,14 +161,11 @@ export function CompoundBuilder({
 
   const handleTransclusionClick = useCallback((span: SpanRangePayload) => {
     const workId = span.source_work_id;
+    if (!sources.some((s) => s.workId === workId)) {
+      void addSource(workId);
+    }
     setActiveSourceId(workId);
-    setTimeout(() => {
-      const el = document.getElementById("compound-source-text");
-      if (el) {
-        el.scrollTo({ top: 0, behavior: "smooth" });
-      }
-    }, 300);
-  }, []);
+  }, [sources, addSource]);
 
   const handleEDLExport = useCallback(() => {
     const sorted = [...compoundSpanRanges].sort((a, b) => a.flat_start - b.flat_start);
@@ -144,10 +173,7 @@ export function CompoundBuilder({
     let pos = 0;
     for (const span of sorted) {
       if (span.flat_start > pos) {
-        entries.push({
-          type: "text",
-          content: centerText.slice(pos, span.flat_start),
-        });
+        entries.push({ type: "text", content: centerText.slice(pos, span.flat_start) });
       }
       const title = compoundSourceTitles[span.source_work_id] || `Work ${span.source_work_id.toString(16)}`;
       entries.push({
@@ -157,18 +183,14 @@ export function CompoundBuilder({
         char_start: span.char_start,
         char_end: span.char_end,
         resolved_text: span.resolved_content || centerText.slice(span.flat_start, span.flat_end),
+        source_changed: span.source_changed || false,
       });
       pos = Math.max(pos, span.flat_end);
     }
     if (pos < centerText.length) {
       entries.push({ type: "text", content: centerText.slice(pos) });
     }
-    const edl = {
-      version: 1,
-      title: centerTitle,
-      work_id: `0x${centerWorkId.toString(16)}`,
-      entries,
-    };
+    const edl = { version: 2, title: centerTitle, work_id: `0x${centerWorkId.toString(16)}`, entries };
     const blob = new Blob([JSON.stringify(edl, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -179,7 +201,7 @@ export function CompoundBuilder({
   }, [compoundSpanRanges, centerText, centerTitle, centerWorkId, compoundSourceTitles]);
 
   const structure = useMemo(() => {
-    const items: Array<{ type: "original" | "transclusion"; label: string; preview: string }> = [];
+    const items: Array<{ type: "original" | "transclusion"; label: string; preview: string; changed?: boolean }> = [];
     if (compoundSpanRanges.length === 0) {
       items.push({ type: "original", label: "Original", preview: centerText.slice(0, 60) });
       return items;
@@ -193,7 +215,7 @@ export function CompoundBuilder({
       }
       const title = compoundSourceTitles[span.source_work_id] || `Work ${span.source_work_id.toString(16)}`;
       const preview = span.resolved_content?.slice(0, 60) || centerText.slice(span.flat_start, Math.min(span.flat_end, span.flat_start + 60));
-      items.push({ type: "transclusion", label: `From: ${title}`, preview });
+      items.push({ type: "transclusion", label: title, preview, changed: span.source_changed });
       pos = Math.max(pos, span.flat_end);
     }
     if (pos < centerText.length) {
@@ -203,147 +225,175 @@ export function CompoundBuilder({
   }, [compoundSpanRanges, compoundSourceTitles, centerText]);
 
   const otherWorks = works.filter((w) => w.work_id !== centerWorkId && !sources.some((s) => s.workId === w.work_id));
-
   const activeSource = sources.find((s) => s.workId === activeSourceId);
+  const transclusionCount = compoundSpanRanges.length;
+  const isEmpty = transclusionCount === 0 && sources.length === 0;
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "#1a1a24", display: "flex", flexDirection: "column" }}>
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "0 16px", height: "48px", background: "#22222e", borderBottom: "1px solid #30363d", flexShrink: 0,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <span style={{ color: "#c9d1d9", fontSize: "14px", fontWeight: 600 }}>Compound Builder</span>
-          <span style={{ color: "#8b949e", fontSize: "12px" }}>{centerTitle}</span>
-        </div>
-        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          {selectedText && (
-            <button type="button" onClick={handleInclude}
-              style={{ background: "#238636", border: "1px solid #2ea043", color: "#fff",
-                borderRadius: "4px", padding: "4px 12px", cursor: "pointer", fontSize: "13px" }}>
-              Include passage
-            </button>
+    <div className="cb-overlay">
+      <div className="cb-header">
+        <div className="cb-header-left">
+          <span className="cb-title">Compound Builder</span>
+          <span className="cb-doc-title">{centerTitle}</span>
+          {transclusionCount > 0 && (
+            <span className="cb-count-badge">{transclusionCount} transclusion{transclusionCount !== 1 ? "s" : ""}</span>
           )}
-          <button type="button" onClick={handleEDLExport}
-            style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-muted)",
-              borderRadius: "4px", padding: "4px 12px", cursor: "pointer", fontSize: "12px" }}>
-            Export EDL
-          </button>
-          <button type="button" onClick={onClose}
-            style={{ background: "#238636", border: "1px solid #2ea043", color: "#fff",
-              borderRadius: "4px", padding: "4px 12px", cursor: "pointer", fontSize: "13px" }}>
-            Done
-          </button>
+        </div>
+        <div className="cb-header-actions">
+          {selectedText && (
+            <>
+              <div className="cb-mode-toggle">
+                <button type="button" className={effectiveMode === "inline" ? "active" : ""} onClick={() => setPlacementMode("inline")} title="Place within paragraph flow">Inline</button>
+                <button type="button" className={effectiveMode === "block" ? "active" : ""} onClick={() => setPlacementMode("block")} title="Place on its own line">Block</button>
+              </div>
+              <button type="button" className="cb-btn-primary" onClick={handleInclude}>
+                Include passage ({effectiveMode})
+              </button>
+            </>
+          )}
+          <button type="button" className="cb-btn-secondary" onClick={handleEDLExport} title="Export as Edit Decision List JSON">Export</button>
+          <button type="button" className="cb-btn-primary" onClick={onClose}>Done</button>
         </div>
       </div>
 
-      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+      <div className="cb-body">
         {/* Left: Source Pool */}
-        <div style={{ width: "300px", borderRight: "1px solid #30363d", display: "flex", flexDirection: "column", background: "#22222e" }}>
-          <div style={{ padding: "8px 12px", borderBottom: "1px solid #30363d" }}>
-            <span style={{ color: "#8b949e", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Sources</span>
-          </div>
-          <div style={{ flex: 1, overflowY: "auto", padding: "4px" }}>
-            {sources.map((src) => (
-              <div key={src.workId}
-                style={{
-                  padding: "6px 8px", marginBottom: "2px", borderRadius: "4px", cursor: "pointer",
-                  background: activeSourceId === src.workId ? "#30363d" : "transparent",
-                  border: activeSourceId === src.workId ? "1px solid #484f58" : "1px solid transparent",
-                }}
-                onClick={() => setActiveSourceId(src.workId)}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ color: "#c9d1d9", fontSize: "12px", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-                    {src.title}
-                  </span>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); removeSource(src.workId); }}
-                    style={{ background: "none", border: "none", color: "#6e7681", cursor: "pointer", fontSize: "14px", marginLeft: "4px", padding: "0" }}>
-                    {"\u00d7"}
-                  </button>
+        <div className="cb-source-panel">
+          <div className="cb-panel-header">Sources</div>
+          <div className="cb-source-list">
+            {sources.length === 0 && (
+              <div className="cb-source-empty">
+                No sources yet.
+                <br />Add one below to start building.
+              </div>
+            )}
+            {sources.map((src, i) => {
+              const color = BRIDGE_COLORS[i % BRIDGE_COLORS.length];
+              return (
+                <div
+                  key={src.workId}
+                  className={`cb-source-item ${activeSourceId === src.workId ? "active" : ""}`}
+                  onClick={() => setActiveSourceId(src.workId)}
+                >
+                  <span className="cb-source-dot" style={{ background: color }} />
+                  <span className="cb-source-name">{src.title}</span>
+                  {src.loading && <span className="cb-source-loading">loading...</span>}
+                  <button type="button" className="cb-source-remove" onClick={(e) => { e.stopPropagation(); removeSource(src.workId); }} title="Remove source">&times;</button>
                 </div>
-                {src.loading && <span style={{ color: "#6e7681", fontSize: "10px" }}>loading...</span>}
-              </div>
-            ))}
+              );
+            })}
             {otherWorks.length > 0 && (
-              <div style={{ marginTop: "8px" }}>
-                <select onChange={(e) => { if (e.target.value) addSource(Number(e.target.value)); e.target.value = ""; }}
-                  style={{ width: "100%", background: "#1c1c26", border: "1px solid #30363d", color: "#8b949e",
-                    borderRadius: "4px", padding: "4px 8px", fontSize: "11px" }}>
-                  <option value="">+ Add source...</option>
-                  {otherWorks.map((w) => (
-                    <option key={w.work_id} value={w.work_id}>{w.title || `Work ${w.work_id.toString(16)}`}</option>
-                  ))}
-                </select>
-              </div>
+              <select
+                className="cb-source-add"
+                onChange={(e) => { if (e.target.value) addSource(Number(e.target.value)); e.target.value = ""; }}
+                defaultValue=""
+              >
+                <option value="">+ Add source...</option>
+                {otherWorks.map((w) => (
+                  <option key={w.work_id} value={w.work_id}>{w.title || `Work 0x${w.work_id.toString(16)}`}</option>
+                ))}
+              </select>
             )}
           </div>
           {/* Active source text */}
           {activeSource && (
-            <div style={{ borderTop: "1px solid #30363d", flex: 1, overflowY: "auto", minHeight: "200px", background: "#1c1c26" }}>
-              <div style={{ padding: "6px 10px", borderBottom: "1px solid #30363d", position: "sticky", top: 0, background: "#1c1c26", zIndex: 1 }}>
-                <span style={{ color: "#c9d1d9", fontSize: "11px", fontWeight: 600 }}>{activeSource.title}</span>
-                <span style={{ color: "#6e7681", fontSize: "10px", marginLeft: "6px" }}>Select text to include</span>
+            <div className="cb-source-reader">
+              <div className="cb-source-reader-header">
+                <input
+                  type="text"
+                  className="cb-source-search"
+                  placeholder="Search in source..."
+                  value={sourceSearch}
+                  onChange={(e) => setSourceSearch(e.target.value)}
+                />
               </div>
-              <div id="compound-source-text" ref={sourceTextRef} onMouseUp={handleSourceTextSelection}
-                style={{ padding: "8px 10px", fontSize: "13px", fontFamily: "Source Serif 4, Georgia, serif",
-                  lineHeight: 1.6, color: "#c9d9d9", userSelect: "text" }}>
-                {activeSource.text}
-              </div>
+              <div
+                id="compound-source-text"
+                ref={sourceTextRef}
+                onMouseUp={handleSourceTextSelection}
+                className="cb-source-text"
+                dangerouslySetInnerHTML={{
+                  __html: sourceSearch
+                    ? highlightSearch(escapeHtml(activeSource.text), sourceSearch)
+                    : escapeHtml(activeSource.text),
+                }}
+              />
+              {!activeSource.loading && activeSource.text.length > 10000 && (
+                <div className="cb-source-truncated">
+                  Showing first 10K characters of {activeSource.text.length.toLocaleString()}
+                </div>
+              )}
             </div>
           )}
         </div>
 
         {/* Center: Compound Document */}
-        <div style={{ flex: 1, overflowY: "auto", background: "#fff" }}>
-          <div
-            style={{ maxWidth: "700px", margin: "0 auto", padding: "24px 32px" }}
-            onClick={(e) => {
-              const target = e.target as HTMLElement;
-              const idx = target?.getAttribute?.("data-span-idx");
-              if (idx !== null && idx !== undefined) {
-                const sorted = [...compoundSpanRanges].sort((a, b) => a.flat_start - b.flat_start);
-                const span = sorted[parseInt(idx, 10)];
-                if (span) handleTransclusionClick(span);
-              }
-            }}
-          >
-            <div style={{ fontSize: "12px", fontWeight: 700, color: "#333", marginBottom: "12px", fontFamily: "Inter, sans-serif" }}>
-              {centerTitle}
+        <div className="cb-compound-panel">
+          {isEmpty ? (
+            <div className="cb-welcome">
+              <h2>Build a document from transclusions</h2>
+              <ol>
+                <li><strong>Add a source</strong> — pick a document from the dropdown on the left</li>
+                <li><strong>Select text</strong> — highlight a passage in the source reader</li>
+                <li><strong>Include passage</strong> — click the green button to transclude it here</li>
+                <li><strong>Repeat</strong> — add more sources and build your compound document</li>
+              </ol>
+              <p className="cb-welcome-hint">
+                Transcluded content maintains its link to the source.
+                If the original is edited, you&apos;ll see a warning here.
+              </p>
             </div>
-            <div style={{ fontSize: "16px", fontFamily: "Source Serif 4, Georgia, serif", lineHeight: 1.75, color: "#1a1a24", whiteSpace: "pre-wrap" }}
-              dangerouslySetInnerHTML={{ __html: renderCompoundText(centerText, compoundSpanRanges, compoundSourceTitles) }} />
-          </div>
+          ) : (
+            <div
+              className="cb-compound-doc"
+              onClick={(e) => {
+                const target = e.target as HTMLElement;
+                const idx = target?.getAttribute?.("data-span-idx");
+                if (idx !== null && idx !== undefined) {
+                  const sorted = [...compoundSpanRanges].sort((a, b) => a.flat_start - b.flat_start);
+                  const span = sorted[parseInt(idx, 10)];
+                  if (span) handleTransclusionClick(span);
+                }
+              }}
+            >
+              <div className="cb-compound-title">{centerTitle}</div>
+              <div
+                className="cb-compound-text"
+                dangerouslySetInnerHTML={{ __html: renderCompoundText(centerText, compoundSpanRanges, compoundSourceTitles) }}
+              />
+            </div>
+          )}
         </div>
 
         {/* Right: Structure Outline */}
-        <div style={{ width: "260px", borderLeft: "1px solid #30363d", display: "flex", flexDirection: "column", background: "#22222e" }}>
-          <div style={{ padding: "8px 12px", borderBottom: "1px solid #30363d" }}>
-            <span style={{ color: "#8b949e", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Structure</span>
-          </div>
-          <div style={{ flex: 1, overflowY: "auto", padding: "4px" }}>
+        <div className="cb-structure-panel">
+          <div className="cb-panel-header">Structure</div>
+          <div className="cb-structure-list">
             {structure.map((item, i) => (
-              <div key={i} style={{
-                padding: "6px 8px", marginBottom: "3px", borderRadius: "4px",
-                background: item.type === "transclusion" ? "rgba(56,166,255,0.06)" : "transparent",
-                borderLeft: item.type === "transclusion" ? "2px solid #38a6ff" : "2px solid transparent",
-              }}>
-                <div style={{ fontSize: "10px", fontWeight: 600, fontFamily: "Inter, sans-serif",
-                  color: item.type === "transclusion" ? "#38a6ff" : "#6e7681", marginBottom: "2px" }}>
-                  {i + 1}. {item.type === "transclusion" ? item.label : "Original"}
+              <div
+                key={i}
+                className={`cb-structure-item ${item.type}`}
+                onClick={() => {
+                  const el = document.querySelector(".cb-compound-text");
+                  if (el) {
+                    const spans = el.querySelectorAll("[data-span-idx]");
+                    if (item.type === "transclusion" && spans[i]) {
+                      (spans[i] as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+                    }
+                  }
+                }}
+              >
+                <div className="cb-structure-num">
+                  {item.type === "transclusion" ? "\u21D7" : "\u00B7"} {item.label}
+                  {item.changed && <span className="cb-changed-badge" title="Source edited">&#x26A0;</span>}
                 </div>
-                <div style={{ fontSize: "11px", color: "#8b949e", lineHeight: 1.4,
-                  overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box",
-                  WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-                  {item.preview}
-                </div>
+                <div className="cb-structure-preview">{item.preview}</div>
               </div>
             ))}
           </div>
-          <div style={{ padding: "8px 12px", borderTop: "1px solid #30363d" }}>
-            <span style={{ color: "#6e7681", fontSize: "10px" }}>
-              {structure.filter((s) => s.type === "transclusion").length} transclusion(s),
-              {" "}{structure.filter((s) => s.type === "original").length} original section(s)
-            </span>
+          <div className="cb-structure-footer">
+            {structure.filter((s) => s.type === "transclusion").length} transclusion(s),
+            {" "}{structure.filter((s) => s.type === "original").length} original section(s)
           </div>
         </div>
       </div>
