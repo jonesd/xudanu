@@ -97,6 +97,7 @@ export function CompoundBuilder({
   const [selectedText, setSelectedText] = useState<{ start: number; end: number; text: string } | null>(null);
   const [sourceSearch, setSourceSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
+  const [sourceHighlight, setSourceHighlight] = useState(0);
   const [placementMode, setPlacementMode] = useState<"inline" | "block" | "auto">("auto");
   const sourceTextRef = useRef<HTMLDivElement>(null);
 
@@ -312,14 +313,21 @@ export function CompoundBuilder({
               className="cb-source-search"
               placeholder="Search to add source..."
               value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
+              onChange={(e) => { setSourceFilter(e.target.value); setSourceHighlight(0); }}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown") { e.preventDefault(); setSourceHighlight((h) => Math.min(h + 1, Math.min(otherWorks.length, 20) - 1)); }
+                else if (e.key === "ArrowUp") { e.preventDefault(); setSourceHighlight((h) => Math.max(h - 1, 0)); }
+                else if (e.key === "Enter") { e.preventDefault(); const w = otherWorks[sourceHighlight]; if (w) { void addSource(w.work_id); setSourceFilter(""); } }
+                else if (e.key === "Escape") { setSourceFilter(""); }
+              }}
             />
             {sourceFilter && otherWorks.length > 0 && (
               <div className="cb-add-source-results">
-                {otherWorks.slice(0, 20).map((w) => (
+                {otherWorks.slice(0, 20).map((w, idx) => (
                   <div
                     key={w.work_id}
-                    className="cb-add-source-item"
+                    className={`cb-add-source-item ${idx === sourceHighlight ? "highlighted" : ""}`}
+                    onMouseEnter={() => setSourceHighlight(idx)}
                     onClick={() => { void addSource(w.work_id); setSourceFilter(""); }}
                   >
                     <span className="cb-source-name">
