@@ -20,7 +20,9 @@ export function useCompoundEdition(
         setSpanRanges(inline.spanRanges);
         setSourceTitles(inline.sourceTitles);
         setResolvedText(inline.text);
-      } else {
+      } else if (!hasCompound) {
+        // Only clear if we didn't have compound before — avoids race condition
+        // where a transient empty response wipes valid compound state
         setHasCompound(false);
         setSpanRanges([]);
         setSourceTitles({});
@@ -29,7 +31,7 @@ export function useCompoundEdition(
     } catch {
       // Expected during identity transitions or connection changes
     }
-  }, [client, workBeId]);
+  }, [client, workBeId, hasCompound]);
 
   useEffect(() => {
     loadCompound();
@@ -41,9 +43,11 @@ export function useCompoundEdition(
         client
           .resolveInlineTransclusions(workBeId!)
           .then((result) => {
-            setSpanRanges(result.spanRanges);
-            setSourceTitles(result.sourceTitles);
-            setResolvedText(result.text);
+            if (result.spanRanges.length > 0) {
+              setSpanRanges(result.spanRanges);
+              setSourceTitles(result.sourceTitles);
+              setResolvedText(result.text);
+            }
           })
           .catch(() => {});
       };
@@ -112,7 +116,11 @@ export function useCompoundEdition(
       try {
         const removed = await client.elementRemoveTransclusion(workBeId, sourceWorkId, charStart, charEnd);
         if (removed) {
-          await loadCompound();
+          const inline = await client.resolveInlineTransclusions(workBeId);
+          setHasCompound(inline.spanRanges.length > 0);
+          setSpanRanges(inline.spanRanges);
+          setSourceTitles(inline.sourceTitles);
+          setResolvedText(inline.text);
         }
         return removed;
       } catch (e) {
@@ -120,7 +128,7 @@ export function useCompoundEdition(
         return false;
       }
     },
-    [client, workBeId, loadCompound],
+    [client, workBeId],
   );
 
   useEffect(() => {

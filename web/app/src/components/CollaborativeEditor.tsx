@@ -50,6 +50,7 @@ interface CollaborativeEditorProps {
   pendingTransclusion?: PendingTransclusion | null;
   onPlaceTransclusion?: (position: number, padding?: string) => void;
   selectionRange?: { start: number; end: number } | null;
+  highlightRange?: { start: number; end: number } | null;
   onNavigateToWork?: (workId: number) => void;
   onCrossServerResolve?: (tumbler: string, contentHash: string) => Promise<{ text: string; hashVerified: boolean; cached: boolean } | null>;
   onTraceProvenance?: (workId: number, charStart: number, charEnd: number) => Promise<AgainHop[]>;
@@ -349,8 +350,8 @@ function drawOverlay(
         range.setStart(textNode as Text, drawStart);
         range.setEnd(textNode as Text, drawEnd);
       } else {
-        const sn = findTextNodeAt(editor, drawStart);
-        const en = findTextNodeAt(editor, drawEnd - 1);
+        const sn = findTextNodeAt(editor, drawStart, false);
+        const en = findTextNodeAt(editor, drawEnd - 1, false);
         if (!sn || !en) continue;
         range.setStart(sn.node, sn.offset);
         range.setEnd(en.node, en.offset + 1);
@@ -373,15 +374,15 @@ function drawOverlay(
       ctx.restore();
     }
 
+    // CSS border-left on .inline-transclusion handles the visual bar.
+    // Canvas bar removed to avoid overlapping text.
+
     if (rangeRects.length > 0) {
       const firstRect = rangeRects[0];
       const firstTop = firstRect.top - rect.top;
       const lastRect = rangeRects[rangeRects.length - 1];
       const barHeight = (lastRect.bottom - rect.top) - firstTop;
-
-      const barOffset = (csIndex % 3) * 4;
-      ctx.fillStyle = srcColor.label;
-      ctx.fillRect(0 + barOffset, firstTop, 3, barHeight);
+      const barOffset = (csIndex % 3) * 3;
 
       const excerptText = cs.resolved_content?.slice(0, 120) || "";
       hitZones.push({
@@ -792,21 +793,23 @@ function drawOverlay(
   return hitZones;
 }
 
-function findTextNodeAt(root: Node, targetOffset: number): { node: Text; offset: number } | null {
+function findTextNodeAt(root: Node, targetOffset: number, skipNonEditable: boolean = true): { node: Text; offset: number } | null {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
-      let n: Node | null = node;
-      while (n && n.nodeType !== Node.DOCUMENT_NODE) {
-        if (n.nodeType === Node.ELEMENT_NODE) {
-          const el = n as Element;
-          if (el.getAttribute && el.getAttribute("contenteditable") === "false") {
-            const style = el.getAttribute("style");
-            if (!style || !style.includes("display:none")) {
-              return NodeFilter.FILTER_REJECT;
+      if (skipNonEditable) {
+        let n: Node | null = node;
+        while (n && n.nodeType !== Node.DOCUMENT_NODE) {
+          if (n.nodeType === Node.ELEMENT_NODE) {
+            const el = n as Element;
+            if (el.getAttribute && el.getAttribute("contenteditable") === "false") {
+              const style = el.getAttribute("style");
+              if (!style || !style.includes("display:none")) {
+                return NodeFilter.FILTER_REJECT;
+              }
             }
           }
+          n = n.parentNode;
         }
-        n = n.parentNode;
       }
       return NodeFilter.FILTER_ACCEPT;
     },
@@ -837,6 +840,7 @@ export function CollaborativeEditor({
   transclusionMarkers = [],
   pendingTransclusion,
   onPlaceTransclusion,
+  highlightRange,
   onNavigateToWork,
   onCrossServerResolve,
   onTraceProvenance,
@@ -1126,14 +1130,73 @@ export function CollaborativeEditor({
 
     const ro = new ResizeObserver(redraw);
     ro.observe(container);
-    container.addEventListener("scroll", redraw, { passive: true });
+
+    // Scroll redraw: sync to animation frame for smooth overlay tracking
+    let scrollPending = false;
+    const scrollRedraw = () => {
+      if (document.hidden || overlayPausedRef.current) return;
+      if (scrollPending) return;
+      scrollPending = true;
+      rafId = requestAnimationFrame(() => {
+        scrollPending = false;
+        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight, showLinkDescriptions, linkDescMap);
+      });
+    };
+    container.addEventListener("scroll", scrollRedraw, { passive: true });
 
     return () => {
       ro.disconnect();
-      container.removeEventListener("scroll", redraw);
+      container.removeEventListener("scroll", scrollRedraw);
       cancelAnimationFrame(rafId);
     };
   }, [attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight, showLinkDescriptions, linkDescMap]);
+
+  // Highlight a range when user clicks a transclusion in the Connections panel
+  useEffect(() => {
+    const el = editorRef.current;
+    const canvas = overlayRef.current;
+    if (!el || !canvas) return;
+    const container = el.parentElement;
+    if (!container) return;
+
+    const draw = () => {
+      if (!highlightRange) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const rect = container.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      const drawStart = Math.max(highlightRange.start, 0);
+      const drawEnd = Math.min(highlightRange.end, el.textContent?.length ?? 0);
+      if (drawStart >= drawEnd) { ctx.restore(); return; }
+      try {
+        const sn = findTextNodeAt(el, drawStart, false);
+        const en = findTextNodeAt(el, drawEnd - 1, false);
+        if (!sn || !en) { ctx.restore(); return; }
+        const range = document.createRange();
+        range.setStart(sn.node, sn.offset);
+        range.setEnd(en.node, en.offset + 1);
+        const rangeRects = range.getClientRects();
+        for (const r of rangeRects) {
+          const x = r.left - rect.left;
+          const y = r.top - rect.top;
+          ctx.fillStyle = "rgba(255, 224, 0, 0.2)";
+          ctx.fillRect(x, y, r.width, r.height);
+          ctx.strokeStyle = "rgba(255, 180, 0, 0.8)";
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(x + 0.5, y + 0.5, r.width - 1, r.height - 1);
+        }
+      } catch { /* range error — ignore */ }
+      ctx.restore();
+    };
+
+    if (highlightRange) {
+      requestAnimationFrame(draw);
+      const interval = setInterval(draw, 100);
+      return () => clearInterval(interval);
+    }
+  }, [highlightRange]);
 
   useEffect(() => {
     if (recentChanges.length === 0) return;
@@ -1156,7 +1219,7 @@ export function CollaborativeEditor({
     const buildZones = () => {
       const rect = container.getBoundingClientRect();
       if (rect.width === 0) return;
-      const zones: Array<{ x: number; y: number; width: number; height: number; text: string }> = [];
+      const zones: Array<{ x: number; y: number; width: number; height: number; text: string; id: number }> = [];
       const textLen = el.textContent?.length ?? 0;
 
       for (const ann of annotations) {
@@ -1631,8 +1694,10 @@ export function CollaborativeEditor({
 
     const target = e.target as HTMLElement;
     const transclusionSpan = target.closest(".inline-transclusion");
+    console.log("[click] target:", target.tagName, target.className, "transclusionSpan:", !!transclusionSpan);
     if (transclusionSpan && onNavigateToWork) {
       const sourceId = parseInt((transclusionSpan as HTMLElement).dataset.sourceWorkId || "0", 10);
+      console.log("[click] sourceId:", sourceId, "dataset:", (transclusionSpan as HTMLElement).dataset);
       if (sourceId) {
         onNavigateToWork(sourceId);
         return;

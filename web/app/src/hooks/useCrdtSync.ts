@@ -83,13 +83,14 @@ export function useCrdtSync(
   const epochRef = useRef(0);
   const [canEdit, setCanEdit] = useState(false);
   const [recentChanges, setRecentChanges] = useState<ChangeHighlight[]>([]);
-
+  const authInitiatedRef = useRef(false);
   useEffect(() => {
     if (!wsUrl) return;
 
     setTextState("");
     setConnected(false);
     setAuthenticated(false);
+    authInitiatedRef.current = false;
     const newEpoch = epochRef.current + 1;
     epochRef.current = newEpoch;
     setConnectionEpoch(newEpoch);
@@ -132,6 +133,7 @@ export function useCrdtSync(
     });
     const unsubIdentity = client.onIdentityChange((id) => {
       setIdentity(id);
+      if (id) setAuthenticated(true);
       try { localStorage.setItem("xudanu_identity_cache", JSON.stringify(id)); } catch {}
       setIsAdmin(client!.getIsAdmin());
     });
@@ -139,80 +141,9 @@ export function useCrdtSync(
 
     const unsubConn2 = client.onConnectionChange((isConnected) => {
       if (isConnected) {
-        client!.sendRequest("server_stats").then((resp) => {
-          const r = resp as Record<string, unknown>;
-          if (r && "value" in r) {
-            const val = r.value as Record<string, unknown>;
-            setLlmEnabled(val?.llm_enabled === true);
-            setLlmUsage((val?.llm_usage as LlmUsageSummary) || null);
-            if (typeof val?.public_club_id === "number") {
-              setPublicClubId(val.public_club_id);
-            }
-          }
-        }).catch(() => {});
-
-        const storedTicket = (() => {
-          try {
-            const b64 = localStorage.getItem("xudanu_session_ticket");
-            if (!b64) return null;
-            const binary = atob(b64);
-            // Ticket format changed (added key_id field): old=104 bytes, new=112 bytes
-            // Clear stale tickets that can't be decoded by the new server
-            if (binary.length !== 112) {
-              console.warn("[session] stale ticket format detected (" + binary.length + " bytes, expected 112) — clearing");
-              localStorage.removeItem("xudanu_session_ticket");
-              return null;
-            }
-            const arr = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
-            return arr;
-          } catch { return null; }
-        })();
-
-        const tryAuth = async () => {
-          const t0 = performance.now();
-          if (storedTicket) {
-            const t1 = performance.now();
-            const ok = await client!.sessionTicketRedeem(storedTicket);
-            console.log(`[perf] ticket redeem: ${(performance.now() - t1).toFixed(0)}ms ok=${ok}`);
-            if (ok) {
-              // Ticket redeemed — we're authenticated. Set immediately,
-              // don't wait for checkWhoAmI.
-              setAuthenticated(true);
-            } else {
-              console.warn("[session] ticket redeem failed — ticket may be stale");
-            }
-          }
-          const t2 = performance.now();
-          const id = await client!.checkWhoAmI();
-          console.log(`[perf] checkWhoAmI: ${(performance.now() - t2).toFixed(0)}ms identity=${!!id}`);
-          if (id) {
-            setAuthenticated(true);
-            setIdentity(id);
-            try { localStorage.setItem("xudanu_identity_cache", JSON.stringify(id)); } catch {}
-            // Issue new ticket immediately (synchronous — don't fire-and-forget)
-            const t3 = performance.now();
-            try {
-              const newTicket = await client!.sessionTicketIssue();
-              console.log(`[perf] ticket issue: ${(performance.now() - t3).toFixed(0)}ms got=${!!newTicket}`);
-              if (newTicket) {
-                try {
-                  const b64 = btoa(String.fromCharCode(...newTicket));
-                  localStorage.setItem("xudanu_session_ticket", b64);
-                } catch {}
-              } else {
-                console.warn("[session] sessionTicketIssue returned null — no new ticket stored");
-              }
-            } catch (e) {
-              console.error("[session] sessionTicketIssue failed:", e);
-            }
-          } else {
-            setAuthenticated(false);
-          }
-          setIsAdmin(client!.getIsAdmin());
-          console.log(`[perf] total auth: ${(performance.now() - t0).toFixed(0)}ms`);
-        };
-        tryAuth().catch(() => setAuthenticated(false));
+        // server_stats and ticket auth are deferred to after text loads
+        // (see effects below) to avoid competing with the critical path:
+        // session_connect → checkWhoAmI → login → crdt_sync_open
       }
     });
 
@@ -294,6 +225,48 @@ export function useCrdtSync(
     setAwareness([]);
     setRecentChanges([]);
   }, [workBeId]);
+
+  // Deferred identity sync: after text loads, sync identity into React state.
+  // Ticket auth already happened in onOpen()'s tryTicketAuth() — this just
+  // propagates the identity to React state for the UI.
+  useEffect(() => {
+    if (!connected || !text || authInitiatedRef.current) return;
+    authInitiatedRef.current = true;
+    const client = clientRef.current;
+    if (!client) return;
+
+    client.checkWhoAmI().then((id) => {
+      if (id) {
+        setAuthenticated(true);
+        setIdentity(id);
+        try { localStorage.setItem("xudanu_identity_cache", JSON.stringify(id)); } catch {}
+      } else {
+        setAuthenticated(false);
+      }
+      setIsAdmin(client.getIsAdmin());
+    }).catch(() => {});
+  }, [connected, text]);
+
+  // Deferred server stats: low-priority UI metadata, fires 2s after connect
+  useEffect(() => {
+    if (!connected) return;
+    const timer = setTimeout(() => {
+      const client = clientRef.current;
+      if (!client) return;
+      client.sendRequest("server_stats").then((resp) => {
+        const r = resp as Record<string, unknown>;
+        if (r && "value" in r) {
+          const val = r.value as Record<string, unknown>;
+          setLlmEnabled(val?.llm_enabled === true);
+          setLlmUsage((val?.llm_usage as LlmUsageSummary) || null);
+          if (typeof val?.public_club_id === "number") {
+            setPublicClubId(val.public_club_id);
+          }
+        }
+      }).catch(() => {});
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [connected]);
 
   useEffect(() => {
     const handler = () => {
@@ -382,6 +355,7 @@ export function useCrdtSync(
       const body = await resp.json().catch(() => ({}));
       throw new Error(body.error || "login failed");
     }
+    try { localStorage.setItem("xudanu_login", JSON.stringify({ clubName, password })); } catch {}
     const client = clientRef.current;
     if (client && client.isConnected()) {
       await client.loginByName(clubName, password);
@@ -424,8 +398,11 @@ export function useCrdtSync(
     const resp = await client.sendRequest("work_create", {
       edition: { text: "" },
     });
-    const val = resp as Record<string, unknown>;
-    return (val.value as number) ?? null;
+    const r = resp as Record<string, unknown>;
+    const val = (r && typeof r === "object" && "value" in r) ? r.value : resp;
+    if (typeof val === "number") return val;
+    if (val && typeof val === "object" && "work_id" in val) return (val as Record<string, unknown>).work_id as number;
+    return null;
   }, []);
 
   const shareWork = useCallback(async (): Promise<void> => {
@@ -516,7 +493,9 @@ export function useCrdtSync(
     const client = clientRef.current;
     if (!client || !client.isConnected()) return [];
     try {
-      return await client.fetchWorkList();
+      const entries = await client.fetchWorkList();
+      console.log("[worklist] fetched", entries.length, "works");
+      return entries;
     } catch (e) {
       console.error("Failed to fetch work list:", e);
       return [];

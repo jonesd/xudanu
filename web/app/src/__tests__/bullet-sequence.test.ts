@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildStyledText, extractStyleMarks, type StyleMark } from "../styled-text";
+import { buildStyledText, extractStyleMarks } from "../styled-text";
 import type { AnnotationEntry } from "../api/crdt_sync";
 
 function ann(kind: string, start: number, end: number, payload?: string): AnnotationEntry {
@@ -13,10 +13,6 @@ function ann(kind: string, start: number, end: number, payload?: string): Annota
     created_by_name: "",
     is_private: false,
   };
-}
-
-function mark(kind: string, start: number, end: number, payload?: string): StyleMark {
-  return { annotation_id: 1, kind, char_start: start, char_end: end, ...(payload ? { payload } : {}) };
 }
 
 // Simulates the full sequence: title + 4 bullet items + exit
@@ -212,13 +208,6 @@ describe("bullet list full sequence", () => {
 
 // Test the continuation logic itself
 describe("list continuation logic", () => {
-  function findLine(text: string, pos: number): { start: number; end: number; text: string } {
-    const start = text.lastIndexOf("\n", pos - 1) + 1;
-    const endIdx = text.indexOf("\n", pos);
-    const end = endIdx === -1 ? text.length : endIdx;
-    return { start, end, text: text.slice(start, end) };
-  }
-
   function shouldCreateBullet(
     newText: string,
     prevText: string,

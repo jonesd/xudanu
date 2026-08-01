@@ -36,6 +36,13 @@ td{padding:10px 14px;border-bottom:1px solid #21262d}
 .badge-building{background:rgba(88,166,255,0.15);color:#58a6ff}
 .badge-future{background:rgba(110,118,129,0.15);color:#8b949e}
 .badge-gap{background:rgba(248,81,73,0.15);color:#f85149}
+.scenario{margin:40px 0;padding:0;border-left:3px solid #30363d;padding-left:24px}
+.scenario h3{margin-top:0}
+.shot{margin:16px 0;border:1px solid #30363d;border-radius:8px;overflow:hidden;background:#0d1117}
+.shot img{display:block;width:100%;height:auto}
+.shot img[src=""],.shot img:not([src]){min-height:120px;display:flex;align-items:center;justify-content:center;background:#161b22}
+.callout{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:10px 14px;margin:12px 0;border-radius:0 6px 6px 0;font-size:13px;color:#8b949e}
+.callout strong{color:#58a6ff}
 </style>
 </head>
 <body>
@@ -241,6 +248,73 @@ td{padding:10px 14px;border-bottom:1px solid #21262d}
 <tr><td>Cross-server</td><td>Cosmic tumblers + FeBe</td><td>DNS-anchored tumblers + XCP/HTTP</td></tr>
 <tr><td>Live updates</td><td>Built into enfilade</td><td>O-tree CRDT delta + span migration</td></tr>
 </table>
+
+<h2 id="walkthrough">Visual Walkthrough</h2>
+<p class="subtitle">Real screenshots of transclusion in action. These are not mockups.</p>
+
+<!-- Scenario 1: Select + Transclude -->
+<div class="scenario">
+<h3>1. Select a passage and hold it</h3>
+<p>Select text in any document, then click the <strong>Transclude</strong> button. The passage is held in memory, ready to place in another document.</p>
+<div class="shot"><img src="img/t-01-select-transclude.png" alt="Selecting a passage and clicking Transclude" loading="lazy"></div>
+<div class="callout">The <strong>Transclude</strong> button appears in the selection action bar alongside Link, Note, and Trail buttons.</div>
+</div>
+
+<!-- Scenario 2: TransclusionBadge -->
+<div class="scenario">
+<h3>2. Transclusion badge</h3>
+<p>A floating badge appears showing the source work title and an excerpt of the held passage. Click anywhere in another document to place it.</p>
+<div class="shot"><img src="img/t-02-badge.png" alt="Transclusion badge floating above the editor" loading="lazy"></div>
+<div class="callout">The badge shows the source document name and a text preview. Press <strong>Esc</strong> to cancel.</div>
+</div>
+
+<!-- Scenario 3: Placed transclusion with margin bar -->
+<div class="scenario">
+<h3>3. Placed transclusion with margin bar</h3>
+<p>The excerpt text appears at the click position. A <strong>colored margin bar</strong> on the left edge marks it as transcluded content.</p>
+<div class="shot"><img src="img/t-03-placed.png" alt="Transclusion placed in a document with colored margin bar" loading="lazy"></div>
+<div class="callout">Each source work gets a deterministic color. Multiple transclusions from different works are visually distinguishable.</div>
+</div>
+
+<!-- Scenario 4: Links sidebar -->
+<div class="scenario">
+<h3>4. Links sidebar &mdash; incoming and outgoing</h3>
+<p>The right panel shows transclusion connections. <strong>Outgoing</strong> links (transcluded to) and <strong>incoming</strong> links (transcluded from) are listed with direction arrows.</p>
+<div class="shot"><img src="img/t-04-links.png" alt="Links sidebar showing incoming and outgoing transclusion links" loading="lazy"></div>
+<div class="callout">Each link shows the excerpt text, the connected work title, and a type badge. Links can be filtered by type.</div>
+</div>
+
+<!-- Scenario 5: Multi-hop provenance -->
+<div class="scenario">
+<h3>5. Multi-hop provenance chain</h3>
+<p>When content is transcluded through a chain (A &rarr; B &rarr; C), provenance propagates. The destination shows <strong>amber badges</strong> indicating the hop depth from the original source.</p>
+<div class="shot"><img src="img/t-05-multihop.png" alt="Multi-hop provenance with amber depth badges" loading="lazy"></div>
+<div class="callout">More hops = more amber bars stacked beside the primary margin bar. The original author's name is preserved through the chain.</div>
+</div>
+
+<!-- Scenario 6: Hover tooltip -->
+<div class="scenario">
+<h3>6. Hover tooltip on margin markers</h3>
+<p>Hovering over a margin bar reveals a <strong>dark tooltip</strong> with the source work title, direction, and provenance hop count.</p>
+<div class="shot"><img src="img/t-06-tooltip.png" alt="Hover tooltip on a transclusion margin marker" loading="lazy"></div>
+<div class="callout">Click a margin bar to jump directly to the linked document.</div>
+</div>
+
+<!-- Scenario 7: Attribution overlay -->
+<div class="scenario">
+<h3>7. Attribution overlay coexists with transclusion</h3>
+<p>Human-authored text shows <strong>green</strong> attribution markers. Transclusion margin bars render alongside without conflict.</p>
+<div class="shot"><img src="img/t-07-attribution.png" alt="Attribution overlay alongside transclusion markers" loading="lazy"></div>
+<div class="callout">Each author gets a distinct color. Transcluded content shows the <em>original</em> author's attribution, not the placer's.</div>
+</div>
+
+<!-- Scenario 8: Span migration -->
+<div class="scenario">
+<h3>8. Span migration &mdash; live updates on source edit</h3>
+<p>Edit the source document. Transclusion positions in all referencing documents <strong>shift automatically</strong> to track the original passage.</p>
+<div class="shot"><img src="img/t-08-migration.png" alt="Span migration after source edit" loading="lazy"></div>
+<div class="callout">Insert 50 characters before a transcluded passage &rarr; the transclusion range shifts by 50. No manual updating.</div>
+</div>
 
 <h2>Try It Yourself</h2>
 

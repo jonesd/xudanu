@@ -445,6 +445,7 @@ impl CompoundEdition {
                         resolved_content: content.clone(),
                         placed_at: 0,
                         placed_by: None,
+                        source_changed: false,
                     });
 
                     resolved_elements.push(ResolvedElement::Span {
@@ -481,6 +482,8 @@ pub struct SpanRange {
     pub placed_at: u64,
     #[serde(default)]
     pub placed_by: Option<u64>,
+    #[serde(default)]
+    pub source_changed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

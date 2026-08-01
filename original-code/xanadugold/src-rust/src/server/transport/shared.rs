@@ -237,6 +237,12 @@ impl ServerHandle {
 
         self.with_server(|srv| srv.checkpoint_commit(result))
     }
+
+    /// Lightweight ticket-only save. Writes just the ticket nonces to a
+    /// sidecar JSON file — no full checkpoint, no server-wide serialization.
+    pub fn save_ticket_nonces(&self) -> std::io::Result<()> {
+        self.with_server(|srv| srv.persist_ticket_nonces())
+    }
 }
 
 impl std::fmt::Debug for ServerHandle {

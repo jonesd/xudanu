@@ -42,7 +42,9 @@ import "../../app.css";
 import "../../theme.css";
 import "../../workspace.css";
 
-const WS_URL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/xudanu`;
+const WS_URL = window.location.port === "5173"
+  ? `ws://127.0.0.1:8080/xudanu`
+  : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/xudanu`;
 
 type LeftRailMode = "graph" | "outline";
 type RightPanelTab = "provenance" | "connections" | "trails" | "timeline" | "more";
@@ -93,47 +95,8 @@ function CropOverlay({ src, natW, natH, onApply, onCancel }: {
         <span className="ws-crop-dims">{cw}×{ch}px</span>
         <button className="ws-layout-fig-btn" onClick={() => onApply(cx, cy, cw, ch)}>Apply</button>
         <button className="ws-layout-fig-btn" onClick={onCancel}>Cancel</button>
-            </div>
-
-            {/* Recent Documents */}
-            <div className="ws-concepts-panel">
-              <div className="ws-concepts-header">
-                <span className="ws-concepts-title">Recent</span>
-              </div>
-              {(() => {
-                const pinned = works.filter((w) => w.is_starred);
-                const recentUnpinned = works
-                  .filter((w) => !w.is_starred)
-                  .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0))
-                  .slice(0, 15 - pinned.length);
-                const recent = [...pinned, ...recentUnpinned].slice(0, 15);
-                if (recent.length === 0) {
-                  return <div className="ws-concepts-empty">No documents yet.</div>;
-                }
-                return (
-                  <ul className="ws-concepts-list">
-                    {recent.map((w) => {
-                      const title = w.title || `Work 0x${w.work_id.toString(16)}`;
-                      const kind = kindCache.get(w.work_id) || "document";
-                      return (
-                        <li
-                          key={w.work_id}
-                          className={`ws-concept-item ${w.work_id === workBeId ? "active" : ""}`}
-                          onClick={() => selectWork(w.work_id)}
-                          title={w.updated_at ? `${w.is_starred ? "★ Pinned · " : ""}Updated ${new Date(w.updated_at * 1000).toLocaleDateString()}` : (w.is_starred ? "★ Pinned" : undefined)}
-                        >
-                          {w.is_starred && <span style={{ color: "#d29922", fontSize: 10 }}>★</span>}
-                          {w.is_source && <span style={{ fontSize: 11, marginRight: 2 }}>{"\u{1F4D6}"}</span>}
-                          <span style={{ color: KIND_COLOR[kind], fontSize: 11, marginRight: 4 }}>{KIND_ICON[kind]}</span>
-                          <span className="ws-concept-name">{title.length > 22 ? title.slice(0, 20) + "…" : title}</span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                );
-              })()}
-            </div>
-          </div>
+      </div>
+      </div>
   );
 }
 
@@ -165,6 +128,8 @@ export function WorkspaceShell() {
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [citeFeedback, setCiteFeedback] = useState<string | null>(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [showUndoToast, setShowUndoToast] = useState(false);
+  const [highlightRange, setHighlightRange] = useState<{ start: number; end: number } | null>(null);
   const useMDE = new URLSearchParams(window.location.search).has("mde");
   const [followState, setFollowState] = useState<{ following: boolean; busy: boolean; error: string | null }>({
     following: false,
@@ -187,6 +152,7 @@ export function WorkspaceShell() {
   const [addToSelector, setAddToSelector] = useState<{ trailId: number; trailName: string } | null>(null);
   const [userTrails, setUserTrails] = useState<TrailPayload[]>([]);
   const [workKind, setWorkKind] = useState<WorkKind>("document");
+  const [linkDescription, setLinkDescription] = useState("");
   const [kindPickerOpen, setKindPickerOpen] = useState(false);
   const kindCache = useWorkStore(s => s.kindCache);
   const licenseCache = useWorkStore(s => s.licenseCache);
@@ -308,6 +274,14 @@ export function WorkspaceShell() {
   const transclusion = useTransclusion();
   const compound = useCompoundEdition(connected ? clientRef.current : null, workBeId);
 
+  // Reload compound state after authentication completes — the initial load
+  // may have failed with PermissionDenied before auth was ready
+  useEffect(() => {
+    if (connected && authenticated && workBeId !== null) {
+      compound.reload();
+    }
+  }, [connected, authenticated, workBeId]);
+
   const identityName = identity?.display_name || null;
 
   const transclusionCompliance = useMemo(() => {
@@ -321,13 +295,14 @@ export function WorkspaceShell() {
   const identityColor = identityName ? authorColorPair(identityName).primary : "#888";
 
   const selectWork = useCallback((id: number) => {
+    console.log("[selectWork]", `0x${id.toString(16)}`, "from", workBeId ? `0x${workBeId.toString(16)}` : "null");
     setWorkBeId(id);
-    setImageEntries([]); // will be repopulated by the load effect
+    setImageEntries([]);
     if (navTab === "library") setNavTab("explore");
     const url = new URL(window.location.href);
     url.searchParams.set("work", `0x${id.toString(16)}`);
     window.history.replaceState({}, "", url.toString());
-  }, [navTab]);
+  }, [navTab, workBeId]);
 
   // Single effect: fetch works list when connected; set work metadata if available
   useEffect(() => {
@@ -339,6 +314,15 @@ export function WorkspaceShell() {
     fetchWorkList()
       .then((entries: WorkListEntry[]) => {
         if (cancelled) return;
+        // Ensure the current work is always in the list (it may be newly created
+        // and not yet committed to the server's work list)
+        if (workBeId !== null && !entries.some((w) => w.work_id === workBeId)) {
+          entries = [...entries, {
+            work_id: workBeId, title: "", is_starred: false, is_source: false,
+            revision_count: 0, updated_at: Math.floor(Date.now() / 1000),
+            owner: 0, is_grabbed: false, read_club: 0,
+          } as WorkListEntry];
+        }
         setWorks(entries);
         setWorksError(null);
         if (workBeId === null) {
@@ -377,13 +361,35 @@ export function WorkspaceShell() {
     return () => {
       cancelled = true;
     };
-  }, [connected, workBeId, fetchWorkList, identityName]);
+  }, [connected, workBeId, fetchWorkList, identityName, authenticated]);
+
+  // Periodic work list refresh — picks up new works from other tabs/sessions
+  useEffect(() => {
+    if (!connected || !fetchWorkList) return;
+    const interval = setInterval(async () => {
+      try {
+        const entries = await fetchWorkList();
+        setWorks(entries);
+      } catch {}
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [connected, fetchWorkList]);
 
   const handleCreateWork = useCallback(async () => {
     if (!createWork) return;
     const newId = await createWork();
-    if (typeof newId === "number") selectWork(newId);
-  }, [createWork, selectWork]);
+    if (typeof newId === "number") {
+      selectWork(newId);
+      setWorks(prev => prev.some(w => w.work_id === newId) ? prev : [...prev, {
+        work_id: newId, title: "", is_starred: false, is_source: false,
+        revision_count: 0, updated_at: Math.floor(Date.now() / 1000),
+        owner: 0, is_grabbed: false, read_club: 0,
+      } as WorkListEntry]);
+    }
+    if (fetchWorkList) {
+      try { const entries = await fetchWorkList(); setWorks(entries); } catch {}
+    }
+  }, [createWork, selectWork, fetchWorkList]);
 
   const handleTranscludeSelection = useCallback(() => {
     if (!selectionRange || workBeId === null) return;
@@ -395,6 +401,7 @@ export function WorkspaceShell() {
     }
     const title = workMeta?.title || `Work 0x${workBeId.toString(16)}`;
     const selectedText = text.slice(selectionRange.start, selectionRange.end);
+    console.log("[transclusion] holdSelection:", { workBeId, title, start: selectionRange.start, end: selectionRange.end, textLen: selectedText.length });
     transclusion.holdSelection(workBeId, title, selectionRange.start, selectionRange.end, selectedText);
   }, [selectionRange, workBeId, workMeta, text, transclusion, licenseCache, workLicense]);
 
@@ -404,6 +411,39 @@ export function WorkspaceShell() {
     const selectedText = text.slice(selectionRange.start, selectionRange.end);
     transclusion.holdLinkSelection(workBeId, title, selectionRange.start, selectionRange.end, selectedText);
   }, [selectionRange, workBeId, workMeta, text, transclusion]);
+
+  const handleCreateLinkTarget = useCallback(
+    async (typeId: number) => {
+      if (!selectionRange || workBeId === null || !clientRef.current) return;
+      const client = clientRef.current;
+      const selectedText = text.slice(selectionRange.start, selectionRange.end);
+      const linkId = await transclusion.createContentLink(
+        client,
+        workBeId,
+        selectionRange.start,
+        selectionRange.end,
+        selectedText,
+        typeId,
+      );
+      if (linkId !== null && linkDescription.trim() && transclusion.pendingLink) {
+        try {
+          await client.annotationCreate(
+            transclusion.pendingLink.sourceWorkId,
+            Date.now(),
+            "link-description",
+            JSON.stringify({ link_id: linkId, text: linkDescription.trim() }),
+            transclusion.pendingLink.start,
+            transclusion.pendingLink.end,
+          );
+        } catch (e) {
+          console.error("[handleCreateLinkTarget] failed to save description:", e);
+        }
+      }
+      setLinkDescription("");
+      setSelectionRange(null);
+    },
+    [selectionRange, workBeId, text, clientRef, transclusion, linkDescription],
+  );
 
   const handleCreateAnnotation = useCallback(() => {
     if (!selectionRange) return;
@@ -959,9 +999,13 @@ export function WorkspaceShell() {
         pending.end,
       );
       transclusion.clearPending();
+      setShowUndoToast(true);
+      setTimeout(() => setShowUndoToast(false), 6000);
     },
-    [workBeId, text, setText, compound, transclusion]
+    [workBeId, text, setText, compound, transclusion, showToast]
   );
+
+  // Remove the Cmd+Z handler — conflicts with editor's text undo
 
   const handleFollow = useCallback(async () => {
     if (workBeId === null || !clientRef.current) return;
@@ -1108,6 +1152,9 @@ export function WorkspaceShell() {
       if (e.key === "Escape") {
         setSearchOpen(false);
         setShowIdentity(false);
+        transclusion.clearPending();
+        transclusion.clearPendingLink();
+        setLinkDescription("");
       }
     };
     document.addEventListener("keydown", handler);
@@ -1162,9 +1209,10 @@ export function WorkspaceShell() {
   // Deferred 1.5s — graph is the lowest priority panel
   useEffect(() => {
     if (!connected || !authenticated || !clientRef.current) return;
+    const client = clientRef.current;
     let cancelled = false;
     const timer = setTimeout(() => {
-      clientRef.current
+      client
         .workGraph(workBeId ?? undefined, 20)
         .then((g) => {
         if (cancelled) return;
@@ -1409,8 +1457,10 @@ export function WorkspaceShell() {
     return sorted.filter((w) => {
       const title = (w.title || "").toLowerCase();
       const hexId = `0x${w.work_id.toString(16)}`;
+      const hexShort = w.work_id.toString(16);
+      const hexPadded = w.work_id.toString(16).padStart(4, "0");
       const decId = w.work_id.toString();
-      return title.includes(q) || hexId.includes(q) || decId.includes(q);
+      return title.includes(q) || hexId.includes(q) || hexShort.includes(q) || hexPadded.includes(q) || decId.includes(q);
     });
   }, [works, searchQuery, sortBy]);
 
@@ -1433,6 +1483,7 @@ export function WorkspaceShell() {
     if (!workMeta) return null;
     return ["Library", workMeta.collection || "Drafts", workMeta.title].filter(Boolean);
   }, [workMeta]);
+  void breadcrumb;
 
   return (
     <div className={`ws-shell ${activeCssClass} ${navTab === "compose" ? "ws-mode-compose" : ""} ${navTab === "library" ? "ws-mode-library" : ""}`}>
@@ -1561,6 +1612,84 @@ export function WorkspaceShell() {
                   ))}
                 </ul>
               )}
+            </div>
+
+            {/* Recent Documents */}
+            <div className="ws-concepts-panel">
+              <div className="ws-concepts-header">
+                <span className="ws-concepts-title">Recent</span>
+                <button
+                  className="ws-concept-add-btn"
+                  onClick={async () => {
+                    if (fetchWorkList) {
+                      try {
+                        const entries = await fetchWorkList();
+                        setWorks(entries);
+                      } catch {}
+                    }
+                  }}
+                  title="Refresh list"
+                  style={{ fontSize: 11 }}
+                >
+                  ↻
+                </button>
+              </div>
+              {(() => {
+                const pinned = works.filter((w) => w.is_starred);
+                const recentUnpinned = works
+                  .filter((w) => !w.is_starred)
+                  .sort((a, b) => {
+                    const now = Math.floor(Date.now() / 1000);
+                    return (b.updated_at ?? now) - (a.updated_at ?? now);
+                  })
+                  .slice(0, 15 - pinned.length);
+                const recent = [...pinned, ...recentUnpinned].slice(0, 15);
+                if (recent.length === 0) {
+                  return <div className="ws-concepts-empty">No documents yet.</div>;
+                }
+                return (
+                  <ul className="ws-concepts-list">
+                    {recent.map((w) => {
+                      const title = w.title || `Work 0x${w.work_id.toString(16)}`;
+                      const kind = kindCache.get(w.work_id) || "document";
+                      return (
+                        <li
+                          key={w.work_id}
+                          className={`ws-concept-item ${w.work_id === workBeId ? "active" : ""}`}
+                          onClick={() => selectWork(w.work_id)}
+                          title={w.updated_at ? `${w.is_starred ? "\u2605 Pinned \u00b7 " : ""}Updated ${new Date(w.updated_at * 1000).toLocaleDateString()}` : (w.is_starred ? "\u2605 Pinned" : undefined)}
+                        >
+                          <span
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!clientRef.current) return;
+                              try {
+                                if (w.is_starred) {
+                                  await clientRef.current.workUnstar(w.work_id);
+                                } else {
+                                  await clientRef.current.workStar(w.work_id);
+                                }
+                                if (fetchWorkList) {
+                                  const entries = await fetchWorkList();
+                                  setWorks(entries);
+                                }
+                              } catch {}
+                            }}
+                            style={{ cursor: "pointer", color: w.is_starred ? "#d29922" : "#6e7681", fontSize: 11, flexShrink: 0 }}
+                            title={w.is_starred ? "Unpin" : "Pin to top"}
+                          >
+                            {w.is_starred ? "\u2605" : "\u2606"}
+                          </span>
+                          {w.is_source && <span style={{ fontSize: 11, marginRight: 2 }}>{"\u{1F4D6}"}</span>}
+                          <span style={{ color: KIND_COLOR[kind], fontSize: 11, marginRight: 4 }}>{KIND_ICON[kind]}</span>
+                          <span className="ws-concept-name">{title.length > 22 ? title.slice(0, 20) + "…" : title}</span>
+                          <span style={{ color: "#6e7681", fontSize: 10, marginLeft: "auto", fontFamily: "monospace", flexShrink: 0 }}>0x{w.work_id.toString(16)}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                );
+              })()}
             </div>
           </div>
           <button
@@ -1752,16 +1881,24 @@ export function WorkspaceShell() {
                       </div>
                     )}
                   </div>
-                  {breadcrumb && (
-                    <nav className="ws-breadcrumb">
-                    {breadcrumb.map((seg, i) => (
-                      <span key={i} className="ws-breadcrumb-seg">
-                        {i > 0 && <span className="ws-breadcrumb-sep">/</span>}
-                        {seg}
-                      </span>
-                    ))}
-                  </nav>
-                  )}
+                  <span
+                    className="ws-doc-title-text"
+                    title="Click to rename"
+                    onClick={async () => {
+                      const current = workMeta?.title || `Work 0x${workBeId?.toString(16) ?? ""}`;
+                      const newTitle = prompt("Document title:", current);
+                      if (newTitle && newTitle.trim() && newTitle !== current) {
+                        try {
+                          await crdt.setWorkTitle(newTitle.trim());
+                          setWorkMeta((prev) => prev ? { ...prev, title: newTitle.trim() } : prev);
+                          if (fetchWorkList) { try { const entries = await fetchWorkList(); setWorks(entries); } catch {} }
+                        } catch (e) { console.error("Failed to set title:", e); }
+                      }
+                    }}
+                    style={{ cursor: "pointer", fontWeight: 600, fontSize: 14, color: "var(--text, #333)" }}
+                  >
+                    {workMeta?.title || `Work 0x${workBeId?.toString(16) ?? ""}`}
+                  </span>
                 </div>
                 <div className="ws-doc-actions">
                   <div className="ws-license-picker-wrap">
@@ -2023,16 +2160,15 @@ export function WorkspaceShell() {
                     >
                       Link
                     </button>
-                    {canEdit && (
-                      <button
-                        type="button"
-                        className="ws-sel-btn note"
-                        onClick={handleCreateAnnotation}
-                        title="Add a note or comment to this passage"
-                      >
-                        ✎ Note
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="ws-sel-btn note"
+                      disabled={!canEdit}
+                      onClick={handleCreateAnnotation}
+                      title="Add a note or comment to this passage"
+                    >
+                      ✎ Note
+                    </button>
                     <button
                       type="button"
                       className="ws-sel-btn trail"
@@ -2365,6 +2501,7 @@ export function WorkspaceShell() {
                   pendingTransclusion={transclusion.pending}
                   onPlaceTransclusion={handlePlaceTransclusion}
                   selectionRange={selectionRange}
+                  highlightRange={highlightRange}
                   onNavigateToWork={selectWork}
                   compoundSpanRanges={compound.spanRanges}
                   remoteCursors={awareness}
@@ -2856,14 +2993,35 @@ export function WorkspaceShell() {
                         <div
                           key={i}
                           className="ws-conn-item"
-                          onClick={() => selectWork(sr.source_work_id)}
+                          style={{ cursor: "pointer" }}
+                          title={`From ${sourceTitle} — click to highlight in document`}
+                          onClick={() => {
+                            setHighlightRange({ start: sr.flat_start, end: sr.flat_end });
+                            const el = document.querySelector(".editor-content") as HTMLElement | null;
+                            if (el) {
+                              el.scrollIntoView({ behavior: "smooth", block: "center" });
+                            }
+                            setTimeout(() => setHighlightRange(null), 4000);
+                          }}
                         >
                           <div className="ws-conn-title">
                             ↗ {sourceTitle}
+                            {sr.source_changed && (
+                              <span style={{ color: "#d29922", fontSize: 11, marginLeft: 4 }} title="Source was edited after this transclusion was created">
+                                ⚠ changed
+                              </span>
+                            )}
                             {srcLicInfo && srcLic !== "all-rights-reserved" && (
                               <span className="ws-work-license-badge" title={srcLicInfo.label}>{srcLicInfo.short}</span>
                             )}
                           </div>
+                          {sr.resolved_content && (
+                            <div className="ws-conn-excerpt" style={{ fontStyle: "italic", color: "#6e7681" }}>
+                              {sr.resolved_content.length > 80
+                                ? sr.resolved_content.slice(0, 80) + "\u2026"
+                                : sr.resolved_content}
+                            </div>
+                          )}
                           <div className="ws-conn-excerpt">
                             [{sr.char_start}:{sr.char_end}]
                           </div>
@@ -3158,6 +3316,33 @@ export function WorkspaceShell() {
         <div className="ws-toast" onClick={() => setToast(null)}>
           {toast}
           <span className="ws-toast-close">×</span>
+        </div>
+      )}
+
+      {showUndoToast && (
+        <div className="ws-toast" style={{ cursor: "default" }}>
+          Transclusion placed
+          <button
+            type="button"
+            onClick={async () => {
+              const ok = await compound.undoLastInsert();
+              setShowUndoToast(false);
+              if (ok) showToast("Transclusion removed");
+            }}
+            style={{
+              background: "rgba(255,255,255,0.2)",
+              border: "1px solid rgba(255,255,255,0.4)",
+              borderRadius: 4,
+              padding: "2px 10px",
+              color: "#fff",
+              fontSize: 12,
+              cursor: "pointer",
+              marginLeft: 8,
+            }}
+          >
+            Undo
+          </button>
+          <span className="ws-toast-close" onClick={() => setShowUndoToast(false)}>×</span>
         </div>
       )}
 

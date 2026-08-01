@@ -166,6 +166,7 @@ export interface SpanRangePayload {
   resolved_content?: string;
   placed_at?: number;
   placed_by?: number | null;
+  source_changed?: boolean;
 }
 
 export type RangeElementPayload =
@@ -348,7 +349,7 @@ export interface WorkListEntry {
   updated_at?: number;
 }
 
-export type WorkKind = "document" | "note" | "person" | "concept" | "collection" | "commentary";
+export type WorkKind = "document" | "note" | "person" | "concept" | "collection" | "commentary" | "book";
 
 export type License = "all-rights-reserved" | "transcopyright" | "cc-by" | "cc-by-sa" | "public-domain";
 
@@ -541,8 +542,8 @@ export class CrdtSyncClient {
     this.ws = new WebSocket(url);
     this.ws.onopen = () => this.onOpen();
     this.ws.onmessage = (e) => this.onMessage(e.data);
-    this.ws.onclose = () => this.onClose();
-    this.ws.onerror = () => this.ws?.close();
+      this.ws.onclose = () => this.onClose();
+      this.ws.onerror = (e) => { console.warn("[ws] error event (not closing):", e); };
   }
 
   disconnect(): void {
@@ -930,7 +931,7 @@ export class CrdtSyncClient {
   }
 
   async fetchWorkList(): Promise<WorkListEntry[]> {
-    const resp = await this.sendRequest("work_list", {});
+    const resp = await this.sendRequest("work_list", { limit: 1000 });
     const val = extractValue(resp);
     if (Array.isArray(val)) return val as WorkListEntry[];
     const rec = val as Record<string, unknown>;
@@ -1643,6 +1644,56 @@ export class CrdtSyncClient {
     return this.currentIdentity;
   }
 
+  /// Try to authenticate using a stored session ticket.
+  /// Falls back to credential re-login if the ticket is invalid.
+  /// Called early in onOpen() so crdt_sync_open succeeds for private works.
+  async tryTicketAuth(): Promise<boolean> {
+    // Try ticket first
+    try {
+      const b64 = localStorage.getItem("xudanu_session_ticket");
+      if (b64) {
+        const binary = atob(b64);
+        if (binary.length === 112) {
+          const arr = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+          const ok = await this.sessionTicketRedeem(arr);
+          if (ok) {
+            this.sessionTicketIssue().then((newTicket) => {
+              if (newTicket) {
+                try {
+                  const b = btoa(String.fromCharCode(...newTicket));
+                  localStorage.setItem("xudanu_session_ticket", b);
+                } catch {}
+              }
+            }).catch(() => {});
+            return true;
+          }
+        }
+      }
+    } catch {}
+
+    // Ticket failed — try credential re-login
+    try {
+      const raw = localStorage.getItem("xudanu_login");
+      if (!raw) return false;
+      const { clubName, password } = JSON.parse(raw);
+      if (!clubName || !password) return false;
+      await this.loginByName(clubName, password);
+      console.log("[auth] re-login succeeded for", clubName);
+      this.sessionTicketIssue().then((newTicket) => {
+        if (newTicket) {
+          try {
+            const b = btoa(String.fromCharCode(...newTicket));
+            localStorage.setItem("xudanu_session_ticket", b);
+          } catch {}
+        }
+      }).catch(() => {});
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   getIdentity(): WhoAmIEntry | null {
     return this.currentIdentity;
   }
@@ -1786,12 +1837,13 @@ export class CrdtSyncClient {
         const resp = await this.sendRequest("session_connect");
         this.sessionId = extractValue(resp) as number;
 
+        await this.tryTicketAuth();
+
         const who = await this.checkWhoAmI();
         if (!who) {
           await this.sendRequest("session_login_public");
         }
 
-        await this.checkSourceWork();
         await this.tryOpenWork();
         this.checkAdminStatus().catch(() => {});
         return;
@@ -1803,28 +1855,6 @@ export class CrdtSyncClient {
           console.warn("CRDT session setup failed after 3 attempts:", e);
         }
       }
-    }
-  }
-
-  private async checkSourceWork(): Promise<void> {
-    if (!this.workBeId) return;
-    try {
-      const resp = await this.sendRequest("work_list", {});
-      let val = extractValue(resp);
-      const r = val as Record<string, unknown>;
-      if (r && typeof r === "object" && "value" in r) val = r.value;
-      const entries = ((val as Record<string, unknown>).entries as WorkListEntry[]) || [];
-      console.log("[checkSource] entries:", entries.length, "is_source:", entries.find(e => e.work_id === this.workBeId)?.is_source);
-      const entry = entries.find((e: WorkListEntry) => e.work_id === this.workBeId);
-      if (entry?.is_source) {
-        console.log("[CRDT-DIAG] work", this.workBeId, "is a source work — skipCrdt=true");
-        this.skipCrdt = true;
-      } else {
-        console.log("[CRDT-DIAG] work", this.workBeId, "is NOT a source work — skipCrdt=false");
-      }
-    } catch (e) {
-      console.warn("[checkSource] failed:", e);
-      // ignore — will try CRDT open as fallback
     }
   }
 
@@ -2287,7 +2317,7 @@ export class CrdtSyncClient {
   }
 }
 
-function extractValue(resp: unknown): unknown {
+export function extractValue(resp: unknown): unknown {
   const r = resp as Record<string, unknown>;
   if (r && typeof r === "object" && "type" in r && "value" in r) {
     return r.value;

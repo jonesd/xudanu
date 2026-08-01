@@ -29,7 +29,6 @@ export function EasyMDEEditor({ text, onTextChange, editable }: MDEditorProps) {
         }}
         preview={editable ? "live" : "preview"}
         hideToolbar={!editable}
-        readOnly={!editable}
         height={500}
       />
     </div>

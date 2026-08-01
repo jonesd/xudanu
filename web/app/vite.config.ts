@@ -18,6 +18,7 @@ export default defineConfig({
         target: backend,
         ws: true,
         changeOrigin: true,
+        timeout: 0,
         configure: (proxy) => {
           proxy.on("error", (err: Error) => {
             console.log("[ws proxy] error:", err.message);

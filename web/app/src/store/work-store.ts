@@ -1,6 +1,5 @@
 import { create } from "zustand";
-import type { WorkListEntry, GraphNode, GraphEdge } from "../api/crdt_sync";
-import type { WorkKind, License } from "../graph-scoring";
+import type { WorkListEntry, GraphNode, GraphEdge, WorkKind, License } from "../api/crdt_sync";
 
 type WorkMeta = WorkListEntry;
 

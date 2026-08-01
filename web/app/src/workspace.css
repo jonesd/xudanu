@@ -983,7 +983,7 @@
 }
 .ws-doc-surface .editor-content,
 .ws-doc-surface.editable .editor-content {
-  padding: 0 !important;
+  padding: 0 0 0 14px !important;
   border: none !important;
   background: #ffffff !important;
   color: #000000 !important;
@@ -992,10 +992,10 @@
 /* Transclusion styling — inline block, not full-width, doesn't swallow neighbors */
 .ws-doc-surface .inline-transclusion {
   display: inline;
-  background: rgba(59, 130, 246, 0.08);
-  border-left: 2px solid var(--blue);
+  background: rgba(59, 130, 246, 0.06);
+  border-left: 3px solid rgba(59, 130, 246, 0.5);
   border-radius: 0 3px 3px 0;
-  padding: 1px 6px;
+  padding: 2px 6px 2px 8px;
   margin: 0;
   font-style: italic;
   color: var(--doc-text-muted);

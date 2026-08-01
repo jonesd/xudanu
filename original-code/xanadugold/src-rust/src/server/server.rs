@@ -7504,7 +7504,7 @@ impl Server {
 
         self.ticket_nonces = {
             let now = crate::server::session_ticket::now_secs();
-            let map: std::collections::HashMap<[u8; 16], u64> = manifest
+            let mut map: std::collections::HashMap<[u8; 16], u64> = manifest
                 .ticket_nonces
                 .iter()
                 .filter(|(_, exp)| **exp > now)
@@ -7519,6 +7519,24 @@ impl Server {
                     }
                 })
                 .collect();
+            // Also load from the lightweight sidecar file (more recent than manifest)
+            if let Some(ref dir) = self.data_dir {
+                let sidecar = dir.join("ticket_nonces.json");
+                if let Ok(data) = std::fs::read_to_string(&sidecar) {
+                    if let Ok(parsed) = serde_json::from_str::<std::collections::HashMap<String, u64>>(&data) {
+                        for (hex, exp) in parsed {
+                            if exp <= now { continue; }
+                            if let Ok(bytes) = hex::decode(&hex) {
+                                if bytes.len() == 16 {
+                                    let mut arr = [0u8; 16];
+                                    arr.copy_from_slice(&bytes);
+                                    map.insert(arr, exp);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             tracing::info!("[restore] session tickets: {} active", map.len());
             self.tickets_dirty = false;
             map
@@ -8465,6 +8483,37 @@ impl Server {
         let d = self.tickets_dirty;
         self.tickets_dirty = false;
         d
+    }
+
+    /// Persist session ticket nonces to a lightweight sidecar file.
+    /// This avoids triggering a full checkpoint (which serializes all works,
+    /// links, and clubs) just to save a few ticket nonces.
+    pub fn persist_ticket_nonces(&self) -> std::io::Result<()> {
+        let data_dir = self.data_dir.as_ref().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "data_dir not set")
+        })?;
+        let now = crate::server::session_ticket::now_secs();
+        let tickets: std::collections::HashMap<String, u64> = self
+            .ticket_nonces
+            .iter()
+            .filter(|(_, &exp)| exp > now)
+            .map(|(nonce, &exp)| {
+                (nonce.iter().map(|b| format!("{:02x}", b)).collect(), exp)
+            })
+            .collect();
+
+        let json = serde_json::to_string(&tickets)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+        let path = data_dir.join("ticket_nonces.json");
+        let tmp_path = data_dir.join("ticket_nonces.json.tmp");
+        {
+            let mut f = std::fs::File::create(&tmp_path)?;
+            std::io::Write::write_all(&mut f, json.as_bytes())?;
+            f.sync_all()?;
+        }
+        std::fs::rename(&tmp_path, &path)?;
+        Ok(())
     }
 
     pub fn operation_count(&self) -> u64 {
@@ -11166,6 +11215,7 @@ impl Server {
                                             resolved_content: rev_content.clone(),
                                             placed_at: p_at,
                                             placed_by: p_by,
+                                            source_changed: false,
                                         });
                                         if !source_titles.contains_key(&src_id) {
                                             if let Some(title) = self.compound_source_title(src_id)
@@ -11194,6 +11244,7 @@ impl Server {
                     resolved_content: content.clone(),
                     placed_at: p_at,
                     placed_by: p_by,
+                    source_changed,
                 });
 
                 if !source_titles.contains_key(&src_id) {
@@ -12752,7 +12803,8 @@ impl Server {
         let lock = super::lock::BooLock::new(club_id);
         let km = self.authenticate(session_id, &lock, &super::lock::LockCredential::Boo)?;
         let clubs: Vec<BeId> = km.actual_authority().into_iter().collect();
-        self.ticket_nonces.remove(&ticket.claims.nonce);
+        // Keep the nonce in the store so the same ticket can be redeemed on
+        // reconnect (WebSocket drops, HMR, etc.). Nonce is cleaned up on expiry.
         let new_ticket = self.issue_session_ticket_for_club(club_id)?;
         tracing::info!(
             target: "security",

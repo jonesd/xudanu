@@ -920,11 +920,18 @@ async fn main() {
                             tracing::info!("auto-save: materialized {} work(s)", saved);
                         }
 
-                        // Checkpoint when there are dirty works OR dirty session tickets.
+                        // Checkpoint when there are dirty works (full checkpoint).
+                        // Session tickets use a lightweight sidecar file save —
+                        // no full checkpoint needed for ticket-only changes.
                         let tickets_dirty = autosave_state
                             .server
                             .with_server(|srv| srv.take_tickets_dirty());
-                        if saved > 0 || tickets_dirty {
+                        if tickets_dirty {
+                            if let Err(e) = autosave_state.server.save_ticket_nonces() {
+                                tracing::warn!("ticket nonce save failed: {}", e);
+                            }
+                        }
+                        if saved > 0 {
                             let should_checkpoint = autosave_state.server.with_server_ref(|srv| {
                                 if srv.chunk_store().is_some() {
                                     let now = std::time::SystemTime::now()
