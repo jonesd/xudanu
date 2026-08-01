@@ -232,12 +232,13 @@ export function WorkspaceShell() {
     logout,
     refreshAttribution,
     reconnectAttempt,
+    switchingWork,
   } = crdt;
 
   // Load blob elements from server when work changes
   useEffect(() => {
-    if (!connected || workBeId === null || !clientRef.current) {
-      setImageEntries([]);
+    if (!connected || workBeId === null || !clientRef.current || switchingWork) {
+      if (workBeId === null) setImageEntries([]);
       return;
     }
     const client = clientRef.current;
@@ -1116,7 +1117,7 @@ export function WorkspaceShell() {
   const loadLinks = transclusion.loadLinks;
   const loadBacklinks = transclusion.loadBacklinks;
   useEffect(() => {
-    if (!connected || !authenticated || workBeId === null) return;
+    if (!connected || !authenticated || workBeId === null || switchingWork) return;
     refreshAttribution();
     refreshAnnotations();
     const linkTimer = setTimeout(() => {
@@ -1126,7 +1127,7 @@ export function WorkspaceShell() {
       }
     }, 200);
     return () => clearTimeout(linkTimer);
-  }, [connected, authenticated, workBeId, clientRef, works, loadLinks, loadBacklinks, refreshAttribution, refreshAnnotations]);
+  }, [connected, authenticated, workBeId, switchingWork, clientRef, works, loadLinks, loadBacklinks, refreshAttribution, refreshAnnotations]);
 
   // Debounced attribution refresh after text changes
   useEffect(() => {

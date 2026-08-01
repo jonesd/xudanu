@@ -1863,10 +1863,13 @@ export class CrdtSyncClient {
     let loaded = false;
     if (!this.skipCrdt) {
       try {
-        console.log("[CRDT-DIAG] crdt_sync_open for work", this.workBeId, "skipCrdt=", this.skipCrdt);
-        const openResp = await this.sendRequest("crdt_sync_open", {
+        const openPromise = this.sendRequest("crdt_sync_open", {
           work_id: this.workBeId,
         });
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("crdt_sync_open timeout")), 5000)
+        );
+        const openResp = await Promise.race([openPromise, timeoutPromise]);
         console.log("[CRDT-DIAG] crdt_sync_open succeeded for work", this.workBeId);
         const inner = extractValue(openResp) as Record<string, unknown>;
 

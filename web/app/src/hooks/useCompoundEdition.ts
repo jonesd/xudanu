@@ -41,7 +41,7 @@ export function useCompoundEdition(
   useEffect(() => {
     if (hasCompound && client && workBeId !== null) {
       const refresh = () => {
-        const epoch = ++epochRef.current;
+        const epoch = epochRef.current;
         client
           .resolveInlineTransclusions(workBeId!)
           .then((result) => {

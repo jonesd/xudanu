@@ -6,6 +6,7 @@ export interface CrdtSyncState {
   connected: boolean;
   authenticated: boolean;
   reconnectAttempt: number;
+  switchingWork: boolean;
   awareness: AwarenessState[];
   setText: (text: string) => void;
   setTextLocal: (text: string) => void;
@@ -55,6 +56,7 @@ export function useCrdtSync(
   const clientRef = useRef<CrdtSyncClient | null>(null);
   const [text, setTextState] = useState("");
   const [connected, setConnected] = useState(false);
+  const [switchingWork, setSwitchingWork] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [awareness, setAwareness] = useState<AwarenessState[]>([]);
@@ -181,13 +183,16 @@ export function useCrdtSync(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsUrl]);
 
-  // Switch works on the persistent connection (no WebSocket reconnect).
-  // Fires immediately on connect for public works. If the work is private,
-  // CRDT open fails with PermissionDenied but the authenticated dependency
-  // triggers a retry when auth completes.
+  // Switch works — text loads first, everything else waits
   useEffect(() => {
     if (!connected || workBeId === null) return;
-    clientRef.current?.switchWork(workBeId);
+    setSwitchingWork(true);
+    const client = clientRef.current;
+    if (client) {
+      client.switchWork(workBeId).finally(() => {
+        setSwitchingWork(false);
+      });
+    }
     // Send initial presence so other sessions see us immediately
     const t = setTimeout(() => {
       clientRef.current?.sendAwareness(null, null, false);
@@ -198,9 +203,9 @@ export function useCrdtSync(
   // Retry switchWork after authentication completes (for private works that
   // failed during the anonymous window)
   useEffect(() => {
-    if (!connected || !authenticated || workBeId === null) return;
+    if (!connected || !authenticated || workBeId === null || switchingWork) return;
     clientRef.current?.switchWork(workBeId);
-  }, [authenticated, connected, workBeId]);
+  }, [authenticated, connected, workBeId, switchingWork]);
 
   // Low-frequency awareness reconciliation (30s safety net).
   // Primary awareness updates arrive via push events (crdt_awareness_update)
@@ -286,7 +291,7 @@ export function useCrdtSync(
   }, [workBeId]);
 
   useEffect(() => {
-    if (!connected || !workBeId || !authenticated) return;
+    if (!connected || !workBeId || !authenticated || switchingWork) return;
     const client = clientRef.current;
     if (!client) return;
     let cancelled = false;
@@ -605,7 +610,7 @@ export function useCrdtSync(
   }, [workBeId, annotations, refreshAnnotations]);
 
   return {
-    text, connected, authenticated, reconnectAttempt, awareness, setText, setTextLocal, sendCursor, sendSelection,
+    text, connected, authenticated, reconnectAttempt, switchingWork, awareness, setText, setTextLocal, sendCursor, sendSelection,
     contentMatches, watchEnabled, toggleWatch, clientRef,
     attributionSpans, attributionLogStatus, refreshAttribution,
     refreshAwareness,
