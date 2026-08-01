@@ -96,6 +96,7 @@ export function CompoundBuilder({
   const [activeSourceId, setActiveSourceId] = useState<number | null>(null);
   const [selectedText, setSelectedText] = useState<{ start: number; end: number; text: string } | null>(null);
   const [sourceSearch, setSourceSearch] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
   const [placementMode, setPlacementMode] = useState<"inline" | "block" | "auto">("auto");
   const sourceTextRef = useRef<HTMLDivElement>(null);
 
@@ -224,7 +225,25 @@ export function CompoundBuilder({
     return items;
   }, [compoundSpanRanges, compoundSourceTitles, centerText]);
 
-  const otherWorks = works.filter((w) => w.work_id !== centerWorkId && !sources.some((s) => s.workId === w.work_id));
+  const transclusionSourceIds = useMemo(() => new Set(compoundSpanRanges.map((s) => s.source_work_id)), [compoundSpanRanges]);
+
+  const otherWorks = useMemo(() => {
+    const q = sourceFilter.trim().toLowerCase();
+    return works
+      .filter((w) => w.work_id !== centerWorkId && !sources.some((s) => s.workId === w.work_id))
+      .filter((w) => {
+        if (!q) return true;
+        const title = (w.title || "").toLowerCase();
+        const hexId = `0x${w.work_id.toString(16)}`;
+        return title.includes(q) || hexId.includes(q) || w.work_id.toString().includes(q);
+      })
+      .sort((a, b) => {
+        const aIsSource = transclusionSourceIds.has(a.work_id) ? 1 : 0;
+        const bIsSource = transclusionSourceIds.has(b.work_id) ? 1 : 0;
+        if (aIsSource !== bIsSource) return bIsSource - aIsSource;
+        return (b.updated_at ?? b.work_id) - (a.updated_at ?? a.work_id);
+      });
+  }, [works, centerWorkId, sources, sourceFilter, transclusionSourceIds]);
   const activeSource = sources.find((s) => s.workId === activeSourceId);
   const transclusionCount = compoundSpanRanges.length;
   const isEmpty = transclusionCount === 0 && sources.length === 0;
@@ -282,18 +301,33 @@ export function CompoundBuilder({
                 </div>
               );
             })}
-            {otherWorks.length > 0 && (
-              <select
-                className="cb-source-add"
-                onChange={(e) => { if (e.target.value) addSource(Number(e.target.value)); e.target.value = ""; }}
-                defaultValue=""
-              >
-                <option value="">+ Add source...</option>
-                {otherWorks.map((w) => (
-                  <option key={w.work_id} value={w.work_id}>{w.title || `Work 0x${w.work_id.toString(16)}`}</option>
-                ))}
-              </select>
-            )}
+            <div className="cb-add-source-wrap">
+              <input
+                type="text"
+                className="cb-source-search"
+                placeholder="Search to add source..."
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+              />
+              {sourceFilter && otherWorks.length > 0 && (
+                <div className="cb-add-source-results">
+                  {otherWorks.slice(0, 20).map((w) => (
+                    <div
+                      key={w.work_id}
+                      className="cb-add-source-item"
+                      onClick={() => { void addSource(w.work_id); setSourceFilter(""); }}
+                    >
+                      <span className="cb-source-name">
+                        {transclusionSourceIds.has(w.work_id) && <span className="cb-source-tag" title="Already a transclusion source">T</span>}
+                        {w.title || `Work 0x${w.work_id.toString(16)}`}
+                      </span>
+                      <span className="cb-source-id">0x{w.work_id.toString(16)}</span>
+                    </div>
+                  ))}
+                  {otherWorks.length > 20 && <div className="cb-add-source-more">+ {otherWorks.length - 20} more — refine search</div>}
+                </div>
+              )}
+            </div>
           </div>
           {/* Active source text */}
           {activeSource && (
