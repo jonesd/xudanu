@@ -1181,7 +1181,7 @@ export function CollaborativeEditor({
         for (const r of rangeRects) {
           const x = r.left - rect.left;
           const y = r.top - rect.top;
-          ctx.fillStyle = "rgba(255, 224, 0, 0.2)";
+          ctx.fillStyle = "rgba(255, 224, 0, 0.12)";
           ctx.fillRect(x, y, r.width, r.height);
           ctx.strokeStyle = "rgba(255, 180, 0, 0.8)";
           ctx.lineWidth = 1.5;
