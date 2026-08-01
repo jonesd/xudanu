@@ -187,6 +187,11 @@ export function WorkspaceShell() {
   });
   const [showPerspective, setShowPerspective] = useState(false);
   const [showCompoundBuilder, setShowCompoundBuilder] = useState(false);
+
+  // Compose nav tab triggers Compound Builder
+  useEffect(() => {
+    setShowCompoundBuilder(navTab === "compose");
+  }, [navTab]);
   const [showMerge, setShowMerge] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [docPrefs, setDocPrefs] = useState<DocPreferences>(loadDocPreferences());
@@ -3536,7 +3541,7 @@ export function WorkspaceShell() {
           compoundSourceTitles={compound.sourceTitles}
           works={works}
           client={clientRef.current}
-          onClose={() => setShowCompoundBuilder(false)}
+          onClose={() => { setShowCompoundBuilder(false); if (navTab === "compose") setNavTab("explore"); }}
           onPlaceTransclusion={(sourceWorkId, sourceWorkTitle, start, end, txt) => {
             transclusion.holdSelection(sourceWorkId, sourceWorkTitle, start, end, txt);
             handlePlaceTransclusion(text.length).then(() => {
