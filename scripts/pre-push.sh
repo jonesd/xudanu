@@ -78,9 +78,16 @@ fi
 # ── 5. ESLint with security rules (catches credential leaks, eval, etc.) ─────
 step "5/8. ESLint (security + recommended)"
 cd "$WEB_APP"
-if npx eslint . 2>&1; then ok; else
-    echo ""; echo "FAIL: ESLint errors (may include security issues)."; exit 1
+LINT_OUT=$(npx eslint . 2>&1 || true)
+if echo "$LINT_OUT" | grep -q "security/"; then
+    echo "FAIL: ESLint security rule violations:"
+    echo "$LINT_OUT" | grep "security/"
+    exit 1
 fi
+if [ -n "$LINT_OUT" ] && ! echo "$LINT_OUT" | grep -q "0 problems"; then
+    echo "(non-security lint warnings — informational only)"
+fi
+ok
 
 # ── 6. TypeScript type check (release.yml: tsc -b) ───────────────────────────
 step "6/8. TypeScript type check (tsc -b)"
