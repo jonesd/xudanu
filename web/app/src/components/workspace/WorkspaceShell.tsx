@@ -190,7 +190,17 @@ export function WorkspaceShell() {
 
   // Compose nav tab triggers Compound Builder
   useEffect(() => {
-    setShowCompoundBuilder(navTab === "compose");
+    if (navTab === "compose") {
+      if (workBeId === null && createWork) {
+        createWork().then((id) => {
+          if (typeof id === "number") selectWork(id);
+        });
+      }
+      setShowCompoundBuilder(true);
+    } else {
+      setShowCompoundBuilder(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navTab]);
   const [showMerge, setShowMerge] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
