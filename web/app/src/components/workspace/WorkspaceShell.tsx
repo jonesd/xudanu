@@ -241,7 +241,9 @@ export function WorkspaceShell() {
       return;
     }
     const client = clientRef.current;
+    let cancelled = false;
     client.workBlobList(workBeId).then((blobs) => {
+      if (cancelled) return;
       if (blobs.length === 0) { setImageEntries([]); return; }
       const entries = blobs.map((b) => ({
         hash: b.content_hash,
@@ -255,20 +257,25 @@ export function WorkspaceShell() {
       setImageEntries(entries);
       entries.forEach((entry) => {
         client.blobGetPreview(entry.hash).then((previewBytes) => {
+          if (cancelled) return;
           const blob = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: entry.mime });
           const url = URL.createObjectURL(blob);
           setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, url, loading: false } : e));
         }).catch(() => {
+          if (cancelled) return;
           client.blobGet(entry.hash).then((fullBytes) => {
+            if (cancelled) return;
             const blob = new Blob([fullBytes as BlobPart], { type: entry.mime });
             const url = URL.createObjectURL(blob);
             setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, url, loading: false } : e));
           }).catch(() => {
+            if (cancelled) return;
             setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, loading: false } : e));
           });
         });
       });
-    }).catch(() => setImageEntries([]));
+    }).catch(() => { if (!cancelled) setImageEntries([]); });
+    return () => { cancelled = true; };
   }, [connected, workBeId, clientRef]);
 
   const transclusion = useTransclusion();
