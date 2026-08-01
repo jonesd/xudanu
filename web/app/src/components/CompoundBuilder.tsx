@@ -283,10 +283,10 @@ export function CompoundBuilder({
         <div className="cb-source-panel">
           <div className="cb-panel-header">Sources</div>
           <div className="cb-source-list">
-            {sources.length === 0 && (
+            {sources.length === 0 && !sourceFilter && (
               <div className="cb-source-empty">
                 No sources yet.
-                <br />Add one below to start building.
+                <br />Search below to start building.
               </div>
             )}
             {sources.map((src, i) => {
@@ -304,33 +304,37 @@ export function CompoundBuilder({
                 </div>
               );
             })}
-            <div className="cb-add-source-wrap">
-              <input
-                type="text"
-                className="cb-source-search"
-                placeholder="Search to add source..."
-                value={sourceFilter}
-                onChange={(e) => setSourceFilter(e.target.value)}
-              />
-              {sourceFilter && otherWorks.length > 0 && (
-                <div className="cb-add-source-results">
-                  {otherWorks.slice(0, 20).map((w) => (
-                    <div
-                      key={w.work_id}
-                      className="cb-add-source-item"
-                      onClick={() => { void addSource(w.work_id); setSourceFilter(""); }}
-                    >
-                      <span className="cb-source-name">
-                        {transclusionSourceIds.has(w.work_id) && <span className="cb-source-tag" title="Already a transclusion source">T</span>}
-                        {w.title || `Work 0x${w.work_id.toString(16)}`}
-                      </span>
-                      <span className="cb-source-id">0x{w.work_id.toString(16)}</span>
-                    </div>
-                  ))}
-                  {otherWorks.length > 20 && <div className="cb-add-source-more">+ {otherWorks.length - 20} more — refine search</div>}
-                </div>
-              )}
-            </div>
+          </div>
+          {/* Search to add source — OUTSIDE scroll container so dropdown isn't clipped */}
+          <div className="cb-add-source-wrap">
+            <input
+              type="text"
+              className="cb-source-search"
+              placeholder="Search to add source..."
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value)}
+            />
+            {sourceFilter && otherWorks.length > 0 && (
+              <div className="cb-add-source-results">
+                {otherWorks.slice(0, 20).map((w) => (
+                  <div
+                    key={w.work_id}
+                    className="cb-add-source-item"
+                    onClick={() => { void addSource(w.work_id); setSourceFilter(""); }}
+                  >
+                    <span className="cb-source-name">
+                      {transclusionSourceIds.has(w.work_id) && <span className="cb-source-tag" title="Already a transclusion source">T</span>}
+                      {w.title || `Work 0x${w.work_id.toString(16)}`}
+                    </span>
+                    <span className="cb-source-id">0x{w.work_id.toString(16)}</span>
+                  </div>
+                ))}
+                {otherWorks.length > 20 && <div className="cb-add-source-more">+ {otherWorks.length - 20} more — refine search</div>}
+              </div>
+            )}
+            {sourceFilter && otherWorks.length === 0 && (
+              <div className="cb-add-source-no-results">No matching documents</div>
+            )}
           </div>
           {/* Active source text */}
           {activeSource && (
@@ -370,9 +374,9 @@ export function CompoundBuilder({
             <div className="cb-welcome">
               <h2>Build a document from transclusions</h2>
               <ol>
-                <li><strong>Add a source</strong> — pick a document from the dropdown on the left</li>
-                <li><strong>Select text</strong> — highlight a passage in the source reader</li>
-                <li><strong>Include passage</strong> — click the green button to transclude it here</li>
+                <li><strong>Add a source</strong> — in the left panel, search for a document and click to add it</li>
+                <li><strong>Select text</strong> — highlight a passage in the source reader (left panel, below sources)</li>
+                <li><strong>Include passage</strong> — click the green button at the top to transclude it into this document</li>
                 <li><strong>Repeat</strong> — add more sources and build your compound document</li>
               </ol>
               <p className="cb-welcome-hint">
