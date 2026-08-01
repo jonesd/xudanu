@@ -4187,7 +4187,7 @@ dependencies = [
 
 [[package]]
 name = "xudanu"
-version = "1.0.2"
+version = "1.1.0"
 dependencies = [
  "argon2",
  "axum",
