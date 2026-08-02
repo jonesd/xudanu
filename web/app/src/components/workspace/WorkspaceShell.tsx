@@ -432,7 +432,6 @@ export function WorkspaceShell() {
     }
     const title = workMeta?.title || `Work 0x${workBeId.toString(16)}`;
     const selectedText = text.slice(selectionRange.start, selectionRange.end);
-    console.log("[transclusion] holdSelection:", { workBeId, title, start: selectionRange.start, end: selectionRange.end, textLen: selectedText.length });
     transclusion.holdSelection(workBeId, title, selectionRange.start, selectionRange.end, selectedText);
   }, [selectionRange, workBeId, workMeta, text, transclusion, licenseCache, workLicense]);
 
@@ -1016,7 +1015,6 @@ export function WorkspaceShell() {
         spanStart = newText.length;
       }
       if (spanStart < 0) spanStart = 0;
-      console.log("[placement] spanStart:", spanStart, "textLen:", text.length, "padding:", padding ? JSON.stringify(padding) : "none");
       await compound.addSpan(
         text,
         spanStart,

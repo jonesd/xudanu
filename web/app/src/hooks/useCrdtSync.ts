@@ -519,7 +519,6 @@ export function useCrdtSync(
     if (!client || !client.isConnected()) return [];
     try {
       const entries = await client.fetchWorkList();
-      console.log("[worklist] fetched", entries.length, "works");
       return entries;
     } catch (e) {
       console.error("Failed to fetch work list:", e);
