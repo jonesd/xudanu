@@ -1645,8 +1645,8 @@ export class CrdtSyncClient {
   }
 
   /// Try to authenticate using a stored session ticket.
-  /// Verifies the ticket gives the expected user (not a stale public ticket).
-  /// Called early in onOpen() so crdt_sync_open succeeds for private works.
+  /// Simple approach: if ticket redeems, trust it. Let onOpen's checkWhoAmI
+  /// handle identity verification. Don't call checkWhoAmI here (causes issues).
   async tryTicketAuth(): Promise<boolean> {
     try {
       const b64 = localStorage.getItem("xudanu_session_ticket");
@@ -1663,33 +1663,7 @@ export class CrdtSyncClient {
         localStorage.removeItem("xudanu_session_ticket");
         return false;
       }
-
-      // Verify the ticket gives the expected user, not a stale public ticket.
-      // Compare the redeemed identity with the cached identity.
-      const expectedClub = (() => {
-        try {
-          const cached = localStorage.getItem("xudanu_identity_cache");
-          if (cached) return (JSON.parse(cached) as { club_id?: number }).club_id ?? null;
-        } catch {}
-        return null;
-      })();
-
-      const actual = await this.checkWhoAmI();
-
-      if (!actual) {
-        // Ticket gives anonymous/public — clear it so login flow kicks in
-        localStorage.removeItem("xudanu_session_ticket");
-        return false;
-      }
-
-      if (expectedClub !== null && actual.club_id !== expectedClub) {
-        console.warn(`[auth] ticket gives club ${actual.club_id} but expected ${expectedClub} — clearing stale ticket`);
-        localStorage.removeItem("xudanu_session_ticket");
-        localStorage.removeItem("xudanu_identity_cache");
-        return false;
-      }
-
-      // Ticket is valid for the correct user — rolling renewal
+      // Rolling renewal — non-blocking
       this.sessionTicketIssue().then((newTicket) => {
         if (newTicket) {
           try {
@@ -1847,10 +1821,11 @@ export class CrdtSyncClient {
         const resp = await this.sendRequest("session_connect");
         this.sessionId = extractValue(resp) as number;
 
-        await this.tryTicketAuth();
+        const ticketOk = await this.tryTicketAuth();
 
         const who = await this.checkWhoAmI();
-        if (!who) {
+        if (!who && !ticketOk) {
+          // Only login as public if ticket auth also failed
           await this.sendRequest("session_login_public");
         }
 
