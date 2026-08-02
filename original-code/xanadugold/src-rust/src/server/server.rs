@@ -12741,7 +12741,15 @@ impl Server {
             .sessions
             .get(&session_id)
             .ok_or(ServerError::SessionNotFound(session_id))?;
-        let club_id = session.initial_login().ok_or(ServerError::NotAuthorized)?;
+        // Use current authority (not initial_login) so that tickets are issued
+        // for the user's real club after login, not the initial public club.
+        let club_id = session
+            .authority_clubs()
+            .iter()
+            .next()
+            .copied()
+            .or_else(|| session.initial_login())
+            .ok_or(ServerError::NotAuthorized)?;
         self.issue_session_ticket_for_club(club_id)
     }
 
