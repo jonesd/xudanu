@@ -205,44 +205,62 @@ export function CompoundBuilder({
     URL.revokeObjectURL(url);
   }, [compoundSpanRanges, centerText, centerTitle, centerWorkId, compoundSourceTitles]);
 
-  const structure = useMemo(() => {
-    const items: Array<{ type: "original" | "transclusion"; label: string; preview: string; changed?: boolean; origin?: string }> = [];
-    if (compoundSpanRanges.length === 0) {
-      items.push({ type: "original", label: "Original", preview: centerText.slice(0, 60) });
-      return items;
-    }
-    const sorted = [...compoundSpanRanges].sort((a, b) => a.flat_start - b.flat_start);
-    let pos = 0;
-    for (let i = 0; i < sorted.length; i++) {
-      const span = sorted[i];
-      if (span.flat_start > pos) {
-        items.push({ type: "original", label: "Original", preview: centerText.slice(pos, Math.min(pos + 60, span.flat_start)) });
-      }
-      const title = compoundSourceTitles[span.source_work_id] || `Work ${span.source_work_id.toString(16)}`;
-      const origin = sourceOriginMap.get(span.source_work_id);
-      const preview = span.resolved_content?.slice(0, 60) || centerText.slice(span.flat_start, Math.min(span.flat_end, span.flat_start + 60));
-      items.push({ type: "transclusion", label: title, preview, changed: span.source_changed, origin });
-      pos = Math.max(pos, span.flat_end);
-    }
-    if (pos < centerText.length) {
-      items.push({ type: "original", label: "Original", preview: centerText.slice(pos, Math.min(pos + 60, centerText.length)) });
-    }
-    return items;
-  }, [compoundSpanRanges, compoundSourceTitles, centerText]);
-
-  const transclusionSourceIds = useMemo(() => new Set(compoundSpanRanges.map((s) => s.source_work_id)), [compoundSpanRanges]);
-
   const sourceOriginMap = useMemo(() => {
     const m = new Map<number, string>();
     for (const w of works) {
       if (w.is_source && (w.source_edition_info || w.source_author_id)) {
         const parts: string[] = [];
         if (w.source_edition_info) parts.push(w.source_edition_info);
-        m.set(w.work_id, parts.join(" · "));
+        m.set(w.work_id, parts.join(" \u00b7 "));
       }
     }
     return m;
   }, [works]);
+
+  const structure = useMemo(() => {
+    const items: Array<{ type: "original" | "transclusion"; label: string; preview: string; changed?: boolean; origin?: string; sectionNum?: number; duplicate?: boolean }> = [];
+    if (compoundSpanRanges.length === 0) {
+      items.push({ type: "original", label: "Original", preview: centerText.slice(0, 60) });
+      return items;
+    }
+    const sorted = [...compoundSpanRanges].sort((a, b) => a.flat_start - b.flat_start);
+    const seenRanges = new Set<string>();
+    let transclusionNum = 0;
+    let pos = 0;
+    for (let i = 0; i < sorted.length; i++) {
+      const span = sorted[i];
+      if (span.flat_start > pos) {
+        items.push({ type: "original", label: "Original", preview: centerText.slice(pos, Math.min(pos + 60, span.flat_start)) });
+      }
+      transclusionNum++;
+      const title = compoundSourceTitles[span.source_work_id] || `Work ${span.source_work_id.toString(16)}`;
+      const origin = sourceOriginMap.get(span.source_work_id);
+      const preview = span.resolved_content?.slice(0, 60) || centerText.slice(span.flat_start, Math.min(span.flat_end, span.flat_start + 60));
+      const rangeKey = `${span.source_work_id}:${span.char_start}:${span.char_end}`;
+      const duplicate = seenRanges.has(rangeKey);
+      seenRanges.add(rangeKey);
+      items.push({ type: "transclusion", label: title, preview, changed: span.source_changed, origin, sectionNum: transclusionNum, duplicate });
+      pos = Math.max(pos, span.flat_end);
+    }
+    if (pos < centerText.length) {
+      items.push({ type: "original", label: "Original", preview: centerText.slice(pos, Math.min(pos + 60, centerText.length)) });
+    }
+    return items;
+  }, [compoundSpanRanges, compoundSourceTitles, centerText, sourceOriginMap]);
+
+  const stats = useMemo(() => {
+    const totalWords = centerText.trim().split(/\s+/).filter(Boolean).length;
+    let transcludedWords = 0;
+    for (const span of compoundSpanRanges) {
+      const content = span.resolved_content || centerText.slice(span.flat_start, span.flat_end);
+      transcludedWords += content.trim().split(/\s+/).filter(Boolean).length;
+    }
+    const sourceCount = new Set(compoundSpanRanges.map((s) => s.source_work_id)).size;
+    const percent = totalWords > 0 ? Math.round((transcludedWords / totalWords) * 100) : 0;
+    return { totalWords, transcludedWords, originalWords: totalWords - transcludedWords, sourceCount, percent };
+  }, [compoundSpanRanges, centerText]);
+
+  const transclusionSourceIds = useMemo(() => new Set(compoundSpanRanges.map((s) => s.source_work_id)), [compoundSpanRanges]);
 
   const otherWorks = useMemo(() => {
     const q = sourceFilter.trim().toLowerCase();
@@ -373,6 +391,13 @@ export function CompoundBuilder({
                 id="compound-source-text"
                 ref={sourceTextRef}
                 onMouseUp={handleSourceTextSelection}
+                onKeyDown={(e) => {
+                  if (selectedText && (e.key === "Enter")) {
+                    e.preventDefault();
+                    handleInclude();
+                  }
+                }}
+                tabIndex={0}
                 className="cb-source-text"
                 dangerouslySetInnerHTML={{
                   __html: sourceSearch
@@ -446,8 +471,9 @@ export function CompoundBuilder({
                 }}
               >
                 <div className="cb-structure-num">
-                  {item.type === "transclusion" ? "\u21D7" : "\u00B7"} {item.label}
+                  {item.type === "transclusion" ? `\u00A7${item.sectionNum} \u21D7` : "\u00B7"} {item.label}
                   {item.changed && <span className="cb-changed-badge" title="Source edited">&#x26A0;</span>}
+                  {item.duplicate && <span style={{ color: "#f85149", fontSize: 10, marginLeft: 4 }} title="Same passage transcluded elsewhere">(dup)</span>}
                 </div>
                 {item.origin && <div className="cb-structure-origin" title={item.origin}>{item.origin}</div>}
                 <div className="cb-structure-preview">{item.preview}</div>
@@ -455,8 +481,8 @@ export function CompoundBuilder({
             ))}
           </div>
           <div className="cb-structure-footer">
-            {structure.filter((s) => s.type === "transclusion").length} transclusion(s),
-            {" "}{structure.filter((s) => s.type === "original").length} original section(s)
+            {stats.totalWords} words ({stats.percent}% transcluded) &middot;
+            {" "}from {stats.sourceCount} source{stats.sourceCount !== 1 ? "s" : ""}
           </div>
         </div>
       </div>
