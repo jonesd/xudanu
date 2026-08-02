@@ -252,68 +252,44 @@ td{padding:10px 14px;border-bottom:1px solid #21262d}
 <h2 id="walkthrough">Visual Walkthrough</h2>
 <p class="subtitle">Real screenshots of transclusion in action. These are not mockups.</p>
 
-<!-- Scenario 1: Select + Transclude -->
+<!-- Step 1: Initial content -->
 <div class="scenario">
-<h3>1. Select a passage and hold it</h3>
-<p>Select text in any document, then click the <strong>Transclude</strong> button. The passage is held in memory, ready to place in another document.</p>
-<div class="shot"><img src="img/t-01-select-transclude.png" alt="Selecting a passage and clicking Transclude" loading="lazy"></div>
-<div class="callout">The <strong>Transclude</strong> button appears in the selection action bar alongside Link, Note, and Trail buttons.</div>
+<h3>1. Start with a source document</h3>
+<p>The source document contains the original text. Any passage can be transcluded into other documents.</p>
+<div class="shot"><img src="img/t-95-initial-content.png" alt="Source document with original content" loading="lazy"></div>
+<div class="callout">This is the document we'll pull a passage <em>from</em>. The text lives here and maintains its provenance.</div>
 </div>
 
-<!-- Scenario 2: TransclusionBadge -->
+<!-- Step 2: Select content -->
 <div class="scenario">
-<h3>2. Transclusion badge</h3>
-<p>A floating badge appears showing the source work title and an excerpt of the held passage. Click anywhere in another document to place it.</p>
-<div class="shot"><img src="img/t-02-badge.png" alt="Transclusion badge floating above the editor" loading="lazy"></div>
-<div class="callout">The badge shows the source document name and a text preview. Press <strong>Esc</strong> to cancel.</div>
+<h3>2. Select a passage to transclude</h3>
+<p>Select text in the source document and click the <strong>Transclude</strong> button. The passage is held in memory.</p>
+<div class="shot"><img src="img/t-96-selected-content-to-place.png" alt="Selecting a passage with the Transclude button" loading="lazy"></div>
+<div class="callout">The selected passage will maintain a live link back to this source document.</div>
 </div>
 
-<!-- Scenario 3: Placed transclusion with margin bar -->
+<!-- Step 3: Place transclusion -->
 <div class="scenario">
-<h3>3. Placed transclusion with margin bar</h3>
-<p>The excerpt text appears at the click position. A <strong>colored margin bar</strong> on the left edge marks it as transcluded content.</p>
-<div class="shot"><img src="img/t-03-placed.png" alt="Transclusion placed in a document with colored margin bar" loading="lazy"></div>
-<div class="callout">Each source work gets a deterministic color. Multiple transclusions from different works are visually distinguishable.</div>
+<h3>3. Place the transclusion</h3>
+<p>Navigate to the destination document and click to place the transclusion. The excerpt text appears inline.</p>
+<div class="shot"><img src="img/t-97-place-transclusion.png" alt="Placing the transclusion in the destination document" loading="lazy"></div>
+<div class="callout">The placed content is a <strong>live reference</strong>, not a copy. If the source is edited, the transclusion updates.</div>
 </div>
 
-<!-- Scenario 4: Links sidebar -->
+<!-- Step 4: Transclusion with derivation chain -->
 <div class="scenario">
-<h3>4. Links sidebar &mdash; incoming and outgoing</h3>
-<p>The right panel shows transclusion connections. <strong>Outgoing</strong> links (transcluded to) and <strong>incoming</strong> links (transcluded from) are listed with direction arrows.</p>
-<div class="shot"><img src="img/t-04-links.png" alt="Links sidebar showing incoming and outgoing transclusion links" loading="lazy"></div>
-<div class="callout">Each link shows the excerpt text, the connected work title, and a type badge. Links can be filtered by type.</div>
+<h3>4. Transcluded content with provenance</h3>
+<p>The placed transclusion shows its source origin. The <strong>derivation chain</strong> traces the content back to its original author.</p>
+<div class="shot"><img src="img/t-98-transcluded-content-with-derivation-chain.png" alt="Transcluded content showing derivation chain and provenance" loading="lazy"></div>
+<div class="callout">Each transclusion carries the original author's attribution through the chain &mdash; this is the Xanadu principle in action.</div>
 </div>
 
-<!-- Scenario 5: Multi-hop provenance -->
+<!-- Step 5: Links panel -->
 <div class="scenario">
-<h3>5. Multi-hop provenance chain</h3>
-<p>When content is transcluded through a chain (A &rarr; B &rarr; C), provenance propagates. The destination shows <strong>amber badges</strong> indicating the hop depth from the original source.</p>
-<div class="shot"><img src="img/t-05-multihop.png" alt="Multi-hop provenance with amber depth badges" loading="lazy"></div>
-<div class="callout">More hops = more amber bars stacked beside the primary margin bar. The original author's name is preserved through the chain.</div>
-</div>
-
-<!-- Scenario 6: Hover tooltip -->
-<div class="scenario">
-<h3>6. Hover tooltip on margin markers</h3>
-<p>Hovering over a margin bar reveals a <strong>dark tooltip</strong> with the source work title, direction, and provenance hop count.</p>
-<div class="shot"><img src="img/t-06-tooltip.png" alt="Hover tooltip on a transclusion margin marker" loading="lazy"></div>
-<div class="callout">Click a margin bar to jump directly to the linked document.</div>
-</div>
-
-<!-- Scenario 7: Attribution overlay -->
-<div class="scenario">
-<h3>7. Attribution overlay coexists with transclusion</h3>
-<p>Human-authored text shows <strong>green</strong> attribution markers. Transclusion margin bars render alongside without conflict.</p>
-<div class="shot"><img src="img/t-07-attribution.png" alt="Attribution overlay alongside transclusion markers" loading="lazy"></div>
-<div class="callout">Each author gets a distinct color. Transcluded content shows the <em>original</em> author's attribution, not the placer's.</div>
-</div>
-
-<!-- Scenario 8: Span migration -->
-<div class="scenario">
-<h3>8. Span migration &mdash; live updates on source edit</h3>
-<p>Edit the source document. Transclusion positions in all referencing documents <strong>shift automatically</strong> to track the original passage.</p>
-<div class="shot"><img src="img/t-08-migration.png" alt="Span migration after source edit" loading="lazy"></div>
-<div class="callout">Insert 50 characters before a transcluded passage &rarr; the transclusion range shifts by 50. No manual updating.</div>
+<h3>5. Transclusion visible in Connections</h3>
+<p>The Connections panel shows all transclusions in the current document &mdash; source title, excerpt, and character range.</p>
+<div class="shot"><img src="img/t-99-transcluded-content.png" alt="Transclusion entry in the Connections panel" loading="lazy"></div>
+<div class="callout">Click an entry to highlight the transclusion in the document. A <strong>&#x26A0; changed</strong> badge appears if the source was edited after transclusion.</div>
 </div>
 
 <h2>Try It Yourself</h2>
