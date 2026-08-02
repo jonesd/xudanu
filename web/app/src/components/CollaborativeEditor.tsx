@@ -1685,7 +1685,9 @@ export function CollaborativeEditor({
     el.querySelectorAll(".inline-transclusion").forEach((span) => {
       const spanRange = document.createRange();
       spanRange.selectNodeContents(span);
-      if (spanRange.compareBoundaryPoints(Range.START_TO_END, pre) <= 0) {
+      // Only subtract if the ENTIRE span ends before the caret
+      // (not just starts before — that over-subtracts when caret is near a span)
+      if (spanRange.compareBoundaryPoints(Range.END_TO_END, pre) <= 0) {
         readonlyChars += (span.textContent || "").replace(/\u200B/g, "").length;
       }
     });

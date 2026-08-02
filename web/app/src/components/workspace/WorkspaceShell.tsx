@@ -1015,9 +1015,8 @@ export function WorkspaceShell() {
         setText(newText);
         spanStart = newText.length;
       }
-      // Note: position from computePlacementPosition is ALREADY in raw text
-      // coordinates (it subtracts .inline-transclusion content via readonlyChars).
-      // Do NOT subtract compound span ranges again — that double-adjusts.
+      if (spanStart < 0) spanStart = 0;
+      console.log("[placement] spanStart:", spanStart, "textLen:", text.length, "padding:", padding ? JSON.stringify(padding) : "none");
       await compound.addSpan(
         text,
         spanStart,
