@@ -999,6 +999,9 @@
   margin: 0;
   font-style: italic;
   color: var(--doc-text-muted);
+  user-select: all;
+  -webkit-user-select: all;
+  cursor: pointer;
 }
 .ws-doc-surface .inline-transclusion::before {
   content: "↗";
