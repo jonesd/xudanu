@@ -2516,7 +2516,7 @@ export function WorkspaceShell() {
                   <EasyMDEEditor
                     text={text}
                     onTextChange={canEdit ? setText : undefined}
-                    editable={canEdit}
+                  editable={canEdit && editorMode === "authoring"}
                   />
                 ) : (
                 <CollaborativeEditor
