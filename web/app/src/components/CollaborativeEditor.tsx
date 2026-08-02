@@ -44,6 +44,7 @@ interface CollaborativeEditorProps {
   connected: boolean;
   attributionSpans: AttributionSpan[];
   editable: boolean;
+  readingMode?: boolean;
   contentStartLine?: number;
   contentEndLine?: number;
   transclusionMarkers?: TransclusionMarker[];
@@ -835,6 +836,7 @@ export function CollaborativeEditor({
   connected,
   attributionSpans,
   editable,
+  readingMode = false,
   contentStartLine,
   contentEndLine,
   transclusionMarkers = [],
@@ -908,6 +910,9 @@ export function CollaborativeEditor({
   }, []);
   const [expandedClusters, setExpandedClusters] = useState<Set<number>>(new Set());
   const [showCompoundHighlight, setShowCompoundHighlight] = useState(true);
+
+  const effectiveShowAttribution = showAttributionColors && !readingMode;
+  const effectiveShowCompound = showCompoundHighlight && !readingMode;
   const styleMarks = useMemo(() => extractStyleMarks(annotations), [annotations]);
   const lastMarksRef = useRef("");
 
@@ -1117,16 +1122,16 @@ export function CollaborativeEditor({
         cancelAnimationFrame(rafId);
         rafId = requestAnimationFrame(() => {
           lastDraw = performance.now();
-          hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight, showLinkDescriptions, linkDescMap);
+          hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap);
         });
         return;
       }
       cancelAnimationFrame(rafId);
       lastDraw = now;
-      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight, showLinkDescriptions, linkDescMap);
+      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap);
     };
 
-    hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight, showLinkDescriptions, linkDescMap);
+    hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap);
 
     const ro = new ResizeObserver(redraw);
     ro.observe(container);
@@ -1139,7 +1144,7 @@ export function CollaborativeEditor({
       scrollPending = true;
       rafId = requestAnimationFrame(() => {
         scrollPending = false;
-        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight, showLinkDescriptions, linkDescMap);
+        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap);
       });
     };
     container.addEventListener("scroll", scrollRedraw, { passive: true });
@@ -1149,7 +1154,7 @@ export function CollaborativeEditor({
       container.removeEventListener("scroll", scrollRedraw);
       cancelAnimationFrame(rafId);
     };
-  }, [attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight, showLinkDescriptions, linkDescMap]);
+  }, [attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap]);
 
   // Highlight a range when user clicks a transclusion in the Connections panel
   useEffect(() => {
@@ -1204,10 +1209,10 @@ export function CollaborativeEditor({
       const el = editorRef.current;
       const canvas = overlayRef.current;
       if (!el || !canvas) return;
-      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight, showLinkDescriptions, linkDescMap);
+      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap);
     }, 200);
     return () => clearInterval(interval);
-  }, [recentChanges, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, showAttributionColors, expandedClusters]);
+  }, [recentChanges, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, effectiveShowAttribution, expandedClusters]);
 
   // Build annotation hit zones for hover tooltips (runs on scroll + redraw)
   useEffect(() => {
@@ -1463,7 +1468,7 @@ export function CollaborativeEditor({
       const el = editorRef.current;
       const canvas = overlayRef.current;
       if (el && canvas) {
-        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight, showLinkDescriptions, linkDescMap);
+        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap);
       }
     }, 400);
     let newText = hasInlineTransclusions ? getEditableText(el) : getTextContent(el);
@@ -2223,7 +2228,7 @@ export function CollaborativeEditor({
           )}
           <div
             ref={editorRef}
-            className={`editor-content${!editable ? " editor-readonly" : ""}`}
+            className={`editor-content${!editable ? " editor-readonly" : ""}${readingMode ? " reading-mode" : ""}`}
             contentEditable={editable && !pendingTransclusion}
             suppressContentEditableWarning
             onInput={handleInput}

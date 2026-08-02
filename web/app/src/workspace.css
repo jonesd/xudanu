@@ -1016,6 +1016,17 @@
   text-decoration: underline;
 }
 
+/* Reading mode: seamless rendering, no markers */
+.ws-doc-surface.reading-mode .inline-transclusion {
+  border-left: none;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+.ws-doc-surface.reading-mode .inline-transclusion::before {
+  display: none;
+}
+
 /* Selection action popover — floats over text, doesn't shift layout */
 .ws-selection-actions {
   display: flex;

@@ -136,6 +136,7 @@ export function WorkspaceShell() {
   const [citeFeedback, setCiteFeedback] = useState<string | null>(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [showUndoToast, setShowUndoToast] = useState(false);
+  const [editorMode, setEditorMode] = useState<"authoring" | "reading">("authoring");
   const [highlightRange, setHighlightRange] = useState<{ start: number; end: number } | null>(null);
   const useMDE = new URLSearchParams(window.location.search).has("mde");
   const [followState, setFollowState] = useState<{ following: boolean; busy: boolean; error: string | null }>({
@@ -1929,6 +1930,15 @@ export function WorkspaceShell() {
                   >
                     {workMeta?.title || `Work 0x${workBeId?.toString(16) ?? ""}`}
                   </span>
+                  <button
+                    type="button"
+                    className="ws-action-btn"
+                    onClick={() => setEditorMode(editorMode === "authoring" ? "reading" : "authoring")}
+                    title={editorMode === "authoring" ? "Switch to reading mode (hides transclusion markers)" : "Switch to authoring mode (shows transclusion markers)"}
+                    style={{ fontSize: 13 }}
+                  >
+                    {editorMode === "authoring" ? "\u{1F4D6}" : "\u270F\uFE0F"}
+                  </button>
                 </div>
                 <div className="ws-doc-actions">
                   <div className="ws-license-picker-wrap">
@@ -2525,6 +2535,7 @@ export function WorkspaceShell() {
                   connected={connected}
                   attributionSpans={attributionSpans}
                   editable={canEdit}
+                  readingMode={editorMode === "reading"}
                   fontSize={14}
                   lineHeight={1.6}
                   transclusionMarkers={transclusion.markers}
