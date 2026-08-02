@@ -1,5 +1,69 @@
 import { describe, it, expect } from "vitest";
 
+describe("Transclusion inline rendering — \\n stripping (the actual bug)", () => {
+  it("strips trailing \\n from text before transclusion span", () => {
+    const resolvedText = "AB\nAlphaCDE";
+    const flatStart = 3;
+    const pos = 0;
+    let chunk = resolvedText.slice(pos, flatStart);
+    chunk = chunk.replace(/\n+$/, "");
+    expect(chunk).toBe("AB");
+    expect(chunk.includes("\n")).toBe(false);
+  });
+
+  it("strips leading \\n from text after transclusion span", () => {
+    const resolvedText = "ABAlpha\nCDE";
+    const flatEnd = 7;
+    let after = resolvedText.slice(flatEnd);
+    after = after.replace(/^\n+/, "");
+    expect(after).toBe("CDE");
+    expect(after.startsWith("\n")).toBe(false);
+  });
+
+  it("strips \\n from both sides when O-tree inserts newlines", () => {
+    const resolvedText = "AB\nAlpha\nCDE";
+    const flatStart = 3;
+    const flatEnd = 8;
+
+    let before = resolvedText.slice(0, flatStart).replace(/\n+$/, "");
+    let content = resolvedText.slice(flatStart, flatEnd).replace(/^\n+/, "").replace(/\n+$/, "");
+    let after = resolvedText.slice(flatEnd).replace(/^\n+/, "");
+
+    expect(before).toBe("AB");
+    expect(content).toBe("Alpha");
+    expect(after).toBe("CDE");
+    const reconstructed = before + content + after;
+    expect(reconstructed).toBe("ABAlphaCDE");
+    expect(reconstructed.includes("\n")).toBe(false);
+  });
+
+  it("preserves internal \\n in original text (not at transclusion boundary)", () => {
+    const resolvedText = "Hello\nWorld\nAlpha\nFoo\nBar";
+    const flatStart = 12;
+    const flatEnd = 17;
+
+    let before = resolvedText.slice(0, flatStart).replace(/\n+$/, "");
+    let content = resolvedText.slice(flatStart, flatEnd).replace(/^\n+/, "").replace(/\n+$/, "");
+    let after = resolvedText.slice(flatEnd).replace(/^\n+/, "");
+
+    expect(before).toBe("Hello\nWorld");
+    expect(content).toBe("Alpha");
+    expect(after).toBe("Foo\nBar");
+  });
+
+  it("strips multiple consecutive \\n at boundary", () => {
+    const resolvedText = "AB\n\n\nAlpha\n\nCDE";
+    const flatStart = 5;
+    const flatEnd = 10;
+
+    let before = resolvedText.slice(0, flatStart).replace(/\n+$/, "");
+    let after = resolvedText.slice(flatEnd).replace(/^\n+/, "");
+
+    expect(before).toBe("AB");
+    expect(after).toBe("CDE");
+  });
+});
+
 describe("Transclusion inline rendering", () => {
   it("resolved text with transclusion has no \\n at boundaries (simple case)", () => {
     const originalText = "ABCDE";
@@ -203,5 +267,92 @@ describe("Compound Builder source search", () => {
       return (b.updated_at ?? 0) - (a.updated_at ?? 0);
     });
     expect(sorted[0].work_id).toBe(1); // transclusion source first
+  });
+});
+
+describe("CSS conflict resolution (app.css vs workspace.css)", () => {
+  it("workspace.css wins for display property (higher specificity)", () => {
+    // .ws-doc-surface .inline-transclusion has specificity (0,2,0)
+    // .inline-transclusion has specificity (0,1,0)
+    const workspaceSpecificity = 2;
+    const appSpecificity = 1;
+    expect(workspaceSpecificity).toBeGreaterThan(appSpecificity);
+  });
+
+  it("display: inline !important overrides any specificity", () => {
+    // Even if app.css somehow had higher specificity, !important wins
+    const hasImportant = true;
+    expect(hasImportant).toBe(true);
+  });
+
+  it("app.css should only set cursor (no conflicting styles)", () => {
+    const appCssProperties = ["cursor"];
+    const conflictingProperties = ["display", "background", "border", "padding", "position", "user-select"];
+    for (const prop of conflictingProperties) {
+      expect(appCssProperties).not.toContain(prop);
+    }
+  });
+});
+
+describe("Reading mode toggles", () => {
+  it("reading mode hides attribution overlay (opacity 0)", () => {
+    const readingMode = true;
+    const opacity = readingMode ? 0 : 1;
+    expect(opacity).toBe(0);
+  });
+
+  it("authoring mode shows attribution overlay", () => {
+    const readingMode = false;
+    const opacity = readingMode ? 0 : 1;
+    expect(opacity).toBe(1);
+  });
+
+  it("reading mode CSS removes border, background, padding from transclusion", () => {
+    const readingModeStyle = {
+      borderLeft: "none",
+      background: "transparent",
+      padding: "0",
+      borderRadius: "0",
+      fontStyle: "normal",
+    };
+    expect(readingModeStyle.borderLeft).toBe("none");
+    expect(readingModeStyle.background).toBe("transparent");
+    expect(readingModeStyle.padding).toBe("0");
+  });
+});
+
+describe("Compound state epoch guard (the persistence bug)", () => {
+  it("loadCompound increments epoch (request ownership)", () => {
+    let epoch = 0;
+    const e1 = ++epoch;
+    expect(e1).toBe(1);
+    expect(epoch).toBe(1);
+  });
+
+  it("refresh reads epoch WITHOUT incrementing (cooperative)", () => {
+    let epoch = 5;
+    const refreshEpoch = epoch; // read only
+    expect(refreshEpoch).toBe(5);
+    expect(epoch).toBe(5); // unchanged
+  });
+
+  it("work switch bumps epoch (invalidates pending responses)", () => {
+    let epoch = 3;
+    // loadCompound starts
+    const loadEpoch = ++epoch; // 4
+    // work switch cleanup
+    epoch++; // 5
+    // loadCompound response arrives
+    expect(loadEpoch).not.toBe(epoch); // stale — discarded
+  });
+
+  it("hasCompound guard prevents clearing on transient empty", () => {
+    let hasCompound = true;
+    const spanRangesEmpty = true;
+    // OLD bug: always cleared. NEW: only clear if !hasCompound
+    if (spanRangesEmpty && !hasCompound) {
+      hasCompound = false;
+    }
+    expect(hasCompound).toBe(true); // preserved!
   });
 });

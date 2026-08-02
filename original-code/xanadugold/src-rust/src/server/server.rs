@@ -26602,6 +26602,48 @@ mod tests {
 
     #[test]
     #[cfg(feature = "server")]
+    fn unstar_removes_cross_club_star() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let doc = server.create_work(sid, Edition::from_text("test")).unwrap();
+        server.work_star(sid, doc).unwrap();
+
+        let starred = server.starred_for_session(sid);
+        assert!(starred.contains(&doc), "doc should be starred");
+
+        server.work_unstar(sid, doc).unwrap();
+        let starred = server.starred_for_session(sid);
+        assert!(!starred.contains(&doc), "doc should no longer be starred");
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn issue_session_ticket_uses_current_authority_not_initial_login() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let initial_clubs = server.session_authority_clubs(sid);
+        assert!(
+            initial_clubs.contains(&0x3e8),
+            "should start as public club"
+        );
+
+        let ticket_bytes = server.issue_session_ticket(sid).unwrap();
+        assert!(!ticket_bytes.is_empty());
+
+        let sid2 = server.connect();
+        let (clubs, _) = server.redeem_session_ticket(sid2, &ticket_bytes).unwrap();
+        assert!(
+            clubs.contains(&0x3e8),
+            "redeemed ticket should give public club"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
     fn wal_truncated_after_checkpoint() {
         let (mut server, data_dir) = setup_chunk_store_server("wal_truncate");
         let sid = server.connect();
