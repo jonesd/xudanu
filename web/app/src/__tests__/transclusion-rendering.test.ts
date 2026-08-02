@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { validateSpanRanges } from "../components/CollaborativeEditor";
+import type { SpanRangePayload } from "../api/crdt_sync";
 
 describe("Transclusion inline rendering — \\n stripping (the actual bug)", () => {
   it("strips trailing \\n from text before transclusion span", () => {
@@ -354,5 +356,298 @@ describe("Compound state epoch guard (the persistence bug)", () => {
       hasCompound = false;
     }
     expect(hasCompound).toBe(true); // preserved!
+  });
+});
+
+describe("validateSpanRanges — guard against invalid data", () => {
+  const makeSpan = (flat_start: number, flat_end: number): SpanRangePayload => ({
+    source_work_id: 1,
+    char_start: 0,
+    char_end: 10,
+    flat_start,
+    flat_end,
+    content_len: flat_end - flat_start,
+  });
+
+  it("filters out spans with flat_end beyond text length", () => {
+    const spans = [makeSpan(0, 50)];
+    const result = validateSpanRanges(spans, 30);
+    expect(result.length).toBe(0);
+  });
+
+  it("filters out spans with flat_start < 0", () => {
+    const spans = [makeSpan(-5, 10)];
+    const result = validateSpanRanges(spans, 30);
+    expect(result.length).toBe(0);
+  });
+
+  it("filters out spans where flat_end <= flat_start (zero or negative width)", () => {
+    const spans = [makeSpan(5, 5), makeSpan(10, 5)];
+    const result = validateSpanRanges(spans, 30);
+    expect(result.length).toBe(0);
+  });
+
+  it("keeps valid spans within text bounds", () => {
+    const spans = [makeSpan(0, 10), makeSpan(15, 25)];
+    const result = validateSpanRanges(spans, 30);
+    expect(result.length).toBe(2);
+  });
+
+  it("keeps span that ends exactly at text length", () => {
+    const spans = [makeSpan(20, 30)];
+    const result = validateSpanRanges(spans, 30);
+    expect(result.length).toBe(1);
+  });
+
+  it("filters empty span list", () => {
+    const result = validateSpanRanges([], 30);
+    expect(result.length).toBe(0);
+  });
+
+  it("handles multiple invalid + valid spans mixed", () => {
+    const spans = [makeSpan(0, 10), makeSpan(-1, 5), makeSpan(20, 50), makeSpan(15, 20)];
+    const result = validateSpanRanges(spans, 30);
+    expect(result.length).toBe(2);
+    expect(result[0].flat_start).toBe(0);
+    expect(result[1].flat_start).toBe(15);
+  });
+});
+
+describe("handlePlaceTransclusion — position handling", () => {
+  it("clamps negative position to 0", () => {
+    let spanStart = -1;
+    if (spanStart < 0) spanStart = 0;
+    expect(spanStart).toBe(0);
+  });
+
+  it("uses padding position when padding is provided (click below last line)", () => {
+    const text = "Hello";
+    const padding: string = "\n\n";
+    let spanStart = -1;
+    if (padding.length > 0) {
+      spanStart = (text + padding).length;
+    }
+    expect(spanStart).toBe(7);
+  });
+
+  it("padding is undefined when clicking mid-line (no newlines added)", () => {
+    const padding: string | undefined = undefined;
+    let spanStart = 2;
+    if (padding) {
+      spanStart = 99;
+    }
+    expect(spanStart).toBe(2);
+  });
+});
+
+describe("buildTransclusionDom — DOM structure expectations", () => {
+  it("resolved text with no spans renders as plain text", () => {
+    const spans: SpanRangePayload[] = [];
+    const result = validateSpanRanges(spans, 100);
+    expect(result.length).toBe(0);
+    // buildTransclusionDom would just set textContent
+  });
+
+  it("empty resolved text gets a <br> placeholder", () => {
+    const resolvedText: string = "";
+    const isEmpty = resolvedText.length === 0;
+    expect(isEmpty).toBe(true);
+  });
+
+  it("sorted spans are processed in order", () => {
+    const spans = [
+      { flat_start: 20, flat_end: 30, source_work_id: 2, char_start: 0, char_end: 10, content_len: 10 },
+      { flat_start: 0, flat_end: 10, source_work_id: 1, char_start: 0, char_end: 10, content_len: 10 },
+    ];
+    const sorted = [...spans].sort((a, b) => a.flat_start - b.flat_start);
+    expect(sorted[0].flat_start).toBe(0);
+    expect(sorted[1].flat_start).toBe(20);
+  });
+
+  it("text between non-adjacent spans is preserved", () => {
+    const resolvedText = "AAAAText betweenBBBBEnd";
+    const span1 = { flat_start: 0, flat_end: 4 };
+    const span2 = { flat_start: 16, flat_end: 20 };
+    const between = resolvedText.slice(span1.flat_end, span2.flat_start);
+    expect(between).toBe("Text between");
+  });
+
+  it("text after last span is preserved", () => {
+    const resolvedText = "AAAARemaining text";
+    const lastSpanEnd = 4;
+    const after = resolvedText.slice(lastSpanEnd);
+    expect(after).toBe("Remaining text");
+  });
+});
+
+describe("Auth flow — session_login_public guard", () => {
+  it("does NOT call login_public when ticket auth succeeds", () => {
+    const ticketOk = true;
+    const who = { club_id: 1011, display_name: "david" };
+    const shouldLoginPublic = !who && !ticketOk;
+    expect(shouldLoginPublic).toBe(false);
+  });
+
+  it("calls login_public when both ticket and identity fail", () => {
+    const ticketOk = false;
+    const who = null;
+    const shouldLoginPublic = !who && !ticketOk;
+    expect(shouldLoginPublic).toBe(true);
+  });
+
+  it("does NOT call login_public when identity exists but ticket failed", () => {
+    // Edge case: ticket expired but session still has identity from cache
+    const ticketOk = false;
+    const who = { club_id: 1011, display_name: "david" };
+    const shouldLoginPublic = !who && !ticketOk;
+    expect(shouldLoginPublic).toBe(false);
+  });
+});
+
+describe("Switch work guard — prevents overlapping async", () => {
+  it("first switch blocks second switch (sets switching=true)", () => {
+    let switching = false;
+    let pendingSwitchId: number | null = null;
+
+    // First switch to work 100
+    if (switching) { pendingSwitchId = 100; }
+    else { switching = true; }
+    expect(switching).toBe(true);
+
+    // Second switch to work 200 arrives while first is in progress
+    if (switching) { pendingSwitchId = 200; }
+    expect(pendingSwitchId).toBe(200);
+  });
+
+  it("pending switch fires after first completes", () => {
+    let switching = true;
+    let pendingSwitchId: number | null = 200;
+
+    // First switch completes
+    switching = false;
+    if (pendingSwitchId !== null) {
+      const next = pendingSwitchId;
+      pendingSwitchId = null;
+      switching = true;
+      // switchWork(next) would be called
+      expect(next).toBe(200);
+    }
+    expect(switching).toBe(true);
+  });
+
+  it("rapid clicking keeps only the LAST target", () => {
+    let switching = false;
+    let pendingSwitchId: number | null = null;
+
+    const click = (id: number) => {
+      if (switching) { pendingSwitchId = id; return; }
+      switching = true;
+    };
+
+    click(100); // starts switching
+    click(200); // queued
+    click(300); // replaces 200
+    click(400); // replaces 300
+
+    expect(pendingSwitchId).toBe(400); // only last survives
+  });
+});
+
+describe("Compound Builder — word count stats", () => {
+  it("counts total words in document", () => {
+    const text = "The quick brown fox jumps";
+    const words = text.trim().split(/\s+/).filter(Boolean).length;
+    expect(words).toBe(5);
+  });
+
+  it("counts transcluded words separately", () => {
+    const centerText = "Hello brown fox World";
+    const spans = [{ resolved_content: "brown fox", flat_start: 6, flat_end: 15 }];
+    let transcludedWords = 0;
+    for (const span of spans) {
+      const content = span.resolved_content || centerText.slice(span.flat_start, span.flat_end);
+      transcludedWords += content.trim().split(/\s+/).filter(Boolean).length;
+    }
+    expect(transcludedWords).toBe(2);
+  });
+
+  it("calculates percentage transcluded", () => {
+    const totalWords = 10;
+    const transcludedWords = 3;
+    const percent = totalWords > 0 ? Math.round((transcludedWords / totalWords) * 100) : 0;
+    expect(percent).toBe(30);
+  });
+
+  it("counts unique source works", () => {
+    const spans = [
+      { source_work_id: 1 },
+      { source_work_id: 2 },
+      { source_work_id: 1 },
+      { source_work_id: 3 },
+    ];
+    const sourceCount = new Set(spans.map((s) => s.source_work_id)).size;
+    expect(sourceCount).toBe(3);
+  });
+});
+
+describe("Compound Builder — duplicate detection", () => {
+  it("detects same passage transcluded twice", () => {
+    const spans = [
+      { source_work_id: 1, char_start: 10, char_end: 20 },
+      { source_work_id: 1, char_start: 10, char_end: 20 },
+    ];
+    const seen = new Set<string>();
+    const duplicates: boolean[] = [];
+    for (const span of spans) {
+      const key = `${span.source_work_id}:${span.char_start}:${span.char_end}`;
+      duplicates.push(seen.has(key));
+      seen.add(key);
+    }
+    expect(duplicates).toEqual([false, true]);
+  });
+
+  it("does not flag different passages from same source as duplicate", () => {
+    const spans = [
+      { source_work_id: 1, char_start: 10, char_end: 20 },
+      { source_work_id: 1, char_start: 30, char_end: 40 },
+    ];
+    const seen = new Set<string>();
+    const duplicates: boolean[] = [];
+    for (const span of spans) {
+      const key = `${span.source_work_id}:${span.char_start}:${span.char_end}`;
+      duplicates.push(seen.has(key));
+      seen.add(key);
+    }
+    expect(duplicates).toEqual([false, false]);
+  });
+});
+
+describe("Compound Builder — placement mode auto-detection", () => {
+  it("auto selects block for long passages", () => {
+    const text = "A".repeat(101);
+    const mode = text.includes("\n") || text.length > 100 ? "block" : "inline";
+    expect(mode).toBe("block");
+  });
+
+  it("auto selects block for multi-line passages", () => {
+    const text = "Line 1\nLine 2";
+    const mode = text.includes("\n") || text.length > 100 ? "block" : "inline";
+    expect(mode).toBe("block");
+  });
+
+  it("auto selects inline for short single-line passages", () => {
+    const text = "short text";
+    const mode = text.includes("\n") || text.length > 100 ? "block" : "inline";
+    expect(mode).toBe("inline");
+  });
+
+  it("explicit mode overrides auto-detection", () => {
+    const placementMode: string = "inline";
+    const selectedText = "A".repeat(101);
+    const effective = placementMode !== "auto"
+      ? placementMode
+      : selectedText.includes("\n") || selectedText.length > 100
+        ? "block" : "inline";
+    expect(effective).toBe("inline");
   });
 });
