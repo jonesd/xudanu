@@ -3012,12 +3012,14 @@ export function WorkspaceShell() {
                       const sourceTitle = compound.sourceTitles[sr.source_work_id] || `Work 0x${sr.source_work_id.toString(16)}`;
                       const srcLic = licenseCache.get(sr.source_work_id);
                       const srcLicInfo = srcLic ? LICENSES.find((l) => l.value === srcLic) : null;
+                      const sourceWork = works.find((w) => w.work_id === sr.source_work_id);
+                      const origin = sourceWork?.is_source ? sourceWork.source_edition_info : null;
                       return (
                         <div
                           key={i}
                           className="ws-conn-item"
                           style={{ cursor: "pointer" }}
-                          title={`From ${sourceTitle} — click to highlight in document`}
+                          title={`From ${sourceTitle}${origin ? " · " + origin : ""} — click to highlight in document`}
                           onClick={() => {
                             setHighlightRange({ start: sr.flat_start, end: sr.flat_end });
                             const el = document.querySelector(".editor-content") as HTMLElement | null;
@@ -3038,6 +3040,11 @@ export function WorkspaceShell() {
                               <span className="ws-work-license-badge" title={srcLicInfo.label}>{srcLicInfo.short}</span>
                             )}
                           </div>
+                          {origin && (
+                            <div style={{ fontSize: 10, color: "#d29922", fontStyle: "italic", margin: "1px 0" }}>
+                              {origin}
+                            </div>
+                          )}
                           {sr.resolved_content && (
                             <div className="ws-conn-excerpt" style={{ fontStyle: "italic", color: "#6e7681" }}>
                               {sr.resolved_content.length > 80
