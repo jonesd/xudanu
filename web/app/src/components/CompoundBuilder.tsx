@@ -1,5 +1,15 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import type { CrdtSyncClient, WorkListEntry, SpanRangePayload } from "../api/crdt_sync";
+import type { CrdtSyncClient, WorkListEntry, SpanRangePayload, BlobEntry } from "../api/crdt_sync";
+
+interface SourceImage {
+  hash: number;
+  mime: string;
+  width?: number | null;
+  height?: number | null;
+  caption?: string | null;
+  url?: string;
+  loading: boolean;
+}
 
 interface CompoundBuilderProps {
   centerWorkId: number;
@@ -20,6 +30,7 @@ interface SourceDoc {
   title: string;
   text: string;
   loading: boolean;
+  images: SourceImage[];
 }
 
 const BRIDGE_COLORS = [
@@ -109,7 +120,7 @@ export function CompoundBuilder({
     if (sources.some((s) => s.workId === workId)) return;
     const work = works.find((w) => w.work_id === workId);
     const title = work?.title || `Work ${workId.toString(16)}`;
-    setSources((prev) => [...prev, { workId, title, text: "", loading: true }]);
+    setSources((prev) => [...prev, { workId, title, text: "", loading: true, images: [] }]);
     if (client) {
       try {
         const resp = await client.sendRequest("work_get_edition", { work_id: workId });
@@ -117,6 +128,48 @@ export function CompoundBuilder({
         const inner = (val && "value" in val) ? val.value as Record<string, unknown> : val;
         const text = (inner?.text as string) || (inner?.value as string) || "";
         setSources((prev) => prev.map((s) => s.workId === workId ? { ...s, text, loading: false } : s));
+
+        // Load images from blob store
+        try {
+          const blobs = await client.workBlobList(workId);
+          if (blobs.length > 0) {
+            const images: SourceImage[] = blobs.map((b: BlobEntry) => ({
+              hash: typeof b.content_hash === "number" ? b.content_hash : 0,
+              mime: b.mime_type,
+              width: b.width,
+              height: b.height,
+              caption: b.caption,
+              loading: true,
+            }));
+            setSources((prev) => prev.map((s) => s.workId === workId ? { ...s, images } : s));
+            // Load thumbnails
+            for (const blob of blobs) {
+              const hashU64 = typeof blob.content_hash === "number" ? blob.content_hash : 0;
+              client.blobGetPreview(hashU64).then((previewBytes) => {
+                const blobObj = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: blob.mime_type });
+                const url = URL.createObjectURL(blobObj);
+                setSources((prev) => prev.map((s) => {
+                  if (s.workId !== workId) return s;
+                  return { ...s, images: s.images.map((img) => img.hash === hashU64 ? { ...img, url, loading: false } : img) };
+                }));
+              }).catch(() => {
+                client.blobGet(hashU64).then((fullBytes) => {
+                  const blobObj = new Blob([fullBytes as BlobPart], { type: blob.mime_type });
+                  const url = URL.createObjectURL(blobObj);
+                  setSources((prev) => prev.map((s) => {
+                    if (s.workId !== workId) return s;
+                    return { ...s, images: s.images.map((img) => img.hash === hashU64 ? { ...img, url, loading: false } : img) };
+                  }));
+                }).catch(() => {
+                  setSources((prev) => prev.map((s) => {
+                    if (s.workId !== workId) return s;
+                    return { ...s, images: s.images.map((img) => img.hash === hashU64 ? { ...img, loading: false } : img) };
+                  }));
+                });
+              });
+            }
+          }
+        } catch { /* blob list might fail for works without images */ }
       } catch {
         setSources((prev) => prev.map((s) => s.workId === workId ? { ...s, text: "(failed to load)", loading: false } : s));
       }
@@ -408,6 +461,23 @@ export function CompoundBuilder({
               {!activeSource.loading && activeSource.text.length > 10000 && (
                 <div className="cb-source-truncated">
                   Showing first 10K characters of {activeSource.text.length.toLocaleString()}
+                </div>
+              )}
+              {activeSource.images.length > 0 && (
+                <div className="cb-source-images">
+                  <div className="cb-source-images-header">Images ({activeSource.images.length})</div>
+                  {activeSource.images.map((img, idx) => (
+                    <div key={idx} className="cb-source-image-item" title={img.caption || `Image ${idx + 1}`}>
+                      {img.loading ? (
+                        <div className="cb-image-placeholder">loading...</div>
+                      ) : img.url ? (
+                        <img src={img.url} alt={img.caption || ""} style={{ maxWidth: "100%", borderRadius: 4 }} />
+                      ) : (
+                        <div className="cb-image-placeholder">failed to load</div>
+                      )}
+                      {img.caption && <div className="cb-image-caption">{img.caption}</div>}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

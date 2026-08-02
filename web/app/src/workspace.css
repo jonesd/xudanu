@@ -2574,6 +2574,11 @@
 .cb-source-search { width: 100%; background: var(--bg-surface, #22222e); border: 1px solid var(--border, #30363d); color: var(--text, #c9d1d9); border-radius: 4px; padding: 4px 8px; font-size: 12px; }
 .cb-source-text { flex: 1; overflow-y: auto; padding: 8px 10px; font-size: 13px; font-family: 'Source Serif 4', Georgia, serif; line-height: 1.6; color: var(--text, #c9d9d9); user-select: text; white-space: pre-wrap; }
 .cb-source-truncated { padding: 4px 10px; font-size: 10px; color: var(--text-muted, #6e7681); border-top: 1px solid var(--border, #30363d); }
+.cb-source-images { border-top: 1px solid var(--border, #30363d); padding: 8px 10px; }
+.cb-source-images-header { font-size: 10px; font-weight: 600; color: var(--text-muted, #8b949e); text-transform: uppercase; margin-bottom: 6px; }
+.cb-source-image-item { margin-bottom: 8px; }
+.cb-image-placeholder { padding: 12px; text-align: center; background: rgba(255,255,255,0.04); border-radius: 4px; font-size: 11px; color: var(--text-muted, #6e7681); }
+.cb-image-caption { font-size: 10px; color: var(--text-muted, #6e7681); margin-top: 2px; font-style: italic; }
 .cb-compound-panel { flex: 1; overflow-y: auto; background: #ffffff; }
 .cb-welcome { max-width: 500px; margin: 80px auto; padding: 32px; font-family: 'Inter', sans-serif; color: #333; }
 .cb-welcome h2 { font-size: 20px; margin-bottom: 16px; color: #1a1a24; }
