@@ -1682,7 +1682,7 @@ export function CollaborativeEditor({
     const fullPos = pre.toString().replace(/\u200B/g, "").length;
 
     let readonlyChars = 0;
-    el.querySelectorAll("[contenteditable='false']").forEach((span) => {
+    el.querySelectorAll(".inline-transclusion").forEach((span) => {
       const spanRange = document.createRange();
       spanRange.selectNodeContents(span);
       if (spanRange.compareBoundaryPoints(Range.START_TO_END, pre) <= 0) {
@@ -2529,6 +2529,8 @@ export function buildTransclusionDom(
         el.appendChild(document.createTextNode(resolvedText.slice(pos, sr.flat_start)));
       }
       const content = resolvedText.slice(sr.flat_start, sr.flat_end).replace(/^\n+/, "").replace(/\n+$/, "");
+      const beforeText = pos < sr.flat_start ? resolvedText.slice(Math.max(0, sr.flat_start - 20), sr.flat_start) : "";
+      console.log("[transclusion-render] flat_start:", sr.flat_start, "flat_end:", sr.flat_end, "content:", JSON.stringify(content.slice(0, 40)), "text_before:", JSON.stringify(beforeText));
       const title = sourceTitles?.[sr.source_work_id] || sr.source_work_id.toString(16);
       const span = document.createElement("span");
       span.className = "inline-transclusion";
