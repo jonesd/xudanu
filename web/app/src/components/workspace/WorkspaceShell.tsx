@@ -1733,7 +1733,7 @@ export function WorkspaceShell() {
         </aside>
 
         {/* Document surface */}
-        <main className={`ws-doc-surface ${canEdit ? "editable" : "readonly"}`}>
+        <main className={`ws-doc-surface ${canEdit ? "editable" : "readonly"} ${editorMode === "reading" ? "reading-mode" : ""}`}>
           {invalidWorkId !== null ? (
             <div className="ws-empty-doc">
               <h2>Work 0x{invalidWorkId.toString(16)} not found</h2>

@@ -1016,16 +1016,21 @@
   text-decoration: underline;
 }
 
-/* Reading mode: seamless rendering, no markers */
+/* Reading mode: seamless rendering, no markers, no distraction */
 .ws-doc-surface.reading-mode .inline-transclusion {
   border-left: none;
   background: transparent;
   padding: 0;
   border-radius: 0;
+  font-style: normal;
+  color: inherit;
 }
 .ws-doc-surface.reading-mode .inline-transclusion::before {
   display: none;
 }
+.ws-doc-surface.reading-mode .ws-selection-actions { display: none !important; }
+.ws-doc-surface.reading-mode .ws-format-bar { display: none !important; }
+.ws-doc-surface.reading-mode .attribution-overlay { opacity: 0; }
 
 /* Selection action popover — floats over text, doesn't shift layout */
 .ws-selection-actions {

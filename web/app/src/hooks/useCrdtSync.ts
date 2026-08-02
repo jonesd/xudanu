@@ -378,14 +378,19 @@ export function useCrdtSync(
       await client.loginByName(clubName, password);
     }
     setAuthenticated(true);
-    client?.sessionTicketIssue().then((ticket) => {
+    // AWAIT ticket issue — must complete before HMR can fire, otherwise
+    // the next mount has no david ticket and user becomes anonymous
+    try {
+      const ticket = await client?.sessionTicketIssue();
       if (ticket) {
         try {
           const b64 = btoa(String.fromCharCode(...ticket));
           localStorage.setItem("xudanu_session_ticket", b64);
         } catch {}
       }
-    }).catch(() => {});
+    } catch (e) {
+      console.error("[session] sessionTicketIssue failed:", e);
+    }
   }, []);
 
   const createIdentity = useCallback(async (displayName: string, password: string) => {
@@ -399,14 +404,17 @@ export function useCrdtSync(
     });
     if (!resp.ok) throw new Error("identity created but session login failed");
     setAuthenticated(true);
-    client.sessionTicketIssue().then((ticket) => {
+    try {
+      const ticket = await client.sessionTicketIssue();
       if (ticket) {
         try {
           const b64 = btoa(String.fromCharCode(...ticket));
           localStorage.setItem("xudanu_session_ticket", b64);
         } catch {}
       }
-    }).catch(() => {});
+    } catch (e) {
+      console.error("[session] sessionTicketIssue failed:", e);
+    }
   }, []);
 
   const createWork = useCallback(async (): Promise<number | null> => {
