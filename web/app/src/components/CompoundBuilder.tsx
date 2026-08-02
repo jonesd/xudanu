@@ -333,6 +333,16 @@ export function CompoundBuilder({
       });
   }, [works, centerWorkId, sources, sourceFilter, transclusionSourceIds]);
   const activeSource = sources.find((s) => s.workId === activeSourceId);
+
+  // Memoize source HTML so re-renders (from selectedText state change)
+  // don't destroy the DOM and lose the user's text selection
+  const sourceHtml = useMemo(() => {
+    if (!activeSource) return { __html: "" };
+    const html = sourceSearch
+      ? highlightSearch(escapeHtml(activeSource.text), sourceSearch)
+      : escapeHtml(activeSource.text);
+    return { __html: html };
+  }, [activeSource?.text, sourceSearch]);
   const transclusionCount = compoundSpanRanges.length;
   const isEmpty = transclusionCount === 0 && sources.length === 0;
 
@@ -452,11 +462,7 @@ export function CompoundBuilder({
                 }}
                 tabIndex={0}
                 className="cb-source-text"
-                dangerouslySetInnerHTML={{
-                  __html: sourceSearch
-                    ? highlightSearch(escapeHtml(activeSource.text), sourceSearch)
-                    : escapeHtml(activeSource.text),
-                }}
+                dangerouslySetInnerHTML={sourceHtml}
               />
               {!activeSource.loading && activeSource.text.length > 10000 && (
                 <div className="cb-source-truncated">
