@@ -2528,7 +2528,7 @@ export function buildTransclusionDom(
       if (sr.flat_start > pos) {
         el.appendChild(document.createTextNode(resolvedText.slice(pos, sr.flat_start)));
       }
-      const content = resolvedText.slice(sr.flat_start, sr.flat_end);
+      const content = resolvedText.slice(sr.flat_start, sr.flat_end).replace(/^\n+/, "").replace(/\n+$/, "");
       const title = sourceTitles?.[sr.source_work_id] || sr.source_work_id.toString(16);
       const span = document.createElement("span");
       span.className = "inline-transclusion";
