@@ -991,18 +991,16 @@
 
 /* Transclusion styling — inline block, not full-width, doesn't swallow neighbors */
 .ws-doc-surface .inline-transclusion {
-  display: inline;
+  display: inline !important;
   white-space: normal;
-  background: rgba(59, 130, 246, 0.06);
+  background: rgba(59, 130, 246, 0.06) !important;
   border-left: 3px solid rgba(59, 130, 246, 0.5);
+  border-bottom: none !important;
   border-radius: 0 3px 3px 0;
-  padding: 2px 6px 2px 8px;
+  padding: 0 4px !important;
   margin: 0;
   font-style: italic;
   color: var(--doc-text-muted);
-  user-select: all;
-  -webkit-user-select: all;
-  cursor: pointer;
 }
 .ws-doc-surface .inline-transclusion::before {
   content: "↗";
