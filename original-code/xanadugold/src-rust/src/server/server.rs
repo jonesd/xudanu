@@ -5616,10 +5616,30 @@ impl Server {
         let club_id = self
             .resolve_author_club(session_id)
             .ok_or(ServerError::NotAuthorized)?;
+        // Remove from the current club's set
         if let Some(set) = self.starred_works.get_mut(&club_id) {
             set.remove(&work_id);
         }
-        tracing::info!("[unstar] club_id={} work_id={}", club_id, work_id,);
+        // Also check all other clubs the session has authority over — the star
+        // may have been added under a different club (e.g. public before login)
+        if let Some(session) = self.sessions.get(&session_id) {
+            for auth_club in session.authority_clubs() {
+                if auth_club != club_id {
+                    if let Some(set) = self.starred_works.get_mut(&auth_club) {
+                        if set.remove(&work_id) {
+                            tracing::info!(
+                                "[unstar] also removed from club {:x} (cross-club)",
+                                auth_club
+                            );
+                            if let Err(e) = self.wal.append_unstar(auth_club, work_id) {
+                                tracing::warn!("WAL write failed for cross-club unstar: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        tracing::info!("[unstar] club_id={:x} work_id={:x}", club_id, work_id);
         if let Err(e) = self.wal.append_unstar(club_id, work_id) {
             tracing::warn!("WAL write failed for unstar: {}", e);
         }

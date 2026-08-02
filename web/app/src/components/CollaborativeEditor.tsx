@@ -1701,7 +1701,6 @@ export function CollaborativeEditor({
 
     const target = e.target as HTMLElement;
     const transclusionSpan = target.closest(".inline-transclusion");
-    console.log("[click] target:", target.tagName, target.className, "transclusionSpan:", !!transclusionSpan);
     if (transclusionSpan && onNavigateToWork) {
       const sourceId = parseInt((transclusionSpan as HTMLElement).dataset.sourceWorkId || "0", 10);
       console.log("[click] sourceId:", sourceId, "dataset:", (transclusionSpan as HTMLElement).dataset);
@@ -1716,7 +1715,7 @@ export function CollaborativeEditor({
 
     const result = computePlacementPosition(e.clientX, e.clientY, el);
     if (result !== null) {
-      console.log("[placement] O-tree position:", result.pos);
+      onPlaceTransclusion(result.pos, result.padding);
       onPlaceTransclusion(result.pos);
     }
     setPlacementIndicator(null);
@@ -2528,11 +2527,11 @@ export function buildTransclusionDom(
 
     for (const sr of sorted) {
       if (sr.flat_start > pos) {
-        el.appendChild(document.createTextNode(resolvedText.slice(pos, sr.flat_start)));
+        let chunk = resolvedText.slice(pos, sr.flat_start);
+        chunk = chunk.replace(/\n+$/, "");
+        el.appendChild(document.createTextNode(chunk));
       }
       const content = resolvedText.slice(sr.flat_start, sr.flat_end).replace(/^\n+/, "").replace(/\n+$/, "");
-      const beforeText = pos < sr.flat_start ? resolvedText.slice(Math.max(0, sr.flat_start - 20), sr.flat_start) : "";
-      console.log("[transclusion-render] flat_start:", sr.flat_start, "flat_end:", sr.flat_end, "content:", JSON.stringify(content.slice(0, 40)), "text_before:", JSON.stringify(beforeText));
       const title = sourceTitles?.[sr.source_work_id] || sr.source_work_id.toString(16);
       const span = document.createElement("span");
       span.className = "inline-transclusion";
@@ -2544,7 +2543,9 @@ export function buildTransclusionDom(
     }
 
     if (pos < resolvedText.length) {
-      el.appendChild(document.createTextNode(resolvedText.slice(pos)));
+      let after = resolvedText.slice(pos);
+      after = after.replace(/^\n+/, "");
+      el.appendChild(document.createTextNode(after));
     }
     if (resolvedText.endsWith("\n")) {
       el.appendChild(document.createTextNode("\u200B"));
