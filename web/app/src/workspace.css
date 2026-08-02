@@ -992,6 +992,7 @@
 /* Transclusion styling — inline block, not full-width, doesn't swallow neighbors */
 .ws-doc-surface .inline-transclusion {
   display: inline;
+  white-space: normal;
   background: rgba(59, 130, 246, 0.06);
   border-left: 3px solid rgba(59, 130, 246, 0.5);
   border-radius: 0 3px 3px 0;
