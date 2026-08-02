@@ -110,7 +110,14 @@ export function WorkspaceShell() {
     return null;
   });
   const [navTab, setNavTab] = useState<WorkspaceNavTab>(() => {
-    const nav = new URLSearchParams(window.location.search).get("nav");
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("clear") === "1") {
+      localStorage.clear();
+      params.delete("clear");
+      const url = window.location.pathname + (params.toString() ? "?" + params.toString() : "");
+      window.history.replaceState({}, "", url);
+    }
+    const nav = params.get("nav");
     if (nav === "library") return "library";
     if (nav === "compose") return "compose";
     return "explore";

@@ -360,8 +360,13 @@ export function CompoundBuilder({
             <span className="cb-count-badge">{transclusionCount} transclusion{transclusionCount !== 1 ? "s" : ""}</span>
           )}
           <span className={`cb-identity-badge ${authenticated ? "" : "anonymous"}`}>
-            {authenticated && identity ? identity.display_name : "Anonymous \u2014 login required"}
+            {authenticated && identity ? identity.display_name : "Anonymous"}
           </span>
+          {!authenticated && (
+            <button type="button" className="cb-btn-primary" onClick={onClose} title="Exit to log in">
+              Log in
+            </button>
+          )}
         </div>
         <div className="cb-header-actions">
           {selectedText && (
