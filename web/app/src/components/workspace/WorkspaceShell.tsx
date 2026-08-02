@@ -1005,7 +1005,6 @@ export function WorkspaceShell() {
 
   const handlePlaceTransclusion = useCallback(
     async (position: number, padding?: string) => {
-      void padding;
       if (workBeId === null) return;
       const pending = transclusion.pending;
       if (!pending) return;
@@ -1016,11 +1015,9 @@ export function WorkspaceShell() {
         setText(newText);
         spanStart = newText.length;
       }
-      for (const sr of compound.spanRanges) {
-        if (sr.flat_end <= spanStart) {
-          spanStart -= (sr.flat_end - sr.flat_start);
-        }
-      }
+      // Note: position from computePlacementPosition is ALREADY in raw text
+      // coordinates (it subtracts .inline-transclusion content via readonlyChars).
+      // Do NOT subtract compound span ranges again — that double-adjusts.
       await compound.addSpan(
         text,
         spanStart,
