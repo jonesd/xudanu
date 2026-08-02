@@ -2177,7 +2177,7 @@ export function WorkspaceShell() {
                       className="ws-sel-btn transclude"
                       disabled={!selectionRange}
                       onClick={handleTranscludeSelection}
-                    title="Hold this selection as a transclusion to insert elsewhere"
+                    title="Hold this passage, then open another document from the Recent list (left panel) and click to place it there"
                   >
                     Transclude
                   </button>
