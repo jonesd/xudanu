@@ -1645,35 +1645,63 @@ export class CrdtSyncClient {
   }
 
   /// Try to authenticate using a stored session ticket.
-  /// Falls back to credential re-login if the ticket is invalid.
+  /// Verifies the ticket gives the expected user (not a stale public ticket).
   /// Called early in onOpen() so crdt_sync_open succeeds for private works.
   async tryTicketAuth(): Promise<boolean> {
-    // Try ticket first
     try {
       const b64 = localStorage.getItem("xudanu_session_ticket");
-      if (b64) {
-        const binary = atob(b64);
-        if (binary.length === 112) {
-          const arr = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
-          const ok = await this.sessionTicketRedeem(arr);
-          if (ok) {
-            this.sessionTicketIssue().then((newTicket) => {
-              if (newTicket) {
-                try {
-                  const b = btoa(String.fromCharCode(...newTicket));
-                  localStorage.setItem("xudanu_session_ticket", b);
-                } catch {}
-              }
-            }).catch(() => {});
-            return true;
-          }
-        }
+      if (!b64) return false;
+      const binary = atob(b64);
+      if (binary.length !== 112) {
+        localStorage.removeItem("xudanu_session_ticket");
+        return false;
       }
-    } catch {}
+      const arr = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+      const ok = await this.sessionTicketRedeem(arr);
+      if (!ok) {
+        localStorage.removeItem("xudanu_session_ticket");
+        return false;
+      }
 
-    // Ticket failed — no stored credentials (security: never store passwords)
-    return false;
+      // Verify the ticket gives the expected user, not a stale public ticket.
+      // Compare the redeemed identity with the cached identity.
+      const expectedClub = (() => {
+        try {
+          const cached = localStorage.getItem("xudanu_identity_cache");
+          if (cached) return (JSON.parse(cached) as { club_id?: number }).club_id ?? null;
+        } catch {}
+        return null;
+      })();
+
+      const actual = await this.checkWhoAmI();
+
+      if (!actual) {
+        // Ticket gives anonymous/public — clear it so login flow kicks in
+        localStorage.removeItem("xudanu_session_ticket");
+        return false;
+      }
+
+      if (expectedClub !== null && actual.club_id !== expectedClub) {
+        console.warn(`[auth] ticket gives club ${actual.club_id} but expected ${expectedClub} — clearing stale ticket`);
+        localStorage.removeItem("xudanu_session_ticket");
+        localStorage.removeItem("xudanu_identity_cache");
+        return false;
+      }
+
+      // Ticket is valid for the correct user — rolling renewal
+      this.sessionTicketIssue().then((newTicket) => {
+        if (newTicket) {
+          try {
+            const b = btoa(String.fromCharCode(...newTicket));
+            localStorage.setItem("xudanu_session_ticket", b);
+          } catch {}
+        }
+      }).catch(() => {});
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   getIdentity(): WhoAmIEntry | null {
