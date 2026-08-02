@@ -2542,6 +2542,8 @@
 .cb-title { color: var(--text, #c9d1d9); font-size: 14px; font-weight: 600; }
 .cb-doc-title { color: var(--text-muted, #8b949e); font-size: 12px; }
 .cb-count-badge { background: rgba(88,166,255,0.12); color: #58a6ff; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.cb-identity-badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; background: rgba(63,185,80,0.12); color: #3fb950; }
+.cb-identity-badge.anonymous { background: rgba(248,81,73,0.12); color: #f85149; }
 .cb-header-actions { display: flex; gap: 8px; align-items: center; }
 .cb-btn-primary { background: #238636; border: 1px solid #2ea043; color: #fff; border-radius: 4px; padding: 4px 12px; cursor: pointer; font-size: 13px; }
 .cb-btn-secondary { background: var(--bg-surface, #22222e); border: 1px solid var(--border, #30363d); color: var(--text-muted, #8b949e); border-radius: 4px; padding: 4px 12px; cursor: pointer; font-size: 12px; }

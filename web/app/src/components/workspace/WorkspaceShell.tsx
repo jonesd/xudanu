@@ -3558,6 +3558,8 @@ export function WorkspaceShell() {
           compoundSourceTitles={compound.sourceTitles}
           works={works}
           client={clientRef.current}
+          identity={identity}
+          authenticated={authenticated}
           onClose={() => { setShowCompoundBuilder(false); if (navTab === "compose") setNavTab("explore"); }}
           onPlaceTransclusion={(sourceWorkId, sourceWorkTitle, start, end, txt) => {
             transclusion.holdSelection(sourceWorkId, sourceWorkTitle, start, end, txt);

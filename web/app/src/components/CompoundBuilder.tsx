@@ -19,6 +19,8 @@ interface CompoundBuilderProps {
   compoundSourceTitles: Record<number, string>;
   works: WorkListEntry[];
   client: CrdtSyncClient | null;
+  identity?: { display_name: string } | null;
+  authenticated?: boolean;
   onClose: () => void;
   onPlaceTransclusion: (sourceWorkId: number, sourceWorkTitle: string, start: number, end: number, text: string) => void;
   onReloadCompound: () => void;
@@ -97,6 +99,8 @@ export function CompoundBuilder({
   compoundSourceTitles,
   works,
   client,
+  identity,
+  authenticated,
   onClose,
   onPlaceTransclusion,
   onReloadCompound,
@@ -355,6 +359,9 @@ export function CompoundBuilder({
           {transclusionCount > 0 && (
             <span className="cb-count-badge">{transclusionCount} transclusion{transclusionCount !== 1 ? "s" : ""}</span>
           )}
+          <span className={`cb-identity-badge ${authenticated ? "" : "anonymous"}`}>
+            {authenticated && identity ? identity.display_name : "Anonymous \u2014 login required"}
+          </span>
         </div>
         <div className="cb-header-actions">
           {selectedText && (
