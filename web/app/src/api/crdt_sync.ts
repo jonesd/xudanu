@@ -543,7 +543,7 @@ export class CrdtSyncClient {
     this.ws.onopen = () => this.onOpen();
     this.ws.onmessage = (e) => this.onMessage(e.data);
       this.ws.onclose = () => this.onClose();
-      this.ws.onerror = (e) => { console.warn("[ws] error event (not closing):", e); };
+      this.ws.onerror = () => {};
   }
 
   disconnect(): void {
@@ -1855,7 +1855,6 @@ export class CrdtSyncClient {
           setTimeout(() => reject(new Error("crdt_sync_open timeout")), 5000)
         );
         const openResp = await Promise.race([openPromise, timeoutPromise]);
-        console.log("[CRDT-DIAG] crdt_sync_open succeeded for work", this.workBeId);
         const inner = extractValue(openResp) as Record<string, unknown>;
 
         const wasInitialOpen = !this.crdtOpenedThisConnection;
@@ -1891,13 +1890,11 @@ export class CrdtSyncClient {
           this.awarenessListeners.forEach((cb) => cb(Array.from(this.awarenessMap.values())));
         }).catch(() => {});
       } catch (e) {
-        console.warn("[CRDT-DIAG] crdt_sync_open failed for work", this.workBeId, "— falling back to edition. Error:", e);
         // CRDT open failed — fall through to edition fallback below
       }
     }
     if (!loaded) {
       try {
-        console.log("[CRDT-DIAG] work_get_edition fallback for work", this.workBeId);
         const edResp = await this.sendRequest("work_get_edition", {
           work_id: this.workBeId,
         });
@@ -1907,7 +1904,6 @@ export class CrdtSyncClient {
             || (edVal as { type?: string; value?: string }).value
             || "";
           this.text = edText;
-          console.log("[CRDT-DIAG] edition loaded, length=", edText.length);
           this.textListeners.forEach((cb) => cb(this.text));
         }
       } catch {
@@ -2010,7 +2006,6 @@ export class CrdtSyncClient {
     if (eventType === "crdt_text_update") {
       const payload = event.payload as Record<string, unknown> | undefined;
       if (payload && payload.work_id === this.workBeId && !this.skipCrdt) {
-        console.log("[CRDT-DIAG] received crdt_text_update from another session");
         const newText = payload.text as string;
         if (this.deltaInFlight) {
           this.pendingServerText = newText;
@@ -2024,7 +2019,6 @@ export class CrdtSyncClient {
     if (eventType === "crdt_text_delta") {
       const payload = event.payload as Record<string, unknown> | undefined;
       if (payload && payload.work_id === this.workBeId && !this.skipCrdt) {
-        console.log("[CRDT-DIAG] received crdt_text_delta from another session");
         const ops = payload.ops as Array<{ type: string; count?: number; text?: string }>;
         const author = (payload.author_name as string) || "unknown";
         try {
@@ -2200,7 +2194,6 @@ export class CrdtSyncClient {
     }
 
     this.deltaInFlight = true;
-    console.log("[CRDT-DIAG] sending work_revise_delta, ops:", ops.length, "for work", this.workBeId);
     this.sendRequest("work_revise_delta", {
       work_id: this.workBeId,
       base_revision: 0,

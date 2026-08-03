@@ -1703,7 +1703,6 @@ export function CollaborativeEditor({
     const transclusionSpan = target.closest(".inline-transclusion");
     if (transclusionSpan && onNavigateToWork) {
       const sourceId = parseInt((transclusionSpan as HTMLElement).dataset.sourceWorkId || "0", 10);
-      console.log("[click] sourceId:", sourceId, "dataset:", (transclusionSpan as HTMLElement).dataset);
       if (sourceId) {
         onNavigateToWork(sourceId);
         return;
