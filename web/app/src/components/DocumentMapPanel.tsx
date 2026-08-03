@@ -75,7 +75,7 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose,
         setNodes(simNodes);
         setEdges(g.edges);
         setLoading(false);
-      } catch (e) {
+      } catch {
         if (cancelled) return;
         // Retry up to 3 times with backoff — likely auth race on first mount
         if (attempt < 3) {

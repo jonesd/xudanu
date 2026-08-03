@@ -928,7 +928,7 @@ async fn main() {
                             .with_server(|srv| srv.take_tickets_dirty());
                         if tickets_dirty {
                             if let Err(e) = autosave_state.server.save_ticket_nonces() {
-                                tracing::warn!("ticket nonce save failed: {}", e);
+                                tracing::warn!("ticket nonce save failed: {e}");
                             }
                         }
                         if saved > 0 {

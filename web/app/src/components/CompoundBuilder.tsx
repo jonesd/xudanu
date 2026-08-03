@@ -51,9 +51,7 @@ function renderCompoundText(
   searchTerm?: string,
 ): string {
   if (spans.length === 0) {
-    let html = escapeHtml(text);
-    if (searchTerm) html = highlightSearch(html, searchTerm);
-    return html;
+    return highlightSearch(escapeHtml(text), searchTerm ?? "");
   }
   const sorted = [...spans].sort((a, b) => a.flat_start - b.flat_start);
   let html = "";
@@ -64,9 +62,7 @@ function renderCompoundText(
     const end = Math.min(span.flat_end, text.length);
     if (start < pos) continue;
     if (start > pos) {
-      let chunk = escapeHtml(text.slice(pos, start));
-      if (searchTerm) chunk = highlightSearch(chunk, searchTerm);
-      html += chunk;
+      html += highlightSearch(escapeHtml(text.slice(pos, start)), searchTerm ?? "");
     }
     const title = sourceTitles[span.source_work_id] || `Work ${span.source_work_id.toString(16)}`;
     const color = BRIDGE_COLORS[i % BRIDGE_COLORS.length];
@@ -78,9 +74,7 @@ function renderCompoundText(
     pos = Math.max(pos, end);
   }
   if (pos < text.length) {
-    let chunk = escapeHtml(text.slice(pos));
-    if (searchTerm) chunk = highlightSearch(chunk, searchTerm);
-    html += chunk;
+    html += highlightSearch(escapeHtml(text.slice(pos)), searchTerm ?? "");
   }
   return html;
 }

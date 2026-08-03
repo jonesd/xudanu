@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import type { CrdtSyncClient, WorkListEntry } from "../api/crdt_sync";
+import { extractValue } from "../api/crdt_sync";
 
 const BRIDGE_COLORS = [
   "#d29922", "#56b4e9", "#009e73", "#cc79a7",
@@ -151,6 +152,11 @@ export interface CompareState {
   setDiffGranularity: (g: DiffGranularity) => void;
 }
 
+export type CompareHook = typeof useCompare & {
+  _openDocument?: (wid: number) => Promise<void>;
+  _openRevision?: (revision: number) => Promise<void>;
+};
+
 export function useCompare(
   visible: boolean,
   currentWorkId: number | null,
@@ -229,9 +235,9 @@ export function useCompare(
         setRightRegions([]);
       }
       try {
-        const resp = await (client as any).sendRequest("work_get_edition", { work_id: wid });
-        const val = (resp as any)?.value;
-        const text = val?.Text || val?.text || (typeof val === "string" ? val : "");
+        const resp = await client.sendRequest("work_get_edition", { work_id: wid });
+        const val = extractValue(resp) as Record<string, unknown> | string;
+        const text = typeof val === "string" ? val : ((val?.Text as string) || (val?.text as string) || "");
         setTargetText(text);
       } catch {
         setTargetText("");
@@ -263,8 +269,8 @@ export function useCompare(
     [client, currentWorkId, currentText, fuzzy]
   );
 
-  (useCompare as any)._openDocument = openDocumentCompare;
-  (useCompare as any)._openRevision = openRevisionCompare;
+  (useCompare as CompareHook)._openDocument = openDocumentCompare;
+  (useCompare as CompareHook)._openRevision = openRevisionCompare;
 
   return {
     mode,
@@ -298,8 +304,8 @@ export function CompareHeader({ visible, state, currentWorkId, works, revisionCo
   if (!visible) return null;
 
   const otherWorks = works.filter((w) => w.work_id !== currentWorkId);
-  const openDoc = (useCompare as any)._openDocument as ((wid: number) => Promise<void>) | undefined;
-  const openRev = (useCompare as any)._openRevision as ((rev: number) => Promise<void>) | undefined;
+  const openDoc = (useCompare as CompareHook)._openDocument;
+  const openRev = (useCompare as CompareHook)._openRevision;
 
   return (
     <div className="compare-header">
@@ -484,7 +490,7 @@ function findClientSharedRegions(textA: string, textB: string, minLen: number = 
       continue;
     }
 
-    let searchFrom = 0;
+    const searchFrom = 0;
     while (true) {
       const idx = textB.indexOf(lineTrim, searchFrom);
       if (idx === -1) break;

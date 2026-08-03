@@ -132,6 +132,14 @@
 
 ### 4.3 Collaborative Awareness
 - [x] Cursor positions and selections (awareness system)
+- [ ] **Add: Awareness bar** — restore the presence bar showing online
+  colleagues with their current work, cursor position, and quick
+  interaction (click to join their work, send cursor reaction)
+  - Server: awareness data already pushed via `crdt_awareness_update`
+  - Client: `awareness` state already in `useCrdtSync`
+  - UI: Needs a dedicated bar (was removed during UI consolidation)
+  - Show: avatar, name, current work title, typing indicator
+  - Interact: click user → navigate to their work, hover → see cursor
 - [ ] Add: "X is editing" indicator when another user has the work open
 - [ ] Add: Conflict notification (when CRDT merge changes your text)
 - [ ] Add: Presence list in right panel (who's viewing this work)

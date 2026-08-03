@@ -351,6 +351,8 @@ export interface WorkListEntry {
 
 export type WorkKind = "document" | "note" | "person" | "concept" | "collection" | "commentary" | "book";
 
+export type SaveState = "idle" | "saving" | "saved" | "error";
+
 export type License = "all-rights-reserved" | "transcopyright" | "cc-by" | "cc-by-sa" | "public-domain";
 
 export const LICENSES: { value: License; label: string; short: string; url: string | null }[] = [
@@ -469,6 +471,9 @@ export class CrdtSyncClient {
   private contentMatchListeners = new Set<(match: ContentMatch) => void>();
   private changeHighlightListeners = new Set<(changes: ChangeHighlight[]) => void>();
   private compoundSourceListeners = new Set<(compoundWorkId: number, sourceWorkId: number) => void>();
+  private saveStateListeners = new Set<(state: SaveState) => void>();
+  private saveState: SaveState = "idle";
+  private saveStateTimer: ReturnType<typeof setTimeout> | null = null;
   private recentChanges: ChangeHighlight[] = [];
   private identityListeners = new Set<IdentityListener>();
   private connected = false;
@@ -618,6 +623,25 @@ export class CrdtSyncClient {
   onCompoundSourceChange(cb: (compoundWorkId: number, sourceWorkId: number) => void): () => void {
     this.compoundSourceListeners.add(cb);
     return () => { this.compoundSourceListeners.delete(cb); };
+  }
+
+  onSaveStateChange(cb: (state: SaveState) => void): () => void {
+    this.saveStateListeners.add(cb);
+    return () => { this.saveStateListeners.delete(cb); };
+  }
+
+  getSaveState(): SaveState {
+    return this.saveState;
+  }
+
+  private setSaveState(state: SaveState): void {
+    if (this.saveState === state) return;
+    this.saveState = state;
+    if (this.saveStateTimer) {
+      clearTimeout(this.saveStateTimer);
+      this.saveStateTimer = null;
+    }
+    this.saveStateListeners.forEach((cb) => cb(state));
   }
 
   async subscribeContentWorks(targetId: number): Promise<number> {
@@ -1669,7 +1693,7 @@ export class CrdtSyncClient {
           try {
             const b = btoa(String.fromCharCode(...newTicket));
             localStorage.setItem("xudanu_session_ticket", b);
-          } catch {}
+          } catch { /* no-op */ }
         }
       }).catch(() => {});
       return true;
@@ -1708,7 +1732,7 @@ export class CrdtSyncClient {
       if (newTicketArr && newTicketArr.length > 0) {
         const newTicket = new Uint8Array(newTicketArr);
         const b64 = btoa(String.fromCharCode(...newTicket));
-        try { localStorage.setItem("xudanu_session_ticket", b64); } catch {}
+        try { localStorage.setItem("xudanu_session_ticket", b64); } catch { /* no-op */ }
       }
       return true;
     } catch {
@@ -1889,7 +1913,7 @@ export class CrdtSyncClient {
           }
           this.awarenessListeners.forEach((cb) => cb(Array.from(this.awarenessMap.values())));
         }).catch(() => {});
-      } catch (e) {
+      } catch {
         // CRDT open failed — fall through to edition fallback below
       }
     }
@@ -2194,12 +2218,15 @@ export class CrdtSyncClient {
     }
 
     this.deltaInFlight = true;
+    this.setSaveState("saving");
     this.sendRequest("work_revise_delta", {
       work_id: this.workBeId,
       base_revision: 0,
       ops,
     }).then(() => {
       this.deltaInFlight = false;
+      this.setSaveState("saved");
+      this.saveStateTimer = setTimeout(() => this.setSaveState("idle"), 2000);
       if (this.pendingServerText !== null) {
         const serverText = this.pendingServerText;
         this.pendingServerText = null;
@@ -2211,6 +2238,7 @@ export class CrdtSyncClient {
       }
     }).catch((e) => {
       this.deltaInFlight = false;
+      this.setSaveState("error");
       const msg = String(e?.message || e || "");
       if (msg.includes("WebSocket not open") || msg.includes("connection closed") || msg.includes("timed out")) {
         console.warn("Text delta not sent (will sync on reconnect):", msg);

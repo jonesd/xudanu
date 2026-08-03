@@ -17,7 +17,7 @@ export function DataIntegrityBanner() {
         setHealth(data);
         const degraded = data.chain_valid === false || (Array.isArray(data.restore_errors) && data.restore_errors.length > 0);
         window.dispatchEvent(new CustomEvent("xudanu-health", { detail: { degraded } }));
-      } catch {}
+      } catch { /* network error — will retry */ }
     };
     check();
     const interval = setInterval(check, 30000);

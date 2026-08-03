@@ -144,14 +144,14 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
     let blockType = marker.type;
     let level = marker.level;
     let listKind = marker.listType;
-    let contentStart = marker.contentStart;
+    const contentStart = marker.contentStart;
 
     if (!blockType && annBlockMarks.length > 0) {
       const ann = annBlockMarks.find(
         (m) => m.char_start <= lineEnd && m.char_end >= lineStart,
       );
       if (ann) {
-        blockType = ann.kind as any;
+        blockType = ann.kind as Exclude<LineBlock["type"], null>;
         if (ann.kind === "heading") {
           try { level = JSON.parse(ann.payload || "{}").level || 1; } catch { level = 1; }
         }

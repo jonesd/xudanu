@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { CrdtSyncClient, WorkListEntry } from "../api/crdt_sync";
+import { extractValue } from "../api/crdt_sync";
 import { useDraggable } from "../hooks/useDraggable";
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -200,9 +201,9 @@ export function ThreeWayDiffPanel({ client, currentWorkId, works, onClose }: Pro
     async (wid: number): Promise<string> => {
       if (!client) return "";
       try {
-        const resp = await (client as any).sendRequest("work_get_edition", { work_id: wid });
-        const val = (resp as any)?.value;
-        return val?.Text || val?.text || (typeof val === "string" ? val : "") || "";
+        const resp = await client.sendRequest("work_get_edition", { work_id: wid });
+        const val = extractValue(resp) as Record<string, unknown> | string;
+        return typeof val === "string" ? val : ((val?.Text as string) || (val?.text as string) || "");
       } catch {
         return "";
       }
@@ -265,20 +266,20 @@ export function ThreeWayDiffPanel({ client, currentWorkId, works, onClose }: Pro
       // Create an empty work, then revise it with the merged text.
       // work_revise stamps element provenance (author + signature) onto
       // every element — so the curator gets attribution for the merge.
-      const createResp = await (client as any).sendRequest("work_create", {
+      const createResp = await client.sendRequest("work_create", {
         edition: { text: " " },
       });
-      const createVal = (createResp as any)?.value;
-      const newId = (createVal?.value ?? createVal) as number;
+      const createVal = extractValue(createResp);
+      const newId = typeof createVal === "number" ? createVal : ((createVal as Record<string, unknown>)?.value as number) ?? 0;
       if (!newId) throw new Error("work_create returned no id");
 
       // Grab → Revise → Release stamps curator provenance
-      await (client as any).sendRequest("work_grab", { work_id: newId });
-      await (client as any).sendRequest("work_revise", {
+      await client.sendRequest("work_grab", { work_id: newId });
+      await client.sendRequest("work_revise", {
         work_id: newId,
         edition: { text: mergedText },
       });
-      await (client as any).sendRequest("work_release", { work_id: newId });
+      await client.sendRequest("work_release", { work_id: newId });
 
       setMergedWorkId(newId);
     } catch (e) {

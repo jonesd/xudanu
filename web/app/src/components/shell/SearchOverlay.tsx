@@ -76,7 +76,7 @@ export function SearchOverlay({
               excerpt: "",
             });
           }
-        } catch {}
+        } catch { /* no-op */ }
       }
       setResults(searchResults.filter((r) => !titleIds.has(r.work_id)));
     } finally {

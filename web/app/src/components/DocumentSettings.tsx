@@ -18,7 +18,7 @@ export function loadDocPreferences(): DocPreferences {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
-  } catch {}
+  } catch { /* parse error */ }
   return { ...DEFAULTS };
 }
 

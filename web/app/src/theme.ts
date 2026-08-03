@@ -97,7 +97,7 @@ function safeGet(key: string): string | null {
 }
 
 function safeSet(key: string, value: string): void {
-  try { localStorage.setItem(key, value); } catch {}
+  try { localStorage.setItem(key, value); } catch { /* no-op */ }
 }
 
 export function loadThemeState(): ThemeState {

@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CrdtSyncClient, type AwarenessState, type ContentMatch, type AttributionSpan, type AttributionLogStatus, type WhoAmIEntry, type WorkListEntry, type AnnotationEntry, type ChangeHighlight, type LlmUsageSummary } from "../api/crdt_sync";
+import { CrdtSyncClient, type AwarenessState, type ContentMatch, type AttributionSpan, type AttributionLogStatus, type WhoAmIEntry, type WorkListEntry, type AnnotationEntry, type ChangeHighlight, type LlmUsageSummary, type SaveState } from "../api/crdt_sync";
 
 export interface CrdtSyncState {
   text: string;
+  saveState: SaveState;
   connected: boolean;
   authenticated: boolean;
   reconnectAttempt: number;
@@ -55,6 +56,7 @@ export function useCrdtSync(
 ): CrdtSyncState {
   const clientRef = useRef<CrdtSyncClient | null>(null);
   const [text, setTextState] = useState("");
+  const [saveState, setSaveState] = useState<SaveState>("idle");
   const [connected, setConnected] = useState(false);
   const [switchingWork, setSwitchingWork] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
@@ -70,7 +72,7 @@ export function useCrdtSync(
     try {
       const cached = localStorage.getItem("xudanu_identity_cache");
       if (cached) return JSON.parse(cached) as WhoAmIEntry;
-    } catch {}
+    } catch { /* parse error */ }
     return null;
   });
   const [isAdmin, setIsAdmin] = useState(false);
@@ -103,6 +105,7 @@ export function useCrdtSync(
     clientRef.current = client;
 
     const unsubText = client.onTextChange(setTextState);
+    const unsubSave = client.onSaveStateChange(setSaveState);
     const unsubConn = client.onConnectionChange((isConnected) => {
       if (isConnected) {
         if (disconnectTimerRef.current) {
@@ -138,7 +141,7 @@ export function useCrdtSync(
     const unsubIdentity = client.onIdentityChange((id) => {
       setIdentity(id);
       if (id) setAuthenticated(true);
-      try { localStorage.setItem("xudanu_identity_cache", JSON.stringify(id)); } catch {}
+      try { localStorage.setItem("xudanu_identity_cache", JSON.stringify(id)); } catch { /* no-op */ }
       setIsAdmin(client!.getIsAdmin());
     });
     const unsubChanges = client.onChangeHighlights(setRecentChanges);
@@ -156,6 +159,7 @@ export function useCrdtSync(
     return () => {
       clearInterval(reconnectPoll);
       unsubText();
+      unsubSave();
       unsubConn();
       unsubConn2();
       unsubAware();
@@ -248,7 +252,7 @@ export function useCrdtSync(
       if (id) {
         setAuthenticated(true);
         setIdentity(id);
-        try { localStorage.setItem("xudanu_identity_cache", JSON.stringify(id)); } catch {}
+        try { localStorage.setItem("xudanu_identity_cache", JSON.stringify(id)); } catch { /* no-op */ }
       } else {
         setAuthenticated(false);
       }
@@ -283,7 +287,7 @@ export function useCrdtSync(
       if (client && client.isConnected() && workBeId !== null) {
         try {
           client.sendRequest("crdt_sync_close", { work_id: workBeId });
-        } catch {}
+        } catch { /* no-op */ }
       }
     };
     window.addEventListener("beforeunload", handler);
@@ -371,7 +375,7 @@ export function useCrdtSync(
       const body = await resp.json().catch(() => ({}));
       throw new Error(body.error || "login failed");
     }
-    try { localStorage.setItem("xudanu_login_club", clubName); } catch {}
+    try { localStorage.setItem("xudanu_login_club", clubName); } catch { /* no-op */ }
     void password;
     const client = clientRef.current;
     if (client && client.isConnected()) {
@@ -386,7 +390,7 @@ export function useCrdtSync(
         try {
           const b64 = btoa(String.fromCharCode(...ticket));
           localStorage.setItem("xudanu_session_ticket", b64);
-        } catch {}
+        } catch { /* no-op */ }
       }
     } catch (e) {
       console.error("[session] sessionTicketIssue failed:", e);
@@ -410,7 +414,7 @@ export function useCrdtSync(
         try {
           const b64 = btoa(String.fromCharCode(...ticket));
           localStorage.setItem("xudanu_session_ticket", b64);
-        } catch {}
+        } catch { /* no-op */ }
       }
     } catch (e) {
       console.error("[session] sessionTicketIssue failed:", e);
@@ -618,7 +622,7 @@ export function useCrdtSync(
   }, [workBeId, annotations, refreshAnnotations]);
 
   return {
-    text, connected, authenticated, reconnectAttempt, switchingWork, awareness, setText, setTextLocal, sendCursor, sendSelection,
+    text, saveState, connected, authenticated, reconnectAttempt, switchingWork, awareness, setText, setTextLocal, sendCursor, sendSelection,
     contentMatches, watchEnabled, toggleWatch, clientRef,
     attributionSpans, attributionLogStatus, refreshAttribution,
     refreshAwareness,

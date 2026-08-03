@@ -63,9 +63,7 @@ export function DropdownItem({ onClick, disabled, checked, children }: DropdownI
   );
 }
 
-interface DropdownSeparatorProps {}
-
-export function DropdownSeparator(_props: DropdownSeparatorProps) {
+export function DropdownSeparator() {
   return <div className="dropdown-separator" />;
 }
 

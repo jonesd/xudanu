@@ -27,9 +27,9 @@ describe("Transclusion inline rendering — \\n stripping (the actual bug)", () 
     const flatStart = 3;
     const flatEnd = 8;
 
-    let before = resolvedText.slice(0, flatStart).replace(/\n+$/, "");
-    let content = resolvedText.slice(flatStart, flatEnd).replace(/^\n+/, "").replace(/\n+$/, "");
-    let after = resolvedText.slice(flatEnd).replace(/^\n+/, "");
+    const before = resolvedText.slice(0, flatStart).replace(/\n+$/, "");
+    const content = resolvedText.slice(flatStart, flatEnd).replace(/^\n+/, "").replace(/\n+$/, "");
+    const after = resolvedText.slice(flatEnd).replace(/^\n+/, "");
 
     expect(before).toBe("AB");
     expect(content).toBe("Alpha");
@@ -44,9 +44,9 @@ describe("Transclusion inline rendering — \\n stripping (the actual bug)", () 
     const flatStart = 12;
     const flatEnd = 17;
 
-    let before = resolvedText.slice(0, flatStart).replace(/\n+$/, "");
-    let content = resolvedText.slice(flatStart, flatEnd).replace(/^\n+/, "").replace(/\n+$/, "");
-    let after = resolvedText.slice(flatEnd).replace(/^\n+/, "");
+    const before = resolvedText.slice(0, flatStart).replace(/\n+$/, "");
+    const content = resolvedText.slice(flatStart, flatEnd).replace(/^\n+/, "").replace(/\n+$/, "");
+    const after = resolvedText.slice(flatEnd).replace(/^\n+/, "");
 
     expect(before).toBe("Hello\nWorld");
     expect(content).toBe("Alpha");
@@ -58,8 +58,8 @@ describe("Transclusion inline rendering — \\n stripping (the actual bug)", () 
     const flatStart = 5;
     const flatEnd = 10;
 
-    let before = resolvedText.slice(0, flatStart).replace(/\n+$/, "");
-    let after = resolvedText.slice(flatEnd).replace(/^\n+/, "");
+    const before = resolvedText.slice(0, flatStart).replace(/\n+$/, "");
+    const after = resolvedText.slice(flatEnd).replace(/^\n+/, "");
 
     expect(before).toBe("AB");
     expect(after).toBe("CDE");
@@ -332,7 +332,7 @@ describe("Compound state epoch guard (the persistence bug)", () => {
   });
 
   it("refresh reads epoch WITHOUT incrementing (cooperative)", () => {
-    let epoch = 5;
+    const epoch = 5;
     const refreshEpoch = epoch; // read only
     expect(refreshEpoch).toBe(5);
     expect(epoch).toBe(5); // unchanged

@@ -149,7 +149,7 @@ export class TextBuffer {
         level = hashMatch[1].length;
         text = hashMatch[2].trim();
       } else {
-        const chapterMatch = trimmed.match(/^(chapter|part|section)\s+(\d+[\.:]?\s*.+)/i);
+        const chapterMatch = trimmed.match(/^(chapter|part|section)\s+(\d+[.:]?\s*.+)/i);
         if (chapterMatch) {
           const keyword = chapterMatch[1].toLowerCase();
           level = keyword === "part" ? 1 : keyword === "chapter" ? 2 : 3;

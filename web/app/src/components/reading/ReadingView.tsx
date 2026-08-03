@@ -69,13 +69,11 @@ export function ReadingView({
       try {
         const s = await clientRef.current!.workSummary(workId);
         if (!cancelled) setSummary(s);
-      } catch (_e) {
-      }
+      } catch (_e) { /* network error — will retry */ }
       try {
         const t = await clientRef.current!.workVersionTimeline(workId);
         if (!cancelled) setTimeline(t);
-      } catch (_e) {
-      }
+      } catch (_e) { /* network error — will retry */ }
     })();
     return () => { cancelled = true; };
   }, [workId, connected, clientRef]);
@@ -310,7 +308,7 @@ function renderAnnotatedLine(
       const isHovered = hoveredRegion && hoveredRegion.start === region.start && hoveredRegion.end === region.end;
       const isEndOfRegion = i === line.length - 1 || !activeRegions.find((r) => r.start <= absPos + 1 && r.end > absPos + 1);
 
-      let style: React.CSSProperties = {};
+      const style: React.CSSProperties = {};
       if (level >= 1) {
         style.borderBottom = `2px solid ${color}`;
         if (isHovered && level >= 2) {

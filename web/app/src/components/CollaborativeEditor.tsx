@@ -894,7 +894,7 @@ export function CollaborativeEditor({
       if (saved === "all" || saved === null) return null;
       const arr = JSON.parse(saved);
       if (Array.isArray(arr)) return new Set(arr);
-    } catch {}
+    } catch { /* parse error */ }
     return null;
   });
 
@@ -904,7 +904,7 @@ export function CollaborativeEditor({
       try {
         if (next === null) localStorage.setItem("xudanu_linkTypeFilter", "all");
         else localStorage.setItem("xudanu_linkTypeFilter", JSON.stringify([...next]));
-      } catch {}
+      } catch { /* no-op */ }
       return next;
     });
   }, []);
@@ -1715,7 +1715,6 @@ export function CollaborativeEditor({
     const result = computePlacementPosition(e.clientX, e.clientY, el);
     if (result !== null) {
       onPlaceTransclusion(result.pos, result.padding);
-      onPlaceTransclusion(result.pos);
     }
     setPlacementIndicator(null);
   }, [pendingTransclusion, onPlaceTransclusion, onNavigateToWork, computePlacementPosition]);

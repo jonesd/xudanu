@@ -52,7 +52,7 @@ export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClos
     try {
       const list = await client.trailList();
       setTrails(list);
-    } catch {}
+    } catch { /* network error — will retry */ }
     setLoading(false);
     loadedOnce.current = true;
   }, [client]);
@@ -66,7 +66,7 @@ export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClos
       ]);
       setCategories(cats);
       setPublishedTrails(list);
-    } catch {}
+    } catch { /* network error — will retry */ }
     setLoading(false);
   }, [client, selectedCategory]);
 

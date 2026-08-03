@@ -1,5 +1,6 @@
 import { useMemo, useState, useCallback } from "react";
 import type { CrdtSyncClient, WorkListEntry, AttributionSpan, AttributionLogStatus, LinkEntry } from "../api/crdt_sync";
+import { extractValue } from "../api/crdt_sync";
 import { useDraggable } from "../hooks/useDraggable";
 
 interface Props {
@@ -90,11 +91,11 @@ export function ExportPanel({
 
         setImportStatus({ state: "creating", message: "Creating work…", importedId: null });
 
-        const resp = await (client as any).sendRequest("work_create", {
+        const resp = await client.sendRequest("work_create", {
           edition: { text: workText },
         });
-        const val = (resp as any)?.value;
-        const newId = (val?.value ?? val) as number;
+        const val = extractValue(resp);
+        const newId = typeof val === "number" ? val : ((val as Record<string, unknown>)?.value as number) ?? 0;
 
         if (!newId) throw new Error("Server returned no work ID");
 

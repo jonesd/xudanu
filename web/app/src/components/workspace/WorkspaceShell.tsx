@@ -232,6 +232,7 @@ export function WorkspaceShell() {
   const crdt = useCrdtSync(WS_URL, workBeId);
   const {
     text,
+    saveState,
     connected,
     authenticated,
     identity,
@@ -326,7 +327,6 @@ export function WorkspaceShell() {
   const identityColor = identityName ? authorColorPair(identityName).primary : "#888";
 
   const selectWork = useCallback((id: number) => {
-    console.log("[selectWork]", `0x${id.toString(16)}`, "from", workBeId ? `0x${workBeId.toString(16)}` : "null");
     setWorkBeId(id);
     setImageEntries([]);
     if (navTab === "library") setNavTab("explore");
@@ -401,7 +401,7 @@ export function WorkspaceShell() {
       try {
         const entries = await fetchWorkList();
         setWorks(entries);
-      } catch {}
+      } catch { /* network error — will retry */ }
     }, 30000);
     return () => clearInterval(interval);
   }, [connected, fetchWorkList]);
@@ -418,7 +418,7 @@ export function WorkspaceShell() {
       } as WorkListEntry]);
     }
     if (fetchWorkList) {
-      try { const entries = await fetchWorkList(); setWorks(entries); } catch {}
+      try { const entries = await fetchWorkList(); setWorks(entries); } catch { /* network error — will retry */ }
     }
   }, [createWork, selectWork, fetchWorkList]);
 
@@ -666,7 +666,7 @@ export function WorkspaceShell() {
         const inner = val.value as Record<string, unknown> | undefined;
         const id = (inner?.value as number) ?? (inner as unknown as number) ?? (val.value as number);
         if (typeof id === "number" && id > 0) {
-          try { await clientRef.current!.workPublish(id); } catch {}
+          try { await clientRef.current!.workPublish(id); } catch { /* no-op */ }
           selectWork(id);
           showToast("Demo document created");
         } else {
@@ -859,7 +859,7 @@ export function WorkspaceShell() {
           try {
             const toCache = next.map((e) => ({ hash: e.hash, mime: e.mime, width: e.width, height: e.height }));
             localStorage.setItem(`xudanu_images_${workBeId}`, JSON.stringify(toCache));
-          } catch {}
+          } catch { /* no-op */ }
         }
         return next;
       });
@@ -1288,7 +1288,7 @@ export function WorkspaceShell() {
         })
         .sort((a, b) => b.link_count - a.link_count);
       setConcepts(conceptList);
-    } catch {}
+    } catch { /* network error — will retry */ }
   }, [clientRef, conceptNameOverride]);
 
   const handleAddConcept = useCallback(async () => {
@@ -1407,7 +1407,7 @@ export function WorkspaceShell() {
           selectionRange.end,
           false,
         );
-      } catch {}
+      } catch { /* expected during transitions */ }
       setAddToSelector(null);
       setSelectionRange(null);
       if (rightPanelTab === "trails") await loadTrailsForWork();
@@ -1459,7 +1459,7 @@ export function WorkspaceShell() {
 
   const filteredWorks = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    let sorted = [...works];
+    const sorted = [...works];
     switch (sortBy) {
       case "title":
         sorted.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
@@ -1650,7 +1650,7 @@ export function WorkspaceShell() {
                       try {
                         const entries = await fetchWorkList();
                         setWorks(entries);
-                      } catch {}
+                      } catch { /* network error — will retry */ }
                     }
                   }}
                   title="Refresh list"
@@ -1698,7 +1698,7 @@ export function WorkspaceShell() {
                                   const entries = await fetchWorkList();
                                   setWorks(entries);
                                 }
-                              } catch {}
+                              } catch { /* network error — will retry */ }
                             }}
                             style={{ cursor: "pointer", color: w.is_starred ? "#d29922" : "#6e7681", fontSize: 11, flexShrink: 0 }}
                             title={w.is_starred ? "Unpin" : "Pin to top"}
@@ -1916,7 +1916,7 @@ export function WorkspaceShell() {
                         try {
                           await crdt.setWorkTitle(newTitle.trim());
                           setWorkMeta((prev) => prev ? { ...prev, title: newTitle.trim() } : prev);
-                          if (fetchWorkList) { try { const entries = await fetchWorkList(); setWorks(entries); } catch {} }
+                          if (fetchWorkList) { try { const entries = await fetchWorkList(); setWorks(entries); } catch { /* network error — will retry */ } }
                         } catch (e) { console.error("Failed to set title:", e); }
                       }
                     }}
@@ -2094,7 +2094,7 @@ export function WorkspaceShell() {
                           onClick={() => {
                             try {
                               navigator.share?.({ title: workMeta?.title || "Xudanu work", text }).catch(() => {});
-                            } catch {}
+                            } catch { /* no-op */ }
                             setMoreMenuOpen(false);
                           }}
                         >
@@ -2139,7 +2139,7 @@ export function WorkspaceShell() {
                           onClick={() => {
                             setShowLinkDesc((prev) => {
                               const next = !prev;
-                              try { localStorage.setItem("xudanu_showLinkDesc", String(next)); } catch {}
+                              try { localStorage.setItem("xudanu_showLinkDesc", String(next)); } catch { /* no-op */ }
                               return next;
                             });
                             setMoreMenuOpen(false);
@@ -2152,6 +2152,9 @@ export function WorkspaceShell() {
                   </div>
                 </div>
                 <div className="ws-doc-meta">
+                  {saveState === "saving" && <span className="ws-save-indicator ws-save-saving">Saving...</span>}
+                  {saveState === "saved" && <span className="ws-save-indicator ws-save-saved">Saved</span>}
+                  {saveState === "error" && <span className="ws-save-indicator ws-save-error">Save error</span>}
                   {workMeta?.author && <span>{workMeta.author}</span>}
                   {workMeta?.collection && <span>· {workMeta.collection}</span>}
                   {workMeta?.publishedAt && <span>· {workMeta.publishedAt}</span>}
@@ -2231,8 +2234,7 @@ export function WorkspaceShell() {
                       💡 Tag
                     </button>
                   </div>
-                {workBeId !== null && (
-                  <div className="ws-format-bar">
+                <div className="ws-format-bar">
                     <button type="button" className="ws-sel-btn style" onMouseDown={(e) => e.preventDefault()}
                       onClick={() => selectionRange && handleToggleStyle("bold", selectionRange.start, selectionRange.end)}
                       title="Bold (Ctrl+B)" style={{ fontWeight: 700 }}
@@ -2290,11 +2292,9 @@ export function WorkspaceShell() {
                     <button type="button" className="ws-sel-btn" onMouseDown={(e) => e.preventDefault()}
                       disabled={suggestingTitle}
                       onClick={async () => {
-                        console.log("[LLM] Title button clicked, calling suggestTitle...");
                         setSuggestingTitle(true);
                         setSuggestedTitle(null);
                         const title = await crdt.suggestTitle();
-                        console.log("[LLM] suggestTitle returned:", JSON.stringify(title));
                         setSuggestedTitle(title || "(No title generated)");
                         setSuggestingTitle(false);
                       }}
@@ -2317,7 +2317,6 @@ export function WorkspaceShell() {
                       {autoTagging ? "Tagging\u2026" : "\u2728 Auto-Tag"}
                     </button>
                   </div>
-                )}
                 {addToSelector && selectionRange && (
                   <div className="ws-trail-picker">
                     <div className="ws-trail-picker-header">
@@ -2404,7 +2403,7 @@ export function WorkspaceShell() {
                       try {
                         const parsed = JSON.parse(a.payload);
                         trailName = parsed.trail_name || "trail";
-                      } catch {}
+                      } catch { /* parse error */ }
                       return (
                         <div
                           key={a.annotation_id}

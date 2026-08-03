@@ -124,7 +124,7 @@ export function SourceTextViewer({ workId, clientRef, connected: _connected, fon
 
   useEffect(() => {
     if (!ready || !clientRef.current) return;
-    let cancelledRef = { current: false };
+    const cancelledRef = { current: false };
     const client = clientRef.current;
     linesRef.current = [];
     viewRef.current = { start: 0, end: 0 };

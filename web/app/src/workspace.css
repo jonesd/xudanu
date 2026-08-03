@@ -942,6 +942,43 @@
   cursor: pointer;
 }
 
+.ws-save-indicator {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.ws-save-saving {
+  color: var(--text-muted);
+  background: var(--bg-document-margin);
+}
+.ws-save-saving::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  margin-right: 4px;
+  animation: ws-pulse 1s ease-in-out infinite;
+}
+@keyframes ws-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+.ws-save-saved {
+  color: var(--green);
+  background: rgba(63, 185, 80, 0.08);
+}
+.ws-save-saved::before {
+  content: "\2713 ";
+}
+.ws-save-error {
+  color: var(--red);
+  background: rgba(248, 81, 73, 0.1);
+}
+
 .ws-doc-scroll {
   flex: 1;
   overflow: auto;
