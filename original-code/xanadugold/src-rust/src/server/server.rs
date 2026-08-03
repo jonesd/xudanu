@@ -10824,19 +10824,11 @@ impl Server {
                         let before: String = chars[..split].iter().collect();
                         let after: String = chars[split..].iter().collect();
 
-                        let needs_newline_before = !before.is_empty() && !before.ends_with('\n');
-                        let needs_newline_after = !after.is_empty() && !after.starts_with('\n');
-
                         if !before.is_empty() {
-                            let before_text = if needs_newline_before {
-                                format!("{}\n", before)
-                            } else {
-                                before
-                            };
                             new_entries.push((
                                 pos,
                                 std::sync::Arc::new(crate::edition::range_element::Carrier::new(
-                                    RangeElement::text(before_text),
+                                    RangeElement::text(before),
                                 )),
                             ));
                             pos += 1;
@@ -10845,15 +10837,10 @@ impl Server {
                         pos += 1;
                         inserted = true;
                         if !after.is_empty() {
-                            let after_text = if needs_newline_after {
-                                format!("\n{}", after)
-                            } else {
-                                after
-                            };
                             new_entries.push((
                                 pos,
                                 std::sync::Arc::new(crate::edition::range_element::Carrier::new(
-                                    RangeElement::text(after_text),
+                                    RangeElement::text(after),
                                 )),
                             ));
                             pos += 1;
@@ -28657,6 +28644,73 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "server")]
+    fn element_insert_does_not_inject_newlines() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work = server
+            .create_work(sid, Edition::from_text("ABCDE"))
+            .unwrap();
+
+        server
+            .element_insert(
+                sid,
+                work,
+                2,
+                RangeElement::Transclusion {
+                    source_work_id: 999,
+                    char_start: 0,
+                    char_end: 5,
+                    placed_at: 0,
+                    placed_by: None,
+                    content_hash: None,
+                    source_revision: None,
+                },
+            )
+            .unwrap();
+
+        let ed = server.work_edition(work).unwrap();
+        assert_eq!(
+            ed.to_text(),
+            "ABCDE",
+            "text should be ABCDE — transclusion is zero-width, no \\n injection"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn element_insert_inline_text_preserved() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+
+        server
+            .element_insert(
+                sid,
+                work,
+                5,
+                RangeElement::Transclusion {
+                    source_work_id: 999,
+                    char_start: 0,
+                    char_end: 5,
+                    placed_at: 0,
+                    placed_by: None,
+                    content_hash: None,
+                    source_revision: None,
+                },
+            )
+            .unwrap();
+
+        let ed = server.work_edition(work).unwrap();
+        assert_eq!(
+            ed.to_text(),
+            "Hello World",
+            "text should be 'Hello World' — no \\n added around transclusion"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
     fn range_element_payload_work_ref_round_trip() {
         use crate::server::transport::protocol::RangeElementPayload;
         let re = RangeElement::work(42);
