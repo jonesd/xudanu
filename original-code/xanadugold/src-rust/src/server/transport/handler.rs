@@ -1568,3 +1568,166 @@ async fn blob_upload_handler(
         })),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---- parse_work_id ----
+
+    #[test]
+    fn parse_work_id_plain_lowercase_hex() {
+        assert_eq!(parse_work_id("deadbeef"), Some(0xdeadbeef));
+    }
+
+    #[test]
+    fn parse_work_id_strips_0x_prefix() {
+        assert_eq!(parse_work_id("0xcafe"), Some(0xcafe));
+        assert_eq!(parse_work_id("0x0"), Some(0));
+    }
+
+    #[test]
+    fn parse_work_id_accepts_uppercase() {
+        assert_eq!(parse_work_id("0xDEADBEEF"), Some(0xdeadbeef));
+        assert_eq!(parse_work_id("FF"), Some(255));
+    }
+
+    #[test]
+    fn parse_work_id_max_u64_value() {
+        assert_eq!(parse_work_id("ffffffffffffffff"), Some(u64::MAX));
+    }
+
+    #[test]
+    fn parse_work_id_empty_returns_none() {
+        assert_eq!(parse_work_id(""), None);
+    }
+
+    #[test]
+    fn parse_work_id_non_hex_returns_none() {
+        assert_eq!(parse_work_id("xyzzy"), None);
+        assert_eq!(parse_work_id("12g4"), None);
+    }
+
+    #[test]
+    fn parse_work_id_overflow_returns_none() {
+        // 17 hex digits exceeds u64::MAX
+        assert_eq!(parse_work_id("10000000000000000"), None);
+    }
+
+    // ---- is_valid_email ----
+
+    #[test]
+    fn is_valid_email_simple() {
+        assert!(is_valid_email("user@example.com"));
+        assert!(is_valid_email("a@b.co"));
+    }
+
+    #[test]
+    fn is_valid_email_subdomain() {
+        assert!(is_valid_email("name@sub.domain.co.uk"));
+    }
+
+    #[test]
+    fn is_valid_email_missing_at_returns_false() {
+        assert!(!is_valid_email("noatsign.com"));
+    }
+
+    #[test]
+    fn is_valid_email_empty_local_returns_false() {
+        assert!(!is_valid_email("@example.com"));
+    }
+
+    #[test]
+    fn is_valid_email_no_dot_in_domain_returns_false() {
+        assert!(!is_valid_email("user@example"));
+    }
+
+    #[test]
+    fn is_valid_email_multiple_at_returns_false() {
+        assert!(!is_valid_email("a@b@c.d"));
+    }
+
+    #[test]
+    fn is_valid_email_empty_returns_false() {
+        assert!(!is_valid_email(""));
+    }
+
+    // ---- hex_encode ----
+
+    #[test]
+    fn hex_encode_empty() {
+        assert_eq!(hex_encode(&[]), "");
+    }
+
+    #[test]
+    fn hex_encode_known_bytes() {
+        assert_eq!(hex_encode(&[0x00, 0xff, 0x0a, 0xab]), "00ff0aab");
+    }
+
+    #[test]
+    fn hex_encode_single_byte_leads_zero() {
+        assert_eq!(hex_encode(&[0x05]), "05");
+        assert_eq!(hex_encode(&[0x5]), "05");
+    }
+
+    // ---- safe_content_type ----
+
+    #[test]
+    fn safe_content_type_valid_mime_passes_through() {
+        let hv = safe_content_type("image/png");
+        assert_eq!(hv.to_str().unwrap(), "image/png");
+    }
+
+    #[test]
+    fn safe_content_type_invalid_falls_back_to_octet_stream() {
+        // newline is forbidden in an HTTP HeaderValue, forcing fallback
+        let hv = safe_content_type("bad\nvalue");
+        assert_eq!(hv.to_str().unwrap(), "application/octet-stream");
+    }
+
+    // ---- html_page ----
+
+    #[test]
+    fn html_page_returns_ok_html_response() {
+        let resp = html_page("Hello", "world");
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        let ct = resp
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default();
+        assert!(
+            ct.starts_with("text/html"),
+            "expected text/html content-type, got {}",
+            ct
+        );
+    }
+
+    // ---- WsQuery deserialization ----
+
+    #[test]
+    fn ws_query_empty_object_all_none() {
+        let q: WsQuery = serde_json::from_str("{}").unwrap();
+        assert!(q.format.is_none());
+        assert!(q.version.is_none());
+        assert!(q.csrf_token.is_none());
+        assert!(q.token.is_none());
+        assert!(q.login.is_none());
+    }
+
+    #[test]
+    fn ws_query_parses_known_fields() {
+        let q: WsQuery =
+            serde_json::from_str(r#"{"format":"json","version":2,"login":"public"}"#).unwrap();
+        assert_eq!(q.format.as_deref(), Some("json"));
+        assert_eq!(q.version, Some(2));
+        assert_eq!(q.login.as_deref(), Some("public"));
+        assert!(q.csrf_token.is_none());
+        assert!(q.token.is_none());
+    }
+
+    #[test]
+    fn ws_query_version_out_of_u8_range_fails() {
+        assert!(serde_json::from_str::<WsQuery>(r#"{"version":300}"#).is_err());
+    }
+}

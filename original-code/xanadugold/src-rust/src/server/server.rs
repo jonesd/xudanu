@@ -1112,6 +1112,7 @@ impl Server {
             "server_description": self.server_description,
             "public_address": self.public_address,
             "server_id": vk_hex,
+            "server_namespace_id": self.server_namespace_id(),
             "tumbler_prefix": self.server_tumbler_prefix(),
             "content_api": "/api/public/work/{id}",
             "hash_algorithm": "blake3",
@@ -1179,19 +1180,39 @@ impl Server {
         let identity: serde_json::Value = serde_json::from_str(&response_text)
             .map_err(|e| ServerError::Internal(format!("Invalid identity JSON: {}", e)))?;
 
-        let server_id = identity["server_id"]
-            .as_u64()
-            .ok_or_else(|| ServerError::Internal("Missing server_id".into()))?;
-        let verifying_key = identity["verifying_key_ed25519"]
+        let verifying_key = identity["server_id"]
             .as_str()
-            .ok_or_else(|| ServerError::Internal("Missing verifying_key".into()))?
+            .ok_or_else(|| ServerError::Internal("Missing server_id (verifying key hex)".into()))?
             .to_string();
-        let name = identity["name"].as_str().unwrap_or("Unknown").to_string();
-        let description = identity["description"].as_str().unwrap_or("").to_string();
+
+        let server_id = if let Some(ns_id) = identity["server_namespace_id"].as_u64() {
+            ns_id
+        } else {
+            let vk_bytes = hex::decode(&verifying_key)
+                .map_err(|e| ServerError::Internal(format!("Invalid verifying key hex: {}", e)))?;
+            let hash = blake3::hash(&vk_bytes);
+            let b = hash.as_bytes();
+            u64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
+        };
+
+        let name = identity["server_name"]
+            .as_str()
+            .or_else(|| identity["name"].as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+        let description = identity["server_description"]
+            .as_str()
+            .or_else(|| identity["description"].as_str())
+            .unwrap_or("")
+            .to_string();
 
         let entry = crate::server::server_directory::DirectoryEntry {
             server_id,
-            address: address.to_string(),
+            address: identity["public_address"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .unwrap_or(address)
+                .to_string(),
             port,
             verifying_key: verifying_key.clone(),
             pinned_key: Some(verifying_key.clone()),

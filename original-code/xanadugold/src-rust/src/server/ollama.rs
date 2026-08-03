@@ -639,4 +639,76 @@ mod tests {
         let auto_title = summary.by_feature.get("auto_title").unwrap();
         assert_eq!(auto_title.requests, 1);
     }
+
+    #[test]
+    fn build_title_prompt_contains_content() {
+        let prompt = build_title_prompt("The mitochondria is the powerhouse of the cell.");
+        assert!(prompt.contains("mitochondria"));
+        assert!(prompt.contains("title"));
+    }
+
+    #[test]
+    fn build_categorization_prompt_empty_concepts() {
+        let prompt = build_categorization_prompt("Some document text here.", &[]);
+        assert!(prompt.contains("(none yet)"));
+        assert!(prompt.contains("Some document text here."));
+    }
+
+    #[test]
+    fn build_categorization_prompt_with_concepts() {
+        let concepts = vec!["Biology".to_string(), "Science".to_string()];
+        let prompt = build_categorization_prompt("Cell biology overview.", &concepts);
+        assert!(prompt.contains("- Biology"));
+        assert!(prompt.contains("- Science"));
+        assert!(!prompt.contains("(none yet)"));
+        assert!(prompt.contains("Cell biology overview."));
+    }
+
+    #[test]
+    fn llm_error_display_connection() {
+        let err = LlmError::Connection("network unreachable".to_string());
+        assert_eq!(format!("{}", err), "llm connection: network unreachable");
+    }
+
+    #[test]
+    fn llm_error_display_api() {
+        let err = LlmError::Api("500 Internal Server Error".to_string());
+        assert_eq!(format!("{}", err), "llm api: 500 Internal Server Error");
+    }
+
+    #[test]
+    fn llm_error_display_parse() {
+        let err = LlmError::Parse("invalid JSON".to_string());
+        assert_eq!(format!("{}", err), "llm parse: invalid JSON");
+    }
+
+    #[test]
+    fn ollama_default_client() {
+        let client = LlmClient::ollama_default();
+        assert_eq!(client.model_name(), "llama3.1");
+        assert_eq!(client.backend_label(), "ollama");
+    }
+
+    #[test]
+    fn llm_client_model_and_backend_ollama() {
+        let client = LlmClient::ollama_default();
+        assert_eq!(client.model_name(), "llama3.1");
+        assert_eq!(client.backend_label(), "ollama");
+    }
+
+    #[test]
+    fn usage_tracker_evicts_beyond_fifty() {
+        let tracker = LlmUsageTracker::default();
+        for _ in 0..60 {
+            tracker.record(LlmFeature::AutoTitle, 10, 5);
+        }
+
+        let summary = tracker.summary();
+        assert_eq!(summary.total_requests, 60);
+        assert_eq!(
+            summary.recent.len(),
+            50,
+            "recent list should be capped at 50"
+        );
+    }
 }

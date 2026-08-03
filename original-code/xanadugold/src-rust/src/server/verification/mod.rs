@@ -49,3 +49,39 @@ impl VerificationState {
         self.provider.send_verification(email, &url);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_issue_redeem_round_trip() {
+        let state = VerificationState::new("https://example.com".into());
+        let tok = state.issue(99, "round@example.com");
+        assert!(!tok.is_empty());
+        let (club, email) = state.redeem(&tok).expect("should redeem issued token");
+        assert_eq!(club, 99);
+        assert_eq!(email, "round@example.com");
+        assert!(state.redeem(&tok).is_none());
+    }
+
+    #[test]
+    fn state_redeem_unknown_returns_none() {
+        let state = VerificationState::new("https://example.com".into());
+        assert!(state.redeem("not-a-real-token").is_none());
+    }
+
+    #[test]
+    fn state_send_verification_does_not_panic() {
+        let state = VerificationState::new("https://example.com".into());
+        let tok = state.issue(1, "a@b.com");
+        state.send_verification("a@b.com", &tok);
+    }
+
+    #[test]
+    fn state_send_verification_strips_trailing_slash() {
+        let state = VerificationState::new("https://example.com/".into());
+        let tok = state.issue(1, "a@b.com");
+        state.send_verification("a@b.com", &tok);
+    }
+}

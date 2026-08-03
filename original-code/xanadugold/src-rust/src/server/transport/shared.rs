@@ -288,4 +288,141 @@ mod tests {
         let result = handle.try_with_server_ref(|_| 42);
         assert_eq!(result, None);
     }
+
+    #[test]
+    fn app_state_new_initializes_default_fields() {
+        let state = AppState::new(Server::new());
+        assert!(state.static_dir.is_none());
+        assert!(state.allowed_origins.is_none());
+        assert!(!state.csrf_enabled);
+        assert!(!state.dev_mode);
+        assert!(state.session_senders.lock().unwrap().is_empty());
+        assert!(state.csrf_tokens.lock().unwrap().is_empty());
+        let _shared: SharedState = state.shared();
+    }
+
+    #[test]
+    fn app_state_builder_methods_set_fields() {
+        let state = AppState::new(Server::new())
+            .with_static_dir(PathBuf::from("/tmp/static"))
+            .with_allowed_origins(HashSet::from(["https://example.com".to_string()]))
+            .with_csrf(true)
+            .with_dev_mode(true);
+        assert_eq!(
+            state.static_dir.as_deref(),
+            Some(std::path::Path::new("/tmp/static"))
+        );
+        assert_eq!(state.allowed_origins.as_ref().unwrap().len(), 1);
+        assert!(state.csrf_enabled);
+        assert!(state.dev_mode);
+    }
+
+    #[test]
+    fn app_state_shared_wraps_in_arc() {
+        let state = AppState::new(Server::new());
+        let shared = state.shared();
+        assert!(Arc::strong_count(&shared) >= 1);
+    }
+
+    #[test]
+    fn app_state_with_security_sets_monitor() {
+        let monitor = SecurityMonitor::new(Arc::new(super::super::audit::TracingAuditLog));
+        let state = AppState::with_security(Server::new(), monitor);
+        assert_eq!(
+            state.security.lock().unwrap().active_sessions_for_ip(None),
+            0
+        );
+    }
+
+    #[test]
+    fn register_and_send_to_session_delivers_message() {
+        let state = AppState::new(Server::new());
+        let session_id = SessionId::new(1);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<EventMessage>();
+        state.register_session_sender(session_id, tx);
+
+        let event = EventMessage {
+            session_id,
+            subscription_id: 0,
+            event: super::super::protocol::EventPayload::Done { operation_id: 7 },
+        };
+        assert!(state.send_to_session(&session_id, event));
+        assert!(rx.try_recv().is_ok());
+    }
+
+    #[test]
+    fn send_to_session_unknown_returns_false() {
+        let state = AppState::new(Server::new());
+        let event = EventMessage {
+            session_id: SessionId::new(99),
+            subscription_id: 0,
+            event: super::super::protocol::EventPayload::Done { operation_id: 0 },
+        };
+        assert!(!state.send_to_session(&SessionId::new(99), event));
+    }
+
+    #[test]
+    fn unregister_session_sender_removes_channel() {
+        let state = AppState::new(Server::new());
+        let session_id = SessionId::new(2);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<EventMessage>();
+        state.register_session_sender(session_id, tx);
+        assert!(state
+            .session_senders
+            .lock()
+            .unwrap()
+            .contains_key(&session_id));
+
+        state.unregister_session_sender(&session_id);
+        assert!(!state
+            .session_senders
+            .lock()
+            .unwrap()
+            .contains_key(&session_id));
+
+        let event = EventMessage {
+            session_id,
+            subscription_id: 0,
+            event: super::super::protocol::EventPayload::Done { operation_id: 0 },
+        };
+        assert!(!state.send_to_session(&session_id, event));
+    }
+
+    #[test]
+    fn with_server_callback_executes_and_can_mutate() {
+        let handle = ServerHandle::new(Server::new());
+        let before = handle.with_server_ref(|srv| srv.session_count());
+        assert_eq!(before, 0);
+        let pruned = handle.with_server(|srv| srv.prune_disconnected_sessions());
+        assert_eq!(pruned, 0);
+    }
+
+    #[test]
+    fn with_server_ref_callback_executes() {
+        let handle = ServerHandle::new(Server::new());
+        let count = handle.with_server_ref(|srv| srv.session_count());
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn wait_for_consequences_timeout_succeeds_when_idle() {
+        let handle = ServerHandle::new(Server::new());
+        let ok = handle.wait_for_consequences_timeout(std::time::Duration::from_millis(50));
+        assert!(ok);
+    }
+
+    #[test]
+    fn wait_for_write_timeout_succeeds_when_idle() {
+        let handle = ServerHandle::new(Server::new());
+        let ok = handle.wait_for_write_timeout(std::time::Duration::from_millis(50));
+        assert!(ok);
+    }
+
+    #[test]
+    fn save_ticket_nonces_returns_err_without_data_dir() {
+        let handle = ServerHandle::new(Server::new());
+        let result = handle.save_ticket_nonces();
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::NotFound);
+    }
 }

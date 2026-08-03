@@ -644,3 +644,280 @@ async fn fetch_google_user(access_token: &str) -> Result<GoogleUser, String> {
             .map(|s| s.to_string()),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::transport::shared::AppState;
+    use crate::server::Server;
+
+    /// Build a SharedState with a given OAuth config, resetting the OAuth state.
+    fn make_state(config: OAuthConfig) -> std::sync::Arc<AppState> {
+        AppState::new(Server::new()).with_oauth(config).shared()
+    }
+
+    fn mk_link(provider: &str, uid: &str, club: u64) -> OAuthLink {
+        OAuthLink {
+            provider: provider.to_string(),
+            provider_user_id: uid.to_string(),
+            provider_username: format!("user-{}", uid),
+            club_id: club,
+            created_at: 1000,
+        }
+    }
+
+    // ---- OAuthConfig ----
+
+    #[test]
+    fn oauth_config_default_disables_both_providers() {
+        let cfg = OAuthConfig::default();
+        assert!(!cfg.github_enabled());
+        assert!(!cfg.google_enabled());
+        assert!(cfg.github_client_id.is_none());
+        assert!(cfg.github_client_secret.is_none());
+        assert!(cfg.google_client_id.is_none());
+        assert!(cfg.google_client_secret.is_none());
+        assert_eq!(cfg.redirect_base, "https://xudanu.com");
+    }
+
+    #[test]
+    fn oauth_config_github_enabled_requires_both_id_and_secret() {
+        let mut cfg = OAuthConfig::default();
+        assert!(!cfg.github_enabled());
+        cfg.github_client_id = Some("id".into());
+        assert!(!cfg.github_enabled(), "secret still missing");
+        cfg.github_client_secret = Some("secret".into());
+        assert!(cfg.github_enabled());
+    }
+
+    #[test]
+    fn oauth_config_google_enabled_requires_both_id_and_secret() {
+        let mut cfg = OAuthConfig::default();
+        cfg.google_client_id = Some("id".into());
+        assert!(!cfg.google_enabled());
+        cfg.google_client_secret = Some("secret".into());
+        assert!(cfg.google_enabled());
+    }
+
+    // ---- OAuthLink storage ----
+
+    #[test]
+    fn store_and_find_link_roundtrip() {
+        let state = OAuthState::new();
+        state.store_link(mk_link("github", "123", 42));
+        let found = state.find_link("github", "123").expect("link present");
+        assert_eq!(found.club_id, 42);
+        assert_eq!(found.provider_username, "user-123");
+        assert_eq!(found.provider, "github");
+    }
+
+    #[test]
+    fn find_link_missing_returns_none() {
+        let state = OAuthState::new();
+        assert!(state.find_link("github", "nope").is_none());
+    }
+
+    #[test]
+    fn find_link_distinguishes_providers() {
+        let state = OAuthState::new();
+        state.store_link(mk_link("github", "1", 10));
+        state.store_link(mk_link("google", "1", 20));
+        assert_eq!(state.find_link("github", "1").unwrap().club_id, 10);
+        assert_eq!(state.find_link("google", "1").unwrap().club_id, 20);
+    }
+
+    #[test]
+    fn store_link_overwrites_same_provider_and_user() {
+        let state = OAuthState::new();
+        state.store_link(mk_link("github", "1", 1));
+        state.store_link(mk_link("github", "1", 2));
+        assert_eq!(state.find_link("github", "1").unwrap().club_id, 2);
+    }
+
+    #[test]
+    fn restore_links_and_get_all_roundtrip() {
+        let state = OAuthState::new();
+        let links = vec![mk_link("github", "1", 1), mk_link("google", "9", 2)];
+        state.restore_links(links);
+        let all = state.get_all_links();
+        assert_eq!(all.len(), 2);
+    }
+
+    // ---- state token (CSRF) ----
+
+    #[test]
+    fn generate_state_returns_hex_token() {
+        let state = OAuthState::new();
+        let token = state.generate_state();
+        assert_eq!(token.len(), 64, "32 bytes -> 64 hex chars");
+        assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
+        // {:02x} always emits lowercase a-f for letters
+        assert!(token
+            .chars()
+            .filter(|c| c.is_alphabetic())
+            .all(|c| c.is_ascii_lowercase()));
+    }
+
+    #[test]
+    fn validate_state_accepts_freshly_generated_token() {
+        let state = OAuthState::new();
+        let token = state.generate_state();
+        assert!(state.validate_state(&token));
+    }
+
+    #[test]
+    fn validate_state_is_single_use() {
+        let state = OAuthState::new();
+        let token = state.generate_state();
+        assert!(state.validate_state(&token), "first use should succeed");
+        assert!(!state.validate_state(&token), "second use must be rejected");
+    }
+
+    #[test]
+    fn validate_state_rejects_unknown_token() {
+        let state = OAuthState::new();
+        assert!(!state.validate_state(
+            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        ));
+    }
+
+    #[test]
+    fn validate_state_rejects_tampered_token() {
+        let state = OAuthState::new();
+        let mut token = state.generate_state();
+        let first = token.as_bytes()[0];
+        let replacement = if first == b'0' { '1' } else { '0' };
+        token.replace_range(0..1, &replacement.to_string());
+        assert!(!state.validate_state(&token));
+    }
+
+    #[test]
+    fn generate_state_produces_distinct_tokens() {
+        let state = OAuthState::new();
+        let a = state.generate_state();
+        let b = state.generate_state();
+        assert_ne!(a, b);
+    }
+
+    // ---- sessions ----
+
+    #[test]
+    fn create_session_returns_validatable_token() {
+        let state = OAuthState::new();
+        let token = state.create_session(
+            "github".into(),
+            "u1".into(),
+            7,
+            "Alice".into(),
+            Some(vec![1, 2, 3]),
+        );
+        let (club_id, name, key) = state.validate_session(&token).expect("session valid");
+        assert_eq!(club_id, 7);
+        assert_eq!(name, "Alice");
+        assert_eq!(key, Some(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn validate_session_unknown_returns_none() {
+        let state = OAuthState::new();
+        assert!(state.validate_session("nope").is_none());
+    }
+
+    #[test]
+    fn destroy_session_invalidates_token() {
+        let state = OAuthState::new();
+        let token = state.create_session("p".into(), "u".into(), 1, "n".into(), None);
+        assert!(state.validate_session(&token).is_some());
+        state.destroy_session(&token);
+        assert!(state.validate_session(&token).is_none());
+    }
+
+    #[test]
+    fn create_session_token_is_hex() {
+        let state = OAuthState::new();
+        let token = state.create_session("p".into(), "u".into(), 1, "n".into(), None);
+        assert_eq!(token.len(), 64);
+        assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    // ---- local hex helper module ----
+
+    #[test]
+    fn local_hex_encode_matches_builtin_format() {
+        assert_eq!(super::hex::encode(&[0x00, 0xab, 0xff]), "00abff");
+        assert_eq!(super::hex::encode(&[]), "");
+    }
+
+    // ---- redirect URL building (no network I/O) ----
+
+    #[tokio::test]
+    async fn github_redirect_when_disabled_returns_html() {
+        let state = make_state(OAuthConfig::default());
+        let resp = github_redirect_handler(State(state)).await;
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn github_redirect_builds_authorize_url() {
+        let cfg = OAuthConfig {
+            github_client_id: Some("gh_client".into()),
+            github_client_secret: Some("gh_secret".into()),
+            redirect_base: "https://test.example.com".into(),
+            ..Default::default()
+        };
+        let state = make_state(cfg);
+        let resp = github_redirect_handler(State(state)).await;
+        assert_eq!(
+            resp.status(),
+            axum::http::StatusCode::TEMPORARY_REDIRECT,
+            "disabled provider should not redirect"
+        );
+        let location = resp
+            .headers()
+            .get(axum::http::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .expect("Location header present");
+        assert!(location.starts_with("https://github.com/login/oauth/authorize?"));
+        assert!(location.contains("client_id=gh_client"));
+        assert!(location.contains("scope=read:user"));
+        assert!(location
+            .contains("redirect_uri=https%3A%2F%2Ftest.example.com%2Fauth%2Fgithub%2Fcallback"));
+        // state token is the last segment before scope; must be 64 hex chars
+        let state_val = location.split("state=").nth(1).unwrap();
+        let token = state_val.split('&').next().unwrap();
+        assert_eq!(token.len(), 64);
+        assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[tokio::test]
+    async fn google_redirect_when_disabled_returns_html() {
+        let state = make_state(OAuthConfig::default());
+        let resp = google_redirect_handler(State(state)).await;
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn google_redirect_builds_authorize_url() {
+        let cfg = OAuthConfig {
+            google_client_id: Some("g_client".into()),
+            google_client_secret: Some("g_secret".into()),
+            redirect_base: "https://test.example.com".into(),
+            ..Default::default()
+        };
+        let state = make_state(cfg);
+        let resp = google_redirect_handler(State(state)).await;
+        assert_eq!(resp.status(), axum::http::StatusCode::TEMPORARY_REDIRECT);
+        let location = resp
+            .headers()
+            .get(axum::http::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .expect("Location header present");
+        assert!(location.starts_with("https://accounts.google.com/o/oauth2/v2/auth?"));
+        assert!(location.contains("client_id=g_client"));
+        assert!(location.contains("response_type=code"));
+        assert!(location.contains("scope=openid+profile+email"));
+        assert!(location
+            .contains("redirect_uri=https%3A%2F%2Ftest.example.com%2Fauth%2Fgoogle%2Fcallback"));
+        assert!(location.contains("state="));
+    }
+}

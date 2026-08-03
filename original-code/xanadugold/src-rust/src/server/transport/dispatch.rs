@@ -4809,4 +4809,663 @@ mod tests {
         drop(handles);
         assert_eq!(sem.available_permits(), max);
     }
+
+    // ── dispatch integration tests ─────────────────────────────────────
+
+    use super::super::shared::AppState;
+    use crate::server::SessionId;
+
+    fn make_state() -> SharedState {
+        AppState::new(Server::new()).shared()
+    }
+
+    fn fresh_session(state: &SharedState) -> SessionId {
+        state.server.with_server(|srv| srv.connect())
+    }
+
+    fn public_session(state: &SharedState) -> SessionId {
+        state.server.with_server(|srv| {
+            let sid = srv.connect();
+            srv.login_public(sid).unwrap();
+            sid
+        })
+    }
+
+    fn owned_session(state: &SharedState) -> SessionId {
+        use crate::server::lock::{BooLock, LockCredential};
+        state.server.with_server(|srv| {
+            let sid = srv.connect();
+            srv.login_public(sid).unwrap();
+            let club_id = srv
+                .create_club(sid, Edition::from_text("owner club"))
+                .unwrap();
+            let lock = BooLock::new(club_id);
+            srv.authenticate(sid, &lock, &LockCredential::Boo).unwrap();
+            sid
+        })
+    }
+
+    // ── Read-only operations (no auth required) ──
+
+    #[test]
+    fn dispatch_server_stats_returns_payload() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(&state, sid, WireRequest::ServerStats);
+        match result {
+            Ok(ResponseValue::ServerInfo(info)) => {
+                assert!(!info.version.is_empty());
+                assert_eq!(info.work_count, 0);
+                assert!(info.is_accepting_connections);
+                assert_eq!(info.session_count, 1);
+            }
+            other => panic!("expected ServerInfo, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_admin_is_accepting_connections_default_true() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(&state, sid, WireRequest::AdminIsAcceptingConnections);
+        assert!(matches!(result, Ok(ResponseValue::Boolean(true))));
+    }
+
+    #[test]
+    fn dispatch_crypto_get_public_key_returns_keys() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(&state, sid, WireRequest::CryptoGetPublicKey);
+        match result {
+            Ok(ResponseValue::CryptoPublicKeyResult {
+                verifying_key,
+                kex_key,
+                server_id,
+                ..
+            }) => {
+                assert!(!verifying_key.is_empty());
+                assert!(!kex_key.is_empty());
+                assert!(!server_id.is_empty());
+            }
+            other => panic!("expected CryptoPublicKeyResult, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_link_type_list_empty_on_fresh_server() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(&state, sid, WireRequest::LinkTypeList);
+        match result {
+            Ok(ResponseValue::LinkTypes(types)) => {
+                assert!(
+                    types.is_empty(),
+                    "fresh server has no registered link types"
+                );
+            }
+            other => panic!("expected LinkTypes, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_federation_info_returns_closed_mode() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(&state, sid, WireRequest::FederationInfo);
+        match result {
+            Ok(ResponseValue::FederationInfoResult { mode, peers, .. }) => {
+                assert_eq!(mode, "closed");
+                assert!(peers.is_empty());
+            }
+            other => panic!("expected FederationInfoResult, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_federation_peers_returns_empty() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(&state, sid, WireRequest::FederationPeers);
+        match result {
+            Ok(ResponseValue::FederationPeersResult { peers }) => {
+                assert!(peers.is_empty());
+            }
+            other => panic!("expected FederationPeersResult, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_blob_stats_returns_zero() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(&state, sid, WireRequest::BlobStats);
+        match result {
+            Ok(ResponseValue::BlobStatsInfo(stats)) => {
+                assert_eq!(stats.total_blobs, 0);
+                assert_eq!(stats.total_bytes, 0);
+            }
+            other => panic!("expected BlobStatsInfo, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_historical_author_list_empty() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(&state, sid, WireRequest::HistoricalAuthorList);
+        match result {
+            Ok(ResponseValue::HistoricalAuthorListResult { authors }) => {
+                assert!(authors.is_empty());
+            }
+            other => panic!("expected HistoricalAuthorListResult, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_trail_list_categories_succeeds() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(&state, sid, WireRequest::TrailListCategories);
+        assert!(result.is_ok(), "TrailListCategories should succeed");
+        assert!(matches!(result.unwrap(), ResponseValue::TrailCategories(_)));
+    }
+
+    #[test]
+    fn dispatch_attribution_log_status_returns_result() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(&state, sid, WireRequest::AttributionLogStatus);
+        match result {
+            Ok(ResponseValue::AttributionLogStatusResult { has_log, .. }) => {
+                assert!(has_log);
+            }
+            other => panic!("expected AttributionLogStatusResult, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_source_pattern_list_returns_entries() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(&state, sid, WireRequest::SourcePatternList);
+        assert!(result.is_ok());
+        match result {
+            Ok(ResponseValue::SourcePatternListResult { patterns }) => {
+                assert!(!patterns.is_empty(), "should have builtin source patterns");
+            }
+            other => panic!("expected SourcePatternListResult, got {:?}", other),
+        }
+    }
+
+    // ── Read-only operations (session required) ──
+
+    #[test]
+    fn dispatch_session_connect_echoes_session_id() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(&state, sid, WireRequest::SessionConnect);
+        match result {
+            Ok(ResponseValue::Id(val)) => {
+                assert_eq!(val, sid.as_u64());
+            }
+            other => panic!("expected Id echoing session, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_work_list_empty_on_fresh_server() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(
+            &state,
+            sid,
+            WireRequest::WorkList {
+                offset: None,
+                limit: None,
+            },
+        );
+        match result {
+            Ok(ResponseValue::PaginatedWorkList {
+                entries,
+                total_count,
+                has_more,
+            }) => {
+                assert!(entries.is_empty());
+                assert_eq!(total_count, 0);
+                assert!(!has_more);
+            }
+            other => panic!("expected PaginatedWorkList, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_club_names_returns_system_clubs() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(
+            &state,
+            sid,
+            WireRequest::ClubNames {
+                offset: None,
+                limit: None,
+            },
+        );
+        match result {
+            Ok(ResponseValue::PaginatedClubNames {
+                entries,
+                total_count,
+                ..
+            }) => {
+                assert!(total_count >= 4, "should have at least 4 system clubs");
+                let names: Vec<&str> = entries.iter().map(|(n, _)| n.as_str()).collect();
+                assert!(names.contains(&"admin"), "should include admin club");
+                assert!(names.contains(&"public"), "should include public club");
+            }
+            other => panic!("expected PaginatedClubNames, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_club_names_pagination() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(
+            &state,
+            sid,
+            WireRequest::ClubNames {
+                offset: Some(0),
+                limit: Some(2),
+            },
+        );
+        match result {
+            Ok(ResponseValue::PaginatedClubNames {
+                entries,
+                total_count,
+                has_more,
+            }) => {
+                assert_eq!(entries.len(), 2, "should limit to 2 entries");
+                assert!(has_more, "should have more entries");
+                assert!(total_count >= 4);
+            }
+            other => panic!("expected PaginatedClubNames, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_club_who_am_i_after_login_public() {
+        let state = make_state();
+        let sid = public_session(&state);
+        let result = dispatch(&state, sid, WireRequest::ClubWhoAmI);
+        match result {
+            Ok(ResponseValue::ClubWhoAmIResult { clubs, .. }) => {
+                assert!(
+                    clubs.is_empty(),
+                    "no personal clubs after login_public only"
+                );
+            }
+            other => panic!("expected ClubWhoAmIResult, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_global_text_search_empty_server() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(
+            &state,
+            sid,
+            WireRequest::GlobalTextSearch {
+                query: "nothing".to_string(),
+                max_results: Some(10),
+            },
+        );
+        assert!(result.is_ok(), "search should succeed on empty server");
+        match result.unwrap() {
+            ResponseValue::GlobalSearchResults {
+                results,
+                total_works_matched,
+            } => {
+                assert!(results.is_empty());
+                assert_eq!(total_works_matched, 0);
+            }
+            other => panic!("expected GlobalSearchResults, got {:?}", other),
+        }
+    }
+
+    // ── Session lifecycle (write path) ──
+
+    #[tokio::test]
+    async fn dispatch_session_login_public_succeeds() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(&state, sid, WireRequest::SessionLoginPublic);
+        match result {
+            Ok(ResponseValue::Id(_)) => {}
+            other => panic!("expected Id after login_public, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn dispatch_session_disconnect_succeeds() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(&state, sid, WireRequest::SessionDisconnect);
+        assert!(matches!(result, Ok(ResponseValue::Void)));
+    }
+
+    #[tokio::test]
+    async fn dispatch_session_ticket_issue_and_redeem_roundtrip() {
+        let state = make_state();
+        let sid = public_session(&state);
+
+        let issue_result = dispatch(&state, sid, WireRequest::SessionTicketIssue);
+        let ticket = match issue_result {
+            Ok(ResponseValue::Ticket { ticket, .. }) => ticket,
+            other => panic!("expected Ticket, got {:?}", other),
+        };
+        assert!(!ticket.is_empty(), "ticket bytes should be non-empty");
+
+        let sid2 = fresh_session(&state);
+        let redeem_result = dispatch(&state, sid2, WireRequest::SessionTicketRedeem { ticket });
+        assert!(redeem_result.is_ok(), "ticket redeem should succeed");
+    }
+
+    // ── Error cases ──
+
+    #[tokio::test]
+    async fn dispatch_work_create_without_auth_fails() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(
+            &state,
+            sid,
+            WireRequest::WorkCreate {
+                edition: EditionPayload::Text("test".into()),
+            },
+        );
+        assert!(
+            matches!(result, Err(crate::server::ServerError::NotAuthorized)),
+            "WorkCreate without auth should return NotAuthorized, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn dispatch_club_get_unknown_club_errors() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(&state, sid, WireRequest::ClubGet { club_id: 999_999 });
+        assert!(result.is_err(), "unknown club should error");
+    }
+
+    #[test]
+    fn dispatch_work_revision_count_unknown_work_errors() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(
+            &state,
+            sid,
+            WireRequest::WorkRevisionCount { work_id: 999_999 },
+        );
+        assert!(result.is_err(), "unknown work should error");
+    }
+
+    #[test]
+    fn dispatch_club_by_name_finds_admin() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(
+            &state,
+            sid,
+            WireRequest::ClubByName {
+                name: "admin".to_string(),
+            },
+        );
+        match result {
+            Ok(ResponseValue::Id(id)) => {
+                assert!(id > 0);
+            }
+            other => panic!("expected Id for admin club, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_club_by_name_unknown_returns_error() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(
+            &state,
+            sid,
+            WireRequest::ClubByName {
+                name: "nonexistent".to_string(),
+            },
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn dispatch_club_name_by_id_returns_name() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let admin_id = state.server.with_server_ref(|srv| srv.admin_club_id());
+        let result = dispatch(&state, sid, WireRequest::ClubNameById { club_id: admin_id });
+        match result {
+            Ok(ResponseValue::String(name)) => {
+                assert_eq!(name, "admin");
+            }
+            other => panic!("expected String, got {:?}", other),
+        }
+    }
+
+    // ── Authenticated write path ──
+
+    #[tokio::test]
+    async fn dispatch_work_create_with_auth_succeeds() {
+        let state = make_state();
+        let sid = owned_session(&state);
+        let result = dispatch(
+            &state,
+            sid,
+            WireRequest::WorkCreate {
+                edition: EditionPayload::Text("hello world".into()),
+            },
+        );
+        match result {
+            Ok(ResponseValue::Id(work_id)) => {
+                assert!(work_id > 0, "work id should be positive");
+            }
+            other => panic!("expected Id(work_id), got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn dispatch_work_list_after_create_shows_work() {
+        let state = make_state();
+        let sid = owned_session(&state);
+        let create_result = dispatch(
+            &state,
+            sid,
+            WireRequest::WorkCreate {
+                edition: EditionPayload::Text("my work".into()),
+            },
+        );
+        let work_id = match create_result {
+            Ok(ResponseValue::Id(id)) => id,
+            other => panic!("expected Id, got {:?}", other),
+        };
+
+        let list_result = dispatch(
+            &state,
+            sid,
+            WireRequest::WorkList {
+                offset: None,
+                limit: None,
+            },
+        );
+        match list_result {
+            Ok(ResponseValue::PaginatedWorkList {
+                entries,
+                total_count,
+                ..
+            }) => {
+                assert_eq!(total_count, 1, "should see exactly 1 work");
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].work_id, work_id);
+            }
+            other => panic!("expected PaginatedWorkList, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn dispatch_work_get_edition_after_create() {
+        let state = make_state();
+        let sid = owned_session(&state);
+        let create_result = dispatch(
+            &state,
+            sid,
+            WireRequest::WorkCreate {
+                edition: EditionPayload::Text("edition test".into()),
+            },
+        );
+        let work_id = match create_result {
+            Ok(ResponseValue::Id(id)) => id,
+            other => panic!("expected Id, got {:?}", other),
+        };
+
+        let result = dispatch(&state, sid, WireRequest::WorkGetEdition { work_id });
+        match result {
+            Ok(ResponseValue::Edition(EditionPayload::Text(text))) => {
+                assert_eq!(text, "edition test");
+            }
+            other => panic!("expected Edition Text, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn dispatch_work_is_grabbed_false_for_new_work() {
+        let state = make_state();
+        let sid = owned_session(&state);
+        let create_result = dispatch(
+            &state,
+            sid,
+            WireRequest::WorkCreate {
+                edition: EditionPayload::Empty,
+            },
+        );
+        let work_id = match create_result {
+            Ok(ResponseValue::Id(id)) => id,
+            other => panic!("expected Id, got {:?}", other),
+        };
+
+        let result = dispatch(&state, sid, WireRequest::WorkIsGrabbed { work_id });
+        assert!(matches!(result, Ok(ResponseValue::Boolean(false))));
+    }
+
+    #[tokio::test]
+    async fn dispatch_work_revision_count_after_create() {
+        let state = make_state();
+        let sid = owned_session(&state);
+        let create_result = dispatch(
+            &state,
+            sid,
+            WireRequest::WorkCreate {
+                edition: EditionPayload::Text("rev count".into()),
+            },
+        );
+        let work_id = match create_result {
+            Ok(ResponseValue::Id(id)) => id,
+            other => panic!("expected Id, got {:?}", other),
+        };
+
+        let result = dispatch(&state, sid, WireRequest::WorkRevisionCount { work_id });
+        match result {
+            Ok(ResponseValue::Humber(count)) => {
+                assert_eq!(count, 0, "freshly created work should have 0 revisions");
+            }
+            other => panic!("expected Humber, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn dispatch_work_star_toggle() {
+        let state = make_state();
+        let sid = owned_session(&state);
+        let create_result = dispatch(
+            &state,
+            sid,
+            WireRequest::WorkCreate {
+                edition: EditionPayload::Empty,
+            },
+        );
+        let work_id = match create_result {
+            Ok(ResponseValue::Id(id)) => id,
+            other => panic!("expected Id, got {:?}", other),
+        };
+
+        let before = dispatch(&state, sid, WireRequest::WorkIsStarred { work_id });
+        assert!(matches!(before, Ok(ResponseValue::Boolean(false))));
+
+        let star_result = dispatch(&state, sid, WireRequest::WorkStar { work_id });
+        assert!(matches!(star_result, Ok(ResponseValue::Void)));
+
+        let after = dispatch(&state, sid, WireRequest::WorkIsStarred { work_id });
+        assert!(matches!(after, Ok(ResponseValue::Boolean(true))));
+    }
+
+    #[tokio::test]
+    async fn dispatch_admin_accept_connections_toggle() {
+        let state = make_state();
+        let sid = state.server.with_server(|srv| {
+            use crate::server::lock::{BooLock, LockCredential};
+            let s = srv.connect();
+            let admin_id = srv.admin_club_id();
+            let lock = BooLock::new(admin_id);
+            srv.authenticate(s, &lock, &LockCredential::Boo).unwrap();
+            s
+        });
+
+        let before = dispatch(&state, sid, WireRequest::AdminIsAcceptingConnections);
+        assert!(matches!(before, Ok(ResponseValue::Boolean(true))));
+
+        let toggle = dispatch(
+            &state,
+            sid,
+            WireRequest::AdminAcceptConnections { accept: false },
+        );
+        assert!(matches!(toggle, Ok(ResponseValue::Void)));
+
+        let after = dispatch(&state, sid, WireRequest::AdminIsAcceptingConnections);
+        assert!(matches!(after, Ok(ResponseValue::Boolean(false))));
+    }
+
+    #[tokio::test]
+    async fn dispatch_server_stats_reflects_created_work() {
+        let state = make_state();
+        let sid = owned_session(&state);
+
+        let before = dispatch(&state, sid, WireRequest::ServerStats);
+        match &before {
+            Ok(ResponseValue::ServerInfo(info)) => {
+                assert_eq!(info.work_count, 0);
+            }
+            other => panic!("expected ServerInfo, got {:?}", other),
+        }
+
+        dispatch(
+            &state,
+            sid,
+            WireRequest::WorkCreate {
+                edition: EditionPayload::Text("stats test".into()),
+            },
+        )
+        .unwrap();
+
+        let after = dispatch(&state, sid, WireRequest::ServerStats);
+        match after {
+            Ok(ResponseValue::ServerInfo(info)) => {
+                assert_eq!(info.work_count, 1, "work_count should reflect created work");
+            }
+            other => panic!("expected ServerInfo, got {:?}", other),
+        }
+    }
 }

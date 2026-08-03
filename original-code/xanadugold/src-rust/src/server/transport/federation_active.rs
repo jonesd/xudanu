@@ -555,3 +555,175 @@ pub async fn spawn_federation_tasks(state: SharedState, pool: PeerPool) {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::transport::federation_handler::FederationFrame;
+
+    #[tokio::test]
+    async fn peer_pool_new_is_empty() {
+        let pool = PeerPool::new();
+        assert_eq!(pool.len().await, 0);
+        assert!(pool.connected_peers().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn peer_pool_insert_increments_len() {
+        let pool = PeerPool::new();
+        let (tx, _rx) = mpsc::unbounded_channel::<FederationFrame>();
+        pool.insert("1.2.3.4:80".to_string(), "server-A".to_string(), tx)
+            .await;
+        assert_eq!(pool.len().await, 1);
+        let peers = pool.connected_peers().await;
+        assert_eq!(peers, vec!["server-A".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn peer_pool_insert_multiple() {
+        let pool = PeerPool::new();
+        let (tx1, _rx1) = mpsc::unbounded_channel::<FederationFrame>();
+        let (tx2, _rx2) = mpsc::unbounded_channel::<FederationFrame>();
+        pool.insert("addr1".to_string(), "server-A".to_string(), tx1)
+            .await;
+        pool.insert("addr2".to_string(), "server-B".to_string(), tx2)
+            .await;
+        assert_eq!(pool.len().await, 2);
+        let mut peers = pool.connected_peers().await;
+        peers.sort();
+        assert_eq!(peers, vec!["server-A".to_string(), "server-B".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn peer_pool_remove_decrements_len() {
+        let pool = PeerPool::new();
+        let (tx, _rx) = mpsc::unbounded_channel::<FederationFrame>();
+        pool.insert("addr1".to_string(), "server-A".to_string(), tx)
+            .await;
+        assert_eq!(pool.len().await, 1);
+        pool.remove("addr1").await;
+        assert_eq!(pool.len().await, 0);
+        assert!(pool.connected_peers().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn peer_pool_remove_nonexistent_from_empty_is_noop() {
+        let pool = PeerPool::new();
+        pool.remove("does-not-exist").await;
+        assert_eq!(pool.len().await, 0);
+    }
+
+    #[tokio::test]
+    async fn peer_pool_remove_nonexistent_from_populated_is_noop() {
+        let pool = PeerPool::new();
+        let (tx, _rx) = mpsc::unbounded_channel::<FederationFrame>();
+        pool.insert("addr1".to_string(), "server-A".to_string(), tx)
+            .await;
+        pool.remove("other-addr").await;
+        assert_eq!(pool.len().await, 1);
+        assert_eq!(pool.connected_peers().await, vec!["server-A".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn peer_pool_duplicate_addr_replaces_entry() {
+        let pool = PeerPool::new();
+        let (tx1, _rx1) = mpsc::unbounded_channel::<FederationFrame>();
+        pool.insert("addr1".to_string(), "server-A".to_string(), tx1)
+            .await;
+        let (tx2, _rx2) = mpsc::unbounded_channel::<FederationFrame>();
+        pool.insert("addr1".to_string(), "server-B".to_string(), tx2)
+            .await;
+        assert_eq!(pool.len().await, 1);
+        let peers = pool.connected_peers().await;
+        assert_eq!(peers, vec!["server-B".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn peer_pool_send_delivers_to_receiver() {
+        let pool = PeerPool::new();
+        let (tx, mut rx) = mpsc::unbounded_channel::<FederationFrame>();
+        pool.insert("addr1".to_string(), "server-A".to_string(), tx)
+            .await;
+        pool.send("addr1", &FederationFrame::Heartbeat).await;
+        let received = rx.recv().await;
+        assert!(matches!(received, Some(FederationFrame::Heartbeat)));
+    }
+
+    #[tokio::test]
+    async fn peer_pool_send_unknown_addr_is_noop() {
+        let pool = PeerPool::new();
+        pool.send("nope", &FederationFrame::Heartbeat).await;
+        assert_eq!(pool.len().await, 0);
+    }
+
+    #[tokio::test]
+    async fn peer_pool_broadcast_empty_is_noop() {
+        let pool = PeerPool::new();
+        pool.broadcast(&FederationFrame::Heartbeat).await;
+        assert_eq!(pool.len().await, 0);
+    }
+
+    #[tokio::test]
+    async fn peer_pool_broadcast_delivers_to_all_peers() {
+        let pool = PeerPool::new();
+        let (tx1, mut rx1) = mpsc::unbounded_channel::<FederationFrame>();
+        let (tx2, mut rx2) = mpsc::unbounded_channel::<FederationFrame>();
+        pool.insert("addr1".to_string(), "server-A".to_string(), tx1)
+            .await;
+        pool.insert("addr2".to_string(), "server-B".to_string(), tx2)
+            .await;
+        pool.broadcast(&FederationFrame::Heartbeat).await;
+        assert!(matches!(rx1.recv().await, Some(FederationFrame::Heartbeat)));
+        assert!(matches!(rx2.recv().await, Some(FederationFrame::Heartbeat)));
+    }
+
+    #[tokio::test]
+    async fn peer_pool_broadcast_skips_removed_peer() {
+        let pool = PeerPool::new();
+        let (tx1, mut rx1) = mpsc::unbounded_channel::<FederationFrame>();
+        let (tx2, mut rx2) = mpsc::unbounded_channel::<FederationFrame>();
+        pool.insert("addr1".to_string(), "server-A".to_string(), tx1)
+            .await;
+        pool.insert("addr2".to_string(), "server-B".to_string(), tx2)
+            .await;
+        pool.remove("addr1").await;
+        pool.broadcast(&FederationFrame::Heartbeat).await;
+        assert!(matches!(rx2.recv().await, Some(FederationFrame::Heartbeat)));
+        assert!(rx1.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn peer_pool_clone_shares_state() {
+        let pool = PeerPool::new();
+        let cloned = pool.clone();
+        let (tx, _rx) = mpsc::unbounded_channel::<FederationFrame>();
+        cloned
+            .insert("addr1".to_string(), "server-A".to_string(), tx)
+            .await;
+        assert_eq!(pool.len().await, 1);
+        assert_eq!(pool.connected_peers().await, vec!["server-A".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn peer_pool_send_after_remove_drops_silently() {
+        let pool = PeerPool::new();
+        let (tx, mut rx) = mpsc::unbounded_channel::<FederationFrame>();
+        pool.insert("addr1".to_string(), "server-A".to_string(), tx)
+            .await;
+        pool.remove("addr1").await;
+        pool.send("addr1", &FederationFrame::Heartbeat).await;
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn peer_pool_connected_peers_reflects_live_state() {
+        let pool = PeerPool::new();
+        let (tx1, _rx1) = mpsc::unbounded_channel::<FederationFrame>();
+        let (tx2, _rx2) = mpsc::unbounded_channel::<FederationFrame>();
+        pool.insert("a1".to_string(), "s1".to_string(), tx1).await;
+        pool.insert("a2".to_string(), "s2".to_string(), tx2).await;
+        assert_eq!(pool.connected_peers().await.len(), 2);
+        pool.remove("a1").await;
+        assert_eq!(pool.connected_peers().await, vec!["s2".to_string()]);
+    }
+}

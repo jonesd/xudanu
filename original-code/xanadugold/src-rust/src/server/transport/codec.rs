@@ -3576,4 +3576,97 @@ mod tests {
         let back = payload.to_edition();
         assert!(back.is_empty());
     }
+
+    #[test]
+    fn json_codec_decode_heartbeat() {
+        let codec = JsonCodec;
+        let frame = br#"{"v":2,"type":"heartbeat","id":0}"#;
+        let msg = codec.decode_request(frame).unwrap();
+        assert!(matches!(msg, IncomingMessage::Heartbeat));
+    }
+
+    #[test]
+    fn json_codec_decode_request_session_login_public() {
+        let codec = JsonCodec;
+        let frame = br#"{"v":2,"type":"request","id":7,"op":"session_login_public"}"#;
+        let msg = codec.decode_request(frame).unwrap();
+        match msg {
+            IncomingMessage::Request(req) => {
+                assert_eq!(req.request_id, 7);
+                assert!(matches!(req.inner, WireRequest::SessionLoginPublic));
+            }
+            other => panic!("expected Request, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn json_codec_decode_request_work_create() {
+        let codec = JsonCodec;
+        let frame =
+            br#"{"v":2,"type":"request","id":3,"op":"work_create","payload":{"edition":"empty"}}"#;
+        let msg = codec.decode_request(frame).unwrap();
+        match msg {
+            IncomingMessage::Request(req) => {
+                assert_eq!(req.request_id, 3);
+                assert!(matches!(req.inner, WireRequest::WorkCreate { .. }));
+            }
+            other => panic!("expected Request, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn json_codec_encode_event_roundtrip() {
+        let codec = JsonCodec;
+        let event = WireEvent {
+            subscription_id: 5,
+            event: EventPayload::Done { operation_id: 42 },
+        };
+        let encoded = codec.encode_event(&event).unwrap();
+        let s = String::from_utf8(encoded).unwrap();
+        assert!(s.contains("\"type\":\"event\""));
+        assert!(s.contains("\"id\":5"));
+        assert!(s.contains("\"type\":\"done\""));
+        assert!(s.contains("\"operation_id\":42"));
+    }
+
+    #[test]
+    fn json_codec_decode_rejects_malformed_json() {
+        let codec = JsonCodec;
+        let bad = b"{not valid json";
+        let err = codec.decode_request(bad).unwrap_err();
+        assert!(matches!(err, ProtocolError::Serialization(_)));
+    }
+
+    #[test]
+    fn json_codec_decode_rejects_unsupported_version() {
+        let codec = JsonCodec;
+        let frame = br#"{"v":99,"type":"heartbeat","id":0}"#;
+        let err = codec.decode_request(frame).unwrap_err();
+        assert!(matches!(
+            err,
+            ProtocolError::FrameParse(FrameParseError::UnsupportedVersion(99))
+        ));
+    }
+
+    #[test]
+    fn protocol_error_frame_parse_display() {
+        let err = ProtocolError::FrameParse(FrameParseError::TruncatedFrame);
+        assert_eq!(err.to_string(), "frame parse: truncated frame");
+    }
+
+    #[test]
+    fn protocol_error_serialization_display() {
+        let err = ProtocolError::Serialization("bad payload".to_string());
+        assert_eq!(err.to_string(), "serialization: bad payload");
+    }
+
+    #[test]
+    fn protocol_error_from_frame_parse_error() {
+        let source = FrameParseError::MissingPayload;
+        let err: ProtocolError = source.into();
+        assert!(matches!(
+            err,
+            ProtocolError::FrameParse(FrameParseError::MissingPayload)
+        ));
+    }
 }

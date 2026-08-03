@@ -1787,6 +1787,834 @@ mod tests {
         let restored: SpanProvenance = serde_json::from_str(&json).unwrap();
         assert_eq!(sp, restored);
     }
+
+    // =========================================================================
+    // sign_element
+    // =========================================================================
+
+    #[test]
+    fn sign_element_populates_provenance() {
+        let key = generate_signing_key();
+        let fp = RangeElement::text("elem").content_fingerprint();
+        let mut server_id = [0u8; 32];
+        server_id[..4].copy_from_slice(b"srvr");
+        let prov = sign_element(&key, &fp, 5000, &server_id);
+        assert_eq!(prov.author_public_key, key.verifying_key().to_bytes());
+        assert_eq!(prov.timestamp, 5000);
+        assert_eq!(prov.server_id, server_id);
+        assert_eq!(prov.signature.len(), 64);
+    }
+
+    #[test]
+    fn sign_element_is_deterministic_for_same_inputs() {
+        let key = generate_signing_key();
+        let fp = RangeElement::text("x").content_fingerprint();
+        let server_id = [9u8; 32];
+        let prov1 = sign_element(&key, &fp, 100, &server_id);
+        let prov2 = sign_element(&key, &fp, 100, &server_id);
+        assert_eq!(prov1, prov2);
+    }
+
+    // =========================================================================
+    // Historical attestation sign / verify
+    // =========================================================================
+
+    #[test]
+    fn historical_attestation_roundtrip() {
+        let key = generate_signing_key();
+        let fps = make_fingerprints();
+        let mut server_id = [0u8; 32];
+        server_id[..4].copy_from_slice(b"hstr");
+        let prov = sign_historical_attestation(&key, &fps, 12345, 1000, &server_id);
+        assert!(verify_historical_attestation(&prov, &fps, 12345));
+    }
+
+    #[test]
+    fn historical_attestation_rejects_wrong_author_id() {
+        let key = generate_signing_key();
+        let fps = make_fingerprints();
+        let server_id = [0u8; 32];
+        let prov = sign_historical_attestation(&key, &fps, 111, 1000, &server_id);
+        assert!(!verify_historical_attestation(&prov, &fps, 222));
+    }
+
+    #[test]
+    fn historical_attestation_rejects_wrong_key() {
+        let key_a = generate_signing_key();
+        let key_b = generate_signing_key();
+        let fps = make_fingerprints();
+        let server_id = [0u8; 32];
+        let mut prov = sign_historical_attestation(&key_a, &fps, 111, 1000, &server_id);
+        prov.author_public_key = key_b.verifying_key().to_bytes();
+        assert!(!verify_historical_attestation(&prov, &fps, 111));
+    }
+
+    #[test]
+    fn historical_attestation_rejects_wrong_fingerprints() {
+        let key = generate_signing_key();
+        let fps = make_fingerprints();
+        let server_id = [0u8; 32];
+        let prov = sign_historical_attestation(&key, &fps, 111, 1000, &server_id);
+        let wrong_fps = vec![RangeElement::text("Z").content_fingerprint()];
+        assert!(!verify_historical_attestation(&prov, &wrong_fps, 111));
+    }
+
+    #[test]
+    fn historical_attestation_rejects_tampered_signature() {
+        let key = generate_signing_key();
+        let fps = make_fingerprints();
+        let server_id = [0u8; 32];
+        let mut prov = sign_historical_attestation(&key, &fps, 111, 1000, &server_id);
+        prov.signature[0] ^= 0xff;
+        assert!(!verify_historical_attestation(&prov, &fps, 111));
+    }
+
+    // =========================================================================
+    // compute_span_fingerprint_hex
+    // =========================================================================
+
+    #[test]
+    fn span_fingerprint_hex_is_consistent_and_well_formed() {
+        let fps = make_fingerprints();
+        let hex1 = compute_span_fingerprint_hex(&fps);
+        let hex2 = compute_span_fingerprint_hex(&fps);
+        assert_eq!(hex1, hex2);
+        assert_eq!(hex1.len(), 64);
+        assert!(hex1.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn span_fingerprint_hex_differs_for_different_input() {
+        let fps1 = vec![RangeElement::text("a").content_fingerprint()];
+        let fps2 = vec![RangeElement::text("b").content_fingerprint()];
+        assert_ne!(
+            compute_span_fingerprint_hex(&fps1),
+            compute_span_fingerprint_hex(&fps2)
+        );
+    }
+
+    // =========================================================================
+    // verify_span_provenance_with_span_fp
+    // =========================================================================
+
+    #[test]
+    fn verify_span_provenance_with_span_fp_roundtrip() {
+        let key = generate_signing_key();
+        let fps = make_fingerprints();
+        let server_id = [0u8; 32];
+        let prov = sign_span(&key, &fps, 1000, &server_id);
+        let span_fp = compute_span_fingerprint(&fps);
+        assert!(verify_span_provenance_with_span_fp(&prov, &span_fp));
+    }
+
+    #[test]
+    fn verify_span_provenance_with_span_fp_rejects_tampered() {
+        let key = generate_signing_key();
+        let fps = make_fingerprints();
+        let server_id = [0u8; 32];
+        let mut prov = sign_span(&key, &fps, 1000, &server_id);
+        let span_fp = compute_span_fingerprint(&fps);
+        prov.signature[0] ^= 0xff;
+        assert!(!verify_span_provenance_with_span_fp(&prov, &span_fp));
+    }
+
+    #[test]
+    fn verify_span_provenance_with_span_fp_rejects_bad_provenance() {
+        let span_fp = [0u8; 32];
+        let prov = Provenance {
+            author_public_key: [0u8; 32],
+            signature: [0u8; 64],
+            timestamp: 0,
+            server_id: [0u8; 32],
+        };
+        assert!(!verify_span_provenance_with_span_fp(&prov, &span_fp));
+    }
+
+    // =========================================================================
+    // sign_cross_server / verify_federation_provenance
+    // =========================================================================
+
+    fn build_base_provenance(
+        server_id_label: &[u8],
+    ) -> (SigningKey, Vec<[u8; 32]>, Provenance, [u8; 32]) {
+        let key = generate_signing_key();
+        let fps = make_fingerprints();
+        let mut server_id = [0u8; 32];
+        server_id[..server_id_label.len()].copy_from_slice(server_id_label);
+        let prov = sign_span(&key, &fps, 1000, &server_id);
+        (key, fps, prov, server_id)
+    }
+
+    #[test]
+    fn federated_provenance_unanimous_passes() {
+        let (_author_key, fps, base_prov, _) = build_base_provenance(b"base");
+
+        let peer_keys: Vec<_> = (0..3).map(|_| generate_signing_key()).collect();
+        let mut sigs = Vec::new();
+        let mut verifying_keys = Vec::new();
+        for (i, pk) in peer_keys.iter().enumerate() {
+            let mut sid = [0u8; 32];
+            sid[0] = i as u8 + 1;
+            let vk = pk.verifying_key().to_bytes();
+            sigs.push(sign_cross_server(pk, &base_prov, &sid, &vk, 2000));
+            verifying_keys.push(vk);
+        }
+
+        let consensus = ClusterConsensus {
+            consensus_type: ConsensusType::Unanimous,
+            verifications: vec![],
+            threshold_met: true,
+            total_servers: 3,
+            approving_servers: 3,
+            timestamp: 2000,
+        };
+        let federated = FederatedProvenance {
+            base_provenance: base_prov,
+            cross_server_signatures: sigs,
+            consensus,
+        };
+        assert!(verify_federation_provenance(
+            &federated,
+            &fps,
+            &verifying_keys
+        ));
+    }
+
+    #[test]
+    fn federated_provenance_majority_passes() {
+        let (_author_key, fps, base_prov, _) = build_base_provenance(b"base");
+
+        let peer_keys: Vec<_> = (0..5).map(|_| generate_signing_key()).collect();
+        let mut sigs = Vec::new();
+        let mut verifying_keys = Vec::new();
+        for (i, pk) in peer_keys.iter().enumerate() {
+            let mut sid = [0u8; 32];
+            sid[0] = i as u8 + 1;
+            let vk = pk.verifying_key().to_bytes();
+            sigs.push(sign_cross_server(pk, &base_prov, &sid, &vk, 2000));
+            verifying_keys.push(vk);
+        }
+
+        let consensus = ClusterConsensus {
+            consensus_type: ConsensusType::Majority,
+            verifications: vec![],
+            threshold_met: true,
+            total_servers: 5,
+            approving_servers: 5,
+            timestamp: 2000,
+        };
+        let federated = FederatedProvenance {
+            base_provenance: base_prov,
+            cross_server_signatures: sigs,
+            consensus,
+        };
+        assert!(verify_federation_provenance(
+            &federated,
+            &fps,
+            &verifying_keys
+        ));
+    }
+
+    #[test]
+    fn federated_provenance_supermajority_passes() {
+        let (_author_key, fps, base_prov, _) = build_base_provenance(b"base");
+
+        // 3 of 4 servers; threshold = ceil(4 * 0.67) = ceil(2.68) = 3
+        let peer_keys: Vec<_> = (0..3).map(|_| generate_signing_key()).collect();
+        let mut sigs = Vec::new();
+        let mut verifying_keys = Vec::new();
+        for (i, pk) in peer_keys.iter().enumerate() {
+            let mut sid = [0u8; 32];
+            sid[0] = i as u8 + 1;
+            let vk = pk.verifying_key().to_bytes();
+            sigs.push(sign_cross_server(pk, &base_prov, &sid, &vk, 2000));
+            verifying_keys.push(vk);
+        }
+
+        let consensus = ClusterConsensus {
+            consensus_type: ConsensusType::Supermajority,
+            verifications: vec![],
+            threshold_met: true,
+            total_servers: 4,
+            approving_servers: 3,
+            timestamp: 2000,
+        };
+        let federated = FederatedProvenance {
+            base_provenance: base_prov,
+            cross_server_signatures: sigs,
+            consensus,
+        };
+        assert!(verify_federation_provenance(
+            &federated,
+            &fps,
+            &verifying_keys
+        ));
+    }
+
+    #[test]
+    fn federated_provenance_fails_wrong_cross_sig() {
+        let (_author_key, fps, base_prov, _) = build_base_provenance(b"base");
+
+        let pk = generate_signing_key();
+        let mut sid = [0u8; 32];
+        sid[0] = 1;
+        let vk = pk.verifying_key().to_bytes();
+        let mut sig = sign_cross_server(&pk, &base_prov, &sid, &vk, 2000);
+        sig.signature[0] ^= 0xff;
+
+        let consensus = ClusterConsensus {
+            consensus_type: ConsensusType::Unanimous,
+            verifications: vec![],
+            threshold_met: true,
+            total_servers: 1,
+            approving_servers: 1,
+            timestamp: 2000,
+        };
+        let federated = FederatedProvenance {
+            base_provenance: base_prov,
+            cross_server_signatures: vec![sig],
+            consensus,
+        };
+        assert!(!verify_federation_provenance(&federated, &fps, &vec![vk]));
+    }
+
+    #[test]
+    fn federated_provenance_fails_unknown_verifying_key() {
+        let (_author_key, fps, base_prov, _) = build_base_provenance(b"base");
+
+        let pk = generate_signing_key();
+        let mut sid = [0u8; 32];
+        sid[0] = 1;
+        let vk = pk.verifying_key().to_bytes();
+        let sig = sign_cross_server(&pk, &base_prov, &sid, &vk, 2000);
+
+        let consensus = ClusterConsensus {
+            consensus_type: ConsensusType::Unanimous,
+            verifications: vec![],
+            threshold_met: true,
+            total_servers: 1,
+            approving_servers: 1,
+            timestamp: 2000,
+        };
+        let federated = FederatedProvenance {
+            base_provenance: base_prov,
+            cross_server_signatures: vec![sig],
+            consensus,
+        };
+        let other_vk = generate_signing_key().verifying_key().to_bytes();
+        assert!(!verify_federation_provenance(
+            &federated,
+            &fps,
+            &vec![other_vk]
+        ));
+    }
+
+    #[test]
+    fn federated_provenance_fails_consensus_not_met() {
+        let (_author_key, fps, base_prov, _) = build_base_provenance(b"base");
+
+        let pk = generate_signing_key();
+        let mut sid = [0u8; 32];
+        sid[0] = 1;
+        let vk = pk.verifying_key().to_bytes();
+        let sig = sign_cross_server(&pk, &base_prov, &sid, &vk, 2000);
+
+        let consensus = ClusterConsensus {
+            consensus_type: ConsensusType::Unanimous,
+            verifications: vec![],
+            threshold_met: false,
+            total_servers: 3,
+            approving_servers: 1,
+            timestamp: 2000,
+        };
+        let federated = FederatedProvenance {
+            base_provenance: base_prov,
+            cross_server_signatures: vec![sig],
+            consensus,
+        };
+        assert!(!verify_federation_provenance(&federated, &fps, &vec![vk]));
+    }
+
+    #[test]
+    fn federated_provenance_fails_base_signature_invalid() {
+        let (_author_key, fps, mut base_prov, _) = build_base_provenance(b"base");
+        base_prov.signature[0] ^= 0xff;
+
+        let pk = generate_signing_key();
+        let mut sid = [0u8; 32];
+        sid[0] = 1;
+        let vk = pk.verifying_key().to_bytes();
+        let sig = sign_cross_server(&pk, &base_prov, &sid, &vk, 2000);
+
+        let consensus = ClusterConsensus {
+            consensus_type: ConsensusType::Unanimous,
+            verifications: vec![],
+            threshold_met: true,
+            total_servers: 1,
+            approving_servers: 1,
+            timestamp: 2000,
+        };
+        let federated = FederatedProvenance {
+            base_provenance: base_prov,
+            cross_server_signatures: vec![sig],
+            consensus,
+        };
+        assert!(!verify_federation_provenance(&federated, &fps, &vec![vk]));
+    }
+
+    // =========================================================================
+    // PROV-JSON helper constructors
+    // =========================================================================
+
+    #[test]
+    fn prov_value_constructors() {
+        let s = ProvValue::string("hi");
+        assert_eq!(s.value, "hi");
+        assert_eq!(s.type_.as_deref(), Some("xsd:string"));
+        assert!(s.lang.is_none());
+
+        let t = ProvValue::typed("42", "xsd:integer");
+        assert_eq!(t.value, "42");
+        assert_eq!(t.type_.as_deref(), Some("xsd:integer"));
+
+        let tn = ProvValue::typed_with_namespace("x", "Person");
+        assert_eq!(tn.value, "x");
+        assert!(tn.type_.as_deref().unwrap().contains("Person"));
+
+        let q = ProvValue::qname("prov:Person");
+        assert_eq!(q.value, "prov:Person");
+        assert_eq!(q.type_.as_deref(), Some("xsd:QName"));
+    }
+
+    #[test]
+    fn prov_json_document_default_prefixes() {
+        let doc = ProvJsonDocument::new();
+        assert!(doc.prefix.contains_key("prov"));
+        assert!(doc.prefix.contains_key("xsd"));
+        assert!(doc.prefix.contains_key("xudanu"));
+        assert!(doc.entity.is_empty());
+        assert!(doc.bundle.is_none());
+
+        let doc2 = ProvJsonDocument::with_default_prefix();
+        assert_eq!(doc, doc2);
+    }
+
+    #[test]
+    fn consensus_type_display() {
+        assert_eq!(ConsensusType::Unanimous.to_string(), "unanimous");
+        assert_eq!(ConsensusType::Majority.to_string(), "majority");
+        assert_eq!(ConsensusType::Supermajority.to_string(), "supermajority");
+    }
+
+    #[test]
+    fn prov_id_generators() {
+        assert_eq!(generate_prov_id("pre", "base"), "pre:base");
+        assert_eq!(generate_span_prov_id(42, 0, 10), "xudanu:span:42:0:10");
+        let key = [0xaa; 32];
+        let id = generate_author_prov_id(&key);
+        assert!(id.starts_with("xudanu:agent:"));
+        assert_eq!(generate_edit_activity_id(7, 1234), "xudanu:activity:7:1234");
+        assert_eq!(
+            generate_federation_bundle_id(9999),
+            "xudanu:federation:consensus:9999"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn author_type_to_prov_agent_type() {
+        assert_eq!(AuthorType::Human.to_prov_agent_type(), "prov:Person");
+        assert_eq!(AuthorType::Llm.to_prov_agent_type(), "xudanu:LLMAgent");
+        assert_eq!(AuthorType::Historical.to_prov_agent_type(), "prov:Person");
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn derivation_method_to_prov_type() {
+        assert_eq!(
+            DerivationMethod::Transclusion.to_prov_type(),
+            "xudanu:Transclusion"
+        );
+        assert_eq!(DerivationMethod::Merge.to_prov_type(), "xudanu:Merge");
+        assert_eq!(DerivationMethod::Import.to_prov_type(), "prov:Revision");
+        assert_eq!(
+            DerivationMethod::Annotation.to_prov_type(),
+            "prov:Quotation"
+        );
+        assert_eq!(DerivationMethod::Revision.to_prov_type(), "prov:Revision");
+    }
+
+    // =========================================================================
+    // Federation-PROV type conversions
+    // =========================================================================
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn federation_metadata_to_prov_entity() {
+        let meta = FederationMetadata::new(
+            "srv-1".to_string(),
+            "example.com".to_string(),
+            5,
+            "active".to_string(),
+            3,
+            "member".to_string(),
+        );
+        let (id, entity) = meta.to_prov_entity();
+        assert!(id.starts_with("xudanu:federation:"));
+        assert!(entity.attributes.contains_key("prov:type"));
+        assert_eq!(
+            entity.attributes.get("xudanu:serverId").unwrap().value,
+            "srv-1"
+        );
+        assert_eq!(
+            entity.attributes.get("xudanu:clusterSize").unwrap().value,
+            "5"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn federation_server_agent_to_prov_agent() {
+        let agent = FederationServerAgent::new(
+            "srv-1".to_string(),
+            "deadbeef".to_string(),
+            "cafebabe".to_string(),
+            "active".to_string(),
+            7,
+            1000,
+        );
+        let (id, prov_agent) = agent.to_prov_agent();
+        assert!(id.starts_with("xudanu:server:"));
+        assert!(prov_agent.attributes.contains_key("prov:type"));
+        assert_eq!(
+            prov_agent.attributes.get("xudanu:serverId").unwrap().value,
+            "srv-1"
+        );
+        assert_eq!(
+            prov_agent
+                .attributes
+                .get("xudanu:endorsementCount")
+                .unwrap()
+                .value,
+            "7"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn federation_attestation_to_prov() {
+        let mut meta = std::collections::HashMap::new();
+        meta.insert("k".to_string(), "v".to_string());
+        let att = FederationAttestation::new(
+            "trust".to_string(),
+            "attester".to_string(),
+            "subject".to_string(),
+            12345,
+            vec![1, 2, 3, 4],
+            meta,
+        );
+        let (act_id, activity) = att.to_prov_activity();
+        assert!(act_id.starts_with("xudanu:attestation:"));
+        assert!(activity.attributes.contains_key("xudanu:attestationType"));
+        assert!(activity.attributes.contains_key("xudanu:meta_k"));
+        assert!(activity.start_time.is_some());
+
+        let (assoc_id, association) = att.to_prov_association();
+        assert!(assoc_id.starts_with("xudanu:assoc:"));
+        assert!(association.agent.is_some());
+        assert!(association.role.is_some());
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn cluster_verification_to_prov() {
+        let cv = ClusterVerificationActivity::new(
+            "act:1".to_string(),
+            "xudanu:ClusterVerification".to_string(),
+            1000,
+            2000,
+            vec!["srv-a".to_string(), "srv-b".to_string()],
+            "unanimous".to_string(),
+            true,
+        );
+        let (act_id, activity) = cv.to_prov_activity();
+        assert_eq!(act_id, "act:1");
+        assert_eq!(
+            activity
+                .attributes
+                .get("xudanu:consensusType")
+                .unwrap()
+                .value,
+            "unanimous"
+        );
+        assert_eq!(
+            activity
+                .attributes
+                .get("xudanu:verifyingServerCount")
+                .unwrap()
+                .value,
+            "2"
+        );
+        assert!(activity.start_time.is_some());
+        assert!(activity.end_time.is_some());
+
+        let associations = cv.to_prov_associations();
+        assert_eq!(associations.len(), 2);
+        for (id, assoc) in &associations {
+            assert!(id.starts_with("act:1:assoc:"));
+            assert_eq!(assoc.activity, "act:1");
+            assert!(assoc.agent.is_some());
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn federation_provenance_bundle_to_prov() {
+        let meta = FederationMetadata::new(
+            "srv-1".to_string(),
+            "fed.example".to_string(),
+            3,
+            "active".to_string(),
+            2,
+            "member".to_string(),
+        );
+        let mut bundle = FederationProvenanceBundle::new("bundle-1".to_string(), 1000, meta);
+
+        bundle.add_server_agent(FederationServerAgent::new(
+            "srv-1".to_string(),
+            "aabb".to_string(),
+            "ccdd".to_string(),
+            "active".to_string(),
+            1,
+            1000,
+        ));
+        bundle.add_verification_activity(ClusterVerificationActivity::new(
+            "act:1".to_string(),
+            "xudanu:ClusterVerification".to_string(),
+            1000,
+            2000,
+            vec!["srv-1".to_string()],
+            "unanimous".to_string(),
+            true,
+        ));
+        let mut att_meta = std::collections::HashMap::new();
+        att_meta.insert("k".to_string(), "v".to_string());
+        bundle.add_attestation(FederationAttestation::new(
+            "trust".to_string(),
+            "attester-srv".to_string(),
+            "subject-srv".to_string(),
+            1500,
+            vec![0; 64],
+            att_meta,
+        ));
+        let mut sig_sid = [0u8; 32];
+        sig_sid[..2].copy_from_slice(b"ss");
+        bundle.add_cross_server_signature(CrossServerSignature {
+            server_id: sig_sid,
+            verifying_key: [1u8; 32],
+            signature: [2u8; 64],
+            timestamp: 3000,
+        });
+
+        assert_eq!(bundle.server_agents.len(), 1);
+        assert_eq!(bundle.verification_activities.len(), 1);
+        assert_eq!(bundle.attestations.len(), 1);
+        assert_eq!(bundle.cross_server_signatures.len(), 1);
+
+        let (id, prov_bundle) = bundle.to_prov_bundle();
+        assert_eq!(id, "bundle-1");
+        assert!(!prov_bundle.content.entity.is_empty());
+        assert!(!prov_bundle.content.agent.is_empty());
+        assert!(!prov_bundle.content.activity.is_empty());
+        assert!(!prov_bundle.content.wasAssociatedWith.is_empty());
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn federation_provenance_bundle_empty_to_prov() {
+        let meta = FederationMetadata::new(
+            "srv-1".to_string(),
+            "fed.example".to_string(),
+            1,
+            "active".to_string(),
+            1,
+            "member".to_string(),
+        );
+        let bundle = FederationProvenanceBundle::new("bundle-empty".to_string(), 0, meta);
+        let (id, prov_bundle) = bundle.to_prov_bundle();
+        assert_eq!(id, "bundle-empty");
+        // federation metadata entity + nothing else
+        assert_eq!(prov_bundle.content.entity.len(), 1);
+        assert!(prov_bundle.content.agent.is_empty());
+        // metadata-generation activity always added
+        assert_eq!(prov_bundle.content.activity.len(), 1);
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn cross_server_signature_to_prov() {
+        let sig = CrossServerSignature {
+            server_id: [0xab; 32],
+            verifying_key: [0xcd; 32],
+            signature: [0xef; 64],
+            timestamp: 4242,
+        };
+        let (eid, entity) = sig.to_prov_entity();
+        assert!(eid.starts_with("xudanu:crosssig:"));
+        assert!(entity.attributes.contains_key("xudanu:signature"));
+        assert_eq!(
+            entity.attributes.get("xudanu:timestamp").unwrap().value,
+            "4242"
+        );
+
+        let (aid, assoc) = sig.to_prov_association("activity-1");
+        assert!(aid.starts_with("activity-1:assoc:"));
+        assert_eq!(assoc.activity, "activity-1");
+        assert!(assoc.agent.is_some());
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn cluster_consensus_to_prov_bundle() {
+        let (_author_key, _fps, base_prov, _) = build_base_provenance(b"base");
+
+        let mut sid1 = [0u8; 32];
+        sid1[0] = 1;
+        let mut sid2 = [0u8; 32];
+        sid2[0] = 2;
+
+        let consensus = ClusterConsensus {
+            consensus_type: ConsensusType::Majority,
+            verifications: vec![
+                ServerVerification {
+                    server_id: sid1,
+                    verified: true,
+                    timestamp: 1000,
+                },
+                ServerVerification {
+                    server_id: sid2,
+                    verified: false,
+                    timestamp: 1000,
+                },
+            ],
+            threshold_met: true,
+            total_servers: 2,
+            approving_servers: 1,
+            timestamp: 1000,
+        };
+
+        let (id, bundle) = consensus.to_prov_bundle("consensus-bundle".to_string(), &base_prov);
+        assert_eq!(id, "consensus-bundle");
+        assert!(!bundle.content.entity.is_empty());
+        assert!(!bundle.content.activity.is_empty());
+        // only verified servers contribute associations
+        assert_eq!(bundle.content.wasAssociatedWith.len(), 1);
+        // verified server agent added
+        assert_eq!(bundle.content.agent.len(), 1);
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn federated_provenance_to_prov_json() {
+        let (_author_key, _fps, base_prov, _) = build_base_provenance(b"base");
+
+        let pk = generate_signing_key();
+        let mut sid = [0u8; 32];
+        sid[0] = 9;
+        let vk = pk.verifying_key().to_bytes();
+        let sig = sign_cross_server(&pk, &base_prov, &sid, &vk, 2000);
+
+        let consensus = ClusterConsensus {
+            consensus_type: ConsensusType::Unanimous,
+            verifications: vec![],
+            threshold_met: true,
+            total_servers: 1,
+            approving_servers: 1,
+            timestamp: 2000,
+        };
+        let federated = FederatedProvenance {
+            base_provenance: base_prov,
+            cross_server_signatures: vec![sig],
+            consensus,
+        };
+
+        let doc = federated.to_prov_json().expect("prov json should succeed");
+        assert!(!doc.entity.is_empty());
+        assert!(!doc.agent.is_empty());
+        assert!(!doc.wasAttributedTo.is_empty());
+        assert!(doc.bundle.is_none());
+
+        let doc2 = federated
+            .to_prov_json_with_federation()
+            .expect("prov json with federation should succeed");
+        assert!(doc2.bundle.is_some());
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn federated_provenance_to_prov_json_no_sigs_no_bundle() {
+        let (_author_key, _fps, base_prov, _) = build_base_provenance(b"base");
+
+        let consensus = ClusterConsensus {
+            consensus_type: ConsensusType::Unanimous,
+            verifications: vec![],
+            threshold_met: false,
+            total_servers: 0,
+            approving_servers: 0,
+            timestamp: 2000,
+        };
+        let federated = FederatedProvenance {
+            base_provenance: base_prov,
+            cross_server_signatures: vec![],
+            consensus,
+        };
+
+        let doc = federated
+            .to_prov_json_with_federation()
+            .expect("prov json with federation should succeed");
+        // no cross-server signatures -> no bundle added
+        assert!(doc.bundle.is_none());
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn federated_provenance_export_bundle() {
+        let (_author_key, _fps, base_prov, _) = build_base_provenance(b"base");
+
+        let pk = generate_signing_key();
+        let mut sid = [0u8; 32];
+        sid[0] = 7;
+        let vk = pk.verifying_key().to_bytes();
+        let sig = sign_cross_server(&pk, &base_prov, &sid, &vk, 2000);
+
+        let mut sid_v = [0u8; 32];
+        sid_v[0] = 1;
+        let consensus = ClusterConsensus {
+            consensus_type: ConsensusType::Unanimous,
+            verifications: vec![ServerVerification {
+                server_id: sid_v,
+                verified: true,
+                timestamp: 1500,
+            }],
+            threshold_met: true,
+            total_servers: 1,
+            approving_servers: 1,
+            timestamp: 2000,
+        };
+        let federated = FederatedProvenance {
+            base_provenance: base_prov,
+            cross_server_signatures: vec![sig],
+            consensus,
+        };
+
+        let bundle = federated
+            .export_federation_provenance_bundle()
+            .expect("export should succeed");
+        assert_eq!(bundle.server_agents.len(), 1);
+        assert_eq!(bundle.verification_activities.len(), 1);
+        assert_eq!(bundle.cross_server_signatures.len(), 1);
+        assert_eq!(bundle.federation_metadata.cluster_size, 1);
+    }
 }
 // W3C PROV-JSON representation for existing provenance model
 // See: https://www.w3.org/Submission/prov-json/

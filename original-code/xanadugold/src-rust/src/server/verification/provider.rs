@@ -19,3 +19,20 @@ impl EmailProvider for DevProvider {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dev_provider_send_does_not_panic() {
+        let provider = DevProvider;
+        provider.send_verification("user@example.com", "https://example.com/verify?token=abc");
+    }
+
+    #[test]
+    fn dev_provider_send_empty_inputs_does_not_panic() {
+        let provider = DevProvider;
+        provider.send_verification("", "");
+    }
+}

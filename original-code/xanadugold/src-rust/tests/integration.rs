@@ -7292,6 +7292,44 @@ fn well_known_identity_json_structure() {
     assert!(identity["server_id"].as_str().unwrap().len() == 64);
     assert!(identity["server_name"].is_string());
     assert!(identity["stats"]["work_count"].as_u64() == Some(0));
+    assert!(
+        identity["server_namespace_id"].as_u64() == Some(s.server_namespace_id()),
+        "server_namespace_id must be a u64 matching the server's actual namespace ID"
+    );
+}
+
+#[test]
+fn well_known_identity_fields_match_directory_add_parser() {
+    let s = Server::new();
+    let identity = s.well_known_identity();
+
+    let verifying_key = identity["server_id"]
+        .as_str()
+        .expect("server_id must be a hex string (verifying key)");
+    assert_eq!(verifying_key.len(), 64, "32-byte Ed25519 key as hex");
+
+    let ns_id = identity["server_namespace_id"]
+        .as_u64()
+        .expect("server_namespace_id must be present as u64");
+    assert_eq!(ns_id, s.server_namespace_id());
+
+    assert!(
+        identity["server_name"].is_string(),
+        "server_name must be present for directory add"
+    );
+    assert!(
+        identity["server_description"].is_string(),
+        "server_description must be present for directory add"
+    );
+
+    let vk_bytes = hex::decode(verifying_key).unwrap();
+    let hash = blake3::hash(&vk_bytes);
+    let b = hash.as_bytes();
+    let derived = u64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]);
+    assert_eq!(
+        derived, ns_id,
+        "BLAKE3-derived namespace ID must match server_namespace_id"
+    );
 }
 
 #[test]
@@ -11333,4 +11371,78 @@ async fn cross_server_resolve_invalid_hash() {
     )
     .await;
     assert!(resp.get("code").is_some(), "invalid hash should fail");
+}
+
+#[test]
+fn server_directory_add_auto_discovery() {
+    use std::io::{Read, Write};
+
+    let mut server_a = Server::new();
+    server_a.set_server_name("Alice's Server".to_string());
+    server_a.set_server_description("Test server A".to_string());
+
+    let identity_json = server_a.well_known_identity().to_string();
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    let json_clone = identity_json.clone();
+    std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                json_clone.len(),
+                json_clone
+            );
+            let _ = stream.write_all(response.as_bytes());
+            let _ = stream.flush();
+        }
+    });
+
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    let mut server_b = Server::new();
+    let entry = server_b
+        .server_directory_add("127.0.0.1", Some(port))
+        .expect("directory add should succeed");
+
+    assert_eq!(entry.server_id, server_a.server_namespace_id());
+    assert_eq!(entry.verifying_key.len(), 64);
+    assert_eq!(entry.name, "Alice's Server");
+    assert_eq!(entry.description, "Test server A");
+    assert!(!entry.trusted);
+    assert_eq!(entry.discovered, "manual");
+}
+
+#[test]
+fn server_directory_add_rejects_unreachable() {
+    let mut server = Server::new();
+    let result = server.server_directory_add("127.0.0.1", Some(1));
+    assert!(result.is_err(), "port 1 should be unreachable");
+}
+
+#[test]
+fn server_directory_trust_flow() {
+    let mut server = Server::new();
+    let ns_id = server.server_namespace_id() + 42;
+    server.server_directory_add_manual(
+        ns_id,
+        "example.com".to_string(),
+        "abcdef0123456789".to_string(),
+        "Test Server".to_string(),
+    );
+
+    let dir = server.server_directory();
+    let entry = dir.get(ns_id).expect("entry should exist");
+    assert!(!entry.trusted, "should start untrusted");
+
+    assert!(server.server_directory_set_trust(ns_id, true));
+    let entry = server.server_directory().get(ns_id).unwrap();
+    assert!(entry.trusted, "should be trusted after set_trust");
+
+    assert!(server.server_directory_set_trust(ns_id, false));
+    let entry = server.server_directory().get(ns_id).unwrap();
+    assert!(!entry.trusted, "should be untrusted after unset");
 }

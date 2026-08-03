@@ -285,4 +285,184 @@ mod tests {
         let v1 = sc.next(&mut storage).unwrap();
         assert_eq!(v1, 1);
     }
+
+    #[test]
+    fn counter_to_bytes_serialization() {
+        let id = FlockId::new(1, 0);
+        let mut c = Counter::new(id);
+        c.next();
+        c.next();
+        c.next();
+
+        let bytes = c.to_bytes().unwrap();
+        assert_eq!(bytes.len(), 8);
+        assert_eq!(bytes, 3u64.to_le_bytes().to_vec());
+    }
+
+    #[test]
+    fn batch_counter_to_bytes_serialization() {
+        let id = FlockId::new(2, 0);
+        let bc = BatchCounter::new(id);
+
+        let bytes = bc.to_bytes().unwrap();
+        assert_eq!(bytes.len(), 16);
+        assert_eq!(&bytes[..8], 0u64.to_le_bytes());
+        assert_eq!(&bytes[8..], 64u64.to_le_bytes());
+    }
+
+    #[test]
+    fn single_counter_to_bytes_serialization() {
+        let id = FlockId::new(3, 0);
+        let sc = SingleCounter::new(id);
+
+        let bytes = sc.to_bytes().unwrap();
+        assert_eq!(bytes.len(), 8);
+        assert_eq!(bytes, 0u64.to_le_bytes().to_vec());
+    }
+
+    #[test]
+    fn counter_persistent_trait_methods() {
+        let id = FlockId::new(10, 20);
+        let mut c = Counter::new(id);
+
+        assert_eq!(c.flock_id(), id);
+        assert_eq!(c.type_tag(), "Counter");
+        assert!(c.flock_info().is_none());
+
+        let info = FlockInfo::new(id);
+        c.set_flock_info(Some(info));
+        assert!(c.flock_info().is_some());
+
+        let new_id = FlockId::new(99, 88);
+        c.set_flock_id(new_id);
+        assert_eq!(c.flock_id(), new_id);
+
+        c.set_flock_info(None);
+        assert!(c.flock_info().is_none());
+    }
+
+    #[test]
+    fn counter_clone_boxed_and_as_any() {
+        let id = FlockId::new(5, 6);
+        let mut c = Counter::new(id);
+        c.next();
+        c.next();
+
+        let boxed = c.clone_boxed();
+        assert_eq!(boxed.type_tag(), "Counter");
+        assert_eq!(boxed.flock_id(), id);
+
+        let any_ref = boxed.as_any();
+        let downcast = any_ref.downcast_ref::<Counter>().unwrap();
+        assert_eq!(downcast.value(), 2);
+    }
+
+    #[test]
+    fn counter_as_any_mut() {
+        let id = FlockId::new(7, 8);
+        let mut c = Counter::new(id);
+
+        let any_mut = c.as_any_mut();
+        let downcast = any_mut.downcast_mut::<Counter>().unwrap();
+        downcast.next();
+        downcast.next();
+        assert_eq!(c.value(), 2);
+    }
+
+    #[test]
+    fn batch_counter_persistent_trait_methods() {
+        let id = FlockId::new(11, 22);
+        let mut bc = BatchCounter::new(id);
+
+        assert_eq!(bc.flock_id(), id);
+        assert_eq!(bc.type_tag(), "BatchCounter");
+        assert!(bc.flock_info().is_none());
+
+        bc.set_flock_info(Some(FlockInfo::new(id)));
+        assert!(bc.flock_info().is_some());
+
+        let new_id = FlockId::new(33, 44);
+        bc.set_flock_id(new_id);
+        assert_eq!(bc.flock_id(), new_id);
+    }
+
+    #[test]
+    fn single_counter_persistent_trait_methods() {
+        let id = FlockId::new(55, 66);
+        let mut sc = SingleCounter::new(id);
+
+        assert_eq!(sc.flock_id(), id);
+        assert_eq!(sc.type_tag(), "SingleCounter");
+        assert!(sc.flock_info().is_none());
+
+        sc.set_flock_info(Some(FlockInfo::new(id)));
+        assert!(sc.flock_info().is_some());
+
+        let new_id = FlockId::new(77, 88);
+        sc.set_flock_id(new_id);
+        assert_eq!(sc.flock_id(), new_id);
+    }
+
+    #[test]
+    fn single_counter_value_before_next() {
+        let id = FlockId::new(1, 0);
+        let sc = SingleCounter::new(id);
+        assert_eq!(sc.value(), 0);
+    }
+
+    #[test]
+    fn batch_counter_boundary_triggers_disk_write() {
+        let mut storage = InMemoryStorage::new();
+        let id = storage.allocate_flock_id();
+        let mut bc = BatchCounter::new(id);
+        storage.store_new(Box::new(bc.clone())).unwrap();
+
+        for i in 0..64u64 {
+            let v = bc.next(&mut storage).unwrap();
+            assert_eq!(v, i);
+        }
+        assert_eq!(bc.current(), 64);
+
+        storage.commit().unwrap();
+        let info = storage.flock_info(&id).unwrap();
+        assert!(
+            !info.is_dirty(),
+            "should be clean after commit and within first batch"
+        );
+
+        let v = bc.next(&mut storage).unwrap();
+        assert_eq!(v, 64);
+
+        let info = storage.flock_info(&id).unwrap();
+        assert!(
+            info.is_dirty(),
+            "disk write should trigger when current reaches the limit boundary"
+        );
+    }
+
+    #[test]
+    fn batch_counter_clone_boxed_and_as_any() {
+        let id = FlockId::new(1, 2);
+        let bc = BatchCounter::new(id);
+
+        let boxed = bc.clone_boxed();
+        assert_eq!(boxed.type_tag(), "BatchCounter");
+
+        let any_ref = boxed.as_any();
+        let downcast = any_ref.downcast_ref::<BatchCounter>().unwrap();
+        assert_eq!(downcast.current(), 0);
+    }
+
+    #[test]
+    fn single_counter_clone_boxed_and_as_any() {
+        let id = FlockId::new(3, 4);
+        let sc = SingleCounter::new(id);
+
+        let boxed = sc.clone_boxed();
+        assert_eq!(boxed.type_tag(), "SingleCounter");
+
+        let any_ref = boxed.as_any();
+        let downcast = any_ref.downcast_ref::<SingleCounter>().unwrap();
+        assert_eq!(downcast.value(), 0);
+    }
 }

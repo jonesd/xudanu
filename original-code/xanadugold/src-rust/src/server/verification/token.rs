@@ -98,3 +98,99 @@ impl Default for VerificationTokenStore {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_store_is_empty() {
+        let store = VerificationTokenStore::new();
+        assert_eq!(store.len(), 0);
+    }
+
+    #[test]
+    fn default_matches_new() {
+        assert_eq!(
+            VerificationTokenStore::new().len(),
+            VerificationTokenStore::default().len()
+        );
+    }
+
+    #[test]
+    fn issue_returns_nonempty_hex_and_increments_len() {
+        let mut store = VerificationTokenStore::new();
+        let tok = store.issue(1, "a@b.com");
+        assert!(!tok.is_empty());
+        assert_eq!(tok.len(), 64);
+        assert!(tok.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(store.len(), 1);
+    }
+
+    #[test]
+    fn issue_multiple_tokens_are_distinct() {
+        let mut store = VerificationTokenStore::new();
+        let t1 = store.issue(1, "a@b.com");
+        let t2 = store.issue(2, "c@d.com");
+        assert_ne!(t1, t2);
+        assert_eq!(store.len(), 2);
+    }
+
+    #[test]
+    fn redeem_success_returns_club_and_email() {
+        let mut store = VerificationTokenStore::new();
+        let tok = store.issue(42, "user@example.com");
+        let redeemed = store.redeem(&tok).expect("should redeem valid token");
+        assert_eq!(redeemed.0, 42);
+        assert_eq!(redeemed.1, "user@example.com");
+        assert_eq!(store.len(), 0);
+    }
+
+    #[test]
+    fn redeem_is_single_use() {
+        let mut store = VerificationTokenStore::new();
+        let tok = store.issue(7, "x@y.com");
+        assert!(store.redeem(&tok).is_some());
+        assert!(store.redeem(&tok).is_none());
+    }
+
+    #[test]
+    fn redeem_unknown_token_returns_none() {
+        let mut store = VerificationTokenStore::new();
+        assert!(store.redeem("deadbeef").is_none());
+        assert_eq!(store.len(), 0);
+    }
+
+    #[test]
+    fn redeem_garbage_on_empty_store_returns_none() {
+        let mut store = VerificationTokenStore::new();
+        assert!(store.redeem("").is_none());
+    }
+
+    #[test]
+    fn sweep_expired_retains_fresh_tokens() {
+        let mut store = VerificationTokenStore::new();
+        let _ = store.issue(1, "a@b.com");
+        let _ = store.issue(2, "c@d.com");
+        assert_eq!(store.len(), 2);
+        store.sweep_expired();
+        assert_eq!(store.len(), 2);
+    }
+
+    #[test]
+    fn sweep_expired_on_empty_store_is_noop() {
+        let mut store = VerificationTokenStore::new();
+        store.sweep_expired();
+        assert_eq!(store.len(), 0);
+    }
+
+    #[test]
+    fn sweep_expired_does_not_invalidate_live_redeem() {
+        let mut store = VerificationTokenStore::new();
+        let tok = store.issue(5, "z@z.com");
+        store.sweep_expired();
+        assert_eq!(store.len(), 1);
+        let redeemed = store.redeem(&tok).expect("fresh token should still redeem");
+        assert_eq!(redeemed.0, 5);
+    }
+}

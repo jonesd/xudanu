@@ -789,4 +789,304 @@ mod tests {
         let join = canopy.join(&a, &b);
         assert!(join.lock().unwrap_or_else(|e| e.into_inner()).height_diff() >= 2);
     }
+
+    #[test]
+    fn sensor_canopy_make_crum_for() {
+        let canopy = SensorCanopy::new();
+        let crum = canopy.make_crum_for(Some(&[Id::global(0)]), None, true);
+        let g = crum.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(g.kind(), CanopyCrumKind::Sensor);
+        assert!(g.is_leaf());
+        assert_eq!(g.flags() & PUBLIC_CLUB_FLAG, PUBLIC_CLUB_FLAG);
+        assert_eq!(
+            g.flags() & crate::edition::props::IS_PARTIAL_FLAG,
+            crate::edition::props::IS_PARTIAL_FLAG
+        );
+    }
+
+    #[test]
+    fn sensor_canopy_join_two_leaves() {
+        let canopy = SensorCanopy::new();
+        let a = canopy.make_crum(crate::edition::props::IS_PARTIAL_FLAG);
+        let b = canopy.make_crum(PUBLIC_CLUB_FLAG);
+        let join = canopy.join(&a, &b);
+        assert!(!join.lock().unwrap_or_else(|e| e.into_inner()).is_leaf());
+        assert_eq!(
+            join.lock().unwrap_or_else(|e| e.into_inner()).flags(),
+            crate::edition::props::IS_PARTIAL_FLAG | PUBLIC_CLUB_FLAG
+        );
+    }
+
+    #[test]
+    fn sensor_canopy_root_of() {
+        let canopy = SensorCanopy::new();
+        let a = canopy.make_crum(0);
+        let b = canopy.make_crum(0);
+        let join = canopy.join(&a, &b);
+        assert!(Arc::ptr_eq(&canopy.root_of(&a), &join));
+        assert!(Arc::ptr_eq(&canopy.root_of(&b), &join));
+    }
+
+    #[test]
+    fn sensor_canopy_propagate() {
+        let canopy = SensorCanopy::new();
+        let a = canopy.make_crum(PUBLIC_CLUB_FLAG);
+        let b = canopy.make_crum(0);
+        let join = canopy.join(&a, &b);
+        a.lock().unwrap_or_else(|e| e.into_inner()).set_own_flags(0);
+        canopy.propagate(&a);
+        assert_eq!(a.lock().unwrap_or_else(|e| e.into_inner()).flags(), 0);
+        assert_eq!(join.lock().unwrap_or_else(|e| e.into_inner()).flags(), 0);
+    }
+
+    #[test]
+    fn crum_own_flags_vs_flags() {
+        let canopy = BertCanopy::new();
+        let a = canopy.make_crum(PUBLIC_CLUB_FLAG);
+        assert_eq!(
+            a.lock().unwrap_or_else(|e| e.into_inner()).own_flags(),
+            PUBLIC_CLUB_FLAG
+        );
+        let b = canopy.make_crum(IS_SENSOR_WAITING_FLAG);
+        let join = canopy.join(&a, &b);
+        let jg = join.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(jg.own_flags(), 0);
+        assert_eq!(jg.flags(), PUBLIC_CLUB_FLAG | IS_SENSOR_WAITING_FLAG);
+    }
+
+    #[test]
+    fn crum_parent_accessor() {
+        let canopy = BertCanopy::new();
+        let a = canopy.make_crum(0);
+        assert!(a
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .parent()
+            .is_none());
+        let b = canopy.make_crum(0);
+        let join = canopy.join(&a, &b);
+        let parent_a = a
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .parent()
+            .cloned()
+            .unwrap();
+        assert!(Arc::ptr_eq(&parent_a, &join));
+    }
+
+    #[test]
+    fn crum_child_accessors() {
+        let canopy = BertCanopy::new();
+        let a = canopy.make_crum(0);
+        assert!(a
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .child1()
+            .is_none());
+        assert!(a
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .child2()
+            .is_none());
+        let b = canopy.make_crum(0);
+        let join = canopy.join(&a, &b);
+        let jg = join.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(Arc::ptr_eq(jg.child1().unwrap(), &a));
+        assert!(Arc::ptr_eq(jg.child2().unwrap(), &b));
+    }
+
+    #[test]
+    fn crum_min_max_height() {
+        let canopy = BertCanopy::new();
+        let a = canopy.make_crum(0);
+        assert_eq!(a.lock().unwrap_or_else(|e| e.into_inner()).min_height(), 0);
+        assert_eq!(a.lock().unwrap_or_else(|e| e.into_inner()).max_height(), 0);
+        let b = canopy.make_crum(0);
+        let join = canopy.join(&a, &b);
+        let jg = join.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(jg.min_height(), -1);
+        assert_eq!(jg.max_height(), 1);
+        assert_eq!(jg.height_diff(), 2);
+    }
+
+    #[test]
+    fn crum_has_recorders_and_recorders_slice() {
+        let canopy = SensorCanopy::new();
+        let crum = canopy.make_crum(0);
+        assert!(!crum
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_recorders());
+        assert_eq!(
+            crum.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .recorders()
+                .len(),
+            0
+        );
+        crum.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .install_recorders(&[1, 2]);
+        assert!(crum
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_recorders());
+        assert_eq!(
+            crum.lock().unwrap_or_else(|e| e.into_inner()).recorders(),
+            &[1, 2]
+        );
+        assert_eq!(
+            crum.lock().unwrap_or_else(|e| e.into_inner()).own_flags() & IS_SENSOR_WAITING_FLAG,
+            IS_SENSOR_WAITING_FLAG
+        );
+        crum.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove_recorders(&[1]);
+        assert_eq!(
+            crum.lock().unwrap_or_else(|e| e.into_inner()).recorders(),
+            &[2]
+        );
+        crum.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove_recorders(&[2]);
+        assert!(!crum
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_recorders());
+        assert_eq!(
+            crum.lock().unwrap_or_else(|e| e.into_inner()).own_flags() & IS_SENSOR_WAITING_FLAG,
+            0
+        );
+    }
+
+    #[test]
+    fn crum_ref_count_no_underflow() {
+        let canopy = BertCanopy::new();
+        let crum = canopy.make_crum(0);
+        assert_eq!(
+            crum.lock().unwrap_or_else(|e| e.into_inner()).ref_count(),
+            0
+        );
+        crum.lock().unwrap_or_else(|e| e.into_inner()).add_pointer();
+        crum.lock().unwrap_or_else(|e| e.into_inner()).add_pointer();
+        assert_eq!(
+            crum.lock().unwrap_or_else(|e| e.into_inner()).ref_count(),
+            2
+        );
+        crum.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove_pointer();
+        crum.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove_pointer();
+        crum.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove_pointer();
+        assert_eq!(
+            crum.lock().unwrap_or_else(|e| e.into_inner()).ref_count(),
+            0
+        );
+    }
+
+    #[test]
+    fn change_height_leaf_is_noop() {
+        let canopy = BertCanopy::new();
+        let a = canopy.make_crum(0);
+        assert!(!a.lock().unwrap_or_else(|e| e.into_inner()).change_height());
+    }
+
+    #[test]
+    fn change_height_detects_child_change() {
+        let canopy = BertCanopy::new();
+        let a = canopy.make_crum(0);
+        let b = canopy.make_crum(0);
+        let join = canopy.join(&a, &b);
+        assert!(!join
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .change_height());
+        {
+            let mut ag = a.lock().unwrap_or_else(|e| e.into_inner());
+            ag.min_h = -5;
+            ag.max_h = 5;
+        }
+        assert!(join
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .change_height());
+        let jg = join.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(jg.min_height(), -6);
+        assert_eq!(jg.max_height(), 6);
+    }
+
+    #[test]
+    fn propagate_height_updates_ancestors() {
+        let canopy = BertCanopy::new();
+        let a = canopy.make_crum(0);
+        let b = canopy.make_crum(0);
+        let c = canopy.make_crum(0);
+        let d = canopy.make_crum(0);
+        let p1 = canopy.join(&a, &b);
+        let p2 = canopy.join(&c, &d);
+        let root = canopy.join(&p1, &p2);
+        assert_eq!(
+            root.lock().unwrap_or_else(|e| e.into_inner()).min_height(),
+            -2
+        );
+        assert_eq!(
+            root.lock().unwrap_or_else(|e| e.into_inner()).max_height(),
+            2
+        );
+        {
+            let mut ag = a.lock().unwrap_or_else(|e| e.into_inner());
+            ag.min_h = -3;
+            ag.max_h = 3;
+        }
+        propagate_height(&p1);
+        assert_eq!(
+            p1.lock().unwrap_or_else(|e| e.into_inner()).min_height(),
+            -4
+        );
+        assert_eq!(p1.lock().unwrap_or_else(|e| e.into_inner()).max_height(), 4);
+        assert_eq!(
+            root.lock().unwrap_or_else(|e| e.into_inner()).min_height(),
+            -5
+        );
+        assert_eq!(
+            root.lock().unwrap_or_else(|e| e.into_inner()).max_height(),
+            5
+        );
+    }
+
+    #[test]
+    fn bert_canopy_root_of_cached() {
+        let canopy = BertCanopy::new();
+        let a = canopy.make_crum(0);
+        let b = canopy.make_crum(0);
+        let join = canopy.join(&a, &b);
+        let r1 = canopy.root_of(&a);
+        let r2 = canopy.root_of(&a);
+        assert!(Arc::ptr_eq(&r1, &join));
+        assert!(Arc::ptr_eq(&r1, &r2));
+    }
+
+    #[test]
+    fn sensor_recording_agent() {
+        let canopy = SensorCanopy::new();
+        let crum = canopy.make_crum(0);
+        assert!(canopy.recording_agent(&crum, 1).is_some());
+        assert!(crum
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_recorders());
+        assert!(canopy.recording_agent(&crum, 1).is_none());
+        assert!(canopy.recording_agent(&crum, 2).is_some());
+    }
+
+    #[test]
+    fn change_canopy_no_change_returns_false() {
+        let canopy = BertCanopy::new();
+        let a = canopy.make_crum(0);
+        assert!(!a.lock().unwrap_or_else(|e| e.into_inner()).change_canopy());
+    }
 }

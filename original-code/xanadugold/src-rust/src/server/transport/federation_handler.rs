@@ -1857,4 +1857,859 @@ mod tests {
             _ => panic!("expected ContentFetchResponse"),
         }
     }
+
+    fn roundtrip(frame: &FederationFrame) -> FederationFrame {
+        let json = serde_json::to_string(frame).expect("serialize");
+        serde_json::from_str(&json).expect("deserialize")
+    }
+
+    fn assert_has_tag(frame: &FederationFrame, tag: &str) {
+        let json = serde_json::to_string(frame).expect("serialize");
+        assert!(
+            json.contains(&format!("\"type\":\"{}\"", tag)),
+            "expected tag {}, json was: {}",
+            tag,
+            json
+        );
+    }
+
+    #[test]
+    fn default_min_compat_is_one() {
+        assert_eq!(default_min_compat(), 1);
+    }
+
+    #[test]
+    fn federation_hello_uses_default_min_compat_when_missing() {
+        let json = r#"{"protocol_version":2,"ephemeral_public_key":[1,2,3],"server_id":"x"}"#;
+        let hello: FederationHello = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(hello.min_compat_version, 1);
+        assert_eq!(hello.protocol_version, 2);
+        assert_eq!(hello.server_id, "x");
+    }
+
+    #[test]
+    fn federation_protocol_version_constants() {
+        assert_eq!(FEDERATION_PROTOCOL_VERSION, 1);
+        assert_eq!(FEDERATION_MIN_COMPAT_VERSION, 1);
+        assert!(FEDERATION_MIN_COMPAT_VERSION <= FEDERATION_PROTOCOL_VERSION);
+    }
+
+    #[test]
+    fn federation_frame_ack_roundtrip() {
+        let frame = FederationFrame::Ack;
+        assert_has_tag(&frame, "Ack");
+        let back = roundtrip(&frame);
+        assert!(matches!(back, FederationFrame::Ack));
+    }
+
+    #[test]
+    fn federation_frame_content_get_roundtrip() {
+        let frame = FederationFrame::ContentGet { work_id: 4242 };
+        assert_has_tag(&frame, "ContentGet");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::ContentGet { work_id } => assert_eq!(work_id, 4242),
+            _ => panic!("expected ContentGet"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_content_response_found_roundtrip() {
+        let frame = FederationFrame::ContentResponse {
+            found: true,
+            edition_payload: Some(crate::server::transport::protocol::EditionPayload::Text(
+                "hello".to_string(),
+            )),
+        };
+        assert_has_tag(&frame, "ContentResponse");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::ContentResponse {
+                found,
+                edition_payload,
+            } => {
+                assert!(found);
+                assert!(matches!(
+                    edition_payload,
+                    Some(crate::server::transport::protocol::EditionPayload::Text(_))
+                ));
+            }
+            _ => panic!("expected ContentResponse"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_content_response_not_found_roundtrip() {
+        let frame = FederationFrame::ContentResponse {
+            found: false,
+            edition_payload: None,
+        };
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::ContentResponse { found, .. } => assert!(!found),
+            _ => panic!("expected ContentResponse"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_blob_get_roundtrip() {
+        let frame = FederationFrame::BlobGet {
+            content_hash_hex: "ab".repeat(32),
+        };
+        assert_has_tag(&frame, "BlobGet");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::BlobGet { content_hash_hex } => {
+                assert_eq!(content_hash_hex, "ab".repeat(32))
+            }
+            _ => panic!("expected BlobGet"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_blob_response_roundtrip() {
+        let frame = FederationFrame::BlobResponse {
+            found: true,
+            data: Some("ZGF0YQ==".to_string()),
+            mime_type: Some("text/plain".to_string()),
+        };
+        assert_has_tag(&frame, "BlobResponse");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::BlobResponse {
+                found,
+                data,
+                mime_type,
+            } => {
+                assert!(found);
+                assert_eq!(data.as_deref(), Some("ZGF0YQ=="));
+                assert_eq!(mime_type.as_deref(), Some("text/plain"));
+            }
+            _ => panic!("expected BlobResponse"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_blob_response_not_found_roundtrip() {
+        let frame = FederationFrame::BlobResponse {
+            found: false,
+            data: None,
+            mime_type: None,
+        };
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::BlobResponse { found, .. } => assert!(!found),
+            _ => panic!("expected BlobResponse"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_sync_pull_roundtrip() {
+        let frame = FederationFrame::SyncPull(crate::server::federation::SyncPull {
+            server_id: "s1".to_string(),
+            known_fingerprints: vec!["aa".to_string(), "bb".to_string()],
+            max_entries: 500,
+        });
+        assert_has_tag(&frame, "SyncPull");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::SyncPull(p) => {
+                assert_eq!(p.server_id, "s1");
+                assert_eq!(p.known_fingerprints.len(), 2);
+                assert_eq!(p.max_entries, 500);
+            }
+            _ => panic!("expected SyncPull"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_sync_push_roundtrip() {
+        let frame = FederationFrame::SyncPush(crate::server::federation::SyncPush {
+            server_id: "s1".to_string(),
+            works: vec![],
+            editions: vec![],
+            blobs: vec![],
+        });
+        assert_has_tag(&frame, "SyncPush");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::SyncPush(p) => {
+                assert_eq!(p.server_id, "s1");
+                assert!(p.works.is_empty());
+            }
+            _ => panic!("expected SyncPush"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_sync_result_roundtrip() {
+        let frame = FederationFrame::SyncResult(crate::server::federation::ContentSyncResult {
+            works_received: 1,
+            editions_received: 2,
+            blobs_received: 3,
+            works_already_known: 4,
+            editions_already_known: 5,
+            blobs_already_known: 6,
+        });
+        assert_has_tag(&frame, "SyncResult");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::SyncResult(r) => {
+                assert_eq!(r.works_received, 1);
+                assert_eq!(r.blobs_already_known, 6);
+            }
+            _ => panic!("expected SyncResult"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_crdt_sync_pull_roundtrip() {
+        let frame = FederationFrame::CrdtSyncPull {
+            server_id: "s1".to_string(),
+            work_ids: vec![1, 2, 3],
+        };
+        assert_has_tag(&frame, "CrdtSyncPull");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::CrdtSyncPull {
+                server_id,
+                work_ids,
+            } => {
+                assert_eq!(server_id, "s1");
+                assert_eq!(work_ids, vec![1, 2, 3]);
+            }
+            _ => panic!("expected CrdtSyncPull"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_crdt_sync_push_roundtrip() {
+        let frame = FederationFrame::CrdtSyncPush {
+            server_id: "s1".to_string(),
+            updates: vec![],
+        };
+        assert_has_tag(&frame, "CrdtSyncPush");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::CrdtSyncPush { server_id, updates } => {
+                assert_eq!(server_id, "s1");
+                assert!(updates.is_empty());
+            }
+            _ => panic!("expected CrdtSyncPush"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_crdt_sync_result_roundtrip() {
+        let frame = FederationFrame::CrdtSyncResult { updates: vec![] };
+        assert_has_tag(&frame, "CrdtSyncResult");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::CrdtSyncResult { updates } => assert!(updates.is_empty()),
+            _ => panic!("expected CrdtSyncResult"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_membership_leave_roundtrip() {
+        let frame = FederationFrame::MembershipLeave {
+            server_id: "srv-leaving".to_string(),
+        };
+        assert_has_tag(&frame, "MembershipLeave");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::MembershipLeave { server_id } => {
+                assert_eq!(server_id, "srv-leaving")
+            }
+            _ => panic!("expected MembershipLeave"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_membership_endorse_result_roundtrip() {
+        let frame = FederationFrame::MembershipEndorseResult { accepted: true };
+        assert_has_tag(&frame, "MembershipEndorseResult");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::MembershipEndorseResult { accepted } => assert!(accepted),
+            _ => panic!("expected MembershipEndorseResult"),
+        }
+    }
+
+    fn sample_endorsement_proof() -> crate::server::federation::EndorsementProof {
+        crate::server::federation::EndorsementProof {
+            endorser_server_id: "endorser".to_string(),
+            endorser_key_id: 7,
+            endorsee_server_id: "endorsee".to_string(),
+            endorsee_verifying_key_hex: "ff".repeat(32),
+            signature: vec![0u8; 64],
+            timestamp: 99,
+        }
+    }
+
+    #[test]
+    fn federation_frame_membership_endorse_offer_roundtrip() {
+        let frame = FederationFrame::MembershipEndorseOffer {
+            server_id: "endorsee".to_string(),
+            proof: sample_endorsement_proof(),
+        };
+        assert_has_tag(&frame, "MembershipEndorseOffer");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::MembershipEndorseOffer { server_id, proof } => {
+                assert_eq!(server_id, "endorsee");
+                assert_eq!(proof.endorser_server_id, "endorser");
+                assert_eq!(proof.endorser_key_id, 7);
+            }
+            _ => panic!("expected MembershipEndorseOffer"),
+        }
+    }
+
+    fn sample_membership_entry() -> crate::server::federation::MembershipEntry {
+        crate::server::federation::MembershipEntry::new(
+            "srv-x",
+            "aa".repeat(32),
+            "bb".repeat(32),
+            vec![sample_endorsement_proof()],
+            1234,
+        )
+    }
+
+    #[test]
+    fn federation_frame_membership_join_request_roundtrip() {
+        let frame = FederationFrame::MembershipJoinRequest {
+            entry: sample_membership_entry(),
+        };
+        assert_has_tag(&frame, "MembershipJoinRequest");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::MembershipJoinRequest { entry } => {
+                assert_eq!(entry.server_id, "srv-x");
+                assert_eq!(entry.endorsement_count(), 1);
+            }
+            _ => panic!("expected MembershipJoinRequest"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_membership_join_result_rejected_roundtrip() {
+        let frame = FederationFrame::MembershipJoinResult {
+            result: crate::server::federation::JoinResult::Rejected {
+                server_id: "srv-y".to_string(),
+                reason: "not enough endorsements".to_string(),
+            },
+        };
+        assert_has_tag(&frame, "MembershipJoinResult");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::MembershipJoinResult {
+                result: crate::server::federation::JoinResult::Rejected { server_id, reason },
+            } => {
+                assert_eq!(server_id, "srv-y");
+                assert_eq!(reason, "not enough endorsements");
+            }
+            _ => panic!("expected MembershipJoinResult::Rejected"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_membership_sync_push_roundtrip() {
+        let frame = FederationFrame::MembershipSyncPush {
+            members: crate::server::federation::OrSet::new(),
+        };
+        assert_has_tag(&frame, "MembershipSyncPush");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::MembershipSyncPush { .. } => {}
+            _ => panic!("expected MembershipSyncPush"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_membership_sync_result_roundtrip() {
+        let frame = FederationFrame::MembershipSyncResult {
+            members: crate::server::federation::OrSet::new(),
+        };
+        assert_has_tag(&frame, "MembershipSyncResult");
+        let back = roundtrip(&frame);
+        assert!(matches!(back, FederationFrame::MembershipSyncResult { .. }));
+    }
+
+    #[test]
+    fn federation_frame_state_sync_push_roundtrip() {
+        let frame = FederationFrame::StateSyncPush { states: vec![] };
+        assert_has_tag(&frame, "StateSyncPush");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::StateSyncPush { states } => assert!(states.is_empty()),
+            _ => panic!("expected StateSyncPush"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_state_sync_result_roundtrip() {
+        let frame = FederationFrame::StateSyncResult { states: vec![] };
+        assert_has_tag(&frame, "StateSyncResult");
+        let back = roundtrip(&frame);
+        assert!(matches!(back, FederationFrame::StateSyncResult { .. }));
+    }
+
+    #[test]
+    fn federation_frame_endorsement_sync_push_roundtrip() {
+        let frame = FederationFrame::EndorsementSyncPush {
+            endorsements: vec![],
+        };
+        assert_has_tag(&frame, "EndorsementSyncPush");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::EndorsementSyncPush { endorsements } => {
+                assert!(endorsements.is_empty())
+            }
+            _ => panic!("expected EndorsementSyncPush"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_endorsement_sync_result_roundtrip() {
+        let frame = FederationFrame::EndorsementSyncResult {
+            endorsements: vec![],
+        };
+        assert_has_tag(&frame, "EndorsementSyncResult");
+        let back = roundtrip(&frame);
+        assert!(matches!(
+            back,
+            FederationFrame::EndorsementSyncResult { .. }
+        ));
+    }
+
+    fn sample_proposal() -> crate::server::federation::GovernanceProposal {
+        crate::server::federation::GovernanceProposal {
+            view_number: 1,
+            sequence_number: 2,
+            transactions: vec![],
+            proposer_id: "proposer-1".to_string(),
+            timestamp: 55,
+        }
+    }
+
+    #[test]
+    fn federation_frame_governance_preprepare_roundtrip() {
+        let frame = FederationFrame::GovernancePrePrepare {
+            proposal: sample_proposal(),
+        };
+        assert_has_tag(&frame, "GovernancePrePrepare");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::GovernancePrePrepare { proposal } => {
+                assert_eq!(proposal.view_number, 1);
+                assert_eq!(proposal.sequence_number, 2);
+                assert_eq!(proposal.proposer_id, "proposer-1");
+            }
+            _ => panic!("expected GovernancePrePrepare"),
+        }
+    }
+
+    fn sample_vote(
+        phase: crate::server::federation::PbftPhase,
+    ) -> crate::server::federation::PbftVote {
+        crate::server::federation::PbftVote {
+            view_number: 1,
+            sequence_number: 2,
+            voter_id: "voter-1".to_string(),
+            phase,
+        }
+    }
+
+    #[test]
+    fn federation_frame_governance_prepare_vote_roundtrip() {
+        let frame = FederationFrame::GovernancePrepareVote {
+            vote: sample_vote(crate::server::federation::PbftPhase::Prepare),
+        };
+        assert_has_tag(&frame, "GovernancePrepareVote");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::GovernancePrepareVote { vote } => {
+                assert_eq!(vote.voter_id, "voter-1");
+                assert_eq!(vote.phase, crate::server::federation::PbftPhase::Prepare);
+            }
+            _ => panic!("expected GovernancePrepareVote"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_governance_commit_vote_roundtrip() {
+        let frame = FederationFrame::GovernanceCommitVote {
+            vote: sample_vote(crate::server::federation::PbftPhase::Commit),
+        };
+        assert_has_tag(&frame, "GovernanceCommitVote");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::GovernanceCommitVote { vote } => {
+                assert_eq!(vote.phase, crate::server::federation::PbftPhase::Commit)
+            }
+            _ => panic!("expected GovernanceCommitVote"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_governance_sealed_roundtrip() {
+        let frame = FederationFrame::GovernanceSealed {
+            batch: crate::server::federation::SealedBatch {
+                view_number: 1,
+                sequence_number: 2,
+                transactions: vec![],
+                proposer_id: "proposer-1".to_string(),
+                timestamp: 55,
+                prepare_votes: vec!["v1".to_string()],
+                commit_votes: vec!["v1".to_string(), "v2".to_string()],
+            },
+        };
+        assert_has_tag(&frame, "GovernanceSealed");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::GovernanceSealed { batch } => {
+                assert_eq!(batch.sequence_number, 2);
+                assert_eq!(batch.commit_votes.len(), 2);
+            }
+            _ => panic!("expected GovernanceSealed"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_prov_json_export_roundtrip() {
+        let frame = FederationFrame::ProvJsonExport {
+            work_id: Some(42),
+            include_federation: true,
+        };
+        assert_has_tag(&frame, "ProvJsonExport");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::ProvJsonExport {
+                work_id,
+                include_federation,
+            } => {
+                assert_eq!(work_id, Some(42));
+                assert!(include_federation);
+            }
+            _ => panic!("expected ProvJsonExport"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_prov_json_export_result_roundtrip() {
+        let frame = FederationFrame::ProvJsonExportResult {
+            prov_json: r#"{"bundle":"x"}"#.to_string(),
+        };
+        assert_has_tag(&frame, "ProvJsonExportResult");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::ProvJsonExportResult { prov_json } => {
+                assert_eq!(prov_json, r#"{"bundle":"x"}"#)
+            }
+            _ => panic!("expected ProvJsonExportResult"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_cluster_verification_prov_roundtrip() {
+        let frame = FederationFrame::ClusterVerificationProv {
+            timestamp: 1700000000,
+            consensus_type: "pbft".to_string(),
+        };
+        assert_has_tag(&frame, "ClusterVerificationProv");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::ClusterVerificationProv {
+                timestamp,
+                consensus_type,
+            } => {
+                assert_eq!(timestamp, 1700000000);
+                assert_eq!(consensus_type, "pbft");
+            }
+            _ => panic!("expected ClusterVerificationProv"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_federation_attestation_request_roundtrip() {
+        let frame = FederationFrame::FederationAttestationRequest {
+            attestation_type: "membership".to_string(),
+            subject_server_id: "srv-subject".to_string(),
+        };
+        assert_has_tag(&frame, "FederationAttestationRequest");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::FederationAttestationRequest {
+                attestation_type,
+                subject_server_id,
+            } => {
+                assert_eq!(attestation_type, "membership");
+                assert_eq!(subject_server_id, "srv-subject");
+            }
+            _ => panic!("expected FederationAttestationRequest"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_federation_attestation_response_roundtrip() {
+        let frame = FederationFrame::FederationAttestationResponse {
+            attestation: None,
+            accepted: false,
+        };
+        assert_has_tag(&frame, "FederationAttestationResponse");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::FederationAttestationResponse { accepted, .. } => {
+                assert!(!accepted)
+            }
+            _ => panic!("expected FederationAttestationResponse"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_federation_prov_bundle_roundtrip() {
+        use crate::edition::provenance::{FederationMetadata, FederationProvenanceBundle};
+        let frame = FederationFrame::FederationProvBundle {
+            bundle: FederationProvenanceBundle {
+                bundle_id: "bundle-1".to_string(),
+                timestamp: 7,
+                federation_metadata: FederationMetadata::new(
+                    "srv-1".to_string(),
+                    "example.com".to_string(),
+                    3,
+                    "closed".to_string(),
+                    2,
+                    "active".to_string(),
+                ),
+                server_agents: vec![],
+                verification_activities: vec![],
+                attestations: vec![],
+                cross_server_signatures: vec![],
+            },
+        };
+        assert_has_tag(&frame, "FederationProvBundle");
+        let back = roundtrip(&frame);
+        match back {
+            FederationFrame::FederationProvBundle { bundle } => {
+                assert_eq!(bundle.bundle_id, "bundle-1");
+                assert_eq!(bundle.federation_metadata.server_id, "srv-1");
+            }
+            _ => panic!("expected FederationProvBundle"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_rejects_unknown_type_tag() {
+        let json = r#"{"type":"DefinitelyNotARealFrame"}"#;
+        assert!(serde_json::from_str::<FederationFrame>(json).is_err());
+    }
+
+    fn fresh_state() -> super::super::shared::SharedState {
+        use crate::server::transport::shared::AppState;
+        use crate::server::Server;
+        AppState::new(Server::new()).shared()
+    }
+
+    #[tokio::test]
+    async fn process_heartbeat_returns_ack() {
+        let state = fresh_state();
+        let replies = process_federation_frame(FederationFrame::Heartbeat, &state, "peer").await;
+        assert_eq!(replies.len(), 1);
+        assert!(matches!(replies[0], FederationFrame::Ack));
+    }
+
+    #[tokio::test]
+    async fn process_ack_returns_no_replies() {
+        let state = fresh_state();
+        let replies = process_federation_frame(FederationFrame::Ack, &state, "peer").await;
+        assert!(replies.is_empty());
+    }
+
+    #[tokio::test]
+    async fn process_hello_after_handshake_ignored() {
+        let state = fresh_state();
+        let hello = FederationFrame::Hello(FederationHello {
+            protocol_version: 1,
+            min_compat_version: 1,
+            ephemeral_public_key: vec![0u8; 32],
+            server_id: "s".to_string(),
+        });
+        let replies = process_federation_frame(hello, &state, "peer").await;
+        assert!(replies.is_empty());
+    }
+
+    #[tokio::test]
+    async fn process_signature_after_handshake_ignored() {
+        let state = fresh_state();
+        let sig = FederationFrame::Signature(FederationSignature {
+            signature: vec![0u8; 64],
+            verifying_key: vec![0u8; 32],
+            kex_key: vec![0u8; 32],
+        });
+        let replies = process_federation_frame(sig, &state, "peer").await;
+        assert!(replies.is_empty());
+    }
+
+    #[tokio::test]
+    async fn process_sync_result_returns_no_replies() {
+        let state = fresh_state();
+        let frame = FederationFrame::SyncResult(crate::server::federation::ContentSyncResult {
+            works_received: 0,
+            editions_received: 0,
+            blobs_received: 0,
+            works_already_known: 0,
+            editions_already_known: 0,
+            blobs_already_known: 0,
+        });
+        let replies = process_federation_frame(frame, &state, "peer").await;
+        assert!(replies.is_empty());
+    }
+
+    #[tokio::test]
+    async fn process_sync_pull_returns_sync_push() {
+        let state = fresh_state();
+        let pull = FederationFrame::SyncPull(crate::server::federation::SyncPull {
+            server_id: "peer".to_string(),
+            known_fingerprints: vec![],
+            max_entries: 100,
+        });
+        let replies = process_federation_frame(pull, &state, "peer").await;
+        assert_eq!(replies.len(), 1);
+        match &replies[0] {
+            FederationFrame::SyncPush(p) => {
+                assert!(p.works.is_empty());
+                assert!(p.editions.is_empty());
+                assert!(p.blobs.is_empty());
+            }
+            other => panic!("expected SyncPush, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn process_content_get_missing_returns_not_found() {
+        let state = fresh_state();
+        let replies =
+            process_federation_frame(FederationFrame::ContentGet { work_id: 999 }, &state, "peer")
+                .await;
+        assert_eq!(replies.len(), 1);
+        match &replies[0] {
+            FederationFrame::ContentResponse {
+                found,
+                edition_payload,
+            } => {
+                assert!(!found);
+                assert!(edition_payload.is_none());
+            }
+            _ => panic!("expected ContentResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn process_blob_get_missing_returns_not_found() {
+        let state = fresh_state();
+        let replies = process_federation_frame(
+            FederationFrame::BlobGet {
+                content_hash_hex: "ab".repeat(32),
+            },
+            &state,
+            "peer",
+        )
+        .await;
+        assert_eq!(replies.len(), 1);
+        match &replies[0] {
+            FederationFrame::BlobResponse {
+                found,
+                data,
+                mime_type,
+            } => {
+                assert!(!found);
+                assert!(data.is_none());
+                assert!(mime_type.is_none());
+            }
+            _ => panic!("expected BlobResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn process_transclude_query_returns_empty_response() {
+        let state = fresh_state();
+        let replies = process_federation_frame(
+            FederationFrame::TranscludeQuery {
+                content_fingerprint_hex: "cd".repeat(32),
+                direct_only: false,
+            },
+            &state,
+            "peer",
+        )
+        .await;
+        assert_eq!(replies.len(), 1);
+        match &replies[0] {
+            FederationFrame::TranscludeResponse { results } => assert!(results.is_empty()),
+            _ => panic!("expected TranscludeResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn process_content_fetch_missing_returns_not_found() {
+        let state = fresh_state();
+        let replies = process_federation_frame(
+            FederationFrame::ContentFetch {
+                content_fingerprint_hex: "ef".repeat(32),
+            },
+            &state,
+            "peer",
+        )
+        .await;
+        assert_eq!(replies.len(), 1);
+        match &replies[0] {
+            FederationFrame::ContentFetchResponse {
+                found,
+                edition_payload,
+                blob_data,
+                blob_mime_type,
+            } => {
+                assert!(!found);
+                assert!(edition_payload.is_none());
+                assert!(blob_data.is_none());
+                assert!(blob_mime_type.is_none());
+            }
+            _ => panic!("expected ContentFetchResponse"),
+        }
+    }
+
+    #[tokio::test]
+    async fn process_membership_leave_mismatched_id_is_rejected() {
+        let state = fresh_state();
+        let frame = FederationFrame::MembershipLeave {
+            server_id: "someone-else".to_string(),
+        };
+        let replies = process_federation_frame(frame, &state, "peer").await;
+        assert!(replies.is_empty());
+    }
+
+    #[tokio::test]
+    async fn process_crdt_sync_pull_mismatched_id_returns_empty() {
+        let state = fresh_state();
+        let frame = FederationFrame::CrdtSyncPull {
+            server_id: "impostor".to_string(),
+            work_ids: vec![1, 2],
+        };
+        let replies = process_federation_frame(frame, &state, "peer").await;
+        assert!(replies.is_empty());
+    }
+
+    #[tokio::test]
+    async fn process_governance_prepare_vote_mismatched_is_rejected() {
+        let state = fresh_state();
+        let frame = FederationFrame::GovernancePrepareVote {
+            vote: crate::server::federation::PbftVote {
+                view_number: 1,
+                sequence_number: 1,
+                voter_id: "impostor".to_string(),
+                phase: crate::server::federation::PbftPhase::Prepare,
+            },
+        };
+        let replies = process_federation_frame(frame, &state, "peer").await;
+        assert!(replies.is_empty());
+    }
 }
