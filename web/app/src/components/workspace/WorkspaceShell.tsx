@@ -2053,6 +2053,18 @@ export function WorkspaceShell() {
                   >
                     {citeFeedback ? `✓ ${citeFeedback}` : "Cite…"}
                   </button>
+                  {crdt.shareWork && (
+                    <button
+                      className="ws-action-btn"
+                      title="Make this work readable from other servers (cross-server)"
+                      onClick={async () => {
+                        try { await crdt.shareWork(); showToast("Work published — now accessible from other servers"); }
+                        catch (e) { showToast("Publish failed"); }
+                      }}
+                    >
+                      Publish
+                    </button>
+                  )}
                   <button
                     className="ws-action-btn"
                     title="Invite collaborators"

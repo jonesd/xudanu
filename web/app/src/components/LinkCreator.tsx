@@ -54,6 +54,9 @@ export function LinkCreator({
   const [remoteHash, setRemoteHash] = useState("");
   const [remoteAuthor, setRemoteAuthor] = useState("");
   const [remoteAuthorKey, setRemoteAuthorKey] = useState("");
+  const [fetchUrl, setFetchUrl] = useState("");
+  const [fetchWorkId, setFetchWorkId] = useState("");
+  const [fetching, setFetching] = useState(false);
   const [webUrl, setWebUrl] = useState("");
   const [description, setDescription] = useState("");
 
@@ -158,6 +161,35 @@ export function LinkCreator({
       setError(e instanceof Error ? e.message : "Failed to create link");
       setCreating(false);
     }
+  };
+
+  const handleFetchRemote = async () => {
+    if (!fetchUrl.trim() || !fetchWorkId.trim()) return;
+    setFetching(true);
+    setError(null);
+    try {
+      const baseUrl = fetchUrl.trim().replace(/\/$/, "");
+      const workId = fetchWorkId.trim().replace(/^0x/i, "");
+      const resp = await fetch(`${baseUrl}/api/public/work/${workId}`);
+      if (!resp.ok) {
+        const body = await resp.text();
+        setError(`Server returned ${resp.status}: ${body.slice(0, 100)}`);
+        setFetching(false);
+        return;
+      }
+      const data = await resp.json();
+      if (data.tumbler) setRemoteTumbler(data.tumbler);
+      if (data.content_hash_blake3) setRemoteHash(data.content_hash_blake3);
+      if (data.span_provenance && data.span_provenance.length > 0) {
+        const prov = data.span_provenance[0];
+        if (prov.author_public_key) setRemoteAuthorKey(prov.author_public_key);
+      }
+      if (data.server_public_key) setRemoteAuthorKey(data.server_public_key);
+      if (data.title) setRemoteAuthor(data.title);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to fetch from server");
+    }
+    setFetching(false);
   };
 
   const handleCreateRemote = async () => {
@@ -423,6 +455,36 @@ export function LinkCreator({
               </button>
             </div>
             <div className="link-remote-form">
+              <div className="link-form-hint" style={{ marginBottom: 12, padding: 8, background: "rgba(88,166,255,0.08)", borderRadius: 4, border: "1px solid rgba(88,166,255,0.2)" }}>
+                Auto-fill from remote server:
+              </div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                <input
+                  type="text"
+                  className="link-form-input"
+                  placeholder="http://localhost:8081"
+                  value={fetchUrl}
+                  onChange={(e) => setFetchUrl(e.target.value)}
+                  style={{ flex: 2 }}
+                />
+                <input
+                  type="text"
+                  className="link-form-input"
+                  placeholder="0x5b3"
+                  value={fetchWorkId}
+                  onChange={(e) => setFetchWorkId(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <button
+                  type="button"
+                  className="link-create-submit"
+                  disabled={fetching || !fetchUrl.trim() || !fetchWorkId.trim()}
+                  onClick={handleFetchRemote}
+                  style={{ flex: 0, padding: "0 12px", whiteSpace: "nowrap" }}
+                >
+                  {fetching ? "..." : "Fetch"}
+                </button>
+              </div>
               <label className="link-form-label">
                 Tumbler
                 <input
