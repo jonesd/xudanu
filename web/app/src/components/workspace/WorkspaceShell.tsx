@@ -138,6 +138,7 @@ export function WorkspaceShell() {
   const [showUndoToast, setShowUndoToast] = useState(false);
   const [editorMode, setEditorMode] = useState<"authoring" | "reading">("authoring");
   const [highlightRange, setHighlightRange] = useState<{ start: number; end: number } | null>(null);
+  const [pendingImage, setPendingImage] = useState<{ hash: number; mime: string; byte_size: number; width?: number; height?: number } | null>(null);
   const useMDE = new URLSearchParams(window.location.search).has("mde");
   const [followState, setFollowState] = useState<{ following: boolean; busy: boolean; error: string | null }>({
     following: false,
@@ -837,14 +838,13 @@ export function WorkspaceShell() {
       const insertPos = cursorPos ?? text.length;
       await client.elementInsert(workBeId, insertPos, {
         type: "blob",
-        content_hash: hashNum,
-        mime_type: meta.mime_type,
-        byte_size: meta.byte_size,
-        width: meta.width ?? undefined,
-        height: meta.height ?? undefined,
+        blob_hash: hashNum,
+        blob_mime: meta.mime_type,
+        blob_size: meta.byte_size,
+        blob_width: meta.width,
+        blob_height: meta.height,
       });
-      showToast(`✓ Image uploaded (${meta.byte_size.toLocaleString()} bytes${meta.width ? `, ${meta.width}×${meta.height}` : ""})`);
-      // Track the image locally for display
+      showToast(`✓ Image placed (${meta.byte_size.toLocaleString()} bytes)`);
       const newEntry = {
         hash: hashNum,
         mime: meta.mime_type,
@@ -854,38 +854,27 @@ export function WorkspaceShell() {
       };
       setImageEntries((prev) => {
         const next = [...prev, newEntry];
-        // Persist to localStorage so images survive navigation
-        if (workBeId !== null) {
-          try {
-            const toCache = next.map((e) => ({ hash: e.hash, mime: e.mime, width: e.width, height: e.height }));
-            localStorage.setItem(`xudanu_images_${workBeId}`, JSON.stringify(toCache));
-          } catch { /* no-op */ }
-        }
         return next;
       });
-      // Fetch the preview image
-      if (hashNum) {
-        client.blobGetPreview(hashNum).then((previewBytes) => {
-          const imgBytes = previewBytes || new Uint8Array();
-          const blob = new Blob([imgBytes as BlobPart], { type: meta.mime_type });
+      client.blobGetPreview(hashNum).then((previewBytes) => {
+        const imgBytes = previewBytes || new Uint8Array();
+        const blob = new Blob([imgBytes as BlobPart], { type: meta.mime_type });
+        const url = URL.createObjectURL(blob);
+        setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, url, loading: false } : e));
+      }).catch(() => {
+        client.blobGet(hashNum).then((fullBytes) => {
+          const blob = new Blob([fullBytes as BlobPart], { type: meta.mime_type });
           const url = URL.createObjectURL(blob);
           setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, url, loading: false } : e));
         }).catch(() => {
-          // Try full image if preview fails
-          client.blobGet(hashNum).then((fullBytes) => {
-            const blob = new Blob([fullBytes as BlobPart], { type: meta.mime_type });
-            const url = URL.createObjectURL(blob);
-            setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, url, loading: false } : e));
-          }).catch(() => {
-            setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, loading: false } : e));
-          });
+          setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, loading: false } : e));
         });
-      }
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : typeof e === "object" ? JSON.stringify(e) : String(e);
       showToast(`Image upload failed: ${msg}`);
     }
-  }, [clientRef, workBeId, text, showToast, cursorPos]);
+  }, [clientRef, workBeId, showToast]);
 
   const handleCaptionChange = useCallback(async (hash: number, caption: string) => {
     if (!clientRef.current || workBeId === null) return;
@@ -894,12 +883,12 @@ export function WorkspaceShell() {
     try {
       await clientRef.current.elementUpdate(workBeId, entry.charPos, {
         type: "blob",
-        content_hash: hash,
-        mime_type: entry.mime,
-        byte_size: 0,
-        width: entry.width,
-        height: entry.height,
-        caption: caption || undefined,
+        blob_hash: hash,
+        blob_mime: entry.mime,
+        blob_size: 0,
+        blob_width: entry.width,
+        blob_height: entry.height,
+        blob_caption: caption || undefined,
       });
     } catch (e) {
       console.error("Failed to persist caption:", e);
@@ -932,12 +921,12 @@ export function WorkspaceShell() {
       const meta = await httpResp.json() as { content_hash: number; byte_size: number; width?: number; height?: number };
       await clientRef.current.elementUpdate(workBeId, entry.charPos, {
         type: "blob",
-        content_hash: meta.content_hash,
-        mime_type: "image/png",
-        byte_size: meta.byte_size,
-        width: meta.width,
-        height: meta.height,
-        caption: entry.caption,
+        blob_hash: meta.content_hash,
+        blob_mime: "image/png",
+        blob_size: meta.byte_size,
+        blob_width: meta.width,
+        blob_height: meta.height,
+        blob_caption: entry.caption,
       });
       const previewBytes = await clientRef.current.blobGetPreview(meta.content_hash);
       const previewBlob = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: "image/png" });
@@ -965,21 +954,21 @@ export function WorkspaceShell() {
     try {
       await client.elementUpdate(workBeId, source.charPos, {
         type: "blob",
-        content_hash: target.hash,
-        mime_type: target.mime,
-        byte_size: 0,
-        width: target.width,
-        height: target.height,
-        caption: target.caption,
+        blob_hash: target.hash,
+        blob_mime: target.mime,
+        blob_size: 0,
+        blob_width: target.width,
+        blob_height: target.height,
+        blob_caption: target.caption,
       });
       await client.elementUpdate(workBeId, target.charPos, {
         type: "blob",
-        content_hash: source.hash,
-        mime_type: source.mime,
-        byte_size: 0,
-        width: source.width,
-        height: source.height,
-        caption: source.caption,
+        blob_hash: source.hash,
+        blob_mime: source.mime,
+        blob_size: 0,
+        blob_width: source.width,
+        blob_height: source.height,
+        blob_caption: source.caption,
       });
       showToast("Images swapped");
       const blobs = await client.workBlobList(workBeId);
@@ -1028,6 +1017,37 @@ export function WorkspaceShell() {
       setTimeout(() => setShowUndoToast(false), 6000);
     },
     [workBeId, text, setText, compound, transclusion, showToast]
+  );
+
+  const handlePlaceImage = useCallback(
+    async (position: number) => {
+      if (workBeId === null || !pendingImage || !clientRef.current) return;
+      const client = clientRef.current;
+      const doInsert = async () => {
+        await client.elementInsert(workBeId, position, {
+          type: "blob",
+          blob_hash: pendingImage.hash,
+          blob_mime: pendingImage.mime,
+          blob_size: pendingImage.byte_size,
+          blob_width: pendingImage.width,
+          blob_height: pendingImage.height,
+        });
+      };
+      try {
+        await doInsert();
+        showToast(`✓ Image placed (${pendingImage.byte_size.toLocaleString()} bytes)`);
+      } catch (e) {
+        try {
+          await new Promise(r => setTimeout(r, 2000));
+          await doInsert();
+          showToast(`✓ Image placed (${pendingImage.byte_size.toLocaleString()} bytes)`);
+        } catch (e2) {
+          showToast(`Failed to place image: ${e2 instanceof Error ? e2.message : String(e2)}`);
+        }
+      }
+      setPendingImage(null);
+    },
+    [workBeId, pendingImage, clientRef, showToast]
   );
 
   // Remove the Cmd+Z handler — conflicts with editor's text undo
@@ -1916,23 +1936,15 @@ export function WorkspaceShell() {
                         try {
                           await crdt.setWorkTitle(newTitle.trim());
                           setWorkMeta((prev) => prev ? { ...prev, title: newTitle.trim() } : prev);
+                          setWorks((prev) => prev.map((w) => w.work_id === workBeId ? { ...w, title: newTitle.trim() } : w));
                           if (fetchWorkList) { try { const entries = await fetchWorkList(); setWorks(entries); } catch { /* network error — will retry */ } }
                         } catch (e) { console.error("Failed to set title:", e); }
                       }
                     }}
-                    style={{ cursor: "pointer", fontWeight: 600, fontSize: 14, color: "var(--text, #333)" }}
+                    style={{ cursor: "pointer", fontWeight: 700, fontSize: 18, color: "var(--doc-text, #1a1a1a)" }}
                   >
                     {workMeta?.title || `Work 0x${workBeId?.toString(16) ?? ""}`}
                   </span>
-                  <button
-                    type="button"
-                    className="ws-action-btn"
-                    onClick={() => setEditorMode(editorMode === "authoring" ? "reading" : "authoring")}
-                    title={editorMode === "authoring" ? "Switch to reading mode (hides transclusion markers)" : "Switch to authoring mode (shows transclusion markers)"}
-                    style={{ fontSize: 13 }}
-                  >
-                    {editorMode === "authoring" ? "\u{1F4D6}" : "\u270F\uFE0F"}
-                  </button>
                 </div>
                 <div className="ws-doc-actions">
                   <div className="ws-license-picker-wrap">
@@ -2040,6 +2052,15 @@ export function WorkspaceShell() {
                   >
                     Save revision
                   </button>
+                  {canEdit && (
+                    <button
+                      className={`ws-action-btn ${editorMode === "reading" ? "active" : ""}`}
+                      onClick={() => setEditorMode(editorMode === "authoring" ? "reading" : "authoring")}
+                      title={editorMode === "authoring" ? "Switch to reading mode (hides markers)" : "Switch to authoring mode (shows markers)"}
+                    >
+                      {editorMode === "authoring" ? "📖 Read" : "✏️ Edit"}
+                    </button>
+                  )}
                   {canEdit && (
                     <label className="ws-action-btn ws-image-upload-btn" title="Insert image">
                       📷
@@ -2541,6 +2562,16 @@ export function WorkspaceShell() {
                   remoteCursors={awareness}
                   compoundSourceTitles={compound.sourceTitles}
                   inlineResolvedText={compound.resolvedText || undefined}
+                  pendingImagePlacement={pendingImage}
+                  onPlaceImage={handlePlaceImage}
+                  blobEntries={imageEntries.filter(e => e.charPos != null && !e.loading).map(e => ({
+                    charPos: e.charPos!,
+                    hash: e.hash,
+                    url: e.url,
+                    mime: e.mime,
+                    width: e.width,
+                    height: e.height,
+                  }))}
                   annotations={annotations}
                     onCreateAnnotation={canEdit ? handleCreateAnnotation : undefined}
                     onToggleStyle={canEdit ? handleToggleStyle : undefined}
@@ -2651,8 +2682,22 @@ export function WorkspaceShell() {
                                     document.addEventListener("mousemove", onMove);
                                     document.addEventListener("mouseup", onUp);
                                   }}
-                                />
-                              )}
+                  />
+                )}
+                {pendingImage && (
+                  <div className="ws-transclusion-badge" style={{ background: "rgba(88, 166, 255, 0.12)", borderColor: "var(--accent-blue)" }}>
+                    <span className="ws-transclusion-badge-icon">{"\u{1F5BC}"}</span>
+                    <span className="ws-transclusion-badge-text">
+                      Image ready — <strong>click in the document</strong> to place it
+                    </span>
+                    <button
+                      className="ws-transclusion-badge-cancel"
+                      onClick={() => setPendingImage(null)}
+                    >
+                      {"\u00d7"}
+                    </button>
+                  </div>
+                )}
                             </div>
                             <figcaption className="ws-layout-fig-caption">
                               <input

@@ -3230,17 +3230,21 @@ pub struct RangeElementPayload {
     pub edition_id: Option<BeId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id_holder: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "content_hash"
+    )]
     pub blob_hash: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "mime_type")]
     pub blob_mime: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "byte_size")]
     pub blob_size: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "width")]
     pub blob_width: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "height")]
     pub blob_height: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "caption")]
     pub blob_caption: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transclusion_source: Option<u64>,

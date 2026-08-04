@@ -656,7 +656,7 @@ body {
 }
 
 .editor-content:empty::before {
-  content: "Start typing...";
+  content: "Start writing...";
   color: #aaa;
 }
 
@@ -893,7 +893,7 @@ body {
 }
 
 .editor-content:empty::before {
-  content: "Start typing...";
+  content: "Start writing...";
   color: #aaa;
 }
 

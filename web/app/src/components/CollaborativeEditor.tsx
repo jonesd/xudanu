@@ -55,6 +55,9 @@ interface CollaborativeEditorProps {
   onNavigateToWork?: (workId: number) => void;
   onCrossServerResolve?: (tumbler: string, contentHash: string) => Promise<{ text: string; hashVerified: boolean; cached: boolean } | null>;
   onTraceProvenance?: (workId: number, charStart: number, charEnd: number) => Promise<AgainHop[]>;
+  blobEntries?: Array<{ charPos: number; hash: number; url?: string; mime?: string; width?: number; height?: number }>;
+  pendingImagePlacement?: { hash: number; mime: string; byte_size: number; width?: number; height?: number } | null;
+  onPlaceImage?: (position: number) => void;
   onShowBacklinks?: (workId: number, excerpt: string) => void;
   onPasteText?: (text: string, pasteStart: number) => void;
   fontSize?: number;
@@ -865,6 +868,9 @@ export function CollaborativeEditor({
   onResolveLinkDescription,
   onEditLinkDescription,
   onDeleteLink,
+  blobEntries = [],
+  pendingImagePlacement = null,
+  onPlaceImage,
 }: CollaborativeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -987,6 +993,7 @@ export function CollaborativeEditor({
   }, [attributionSpans]);
 
   const hasInlineTransclusions = !!inlineResolvedText && compoundSpanRanges.length > 0;
+  const hasInlineBlobs = blobEntries.length > 0;
 
   useEffect(() => {
     const el = editorRef.current;
@@ -1041,6 +1048,7 @@ export function CollaborativeEditor({
         console.error("[editor] buildTransclusionDom threw, falling back:", e);
         el.textContent = inlineResolvedText;
       }
+      if (hasInlineBlobs) insertInlineImages(el, blobEntries);
       lastText.current = getEditableText(el);
       return;
     }
@@ -1086,8 +1094,9 @@ export function CollaborativeEditor({
         el.textContent = displayText;
       }
     }
+    if (hasInlineBlobs) insertInlineImages(el, blobEntries);
     lastText.current = displayText;
-  }, [displayText, inlineResolvedText, hasInlineTransclusions, compoundSpanRanges, compoundSourceTitles]);
+  }, [displayText, inlineResolvedText, hasInlineTransclusions, hasInlineBlobs, compoundSpanRanges, compoundSourceTitles, blobEntries]);
 
   useEffect(() => {
     if (text === "") {
@@ -1485,6 +1494,46 @@ export function CollaborativeEditor({
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!editable) { e.preventDefault(); return; }
+    if (e.key === "Backspace" || e.key === "Delete") {
+      const el = editorRef.current;
+      if (el) {
+        const sel = window.getSelection();
+        if (sel && sel.isCollapsed && sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0);
+          const node = range.startContainer;
+          const offset = range.startOffset;
+          if (e.key === "Backspace" && offset > 0 && node.nodeType === Node.TEXT_NODE) {
+            const prevSibling = (node as Text).previousElementSibling;
+            if (prevSibling && prevSibling.classList.contains("inline-image-wrapper")) {
+              if (!confirm("Delete this image?")) {
+                e.preventDefault();
+                return;
+              }
+            }
+          }
+          if (e.key === "Delete" && node.nodeType === Node.TEXT_NODE) {
+            const nextSibling = (node as Text).nextElementSibling;
+            if (nextSibling && nextSibling.classList.contains("inline-image-wrapper")) {
+              if (!confirm("Delete this image?")) {
+                e.preventDefault();
+                return;
+              }
+            }
+          }
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const child = (node as Element).children[offset];
+            const prevChild = offset > 0 ? (node as Element).children[offset - 1] : null;
+            if ((e.key === "Backspace" && prevChild?.classList.contains("inline-image-wrapper")) ||
+                (e.key === "Delete" && child?.classList.contains("inline-image-wrapper"))) {
+              if (!confirm("Delete this image?")) {
+                e.preventDefault();
+                return;
+              }
+            }
+          }
+        }
+      }
+    }
     if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
       e.preventDefault();
       if (undoTimer.current !== null) {
@@ -1709,18 +1758,22 @@ export function CollaborativeEditor({
       }
     }
 
-    if (!pendingTransclusion || !onPlaceTransclusion) return;
+    if (!pendingTransclusion && !pendingImagePlacement) return;
     if (!el.contains(e.target as Node)) return;
 
     const result = computePlacementPosition(e.clientX, e.clientY, el);
     if (result !== null) {
-      onPlaceTransclusion(result.pos, result.padding);
+      if (pendingImagePlacement && onPlaceImage) {
+        onPlaceImage(result.pos);
+      } else if (pendingTransclusion && onPlaceTransclusion) {
+        onPlaceTransclusion(result.pos, result.padding);
+      }
     }
     setPlacementIndicator(null);
-  }, [pendingTransclusion, onPlaceTransclusion, onNavigateToWork, computePlacementPosition]);
+  }, [pendingTransclusion, pendingImagePlacement, onPlaceTransclusion, onPlaceImage, onNavigateToWork, computePlacementPosition]);
 
   const handleEditorMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!pendingTransclusion) {
+    if (!pendingTransclusion && !pendingImagePlacement) {
       if (placementIndicator) setPlacementIndicator(null);
       return;
     }
@@ -1897,7 +1950,7 @@ export function CollaborativeEditor({
         )}
         <div
           className="editor-container"
-          style={pendingTransclusion ? { cursor: "crosshair" } : undefined}
+          style={(pendingTransclusion || pendingImagePlacement) ? { cursor: "crosshair" } : undefined}
           onMouseMove={handleOverlayMouseMove}
           onMouseLeave={handleOverlayMouseLeave}
           onClick={handleOverlayClick}
@@ -2228,7 +2281,7 @@ export function CollaborativeEditor({
           <div
             ref={editorRef}
             className={`editor-content${!editable ? " editor-readonly" : ""}${readingMode ? " reading-mode" : ""}`}
-            contentEditable={editable && !pendingTransclusion}
+            contentEditable={editable && !pendingTransclusion && !pendingImagePlacement}
             suppressContentEditableWarning
             onInput={handleInput}
             onKeyDown={handleKeyDown}
@@ -2557,4 +2610,91 @@ export function buildTransclusionDom(
   }
 
   setCursorOffset(el, savedCursor);
+}
+
+export function insertInlineImages(
+  el: HTMLElement,
+  blobs: Array<{ charPos: number; hash: number; url?: string; mime?: string; width?: number; height?: number }>,
+) {
+  el.querySelectorAll(".inline-image-wrapper").forEach((n) => n.remove());
+  if (blobs.length === 0) return;
+
+  const sorted = [...blobs].filter((b) => b.charPos >= 0).sort((a, b) => a.charPos - b.charPos);
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let charCount = 0;
+  let blobIdx = 0;
+  const insertions: Array<{ textNode: Text; offset: number; blob: typeof sorted[0] }> = [];
+
+  let node: Node | null;
+  while ((node = walker.nextNode()) && blobIdx < sorted.length) {
+    if (isReadonlyNode(node)) continue;
+    const textNode = node as Text;
+    const raw = textNode.textContent || "";
+    const textLen = raw.replace(/\u200B/g, "").length;
+
+    while (blobIdx < sorted.length && sorted[blobIdx].charPos <= charCount + textLen) {
+      const relativeOffset = sorted[blobIdx].charPos - charCount;
+      let actualOffset = 0;
+      let count = 0;
+      for (let i = 0; i < raw.length && count < relativeOffset; i++) {
+        if (raw[i] !== "\u200B") count++;
+        actualOffset++;
+      }
+      insertions.push({ textNode, offset: actualOffset, blob: sorted[blobIdx] });
+      blobIdx++;
+    }
+    charCount += textLen;
+  }
+
+  for (let i = insertions.length - 1; i >= 0; i--) {
+    const { textNode, offset, blob } = insertions[i];
+    const wrapper = document.createElement("span");
+    wrapper.className = "inline-image-wrapper";
+    wrapper.setAttribute("contenteditable", "false");
+
+    if (blob.url) {
+      const img = document.createElement("img");
+      img.className = "inline-image";
+      img.src = blob.url;
+      img.alt = `blob:${blob.hash.toString(16)}`;
+      const displayW = blob.width ? Math.min(blob.width, 400) : 400;
+      img.style.width = "100%";
+      img.style.height = "auto";
+      img.style.display = "block";
+      wrapper.style.width = `${displayW}px`;
+      wrapper.style.height = "auto";
+      wrapper.style.resize = "horizontal";
+      wrapper.style.overflow = "hidden";
+      wrapper.style.maxWidth = "100%";
+      wrapper.appendChild(img);
+
+      const sizeLabel = document.createElement("div");
+      sizeLabel.className = "inline-image-size";
+      sizeLabel.textContent = `${displayW}px`;
+      sizeLabel.style.cssText = "font-size:9px;color:#999;text-align:right;padding:1px 4px;background:rgba(255,255,255,0.9);";
+      wrapper.appendChild(sizeLabel);
+
+      if (typeof ResizeObserver !== "undefined") {
+        const ro = new ResizeObserver(() => {
+          const w = Math.round(wrapper.offsetWidth);
+          sizeLabel.textContent = `${w}px`;
+        });
+        ro.observe(wrapper);
+      }
+    } else {
+      wrapper.textContent = "[image]";
+      wrapper.style.cssText = "display:inline-block;padding:4px 8px;background:#f0f0f0;border-radius:4px;color:#999;font-size:11px;";
+    }
+
+    try {
+      if (offset === 0) {
+        textNode.parentNode?.insertBefore(wrapper, textNode);
+      } else if (offset >= (textNode.textContent || "").length) {
+        textNode.parentNode?.insertBefore(wrapper, textNode.nextSibling);
+      } else {
+        const after = textNode.splitText(offset);
+        textNode.parentNode?.insertBefore(wrapper, after);
+      }
+    } catch { /* node may have been removed by earlier split */ }
+  }
 }

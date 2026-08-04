@@ -11446,3 +11446,132 @@ fn server_directory_trust_flow() {
     let entry = server.server_directory().get(ns_id).unwrap();
     assert!(!entry.trusted, "should be untrusted after unset");
 }
+
+#[test]
+fn element_insert_blob_with_correct_field_names() {
+    let mut server = Server::new();
+    let sid = server.connect();
+    server.login_public(sid).unwrap();
+    let work_id = server
+        .create_work(sid, xudanu::edition::Edition::from_text("Hello world"))
+        .unwrap();
+
+    let element = xudanu::server::transport::protocol::RangeElementPayload {
+        elem_type: "blob".to_string(),
+        text: None,
+        label_id: None,
+        work_id: None,
+        edition_id: None,
+        id_holder: None,
+        blob_hash: Some(12345),
+        blob_mime: Some("image/png".to_string()),
+        blob_size: Some(6789),
+        blob_width: Some(800),
+        blob_height: Some(600),
+        blob_caption: None,
+        transclusion_source: None,
+        transclusion_start: None,
+        transclusion_end: None,
+    };
+
+    let result = server.element_insert(sid, work_id, 5, element.to_range_element().unwrap());
+    assert!(
+        result.is_ok(),
+        "element_insert with blob should succeed: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn blob_payload_json_roundtrip() {
+    let json = serde_json::json!({
+        "type": "blob",
+        "blob_hash": 12345u64,
+        "blob_mime": "image/png",
+        "blob_size": 6789u64,
+        "blob_width": 800u32,
+        "blob_height": 600u32
+    });
+    let payload: xudanu::server::transport::protocol::RangeElementPayload =
+        serde_json::from_value(json).unwrap();
+    assert_eq!(payload.elem_type, "blob");
+    assert_eq!(payload.blob_hash, Some(12345));
+    let elem = payload.to_range_element();
+    assert!(
+        elem.is_some(),
+        "to_range_element should succeed with blob_* field names"
+    );
+}
+
+#[test]
+fn blob_payload_old_field_names_work_via_alias() {
+    let json = serde_json::json!({
+        "type": "blob",
+        "content_hash": 12345u64,
+        "mime_type": "image/png",
+        "byte_size": 6789u64
+    });
+    let payload: xudanu::server::transport::protocol::RangeElementPayload =
+        serde_json::from_value(json).unwrap();
+    assert_eq!(
+        payload.blob_hash,
+        Some(12345),
+        "content_hash should map to blob_hash via alias"
+    );
+    let elem = payload.to_range_element();
+    assert!(
+        elem.is_some(),
+        "old field names should work via serde alias"
+    );
+}
+
+#[test]
+fn image_insert_end_to_end() {
+    let mut server = Server::new();
+    let sid = server.connect();
+    server.login_public(sid).unwrap();
+
+    let work_id = server
+        .create_work(sid, xudanu::edition::Edition::from_text("Hello world"))
+        .unwrap();
+
+    let png_bytes: Vec<u8> = vec![
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90,
+        0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8,
+        0xCF, 0xC0, 0x00, 0x00, 0x00, 0x03, 0x00, 0x01, 0x5B, 0x70, 0x21, 0xAE, 0x00, 0x00, 0x00,
+        0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    let meta = server
+        .blob_upload(sid, png_bytes, "image/png".to_string())
+        .unwrap();
+
+    let element = xudanu::server::transport::protocol::RangeElementPayload {
+        elem_type: "blob".to_string(),
+        blob_hash: Some(meta.hash_u64()),
+        blob_mime: Some("image/png".to_string()),
+        blob_size: Some(meta.byte_size as u64),
+        blob_width: meta.width,
+        blob_height: meta.height,
+        text: None,
+        label_id: None,
+        work_id: None,
+        edition_id: None,
+        id_holder: None,
+        blob_caption: None,
+        transclusion_source: None,
+        transclusion_start: None,
+        transclusion_end: None,
+    };
+
+    let elem = element
+        .to_range_element()
+        .expect("to_range_element must succeed");
+    let result = server.element_insert(sid, work_id, 5, elem);
+    assert!(
+        result.is_ok(),
+        "element_insert should succeed: {:?}",
+        result.err()
+    );
+}

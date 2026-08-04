@@ -992,6 +992,23 @@
 .ws-doc-surface {
   color: var(--doc-text);
 }
+
+/* Prominent document title in header */
+.ws-doc-title-text {
+  letter-spacing: -0.3px;
+  transition: color 0.12s;
+}
+.ws-doc-title-text:hover {
+  color: var(--accent-blue) !important;
+}
+
+/* Empty document placeholder */
+.ws-doc-surface .editor-content:empty::before {
+  content: "Start writing...";
+  color: #ccc;
+  font-style: italic;
+  font-size: 16px;
+}
 .ws-doc-surface .editor-content,
 .ws-doc-surface .collaborative-editor {
   color: #000000 !important;
@@ -1024,6 +1041,7 @@
   border: none !important;
   background: #ffffff !important;
   color: #000000 !important;
+  min-height: calc(100vh - 180px) !important;
 }
 
 /* Transclusion styling — inline block, not full-width, doesn't swallow neighbors */
@@ -1070,6 +1088,36 @@
 .ws-doc-surface.reading-mode .ws-selection-actions { display: none !important; }
 .ws-doc-surface.reading-mode .ws-format-bar { display: none !important; }
 .ws-doc-surface.reading-mode .attribution-overlay { opacity: 0; }
+
+/* Inline images — render within the text flow */
+.ws-doc-surface .inline-image-wrapper {
+  display: block;
+  margin: 8px 0;
+  border-radius: 6px;
+  position: relative;
+}
+.ws-doc-surface .inline-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 6px;
+}
+.ws-doc-surface .inline-image-wrapper::-webkit-resizer {
+  background: transparent;
+  border-left: 2px solid #ccc;
+  border-top: 2px solid #ccc;
+  width: 10px;
+  height: 10px;
+}
+.ws-doc-surface .inline-image-size {
+  pointer-events: none;
+}
+.ws-doc-surface.reading-mode .inline-image-wrapper {
+  resize: none !important;
+}
+.ws-doc-surface.reading-mode .inline-image-size {
+  display: none;
+}
 
 /* Selection action popover — floats over text, doesn't shift layout */
 .ws-selection-actions {
