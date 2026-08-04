@@ -12,6 +12,9 @@ RUN npm run build
 
 # ── Stage 2: Rust server binary ────────────────────────────────────────────
 FROM rust:slim AS server
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo
 # Workspace root manifest + the crate (the only workspace member)
 COPY Cargo.toml ./

@@ -1,27 +1,40 @@
-# 3-node cross-server test bed on a private bridge network.
+# docker-compose.yml — 3-node Xudanu cross-server demo
 #
-# Each container serves the full web UI + API + WebSocket.
-# Host ports 8081/8082/8083 let you browse each node.
+# Each node is an independent server with its own identity, data, and
+# keypair. They discover each other via /.well-known/xudanu-server.json
+# and resolve cross-server references via the public content API.
 #
-# Cross-server content links (FR-6) work between nodes:
-#   - Each node has /api/public/work/{id} for public content
-#   - Each node has /.well-known/xudanu-server.json
-#   - --public-address sets the tumbler domain for cross-server refs
+# Usage:
+#   docker compose up --build
 #
-# To test cross-server:
-#   1. Open http://localhost:8081 — create a work, publish it
-#   2. Open http://localhost:8082 — create a cross-server link to peer1's work
-#   3. The link uses tumbler "localhost:8081".0x{id}.1.0.0 with BLAKE3 hash
+# Then open in your browser:
+#   http://localhost:8081  — Alice's server
+#   http://localhost:8082  — Bob's server
+#   http://localhost:8083  — Carol's server
+#
+# Cross-server flow:
+#   1. On Alice (8081): create account, create a work, write content
+#   2. On Bob (8082): create account, add Alice's server to directory
+#      (http://localhost:8081), create a cross-server link to Alice's work
+#   3. Bob's server fetches Alice's content, verifies BLAKE3 hash,
+#      caches it locally. A backlink notification goes to Alice.
+#   4. On Alice (8081): check Connections panel — Bob's link appears
+#
+# To reset all data:
+#   docker compose down -v
 
 services:
-  node1:
-    build: .
+  alice:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: xudanu:latest
-    container_name: xudanu-node1
-    hostname: node1
-    networks: [xudanu-net]
-    ports: ["8081:8080"]
-    volumes: ["node1-data:/data"]
+    container_name: xudanu-alice
+    hostname: alice
+    ports:
+      - "8081:8080"
+    volumes:
+      - alice-data:/data
     command:
       - run
       - "0.0.0.0:8080"
@@ -31,24 +44,31 @@ services:
       - --public-address
       - "localhost:8081"
       - --server-name
-      - "Node Alpha"
+      - "Alice"
       - --server-description
-      - "Test node 1 — cross-server link source"
+      - "Alice's server — content publisher"
       - --allowed-origin
       - "http://localhost:8081"
       - --allowed-origin
       - "http://localhost:8082"
       - --allowed-origin
       - "http://localhost:8083"
+    networks:
+      xudanu-net:
+        aliases:
+          - alice
 
-  node2:
-    build: .
+  bob:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: xudanu:latest
-    container_name: xudanu-node2
-    hostname: node2
-    networks: [xudanu-net]
-    ports: ["8082:8080"]
-    volumes: ["node2-data:/data"]
+    container_name: xudanu-bob
+    hostname: bob
+    ports:
+      - "8082:8080"
+    volumes:
+      - bob-data:/data
     command:
       - run
       - "0.0.0.0:8080"
@@ -58,24 +78,31 @@ services:
       - --public-address
       - "localhost:8082"
       - --server-name
-      - "Node Beta"
+      - "Bob"
       - --server-description
-      - "Test node 2 — cross-server link target"
+      - "Bob's server — commentator and transcluder"
       - --allowed-origin
       - "http://localhost:8081"
       - --allowed-origin
       - "http://localhost:8082"
       - --allowed-origin
       - "http://localhost:8083"
+    networks:
+      xudanu-net:
+        aliases:
+          - bob
 
-  node3:
-    build: .
+  carol:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: xudanu:latest
-    container_name: xudanu-node3
-    hostname: node3
-    networks: [xudanu-net]
-    ports: ["8083:8080"]
-    volumes: ["node3-data:/data"]
+    container_name: xudanu-carol
+    hostname: carol
+    ports:
+      - "8083:8080"
+    volumes:
+      - carol-data:/data
     command:
       - run
       - "0.0.0.0:8080"
@@ -85,21 +112,25 @@ services:
       - --public-address
       - "localhost:8083"
       - --server-name
-      - "Node Gamma"
+      - "Carol"
       - --server-description
-      - "Test node 3 — cross-server trail relay"
+      - "Carol's server — newcomer, discovers and transcludes"
       - --allowed-origin
       - "http://localhost:8081"
       - --allowed-origin
       - "http://localhost:8082"
       - --allowed-origin
       - "http://localhost:8083"
+    networks:
+      xudanu-net:
+        aliases:
+          - carol
 
 networks:
   xudanu-net:
     driver: bridge
 
 volumes:
-  node1-data:
-  node2-data:
-  node3-data:
+  alice-data:
+  bob-data:
+  carol-data:

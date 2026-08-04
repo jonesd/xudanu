@@ -128,7 +128,14 @@ export function WorkspaceShell() {
   const [rightPanelHidden, setRightPanelHidden] = useState(false);
   const [showIdentity, setShowIdentity] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
-  const [workMeta, setWorkMeta] = useState<WorkMeta | null>(null);
+  const [workMeta, setWorkMeta] = useState<WorkMeta | null>(() => {
+    if (workBeId === null) return null;
+    try {
+      const cached = localStorage.getItem(`xudanu_meta_${workBeId}`);
+      if (cached) return JSON.parse(cached) as WorkMeta;
+    } catch { /* no-op */ }
+    return null;
+  });
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
   const [annotationTarget, setAnnotationTarget] = useState<{ start: number; end: number } | null>(null);
   const [themeState, setThemeState] = useState(() => loadThemeState());
@@ -271,38 +278,57 @@ export function WorkspaceShell() {
     client.workBlobList(workBeId).then((blobs) => {
       if (cancelled) return;
       if (blobs.length === 0) { setImageEntries([]); return; }
-      const entries = blobs.map((b) => ({
-        hash: b.content_hash,
-        mime: b.mime_type,
-        width: b.width ?? undefined,
-        height: b.height ?? undefined,
-        charPos: b.char_position,
-        caption: b.caption ?? undefined,
-        loading: true,
-      }));
-      setImageEntries(entries);
-      entries.forEach((entry) => {
-        client.blobGetPreview(entry.hash).then((previewBytes) => {
+      setImageEntries((prev) => {
+        return blobs.map((b) => {
+          const existing = prev.find((e) => e.hash === b.content_hash);
+          if (existing && existing.url) {
+            return {
+              ...existing,
+              charPos: b.char_position,
+              mime: b.mime_type,
+              width: b.width ?? existing.width,
+              height: b.height ?? existing.height,
+              caption: b.caption ?? existing.caption,
+              loading: false,
+            };
+          }
+          return {
+            hash: b.content_hash,
+            mime: b.mime_type,
+            width: b.width ?? undefined,
+            height: b.height ?? undefined,
+            charPos: b.char_position,
+            caption: b.caption ?? undefined,
+            loading: true,
+          };
+        });
+      });
+      blobs.forEach((b) => {
+        const existing = imageEntries.find((e) => e.hash === b.content_hash);
+        if (existing && existing.url) return;
+        const hash = b.content_hash;
+        const mime = b.mime_type;
+        client.blobGetPreview(hash).then((previewBytes) => {
           if (cancelled) return;
-          const blob = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: entry.mime });
+          const blob = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: mime });
           const url = URL.createObjectURL(blob);
-          setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, url, loading: false } : e));
+          setImageEntries((prev) => prev.map((e) => e.hash === hash ? { ...e, url, loading: false } : e));
         }).catch(() => {
           if (cancelled) return;
-          client.blobGet(entry.hash).then((fullBytes) => {
+          client.blobGet(hash).then((fullBytes) => {
             if (cancelled) return;
-            const blob = new Blob([fullBytes as BlobPart], { type: entry.mime });
+            const blob = new Blob([fullBytes as BlobPart], { type: mime });
             const url = URL.createObjectURL(blob);
-            setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, url, loading: false } : e));
+            setImageEntries((prev) => prev.map((e) => e.hash === hash ? { ...e, url, loading: false } : e));
           }).catch(() => {
             if (cancelled) return;
-            setImageEntries((prev) => prev.map((e) => e.hash === entry.hash ? { ...e, loading: false } : e));
+            setImageEntries((prev) => prev.map((e) => e.hash === hash ? { ...e, loading: false } : e));
           });
         });
       });
     }).catch(() => { if (!cancelled) setImageEntries([]); });
     return () => { cancelled = true; };
-  }, [connected, workBeId, clientRef]);
+  }, [connected, authenticated, workBeId, switchingWork]);
 
   const transclusion = useTransclusion();
   const compound = useCompoundEdition(connected ? clientRef.current : null, workBeId);
@@ -363,13 +389,15 @@ export function WorkspaceShell() {
         }
         const match = entries.find((e) => e.work_id === workBeId);
         if (match) {
-          setWorkMeta({
+          const meta = {
             title: match.title || `Work 0x${workBeId.toString(16)}`,
             author: identityName,
             collection: null,
             publishedAt: match.updated_at ? new Date(match.updated_at * 1000).toLocaleDateString() : null,
             versionLabel: match.revision_count ? `v${match.revision_count}` : null,
-          });
+          };
+          setWorkMeta(meta);
+          try { localStorage.setItem(`xudanu_meta_${workBeId}`, JSON.stringify(meta)); } catch { /* no-op */ }
           setFollowState((prev) => ({ ...prev, following: !!match.is_starred }));
         } else {
           // Work not in the list — still try to open it (it may be readable)
@@ -1935,7 +1963,13 @@ export function WorkspaceShell() {
                       if (newTitle && newTitle.trim() && newTitle !== current) {
                         try {
                           await crdt.setWorkTitle(newTitle.trim());
-                          setWorkMeta((prev) => prev ? { ...prev, title: newTitle.trim() } : prev);
+                          setWorkMeta((prev) => {
+                            const updated = prev ? { ...prev, title: newTitle.trim() } : prev;
+                            if (updated && workBeId !== null) {
+                              try { localStorage.setItem(`xudanu_meta_${workBeId}`, JSON.stringify(updated)); } catch { /* no-op */ }
+                            }
+                            return updated;
+                          });
                           setWorks((prev) => prev.map((w) => w.work_id === workBeId ? { ...w, title: newTitle.trim() } : w));
                           if (fetchWorkList) { try { const entries = await fetchWorkList(); setWorks(entries); } catch { /* network error — will retry */ } }
                         } catch (e) { console.error("Failed to set title:", e); }
