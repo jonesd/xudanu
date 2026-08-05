@@ -547,8 +547,13 @@ export class CrdtSyncClient {
     this.ws = new WebSocket(url);
     this.ws.onopen = () => this.onOpen();
     this.ws.onmessage = (e) => this.onMessage(e.data);
-      this.ws.onclose = () => this.onClose();
-      this.ws.onerror = () => {};
+      this.ws.onclose = (ev: CloseEvent) => {
+        console.warn(`[ws] closed code=${ev.code} reason="${ev.reason}" wasClean=${ev.wasClean}`);
+        this.onClose();
+      };
+      this.ws.onerror = (ev: Event) => {
+        console.warn(`[ws] error`, ev);
+      };
   }
 
   disconnect(): void {
@@ -2172,13 +2177,19 @@ export class CrdtSyncClient {
 
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return;
-    const base = Math.min(
-      CrdtSyncClient.RECONNECT_BASE_MS * Math.pow(2, this.reconnectAttempts),
-      CrdtSyncClient.RECONNECT_MAX_MS,
-    );
-    const jitter = base * 0.25 * (Math.random() * 2 - 1);
-    const delay = Math.max(CrdtSyncClient.RECONNECT_BASE_MS, base + jitter);
+    let delay: number;
+    if (this.reconnectAttempts < 3) {
+      delay = [200, 500, 1000][this.reconnectAttempts];
+    } else {
+      const base = Math.min(
+        CrdtSyncClient.RECONNECT_BASE_MS * Math.pow(2, this.reconnectAttempts),
+        CrdtSyncClient.RECONNECT_MAX_MS,
+      );
+      const jitter = base * 0.25 * (Math.random() * 2 - 1);
+      delay = Math.max(CrdtSyncClient.RECONNECT_BASE_MS, base + jitter);
+    }
     this.reconnectAttempts++;
+    console.log(`[ws] reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
