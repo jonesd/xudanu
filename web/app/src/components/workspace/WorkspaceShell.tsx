@@ -353,6 +353,8 @@ export function WorkspaceShell() {
   }, [compound.spanRanges, licenseCache]);
   const identityColor = identityName ? authorColorPair(identityName).primary : "#888";
 
+  const getSourceText = useCallback(() => compound.resolvedText || text, [compound.resolvedText, text]);
+
   const selectWork = useCallback((id: number) => {
     setWorkBeId(id);
     setImageEntries([]);
@@ -460,14 +462,14 @@ export function WorkspaceShell() {
       }
     }
     const title = workMeta?.title || `Work 0x${workBeId.toString(16)}`;
-    const selectedText = text.slice(selectionRange.start, selectionRange.end);
+    const selectedText = getSourceText().slice(selectionRange.start, selectionRange.end);
     transclusion.holdSelection(workBeId, title, selectionRange.start, selectionRange.end, selectedText);
   }, [selectionRange, workBeId, workMeta, text, transclusion, licenseCache, workLicense]);
 
   const handleOpenLinkCreator = useCallback(() => {
     if (!selectionRange || workBeId === null) return;
     const title = workMeta?.title || `Work 0x${workBeId.toString(16)}`;
-    const selectedText = text.slice(selectionRange.start, selectionRange.end);
+    const selectedText = getSourceText().slice(selectionRange.start, selectionRange.end);
     transclusion.holdLinkSelection(workBeId, title, selectionRange.start, selectionRange.end, selectedText);
   }, [selectionRange, workBeId, workMeta, text, transclusion]);
 
@@ -475,7 +477,7 @@ export function WorkspaceShell() {
     async (typeId: number) => {
       if (!selectionRange || workBeId === null || !clientRef.current) return;
       const client = clientRef.current;
-      const selectedText = text.slice(selectionRange.start, selectionRange.end);
+      const selectedText = getSourceText().slice(selectionRange.start, selectionRange.end);
       const linkId = await transclusion.createContentLink(
         client,
         workBeId,
@@ -774,7 +776,7 @@ export function WorkspaceShell() {
     async (name: string, kind: WorkKind) => {
       if (!selectionRange || workBeId === null || !clientRef.current) return;
       const client = clientRef.current;
-      const selectedText = text.slice(selectionRange.start, selectionRange.end);
+      const selectedText = getSourceText().slice(selectionRange.start, selectionRange.end);
 
       try {
         // 1. Search for existing work with matching title + kind
@@ -1439,7 +1441,7 @@ export function WorkspaceShell() {
 
   const handleAddSelectionToTrail = useCallback(async (trailId: number) => {
     if (!selectionRange || workBeId === null || !clientRef.current) return;
-    const selectedText = text.slice(selectionRange.start, selectionRange.end);
+    const selectedText = getSourceText().slice(selectionRange.start, selectionRange.end);
     try {
       await clientRef.current.trailAddStop(
         trailId,
@@ -1474,7 +1476,7 @@ export function WorkspaceShell() {
     if (!name) return;
     try {
       const trailId = await clientRef.current.trailCreate(name);
-      const selectedText = text.slice(selectionRange.start, selectionRange.end);
+      const selectedText = getSourceText().slice(selectionRange.start, selectionRange.end);
       await clientRef.current.trailAddStop(
         trailId,
         workBeId,
