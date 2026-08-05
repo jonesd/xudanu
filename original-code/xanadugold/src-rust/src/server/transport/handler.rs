@@ -1152,7 +1152,21 @@ async fn handle_socket(
             msg_result = ws_receiver.next() => {
                 let msg = match msg_result {
                     Some(Ok(m)) => m,
-                    _ => break,
+                    Some(Err(e)) => {
+                        tracing::warn!(
+                            session_id = %session_id,
+                            error = %e,
+                            "WebSocket stream error, closing connection"
+                        );
+                        break;
+                    }
+                    None => {
+                        tracing::info!(
+                            session_id = %session_id,
+                            "WebSocket stream ended (client disconnected)"
+                        );
+                        break;
+                    }
                 };
                 last_activity = std::time::Instant::now();
 

@@ -7272,6 +7272,7 @@ impl Server {
         data_dir: &std::path::Path,
         passphrase: Option<&[u8]>,
     ) -> std::io::Result<()> {
+        self.data_dir = Some(data_dir.to_path_buf());
         for name in &["manifest.json.tmp", "key_history.json.tmp"] {
             let p = data_dir.join(name);
             if p.exists() {
@@ -7563,7 +7564,12 @@ impl Server {
             // Also load from the lightweight sidecar file (more recent than manifest)
             if let Some(ref dir) = self.data_dir {
                 let sidecar = dir.join("ticket_nonces.json");
+                tracing::info!(
+                    "[restore] looking for ticket nonce sidecar at {}",
+                    sidecar.display()
+                );
                 if let Ok(data) = std::fs::read_to_string(&sidecar) {
+                    tracing::info!("[restore] ticket nonce sidecar found, parsing");
                     if let Ok(parsed) =
                         serde_json::from_str::<std::collections::HashMap<String, u64>>(&data)
                     {
