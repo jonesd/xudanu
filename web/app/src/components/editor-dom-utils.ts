@@ -19,6 +19,7 @@ export function isDecorativeNode(node: Node | null): boolean {
   while (n && n.nodeType !== Node.DOCUMENT_NODE) {
     if (n.nodeType === Node.ELEMENT_NODE) {
       const el = n as Element;
+      if (el.classList && (el.classList.contains("inline-transclusion") || el.classList.contains("inline-image-wrapper"))) return true;
       if (el.getAttribute && el.getAttribute("contenteditable") === "false" && !isHiddenMarker(el)) return true;
     }
     n = n.parentNode;
@@ -54,6 +55,8 @@ export function isReadonlyNode(node: Node | null): boolean {
     if (n.nodeType === Node.ELEMENT_NODE) {
       const el = n as Element;
       if (el.getAttribute && el.getAttribute("contenteditable") === "false") return true;
+      if (el.classList && el.classList.contains("inline-transclusion")) return true;
+      if (el.classList && el.classList.contains("inline-image-wrapper")) return true;
     }
     n = n.parentNode;
   }

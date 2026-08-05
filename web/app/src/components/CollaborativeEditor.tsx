@@ -1679,11 +1679,23 @@ export function CollaborativeEditor({
       const preEnd = document.createRange();
       preEnd.selectNodeContents(el);
       preEnd.setEnd(range.endContainer, range.endOffset);
-      const end = preEnd.toString().length;
+      let end = preEnd.toString().length;
+
+      if (start < end && compoundSpanRanges.length > 0) {
+        for (const sr of compoundSpanRanges) {
+          if (sr.flat_start >= start && sr.flat_start < end && sr.flat_end > end) {
+            end = sr.flat_end;
+            break;
+          }
+          if (sr.flat_start > start && sr.flat_start < end && sr.flat_end <= end) {
+          }
+        }
+      }
+
       onSelectionChange(start, end);
       lastSelectionTime.current = Date.now();
     }
-  }, [onCursorChange, onSelectionChange]);
+  }, [onCursorChange, onSelectionChange, compoundSpanRanges]);
 
   const computePlacementPosition = useCallback((clientX: number, clientY: number, el: HTMLElement): { pos: number; rect: DOMRect; padding?: string } | null => {
     const doc = el.ownerDocument as Document & {
@@ -1759,6 +1771,8 @@ export function CollaborativeEditor({
     const target = e.target as HTMLElement;
     const transclusionSpan = target.closest(".inline-transclusion");
     if (transclusionSpan && onNavigateToWork) {
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return;
       const sourceId = parseInt((transclusionSpan as HTMLElement).dataset.sourceWorkId || "0", 10);
       if (sourceId) {
         onNavigateToWork(sourceId);

@@ -2319,8 +2319,8 @@ export class CrdtSyncClient {
     return (rec.work_ids as number[]) || [];
   }
 
-  async findWorksForContent(text: string): Promise<number[]> {
-    const resp = await this.sendRequest("find_works_for_content", { text });
+  async findWorksForContent(contentBeId: number): Promise<number[]> {
+    const resp = await this.sendRequest("find_works_for_content", { content_be_id: contentBeId });
     const val = extractValue(resp);
     if (Array.isArray(val)) return val as number[];
     const rec = val as Record<string, unknown>;

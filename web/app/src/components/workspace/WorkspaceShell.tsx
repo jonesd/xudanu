@@ -17,7 +17,7 @@ import { ImportWizard } from "../ImportWizard";
 import { AttributionPanel } from "../AttributionPanel";
 import { loadThemeState, saveThemeState, activePalette } from "../../theme";
 import type { ThemeMode } from "../../theme";
-import type { WorkListEntry, TrailPayload } from "../../api/crdt_sync";
+import type { WorkListEntry, TrailPayload, AgainHop } from "../../api/crdt_sync";
 import type { License } from "../../api/crdt_sync";
 import { LICENSES } from "../../api/crdt_sync";
 import type { WorkKind } from "../../graph-scoring";
@@ -195,6 +195,10 @@ export function WorkspaceShell() {
   const [showImport, setShowImport] = useState(false);
   const [demoTrigger, setDemoTrigger] = useState(false);
   const [crossServerBacklinks, setCrossServerBacklinks] = useState<CrossServerBacklinkPayload[]>([]);
+  const [whereUsed, setWhereUsed] = useState<{ edition_ids: number[]; work_ids: number[] } | null>(null);
+  const [whereUsedLoading, setWhereUsedLoading] = useState(false);
+  const [provenanceChain, setProvenanceChain] = useState<AgainHop[] | null>(null);
+  const [provenanceLoading, setProvenanceLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeLinkTypes, setActiveLinkTypes] = useState<Set<number>>(new Set());
   const [showLinkDesc, setShowLinkDesc] = useState(() => {
@@ -331,6 +335,15 @@ export function WorkspaceShell() {
   }, [connected, authenticated, workBeId, switchingWork]);
 
   const transclusion = useTransclusion();
+
+  const blobEntries = useMemo(() => imageEntries.filter(e => e.charPos != null && !e.loading).map(e => ({
+    charPos: e.charPos!,
+    hash: e.hash,
+    url: e.url,
+    mime: e.mime,
+    width: e.width,
+    height: e.height,
+  })), [imageEntries]);
   const compound = useCompoundEdition(connected ? clientRef.current : null, workBeId);
 
   // Reload compound state after authentication completes — the initial load
@@ -2590,20 +2603,26 @@ export function WorkspaceShell() {
                   selectionRange={selectionRange}
                   highlightRange={highlightRange}
                   onNavigateToWork={selectWork}
+                  onCrossServerResolve={async (tumbler, contentHash) => {
+                    if (!clientRef.current) return null;
+                    try {
+                      const result = await clientRef.current.crossServerResolve(tumbler, contentHash);
+                      return { text: result.text, hashVerified: result.hashVerified, cached: result.cached };
+                    } catch { return null; }
+                  }}
+                  onTraceProvenance={async (workId, charStart, charEnd) => {
+                    if (!clientRef.current) return [];
+                    try {
+                      return await clientRef.current.workTransclusionChain(workId, charStart, charEnd);
+                    } catch { return []; }
+                  }}
                   compoundSpanRanges={compound.spanRanges}
                   remoteCursors={awareness}
                   compoundSourceTitles={compound.sourceTitles}
                   inlineResolvedText={compound.resolvedText || undefined}
                   pendingImagePlacement={pendingImage}
                   onPlaceImage={handlePlaceImage}
-                  blobEntries={imageEntries.filter(e => e.charPos != null && !e.loading).map(e => ({
-                    charPos: e.charPos!,
-                    hash: e.hash,
-                    url: e.url,
-                    mime: e.mime,
-                    width: e.width,
-                    height: e.height,
-                  }))}
+                  blobEntries={blobEntries}
                   annotations={annotations}
                     onCreateAnnotation={canEdit ? handleCreateAnnotation : undefined}
                     onToggleStyle={canEdit ? handleToggleStyle : undefined}
@@ -2843,9 +2862,106 @@ export function WorkspaceShell() {
                         Cancel
                       </button>
                     </div>
-                  </div>
                 </div>
-              )}
+
+                  {/* Where is this used? (backfollow) */}
+                  {workBeId !== null && (
+                    <div className="ws-conn-section">
+                      <div className="ws-conn-header" style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <span>Where is this used?</span>
+                        <button
+                          className="ws-concept-add-btn"
+                          style={{ fontSize: 10 }}
+                          disabled={whereUsedLoading}
+                          onClick={async () => {
+                            if (!clientRef.current || workBeId === null) return;
+                            setWhereUsedLoading(true);
+                            setWhereUsed(null);
+                            try {
+                              const result = await clientRef.current.rangeTranscluders(workBeId);
+                              setWhereUsed(result);
+                            } catch { setWhereUsed(null); }
+                            setWhereUsedLoading(false);
+                          }}
+                        >
+                          {whereUsedLoading ? "..." : whereUsed ? "↻" : "Find"}
+                        </button>
+                      </div>
+                      {whereUsedLoading ? (
+                        <div className="ws-conn-empty">Searching...</div>
+                      ) : whereUsed === null ? (
+                        <div className="ws-conn-empty">Click "Find" to search for documents that reuse this work's content.</div>
+                      ) : whereUsed.work_ids.length === 0 ? (
+                        <div className="ws-conn-empty">Not reused in any other documents.</div>
+                      ) : (
+                        whereUsed.work_ids.map((wid, i) => {
+                          const w = works.find((x) => x.work_id === wid);
+                          const title = w?.title || `Work 0x${wid.toString(16)}`;
+                          return (
+                            <div key={i} className="ws-conn-item" onClick={() => selectWork(wid)}>
+                              <div className="ws-conn-title">↗ {title}</div>
+                              <div className="ws-conn-excerpt">Reuses content from this work</div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+
+                  {/* Provenance chain */}
+                  {workBeId !== null && (
+                    <div className="ws-conn-section">
+                      <div className="ws-conn-header" style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <span>Provenance chain</span>
+                        <button
+                          className="ws-concept-add-btn"
+                          style={{ fontSize: 10 }}
+                          disabled={provenanceLoading}
+                          onClick={async () => {
+                            if (!clientRef.current || workBeId === null) return;
+                            setProvenanceLoading(true);
+                            setProvenanceChain(null);
+                            try {
+                              const chain = await clientRef.current.workTransclusionChain(workBeId, 0, 0);
+                              setProvenanceChain(chain);
+                            } catch { setProvenanceChain(null); }
+                            setProvenanceLoading(false);
+                          }}
+                        >
+                          {provenanceLoading ? "..." : provenanceChain ? "↻" : "Trace"}
+                        </button>
+                      </div>
+                      {provenanceLoading ? (
+                        <div className="ws-conn-empty">Tracing provenance...</div>
+                      ) : provenanceChain === null ? (
+                        <div className="ws-conn-empty">Click "Trace" to trace where this work's content originated.</div>
+                      ) : provenanceChain.length === 0 ? (
+                        <div className="ws-conn-empty">Original content — no transclusion source.</div>
+                      ) : (
+                        provenanceChain.map((hop, i) => (
+                          <div key={i} className="ws-conn-item" onClick={() => selectWork(hop.work_id)}>
+                            <div className="ws-conn-title" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <span style={{ fontSize: 10, color: "#8b949e", fontFamily: "monospace" }}>{i + 1}.</span>
+                              {hop.work_title || `Work 0x${hop.work_id.toString(16)}`}
+                              {hop.is_original && (
+                                <span style={{ fontSize: 9, color: "#3fb950", fontWeight: 600 }}>ORIGINAL</span>
+                              )}
+                            </div>
+                            {hop.author_name && (
+                              <div className="ws-conn-excerpt">by {hop.author_name}{hop.author_type ? ` (${hop.author_type})` : ""}</div>
+                            )}
+                            {hop.element_text && (
+                              <div className="ws-conn-excerpt" style={{ fontStyle: "italic", maxHeight: 40, overflow: "hidden" }}>
+                                "{hop.element_text.slice(0, 80)}{hop.element_text.length > 80 ? "..." : ""}"
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+              </div>
+            )}
             </>
           )}
           {workBeId !== null && (
