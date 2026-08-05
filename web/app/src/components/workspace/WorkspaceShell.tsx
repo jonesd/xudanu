@@ -232,7 +232,7 @@ export function WorkspaceShell() {
   // Track uploaded images locally for display
   const [imageEntries, setImageEntries] = useState<Array<{ hash: number; mime: string; width?: number; height?: number; url?: string; loading: boolean; charPos?: number; caption?: string }>>([]);
   const [cursorPos, setCursorPos] = useState<number | null>(null);
-  const [docMode, setDocMode] = useState<"edit" | "layout">("edit");
+  const [docMode] = useState<"edit" | "layout">("edit");
   const [imageSizes, setImageSizes] = useState<Map<number, number>>(new Map());
   const [lightboxHash, setLightboxHash] = useState<number | null>(null);
   const [cropTarget, setCropTarget] = useState<number | null>(null);
@@ -1116,6 +1116,7 @@ export function WorkspaceShell() {
     }
   }, [workBeId]);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleOpenInvite = useCallback(async () => {
     if (workBeId === null || !clientRef.current) return;
     setShowInvite(true);
@@ -1136,6 +1137,7 @@ export function WorkspaceShell() {
       setInviteLoading(false);
     }
   }, [workBeId, clientRef]);
+  void handleOpenInvite;
 
   // Load all of the user's trails (for the "add to trail" picker)
   const loadUserTrails = useCallback(async () => {
@@ -2044,59 +2046,7 @@ export function WorkspaceShell() {
                     onClick={handleFollow}
                     disabled={followState.busy}
                   >
-                    {followState.busy ? "…" : followState.following ? "★ Following" : "☆ Follow"}
-                  </button>
-                  <button
-                    className="ws-action-btn"
-                    title="Copy persistent xan:// reference"
-                    onClick={handleCite}
-                  >
-                    {citeFeedback ? `✓ ${citeFeedback}` : "Cite…"}
-                  </button>
-                  {crdt.shareWork && (
-                    <button
-                      className="ws-action-btn"
-                      title="Make this work readable from other servers (cross-server)"
-                      onClick={async () => {
-                        try { await crdt.shareWork(); showToast("Work published — now accessible from other servers"); }
-                        catch (e) { showToast("Publish failed"); }
-                      }}
-                    >
-                      Publish
-                    </button>
-                  )}
-                  <button
-                    className="ws-action-btn"
-                    title="Invite collaborators"
-                    onClick={handleOpenInvite}
-                  >
-                    Invite
-                  </button>
-                  <button
-                    className="ws-action-btn"
-                    title="Curated trails through this work and others"
-                    onClick={() => setShowTrailsPanel(true)}
-                  >
-                    Trails
-                  </button>
-                  <button
-                    className="ws-action-btn"
-                    title="Mark current state as a notable revision (add description later in Timeline)"
-                    onClick={async () => {
-                      if (workBeId === null || !clientRef.current) return;
-                      try {
-                        const revs = await clientRef.current.workRevisionsList(workBeId);
-                        const latest = revs[revs.length - 1];
-                        if (latest) {
-                          await clientRef.current.workRevisionMarkNotable(workBeId, latest.revision_id, true);
-                        }
-                        setRightPanelTab("timeline");
-                      } catch (e) {
-                        alert(`Could not save revision: ${e instanceof Error ? e.message : String(e)}`);
-                      }
-                    }}
-                  >
-                    Save revision
+                    {followState.busy ? "…" : followState.following ? "★" : "☆"}
                   </button>
                   {canEdit && (
                     <button
@@ -2104,7 +2054,7 @@ export function WorkspaceShell() {
                       onClick={() => setEditorMode(editorMode === "authoring" ? "reading" : "authoring")}
                       title={editorMode === "authoring" ? "Switch to reading mode (hides markers)" : "Switch to authoring mode (shows markers)"}
                     >
-                      {editorMode === "authoring" ? "📖 Read" : "✏️ Edit"}
+                      {editorMode === "authoring" ? "📖" : "✏️"}
                     </button>
                   )}
                   {canEdit && (
@@ -2122,15 +2072,6 @@ export function WorkspaceShell() {
                       />
                     </label>
                   )}
-                  {imageEntries.length > 0 && (
-                    <button
-                      className={`ws-action-btn ${docMode === "layout" ? "active" : ""}`}
-                      title={docMode === "edit" ? "Switch to layout view (images inline)" : "Switch to editor"}
-                      onClick={() => setDocMode(docMode === "edit" ? "layout" : "edit")}
-                    >
-                      {docMode === "edit" ? "🗔" : "✏️"}
-                    </button>
-                  )}
                   <div className="ws-more-wrap" ref={moreMenuRef}>
                     <button
                       className="ws-action-btn"
@@ -2141,6 +2082,49 @@ export function WorkspaceShell() {
                     </button>
                     {moreMenuOpen && (
                       <div className="ws-more-menu" role="menu">
+                        <button
+                          className="ws-more-item"
+                          onClick={() => { handleCite(); setMoreMenuOpen(false); }}
+                        >
+                          {citeFeedback ? `✓ ${citeFeedback}` : "Cite…"}
+                        </button>
+                        {crdt.shareWork && (
+                          <button
+                            className="ws-more-item"
+                            onClick={async () => {
+                              setMoreMenuOpen(false);
+                              try { await crdt.shareWork(); showToast("Work published — now accessible from other servers"); }
+                              catch (e) { showToast("Publish failed"); }
+                            }}
+                          >
+                            Publish to network
+                          </button>
+                        )}
+                        <button
+                          className="ws-more-item"
+                          onClick={() => { setShowTrailsPanel(true); setMoreMenuOpen(false); }}
+                        >
+                          Trails
+                        </button>
+                        <button
+                          className="ws-more-item"
+                          onClick={async () => {
+                            setMoreMenuOpen(false);
+                            if (workBeId === null || !clientRef.current) return;
+                            try {
+                              const revs = await clientRef.current.workRevisionsList(workBeId);
+                              const latest = revs[revs.length - 1];
+                              if (latest) {
+                                await clientRef.current.workRevisionMarkNotable(workBeId, latest.revision_id, true);
+                              }
+                              setRightPanelTab("timeline");
+                            } catch (e) {
+                              alert(`Could not save revision: ${e instanceof Error ? e.message : String(e)}`);
+                            }
+                          }}
+                        >
+                          Save revision
+                        </button>
                         <button
                           className="ws-more-item"
                           onClick={() => {

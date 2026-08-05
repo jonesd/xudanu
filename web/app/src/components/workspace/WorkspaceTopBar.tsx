@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Logo } from "../../logo";
+import "../../workspace.css";
 import { PALETTES } from "../../theme";
 import type { ThemeMode, ThemePalette } from "../../theme";
 
@@ -97,8 +97,9 @@ export function WorkspaceTopBar({
           window.dispatchEvent(new PopStateEvent("popstate"));
         }}
       >
-        <Logo size={18} />
-        <span>xudanu</span>
+        <span className="ws-brand-text">
+          Xuda<span className="ws-brand-nu">nu</span>
+        </span>
       </div>
 
       <div className="ws-search-trigger" onClick={onOpenSearch}>

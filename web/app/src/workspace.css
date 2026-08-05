@@ -2,6 +2,20 @@
    Grid layout: top bar + 3-column body + bottom lens row.
    All zones collapsible; the document surface reclaims freed space. */
 
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&display=swap');
+
+/* ── Brand ── */
+.ws-brand-text {
+  font-family: 'Orbitron', 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text);
+}
+.ws-brand-nu {
+  color: #e11d48;
+}
+
 /* ── Block formatting in editor ── */
 .ws-sel-sep {
   display: inline-block;
@@ -907,7 +921,8 @@
 .ws-doc-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  flex-wrap: wrap;
 }
 .ws-action-btn {
   background: var(--bg-elevated);
@@ -915,10 +930,11 @@
   color: var(--doc-text-muted);
   font-family: 'Inter', sans-serif;
   font-size: 11px;
-  padding: 3px 10px;
+  padding: 3px 8px;
   border-radius: 4px;
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
 }
 .ws-action-btn:hover { background: var(--bg-document-margin); color: var(--doc-text); }
 
