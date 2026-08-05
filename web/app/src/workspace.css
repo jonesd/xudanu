@@ -1072,6 +1072,8 @@
   margin: 0;
   font-style: italic;
   color: var(--doc-text-muted);
+  -webkit-user-select: text;
+  user-select: text;
 }
 .ws-doc-surface .inline-transclusion::before {
   content: "↗";

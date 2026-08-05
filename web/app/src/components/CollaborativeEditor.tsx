@@ -889,6 +889,7 @@ export function CollaborativeEditor({
   const redoStack = useRef<UndoEntry[]>([]);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isUndoRedoing = useRef(false);
+  const lastSelectionTime = useRef(0);
   const lastInputTime = useRef(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
@@ -1680,6 +1681,7 @@ export function CollaborativeEditor({
       preEnd.setEnd(range.endContainer, range.endOffset);
       const end = preEnd.toString().length;
       onSelectionChange(start, end);
+      lastSelectionTime.current = Date.now();
     }
   }, [onCursorChange, onSelectionChange]);
 
@@ -2298,7 +2300,9 @@ export function CollaborativeEditor({
             onMouseUp={() => {
               const sel = window.getSelection();
               if (!sel || sel.isCollapsed) {
-                onSelectionChange(null, null);
+                if (Date.now() - lastSelectionTime.current > 500) {
+                  onSelectionChange(null, null);
+                }
               }
             }}
             onCompositionStart={() => { isComposing.current = true; }}
