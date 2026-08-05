@@ -90,12 +90,12 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose,
     return () => { cancelled = true; };
   }, [client]);
 
-  const tick = useCallback(() => {
+  const tick = useCallback((silent = false) => {
     const ns = nodesRef.current;
     const es = edgesRef.current;
     if (ns.length === 0) return;
 
-    const alpha = 0.3;
+    const alpha = 0.08;
     const repulsion = 800;   // reduced for more nodes
     const attraction = 0.005;
     const centerForce = 0.02; // doubled
@@ -162,17 +162,16 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose,
       n.y = Math.max(30, Math.min(570, n.y));
     }
 
-    setNodes([...ns]);
+    if (!silent) setNodes([...ns]);
   }, [dragId, currentWorkId]);
 
-  // When current work changes, kick the simulation so nodes visibly rearrange
+  // When current work changes, gently nudge toward new center (no random kick)
   useEffect(() => {
     if (nodes.length === 0) return;
     const kicked = nodes.map((n) => ({
       ...n,
-      // Add small random velocity to break out of equilibrium
-      vx: n.vx + (Math.random() - 0.5) * 20,
-      vy: n.vy + (Math.random() - 0.5) * 20,
+      vx: n.vx * 0.5,
+      vy: n.vy * 0.5,
     }));
     setNodes(kicked);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -180,12 +179,17 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose,
 
   useEffect(() => {
     if (nodes.length === 0) return;
+    // Pre-warm: run 80 iterations silently so nodes start near-converged
+    for (let i = 0; i < 80; i++) {
+      tick(true);
+    }
+    setNodes([...nodesRef.current]);
+    // Then animate 60 more frames for gentle settle
     let frame = 0;
-    const maxFrames = 150;
+    const maxFrames = 60;
     const run = () => {
       if (frame >= maxFrames) return;
       tick();
-      // Push updated positions to React state every frame for smooth animation
       setNodes([...nodesRef.current]);
       frame++;
       animRef.current = requestAnimationFrame(run);

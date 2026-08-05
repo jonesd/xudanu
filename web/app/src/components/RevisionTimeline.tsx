@@ -9,13 +9,7 @@ interface RevisionTimelineProps {
 
 function formatDate(ts: number): string {
   if (ts === 0) return "unknown date";
-  return new Date(ts * 1000).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return new Date(ts * 1000).toISOString().slice(0, 10);
 }
 
 export function RevisionTimeline({ workId, client, onViewRevision }: RevisionTimelineProps) {

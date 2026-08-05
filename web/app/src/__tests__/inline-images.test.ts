@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { insertInlineImages } from "../components/CollaborativeEditor";
+import { insertInlineImages } from "../components/editor-dom-utils";
 
 function makeEditor(text: string): HTMLElement {
   const el = document.createElement("div");

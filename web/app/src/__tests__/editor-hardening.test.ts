@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateSpanRanges } from "../components/CollaborativeEditor";
+import { validateSpanRanges } from "../components/editor-dom-utils";
 import type { SpanRangePayload } from "../api/crdt_sync";
 
 function mkSpan(flat_start: number, flat_end: number, source = 1): SpanRangePayload {

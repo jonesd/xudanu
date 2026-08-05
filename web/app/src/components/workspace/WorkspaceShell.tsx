@@ -393,7 +393,7 @@ export function WorkspaceShell() {
             title: match.title || `Work 0x${workBeId.toString(16)}`,
             author: identityName,
             collection: null,
-            publishedAt: match.updated_at ? new Date(match.updated_at * 1000).toLocaleDateString() : null,
+            publishedAt: match.updated_at ? new Date(match.updated_at * 1000).toISOString().slice(0, 10) : null,
             versionLabel: match.revision_count ? `v${match.revision_count}` : null,
           };
           setWorkMeta(meta);
@@ -1732,7 +1732,7 @@ export function WorkspaceShell() {
                           key={w.work_id}
                           className={`ws-concept-item ${w.work_id === workBeId ? "active" : ""}`}
                           onClick={() => selectWork(w.work_id)}
-                          title={w.updated_at ? `${w.is_starred ? "\u2605 Pinned \u00b7 " : ""}Updated ${new Date(w.updated_at * 1000).toLocaleDateString()}` : (w.is_starred ? "\u2605 Pinned" : undefined)}
+                          title={w.updated_at ? `${w.is_starred ? "\u2605 Pinned \u00b7 " : ""}Updated ${new Date(w.updated_at * 1000).toISOString().slice(0, 10)}` : (w.is_starred ? "\u2605 Pinned" : undefined)}
                         >
                           <span
                             onClick={async (e) => {
@@ -1887,7 +1887,7 @@ export function WorkspaceShell() {
                         </div>
                         <div className="ws-work-meta">
                           <code>0x{w.work_id.toString(16)}</code>
-                          {w.updated_at && <span>· updated {new Date(w.updated_at * 1000).toLocaleDateString()}</span>}
+                          {w.updated_at && <span>· updated {new Date(w.updated_at * 1000).toISOString().slice(0, 10)}</span>}
                           {w.revision_count > 0 && <span>· v{w.revision_count}</span>}
                           <span>· {kind}</span>
                           {lic !== "all-rights-reserved" && licInfo && (
@@ -2313,7 +2313,7 @@ export function WorkspaceShell() {
                     <button type="button" className="ws-sel-btn" onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleToggleBlock("code_block", "")}
                       title="Code block">&lt;/&gt;</button>
-                    <span className="ws-sel-sep" />
+                    <span className="ws-sel-sep" style={{ marginLeft: "auto" }} />
                     <button type="button" className="ws-sel-btn" onMouseDown={(e) => e.preventDefault()}
                       disabled={narrating}
                       onClick={async () => {

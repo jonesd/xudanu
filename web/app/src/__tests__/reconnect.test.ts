@@ -13,9 +13,8 @@ describe("WS reconnect backoff (F1)", () => {
   it("nth reconnect delay follows exponential backoff envelope", () => {
     const client = new CrdtSyncClient("ws://test", 1);
 
+    const fastSchedule = [200, 500, 1000];
     for (let attempt = 0; attempt < 6; attempt++) {
-      const expectedBase = Math.min(500 * Math.pow(2, attempt), 10000);
-
       for (let sample = 0; sample < 50; sample++) {
         const delaySpy = vi.spyOn(globalThis, "setTimeout");
         vi.spyOn(client as any, "connect").mockImplementation(() => {});
@@ -27,10 +26,13 @@ describe("WS reconnect backoff (F1)", () => {
         expect(delaySpy).toHaveBeenCalledTimes(1);
         const delay = delaySpy.mock.calls[0][1] as number;
 
-        const lowerBound = expectedBase * 0.75;
-        const upperBound = expectedBase * 1.25;
-        expect(delay).toBeGreaterThanOrEqual(lowerBound);
-        expect(delay).toBeLessThanOrEqual(upperBound);
+        if (attempt < 3) {
+          expect(delay).toBe(fastSchedule[attempt]);
+        } else {
+          const expectedBase = Math.min(500 * Math.pow(2, attempt), 10000);
+          expect(delay).toBeGreaterThanOrEqual(expectedBase * 0.75);
+          expect(delay).toBeLessThanOrEqual(expectedBase * 1.25);
+        }
 
         delaySpy.mockRestore();
         vi.clearAllTimers();

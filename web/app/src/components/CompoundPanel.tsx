@@ -168,7 +168,7 @@ export function CompoundPanel({
                     const by = sr.placed_by != null ? `club:${sr.placed_by.toString(16).padStart(4, "0")}` : "unknown";
                     return (
                       <span className="compound-placed-meta" title={`Placed by ${by} on ${date.toLocaleString()}`}>
-                        {"\u00B7"} {by} {"\u00B7"} {date.toLocaleDateString()}
+                        {"\u00B7"} {by} {"\u00B7"} {date.toISOString().slice(0, 10)}
                       </span>
                     );
                   })()}
