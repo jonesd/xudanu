@@ -255,6 +255,7 @@ export function WorkspaceShell() {
     canEdit,
     attributionSpans,
     attributionLogStatus,
+    refreshAttribution,
     createWork,
     fetchWorkList,
     clientRef,
@@ -266,7 +267,6 @@ export function WorkspaceShell() {
     login,
     createIdentity,
     logout,
-    refreshAttribution,
     reconnectAttempt,
     switchingWork,
   } = crdt;
@@ -1505,11 +1505,21 @@ export function WorkspaceShell() {
     }
   }, [selectionRange, workBeId, clientRef, text, workMeta, rightPanelTab, loadTrailsForWork]);
 
+  const resolvedAttributionSpans = useMemo(() => {
+    if (!identity) return attributionSpans;
+    return attributionSpans.map(span => {
+      if (!span.author_display_name && identity.club_id && span.author_club_id === identity.club_id) {
+        return { ...span, author_display_name: identity.display_name };
+      }
+      return span;
+    });
+  }, [attributionSpans, identity]);
+
   const authorStats = useMemo(() => {
     type Entry = { name: string; chars: number; pct: number };
     const byName = new Map<string, number>();
     let total = 0;
-    for (const span of attributionSpans) {
+    for (const span of resolvedAttributionSpans) {
       const name = span.author_display_name || "Anonymous";
       const len = span.end - span.start;
       byName.set(name, (byName.get(name) || 0) + len);
@@ -1520,7 +1530,7 @@ export function WorkspaceShell() {
       .map(([name, chars]) => ({ name, chars, pct: (chars / total) * 100 }))
       .sort((a, b) => b.chars - a.chars);
     return entries;
-  }, [attributionSpans]);
+  }, [resolvedAttributionSpans]);
 
   const filteredWorks = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -2592,7 +2602,7 @@ export function WorkspaceShell() {
                     else setSelectionRange(null);
                   }}
                   connected={connected}
-                  attributionSpans={attributionSpans}
+                  attributionSpans={resolvedAttributionSpans}
                   editable={canEdit}
                   readingMode={editorMode === "reading"}
                   fontSize={14}
@@ -3024,7 +3034,7 @@ export function WorkspaceShell() {
 
                 {/* Full detailed attribution — security-critical view */}
                 <AttributionPanel
-                  spans={attributionSpans}
+                  spans={resolvedAttributionSpans}
                   logStatus={attributionLogStatus}
                   documentLength={text.length}
                   visible={true}

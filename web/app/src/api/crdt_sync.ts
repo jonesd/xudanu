@@ -1836,9 +1836,7 @@ export class CrdtSyncClient {
 
   private async onOpen(): Promise<void> {
     console.log(`[ws] connected at ${new Date().toISOString()}`);
-    this.connected = true;
     this.reconnectAttempts = 0;
-    this.connectionListeners.forEach((cb) => cb(true));
 
     this.heartbeatTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
@@ -1855,12 +1853,14 @@ export class CrdtSyncClient {
 
         const who = await this.checkWhoAmI();
         if (!who && !ticketOk) {
-          // Only login as public if ticket auth also failed
           await this.sendRequest("session_login_public");
         }
 
         await this.tryOpenWork();
         this.checkAdminStatus().catch(() => {});
+
+        this.connected = true;
+        this.connectionListeners.forEach((cb) => cb(true));
         return;
       } catch (e) {
         if (attempt < 2) {
