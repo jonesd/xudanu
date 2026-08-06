@@ -1836,7 +1836,9 @@ export class CrdtSyncClient {
 
   private async onOpen(): Promise<void> {
     console.log(`[ws] connected at ${new Date().toISOString()}`);
+    this.connected = true;
     this.reconnectAttempts = 0;
+    this.connectionListeners.forEach((cb) => cb(true));
 
     this.heartbeatTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
