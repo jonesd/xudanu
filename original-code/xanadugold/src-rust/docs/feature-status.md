@@ -286,7 +286,7 @@
 
 | Feature | Status | Details |
 |---------|:------:|---------|
-| Global dark mode | ❌ | Only debug panel is dark; no global toggle |
+| Global dark mode | ✅ | Light/dark/auto theme support with picker |
 | Mobile/responsive | ⚠️ | Basic responsive layout; not fully mobile-optimized |
 | Spatial document layout | ❌ | No multi-zone page layout for content placement |
 | Awareness bar | ❌ | Presence bar removed during UI consolidation |
