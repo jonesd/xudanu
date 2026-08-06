@@ -2875,7 +2875,7 @@ export function WorkspaceShell() {
                 </div>
 
                   {/* Where is this used? (backfollow) */}
-                  {workBeId !== null && (
+                  {(
                     <div className="ws-conn-section">
                       <div className="ws-conn-header" style={{ flexDirection: "row", justifyContent: "space-between" }}>
                         <span>Where is this used?</span>
@@ -2919,7 +2919,7 @@ export function WorkspaceShell() {
                   )}
 
                   {/* Provenance chain */}
-                  {workBeId !== null && (
+                  {(
                     <div className="ws-conn-section">
                       <div className="ws-conn-header" style={{ flexDirection: "row", justifyContent: "space-between" }}>
                         <span>Provenance chain</span>
