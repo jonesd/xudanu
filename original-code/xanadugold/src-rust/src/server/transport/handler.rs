@@ -689,7 +689,8 @@ async fn ws_handler(
             .get("origin")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
-        if !allowed.contains(origin) {
+        let is_allowed = allowed.iter().any(|a| a == "*" || a == origin);
+        if !is_allowed {
             tracing::warn!(
                 target: "xudanu::security",
                 origin = origin,

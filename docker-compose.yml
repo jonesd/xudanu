@@ -48,11 +48,7 @@ services:
       - --server-description
       - "Alice's server — content publisher"
       - --allowed-origin
-      - "http://localhost:8081"
-      - --allowed-origin
-      - "http://localhost:8082"
-      - --allowed-origin
-      - "http://localhost:8083"
+      - "*"
     networks:
       xudanu-net:
         aliases:
@@ -82,11 +78,7 @@ services:
       - --server-description
       - "Bob's server — commentator and transcluder"
       - --allowed-origin
-      - "http://localhost:8081"
-      - --allowed-origin
-      - "http://localhost:8082"
-      - --allowed-origin
-      - "http://localhost:8083"
+      - "*"
     networks:
       xudanu-net:
         aliases:
@@ -116,11 +108,7 @@ services:
       - --server-description
       - "Carol's server — newcomer, discovers and transcludes"
       - --allowed-origin
-      - "http://localhost:8081"
-      - --allowed-origin
-      - "http://localhost:8082"
-      - --allowed-origin
-      - "http://localhost:8083"
+      - "*"
     networks:
       xudanu-net:
         aliases:
