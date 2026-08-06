@@ -363,6 +363,7 @@ pub struct Server {
     /// FR-23: Revision metadata per work
     revisions: HashMap<BeId, Vec<crate::persist::manifest::RevisionMeta>>,
     demo_signing_keys: HashMap<BeId, ed25519_dalek::SigningKey>,
+    cached_signing_keys: HashMap<BeId, ed25519_dalek::SigningKey>,
     wal: crate::persist::wal::WalLog,
     /// Errors encountered during data restoration. When non-empty,
     /// auto_checkpoint is SUPPRESSED to prevent overwriting good on-disk
@@ -915,6 +916,7 @@ impl Server {
             wal_deleted_annotations: HashMap::new(),
             revisions: HashMap::new(),
             demo_signing_keys: HashMap::new(),
+            cached_signing_keys: HashMap::new(),
             wal: crate::persist::wal::WalLog::disabled(),
             restore_errors: Vec::new(),
             trusted_server_registry: None,
@@ -12860,7 +12862,22 @@ impl Server {
             "redeemed session ticket for club {:x} (rolling renewal)",
             club_id
         );
+
+        if let Some(signing_key) = self.cached_signing_keys.get(&club_id) {
+            if let Some(session) = self.sessions.get_mut(&session_id) {
+                session.set_club_signing_key(Some(signing_key.clone()));
+                tracing::info!(
+                    "restored signing key for club {:x} from cache during ticket redemption",
+                    club_id
+                );
+            }
+        }
+
         Ok((clubs, new_ticket))
+    }
+
+    pub fn cache_signing_key(&mut self, club_id: BeId, key: ed25519_dalek::SigningKey) {
+        self.cached_signing_keys.insert(club_id, key);
     }
 
     fn validate_endorsement(
@@ -15461,6 +15478,7 @@ pub(crate) mod persist_snapshot {
                 wal_deleted_annotations: HashMap::new(),
                 revisions: HashMap::new(),
                 demo_signing_keys: HashMap::new(),
+                cached_signing_keys: HashMap::new(),
                 consequence_tracker: Arc::new(ConsequenceTracker::new()),
                 write_barrier: Arc::new(WriteBarrier::new()),
                 wal: crate::persist::wal::WalLog::disabled(),

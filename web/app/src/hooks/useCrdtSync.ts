@@ -564,6 +564,12 @@ export function useCrdtSync(
 
   const logout = useCallback(() => {
     setAuthenticated(false);
+    setIdentity(null);
+    try {
+      localStorage.removeItem("xudanu_session_ticket");
+      localStorage.removeItem("xudanu_identity_cache");
+      localStorage.removeItem("xudanu_login_club");
+    } catch { /* no-op */ }
     fetch("/auth/logout", { method: "POST" }).catch(() => {});
     const client = clientRef.current;
     if (client) {

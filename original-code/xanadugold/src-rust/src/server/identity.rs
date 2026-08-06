@@ -663,6 +663,7 @@ impl Server {
                         if let Some(encrypted_key) = club.encrypted_signing_key() {
                             match decrypt_signing_key(encrypted_key, password_bytes) {
                                 Ok(signing_key) => {
+                                    self.cache_signing_key(club_id, signing_key.clone());
                                     if let Some(session) = self.sessions.get_mut(&session_id) {
                                         session.set_club_signing_key(Some(signing_key));
                                     }
