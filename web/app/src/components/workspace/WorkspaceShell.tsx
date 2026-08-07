@@ -194,6 +194,7 @@ export function WorkspaceShell() {
   const [epubImporting, setEpubImporting] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [demoTrigger, setDemoTrigger] = useState(false);
+  const [isPublished, setIsPublished] = useState(false);
   const [crossServerBacklinks, setCrossServerBacklinks] = useState<CrossServerBacklinkPayload[]>([]);
   const [whereUsed, setWhereUsed] = useState<{ edition_ids: number[]; work_ids: number[] } | null>(null);
   const [whereUsedLoading, setWhereUsedLoading] = useState(false);
@@ -269,6 +270,7 @@ export function WorkspaceShell() {
     logout,
     reconnectAttempt,
     switchingWork,
+    publicClubId,
   } = crdt;
 
   // Load blob elements from server when work changes
@@ -414,6 +416,7 @@ export function WorkspaceShell() {
           setWorkMeta(meta);
           try { localStorage.setItem(`xudanu_meta_${workBeId}`, JSON.stringify(meta)); } catch { /* no-op */ }
           setFollowState((prev) => ({ ...prev, following: !!match.is_starred }));
+          setIsPublished(!!match.read_club && match.read_club === publicClubId);
         } else {
           // Work not in the list — still try to open it (it may be readable)
           setWorkMeta({
@@ -1920,6 +1923,11 @@ export function WorkspaceShell() {
                               {licInfo.short}
                             </span>
                           )}
+                          {w.read_club != null && w.read_club === publicClubId ? (
+                            <span style={{ color: "#3fb950", fontSize: 9, fontWeight: 600 }}>· 🌍 Public</span>
+                          ) : (
+                            <span style={{ color: "#8b949e", fontSize: 9 }}>· 🔒 Private</span>
+                          )}
                         </div>
                         {pickerKindFor === w.work_id && (
                           <div className="ws-picker-kind-menu" onClick={(e) => e.stopPropagation()}>
@@ -2080,6 +2088,33 @@ export function WorkspaceShell() {
                       title={editorMode === "authoring" ? "Switch to reading mode (hides markers)" : "Switch to authoring mode (shows markers)"}
                     >
                       {editorMode === "authoring" ? "📖" : "✏️"}
+                    </button>
+                  )}
+                  {canEdit && (
+                    <button
+                      className={`ws-action-btn ${isPublished ? "active" : ""}`}
+                      style={isPublished ? { background: "rgba(63, 185, 80, 0.15)", borderColor: "rgba(63, 185, 80, 0.4)", color: "#3fb950" } : {}}
+                      title={isPublished ? "Public — anyone on this server can read this work. Click to make private." : "Private — only you can read this work. Click to publish."}
+                      onClick={async () => {
+                        if (isPublished) {
+                          if (!confirm("Make this work private? Other users will no longer see it.")) return;
+                          try {
+                            await clientRef.current?.sendRequest("work_set_read_club", { work_id: workBeId, club_id: 0 });
+                            setIsPublished(false);
+                            showToast("Work is now private");
+                          } catch { showToast("Failed to make private"); }
+                        } else {
+                          const pubClub = publicClubId || 1000;
+                          try {
+                            await clientRef.current?.sendRequest("work_set_read_club", { work_id: workBeId, club_id: pubClub });
+                            await clientRef.current?.sendRequest("work_set_edit_club", { work_id: workBeId, club_id: pubClub });
+                            setIsPublished(true);
+                            showToast("Work published — visible to all users on this server");
+                          } catch { showToast("Publish failed"); }
+                        }
+                      }}
+                    >
+                      {isPublished ? "🌍 Public" : "🔒 Private"}
                     </button>
                   )}
                   {canEdit && (
@@ -3055,6 +3090,21 @@ export function WorkspaceShell() {
             )}
             {rightPanelTab === "connections" && (
               <div className="ws-connections-tab">
+                {canEdit && workBeId !== null && (
+                  <button
+                    className="ws-action-btn"
+                    style={{ width: "100%", marginBottom: 8, justifyContent: "center" }}
+                    onClick={() => {
+                      if (!selectionRange) {
+                        setSelectionRange({ start: 0, end: 0 });
+                      }
+                      handleOpenLinkCreator();
+                    }}
+                    title="Create a link to another document"
+                  >
+                    + Add Link
+                  </button>
+                )}
                 {/* Link type filter */}
                 {transclusion.links.length > 0 && (
                   <div className="ws-link-filters">
