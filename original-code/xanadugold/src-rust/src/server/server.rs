@@ -3197,14 +3197,34 @@ impl Server {
                     .unwrap_or_else(|| "Unknown Historical Author".to_string());
                 (Some(ha_name), historical_author_id)
             } else {
-                self.clubs
+                let by_key = self
+                    .clubs
                     .iter()
                     .find(|(_, club)| match club.encrypted_signing_key() {
                         Some(ek) => ek.verifying_key == sp.provenance.author_public_key,
                         None => false,
                     })
-                    .map(|(id, club)| (club.display_name().map(|s| s.to_string()), Some(*id)))
-                    .unwrap_or((None, None))
+                    .map(|(id, club)| (club.display_name().map(|s| s.to_string()), Some(*id)));
+
+                if let Some(result) = by_key {
+                    result
+                } else if let Some(ep) = element_prov {
+                    let club_id = ep.author_club_id;
+                    let name = self
+                        .clubs
+                        .get(&club_id)
+                        .and_then(|c| c.display_name().map(|s| s.to_string()))
+                        .unwrap_or_else(|| {
+                            self.club_names
+                                .iter()
+                                .find(|(_, id)| **id == club_id)
+                                .map(|(name, _)| name.clone())
+                                .unwrap_or_else(|| format!("club:{:04x}", club_id))
+                        });
+                    (Some(name), Some(club_id))
+                } else {
+                    (None, None)
+                }
             };
 
             let (char_start, char_end) = elem_to_char(sp.start, sp.end);
