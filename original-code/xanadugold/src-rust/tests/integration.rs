@@ -11575,3 +11575,145 @@ fn image_insert_end_to_end() {
         result.err()
     );
 }
+
+// ============================================================
+// Public works list endpoint (/api/public/works)
+// ============================================================
+
+#[tokio::test]
+async fn public_works_list_returns_empty_for_fresh_server() {
+    let server = Server::new();
+    let state = AppState::new(server).shared();
+    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://{}/api/public/works", addr))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["api_version"], 1);
+    assert_eq!(body["implementation"], "xudanu");
+    assert!(body["works"].is_array());
+    assert_eq!(body["works"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn public_works_list_returns_only_public_works() {
+    let mut server = Server::new();
+    let sid = server.connect();
+    server.login_public(sid).unwrap();
+
+    let public_work = server
+        .create_work(sid, xudanu::edition::Edition::from_text("Public content"))
+        .unwrap();
+
+    let state = AppState::new(server).shared();
+    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://{}/api/public/works", addr))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let works = body["works"].as_array().unwrap();
+    assert!(works.len() >= 1, "should list public works");
+    let found = works.iter().any(|w| w["title"] == "Public content");
+    assert!(found, "public work should appear in list");
+}
+
+#[tokio::test]
+async fn public_works_list_has_cors_headers() {
+    let server = Server::new();
+    let state = AppState::new(server).shared();
+    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://{}/api/public/works", addr))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers().get("access-control-allow-origin").unwrap(),
+        "*"
+    );
+    assert!(resp
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .contains("application/json"));
+}
+
+#[tokio::test]
+async fn public_works_list_includes_work_metadata() {
+    let mut server = Server::new();
+    let sid = server.connect();
+    server.login_public(sid).unwrap();
+    let work_id = server
+        .create_work(
+            sid,
+            xudanu::edition::Edition::from_text(
+                "Test essay with enough content to verify metadata",
+            ),
+        )
+        .unwrap();
+    let pub_club = server.public_club_id();
+    server.work_publish(sid, work_id).unwrap();
+
+    let state = AppState::new(server).shared();
+    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://{}/api/public/works", addr))
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let works = body["works"].as_array().unwrap();
+    assert_eq!(works.len(), 1);
+    let work = &works[0];
+    assert!(work["work_id"].is_string(), "work_id should be hex string");
+    assert!(work["title"].is_string(), "title should be present");
+    assert!(
+        work["revision"].is_number(),
+        "revision count should be present"
+    );
+    assert!(
+        work["char_count"].is_number(),
+        "char_count should be present"
+    );
+    assert!(
+        work["char_count"].as_u64().unwrap() > 0,
+        "char_count should be positive"
+    );
+}

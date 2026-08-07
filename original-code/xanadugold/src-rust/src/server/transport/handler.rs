@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU16, Ordering};
 
 use crate::server::transport::shared::MAX_CSRF_TOKENS;
 
+use axum::http::HeaderValue;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -50,6 +51,7 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/.well-known/xudanu-server.json", get(well_known_handler))
         .route("/.well-known/xanadu-server.json", get(well_known_handler))
         .route("/api/public/work/{work_id}", get(public_work_handler))
+        .route("/api/public/works", get(public_works_list_handler))
         .route(
             "/api/public/work/{work_id}/range/{start}/{end}",
             get(public_work_range_handler),
@@ -130,6 +132,43 @@ async fn well_known_handler(State(state): State<SharedState>) -> impl IntoRespon
         ],
         json,
     )
+}
+
+async fn public_works_list_handler(
+    State(state): State<SharedState>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+) -> impl IntoResponse {
+    if !state.rate_limiter.check_get(addr.ip()) {
+        return (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            "rate limit exceeded",
+        )
+            .into_response();
+    }
+
+    let works = state.server.with_server_ref(|srv| srv.public_work_list());
+
+    let body = serde_json::json!({
+        "api_version": 1,
+        "implementation": "xudanu",
+        "works": works,
+    });
+
+    (
+        axum::http::StatusCode::OK,
+        [
+            (
+                axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+                HeaderValue::from_static("*"),
+            ),
+            (
+                axum::http::header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            ),
+        ],
+        axum::response::Json(body),
+    )
+        .into_response()
 }
 
 async fn public_work_handler(

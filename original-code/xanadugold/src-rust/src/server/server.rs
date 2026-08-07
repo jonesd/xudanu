@@ -4771,6 +4771,26 @@ impl Server {
         self.works.len()
     }
 
+    pub fn public_work_list(&self) -> Vec<serde_json::Value> {
+        let pub_club = self.system_clubs.public_club;
+        self.works
+            .iter()
+            .filter(|(_, ws)| ws.work.read_club() == Some(pub_club))
+            .map(|(id, ws)| {
+                let title = ws.title().to_string();
+                let revision = ws.work.revision_count();
+                let text = ws.work.current_edition().to_text();
+                let char_count = text.chars().count();
+                serde_json::json!({
+                    "work_id": format!("{:04x}", id),
+                    "title": title,
+                    "revision": revision,
+                    "char_count": char_count,
+                })
+            })
+            .collect()
+    }
+
     pub fn public_work_edition(&self, work_be_id: BeId) -> Result<serde_json::Value, ServerError> {
         let ws = self
             .works
