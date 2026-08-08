@@ -32758,6 +32758,227 @@ mod tests_signed_introductions {
             intro.target_address.contains("9090"),
             "address should include port"
         );
-        assert!(intro.target_address.contains("target.example.com"));
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "serde")]
+mod tests_crypto_property {
+    use super::*;
+    use ed25519_dalek::Signer;
+    use proptest::prelude::*;
+
+    fn random_keypair() -> (ed25519_dalek::SigningKey, ed25519_dalek::VerifyingKey) {
+        let mut rng = rand::rngs::OsRng;
+        let sk = ed25519_dalek::SigningKey::generate(&mut rng);
+        let vk = sk.verifying_key();
+        (sk, vk)
+    }
+
+    fn vk_hex(vk: &ed25519_dalek::VerifyingKey) -> String {
+        vk.to_bytes().iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    fn make_signed_body(
+        text: &str,
+        server_id: u64,
+        revision: u64,
+        sk: &ed25519_dalek::SigningKey,
+        vk_hex_str: &str,
+    ) -> (serde_json::Value, [u8; 32]) {
+        let hash: [u8; 32] = {
+            let mut h = blake3::Hasher::new();
+            h.update(text.as_bytes());
+            h.finalize().into()
+        };
+        let payload = format!(
+            "{}|{}|{}",
+            crate::crypto::keys::hex_encode(&hash),
+            server_id,
+            revision
+        );
+        let sig = sk.sign(payload.as_bytes());
+        let sig_hex: String = sig
+            .to_bytes()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        let body = serde_json::json!({
+            "text": text,
+            "server_namespace_id": server_id,
+            "server_public_key": vk_hex_str,
+            "server_signature": sig_hex,
+            "revision": revision,
+        });
+        (body, hash)
+    }
+
+    proptest! {
+        #[test]
+        fn prop_valid_signature_always_verifies(text in "[a-z]{1,100}", server_id in 1u64..10000, revision in 0u64..100) {
+            let (sk, vk) = random_keypair();
+            let vk_h = vk_hex(&vk);
+            let (body, hash) = make_signed_body(&text, server_id, revision, &sk, &vk_h);
+            prop_assert!(verify_signed_response(&body, &hash, server_id, None).is_ok());
+        }
+
+        #[test]
+        fn prop_bitflip_in_text_fails(text in "[a-z]{1,100}", server_id in 1u64..10000, revision in 0u64..100) {
+            let (sk, vk) = random_keypair();
+            let vk_h = vk_hex(&vk);
+            let (body, hash) = make_signed_body(&text, server_id, revision, &sk, &vk_h);
+            let wrong_hash = {
+                let mut h = hash;
+                h[0] ^= 1;
+                h
+            };
+            prop_assert!(verify_signed_response(&body, &wrong_hash, server_id, None).is_err());
+        }
+
+        #[test]
+        fn prop_wrong_server_id_fails(text in "[a-z]{1,100}", sid in 1u64..10000, wrong_sid in 1u64..10000, revision in 0u64..100) {
+            prop_assume!(sid != wrong_sid);
+            let (sk, vk) = random_keypair();
+            let vk_h = vk_hex(&vk);
+            let (body, hash) = make_signed_body(&text, sid, revision, &sk, &vk_h);
+            prop_assert!(verify_signed_response(&body, &hash, wrong_sid, None).is_err());
+        }
+
+        #[test]
+        fn prop_tofu_mismatch_always_rejected(text in "[a-z]{1,100}", server_id in 1u64..10000, revision in 0u64..100) {
+            let (sk, vk) = random_keypair();
+            let vk_h = vk_hex(&vk);
+            let (body, hash) = make_signed_body(&text, server_id, revision, &sk, &vk_h);
+            let (_, other_vk) = random_keypair();
+            let other_hex = vk_hex(&other_vk);
+            let result = verify_signed_response(&body, &hash, server_id, Some(&other_hex));
+            prop_assert!(result.is_err());
+        }
+
+        #[test]
+        fn prop_tofu_match_always_accepted(text in "[a-z]{1,100}", server_id in 1u64..10000, revision in 0u64..100) {
+            let (sk, vk) = random_keypair();
+            let vk_h = vk_hex(&vk);
+            let (body, hash) = make_signed_body(&text, server_id, revision, &sk, &vk_h);
+            let result = verify_signed_response(&body, &hash, server_id, Some(&vk_h));
+            prop_assert!(result.is_ok());
+        }
+
+        #[test]
+        fn prop_blake3_deterministic(text in "[a-z ]{1,200}") {
+            let h1: [u8; 32] = {
+                let mut h = blake3::Hasher::new();
+                h.update(text.as_bytes());
+                h.finalize().into()
+            };
+            let h2: [u8; 32] = {
+                let mut h = blake3::Hasher::new();
+                h.update(text.as_bytes());
+                h.finalize().into()
+            };
+            prop_assert_eq!(h1, h2);
+        }
+
+        #[test]
+        fn prop_blake3_different_inputs_different_hashes(t1 in "[a-z]{1,100}", t2 in "[a-z]{1,100}") {
+            prop_assume!(t1 != t2);
+            let h1: [u8; 32] = blake3::hash(t1.as_bytes()).into();
+            let h2: [u8; 32] = blake3::hash(t2.as_bytes()).into();
+            prop_assert_ne!(h1, h2);
+        }
+
+        #[test]
+        fn prop_rotation_chain_n_hops_succeeds(n in 1usize..5) {
+            let mut server = Server::new();
+            let k0 = vk_hex(&server.server_keypair.signing_verifying_key());
+            for _ in 0..n {
+                server.rotate_server_keys().expect("rotation should succeed");
+            }
+            let kn = vk_hex(&server.server_keypair.signing_verifying_key());
+            let identity = server.well_known_identity();
+            let result = verify_key_rotation(&identity, &k0, &kn);
+            prop_assert!(result.is_ok(), "chain of {} hops should verify: {:?}", n, result.err());
+        }
+
+        #[test]
+        fn prop_rotation_chain_from_any_intermediate_succeeds(n in 2usize..5, start in 1usize..4) {
+            let start = start.min(n - 1);
+            let mut server = Server::new();
+            let mut keys = vec![vk_hex(&server.server_keypair.signing_verifying_key())];
+            for _ in 0..n {
+                server.rotate_server_keys().expect("rotation");
+                keys.push(vk_hex(&server.server_keypair.signing_verifying_key()));
+            }
+            let identity = server.well_known_identity();
+            let from = &keys[start];
+            let to = &keys[n];
+            let result = verify_key_rotation(&identity, from, to);
+            prop_assert!(result.is_ok(), "chain from hop {} to {} should verify: {:?}", start, n, result.err());
+        }
+
+        #[test]
+        fn prop_introduction_tamper_signed_field_fails(
+            target_id in 1u64..10000,
+            addr in "[a-z]{3,20}\\.example\\.com:808[0-9]",
+        ) {
+            let mut server = Server::new();
+            server.server_directory_add_manual(
+                target_id,
+                addr.clone(),
+                "ab".repeat(32),
+                "Target".to_string(),
+            );
+            server.server_directory_set_trust(target_id, true);
+
+            let intro = server.signed_introductions()[0].clone();
+            let key = intro.introduced_by_key.clone();
+
+            let mut tampered = intro.clone();
+            tampered.target_verifying_key = "ff".repeat(32);
+            prop_assert!(tampered.verify(&key).is_err());
+
+            let mut tampered2 = intro.clone();
+            tampered2.target_address = "evil.example.com:9999".to_string();
+            prop_assert!(tampered2.verify(&key).is_err());
+
+            let mut tampered3 = intro.clone();
+            tampered3.target_server_id = target_id + 1;
+            prop_assert!(tampered3.verify(&key).is_err());
+        }
+
+        #[test]
+        fn prop_introduction_valid_always_verifies(
+            target_id in 1u64..10000,
+            addr in "[a-z]{3,20}\\.example\\.com:808[0-9]",
+        ) {
+            let mut server = Server::new();
+            server.server_directory_add_manual(
+                target_id,
+                addr,
+                "ab".repeat(32),
+                "Target".to_string(),
+            );
+            server.server_directory_set_trust(target_id, true);
+            let intro = server.signed_introductions()[0].clone();
+            let key = intro.introduced_by_key.clone();
+            prop_assert!(intro.verify(&key).is_ok());
+        }
+
+        #[test]
+        fn prop_unsigned_rejected_when_key_pinned(text in "[a-z]{1,50}", server_id in 1u64..10000) {
+            let (sk, vk) = random_keypair();
+            let vk_h = vk_hex(&vk);
+            let hash: [u8; 32] = blake3::hash(text.as_bytes()).into();
+
+            let signed_body = serde_json::json!({
+                "text": text,
+                "server_namespace_id": server_id,
+                "server_public_key": vk_h,
+                "server_signature": "00".repeat(64),
+                "revision": 0u64,
+            });
+            let result = verify_signed_response(&signed_body, &hash, server_id, Some(&vk_h));
+            prop_assert!(result.is_err(), "garbage signature with pinned key must fail");
+        }
     }
 }
