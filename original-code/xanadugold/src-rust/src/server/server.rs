@@ -1774,7 +1774,7 @@ impl Server {
             Ok(None) => {
                 tracing::warn!("cross-server response unsigned — accepting as legacy");
             }
-            Err(e) if e.contains("TOFU") => {
+            Err(e) if e.starts_with(TOFU_MISMATCH_PREFIX) => {
                 tracing::info!("TOFU key mismatch detected, checking for key rotation...");
                 let wk_url = format!(
                     "{}/.well-known/xudanu-server.json",
@@ -31738,6 +31738,8 @@ mod tests_ssrf_guard {
     }
 }
 
+const TOFU_MISMATCH_PREFIX: &str = "TOFU key mismatch";
+
 #[cfg(feature = "serde")]
 fn verify_signed_response(
     body: &serde_json::Value,
@@ -31785,7 +31787,8 @@ fn verify_signed_response(
     if let Some(expected) = expected_key {
         if !expected.is_empty() && expected != pub_key_hex {
             return Err(format!(
-                "TOFU key mismatch: pinned key does not match response key"
+                "{}: pinned key does not match response key",
+                TOFU_MISMATCH_PREFIX
             ));
         }
     }
@@ -31854,6 +31857,19 @@ fn verify_key_rotation(
     prev_vk
         .verify_strict(&payload_bytes, &sig)
         .map_err(|_| "key rotation signature verification failed".to_string())?;
+
+    let payload = crate::crypto::keys::KeyRotationPayload::decode(&payload_bytes)
+        .ok_or_else(|| "invalid rotation payload encoding".to_string())?;
+    let signed_new_key_hex: String = payload
+        .new_signing_key
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+    if signed_new_key_hex != new_key_hex {
+        return Err(
+            "rotation replay detected: signed payload new key does not match response key".into(),
+        );
+    }
 
     tracing::info!("key rotation verified: old key signed transition to new key");
     Ok(())
@@ -32286,6 +32302,40 @@ mod tests_key_rotation {
         assert!(
             new_vk.verify_strict(test_data, &signature).is_ok(),
             "server should sign with new key after rotation"
+        );
+    }
+
+    #[test]
+    fn test_rotation_replay_attack_rejected() {
+        let mut server_a = Server::new();
+        let old_vk_hex = vk_to_hex(&server_a.server_keypair.signing_verifying_key());
+        server_a
+            .rotate_server_keys()
+            .expect("rotation should succeed");
+        let real_new_vk_hex = vk_to_hex(&server_a.server_keypair.signing_verifying_key());
+
+        let legitimate_identity = server_a.well_known_identity();
+
+        let mut attacker_identity = legitimate_identity.clone();
+        let attacker_key = "de".repeat(32);
+        attacker_identity["key_rotation"]["new_verifying_key"] = serde_json::json!(attacker_key);
+
+        let result = verify_key_rotation(&attacker_identity, &old_vk_hex, &attacker_key);
+        assert!(
+            result.is_err(),
+            "should reject rotation replay: signed payload new_signing_key != attacker key"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("replay") || err.contains("does not match"),
+            "error should mention replay or key mismatch: got {}",
+            err
+        );
+
+        let legit_result = verify_key_rotation(&legitimate_identity, &old_vk_hex, &real_new_vk_hex);
+        assert!(
+            legit_result.is_ok(),
+            "legitimate rotation should still verify"
         );
     }
 }
