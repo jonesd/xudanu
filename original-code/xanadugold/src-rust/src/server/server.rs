@@ -1581,47 +1581,28 @@ impl Server {
 
         let origin_server_id = body["server_namespace_id"].as_u64().unwrap_or(server_id);
 
-        if let (Some(sig_hex), Some(pub_key_hex)) = (
-            body["server_signature"].as_str(),
-            body["server_public_key"].as_str(),
-        ) {
-            let revision = body["revision"].as_u64().unwrap_or(0);
-            let sig_payload = format!(
-                "{}|{}|{}",
-                crate::crypto::keys::hex_encode(&content_hash),
-                origin_server_id,
-                revision
-            );
-            let sig_bytes = crate::crypto::keys::hex_decode(sig_hex).unwrap_or_default();
-            let pub_key_bytes = crate::crypto::keys::hex_decode(pub_key_hex).unwrap_or_default();
+        let expected_key = self.server_directory.get(server_id)
+            .map(|e| e.pinned_key.as_ref().unwrap_or(&e.verifying_key).as_str());
 
-            if pub_key_bytes.len() == 32 && sig_bytes.len() == 64 {
-                let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(
-                    pub_key_bytes.as_slice().try_into().unwrap(),
-                );
-                if let Ok(vk) = verifying_key {
-                    let sig_arr: [u8; 64] = sig_bytes.as_slice().try_into().unwrap();
-                    if let Ok(sig) = ed25519_dalek::Signature::from_slice(&sig_arr) {
-                        let verified = vk.verify_strict(sig_payload.as_bytes(), &sig).is_ok();
-                        if verified {
-                            tracing::info!("cross-server content signature verified");
-                        } else {
-                            tracing::warn!("cross-server content signature FAILED verification");
-                        }
-
-                        if let Some(entry) = self.server_directory.get(server_id) {
-                            if let Some(ref pinned) = entry.pinned_key {
-                                if pinned != pub_key_hex {
-                                    tracing::warn!(
-                                        "cross-server key mismatch: pinned={} response={}",
-                                        &pinned[..pinned.len().min(16)],
-                                        &pub_key_hex[..pub_key_hex.len().min(16)]
-                                    );
-                                }
-                            }
-                        }
+        match verify_signed_response(&body, &content_hash, origin_server_id, expected_key) {
+            Ok(Some(pub_key_hex)) => {
+                tracing::info!("cross-server content signature verified");
+                if let Some(entry) = self.server_directory.get_mut(server_id) {
+                    if entry.pinned_key.is_none() {
+                        entry.pinned_key = Some(pub_key_hex);
+                        let _ = self.server_directory_save();
+                        tracing::info!("TOFU: pinned server key for server_id={}", server_id);
                     }
                 }
+            }
+            Ok(None) => {
+                tracing::warn!("cross-server response unsigned — accepting as legacy");
+            }
+            Err(e) => {
+                tracing::warn!("cross-server signature verification failed: {} — rejecting", e);
+                return Err(ServerError::Internal(format!(
+                    "cross-server content verification failed: {}", e
+                )));
             }
         }
 
@@ -31532,5 +31513,252 @@ mod tests_ssrf_guard {
     #[test]
     fn test_resolve_rejects_zero_ip() {
         assert!(resolve_and_verify_host("0.0.0.0", 80).is_err());
+    }
+}
+
+#[cfg(feature = "serde")]
+fn verify_signed_response(
+    body: &serde_json::Value,
+    content_hash: &[u8; 32],
+    origin_server_id: u64,
+    expected_key: Option<&str>,
+) -> Result<Option<String>, String> {
+    let sig_hex = match body["server_signature"].as_str() {
+        Some(s) => s,
+        None => return Ok(None),
+    };
+    let pub_key_hex = match body["server_public_key"].as_str() {
+        Some(s) => s,
+        None => return Ok(None),
+    };
+
+    let revision = body["revision"].as_u64().unwrap_or(0);
+    let sig_payload = format!(
+        "{}|{}|{}",
+        crate::crypto::keys::hex_encode(content_hash),
+        origin_server_id,
+        revision
+    );
+
+    let sig_bytes = crate::crypto::keys::hex_decode(sig_hex)
+        .map_err(|e| format!("invalid signature hex: {}", e))?;
+    let pub_key_bytes = crate::crypto::keys::hex_decode(pub_key_hex)
+        .map_err(|e| format!("invalid key hex: {}", e))?;
+
+    if pub_key_bytes.len() != 32 || sig_bytes.len() != 64 {
+        return Err("malformed signature or key (expected 32-byte key, 64-byte signature)".into());
+    }
+
+    let vk = ed25519_dalek::VerifyingKey::from_bytes(
+        pub_key_bytes.as_slice().try_into().unwrap(),
+    )
+    .map_err(|_| "invalid Ed25519 verifying key".to_string())?;
+
+    let sig_arr: [u8; 64] = sig_bytes.as_slice().try_into().unwrap();
+    let sig = ed25519_dalek::Signature::from_slice(&sig_arr)
+        .map_err(|_| "invalid signature bytes".to_string())?;
+
+    if vk.verify_strict(sig_payload.as_bytes(), &sig).is_err() {
+        return Err("signature verification failed".into());
+    }
+
+    if let Some(expected) = expected_key {
+        if !expected.is_empty() && expected != pub_key_hex {
+            return Err(format!(
+                "TOFU key mismatch: pinned key does not match response key"
+            ));
+        }
+    }
+
+    Ok(Some(pub_key_hex.to_string()))
+}
+
+#[cfg(test)]
+#[cfg(feature = "serde")]
+mod tests_signature_enforcement {
+    use super::*;
+    use ed25519_dalek::Signer;
+
+    fn make_keypair() -> (
+        ed25519_dalek::SigningKey,
+        ed25519_dalek::VerifyingKey,
+    ) {
+        let mut csprng = rand::rngs::OsRng;
+        let sk = ed25519_dalek::SigningKey::generate(&mut csprng);
+        let vk = sk.verifying_key();
+        (sk, vk)
+    }
+
+    fn make_signed_response(
+        text: &str,
+        server_namespace_id: u64,
+        signing_key: &ed25519_dalek::SigningKey,
+        verifying_key_hex: &str,
+        revision: u64,
+    ) -> (serde_json::Value, [u8; 32]) {
+        let content_hash: [u8; 32] = {
+            let mut h = blake3::Hasher::new();
+            h.update(text.as_bytes());
+            h.finalize().into()
+        };
+
+        let sig_payload = format!(
+            "{}|{}|{}",
+            crate::crypto::keys::hex_encode(&content_hash),
+            server_namespace_id,
+            revision
+        );
+
+        let sig = signing_key.sign(sig_payload.as_bytes());
+        let sig_hex: String = sig.to_bytes().iter().map(|b| format!("{:02x}", b)).collect();
+
+        let body = serde_json::json!({
+            "text": text,
+            "server_namespace_id": server_namespace_id,
+            "server_public_key": verifying_key_hex,
+            "server_signature": sig_hex,
+            "revision": revision,
+        });
+
+        (body, content_hash)
+    }
+
+    fn vk_to_hex(vk: &ed25519_dalek::VerifyingKey) -> String {
+        vk.to_bytes().iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    #[test]
+    fn test_valid_signature_passes() {
+        let (sk, vk) = make_keypair();
+        let vk_hex = vk_to_hex(&vk);
+        let (body, hash) = make_signed_response("Hello world", 42, &sk, &vk_hex, 0);
+
+        let result = verify_signed_response(&body, &hash, 42, None);
+        assert!(result.is_ok(), "valid signature should pass: {:?}", result.err());
+        assert_eq!(result.unwrap(), Some(vk_hex));
+    }
+
+    #[test]
+    fn test_invalid_signature_rejected() {
+        let (sk, vk) = make_keypair();
+        let vk_hex = vk_to_hex(&vk);
+        let (body, hash) = make_signed_response("Hello world", 42, &sk, &vk_hex, 0);
+
+        let wrong_hash = [0xFFu8; 32];
+        let result = verify_signed_response(&body, &wrong_hash, 42, None);
+        assert!(result.is_err(), "should reject signature over wrong hash");
+        assert!(result.unwrap_err().contains("verification failed"));
+    }
+
+    #[test]
+    fn test_signature_with_wrong_key_rejected() {
+        let (sk1, vk1) = make_keypair();
+        let (_sk2, vk2) = make_keypair();
+        let vk1_hex = vk_to_hex(&vk1);
+        let vk2_hex = vk_to_hex(&vk2);
+
+        let (body, hash) = make_signed_response("Hello", 42, &sk1, &vk1_hex, 0);
+
+        let mut body2 = body.clone();
+        body2["server_public_key"] = serde_json::json!(vk2_hex);
+        let result = verify_signed_response(&body2, &hash, 42, None);
+        assert!(result.is_err(), "should reject when public key doesn't match signature");
+    }
+
+    #[test]
+    fn test_wrong_server_id_rejected() {
+        let (sk, vk) = make_keypair();
+        let vk_hex = vk_to_hex(&vk);
+        let (body, hash) = make_signed_response("Hello", 42, &sk, &vk_hex, 0);
+
+        let result = verify_signed_response(&body, &hash, 99, None);
+        assert!(result.is_err(), "should reject signature for wrong server_id");
+    }
+
+    #[test]
+    fn test_missing_signature_accepted_as_legacy() {
+        let body = serde_json::json!({
+            "text": "Hello",
+            "server_namespace_id": 42,
+        });
+        let hash = [0u8; 32];
+        let result = verify_signed_response(&body, &hash, 42, None);
+        assert!(result.is_ok(), "missing signature should be accepted as legacy");
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_tofu_key_mismatch_rejected() {
+        let (sk1, vk1) = make_keypair();
+        let vk1_hex = vk_to_hex(&vk1);
+        let (body, hash) = make_signed_response("Hello", 42, &sk1, &vk1_hex, 0);
+
+        let different_key_hex = "ab".repeat(32);
+        let result = verify_signed_response(&body, &hash, 42, Some(&different_key_hex));
+        assert!(result.is_err(), "should reject key mismatch");
+        assert!(result.unwrap_err().contains("TOFU"));
+    }
+
+    #[test]
+    fn test_tofu_key_match_passes() {
+        let (sk, vk) = make_keypair();
+        let vk_hex = vk_to_hex(&vk);
+        let (body, hash) = make_signed_response("Hello", 42, &sk, &vk_hex, 0);
+
+        let result = verify_signed_response(&body, &hash, 42, Some(&vk_hex));
+        assert!(result.is_ok(), "matching key should pass");
+    }
+
+    #[test]
+    fn test_tofu_first_key_returns_key_for_pinning() {
+        let (sk, vk) = make_keypair();
+        let vk_hex = vk_to_hex(&vk);
+        let (body, hash) = make_signed_response("Hello", 42, &sk, &vk_hex, 0);
+
+        let result = verify_signed_response(&body, &hash, 42, None);
+        assert!(result.is_ok());
+        let pinned_key = result.unwrap();
+        assert_eq!(pinned_key, Some(vk_hex));
+    }
+
+    #[test]
+    fn test_tofu_empty_expected_key_ignored() {
+        let (sk, vk) = make_keypair();
+        let vk_hex = vk_to_hex(&vk);
+        let (body, hash) = make_signed_response("Hello", 42, &sk, &vk_hex, 0);
+
+        let result = verify_signed_response(&body, &hash, 42, Some(""));
+        assert!(result.is_ok(), "empty expected key should be ignored (first connection)");
+    }
+
+    #[test]
+    fn test_malformed_signature_rejected() {
+        let body = serde_json::json!({
+            "text": "Hello",
+            "server_namespace_id": 42,
+            "server_public_key": "00112233",
+            "server_signature": "aabbccdd",
+            "revision": 0,
+        });
+        let hash = [0u8; 32];
+        let result = verify_signed_response(&body, &hash, 42, None);
+        assert!(result.is_err(), "malformed signature should be rejected");
+    }
+
+    #[test]
+    fn test_revision_in_signature_payload() {
+        let (sk, vk) = make_keypair();
+        let vk_hex = vk_to_hex(&vk);
+
+        let (body_rev0, hash) = make_signed_response("Hello", 42, &sk, &vk_hex, 0);
+        let result_rev0 = verify_signed_response(&body_rev0, &hash, 42, None);
+        assert!(result_rev0.is_ok(), "revision 0 should verify");
+
+        let (body_rev5, hash5) = make_signed_response("Hello v5", 42, &sk, &vk_hex, 5);
+        let result_rev5 = verify_signed_response(&body_rev5, &hash5, 42, None);
+        assert!(result_rev5.is_ok(), "revision 5 should verify");
+
+        let cross_result = verify_signed_response(&body_rev5, &hash, 42, None);
+        assert!(cross_result.is_err(), "revision 5 signature should not verify with revision 0 hash");
     }
 }
