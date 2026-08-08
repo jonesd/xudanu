@@ -11719,3 +11719,194 @@ async fn public_works_list_includes_work_metadata() {
         "char_count should be positive"
     );
 }
+
+fn start_mock_server(responses: Vec<String>) -> u16 {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for resp_body in responses {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 4096];
+                let _ = stream.read(&mut buf);
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        }
+    });
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    port
+}
+
+#[test]
+fn adversarial_signature_stripping_rejected() {
+    xudanu::server::server::set_allow_loopback(true);
+    let mut server_a = xudanu::server::Server::new();
+    server_a.set_server_namespace_id(100);
+    let text = "Signed content";
+    let hash: [u8; 32] = blake3::hash(text.as_bytes()).into();
+
+    let vk_hex: String = server_a
+        .server_public_signing_key()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+
+    let work_json = serde_json::json!({
+        "text": text,
+        "server_namespace_id": 100u64,
+        "server_public_key": vk_hex,
+        "server_signature": "ab".repeat(64),
+        "revision": 0u64,
+    });
+    let port = start_mock_server(vec![work_json.to_string()]);
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    let mut server_b = xudanu::server::Server::new();
+    server_b.server_directory_add_manual(
+        100,
+        format!("127.0.0.1:{}", port),
+        vk_hex,
+        "Alice".to_string(),
+    );
+    server_b.server_directory_set_trust(100, true);
+
+    let tumbler = format!("100.{:04x}.0", 0);
+    let result = server_b.resolve_cross_server_ref(&tumbler, hash);
+    assert!(result.is_err(), "forged signature should be rejected");
+}
+
+#[test]
+fn adversarial_unsigned_rejected_when_pinned() {
+    xudanu::server::server::set_allow_loopback(true);
+    let text = "Content without signature";
+    let hash: [u8; 32] = blake3::hash(text.as_bytes()).into();
+
+    let work_json = serde_json::json!({
+        "text": text,
+        "server_namespace_id": 200u64,
+    });
+
+    let port = start_mock_server(vec![work_json.to_string()]);
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    let mut server = xudanu::server::Server::new();
+    server.server_directory_add_manual(
+        200,
+        format!("127.0.0.1:{}", port),
+        "ab".repeat(32),
+        "Unsigned Server".to_string(),
+    );
+    server.server_directory_set_trust(200, true);
+
+    let tumbler = format!("200.{:04x}.0", 0);
+    let result = server.resolve_cross_server_ref(&tumbler, hash);
+    assert!(
+        result.is_err(),
+        "unsigned response from server with pinned key should be rejected"
+    );
+}
+
+#[test]
+fn adversarial_introduction_tamper_address_detected() {
+    let mut server_a = xudanu::server::Server::new();
+    let target_ns = server_a.server_namespace_id() + 50;
+    server_a.server_directory_add_manual(
+        target_ns,
+        "real.example.com:8080".to_string(),
+        "ab".repeat(32),
+        "Target".to_string(),
+    );
+    server_a.server_directory_set_trust(target_ns, true);
+
+    let intro = server_a.signed_introductions()[0].clone();
+    let key = intro.introduced_by_key.clone();
+
+    let mut tampered = intro.clone();
+    tampered.target_address = "evil.example.com:9999".to_string();
+    assert!(
+        tampered.verify(&key).is_err(),
+        "tampered address should fail introduction verification"
+    );
+
+    assert!(
+        intro.verify(&key).is_ok(),
+        "original introduction should still verify"
+    );
+}
+
+#[test]
+fn adversarial_rotation_replay_different_key_rejected() {
+    let mut server = xudanu::server::Server::new();
+    let old_vk_hex: String = server
+        .server_public_signing_key()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+
+    server.rotate_server_keys().expect("rotation");
+    let real_new_hex: String = server
+        .server_public_signing_key()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+
+    let identity = server.well_known_identity();
+
+    let attacker_key = "ee".repeat(32);
+    let mut tampered = identity.clone();
+    if let Some(chain) = tampered["rotation_chain"].as_array_mut() {
+        chain[0]["new_verifying_key"] = serde_json::json!(attacker_key);
+    }
+    tampered["key_rotation"]["new_verifying_key"] = serde_json::json!(attacker_key);
+
+    let result = xudanu::server::server::verify_key_rotation(&tampered, &old_vk_hex, &attacker_key);
+    assert!(
+        result.is_err(),
+        "rotation replay with different key must be rejected"
+    );
+
+    let legit_result =
+        xudanu::server::server::verify_key_rotation(&identity, &old_vk_hex, &real_new_hex);
+    assert!(
+        legit_result.is_ok(),
+        "legitimate rotation should still verify"
+    );
+}
+
+#[test]
+fn adversarial_blake3_hash_mismatch_rejected() {
+    xudanu::server::server::set_allow_loopback(true);
+
+    let text = "Real content";
+    let wrong_hash = [0xFFu8; 32];
+
+    let work_json = serde_json::json!({
+        "text": text,
+        "server_namespace_id": 300u64,
+    });
+
+    let port = start_mock_server(vec![work_json.to_string()]);
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    let mut server = xudanu::server::Server::new();
+    server.server_directory_add_manual(
+        300,
+        format!("127.0.0.1:{}", port),
+        "ab".repeat(32),
+        "Hash Test".to_string(),
+    );
+    server.server_directory_set_trust(300, true);
+
+    let tumbler = format!("300.{:04x}.0", 0);
+    let result = server.resolve_cross_server_ref(&tumbler, wrong_hash);
+    assert!(
+        result.is_err(),
+        "hash mismatch should be rejected (content tampering detected)"
+    );
+}

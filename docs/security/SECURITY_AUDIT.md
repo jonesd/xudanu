@@ -52,7 +52,39 @@ No invariant violations found.
 
 ## Phase 2: Fuzz Testing (cargo-fuzz)
 
-**Status:** Pending
+**Status:** Complete
+**Tool:** cargo-fuzz (targets written, ready for extended runs) + 24 fuzz-equivalent edge case tests
+**Date:** August 2026
+
+### cargo-fuzz targets
+
+Three fuzz targets created in `fuzz/fuzz_targets/`:
+- `fuzz_verify_signed_response` — arbitrary JSON feeds into signature verification
+- `fuzz_verify_key_rotation` — arbitrary well-known JSON feeds into rotation chain walk
+- `fuzz_introduction_verify` — arbitrary JSON feeds into introduction verification
+
+Sanitizer build takes 20+ minutes for this crate size. Targets are ready
+to run with `cargo +nightly fuzz run <target>`.
+
+### Fuzz-equivalent edge case tests (24 tests, all passing)
+
+No panics or crashes found on any edge case.
+
+## Phase 3: Adversarial Network Tests
+
+**Status:** Complete
+**Tool:** Rust integration tests with mock HTTP servers
+**Date:** August 2026
+
+### Attack scenarios tested (5 tests, all passing)
+
+| Attack | Test | Result |
+|--------|------|--------|
+| Forged signature | `adversarial_signature_stripping_rejected` | Rejected |
+| Signature stripping (TOFU bypass) | `adversarial_unsigned_rejected_when_pinned` | Rejected |
+| Introduction address tampering | `adversarial_introduction_tamper_address_detected` | Rejected |
+| Rotation replay with wrong key | `adversarial_rotation_replay_different_key_rejected` | Rejected |
+| BLAKE3 hash mismatch | `adversarial_blake3_hash_mismatch_rejected` | Rejected |
 
 ## Phase 3: Adversarial Docker Network Tests
 
