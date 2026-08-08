@@ -343,6 +343,74 @@ pub struct InlineTransclusionResult {
     pub source_titles: HashMap<BeId, String>,
 }
 
+const SIG_FAILURE_THRESHOLD: u32 = 5;
+const ROTATION_RATE_LIMIT: u32 = 3;
+const ROTATION_RATE_WINDOW_SECS: u64 = 3600;
+
+#[derive(Debug, Clone)]
+pub enum SecurityAlert {
+    None,
+    ConsecutiveSignatureFailures { server_id: u64, count: u32 },
+    RotationRateExceeded { server_id: u64, attempts: u32 },
+}
+
+#[derive(Debug, Default)]
+pub struct CrossServerSecurityTracker {
+    sig_failures: HashMap<u64, u32>,
+    rotation_attempts: HashMap<u64, (u32, u64)>,
+}
+
+impl CrossServerSecurityTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn record_sig_success(&mut self, server_id: u64) {
+        self.sig_failures.remove(&server_id);
+    }
+
+    pub fn record_sig_failure(&mut self, server_id: u64) -> SecurityAlert {
+        let count = self.sig_failures.entry(server_id).or_insert(0);
+        *count += 1;
+        if *count >= SIG_FAILURE_THRESHOLD {
+            tracing::warn!(
+                target: "xudanu::security",
+                server_id,
+                count = *count,
+                event = "SECURITY:consecutive_sig_failures",
+                "threshold reached: possible brute-force signature attack"
+            );
+            return SecurityAlert::ConsecutiveSignatureFailures {
+                server_id,
+                count: *count,
+            };
+        }
+        SecurityAlert::None
+    }
+
+    pub fn check_rotation_rate(&mut self, server_id: u64, now: u64) -> Result<(), String> {
+        let entry = self.rotation_attempts.entry(server_id).or_insert((0, now));
+        if now.saturating_sub(entry.1) > ROTATION_RATE_WINDOW_SECS {
+            *entry = (0, now);
+        }
+        entry.0 += 1;
+        if entry.0 > ROTATION_RATE_LIMIT {
+            tracing::warn!(
+                target: "xudanu::security",
+                server_id,
+                attempts = entry.0,
+                event = "SECURITY:rotation_rate_exceeded",
+                "rate limit exceeded: possible rotation-based attack"
+            );
+            return Err(format!(
+                "rotation rate limit exceeded for server {} (max {} per {}s)",
+                server_id, ROTATION_RATE_LIMIT, ROTATION_RATE_WINDOW_SECS
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// A signed introduction: Server A vouches for Server B's identity.
 /// Published at /api/introductions so other servers can verify
 /// new servers through a web of trust.
@@ -478,6 +546,7 @@ pub struct Server {
     restore_errors: Vec<String>,
     trusted_server_registry: Option<crate::crypto::server_identity::TrustedServerRegistry>,
     signed_introductions: Vec<SignedIntroduction>,
+    security_tracker: CrossServerSecurityTracker,
     pub(crate) server_name: String,
     server_description: String,
     server_namespace_id: u64,
@@ -1028,6 +1097,7 @@ impl Server {
             restore_errors: Vec::new(),
             trusted_server_registry: None,
             signed_introductions: Vec::new(),
+            security_tracker: CrossServerSecurityTracker::new(),
             server_name: "Xudanu Server".to_string(),
             server_description: String::new(),
             server_namespace_id: 0,
@@ -1809,6 +1879,7 @@ impl Server {
         match verify_signed_response(&body, &content_hash, origin_server_id, expected_key) {
             Ok(Some(pub_key_hex)) => {
                 tracing::info!("cross-server content signature verified");
+                self.security_tracker.record_sig_success(server_id);
                 if let Some(entry) = self.server_directory.get_mut(server_id) {
                     if entry.pinned_key.is_none() {
                         entry.pinned_key = Some(pub_key_hex);
@@ -1824,7 +1895,8 @@ impl Server {
                     .map(|e| e.pinned_key.is_some() || (!e.verifying_key.is_empty()))
                     .unwrap_or(false);
                 if has_pin {
-                    tracing::warn!("cross-server response unsigned but key is pinned — rejecting (possible signature stripping)");
+                    tracing::warn!(target: "xudanu::security", server_id, event = "SECURITY:sig_stripping", "unsigned response with pinned key — possible signature stripping");
+                    self.security_tracker.record_sig_failure(server_id);
                     return Err(ServerError::Internal(
                         "unsigned response from server with pinned key — possible signature stripping attack".into(),
                     ));
@@ -1835,6 +1907,10 @@ impl Server {
             }
             Err(e) if e.starts_with(TOFU_MISMATCH_PREFIX) => {
                 tracing::info!("TOFU key mismatch detected, checking for key rotation...");
+                let now = Self::current_timestamp_secs();
+                if let Err(rate_err) = self.security_tracker.check_rotation_rate(server_id, now) {
+                    return Err(ServerError::Internal(rate_err));
+                }
                 let wk_url = format!(
                     "{}/.well-known/xudanu-server.json",
                     base_url.trim_end_matches('/')
@@ -1851,13 +1927,15 @@ impl Server {
                         match verify_key_rotation(&wk_body, &pinned, &response_key) {
                             Ok(()) => {
                                 tracing::info!("key rotation accepted — updating pinned key");
+                                self.security_tracker.record_sig_success(server_id);
                                 if let Some(entry) = self.server_directory.get_mut(server_id) {
                                     entry.pinned_key = Some(response_key.clone());
                                     let _ = self.server_directory_save();
                                 }
                             }
                             Err(re) => {
-                                tracing::warn!("key rotation verification failed: {}", re);
+                                tracing::warn!(target: "xudanu::security", server_id, event = "SECURITY:rotation_failed", "rotation verification failed: {}", re);
+                                self.security_tracker.record_sig_failure(server_id);
                                 return Err(ServerError::Internal(format!(
                                     "cross-server key changed and rotation verification failed: {}",
                                     re
@@ -1866,7 +1944,8 @@ impl Server {
                         }
                     }
                     Err(fe) => {
-                        tracing::warn!("failed to fetch well-known for rotation check: {}", fe);
+                        tracing::warn!(target: "xudanu::security", server_id, event = "SECURITY:wk_fetch_failed", "failed to fetch well-known: {}", fe);
+                        self.security_tracker.record_sig_failure(server_id);
                         return Err(ServerError::Internal(format!(
                             "cross-server content verification failed: {}",
                             e
@@ -1876,9 +1955,24 @@ impl Server {
             }
             Err(e) => {
                 tracing::warn!(
+                    target: "xudanu::security",
+                    server_id,
+                    event = "SECURITY:sig_failed",
                     "cross-server signature verification failed: {} — rejecting",
                     e
                 );
+                let alert = self.security_tracker.record_sig_failure(server_id);
+                if let SecurityAlert::ConsecutiveSignatureFailures { count, .. } = alert {
+                    tracing::error!(
+                        target: "xudanu::security",
+                        server_id,
+                        count,
+                        event = "SECURITY:brute_force_alert",
+                        "BRUTE FORCE ALERT: {} consecutive signature failures for server {}",
+                        count,
+                        server_id
+                    );
+                }
                 return Err(ServerError::Internal(format!(
                     "cross-server content verification failed: {}",
                     e
@@ -15838,6 +15932,7 @@ pub(crate) mod persist_snapshot {
                 restore_errors: Vec::new(),
                 trusted_server_registry: None,
                 signed_introductions: Vec::new(),
+                security_tracker: CrossServerSecurityTracker::new(),
                 server_name: "Xudanu Server".to_string(),
                 server_description: String::new(),
                 server_namespace_id: 0,
@@ -33328,5 +33423,129 @@ mod tests_fuzz_equivalent {
             "revision": rev,
         });
         (body, hash)
+    }
+}
+
+#[cfg(test)]
+mod tests_security_tracker {
+    use super::*;
+
+    #[test]
+    fn test_sig_success_resets_failures() {
+        let mut tracker = CrossServerSecurityTracker::new();
+        for _ in 0..3 {
+            let _ = tracker.record_sig_failure(100);
+        }
+        assert!(tracker.sig_failures.contains_key(&100));
+        tracker.record_sig_success(100);
+        assert!(!tracker.sig_failures.contains_key(&100));
+    }
+
+    #[test]
+    fn test_sig_failure_alert_at_threshold() {
+        let mut tracker = CrossServerSecurityTracker::new();
+        for i in 1..SIG_FAILURE_THRESHOLD {
+            let alert = tracker.record_sig_failure(100);
+            assert!(
+                !matches!(alert, SecurityAlert::ConsecutiveSignatureFailures { .. }),
+                "should not alert before threshold (attempt {})",
+                i
+            );
+        }
+        let alert = tracker.record_sig_failure(100);
+        assert!(
+            matches!(alert, SecurityAlert::ConsecutiveSignatureFailures { count, server_id } if count == SIG_FAILURE_THRESHOLD && server_id == 100),
+            "should alert at threshold"
+        );
+    }
+
+    #[test]
+    fn test_sig_failure_continuous_alerts() {
+        let mut tracker = CrossServerSecurityTracker::new();
+        for _ in 0..SIG_FAILURE_THRESHOLD {
+            let _ = tracker.record_sig_failure(100);
+        }
+        let alert = tracker.record_sig_failure(100);
+        assert!(
+            matches!(
+                alert,
+                SecurityAlert::ConsecutiveSignatureFailures { count: 6, .. }
+            ),
+            "should continue alerting past threshold"
+        );
+    }
+
+    #[test]
+    fn test_different_servers_tracked_separately() {
+        let mut tracker = CrossServerSecurityTracker::new();
+        for _ in 0..3 {
+            let _ = tracker.record_sig_failure(100);
+        }
+        let alert = tracker.record_sig_failure(200);
+        assert!(matches!(alert, SecurityAlert::None));
+    }
+
+    #[test]
+    fn test_rotation_rate_allows_limit() {
+        let mut tracker = CrossServerSecurityTracker::new();
+        let now = 1000u64;
+        for _ in 0..ROTATION_RATE_LIMIT {
+            assert!(tracker.check_rotation_rate(100, now).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_rotation_rate_blocks_after_limit() {
+        let mut tracker = CrossServerSecurityTracker::new();
+        let now = 1000u64;
+        for _ in 0..ROTATION_RATE_LIMIT {
+            tracker.check_rotation_rate(100, now).unwrap();
+        }
+        let result = tracker.check_rotation_rate(100, now);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("rate limit"));
+    }
+
+    #[test]
+    fn test_rotation_rate_resets_after_window() {
+        let mut tracker = CrossServerSecurityTracker::new();
+        let t0 = 1000u64;
+        for _ in 0..ROTATION_RATE_LIMIT {
+            tracker.check_rotation_rate(100, t0).unwrap();
+        }
+        assert!(tracker.check_rotation_rate(100, t0).is_err());
+        let t1 = t0 + ROTATION_RATE_WINDOW_SECS + 1;
+        assert!(tracker.check_rotation_rate(100, t1).is_ok());
+    }
+
+    #[test]
+    fn test_rotation_rate_different_servers_independent() {
+        let mut tracker = CrossServerSecurityTracker::new();
+        let now = 1000u64;
+        for _ in 0..ROTATION_RATE_LIMIT {
+            tracker.check_rotation_rate(100, now).unwrap();
+        }
+        assert!(tracker.check_rotation_rate(200, now).is_ok());
+    }
+
+    #[test]
+    fn test_success_then_failure_resets_count() {
+        let mut tracker = CrossServerSecurityTracker::new();
+        for _ in 0..4 {
+            let _ = tracker.record_sig_failure(100);
+        }
+        tracker.record_sig_success(100);
+        for _ in 0..4 {
+            let alert = tracker.record_sig_failure(100);
+            assert!(!matches!(
+                alert,
+                SecurityAlert::ConsecutiveSignatureFailures { .. }
+            ));
+        }
+        let alert = tracker.record_sig_failure(100);
+        assert!(matches!(
+            alert,
+            SecurityAlert::ConsecutiveSignatureFailures { .. }
+        ));
     }
 }
