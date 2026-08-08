@@ -124,6 +124,10 @@ export function WorkspaceShell() {
   const [leftRailMode, setLeftRailMode] = useState<LeftRailMode>("graph");
   const [leftRailHidden, setLeftRailHidden] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("provenance");
+  const [remoteView, setRemoteView] = useState<{
+    title: string; text: string; originServerName: string;
+    license: string; tumbler: string; workId: string;
+  } | null>(null);
   const [rightPanelHidden, setRightPanelHidden] = useState(false);
   const [showIdentity, setShowIdentity] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
@@ -2615,6 +2619,63 @@ export function WorkspaceShell() {
                     onCancel={transclusion.clearPending}
                   />
                 )}
+                {remoteView && (
+                  <div style={{
+                    position: "absolute", inset: 0, zIndex: 50,
+                    background: "var(--bg-surface)", display: "flex",
+                    flexDirection: "column", overflow: "hidden",
+                  }}>
+                    <div style={{
+                      padding: "8px 16px", background: "var(--bg-elevated)",
+                      borderBottom: "2px solid var(--border)", display: "flex",
+                      alignItems: "center", gap: 8, flexShrink: 0,
+                    }}>
+                      <span style={{
+                        fontSize: 9, fontWeight: 700, color: "#fff", background: "#d97706",
+                        padding: "2px 8px", borderRadius: 3, textTransform: "uppercase",
+                        letterSpacing: 0.5, userSelect: "none",
+                      }}>Remote</span>
+                      <span style={{ fontSize: 12, fontWeight: 600 }}>
+                        From {remoteView.originServerName}
+                      </span>
+                      <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                        {remoteView.license}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setRemoteView(null)}
+                        style={{
+                          marginLeft: "auto", fontSize: 11, padding: "4px 12px",
+                          border: "1px solid var(--border)", borderRadius: 4,
+                          background: "var(--bg-surface)", cursor: "pointer",
+                        }}
+                      >
+                        Back to my work
+                      </button>
+                    </div>
+                    <div style={{ flex: 1, overflow: "auto", padding: "32px 48px", minHeight: 0 }}>
+                      <h1 style={{
+                        fontSize: 24, fontWeight: 700, marginBottom: 16,
+                        fontFamily: "Source Serif 4, Georgia, serif",
+                      }}>
+                        {remoteView.title}
+                      </h1>
+                      <div style={{
+                        whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.75,
+                        fontFamily: "Source Serif 4, Georgia, serif", color: "var(--text)",
+                      }}>
+                        {remoteView.text}
+                      </div>
+                    </div>
+                    <div style={{
+                      padding: "6px 16px", borderTop: "1px solid var(--border)",
+                      fontSize: 9, color: "var(--text-dim)", flexShrink: 0, display: "flex", gap: 16,
+                    }}>
+                      <span>Tumbler: <code>{remoteView.tumbler}</code></span>
+                      <span>Work ID: <code>{remoteView.workId}</code></span>
+                    </div>
+                  </div>
+                )}
                 {useMDE ? (
                   <EasyMDEEditor
                     text={text}
@@ -3428,6 +3489,10 @@ export function WorkspaceShell() {
                 client={connected ? clientRef.current : null}
                 connected={connected}
                 onNavigateToWork={(workId) => selectWork(workId)}
+                onViewRemoteWork={(data) => {
+                  setRemoteView(data);
+                  setRightPanelTab("provenance");
+                }}
               />
             )}
             {rightPanelTab === "more" && (
