@@ -1,10 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import {
-  sanitizeAddress,
-  buildRemoteWorksUrl,
-  validateRemoteWorksResponse,
-  MAX_REMOTE_FETCH_TIMEOUT_MS,
-} from "../security/remote-content";
+import { sanitizeAddress } from "../security/remote-content";
 
 const isLocalDev = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 
@@ -118,50 +113,38 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
 
   const handleBrowse = useCallback(async (address: string, port: number | undefined, serverId?: string) => {
     if (!client) return;
-    if (serverId) setBrowsingServerId(serverId);
-    else {
+    let sid = serverId;
+    if (!sid) {
       const resp = await client.sendRequest("server_directory_list", {});
       const val = (resp as Record<string, unknown>)?.value ?? resp;
       const list = (val as Record<string, unknown>)?.servers ?? (Array.isArray(val) ? val : []);
       const entry = (Array.isArray(list) ? (list as DirectoryServer[]) : []).find(
         (s) => s.address === address && (s.port === port || s.port === null)
       );
-      setBrowsingServerId(entry?.server_id ?? null);
+      sid = entry?.server_id ?? undefined;
     }
-
-    const addrStr = port ? `${address}:${port}` : address;
-    const parsed = sanitizeAddress(addrStr, { allowBlocked: isLocalDev });
-    if (!parsed) {
-      setRemoteError("Invalid server address");
+    if (!sid) {
+      setRemoteError("Could not identify server");
       return;
     }
-    const url = buildRemoteWorksUrl(parsed.host, parsed.port);
-    setBrowsingServer(parsed.host);
-    setBrowsingPort(parsed.port);
+    setBrowsingServerId(sid);
+    setBrowsingServer(address);
+    setBrowsingPort(port);
     setRemoteLoading(true);
     setRemoteError(null);
     setRemoteWorks([]);
     setRemoteText(null);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), MAX_REMOTE_FETCH_TIMEOUT_MS);
     try {
-      const resp = await fetch(url, { signal: controller.signal });
-      if (!resp.ok) {
-        setRemoteError(`Server returned ${resp.status}`);
-        return;
-      }
-      const data = await resp.json();
-      setRemoteWorks(validateRemoteWorksResponse(data));
+      const resp = await client.sendRequest("cross_server_list_works", { server_id: sid });
+      const val = (resp as Record<string, unknown>)?.value ?? resp;
+      const data = (val ?? {}) as Record<string, unknown>;
+      const works = (data.works as Array<{ work_id: string; title: string; revision: number; char_count: number }>) || [];
+      setRemoteWorks(works);
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") {
-        setRemoteError("Request timed out");
-      } else {
-        setRemoteError("Failed to fetch works list");
-      }
+      setRemoteError(e instanceof Error ? e.message : "Failed to fetch works list");
     }
-    clearTimeout(timeout);
     setRemoteLoading(false);
-  }, []);
+  }, [client]);
 
   const handleViewWork = useCallback(async (_address: string, _port: number | undefined, workId: string) => {
     if (!client || !browsingServerId) {

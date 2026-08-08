@@ -2304,6 +2304,18 @@ export class CrdtSyncClient {
     };
   }
 
+  async crossServerListWorks(serverId: string): Promise<{
+    works: Array<{ work_id: string; title: string; revision: number; char_count: number }>;
+    originServerName: string;
+  }> {
+    const resp = await this.sendRequest("cross_server_list_works", { server_id: serverId });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return {
+      works: (val.works as Array<{ work_id: string; title: string; revision: number; char_count: number }>) || [],
+      originServerName: (val.origin_server_name as string) || "Unknown",
+    };
+  }
+
   async workEndorse(workId: number, endorsements: Array<[number, number]>): Promise<void> {
     await this.sendRequest("work_endorse", { work_id: workId, endorsements });
   }

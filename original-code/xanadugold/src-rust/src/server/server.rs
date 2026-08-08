@@ -2234,6 +2234,54 @@ impl Server {
         })
     }
 
+    pub fn fetch_remote_works_list(
+        &mut self,
+        server_id: u64,
+    ) -> Result<(Vec<serde_json::Value>, String), ServerError> {
+        let entry = self
+            .server_directory
+            .get(server_id)
+            .ok_or_else(|| ServerError::Internal("server not in directory".into()))?;
+
+        if entry.quarantined {
+            return Err(ServerError::Internal(format!(
+                "server {} is quarantined",
+                server_id
+            )));
+        }
+
+        if !entry.trusted {
+            return Err(ServerError::Internal(format!(
+                "server {} is not trusted",
+                server_id
+            )));
+        }
+
+        let address = entry.address.clone();
+        let port = entry.port.unwrap_or(8080);
+        let server_name = entry.name.clone();
+        drop(entry);
+
+        let url = format!("http://{}:{}/api/public/works", address, port);
+
+        tracing::info!("Fetching remote works list from {}", url);
+
+        let response_text = http_get_json(&url, 15)
+            .map_err(|e| ServerError::Internal(format!("Failed to fetch works list: {}", e)))?;
+
+        let body: serde_json::Value = serde_json::from_str(&response_text)
+            .map_err(|e| ServerError::Internal(format!("Invalid JSON from remote: {}", e)))?;
+
+        let works = body["works"].as_array().cloned().unwrap_or_default();
+
+        if let Some(entry) = self.server_directory.get_mut(server_id) {
+            entry.last_seen = Some(Self::current_timestamp_secs());
+        }
+        let _ = self.server_directory_save();
+
+        Ok((works, server_name))
+    }
+
     pub fn verify_server_identity(
         &self,
         server_id: &str,

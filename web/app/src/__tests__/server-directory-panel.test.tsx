@@ -2,10 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ServerDirectoryPanel, type DirectoryServer } from "../components/ServerDirectoryPanel";
 
-function mkClient(response: unknown = { servers: [] }, workData?: Record<string, unknown>) {
+function mkClient(response: unknown = { servers: [] }, workData?: Record<string, unknown>, worksList?: unknown[]) {
   return {
     sendRequest: vi.fn().mockImplementation((op: string) => {
       if (op === "cross_server_fetch_work" && workData) return Promise.resolve(workData);
+      if (op === "cross_server_list_works") {
+        if (worksList) return Promise.resolve({ works: worksList });
+        return Promise.reject(new Error("no works list configured"));
+      }
       return Promise.resolve(response);
     }),
   } as any;

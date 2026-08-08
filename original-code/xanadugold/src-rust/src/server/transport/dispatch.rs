@@ -3768,6 +3768,23 @@ fn dispatch_inner(
             }
         }
         #[cfg(feature = "serde")]
+        WireRequest::CrossServerListWorks { server_id } => {
+            srv.ensure_session(session_id)?;
+            let sid: u64 = server_id.parse().map_err(|_| {
+                crate::server::ServerError::InvalidArgument("invalid server_id".into())
+            })?;
+            match srv.fetch_remote_works_list(sid) {
+                Ok((works, name)) => Ok(ResponseValue::CrossServerListWorksResult {
+                    works,
+                    origin_server_name: name,
+                }),
+                Err(e) => {
+                    tracing::warn!("cross-server list works failed: {}", e);
+                    Err(e)
+                }
+            }
+        }
+        #[cfg(feature = "serde")]
         WireRequest::FederationAttestationCreate {
             attestation_type,
             subject_server_id,
