@@ -6,10 +6,7 @@ function mkClient(response: unknown = { servers: [] }, workData?: Record<string,
   return {
     sendRequest: vi.fn().mockImplementation((op: string) => {
       if (op === "cross_server_fetch_work" && workData) return Promise.resolve(workData);
-      if (op === "cross_server_list_works") {
-        if (worksList) return Promise.resolve({ works: worksList });
-        return Promise.reject(new Error("no works list configured"));
-      }
+      if (op === "cross_server_list_works") return Promise.resolve({ works: worksList || [] });
       return Promise.resolve(response);
     }),
   } as any;
@@ -460,7 +457,7 @@ describe("ServerDirectoryPanel", () => {
 
   // Remote browsing tests
   it("fetches remote works when Browse clicked", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] });
+    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ works: [{ work_id: "42", title: "Remote Doc", revision: 3, char_count: 100 }] }),
@@ -482,7 +479,7 @@ describe("ServerDirectoryPanel", () => {
   });
 
   it("shows remote error on fetch failure", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] });
+    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
     vi.mocked(fetch).mockRejectedValue(new Error("network error"));
 
     render(
@@ -500,7 +497,7 @@ describe("ServerDirectoryPanel", () => {
   });
 
   it("shows remote error on non-ok response", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] });
+    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
     vi.mocked(fetch).mockResolvedValue({ ok: false, status: 404 } as Response);
 
     render(
@@ -518,7 +515,7 @@ describe("ServerDirectoryPanel", () => {
   });
 
   it("shows empty state when remote has no works", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] });
+    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ works: [] }),
@@ -539,7 +536,7 @@ describe("ServerDirectoryPanel", () => {
   });
 
   it("closes remote browser on close button", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] });
+    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ works: [{ work_id: "1", title: "R", revision: 1, char_count: 5 }] }),
@@ -562,7 +559,7 @@ describe("ServerDirectoryPanel", () => {
   });
 
   it("displays char count and revision for remote works", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] });
+    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({
@@ -587,10 +584,7 @@ describe("ServerDirectoryPanel", () => {
 
   // Remote text view tests
   it("fetches and displays remote work text", async () => {
-    const client = mkClient(
-      { servers: [mkServer({ trusted: true })] },
-      { text: "Hello from remote", title: "Remote", origin_server_name: "Alice", license: "cc-by", tumbler: "test.42.0" },
-    );
+    const client = mkClient({ servers: [mkServer({ trusted: true })] }, { text: "Hello from remote", title: "Remote", origin_server_name: "Alice", license: "cc-by", tumbler: "test.42.0" }, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ works: [{ work_id: "42", title: "Remote", revision: 1, char_count: 5 }] }),
@@ -615,7 +609,7 @@ describe("ServerDirectoryPanel", () => {
   });
 
   it("shows work ID hint for cross-server linking", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] });
+    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
     vi.mocked(fetch)
       .mockResolvedValueOnce({
         ok: true,
@@ -646,7 +640,7 @@ describe("ServerDirectoryPanel", () => {
 
   it("truncates remote text at 2000 chars", async () => {
     const longText = "A".repeat(3000);
-    const client = mkClient({ servers: [mkServer({ trusted: true })] });
+    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
     vi.mocked(fetch)
       .mockResolvedValueOnce({
         ok: true,
@@ -735,7 +729,7 @@ describe("ServerDirectoryPanel", () => {
   });
 
   it("renders remote work title as text, not HTML (XSS protection)", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] });
+    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({
@@ -759,10 +753,7 @@ describe("ServerDirectoryPanel", () => {
   });
 
   it("renders remote text as text, not HTML (XSS protection)", async () => {
-    const client = mkClient(
-      { servers: [mkServer({ trusted: true })] },
-      { text: '<script>alert("evil")</script>', title: "XSS", origin_server_name: "Alice", license: "cc-by", tumbler: "test.1.0" },
-    );
+    const client = mkClient({ servers: [mkServer({ trusted: true })] }, { text: '<script>alert("evil")</script>', title: "XSS", origin_server_name: "Alice", license: "cc-by", tumbler: "test.1.0" }, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ works: [{ work_id: "1", title: "XSS", revision: 1, char_count: 10 }] }),
