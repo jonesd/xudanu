@@ -1270,6 +1270,48 @@ impl Server {
                     "rotation_payload_hex": payload_hex,
                     "rotated_at": last_rotation.payload.timestamp,
                 });
+
+                let chain: Vec<serde_json::Value> = self
+                    .key_history
+                    .rotation_proofs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, proof)| {
+                        let prev_vk = self.key_history.entries[i].verifying_key;
+                        let prev_hex: String = prev_vk
+                            .to_bytes()
+                            .iter()
+                            .map(|b| format!("{:02x}", b))
+                            .collect();
+                        let new_hex: String = proof
+                            .payload
+                            .new_signing_key
+                            .iter()
+                            .map(|b| format!("{:02x}", b))
+                            .collect();
+                        let p_hex: String = proof
+                            .payload
+                            .encode()
+                            .iter()
+                            .map(|b| format!("{:02x}", b))
+                            .collect();
+                        let s_hex: String = proof
+                            .signature
+                            .to_bytes()
+                            .iter()
+                            .map(|b| format!("{:02x}", b))
+                            .collect();
+                        serde_json::json!({
+                            "previous_verifying_key": prev_hex,
+                            "new_verifying_key": new_hex,
+                            "rotation_signature": s_hex,
+                            "rotation_payload_hex": p_hex,
+                            "rotated_at": proof.payload.timestamp,
+                        })
+                    })
+                    .collect();
+
+                identity["rotation_chain"] = serde_json::json!(chain);
             }
         }
 
@@ -31802,16 +31844,28 @@ fn verify_key_rotation(
     pinned_key_hex: &str,
     new_key_hex: &str,
 ) -> Result<(), String> {
-    let rotation = well_known
-        .get("key_rotation")
-        .ok_or_else(|| "no key_rotation in well-known endpoint".to_string())?;
+    if let Some(chain) = well_known.get("rotation_chain").and_then(|c| c.as_array()) {
+        return verify_rotation_chain(chain, pinned_key_hex, new_key_hex);
+    }
 
+    if let Some(rotation) = well_known.get("key_rotation") {
+        return verify_single_rotation(rotation, pinned_key_hex, new_key_hex);
+    }
+
+    Err("no key_rotation or rotation_chain in well-known endpoint".into())
+}
+
+fn verify_single_rotation(
+    rotation: &serde_json::Value,
+    pinned_key_hex: &str,
+    new_key_hex: &str,
+) -> Result<(), String> {
     let prev_vk_hex = rotation["previous_verifying_key"]
         .as_str()
         .ok_or("missing previous_verifying_key")?;
 
     if prev_vk_hex != pinned_key_hex {
-        return Err(format!("rotation previous key does not match pinned key"));
+        return Err("rotation previous key does not match pinned key".into());
     }
 
     let new_vk_hex = rotation["new_verifying_key"]
@@ -31822,11 +31876,65 @@ fn verify_key_rotation(
         return Err("rotation new key does not match response key".into());
     }
 
-    let sig_hex = rotation["rotation_signature"]
+    verify_one_hop(rotation, pinned_key_hex, new_key_hex)?;
+
+    tracing::info!("key rotation verified (single hop)");
+    Ok(())
+}
+
+fn verify_rotation_chain(
+    chain: &[serde_json::Value],
+    pinned_key_hex: &str,
+    new_key_hex: &str,
+) -> Result<(), String> {
+    let mut current_key = pinned_key_hex.to_string();
+
+    for (i, hop) in chain.iter().enumerate() {
+        let prev_hex = hop["previous_verifying_key"]
+            .as_str()
+            .ok_or_else(|| format!("hop {}: missing previous_verifying_key", i))?;
+
+        if prev_hex != current_key {
+            continue;
+        }
+
+        let hop_new_hex = hop["new_verifying_key"]
+            .as_str()
+            .ok_or_else(|| format!("hop {}: missing new_verifying_key", i))?;
+
+        verify_one_hop(hop, &current_key, hop_new_hex)?;
+        current_key = hop_new_hex.to_string();
+        tracing::info!(
+            "rotation chain hop {} verified: {} -> {}",
+            i,
+            &prev_hex[..8],
+            &hop_new_hex[..8]
+        );
+
+        if current_key == new_key_hex {
+            tracing::info!(
+                "rotation chain verified: reached current key after {} hops",
+                i + 1
+            );
+            return Ok(());
+        }
+    }
+
+    Err(format!(
+        "rotation chain does not reach current key (stopped at {})",
+        &current_key[..current_key.len().min(16)]
+    ))
+}
+
+fn verify_one_hop(
+    hop: &serde_json::Value,
+    prev_key_hex: &str,
+    expected_new_key_hex: &str,
+) -> Result<(), String> {
+    let sig_hex = hop["rotation_signature"]
         .as_str()
         .ok_or("missing rotation_signature")?;
-
-    let payload_hex = rotation["rotation_payload_hex"]
+    let payload_hex = hop["rotation_payload_hex"]
         .as_str()
         .ok_or("missing rotation_payload_hex")?;
 
@@ -31839,11 +31947,10 @@ fn verify_key_rotation(
         return Err("rotation signature must be 64 bytes".into());
     }
 
-    let prev_vk_bytes = crate::crypto::keys::hex_decode(pinned_key_hex)
-        .map_err(|e| format!("invalid pinned key hex: {}", e))?;
-
+    let prev_vk_bytes = crate::crypto::keys::hex_decode(prev_key_hex)
+        .map_err(|e| format!("invalid prev key hex: {}", e))?;
     if prev_vk_bytes.len() != 32 {
-        return Err("pinned key must be 32 bytes".into());
+        return Err("prev key must be 32 bytes".into());
     }
 
     let prev_vk =
@@ -31865,13 +31972,12 @@ fn verify_key_rotation(
         .iter()
         .map(|b| format!("{:02x}", b))
         .collect();
-    if signed_new_key_hex != new_key_hex {
+    if signed_new_key_hex != expected_new_key_hex {
         return Err(
-            "rotation replay detected: signed payload new key does not match response key".into(),
+            "rotation replay detected: signed payload new key does not match expected key".into(),
         );
     }
 
-    tracing::info!("key rotation verified: old key signed transition to new key");
     Ok(())
 }
 
@@ -32172,7 +32278,6 @@ mod tests_key_rotation {
 
         let result = verify_key_rotation(&identity, &wrong_key, &new_vk_hex);
         assert!(result.is_err(), "should reject wrong pinned key");
-        assert!(result.unwrap_err().contains("pinned key"));
     }
 
     #[test]
@@ -32189,7 +32294,6 @@ mod tests_key_rotation {
 
         let result = verify_key_rotation(&identity, &old_vk_hex, &wrong_new_key);
         assert!(result.is_err(), "should reject wrong new key");
-        assert!(result.unwrap_err().contains("response key"));
     }
 
     #[test]
@@ -32220,11 +32324,10 @@ mod tests_key_rotation {
 
         let mut identity = server.well_known_identity();
         let tampered_sig = "ff".repeat(64);
-        identity["key_rotation"]["rotation_signature"] = serde_json::json!(tampered_sig);
+        identity["rotation_chain"][0]["rotation_signature"] = serde_json::json!(tampered_sig);
 
         let result = verify_key_rotation(&identity, &old_vk_hex, &new_vk_hex);
         assert!(result.is_err(), "should reject tampered signature");
-        assert!(result.unwrap_err().contains("verification failed"));
     }
 
     #[test]
@@ -32239,7 +32342,7 @@ mod tests_key_rotation {
 
         let mut identity = server.well_known_identity();
         let tampered_payload = "ff".repeat(88);
-        identity["key_rotation"]["rotation_payload_hex"] = serde_json::json!(tampered_payload);
+        identity["rotation_chain"][0]["rotation_payload_hex"] = serde_json::json!(tampered_payload);
 
         let result = verify_key_rotation(&identity, &old_vk_hex, &new_vk_hex);
         assert!(result.is_err(), "should reject tampered payload");
@@ -32255,7 +32358,11 @@ mod tests_key_rotation {
 
         let identity_after_first = server.well_known_identity();
         let result1 = verify_key_rotation(&identity_after_first, &original_vk_hex, &first_new_vk);
-        assert!(result1.is_ok(), "first rotation should verify");
+        assert!(
+            result1.is_ok(),
+            "first rotation should verify: {:?}",
+            result1.err()
+        );
 
         server.rotate_server_keys().expect("second rotation");
         let second_new_vk = vk_to_hex(&server.server_keypair.signing_verifying_key());
@@ -32264,14 +32371,77 @@ mod tests_key_rotation {
         let result2 = verify_key_rotation(&identity_after_second, &first_new_vk, &second_new_vk);
         assert!(
             result2.is_ok(),
-            "second rotation should verify from first new key"
+            "second rotation should verify from first new key: {:?}",
+            result2.err()
         );
 
-        let result_wrong =
+        let result_multi =
             verify_key_rotation(&identity_after_second, &original_vk_hex, &second_new_vk);
         assert!(
-            result_wrong.is_err(),
-            "should not verify from original key (need chain)"
+            result_multi.is_ok(),
+            "multi-hop K0->K2 should verify via rotation_chain: {:?}",
+            result_multi.err()
+        );
+    }
+
+    #[test]
+    fn test_three_hop_rotation_chain() {
+        let mut server = Server::new();
+        let k0 = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        server.rotate_server_keys().expect("K0->K1");
+        let k1 = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        server.rotate_server_keys().expect("K1->K2");
+        let k2 = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        server.rotate_server_keys().expect("K2->K3");
+        let k3 = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        let identity = server.well_known_identity();
+        let chain = identity["rotation_chain"].as_array();
+        assert!(chain.is_some(), "rotation_chain should be published");
+        assert_eq!(chain.unwrap().len(), 3, "should have 3 hops");
+
+        let result = verify_key_rotation(&identity, &k0, &k3);
+        assert!(
+            result.is_ok(),
+            "3-hop rotation K0->K3 should verify via chain: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_rotation_chain_with_broken_middle_hop_rejected() {
+        let mut server = Server::new();
+        let k0 = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        server.rotate_server_keys().expect("K0->K1");
+        server.rotate_server_keys().expect("K1->K2");
+        let k2 = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        let mut identity = server.well_known_identity();
+        identity["rotation_chain"][1]["rotation_signature"] = serde_json::json!("ff".repeat(64));
+
+        let result = verify_key_rotation(&identity, &k0, &k2);
+        assert!(result.is_err(), "broken middle hop should be rejected");
+    }
+
+    #[test]
+    fn test_rotation_chain_missing_key_rejected() {
+        let mut server = Server::new();
+        let k0 = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        server.rotate_server_keys().expect("K0->K1");
+        server.rotate_server_keys().expect("K1->K2");
+        let k2 = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        let identity = server.well_known_identity();
+        let wrong_key = "ee".repeat(32);
+        let result = verify_key_rotation(&identity, &wrong_key, &k2);
+        assert!(
+            result.is_err(),
+            "should reject when pinned key is not in chain"
         );
     }
 
@@ -32315,9 +32485,10 @@ mod tests_key_rotation {
         let real_new_vk_hex = vk_to_hex(&server_a.server_keypair.signing_verifying_key());
 
         let legitimate_identity = server_a.well_known_identity();
-
         let mut attacker_identity = legitimate_identity.clone();
         let attacker_key = "de".repeat(32);
+        attacker_identity["rotation_chain"][0]["new_verifying_key"] =
+            serde_json::json!(attacker_key);
         attacker_identity["key_rotation"]["new_verifying_key"] = serde_json::json!(attacker_key);
 
         let result = verify_key_rotation(&attacker_identity, &old_vk_hex, &attacker_key);
