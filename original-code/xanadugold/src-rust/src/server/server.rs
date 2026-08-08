@@ -31800,7 +31800,7 @@ mod tests_ssrf_guard {
 const TOFU_MISMATCH_PREFIX: &str = "TOFU key mismatch";
 
 #[cfg(feature = "serde")]
-fn verify_signed_response(
+pub fn verify_signed_response(
     body: &serde_json::Value,
     content_hash: &[u8; 32],
     origin_server_id: u64,
@@ -31856,7 +31856,7 @@ fn verify_signed_response(
 }
 
 #[cfg(feature = "serde")]
-fn verify_key_rotation(
+pub fn verify_key_rotation(
     well_known: &serde_json::Value,
     pinned_key_hex: &str,
     new_key_hex: &str,
@@ -32980,5 +32980,353 @@ mod tests_crypto_property {
             let result = verify_signed_response(&signed_body, &hash, server_id, Some(&vk_h));
             prop_assert!(result.is_err(), "garbage signature with pinned key must fail");
         }
+    }
+}
+#[cfg(test)]
+#[cfg(feature = "serde")]
+mod tests_fuzz_equivalent {
+    use super::*;
+
+    fn make_body(sig: &str, key: &str, sid: u64, rev: u64, text: &str) -> serde_json::Value {
+        serde_json::json!({
+            "text": text,
+            "server_namespace_id": sid,
+            "server_public_key": key,
+            "server_signature": sig,
+            "revision": rev,
+        })
+    }
+
+    fn hash_of(text: &str) -> [u8; 32] {
+        let mut h = blake3::Hasher::new();
+        h.update(text.as_bytes());
+        h.finalize().into()
+    }
+
+    // --- verify_signed_response edge cases ---
+
+    #[test]
+    fn fuzz_empty_json() {
+        let body = serde_json::json!({});
+        let result = verify_signed_response(&body, &[0u8; 32], 1, None);
+        assert!(
+            result.is_ok(),
+            "empty JSON should be accepted as legacy (unsigned)"
+        );
+    }
+
+    #[test]
+    fn fuzz_null_fields() {
+        let body = serde_json::json!({
+            "server_signature": null,
+            "server_public_key": null,
+            "server_namespace_id": null,
+        });
+        let result = verify_signed_response(&body, &[0u8; 32], 1, None);
+        assert!(result.is_ok(), "null fields should be accepted as legacy");
+    }
+
+    #[test]
+    fn fuzz_truncated_signature_hex() {
+        let body = make_body("ab", "cd".repeat(32).as_str(), 1, 0, "test");
+        let result = verify_signed_response(&body, &hash_of("test"), 1, None);
+        assert!(result.is_err(), "truncated sig should error not panic");
+    }
+
+    #[test]
+    fn fuzz_truncated_key_hex() {
+        let body = make_body("ab".repeat(64).as_str(), "cd", 1, 0, "test");
+        let result = verify_signed_response(&body, &hash_of("test"), 1, None);
+        assert!(result.is_err(), "truncated key should error not panic");
+    }
+
+    #[test]
+    fn fuzz_non_hex_chars() {
+        let body = make_body(
+            "xy".repeat(64).as_str(),
+            "gh".repeat(32).as_str(),
+            1,
+            0,
+            "test",
+        );
+        let result = verify_signed_response(&body, &hash_of("test"), 1, None);
+        assert!(result.is_err(), "non-hex chars should error not panic");
+    }
+
+    #[test]
+    fn fuzz_signature_as_number() {
+        let mut body = make_body(
+            "00".repeat(64).as_str(),
+            "ab".repeat(32).as_str(),
+            1,
+            0,
+            "test",
+        );
+        body["server_signature"] = serde_json::json!(12345);
+        let result = verify_signed_response(&body, &hash_of("test"), 1, None);
+        assert!(
+            result.is_ok(),
+            "non-string sig should be treated as missing (legacy)"
+        );
+    }
+
+    #[test]
+    fn fuzz_empty_text() {
+        let (sk, vk) = make_keypair_fuzz();
+        let vk_h = vk_hex_fuzz(&vk);
+        let (body, hash) = make_signed_body_fuzz("", 1, 0, &sk, &vk_h);
+        let result = verify_signed_response(&body, &hash, 1, None);
+        assert!(result.is_ok(), "empty text with valid sig should verify");
+    }
+
+    #[test]
+    fn fuzz_huge_text() {
+        let text = "A".repeat(1_000_000);
+        let (sk, vk) = make_keypair_fuzz();
+        let vk_h = vk_hex_fuzz(&vk);
+        let (body, hash) = make_signed_body_fuzz(&text, 1, 0, &sk, &vk_h);
+        let result = verify_signed_response(&body, &hash, 1, None);
+        assert!(result.is_ok(), "large text with valid sig should verify");
+    }
+
+    #[test]
+    fn fuzz_all_zeros_signature() {
+        let body = make_body(
+            "00".repeat(64).as_str(),
+            "00".repeat(32).as_str(),
+            1,
+            0,
+            "test",
+        );
+        let result = verify_signed_response(&body, &hash_of("test"), 1, None);
+        assert!(result.is_err(), "all-zeros sig/key should error not panic");
+    }
+
+    #[test]
+    fn fuzz_all_ff_signature() {
+        let body = make_body(
+            "ff".repeat(64).as_str(),
+            "ff".repeat(32).as_str(),
+            1,
+            0,
+            "test",
+        );
+        let result = verify_signed_response(&body, &hash_of("test"), 1, None);
+        assert!(result.is_err(), "all-ff sig/key should error not panic");
+    }
+
+    #[test]
+    fn fuzz_unicode_in_text() {
+        let text = "Hello\x00\x01\x02世界🎉\n\r\t";
+        let (sk, vk) = make_keypair_fuzz();
+        let vk_h = vk_hex_fuzz(&vk);
+        let (body, hash) = make_signed_body_fuzz(text, 1, 0, &sk, &vk_h);
+        let result = verify_signed_response(&body, &hash, 1, None);
+        assert!(
+            result.is_ok(),
+            "unicode/control chars in text should verify"
+        );
+    }
+
+    #[test]
+    fn fuzz_max_server_id() {
+        let (sk, vk) = make_keypair_fuzz();
+        let vk_h = vk_hex_fuzz(&vk);
+        let (body, hash) = make_signed_body_fuzz("test", u64::MAX, 0, &sk, &vk_h);
+        let result = verify_signed_response(&body, &hash, u64::MAX, None);
+        assert!(result.is_ok(), "max u64 server_id should verify");
+    }
+
+    #[test]
+    fn fuzz_max_revision() {
+        let (sk, vk) = make_keypair_fuzz();
+        let vk_h = vk_hex_fuzz(&vk);
+        let (body, hash) = make_signed_body_fuzz("test", 1, u64::MAX, &sk, &vk_h);
+        let result = verify_signed_response(&body, &hash, 1, None);
+        assert!(result.is_ok(), "max u64 revision should verify");
+    }
+
+    // --- verify_key_rotation edge cases ---
+
+    #[test]
+    fn fuzz_rotation_empty_chain_array() {
+        let well_known = serde_json::json!({
+            "rotation_chain": [],
+        });
+        let result = verify_key_rotation(
+            &well_known,
+            "ab".repeat(32).as_str(),
+            "cd".repeat(32).as_str(),
+        );
+        assert!(result.is_err(), "empty chain array should error");
+    }
+
+    #[test]
+    fn fuzz_rotation_chain_with_null_entries() {
+        let well_known = serde_json::json!({
+            "rotation_chain": [null, null, null],
+        });
+        let result = verify_key_rotation(
+            &well_known,
+            "ab".repeat(32).as_str(),
+            "cd".repeat(32).as_str(),
+        );
+        assert!(result.is_err(), "null entries should error not panic");
+    }
+
+    #[test]
+    fn fuzz_rotation_wrong_types() {
+        let well_known = serde_json::json!({
+            "key_rotation": {
+                "previous_verifying_key": 12345,
+                "new_verifying_key": true,
+                "rotation_signature": [],
+                "rotation_payload_hex": {},
+            }
+        });
+        let result = verify_key_rotation(
+            &well_known,
+            "ab".repeat(32).as_str(),
+            "cd".repeat(32).as_str(),
+        );
+        assert!(result.is_err(), "wrong types should error not panic");
+    }
+
+    #[test]
+    fn fuzz_rotation_huge_chain() {
+        let hop = serde_json::json!({
+            "previous_verifying_key": "ab".repeat(32),
+            "new_verifying_key": "cd".repeat(32),
+            "rotation_signature": "ef".repeat(64),
+            "rotation_payload_hex": "00".repeat(88),
+        });
+        let well_known = serde_json::json!({
+            "rotation_chain": vec![hop; 1000],
+        });
+        let result = verify_key_rotation(
+            &well_known,
+            "ab".repeat(32).as_str(),
+            "cd".repeat(32).as_str(),
+        );
+        assert!(result.is_err(), "huge chain should not panic, just error");
+    }
+
+    // --- SignedIntroduction edge cases ---
+
+    #[test]
+    fn fuzz_introduction_empty_hex() {
+        let intro = SignedIntroduction {
+            target_server_id: 1,
+            target_verifying_key: "".to_string(),
+            target_address: "x:1".to_string(),
+            target_name: "T".to_string(),
+            introduced_by: 2,
+            introduced_by_key: "".to_string(),
+            timestamp: 0,
+            signature: "".to_string(),
+        };
+        let result = intro.verify("");
+        assert!(result.is_err(), "empty hex should error not panic");
+    }
+
+    #[test]
+    fn fuzz_introduction_non_hex() {
+        let intro = SignedIntroduction {
+            target_server_id: 1,
+            target_verifying_key: "not-hex".to_string(),
+            target_address: "x:1".to_string(),
+            target_name: "T".to_string(),
+            introduced_by: 2,
+            introduced_by_key: "also-not-hex".to_string(),
+            timestamp: 0,
+            signature: "zz".repeat(64),
+        };
+        let result = intro.verify("also-not-hex");
+        assert!(result.is_err(), "non-hex should error not panic");
+    }
+
+    #[test]
+    fn fuzz_introduction_oversized_hex() {
+        let intro = SignedIntroduction {
+            target_server_id: 1,
+            target_verifying_key: "ab".repeat(100),
+            target_address: "x:1".to_string(),
+            target_name: "T".to_string(),
+            introduced_by: 2,
+            introduced_by_key: "cd".repeat(100),
+            timestamp: 0,
+            signature: "ef".repeat(200),
+        };
+        let result = intro.verify(&"cd".repeat(100));
+        assert!(result.is_err(), "oversized hex should error not panic");
+    }
+
+    // --- BLAKE3 edge cases ---
+
+    #[test]
+    fn fuzz_blake3_empty_input() {
+        let hash: [u8; 32] = blake3::hash(b"").into();
+        assert_eq!(hash.len(), 32, "empty input should produce 32-byte hash");
+    }
+
+    #[test]
+    fn fuzz_blake3_single_byte() {
+        let hash: [u8; 32] = blake3::hash(b"\x00").into();
+        let hash2: [u8; 32] = blake3::hash(b"\x01").into();
+        assert_ne!(
+            hash, hash2,
+            "different single bytes should produce different hashes"
+        );
+    }
+
+    // --- resolve_and_verify_host edge cases ---
+
+    #[test]
+    fn fuzz_resolve_empty_host() {
+        let result = resolve_and_verify_host("", 8080);
+        assert!(result.is_err(), "empty host should error not panic");
+    }
+
+    #[test]
+    fn fuzz_resolve_port_zero() {
+        let result = resolve_and_verify_host("example.com", 0);
+        let _ = result; // may succeed or fail depending on DNS, just shouldn't panic
+    }
+
+    fn make_keypair_fuzz() -> (ed25519_dalek::SigningKey, ed25519_dalek::VerifyingKey) {
+        let mut rng = rand::rngs::OsRng;
+        let sk = ed25519_dalek::SigningKey::generate(&mut rng);
+        let vk = sk.verifying_key();
+        (sk, vk)
+    }
+
+    fn vk_hex_fuzz(vk: &ed25519_dalek::VerifyingKey) -> String {
+        vk.to_bytes().iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    fn make_signed_body_fuzz(
+        text: &str,
+        sid: u64,
+        rev: u64,
+        sk: &ed25519_dalek::SigningKey,
+        vk_h: &str,
+    ) -> (serde_json::Value, [u8; 32]) {
+        use ed25519_dalek::Signer;
+        let hash = hash_of(text);
+        let payload = format!("{}|{}|{}", crate::crypto::keys::hex_encode(&hash), sid, rev);
+        let sig = sk.sign(payload.as_bytes());
+        let sig_hex: String = sig
+            .to_bytes()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        let body = serde_json::json!({
+            "text": text,
+            "server_namespace_id": sid,
+            "server_public_key": vk_h,
+            "server_signature": sig_hex,
+            "revision": rev,
+        });
+        (body, hash)
     }
 }

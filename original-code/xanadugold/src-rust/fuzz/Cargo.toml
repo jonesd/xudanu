@@ -1,0 +1,39 @@
+[package]
+name = "xudanu-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+
+[dependencies.xudanu]
+path = ".."
+features = ["server"]
+
+[[bin]]
+name = "fuzz_verify_signed_response"
+path = "fuzz_targets/fuzz_verify_signed_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_verify_key_rotation"
+path = "fuzz_targets/fuzz_verify_key_rotation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_introduction_verify"
+path = "fuzz_targets/fuzz_introduction_verify.rs"
+test = false
+doc = false
+bench = false
