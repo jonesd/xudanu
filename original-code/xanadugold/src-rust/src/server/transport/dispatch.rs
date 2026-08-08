@@ -3742,6 +3742,32 @@ fn dispatch_inner(
             }
         }
         #[cfg(feature = "serde")]
+        WireRequest::CrossServerFetchWork { server_id, work_id } => {
+            srv.ensure_session(session_id)?;
+            let sid: u64 = server_id.parse().map_err(|_| {
+                crate::server::ServerError::InvalidArgument("invalid server_id".into())
+            })?;
+            match srv.fetch_remote_work(sid, &work_id) {
+                Ok(data) => Ok(ResponseValue::CrossServerFetchWorkResult {
+                    work_id: data.work_id,
+                    title: data.title,
+                    text: data.text,
+                    revision: data.revision,
+                    char_count: data.char_count,
+                    content_hash: data.content_hash,
+                    origin_server_id: data.origin_server_id,
+                    origin_server_name: data.origin_server_name,
+                    license: data.license,
+                    tumbler: data.tumbler,
+                    cached: data.cached,
+                }),
+                Err(e) => {
+                    tracing::warn!("cross-server fetch work failed: {}", e);
+                    Err(e)
+                }
+            }
+        }
+        #[cfg(feature = "serde")]
         WireRequest::FederationAttestationCreate {
             attestation_type,
             subject_server_id,

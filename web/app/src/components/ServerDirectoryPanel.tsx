@@ -2,9 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import {
   sanitizeAddress,
   buildRemoteWorksUrl,
-  buildRemoteWorkUrl,
   validateRemoteWorksResponse,
-  validateRemoteWorkResponse,
   MAX_REMOTE_FETCH_TIMEOUT_MS,
 } from "../security/remote-content";
 
@@ -35,15 +33,17 @@ interface ServerDirectoryProps {
   client: { sendRequest: (op: string, payload: Record<string, unknown>) => Promise<unknown> } | null;
   connected: boolean;
   onNavigateToWork: (workId: number) => void;
+  onViewRemoteWork?: (data: { title: string; text: string; originServerName: string; license: string; tumbler: string; workId: string }) => void;
 }
 
-export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onNavigateToWork }: ServerDirectoryProps) {
+export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onNavigateToWork, onViewRemoteWork }: ServerDirectoryProps) {
   const [servers, setServers] = useState<DirectoryServer[]>([]);
   const [loading, setLoading] = useState(false);
   const [addAddress, setAddAddress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [browsingServer, setBrowsingServer] = useState<string | null>(null);
   const [browsingPort, setBrowsingPort] = useState<number | undefined>(undefined);
+  const [browsingServerId, setBrowsingServerId] = useState<string | null>(null);
   const [remoteWorks, setRemoteWorks] = useState<Array<{ work_id: string; title: string; revision: number; char_count: number }>>([]);
   const [remoteLoading, setRemoteLoading] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
@@ -116,7 +116,19 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
     }
   }, [client, refresh]);
 
-  const handleBrowse = useCallback(async (address: string, port: number | undefined) => {
+  const handleBrowse = useCallback(async (address: string, port: number | undefined, serverId?: string) => {
+    if (!client) return;
+    if (serverId) setBrowsingServerId(serverId);
+    else {
+      const resp = await client.sendRequest("server_directory_list", {});
+      const val = (resp as Record<string, unknown>)?.value ?? resp;
+      const list = (val as Record<string, unknown>)?.servers ?? (Array.isArray(val) ? val : []);
+      const entry = (Array.isArray(list) ? (list as DirectoryServer[]) : []).find(
+        (s) => s.address === address && (s.port === port || s.port === null)
+      );
+      setBrowsingServerId(entry?.server_id ?? null);
+    }
+
     const addrStr = port ? `${address}:${port}` : address;
     const parsed = sanitizeAddress(addrStr, { allowBlocked: isLocalDev });
     if (!parsed) {
@@ -151,49 +163,45 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
     setRemoteLoading(false);
   }, []);
 
-  const handleViewWork = useCallback(async (address: string, port: number | undefined, workId: string) => {
-    const addrStr = port ? `${address}:${port}` : address;
-    const parsed = sanitizeAddress(addrStr, { allowBlocked: isLocalDev });
-    if (!parsed) {
-      setRemoteError("Invalid server address");
-      return;
-    }
-    const url = buildRemoteWorkUrl(parsed.host, parsed.port, workId);
-    if (!url) {
-      setRemoteError("Invalid work ID");
+  const handleViewWork = useCallback(async (_address: string, _port: number | undefined, workId: string) => {
+    if (!client || !browsingServerId) {
+      setRemoteError("Server not identified");
       return;
     }
     setTextLoading(true);
     setRemoteText(null);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), MAX_REMOTE_FETCH_TIMEOUT_MS);
+    setRemoteError(null);
     try {
-      const resp = await fetch(url, { signal: controller.signal });
-      if (!resp.ok) {
-        setRemoteError(`Failed to fetch work ${workId}`);
-        return;
-      }
-      const data = await resp.json();
-      const validated = validateRemoteWorkResponse(data);
-      if (!validated) {
-        setRemoteError(`Invalid response from server for work ${workId}`);
-        return;
-      }
-      setRemoteText({
-        workId,
-        text: validated.text,
-        title: validated.title || `Work ${workId}`,
+      const resp = await client.sendRequest("cross_server_fetch_work", {
+        server_id: browsingServerId,
+        work_id: workId,
       });
+      const val = (resp as Record<string, unknown>)?.value ?? resp;
+      const data = (val ?? {}) as Record<string, unknown>;
+      const title = (data.title as string) || `Work ${workId}`;
+      const text = (data.text as string) || "";
+      const originName = (data.origin_server_name as string) || "Remote";
+      const license = (data.license as string) || "all-rights-reserved";
+      const tumbler = (data.tumbler as string) || "";
+      const cached = data.cached === true;
+
+      if (onViewRemoteWork) {
+        onViewRemoteWork({ title, text, originServerName: originName, license, tumbler, workId });
+      } else {
+        setRemoteText({ workId, text, title });
+      }
+      if (cached) {
+        setRemoteError(`(cached copy — source may be offline)`);
+      }
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") {
-        setRemoteError("Request timed out");
+      if (e instanceof Error) {
+        setRemoteError(`Failed: ${e.message}`);
       } else {
         setRemoteError(`Failed to fetch work ${workId}`);
       }
     }
-    clearTimeout(timeout);
     setTextLoading(false);
-  }, []);
+  }, [client, browsingServerId, onViewRemoteWork]);
 
   if (!connected || !client) {
     return <div className="ws-placeholder"><div className="ws-placeholder-label">Not connected</div></div>;
@@ -287,7 +295,7 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
                 <button
                   className="ws-action-btn"
                   style={{ fontSize: 10, padding: "2px 8px" }}
-                  onClick={() => void handleBrowse(srv.address, srv.port || undefined)}
+                  onClick={() => void handleBrowse(srv.address, srv.port || undefined, srv.server_id)}
                 >
                   Browse
                 </button>

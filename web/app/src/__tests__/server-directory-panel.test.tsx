@@ -2,8 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ServerDirectoryPanel, type DirectoryServer } from "../components/ServerDirectoryPanel";
 
-function mkClient(response: unknown = { servers: [] }) {
-  return { sendRequest: vi.fn().mockResolvedValue(response) } as any;
+function mkClient(response: unknown = { servers: [] }, workData?: Record<string, unknown>) {
+  return {
+    sendRequest: vi.fn().mockImplementation((op: string) => {
+      if (op === "cross_server_fetch_work" && workData) return Promise.resolve(workData);
+      return Promise.resolve(response);
+    }),
+  } as any;
 }
 
 const mkServer = (over: Partial<DirectoryServer> = {}): DirectoryServer => ({
@@ -578,16 +583,14 @@ describe("ServerDirectoryPanel", () => {
 
   // Remote text view tests
   it("fetches and displays remote work text", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] });
-    vi.mocked(fetch)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ works: [{ work_id: "42", title: "Remote", revision: 1, char_count: 5 }] }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ text: "Hello from remote", title: "Remote" }),
-      } as Response);
+    const client = mkClient(
+      { servers: [mkServer({ trusted: true })] },
+      { text: "Hello from remote", title: "Remote", origin_server_name: "Alice", license: "cc-by", tumbler: "test.42.0" },
+    );
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ works: [{ work_id: "42", title: "Remote", revision: 1, char_count: 5 }] }),
+    } as Response);
 
     render(
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
@@ -669,13 +672,17 @@ describe("ServerDirectoryPanel", () => {
   });
 
   it("shows error when remote work fetch fails", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] });
-    vi.mocked(fetch)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ works: [{ work_id: "5", title: "Err", revision: 1, char_count: 1 }] }),
-      } as Response)
-      .mockRejectedValueOnce(new Error("timeout"));
+    const client = mkClient(
+      { servers: [mkServer({ trusted: true })] },
+    );
+    client.sendRequest = vi.fn().mockImplementation((op: string) => {
+      if (op === "cross_server_fetch_work") return Promise.reject(new Error("timeout"));
+      return Promise.resolve({ servers: [mkServer({ trusted: true })] });
+    });
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ works: [{ work_id: "5", title: "Err", revision: 1, char_count: 1 }] }),
+    } as Response);
 
     render(
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
@@ -691,7 +698,7 @@ describe("ServerDirectoryPanel", () => {
 
     fireEvent.click(screen.getByText("Err"));
     await waitFor(() => {
-      expect(screen.getByText(/Failed to fetch work 5/)).toBeTruthy();
+      expect(screen.getByText(/Failed: timeout/)).toBeTruthy();
     });
   });
 
@@ -748,16 +755,14 @@ describe("ServerDirectoryPanel", () => {
   });
 
   it("renders remote text as text, not HTML (XSS protection)", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] });
-    vi.mocked(fetch)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ works: [{ work_id: "1", title: "XSS", revision: 1, char_count: 10 }] }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ text: '<script>alert("evil")</script>', title: "XSS" }),
-      } as Response);
+    const client = mkClient(
+      { servers: [mkServer({ trusted: true })] },
+      { text: '<script>alert("evil")</script>', title: "XSS", origin_server_name: "Alice", license: "cc-by", tumbler: "test.1.0" },
+    );
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ works: [{ work_id: "1", title: "XSS", revision: 1, char_count: 10 }] }),
+    } as Response);
 
     const { container } = render(
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,

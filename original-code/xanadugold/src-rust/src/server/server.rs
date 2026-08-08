@@ -348,6 +348,21 @@ const ROTATION_RATE_LIMIT: u32 = 3;
 const ROTATION_RATE_WINDOW_SECS: u64 = 3600;
 
 #[derive(Debug, Clone)]
+pub struct RemoteWorkData {
+    pub work_id: String,
+    pub title: String,
+    pub text: String,
+    pub revision: u64,
+    pub char_count: u64,
+    pub content_hash: String,
+    pub origin_server_id: u64,
+    pub origin_server_name: String,
+    pub license: String,
+    pub tumbler: String,
+    pub cached: bool,
+}
+
+#[derive(Debug, Clone)]
 pub enum SecurityAlert {
     None,
     ConsecutiveSignatureFailures { server_id: u64, count: u32 },
@@ -2067,6 +2082,155 @@ impl Server {
             text,
             hash: content_hash,
             origin_server_id,
+        })
+    }
+
+    pub fn fetch_remote_work(
+        &mut self,
+        server_id: u64,
+        work_id_hex: &str,
+    ) -> Result<RemoteWorkData, ServerError> {
+        let entry = self
+            .server_directory
+            .get(server_id)
+            .ok_or_else(|| ServerError::Internal("server not in directory".into()))?;
+
+        if entry.quarantined {
+            return Err(ServerError::Internal(format!(
+                "server {} is quarantined",
+                server_id
+            )));
+        }
+
+        if !entry.trusted {
+            return Err(ServerError::Internal(format!(
+                "server {} is not trusted — trust it before fetching",
+                server_id
+            )));
+        }
+
+        let address = entry.address.clone();
+        let port = entry.port.unwrap_or(8080);
+        let server_name = entry.name.clone();
+        let expected_key = entry
+            .pinned_key
+            .as_ref()
+            .unwrap_or(&entry.verifying_key)
+            .clone();
+        drop(entry);
+
+        let scheme = "http";
+        let url = format!(
+            "{}://{}:{}/api/public/work/{}",
+            scheme, address, port, work_id_hex
+        );
+
+        tracing::info!("Fetching remote work from {}", url);
+
+        let response_text = http_get_json(&url, 15)
+            .map_err(|e| ServerError::Internal(format!("Failed to fetch remote work: {}", e)))?;
+
+        let body: serde_json::Value = serde_json::from_str(&response_text)
+            .map_err(|e| ServerError::Internal(format!("Invalid JSON from remote: {}", e)))?;
+
+        let text = body["text"]
+            .as_str()
+            .ok_or_else(|| ServerError::Internal("response missing 'text' field".into()))?
+            .to_string();
+
+        let title = body["title"].as_str().unwrap_or("Untitled").to_string();
+
+        let revision = body["revision"].as_u64().unwrap_or(0);
+        let char_count = body["char_count"].as_u64().unwrap_or(text.len() as u64);
+        let content_hash_str = body["content_hash_blake3"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        let origin_server_id = body["server_namespace_id"].as_u64().unwrap_or(server_id);
+        let license = body["license"]
+            .as_str()
+            .unwrap_or("all-rights-reserved")
+            .to_string();
+        let tumbler = body["tumbler"].as_str().unwrap_or("").to_string();
+
+        let content_hash: [u8; 32] = {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(text.as_bytes());
+            hasher.finalize().into()
+        };
+
+        let cached = self.blob_store.exists(&content_hash).unwrap_or(false);
+
+        let expected_key_opt = if expected_key.is_empty() {
+            None
+        } else {
+            Some(expected_key.as_str())
+        };
+
+        match verify_signed_response(&body, &content_hash, origin_server_id, expected_key_opt) {
+            Ok(Some(pub_key_hex)) => {
+                tracing::info!("remote work signature verified");
+                self.security_tracker.record_sig_success(server_id);
+                if let Some(entry) = self.server_directory.get_mut(server_id) {
+                    if entry.pinned_key.is_none() {
+                        entry.pinned_key = Some(pub_key_hex);
+                    }
+                    entry.successful_resolutions += 1;
+                    entry.last_seen = Some(Self::current_timestamp_secs());
+                }
+                let _ = self.server_directory_save();
+            }
+            Ok(None) => {
+                let has_pin = self
+                    .server_directory
+                    .get(server_id)
+                    .map(|e| e.pinned_key.is_some() || !e.verifying_key.is_empty())
+                    .unwrap_or(false);
+                if has_pin {
+                    return Err(ServerError::Internal(
+                        "remote work unsigned but key is pinned — rejecting".into(),
+                    ));
+                }
+                tracing::warn!("remote work unsigned — accepting as legacy");
+            }
+            Err(e) if e.starts_with(TOFU_MISMATCH_PREFIX) => {
+                tracing::warn!("TOFU mismatch on remote work fetch");
+                let alert = self.security_tracker.record_sig_failure(server_id);
+                self.handle_security_alert(server_id, alert);
+                return Err(ServerError::Internal(format!(
+                    "remote work key mismatch: {}",
+                    e
+                )));
+            }
+            Err(e) => {
+                tracing::warn!("remote work signature failed: {}", e);
+                let alert = self.security_tracker.record_sig_failure(server_id);
+                self.handle_security_alert(server_id, alert);
+                return Err(ServerError::Internal(format!(
+                    "remote work verification failed: {}",
+                    e
+                )));
+            }
+        }
+
+        let _ = self
+            .blob_store
+            .store(text.as_bytes(), "text/plain".to_string());
+
+        let _ = self.server_directory_save();
+
+        Ok(RemoteWorkData {
+            work_id: work_id_hex.to_string(),
+            title,
+            text,
+            revision,
+            char_count,
+            content_hash: content_hash_str,
+            origin_server_id,
+            origin_server_name: server_name,
+            license,
+            tumbler,
+            cached,
         })
     }
 

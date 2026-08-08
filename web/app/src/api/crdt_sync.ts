@@ -2282,6 +2282,28 @@ export class CrdtSyncClient {
     };
   }
 
+  async crossServerFetchWork(serverId: string, workId: string): Promise<{
+    workId: string; title: string; text: string; revision: number;
+    charCount: number; contentHash: string; originServerId: number;
+    originServerName: string; license: string; tumbler: string; cached: boolean;
+  }> {
+    const resp = await this.sendRequest("cross_server_fetch_work", { server_id: serverId, work_id: workId });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return {
+      workId: (val.work_id as string) || workId,
+      title: (val.title as string) || "Untitled",
+      text: (val.text as string) || "",
+      revision: (val.revision as number) || 0,
+      charCount: (val.char_count as number) || 0,
+      contentHash: (val.content_hash as string) || "",
+      originServerId: (val.origin_server_id as number) || 0,
+      originServerName: (val.origin_server_name as string) || "Unknown",
+      license: (val.license as string) || "all-rights-reserved",
+      tumbler: (val.tumbler as string) || "",
+      cached: val.cached === true,
+    };
+  }
+
   async workEndorse(workId: number, endorsements: Array<[number, number]>): Promise<void> {
     await this.sendRequest("work_endorse", { work_id: workId, endorsements });
   }
