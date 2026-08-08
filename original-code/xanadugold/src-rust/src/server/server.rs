@@ -5451,10 +5451,24 @@ impl Server {
     }
 
     pub fn public_work_list(&self) -> Vec<serde_json::Value> {
+        self.public_work_list_search(None)
+    }
+
+    pub fn public_work_list_search(&self, query: Option<&str>) -> Vec<serde_json::Value> {
         let pub_club = self.system_clubs.public_club;
+        let q = query.map(|s| s.to_lowercase());
         self.works
             .iter()
             .filter(|(_, ws)| ws.work.read_club() == Some(pub_club))
+            .filter(|(_, ws)| {
+                if let Some(ref q) = q {
+                    let title = ws.title().to_lowercase();
+                    let text = ws.work.current_edition().to_text().to_lowercase();
+                    title.contains(q.as_str()) || text.contains(q.as_str())
+                } else {
+                    true
+                }
+            })
             .map(|(id, ws)| {
                 let title = ws.title().to_string();
                 let revision = ws.work.revision_count();

@@ -2658,7 +2658,7 @@ export function WorkspaceShell() {
                       display: "flex", alignItems: "center", gap: 8, flexShrink: 0,
                     }}>
                       <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
-                        Select text below, then insert into your work as a transclusion
+                        Select text to transclude, or copy the whole document to your server
                       </span>
                       <button
                         type="button"
@@ -2675,13 +2675,44 @@ export function WorkspaceShell() {
                           setRemoteView(null);
                         }}
                         style={{
-                          marginLeft: "auto", fontSize: 11, padding: "4px 12px",
+                          fontSize: 11, padding: "4px 12px",
                           border: "1px solid var(--accent)", borderRadius: 4,
                           background: "var(--accent)", color: "#fff", cursor: canEdit ? "pointer" : "not-allowed",
                           opacity: canEdit ? 1 : 0.5,
                         }}
                       >
-                        Insert into my work
+                        Insert passage
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canEdit}
+                        onClick={async () => {
+                          if (!clientRef.current) return;
+                          try {
+                            const provenance = `> Imported from ${remoteView.originServerName}\n> Tumbler: ${remoteView.tumbler}\n> License: ${remoteView.license}\n\n`;
+                            const importText = provenance + remoteView.text;
+                            const resp = await clientRef.current.sendRequest("work_create", {
+                              edition: { text: importText },
+                            });
+                            const newWorkId = (resp as Record<string, unknown>)?.value as Record<string, unknown> | undefined;
+                            const wid = newWorkId?.value as number | undefined;
+                            if (wid) {
+                              await clientRef.current.workSetTitle(wid, `${remoteView.title} (from ${remoteView.originServerName})`);
+                            }
+                            setRemoteView(null);
+                            if (wid) selectWork(wid);
+                          } catch (e) {
+                            console.error("Import failed:", e);
+                          }
+                        }}
+                        style={{
+                          marginLeft: "auto", fontSize: 11, padding: "4px 12px",
+                          border: "1px solid var(--green)", borderRadius: 4,
+                          background: "var(--green)", color: "#fff", cursor: canEdit ? "pointer" : "not-allowed",
+                          opacity: canEdit ? 1 : 0.5,
+                        }}
+                      >
+                        Copy to my server
                       </button>
                     </div>
                     <div style={{ flex: 1, overflow: "auto", padding: "32px 48px", minHeight: 0 }}>

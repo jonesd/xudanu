@@ -40,6 +40,7 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
   const [browsingPort, setBrowsingPort] = useState<number | undefined>(undefined);
   const [browsingServerId, setBrowsingServerId] = useState<string | null>(null);
   const [remoteWorks, setRemoteWorks] = useState<Array<{ work_id: string; title: string; revision: number; char_count: number }>>([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const [remoteLoading, setRemoteLoading] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
   const [remoteText, setRemoteText] = useState<{ workId: string; text: string; title: string } | null>(null);
@@ -111,7 +112,7 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
     }
   }, [client, refresh]);
 
-  const handleBrowse = useCallback(async (address: string, port: number | undefined, serverId?: string) => {
+  const handleBrowse = useCallback(async (address: string, port: number | undefined, serverId?: string, query?: string) => {
     if (!client) return;
     let sid = serverId;
     if (!sid) {
@@ -138,7 +139,11 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
       const resp = await client.sendRequest("cross_server_list_works", { server_id: sid });
       const val = (resp as Record<string, unknown>)?.value ?? resp;
       const data = (val ?? {}) as Record<string, unknown>;
-      const works = (data.works as Array<{ work_id: string; title: string; revision: number; char_count: number }>) || [];
+      let works = (data.works as Array<{ work_id: string; title: string; revision: number; char_count: number }>) || [];
+      if (query && query.trim()) {
+        const q = query.toLowerCase();
+        works = works.filter(w => w.title.toLowerCase().includes(q));
+      }
       setRemoteWorks(works);
     } catch (e) {
       setRemoteError(e instanceof Error ? e.message : "Failed to fetch works list");
@@ -311,6 +316,21 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
               ✕
             </button>
           </div>
+          {remoteWorks.length > 0 && (
+            <input
+              type="text"
+              className="ws-picker-search"
+              placeholder="Search titles..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && browsingServer) {
+                  void handleBrowse(browsingServer, browsingPort, browsingServerId ?? undefined, searchQuery);
+                }
+              }}
+              style={{ fontSize: 12, marginBottom: 4 }}
+            />
+          )}
           {remoteLoading && <div className="ws-conn-empty">Fetching works...</div>}
           {remoteError && <div className="ws-conn-empty" style={{ color: "var(--red)" }}>{remoteError}</div>}
           {!remoteLoading && !remoteError && remoteWorks.length === 0 && (

@@ -29,6 +29,11 @@ use crate::server::session::SessionId;
 static SUBSCRIPTION_COUNTER: AtomicU16 = AtomicU16::new(1);
 
 #[derive(Debug, serde::Deserialize)]
+pub struct WorksListQuery {
+    pub q: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
 pub struct WsQuery {
     pub format: Option<String>,
     pub version: Option<u8>,
@@ -192,6 +197,7 @@ async fn well_known_handler(State(state): State<SharedState>) -> impl IntoRespon
 async fn public_works_list_handler(
     State(state): State<SharedState>,
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    Query(query): Query<WorksListQuery>,
 ) -> impl IntoResponse {
     if !state.rate_limiter.check_get(addr.ip()) {
         return (
@@ -201,7 +207,9 @@ async fn public_works_list_handler(
             .into_response();
     }
 
-    let works = state.server.with_server_ref(|srv| srv.public_work_list());
+    let works = state
+        .server
+        .with_server_ref(|srv| srv.public_work_list_search(query.q.as_deref()));
 
     let body = serde_json::json!({
         "api_version": 1,
