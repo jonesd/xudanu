@@ -3667,6 +3667,9 @@ fn dispatch_inner(
                         "discovered": e.discovered,
                         "referred_by": e.referred_by,
                         "last_seen": e.last_seen,
+                        "first_seen": e.first_seen,
+                        "successful_resolutions": e.successful_resolutions,
+                        "quarantined": e.quarantined,
                     })
                 })
                 .collect();

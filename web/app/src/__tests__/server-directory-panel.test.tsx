@@ -122,7 +122,7 @@ describe("ServerDirectoryPanel", () => {
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
-      expect(screen.getByText("Browse works")).toBeTruthy();
+      expect(screen.getByText("Browse")).toBeTruthy();
     });
   });
 
@@ -136,7 +136,7 @@ describe("ServerDirectoryPanel", () => {
     await waitFor(() => {
       expect(screen.getByText(/Untrusted/)).toBeTruthy();
     });
-    expect(screen.queryByText("Browse works")).toBeNull();
+    expect(screen.queryByText("Browse")).toBeNull();
   });
 
   it("calls server_directory_add with parsed address and port", async () => {
@@ -461,10 +461,10 @@ describe("ServerDirectoryPanel", () => {
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
-      expect(screen.getByText("Browse works")).toBeTruthy();
+      expect(screen.getByText("Browse")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText("Browse works"));
+    fireEvent.click(screen.getByText("Browse"));
 
     await waitFor(() => {
       expect(screen.getByText("Remote Doc")).toBeTruthy();
@@ -480,10 +480,10 @@ describe("ServerDirectoryPanel", () => {
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
-      expect(screen.getByText("Browse works")).toBeTruthy();
+      expect(screen.getByText("Browse")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText("Browse works"));
+    fireEvent.click(screen.getByText("Browse"));
 
     await waitFor(() => {
       expect(screen.getByText(/Failed to fetch works list/)).toBeTruthy();
@@ -498,10 +498,10 @@ describe("ServerDirectoryPanel", () => {
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
-      expect(screen.getByText("Browse works")).toBeTruthy();
+      expect(screen.getByText("Browse")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText("Browse works"));
+    fireEvent.click(screen.getByText("Browse"));
 
     await waitFor(() => {
       expect(screen.getByText(/Server returned 404/)).toBeTruthy();
@@ -519,10 +519,10 @@ describe("ServerDirectoryPanel", () => {
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
-      expect(screen.getByText("Browse works")).toBeTruthy();
+      expect(screen.getByText("Browse")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText("Browse works"));
+    fireEvent.click(screen.getByText("Browse"));
 
     await waitFor(() => {
       expect(screen.getByText(/No public works/)).toBeTruthy();
@@ -540,10 +540,10 @@ describe("ServerDirectoryPanel", () => {
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
-      expect(screen.getByText("Browse works")).toBeTruthy();
+      expect(screen.getByText("Browse")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText("Browse works"));
+    fireEvent.click(screen.getByText("Browse"));
     await waitFor(() => {
       expect(screen.getByText("R")).toBeTruthy();
     });
@@ -565,10 +565,10 @@ describe("ServerDirectoryPanel", () => {
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
-      expect(screen.getByText("Browse works")).toBeTruthy();
+      expect(screen.getByText("Browse")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText("Browse works"));
+    fireEvent.click(screen.getByText("Browse"));
 
     await waitFor(() => {
       expect(screen.getByText(/2500 chars/)).toBeTruthy();
@@ -593,10 +593,10 @@ describe("ServerDirectoryPanel", () => {
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
-      expect(screen.getByText("Browse works")).toBeTruthy();
+      expect(screen.getByText("Browse")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText("Browse works"));
+    fireEvent.click(screen.getByText("Browse"));
     await waitFor(() => {
       expect(screen.getByText("Remote")).toBeTruthy();
     });
@@ -623,10 +623,10 @@ describe("ServerDirectoryPanel", () => {
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
-      expect(screen.getByText("Browse works")).toBeTruthy();
+      expect(screen.getByText("Browse")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText("Browse works"));
+    fireEvent.click(screen.getByText("Browse"));
     await waitFor(() => {
       expect(screen.getByText("T")).toBeTruthy();
     });
@@ -654,10 +654,10 @@ describe("ServerDirectoryPanel", () => {
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
-      expect(screen.getByText("Browse works")).toBeTruthy();
+      expect(screen.getByText("Browse")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText("Browse works"));
+    fireEvent.click(screen.getByText("Browse"));
     await waitFor(() => {
       expect(screen.getByText("Long")).toBeTruthy();
     });
@@ -681,10 +681,10 @@ describe("ServerDirectoryPanel", () => {
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
-      expect(screen.getByText("Browse works")).toBeTruthy();
+      expect(screen.getByText("Browse")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText("Browse works"));
+    fireEvent.click(screen.getByText("Browse"));
     await waitFor(() => {
       expect(screen.getByText("Err")).toBeTruthy();
     });
@@ -736,10 +736,10 @@ describe("ServerDirectoryPanel", () => {
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
-      expect(screen.getByText("Browse works")).toBeTruthy();
+      expect(screen.getByText("Browse")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText("Browse works"));
+    fireEvent.click(screen.getByText("Browse"));
     await waitFor(() => {
       expect(container.textContent).toContain("bold");
     });
@@ -763,10 +763,10 @@ describe("ServerDirectoryPanel", () => {
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
-      expect(screen.getByText("Browse works")).toBeTruthy();
+      expect(screen.getByText("Browse")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText("Browse works"));
+    fireEvent.click(screen.getByText("Browse"));
     await waitFor(() => {
       expect(screen.getByText("XSS")).toBeTruthy();
     });

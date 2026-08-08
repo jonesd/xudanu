@@ -17,6 +17,9 @@ export interface DirectoryServer {
   name: string;
   description: string;
   trusted: boolean;
+  quarantined?: boolean;
+  first_seen?: number | null;
+  successful_resolutions?: number;
 }
 
 interface ServerDirectoryProps {
@@ -223,10 +226,31 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
         <div className="ws-conn-empty">No servers in directory. Add one above to browse remote content.</div>
       )}
 
-      {servers.map((srv) => (
+      {servers.map((srv) => {
+        const isNew = srv.first_seen
+          ? (Date.now() / 1000) - srv.first_seen < 7 * 86400
+          : true;
+        const daysKnown = srv.first_seen
+          ? Math.floor((Date.now() / 1000 - srv.first_seen) / 86400)
+          : null;
+        return (
         <div key={srv.server_id} className="ws-conn-item" style={{ display: "flex", flexDirection: "column", alignItems: "stretch" }}>
-          <div className="ws-conn-title" style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            {srv.trusted ? "✅" : "❓"} {srv.name || "Unknown"}
+          <div className="ws-conn-title" style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+            <span>
+              {srv.quarantined ? "⛔" : srv.trusted ? "✅" : "❓"} {srv.name || "Unknown"}
+            </span>
+            {isNew && !srv.quarantined && (
+              <span style={{
+                fontSize: 8, fontWeight: 700, color: "#fff", background: "var(--accent)",
+                padding: "1px 5px", borderRadius: 8, textTransform: "uppercase", letterSpacing: 0.5,
+              }}>NEW</span>
+            )}
+            {srv.quarantined && (
+              <span style={{
+                fontSize: 8, fontWeight: 700, color: "#fff", background: "var(--red)",
+                padding: "1px 5px", borderRadius: 8, textTransform: "uppercase",
+              }}>Blocked</span>
+            )}
             <span style={{ fontSize: 9, color: "var(--text-dim)", marginLeft: "auto", fontFamily: "monospace" }}>
               {srv.address}{srv.port ? `:${srv.port}` : ""}
             </span>
@@ -234,33 +258,45 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
           {srv.description && (
             <div className="ws-conn-excerpt">{srv.description}</div>
           )}
-          <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-            {srv.trusted && (
+          {!srv.quarantined && daysKnown !== null && (
+            <div style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 2 }}>
+              Known {daysKnown === 0 ? "today" : `${daysKnown}d`}
+              {srv.successful_resolutions !== undefined && srv.successful_resolutions > 0
+                ? ` · ${srv.successful_resolutions} resolves`
+                : ""
+              }
+            </div>
+          )}
+          {!srv.quarantined && (
+            <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+              {srv.trusted && (
+                <button
+                  className="ws-action-btn"
+                  style={{ fontSize: 10, padding: "2px 8px" }}
+                  onClick={() => void handleBrowse(srv.address, srv.port || undefined)}
+                >
+                  Browse
+                </button>
+              )}
               <button
                 className="ws-action-btn"
                 style={{ fontSize: 10, padding: "2px 8px" }}
-                onClick={() => void handleBrowse(srv.address, srv.port || undefined)}
+                onClick={() => void handleTrust(srv.server_id, !srv.trusted)}
               >
-                Browse works
+                {srv.trusted ? "Untrust" : "Trust"}
               </button>
-            )}
-            <button
-              className="ws-action-btn"
-              style={{ fontSize: 10, padding: "2px 8px" }}
-              onClick={() => void handleTrust(srv.server_id, !srv.trusted)}
-            >
-              {srv.trusted ? "Untrust" : "Trust"}
-            </button>
-            <button
-              className="ws-action-btn"
-              style={{ fontSize: 10, padding: "2px 8px", color: "var(--red)" }}
-              onClick={() => void handleRemove(srv.server_id)}
-            >
-              Remove
-            </button>
-          </div>
+              <button
+                className="ws-action-btn"
+                style={{ fontSize: 10, padding: "2px 8px", color: "var(--red)" }}
+                onClick={() => void handleRemove(srv.server_id)}
+              >
+                Remove
+              </button>
+            </div>
+          )}
         </div>
-      ))}
+        );
+      })}
 
       {browsingServer && (
         <div className="ws-conn-section" style={{ marginTop: 8 }}>
