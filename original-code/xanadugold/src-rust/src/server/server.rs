@@ -1499,11 +1499,14 @@ impl Server {
         let Some(entry) = self.server_directory.get(target_server_id) else {
             return;
         };
-        let target_vk = entry.verifying_key.clone();
+        let target_vk = entry
+            .pinned_key
+            .as_ref()
+            .unwrap_or(&entry.verifying_key)
+            .clone();
         let target_addr = entry.address.clone();
         let target_name = entry.name.clone();
         let target_port = entry.port;
-        drop(entry);
 
         let my_vk_hex: String = self
             .server_keypair
