@@ -5484,6 +5484,67 @@ impl Server {
             .collect()
     }
 
+    pub fn federated_search(&mut self, query: &str) -> Vec<serde_json::Value> {
+        let mut results: Vec<serde_json::Value> = Vec::new();
+
+        let local_results = self.public_work_list_search(Some(query));
+        for work in local_results {
+            results.push(serde_json::json!({
+                "work_id": work["work_id"],
+                "title": work["title"],
+                "revision": work["revision"],
+                "char_count": work["char_count"],
+                "server_name": self.server_name.clone(),
+                "server_id": self.server_namespace_id(),
+                "local": true,
+            }));
+        }
+
+        let trusted_entries: Vec<(u64, String, Option<u16>, String)> = self
+            .server_directory
+            .list()
+            .iter()
+            .filter(|e| e.trusted && !e.quarantined)
+            .map(|e| (e.server_id, e.address.clone(), e.port, e.name.clone()))
+            .collect();
+
+        for (server_id, address, port, server_name) in trusted_entries {
+            let port = port.unwrap_or(8080);
+            let url = format!(
+                "http://{}:{}/api/public/works?q={}",
+                address,
+                port,
+                urlencode(query)
+            );
+            tracing::info!("Federated search: {}", url);
+
+            match http_get_json(&url, 10) {
+                Ok(response_text) => {
+                    if let Ok(body) = serde_json::from_str::<serde_json::Value>(&response_text) {
+                        if let Some(works) = body["works"].as_array() {
+                            for work in works {
+                                results.push(serde_json::json!({
+                                    "work_id": work["work_id"],
+                                    "title": work["title"],
+                                    "revision": work["revision"],
+                                    "char_count": work["char_count"],
+                                    "server_name": server_name,
+                                    "server_id": server_id,
+                                    "local": false,
+                                }));
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Federated search failed for {}: {}", server_name, e);
+                }
+            }
+        }
+
+        results
+    }
+
     pub fn public_work_edition(&self, work_be_id: BeId) -> Result<serde_json::Value, ServerError> {
         let ws = self
             .works
@@ -31429,6 +31490,22 @@ mod tests {
             "chain should end at source"
         );
     }
+}
+
+fn urlencode(s: &str) -> String {
+    let mut result = String::new();
+    for byte in s.bytes() {
+        match byte {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                result.push(byte as char);
+            }
+            b' ' => result.push('+'),
+            _ => {
+                result.push_str(&format!("%{:02X}", byte));
+            }
+        }
+    }
+    result
 }
 
 fn http_get_json(url: &str, timeout_secs: u64) -> Result<String, String> {

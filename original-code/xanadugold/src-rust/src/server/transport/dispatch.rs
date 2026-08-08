@@ -3785,6 +3785,12 @@ fn dispatch_inner(
             }
         }
         #[cfg(feature = "serde")]
+        WireRequest::FederatedSearch { query } => {
+            srv.ensure_session(session_id)?;
+            let results = srv.federated_search(&query);
+            Ok(ResponseValue::FederatedSearchResult { results })
+        }
+        #[cfg(feature = "serde")]
         WireRequest::FederationAttestationCreate {
             attestation_type,
             subject_server_id,

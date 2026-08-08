@@ -384,6 +384,8 @@ pub enum OperationCode {
     #[cfg(feature = "serde")]
     CrossServerListWorks,
     #[cfg(feature = "serde")]
+    FederatedSearch,
+    #[cfg(feature = "serde")]
     FederationAttestationCreate,
     #[cfg(feature = "serde")]
     FederationAttestationVerify,
@@ -729,6 +731,8 @@ impl OperationCode {
             0x0F06 => Some(OperationCode::CrossServerFetchWork),
             #[cfg(feature = "serde")]
             0x0F07 => Some(OperationCode::CrossServerListWorks),
+            #[cfg(feature = "serde")]
+            0x0F08 => Some(OperationCode::FederatedSearch),
 
             _ => None,
         }
@@ -1040,6 +1044,8 @@ impl OperationCode {
             OperationCode::CrossServerFetchWork => 0x0F06,
             #[cfg(feature = "serde")]
             OperationCode::CrossServerListWorks => 0x0F07,
+            #[cfg(feature = "serde")]
+            OperationCode::FederatedSearch => 0x0F08,
             #[cfg(feature = "serde")]
             OperationCode::FederationAttestationCreate => 0x0E02,
             #[cfg(feature = "serde")]
@@ -2130,6 +2136,10 @@ pub enum WireRequest {
     CrossServerListWorks {
         server_id: String,
     },
+    #[cfg(feature = "serde")]
+    FederatedSearch {
+        query: String,
+    },
 }
 
 impl WireRequest {
@@ -2787,6 +2797,10 @@ pub enum ResponseValue {
     CrossServerListWorksResult {
         works: Vec<serde_json::Value>,
         origin_server_name: String,
+    },
+    #[cfg(feature = "serde")]
+    FederatedSearchResult {
+        results: Vec<serde_json::Value>,
     },
     #[cfg(feature = "serde")]
     FederationAttestationCreateResult {

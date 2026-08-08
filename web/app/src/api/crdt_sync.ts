@@ -2316,6 +2316,18 @@ export class CrdtSyncClient {
     };
   }
 
+  async federatedSearch(query: string): Promise<Array<{
+    work_id: string; title: string; revision: number; char_count: number;
+    server_name: string; server_id: number; local: boolean;
+  }>> {
+    const resp = await this.sendRequest("federated_search", { query });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.results as Array<{
+      work_id: string; title: string; revision: number; char_count: number;
+      server_name: string; server_id: number; local: boolean;
+    }>) || [];
+  }
+
   async workEndorse(workId: number, endorsements: Array<[number, number]>): Promise<void> {
     await this.sendRequest("work_endorse", { work_id: workId, endorsements });
   }

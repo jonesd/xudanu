@@ -191,6 +191,26 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
     setTextLoading(false);
   }, [client, browsingServerId, onViewRemoteWork]);
 
+  const [federatedResults, setFederatedResults] = useState<Array<{
+    work_id: string; title: string; revision: number; char_count: number;
+    server_name: string; server_id: number; local: boolean;
+  }>>([]);
+  const [fedSearching, setFedSearching] = useState(false);
+
+  const handleFederatedSearch = useCallback(async (query: string) => {
+    if (!client || !query.trim()) return;
+    setFedSearching(true);
+    try {
+      const resp = await client.sendRequest("federated_search", { query });
+      const val = (resp as Record<string, unknown>)?.value ?? resp;
+      const data = (val ?? {}) as Record<string, unknown>;
+      setFederatedResults((data.results as typeof federatedResults) || []);
+    } catch {
+      setFederatedResults([]);
+    }
+    setFedSearching(false);
+  }, [client]);
+
   if (!connected || !client) {
     return <div className="ws-placeholder"><div className="ws-placeholder-label">Not connected</div></div>;
   }
@@ -203,6 +223,47 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
           ↻
         </button>
       </div>
+
+      <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+        <input
+          type="text"
+          className="ws-picker-search"
+          placeholder="Search all servers..."
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              const val = (e.target as HTMLInputElement).value;
+              if (val.trim()) void handleFederatedSearch(val);
+            }
+          }}
+          style={{ flex: 1, fontSize: 12 }}
+        />
+      </div>
+
+      {fedSearching && <div className="ws-conn-empty">Searching all trusted servers...</div>}
+
+      {federatedResults.length > 0 && (
+        <div className="ws-conn-section" style={{ marginBottom: 8 }}>
+          <div className="ws-conn-header" style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <span>Search results ({federatedResults.length})</span>
+            <button className="ws-concept-add-btn" style={{ fontSize: 10 }} onClick={() => setFederatedResults([])}>✕</button>
+          </div>
+          {federatedResults.map((r) => (
+            <div key={`${r.server_id}-${r.work_id}`} className="ws-conn-item">
+              <div className="ws-conn-title" style={{ fontSize: 12 }}>
+                {r.title}
+              </div>
+              <div className="ws-conn-excerpt" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <span style={{
+                  fontSize: 8, fontWeight: 700, color: "#fff",
+                  background: r.local ? "var(--green)" : "#d97706",
+                  padding: "1px 5px", borderRadius: 3,
+                }}>{r.local ? "Local" : r.server_name}</span>
+                <span>{r.char_count} chars</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
         <input
