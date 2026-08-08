@@ -17,6 +17,10 @@ pub struct DirectoryEntry {
     pub discovered: String,
     pub referred_by: Option<u64>,
     pub last_seen: Option<u64>,
+    #[serde(default)]
+    pub quarantined: bool,
+    #[serde(default)]
+    pub quarantined_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,6 +126,8 @@ mod tests {
             discovered: "manual".to_string(),
             referred_by: None,
             last_seen: None,
+            quarantined: false,
+            quarantined_at: None,
         });
         assert_eq!(dir.get(2).unwrap().name, "Bob");
         assert!(dir.get(99).is_none());
@@ -142,7 +148,9 @@ mod tests {
             trusted: true,
             discovered: "referral".to_string(),
             referred_by: Some(1),
-            last_seen: Some(1000),
+            last_seen: Some(0),
+            quarantined: false,
+            quarantined_at: None,
         });
         assert!(dir.remove(3));
         assert!(!dir.remove(3));
@@ -165,6 +173,8 @@ mod tests {
             discovered: "manual".to_string(),
             referred_by: None,
             last_seen: None,
+            quarantined: false,
+            quarantined_at: None,
         });
         assert!(dir.set_trust(5, true));
         assert!(dir.get(5).unwrap().trusted);
@@ -187,6 +197,8 @@ mod tests {
             discovered: "manual".to_string(),
             referred_by: None,
             last_seen: None,
+            quarantined: false,
+            quarantined_at: None,
         });
         assert_eq!(
             dir.resolve_address(7).unwrap(),
@@ -211,6 +223,8 @@ mod tests {
             discovered: "manual".to_string(),
             referred_by: None,
             last_seen: None,
+            quarantined: false,
+            quarantined_at: None,
         });
         assert_eq!(dir.resolve_address(8).unwrap(), "https://frank.example.com");
     }
@@ -232,6 +246,8 @@ mod tests {
                 discovered: "manual".to_string(),
                 referred_by: None,
                 last_seen: None,
+                quarantined: false,
+                quarantined_at: None,
             });
         }
         let list = dir.list();
@@ -260,7 +276,9 @@ mod tests {
             trusted: true,
             discovered: "manual".to_string(),
             referred_by: None,
-            last_seen: Some(999),
+            last_seen: Some(0),
+            quarantined: false,
+            quarantined_at: None,
         });
         dir.save_to_file(&path).unwrap();
 
@@ -296,6 +314,8 @@ mod tests {
                 discovered: "manual".to_string(),
                 referred_by: None,
                 last_seen: None,
+                quarantined: false,
+                quarantined_at: None,
             });
         }
         let trusted = dir.trusted_servers();

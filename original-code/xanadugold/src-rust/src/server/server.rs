@@ -351,7 +351,6 @@ const ROTATION_RATE_WINDOW_SECS: u64 = 3600;
 pub enum SecurityAlert {
     None,
     ConsecutiveSignatureFailures { server_id: u64, count: u32 },
-    RotationRateExceeded { server_id: u64, attempts: u32 },
 }
 
 #[derive(Debug, Default)]
@@ -1486,6 +1485,8 @@ impl Server {
             discovered: "manual".to_string(),
             referred_by: None,
             last_seen: Some(Self::current_timestamp_secs()),
+            quarantined: false,
+            quarantined_at: None,
         };
 
         if let Some(existing) = self.server_directory.get(server_id) {
@@ -1539,6 +1540,8 @@ impl Server {
             discovered: "manual".to_string(),
             referred_by: None,
             last_seen: Some(Self::current_timestamp_secs()),
+            quarantined: false,
+            quarantined_at: None,
         };
         self.server_directory.add(entry);
     }
@@ -1557,12 +1560,43 @@ impl Server {
     pub fn server_directory_set_trust(&mut self, server_id: u64, trusted: bool) -> bool {
         let changed = self.server_directory.set_trust(server_id, trusted);
         if changed && trusted {
+            if let Some(entry) = self.server_directory.get_mut(server_id) {
+                entry.quarantined = false;
+                entry.quarantined_at = None;
+            }
             self.sign_introduction(server_id);
         } else if changed && !trusted {
             self.signed_introductions
                 .retain(|i| i.target_server_id != server_id);
         }
         changed
+    }
+
+    fn handle_security_alert(&mut self, server_id: u64, alert: SecurityAlert) {
+        if let SecurityAlert::ConsecutiveSignatureFailures { count, .. } = alert {
+            tracing::error!(
+                target: "xudanu::security",
+                server_id,
+                count,
+                event = "SECURITY:brute_force_alert",
+                "BRUTE FORCE ALERT: {} consecutive signature failures for server {} — quarantining",
+                count,
+                server_id
+            );
+            if let Some(entry) = self.server_directory.get_mut(server_id) {
+                entry.quarantined = true;
+                entry.quarantined_at = Some(Self::current_timestamp_secs());
+                let _ = self.server_directory_save();
+                tracing::warn!(
+                    target: "xudanu::security",
+                    server_id,
+                    event = "SECURITY:server_quarantined",
+                    "server {} quarantined — all future resolutions blocked until untrusted and re-trusted",
+                    server_id
+                );
+            }
+            self.security_tracker.record_sig_success(server_id);
+        }
     }
 
     fn sign_introduction(&mut self, target_server_id: u64) {
@@ -1711,6 +1745,24 @@ impl Server {
         }
 
         let (server_id, server_address) = parse_tumbler_server(tumbler);
+
+        if server_id != 0 && server_id != self.server_namespace_id() {
+            if let Some(entry) = self.server_directory.get(server_id) {
+                if entry.quarantined {
+                    tracing::warn!(
+                        target: "xudanu::security",
+                        server_id,
+                        event = "SECURITY:quarantine_block",
+                        "rejecting resolution to quarantined server"
+                    );
+                    return Err(ServerError::Internal(format!(
+                        "server {} is quarantined due to security violations — untrust and re-trust to clear",
+                        server_id
+                    )));
+                }
+            }
+        }
+
         let local_path = tumbler_local_path(tumbler);
         let work_id_hex = local_path
             .split('.')
@@ -1896,7 +1948,8 @@ impl Server {
                     .unwrap_or(false);
                 if has_pin {
                     tracing::warn!(target: "xudanu::security", server_id, event = "SECURITY:sig_stripping", "unsigned response with pinned key — possible signature stripping");
-                    self.security_tracker.record_sig_failure(server_id);
+                    let alert = self.security_tracker.record_sig_failure(server_id);
+                    self.handle_security_alert(server_id, alert);
                     return Err(ServerError::Internal(
                         "unsigned response from server with pinned key — possible signature stripping attack".into(),
                     ));
@@ -1935,7 +1988,8 @@ impl Server {
                             }
                             Err(re) => {
                                 tracing::warn!(target: "xudanu::security", server_id, event = "SECURITY:rotation_failed", "rotation verification failed: {}", re);
-                                self.security_tracker.record_sig_failure(server_id);
+                                let alert = self.security_tracker.record_sig_failure(server_id);
+                                self.handle_security_alert(server_id, alert);
                                 return Err(ServerError::Internal(format!(
                                     "cross-server key changed and rotation verification failed: {}",
                                     re
@@ -1945,7 +1999,8 @@ impl Server {
                     }
                     Err(fe) => {
                         tracing::warn!(target: "xudanu::security", server_id, event = "SECURITY:wk_fetch_failed", "failed to fetch well-known: {}", fe);
-                        self.security_tracker.record_sig_failure(server_id);
+                        let alert = self.security_tracker.record_sig_failure(server_id);
+                        self.handle_security_alert(server_id, alert);
                         return Err(ServerError::Internal(format!(
                             "cross-server content verification failed: {}",
                             e
@@ -1962,17 +2017,7 @@ impl Server {
                     e
                 );
                 let alert = self.security_tracker.record_sig_failure(server_id);
-                if let SecurityAlert::ConsecutiveSignatureFailures { count, .. } = alert {
-                    tracing::error!(
-                        target: "xudanu::security",
-                        server_id,
-                        count,
-                        event = "SECURITY:brute_force_alert",
-                        "BRUTE FORCE ALERT: {} consecutive signature failures for server {}",
-                        count,
-                        server_id
-                    );
-                }
+                self.handle_security_alert(server_id, alert);
                 return Err(ServerError::Internal(format!(
                     "cross-server content verification failed: {}",
                     e
@@ -32852,6 +32897,10 @@ mod tests_signed_introductions {
         assert!(
             intro.target_address.contains("9090"),
             "address should include port"
+        );
+        assert!(
+            intro.target_address.contains("target.example.com"),
+            "address should include hostname"
         );
     }
 }
