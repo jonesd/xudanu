@@ -203,7 +203,7 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
         <input
           type="text"
           className="ws-picker-search"
-          placeholder="http://alice.example.com:8081"
+          placeholder="e.g. alice.com:8081"
           value={addAddress}
           onChange={(e) => setAddAddress(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && addAddress.trim() && !loading) { e.preventDefault(); void handleAdd(); } }}
