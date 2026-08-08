@@ -56,8 +56,9 @@ impl ServerDirectory {
 
     pub fn set_trust(&mut self, server_id: u64, trusted: bool) -> bool {
         if let Some(entry) = self.get_mut(server_id) {
+            let changed = entry.trusted != trusted;
             entry.trusted = trusted;
-            true
+            changed
         } else {
             false
         }

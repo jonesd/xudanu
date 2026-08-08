@@ -1569,6 +1569,7 @@ impl Server {
             match crate::server::server_directory::ServerDirectory::load_from_file(&path) {
                 Ok(d) => {
                     self.server_directory = d;
+                    self.signed_introductions.clear();
                     let trusted_ids: Vec<u64> = self
                         .server_directory
                         .list()
@@ -1814,7 +1815,20 @@ impl Server {
                 }
             }
             Ok(None) => {
-                tracing::warn!("cross-server response unsigned — accepting as legacy");
+                let has_pin = self
+                    .server_directory
+                    .get(server_id)
+                    .map(|e| e.pinned_key.is_some() || (!e.verifying_key.is_empty()))
+                    .unwrap_or(false);
+                if has_pin {
+                    tracing::warn!("cross-server response unsigned but key is pinned — rejecting (possible signature stripping)");
+                    return Err(ServerError::Internal(
+                        "unsigned response from server with pinned key — possible signature stripping attack".into(),
+                    ));
+                }
+                tracing::warn!(
+                    "cross-server response unsigned — accepting as legacy (no pinned key)"
+                );
             }
             Err(e) if e.starts_with(TOFU_MISMATCH_PREFIX) => {
                 tracing::info!("TOFU key mismatch detected, checking for key rotation...");
