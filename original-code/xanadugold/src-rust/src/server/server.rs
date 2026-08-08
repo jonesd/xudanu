@@ -343,6 +343,60 @@ pub struct InlineTransclusionResult {
     pub source_titles: HashMap<BeId, String>,
 }
 
+/// A signed introduction: Server A vouches for Server B's identity.
+/// Published at /api/introductions so other servers can verify
+/// new servers through a web of trust.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SignedIntroduction {
+    pub target_server_id: u64,
+    pub target_verifying_key: String,
+    pub target_address: String,
+    pub target_name: String,
+    pub introduced_by: u64,
+    pub introduced_by_key: String,
+    pub timestamp: u64,
+    pub signature: String,
+}
+
+impl SignedIntroduction {
+    pub fn payload(&self) -> String {
+        format!(
+            "{}|{}|{}|{}|{}",
+            self.target_server_id,
+            self.target_verifying_key,
+            self.target_address,
+            self.introduced_by,
+            self.timestamp
+        )
+    }
+
+    pub fn verify(&self, introducer_vk_hex: &str) -> Result<(), String> {
+        if self.introduced_by_key != introducer_vk_hex {
+            return Err("introducer key mismatch".into());
+        }
+        let vk_bytes = crate::crypto::keys::hex_decode(introducer_vk_hex)
+            .map_err(|e| format!("invalid key hex: {}", e))?;
+        if vk_bytes.len() != 32 {
+            return Err("introducer key must be 32 bytes".into());
+        }
+        let vk = ed25519_dalek::VerifyingKey::from_bytes(vk_bytes.as_slice().try_into().unwrap())
+            .map_err(|_| "invalid Ed25519 key".to_string())?;
+
+        let sig_bytes = crate::crypto::keys::hex_decode(&self.signature)
+            .map_err(|e| format!("invalid sig hex: {}", e))?;
+        if sig_bytes.len() != 64 {
+            return Err("signature must be 64 bytes".into());
+        }
+        let sig_arr: [u8; 64] = sig_bytes.as_slice().try_into().unwrap();
+        let sig = ed25519_dalek::Signature::from_slice(&sig_arr)
+            .map_err(|_| "invalid signature".to_string())?;
+
+        let payload = self.payload();
+        vk.verify_strict(payload.as_bytes(), &sig)
+            .map_err(|_| "introduction signature verification failed".to_string())
+    }
+}
+
 /// Ghost metadata for an archived work — rendered when references
 /// point to archived content instead of a 404 or full live view.
 #[derive(Debug, Clone)]
@@ -423,6 +477,7 @@ pub struct Server {
     /// Cleared by an explicit admin action once the root cause is fixed.
     restore_errors: Vec<String>,
     trusted_server_registry: Option<crate::crypto::server_identity::TrustedServerRegistry>,
+    signed_introductions: Vec<SignedIntroduction>,
     pub(crate) server_name: String,
     server_description: String,
     server_namespace_id: u64,
@@ -972,6 +1027,7 @@ impl Server {
             wal: crate::persist::wal::WalLog::disabled(),
             restore_errors: Vec::new(),
             trusted_server_registry: None,
+            signed_introductions: Vec::new(),
             server_name: "Xudanu Server".to_string(),
             server_description: String::new(),
             server_namespace_id: 0,
@@ -1375,8 +1431,75 @@ impl Server {
         self.server_directory.add(entry);
     }
 
+    pub fn signed_introductions(&self) -> &[SignedIntroduction] {
+        &self.signed_introductions
+    }
+
+    pub fn verify_introduction(
+        intro: &SignedIntroduction,
+        introducer_vk_hex: &str,
+    ) -> Result<(), String> {
+        intro.verify(introducer_vk_hex)
+    }
+
     pub fn server_directory_set_trust(&mut self, server_id: u64, trusted: bool) -> bool {
-        self.server_directory.set_trust(server_id, trusted)
+        let changed = self.server_directory.set_trust(server_id, trusted);
+        if changed && trusted {
+            self.sign_introduction(server_id);
+        } else if changed && !trusted {
+            self.signed_introductions
+                .retain(|i| i.target_server_id != server_id);
+        }
+        changed
+    }
+
+    fn sign_introduction(&mut self, target_server_id: u64) {
+        let Some(entry) = self.server_directory.get(target_server_id) else {
+            return;
+        };
+        let target_vk = entry.verifying_key.clone();
+        let target_addr = entry.address.clone();
+        let target_name = entry.name.clone();
+        let target_port = entry.port;
+        drop(entry);
+
+        let my_vk_hex: String = self
+            .server_keypair
+            .signing_verifying_key()
+            .to_bytes()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        let my_ns_id = self.server_namespace_id();
+        let timestamp = Self::current_timestamp_secs();
+        let addr_str = if let Some(p) = target_port {
+            format!("{}:{}", target_addr, p)
+        } else {
+            target_addr.clone()
+        };
+
+        let payload = format!(
+            "{}|{}|{}|{}|{}",
+            target_server_id, target_vk, addr_str, my_ns_id, timestamp
+        );
+        let sig = self.sign_data(payload.as_bytes());
+        let sig_hex: String = sig.iter().map(|b| format!("{:02x}", b)).collect();
+
+        let intro = SignedIntroduction {
+            target_server_id,
+            target_verifying_key: target_vk,
+            target_address: addr_str,
+            target_name,
+            introduced_by: my_ns_id,
+            introduced_by_key: my_vk_hex,
+            timestamp,
+            signature: sig_hex,
+        };
+
+        self.signed_introductions
+            .retain(|i| i.target_server_id != target_server_id);
+        self.signed_introductions.push(intro);
+        tracing::info!("signed introduction for server_id={}", target_server_id);
     }
 
     pub fn server_directory_set_port(&mut self, server_id: u64, port: Option<u16>) -> bool {
@@ -1404,6 +1527,16 @@ impl Server {
             match crate::server::server_directory::ServerDirectory::load_from_file(&path) {
                 Ok(d) => {
                     self.server_directory = d;
+                    let trusted_ids: Vec<u64> = self
+                        .server_directory
+                        .list()
+                        .iter()
+                        .filter(|e| e.trusted)
+                        .map(|e| e.server_id)
+                        .collect();
+                    for sid in trusted_ids {
+                        self.sign_introduction(sid);
+                    }
                 }
                 Err(e) => {
                     tracing::warn!("Failed to load server directory: {}", e);
@@ -15645,6 +15778,7 @@ pub(crate) mod persist_snapshot {
                 wal: crate::persist::wal::WalLog::disabled(),
                 restore_errors: Vec::new(),
                 trusted_server_registry: None,
+                signed_introductions: Vec::new(),
                 server_name: "Xudanu Server".to_string(),
                 server_description: String::new(),
                 server_namespace_id: 0,
@@ -32153,5 +32287,239 @@ mod tests_key_rotation {
             new_vk.verify_strict(test_data, &signature).is_ok(),
             "server should sign with new key after rotation"
         );
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "serde")]
+mod tests_signed_introductions {
+    use super::*;
+
+    fn setup_server_with_directory_entry() -> Server {
+        let mut server = Server::new();
+        let target_ns_id = server.server_namespace_id() + 100;
+        server.server_directory_add_manual(
+            target_ns_id,
+            "target.example.com".to_string(),
+            "ab".repeat(32),
+            "Target Server".to_string(),
+        );
+        server
+    }
+
+    #[test]
+    fn test_no_introductions_initially() {
+        let server = Server::new();
+        assert!(server.signed_introductions().is_empty());
+    }
+
+    #[test]
+    fn test_signs_introduction_on_trust() {
+        let mut server = setup_server_with_directory_entry();
+        let target_id = server.server_namespace_id() + 100;
+
+        server.server_directory_set_trust(target_id, true);
+
+        let intros = server.signed_introductions();
+        assert_eq!(intros.len(), 1, "should have one introduction");
+        assert_eq!(intros[0].target_server_id, target_id);
+        assert_eq!(intros[0].target_name, "Target Server");
+        assert!(!intros[0].signature.is_empty());
+        assert_eq!(intros[0].introduced_by, server.server_namespace_id());
+    }
+
+    #[test]
+    fn test_removes_introduction_on_untrust() {
+        let mut server = setup_server_with_directory_entry();
+        let target_id = server.server_namespace_id() + 100;
+
+        server.server_directory_set_trust(target_id, true);
+        assert_eq!(server.signed_introductions().len(), 1);
+
+        server.server_directory_set_trust(target_id, false);
+        assert!(server.signed_introductions().is_empty());
+    }
+
+    #[test]
+    fn test_no_introduction_for_nonexistent_server() {
+        let mut server = Server::new();
+        server.server_directory_set_trust(99999, true);
+        assert!(server.signed_introductions().is_empty());
+    }
+
+    #[test]
+    fn test_introduction_payload_format() {
+        let mut server = setup_server_with_directory_entry();
+        let target_id = server.server_namespace_id() + 100;
+        server.server_directory_set_trust(target_id, true);
+
+        let intro = &server.signed_introductions()[0];
+        let expected_payload = format!(
+            "{}|{}|{}|{}|{}",
+            intro.target_server_id,
+            intro.target_verifying_key,
+            intro.target_address,
+            intro.introduced_by,
+            intro.timestamp
+        );
+        assert_eq!(intro.payload(), expected_payload);
+    }
+
+    #[test]
+    fn test_introduction_verifies_with_correct_key() {
+        let mut server = setup_server_with_directory_entry();
+        let target_id = server.server_namespace_id() + 100;
+        server.server_directory_set_trust(target_id, true);
+
+        let intro = server.signed_introductions()[0].clone();
+        let introducer_key = intro.introduced_by_key.clone();
+
+        let result = intro.verify(&introducer_key);
+        assert!(
+            result.is_ok(),
+            "should verify with correct key: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_introduction_rejected_with_wrong_key() {
+        let mut server = setup_server_with_directory_entry();
+        let target_id = server.server_namespace_id() + 100;
+        server.server_directory_set_trust(target_id, true);
+
+        let intro = server.signed_introductions()[0].clone();
+        let wrong_key = "ff".repeat(32);
+
+        let result = intro.verify(&wrong_key);
+        assert!(result.is_err(), "should reject wrong key");
+        let err = result.unwrap_err();
+        assert!(err.contains("mismatch") || err.contains("failed"));
+    }
+
+    #[test]
+    fn test_introduction_rejected_with_tampered_signature() {
+        let mut server = setup_server_with_directory_entry();
+        let target_id = server.server_namespace_id() + 100;
+        server.server_directory_set_trust(target_id, true);
+
+        let mut intro = server.signed_introductions()[0].clone();
+        intro.signature = "ff".repeat(64);
+        let introducer_key = intro.introduced_by_key.clone();
+
+        let result = intro.verify(&introducer_key);
+        assert!(result.is_err(), "should reject tampered signature");
+    }
+
+    #[test]
+    fn test_introduction_rejected_with_tampered_target() {
+        let mut server = setup_server_with_directory_entry();
+        let target_id = server.server_namespace_id() + 100;
+        server.server_directory_set_trust(target_id, true);
+
+        let mut intro = server.signed_introductions()[0].clone();
+        intro.target_address = "evil.example.com:9999".to_string();
+        let introducer_key = intro.introduced_by_key.clone();
+
+        let result = intro.verify(&introducer_key);
+        assert!(result.is_err(), "tampered address should fail verification");
+    }
+
+    #[test]
+    fn test_introduction_rejected_with_tampered_target_key() {
+        let mut server = setup_server_with_directory_entry();
+        let target_id = server.server_namespace_id() + 100;
+        server.server_directory_set_trust(target_id, true);
+
+        let mut intro = server.signed_introductions()[0].clone();
+        intro.target_verifying_key = "ee".repeat(32);
+        let introducer_key = intro.introduced_by_key.clone();
+
+        let result = intro.verify(&introducer_key);
+        assert!(
+            result.is_err(),
+            "tampered target key should fail verification"
+        );
+    }
+
+    #[test]
+    fn test_multiple_introductions_for_different_servers() {
+        let mut server = Server::new();
+
+        let id1 = server.server_namespace_id() + 100;
+        let id2 = server.server_namespace_id() + 200;
+
+        server.server_directory_add_manual(
+            id1,
+            "server1.example.com".to_string(),
+            "ab".repeat(32),
+            "Server 1".to_string(),
+        );
+        server.server_directory_add_manual(
+            id2,
+            "server2.example.com".to_string(),
+            "cd".repeat(32),
+            "Server 2".to_string(),
+        );
+
+        server.server_directory_set_trust(id1, true);
+        server.server_directory_set_trust(id2, true);
+
+        assert_eq!(server.signed_introductions().len(), 2);
+
+        server.server_directory_set_trust(id1, false);
+        assert_eq!(server.signed_introductions().len(), 1);
+        assert_eq!(server.signed_introductions()[0].target_server_id, id2);
+    }
+
+    #[test]
+    fn test_retrust_replaces_introduction() {
+        let mut server = setup_server_with_directory_entry();
+        let target_id = server.server_namespace_id() + 100;
+
+        server.server_directory_set_trust(target_id, true);
+        let first_ts = server.signed_introductions()[0].timestamp;
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        server.server_directory_set_trust(target_id, false);
+        server.server_directory_set_trust(target_id, true);
+
+        assert_eq!(server.signed_introductions().len(), 1);
+        assert!(server.signed_introductions()[0].timestamp >= first_ts);
+    }
+
+    #[test]
+    fn test_verify_introduction_static_method() {
+        let mut server = setup_server_with_directory_entry();
+        let target_id = server.server_namespace_id() + 100;
+        server.server_directory_set_trust(target_id, true);
+
+        let intro = server.signed_introductions()[0].clone();
+        let key = intro.introduced_by_key.clone();
+
+        let result = Server::verify_introduction(&intro, &key);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_introduction_includes_address_with_port() {
+        let mut server = Server::new();
+        let target_id = server.server_namespace_id() + 100;
+        server.server_directory_add_manual(
+            target_id,
+            "target.example.com".to_string(),
+            "ab".repeat(32),
+            "Target".to_string(),
+        );
+        server.server_directory_set_port(target_id, Some(9090));
+        server.server_directory_set_trust(target_id, true);
+
+        let intro = &server.signed_introductions()[0];
+        assert!(
+            intro.target_address.contains("9090"),
+            "address should include port"
+        );
+        assert!(intro.target_address.contains("target.example.com"));
     }
 }

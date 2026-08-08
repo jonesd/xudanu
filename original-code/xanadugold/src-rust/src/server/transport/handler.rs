@@ -56,6 +56,7 @@ pub fn build_router(state: SharedState) -> Router {
             "/api/public/work/{work_id}/range/{start}/{end}",
             get(public_work_range_handler),
         )
+        .route("/api/introductions", get(introductions_handler))
         .route("/api/backlink-notify", post(backlink_notify_handler))
         .route("/csrf-token", get(csrf_token_handler))
         .route("/auth/login", post(auth_login_handler))
@@ -271,6 +272,38 @@ async fn public_work_handler(
             .into_response(),
         Err(_) => (axum::http::StatusCode::NOT_FOUND, "work not found").into_response(),
     }
+}
+
+async fn introductions_handler(
+    State(state): State<SharedState>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+) -> impl IntoResponse {
+    if !state.rate_limiter.check_get(addr.ip()) {
+        return (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            "rate limit exceeded",
+        )
+            .into_response();
+    }
+    let introductions = state
+        .server
+        .with_server_ref(|srv| srv.signed_introductions().to_vec());
+    let body = serde_json::json!({
+        "api_version": 1,
+        "implementation": "xudanu",
+        "introductions": introductions,
+    });
+    (
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/json; charset=utf-8",
+            ),
+            (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+        ],
+        body.to_string(),
+    )
+        .into_response()
 }
 
 async fn backlink_notify_handler(
