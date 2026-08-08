@@ -2653,6 +2653,37 @@ export function WorkspaceShell() {
                         Back to my work
                       </button>
                     </div>
+                    <div style={{
+                      padding: "8px 16px", borderBottom: "1px solid var(--border)",
+                      display: "flex", alignItems: "center", gap: 8, flexShrink: 0,
+                    }}>
+                      <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                        Select text below, then insert into your work as a transclusion
+                      </span>
+                      <button
+                        type="button"
+                        disabled={!canEdit}
+                        onClick={() => {
+                          const sel = window.getSelection();
+                          if (!sel || sel.toString().trim().length === 0) return;
+                          const excerpt = sel.toString().trim();
+                          const citation = `\n\n> ${excerpt.split("\n").join("\n> ")}\n> — From "${remoteView.title}" via ${remoteView.originServerName} (${remoteView.tumbler})\n`;
+                          const newText = text + citation;
+                          if (clientRef.current && workBeId !== null) {
+                            void clientRef.current.workSetText(workBeId, newText);
+                          }
+                          setRemoteView(null);
+                        }}
+                        style={{
+                          marginLeft: "auto", fontSize: 11, padding: "4px 12px",
+                          border: "1px solid var(--accent)", borderRadius: 4,
+                          background: "var(--accent)", color: "#fff", cursor: canEdit ? "pointer" : "not-allowed",
+                          opacity: canEdit ? 1 : 0.5,
+                        }}
+                      >
+                        Insert into my work
+                      </button>
+                    </div>
                     <div style={{ flex: 1, overflow: "auto", padding: "32px 48px", minHeight: 0 }}>
                       <h1 style={{
                         fontSize: 24, fontWeight: 700, marginBottom: 16,
@@ -2663,6 +2694,7 @@ export function WorkspaceShell() {
                       <div style={{
                         whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.75,
                         fontFamily: "Source Serif 4, Georgia, serif", color: "var(--text)",
+                        userSelect: "text",
                       }}>
                         {remoteView.text}
                       </div>
