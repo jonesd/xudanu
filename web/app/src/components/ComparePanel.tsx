@@ -16,13 +16,8 @@ interface TextRegion {
   cidx: number;
 }
 
-export function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+import { escapeHtml } from "../utils/escape";
+export { escapeHtml };
 
 export function highlightRegions(
   text: string,

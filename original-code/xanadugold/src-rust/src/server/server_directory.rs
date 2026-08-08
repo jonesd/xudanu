@@ -21,6 +21,10 @@ pub struct DirectoryEntry {
     pub quarantined: bool,
     #[serde(default)]
     pub quarantined_at: Option<u64>,
+    #[serde(default)]
+    pub first_seen: Option<u64>,
+    #[serde(default)]
+    pub successful_resolutions: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -128,6 +132,8 @@ mod tests {
             last_seen: None,
             quarantined: false,
             quarantined_at: None,
+            first_seen: None,
+            successful_resolutions: 0,
         });
         assert_eq!(dir.get(2).unwrap().name, "Bob");
         assert!(dir.get(99).is_none());
@@ -151,6 +157,8 @@ mod tests {
             last_seen: Some(0),
             quarantined: false,
             quarantined_at: None,
+            first_seen: None,
+            successful_resolutions: 0,
         });
         assert!(dir.remove(3));
         assert!(!dir.remove(3));
@@ -175,6 +183,8 @@ mod tests {
             last_seen: None,
             quarantined: false,
             quarantined_at: None,
+            first_seen: None,
+            successful_resolutions: 0,
         });
         assert!(dir.set_trust(5, true));
         assert!(dir.get(5).unwrap().trusted);
@@ -199,6 +209,8 @@ mod tests {
             last_seen: None,
             quarantined: false,
             quarantined_at: None,
+            first_seen: None,
+            successful_resolutions: 0,
         });
         assert_eq!(
             dir.resolve_address(7).unwrap(),
@@ -225,6 +237,8 @@ mod tests {
             last_seen: None,
             quarantined: false,
             quarantined_at: None,
+            first_seen: None,
+            successful_resolutions: 0,
         });
         assert_eq!(dir.resolve_address(8).unwrap(), "https://frank.example.com");
     }
@@ -248,6 +262,8 @@ mod tests {
                 last_seen: None,
                 quarantined: false,
                 quarantined_at: None,
+                first_seen: None,
+                successful_resolutions: 0,
             });
         }
         let list = dir.list();
@@ -279,6 +295,8 @@ mod tests {
             last_seen: Some(0),
             quarantined: false,
             quarantined_at: None,
+            first_seen: None,
+            successful_resolutions: 0,
         });
         dir.save_to_file(&path).unwrap();
 
@@ -316,6 +334,8 @@ mod tests {
                 last_seen: None,
                 quarantined: false,
                 quarantined_at: None,
+                first_seen: None,
+                successful_resolutions: 0,
             });
         }
         let trusted = dir.trusted_servers();

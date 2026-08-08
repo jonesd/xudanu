@@ -50,3 +50,9 @@ original-code/xanadugold/src.tar.gz
 original-code/xanadugold/src/image/base.log
 data-*/
 docs/roger-email.md
+
+# Debug scripts
+scripts/debug-*
+
+# Security scan output
+security-scan/

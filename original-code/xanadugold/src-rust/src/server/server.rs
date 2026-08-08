@@ -423,6 +423,8 @@ pub struct SignedIntroduction {
     pub introduced_by_key: String,
     pub timestamp: u64,
     pub signature: String,
+    pub known_since: Option<u64>,
+    pub successful_resolutions: u64,
 }
 
 impl SignedIntroduction {
@@ -1487,6 +1489,8 @@ impl Server {
             last_seen: Some(Self::current_timestamp_secs()),
             quarantined: false,
             quarantined_at: None,
+            first_seen: Some(Self::current_timestamp_secs()),
+            successful_resolutions: 0,
         };
 
         if let Some(existing) = self.server_directory.get(server_id) {
@@ -1542,6 +1546,8 @@ impl Server {
             last_seen: Some(Self::current_timestamp_secs()),
             quarantined: false,
             quarantined_at: None,
+            first_seen: Some(Self::current_timestamp_secs()),
+            successful_resolutions: 0,
         };
         self.server_directory.add(entry);
     }
@@ -1611,6 +1617,8 @@ impl Server {
         let target_addr = entry.address.clone();
         let target_name = entry.name.clone();
         let target_port = entry.port;
+        let known_since = entry.first_seen;
+        let successful_resolutions = entry.successful_resolutions;
 
         let my_vk_hex: String = self
             .server_keypair
@@ -1643,6 +1651,8 @@ impl Server {
             introduced_by_key: my_vk_hex,
             timestamp,
             signature: sig_hex,
+            known_since,
+            successful_resolutions,
         };
 
         self.signed_introductions
@@ -2047,6 +2057,11 @@ impl Server {
                     .unwrap_or_default()
                     .as_secs(),
             });
+
+        if let Some(entry) = self.server_directory.get_mut(server_id) {
+            entry.successful_resolutions += 1;
+            entry.last_seen = Some(Self::current_timestamp_secs());
+        }
 
         Ok(CrossServerResolution::Fetched {
             text,
@@ -33368,6 +33383,8 @@ mod tests_fuzz_equivalent {
             introduced_by_key: "".to_string(),
             timestamp: 0,
             signature: "".to_string(),
+            known_since: None,
+            successful_resolutions: 0,
         };
         let result = intro.verify("");
         assert!(result.is_err(), "empty hex should error not panic");
@@ -33384,6 +33401,8 @@ mod tests_fuzz_equivalent {
             introduced_by_key: "also-not-hex".to_string(),
             timestamp: 0,
             signature: "zz".repeat(64),
+            known_since: None,
+            successful_resolutions: 0,
         };
         let result = intro.verify("also-not-hex");
         assert!(result.is_err(), "non-hex should error not panic");
@@ -33400,6 +33419,8 @@ mod tests_fuzz_equivalent {
             introduced_by_key: "cd".repeat(100),
             timestamp: 0,
             signature: "ef".repeat(200),
+            known_since: None,
+            successful_resolutions: 0,
         };
         let result = intro.verify(&"cd".repeat(100));
         assert!(result.is_err(), "oversized hex should error not panic");

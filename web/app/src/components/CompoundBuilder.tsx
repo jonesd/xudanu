@@ -40,9 +40,7 @@ const BRIDGE_COLORS = [
   "#f0e442", "#e69f00", "#0072b2", "#d55e00",
 ];
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
+import { escapeHtml } from "../utils/escape";
 
 function renderCompoundText(
   text: string,

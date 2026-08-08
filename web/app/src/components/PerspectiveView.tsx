@@ -24,9 +24,7 @@ interface PerspectiveViewProps {
   onFetchWorkText?: (workId: number) => Promise<string | null>;
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+import { escapeHtml } from "../utils/escape";
 
 function renderTextWithSpans(text: string, spans: Array<{ start: number; end: number; linkId: number; color: string }>, idPrefix: string): string {
   if (spans.length === 0) return escapeHtml(text);
