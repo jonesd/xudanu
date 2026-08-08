@@ -1157,7 +1157,8 @@ impl Server {
     pub fn well_known_identity(&self) -> serde_json::Value {
         let vk_bytes = self.server_keypair.signing_verifying_key().to_bytes();
         let vk_hex: String = vk_bytes.iter().map(|b| format!("{:02x}", b)).collect();
-        serde_json::json!({
+
+        let mut identity = serde_json::json!({
             "protocol": "xcp",
             "protocol_version": 1,
             "api_version": 1,
@@ -1176,7 +1177,47 @@ impl Server {
                 "work_count": self.work_count(),
                 "revision_count": self.total_revision_count(),
             }
-        })
+        });
+
+        if let Some(last_rotation) = self.key_history.rotation_proofs.last() {
+            if self.key_history.entries.len() >= 2 {
+                let prev_entry = &self.key_history.entries[self.key_history.entries.len() - 2];
+                let prev_vk_hex: String = prev_entry
+                    .verifying_key
+                    .to_bytes()
+                    .iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect();
+                let sig_hex: String = last_rotation
+                    .signature
+                    .to_bytes()
+                    .iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect();
+                let payload_hex: String = last_rotation
+                    .payload
+                    .encode()
+                    .iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect();
+                let new_vk_hex: String = last_rotation
+                    .payload
+                    .new_signing_key
+                    .iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect();
+
+                identity["key_rotation"] = serde_json::json!({
+                    "previous_verifying_key": prev_vk_hex,
+                    "new_verifying_key": new_vk_hex,
+                    "rotation_signature": sig_hex,
+                    "rotation_payload_hex": payload_hex,
+                    "rotated_at": last_rotation.payload.timestamp,
+                });
+            }
+        }
+
+        identity
     }
 
     pub fn server_directory(&self) -> &crate::server::server_directory::ServerDirectory {
@@ -1581,7 +1622,9 @@ impl Server {
 
         let origin_server_id = body["server_namespace_id"].as_u64().unwrap_or(server_id);
 
-        let expected_key = self.server_directory.get(server_id)
+        let expected_key = self
+            .server_directory
+            .get(server_id)
             .map(|e| e.pinned_key.as_ref().unwrap_or(&e.verifying_key).as_str());
 
         match verify_signed_response(&body, &content_hash, origin_server_id, expected_key) {
@@ -1598,10 +1641,55 @@ impl Server {
             Ok(None) => {
                 tracing::warn!("cross-server response unsigned — accepting as legacy");
             }
+            Err(e) if e.contains("TOFU") => {
+                tracing::info!("TOFU key mismatch detected, checking for key rotation...");
+                let wk_url = format!(
+                    "{}/.well-known/xudanu-server.json",
+                    base_url.trim_end_matches('/')
+                );
+                let pinned = expected_key.unwrap_or("").to_string();
+                let response_key = body["server_public_key"].as_str().unwrap_or("").to_string();
+
+                match http_get_json(&wk_url, 10) {
+                    Ok(wk_text) => {
+                        let wk_body: serde_json::Value =
+                            serde_json::from_str(&wk_text).map_err(|e| {
+                                ServerError::Internal(format!("invalid well-known JSON: {}", e))
+                            })?;
+                        match verify_key_rotation(&wk_body, &pinned, &response_key) {
+                            Ok(()) => {
+                                tracing::info!("key rotation accepted — updating pinned key");
+                                if let Some(entry) = self.server_directory.get_mut(server_id) {
+                                    entry.pinned_key = Some(response_key.clone());
+                                    let _ = self.server_directory_save();
+                                }
+                            }
+                            Err(re) => {
+                                tracing::warn!("key rotation verification failed: {}", re);
+                                return Err(ServerError::Internal(format!(
+                                    "cross-server key changed and rotation verification failed: {}",
+                                    re
+                                )));
+                            }
+                        }
+                    }
+                    Err(fe) => {
+                        tracing::warn!("failed to fetch well-known for rotation check: {}", fe);
+                        return Err(ServerError::Internal(format!(
+                            "cross-server content verification failed: {}",
+                            e
+                        )));
+                    }
+                }
+            }
             Err(e) => {
-                tracing::warn!("cross-server signature verification failed: {} — rejecting", e);
+                tracing::warn!(
+                    "cross-server signature verification failed: {} — rejecting",
+                    e
+                );
                 return Err(ServerError::Internal(format!(
-                    "cross-server content verification failed: {}", e
+                    "cross-server content verification failed: {}",
+                    e
                 )));
             }
         }
@@ -31549,10 +31637,8 @@ fn verify_signed_response(
         return Err("malformed signature or key (expected 32-byte key, 64-byte signature)".into());
     }
 
-    let vk = ed25519_dalek::VerifyingKey::from_bytes(
-        pub_key_bytes.as_slice().try_into().unwrap(),
-    )
-    .map_err(|_| "invalid Ed25519 verifying key".to_string())?;
+    let vk = ed25519_dalek::VerifyingKey::from_bytes(pub_key_bytes.as_slice().try_into().unwrap())
+        .map_err(|_| "invalid Ed25519 verifying key".to_string())?;
 
     let sig_arr: [u8; 64] = sig_bytes.as_slice().try_into().unwrap();
     let sig = ed25519_dalek::Signature::from_slice(&sig_arr)
@@ -31573,16 +31659,79 @@ fn verify_signed_response(
     Ok(Some(pub_key_hex.to_string()))
 }
 
+#[cfg(feature = "serde")]
+fn verify_key_rotation(
+    well_known: &serde_json::Value,
+    pinned_key_hex: &str,
+    new_key_hex: &str,
+) -> Result<(), String> {
+    let rotation = well_known
+        .get("key_rotation")
+        .ok_or_else(|| "no key_rotation in well-known endpoint".to_string())?;
+
+    let prev_vk_hex = rotation["previous_verifying_key"]
+        .as_str()
+        .ok_or("missing previous_verifying_key")?;
+
+    if prev_vk_hex != pinned_key_hex {
+        return Err(format!("rotation previous key does not match pinned key"));
+    }
+
+    let new_vk_hex = rotation["new_verifying_key"]
+        .as_str()
+        .ok_or("missing new_verifying_key")?;
+
+    if new_vk_hex != new_key_hex {
+        return Err("rotation new key does not match response key".into());
+    }
+
+    let sig_hex = rotation["rotation_signature"]
+        .as_str()
+        .ok_or("missing rotation_signature")?;
+
+    let payload_hex = rotation["rotation_payload_hex"]
+        .as_str()
+        .ok_or("missing rotation_payload_hex")?;
+
+    let sig_bytes = crate::crypto::keys::hex_decode(sig_hex)
+        .map_err(|e| format!("invalid signature hex: {}", e))?;
+    let payload_bytes = crate::crypto::keys::hex_decode(payload_hex)
+        .map_err(|e| format!("invalid payload hex: {}", e))?;
+
+    if sig_bytes.len() != 64 {
+        return Err("rotation signature must be 64 bytes".into());
+    }
+
+    let prev_vk_bytes = crate::crypto::keys::hex_decode(pinned_key_hex)
+        .map_err(|e| format!("invalid pinned key hex: {}", e))?;
+
+    if prev_vk_bytes.len() != 32 {
+        return Err("pinned key must be 32 bytes".into());
+    }
+
+    let prev_vk =
+        ed25519_dalek::VerifyingKey::from_bytes(prev_vk_bytes.as_slice().try_into().unwrap())
+            .map_err(|_| "invalid Ed25519 previous verifying key".to_string())?;
+
+    let sig_arr: [u8; 64] = sig_bytes.as_slice().try_into().unwrap();
+    let sig = ed25519_dalek::Signature::from_slice(&sig_arr)
+        .map_err(|_| "invalid rotation signature bytes".to_string())?;
+
+    prev_vk
+        .verify_strict(&payload_bytes, &sig)
+        .map_err(|_| "key rotation signature verification failed".to_string())?;
+
+    tracing::info!("key rotation verified: old key signed transition to new key");
+    Ok(())
+}
+
 #[cfg(test)]
 #[cfg(feature = "serde")]
 mod tests_signature_enforcement {
     use super::*;
     use ed25519_dalek::Signer;
 
-    fn make_keypair() -> (
-        ed25519_dalek::SigningKey,
-        ed25519_dalek::VerifyingKey,
-    ) {
+    fn make_keypair() -> (ed25519_dalek::SigningKey, ed25519_dalek::VerifyingKey) {
         let mut csprng = rand::rngs::OsRng;
         let sk = ed25519_dalek::SigningKey::generate(&mut csprng);
         let vk = sk.verifying_key();
@@ -31610,7 +31759,11 @@ mod tests_signature_enforcement {
         );
 
         let sig = signing_key.sign(sig_payload.as_bytes());
-        let sig_hex: String = sig.to_bytes().iter().map(|b| format!("{:02x}", b)).collect();
+        let sig_hex: String = sig
+            .to_bytes()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
 
         let body = serde_json::json!({
             "text": text,
@@ -31634,7 +31787,11 @@ mod tests_signature_enforcement {
         let (body, hash) = make_signed_response("Hello world", 42, &sk, &vk_hex, 0);
 
         let result = verify_signed_response(&body, &hash, 42, None);
-        assert!(result.is_ok(), "valid signature should pass: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "valid signature should pass: {:?}",
+            result.err()
+        );
         assert_eq!(result.unwrap(), Some(vk_hex));
     }
 
@@ -31662,7 +31819,10 @@ mod tests_signature_enforcement {
         let mut body2 = body.clone();
         body2["server_public_key"] = serde_json::json!(vk2_hex);
         let result = verify_signed_response(&body2, &hash, 42, None);
-        assert!(result.is_err(), "should reject when public key doesn't match signature");
+        assert!(
+            result.is_err(),
+            "should reject when public key doesn't match signature"
+        );
     }
 
     #[test]
@@ -31672,7 +31832,10 @@ mod tests_signature_enforcement {
         let (body, hash) = make_signed_response("Hello", 42, &sk, &vk_hex, 0);
 
         let result = verify_signed_response(&body, &hash, 99, None);
-        assert!(result.is_err(), "should reject signature for wrong server_id");
+        assert!(
+            result.is_err(),
+            "should reject signature for wrong server_id"
+        );
     }
 
     #[test]
@@ -31683,7 +31846,10 @@ mod tests_signature_enforcement {
         });
         let hash = [0u8; 32];
         let result = verify_signed_response(&body, &hash, 42, None);
-        assert!(result.is_ok(), "missing signature should be accepted as legacy");
+        assert!(
+            result.is_ok(),
+            "missing signature should be accepted as legacy"
+        );
         assert_eq!(result.unwrap(), None);
     }
 
@@ -31728,7 +31894,10 @@ mod tests_signature_enforcement {
         let (body, hash) = make_signed_response("Hello", 42, &sk, &vk_hex, 0);
 
         let result = verify_signed_response(&body, &hash, 42, Some(""));
-        assert!(result.is_ok(), "empty expected key should be ignored (first connection)");
+        assert!(
+            result.is_ok(),
+            "empty expected key should be ignored (first connection)"
+        );
     }
 
     #[test]
@@ -31759,6 +31928,230 @@ mod tests_signature_enforcement {
         assert!(result_rev5.is_ok(), "revision 5 should verify");
 
         let cross_result = verify_signed_response(&body_rev5, &hash, 42, None);
-        assert!(cross_result.is_err(), "revision 5 signature should not verify with revision 0 hash");
+        assert!(
+            cross_result.is_err(),
+            "revision 5 signature should not verify with revision 0 hash"
+        );
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "serde")]
+mod tests_key_rotation {
+    use super::*;
+    use ed25519_dalek::Signer;
+
+    fn vk_to_hex(vk: &ed25519_dalek::VerifyingKey) -> String {
+        vk.to_bytes().iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    #[test]
+    fn test_well_known_has_no_rotation_initially() {
+        let server = Server::new();
+        let identity = server.well_known_identity();
+        assert!(
+            identity.get("key_rotation").is_none(),
+            "no rotation before any key rotation"
+        );
+    }
+
+    #[test]
+    fn test_well_known_includes_rotation_after_rotate() {
+        let mut server = Server::new();
+        let old_vk_hex = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        let new_id = server
+            .rotate_server_keys()
+            .expect("rotation should succeed");
+        let identity = server.well_known_identity();
+
+        let rotation = identity
+            .get("key_rotation")
+            .expect("rotation section should exist after rotate_server_keys");
+
+        assert_eq!(
+            rotation["previous_verifying_key"].as_str(),
+            Some(old_vk_hex.as_str()),
+            "previous key should match old key"
+        );
+
+        let new_vk_hex = vk_to_hex(&server.server_keypair.signing_verifying_key());
+        assert_eq!(
+            rotation["new_verifying_key"].as_str(),
+            Some(new_vk_hex.as_str()),
+            "new key should match current server key"
+        );
+
+        assert!(rotation["rotation_signature"].as_str().is_some());
+        assert!(rotation["rotation_payload_hex"].as_str().is_some());
+        assert!(rotation["rotated_at"].as_u64().is_some());
+
+        let _ = new_id;
+    }
+
+    #[test]
+    fn test_verify_key_rotation_valid() {
+        let mut server = Server::new();
+        let old_vk_hex = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        server
+            .rotate_server_keys()
+            .expect("rotation should succeed");
+        let new_vk_hex = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        let identity = server.well_known_identity();
+
+        let result = verify_key_rotation(&identity, &old_vk_hex, &new_vk_hex);
+        assert!(
+            result.is_ok(),
+            "valid rotation should verify: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_verify_key_rotation_wrong_pinned_key() {
+        let mut server = Server::new();
+        server
+            .rotate_server_keys()
+            .expect("rotation should succeed");
+        let new_vk_hex = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        let identity = server.well_known_identity();
+        let wrong_key = "ab".repeat(32);
+
+        let result = verify_key_rotation(&identity, &wrong_key, &new_vk_hex);
+        assert!(result.is_err(), "should reject wrong pinned key");
+        assert!(result.unwrap_err().contains("pinned key"));
+    }
+
+    #[test]
+    fn test_verify_key_rotation_wrong_new_key() {
+        let mut server = Server::new();
+        let old_vk_hex = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        server
+            .rotate_server_keys()
+            .expect("rotation should succeed");
+
+        let identity = server.well_known_identity();
+        let wrong_new_key = "cd".repeat(32);
+
+        let result = verify_key_rotation(&identity, &old_vk_hex, &wrong_new_key);
+        assert!(result.is_err(), "should reject wrong new key");
+        assert!(result.unwrap_err().contains("response key"));
+    }
+
+    #[test]
+    fn test_verify_key_rotation_missing_rotation_section() {
+        let well_known = serde_json::json!({
+            "server_id": "ab".repeat(32),
+            "server_name": "Test",
+        });
+
+        let result = verify_key_rotation(
+            &well_known,
+            "ab".repeat(32).as_str(),
+            "cd".repeat(32).as_str(),
+        );
+        assert!(result.is_err(), "should reject missing rotation section");
+        assert!(result.unwrap_err().contains("no key_rotation"));
+    }
+
+    #[test]
+    fn test_verify_key_rotation_tampered_signature() {
+        let mut server = Server::new();
+        let old_vk_hex = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        server
+            .rotate_server_keys()
+            .expect("rotation should succeed");
+        let new_vk_hex = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        let mut identity = server.well_known_identity();
+        let tampered_sig = "ff".repeat(64);
+        identity["key_rotation"]["rotation_signature"] = serde_json::json!(tampered_sig);
+
+        let result = verify_key_rotation(&identity, &old_vk_hex, &new_vk_hex);
+        assert!(result.is_err(), "should reject tampered signature");
+        assert!(result.unwrap_err().contains("verification failed"));
+    }
+
+    #[test]
+    fn test_verify_key_rotation_tampered_payload() {
+        let mut server = Server::new();
+        let old_vk_hex = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        server
+            .rotate_server_keys()
+            .expect("rotation should succeed");
+        let new_vk_hex = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        let mut identity = server.well_known_identity();
+        let tampered_payload = "ff".repeat(88);
+        identity["key_rotation"]["rotation_payload_hex"] = serde_json::json!(tampered_payload);
+
+        let result = verify_key_rotation(&identity, &old_vk_hex, &new_vk_hex);
+        assert!(result.is_err(), "should reject tampered payload");
+    }
+
+    #[test]
+    fn test_multiple_rotations_verify() {
+        let mut server = Server::new();
+        let original_vk_hex = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        server.rotate_server_keys().expect("first rotation");
+        let first_new_vk = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        let identity_after_first = server.well_known_identity();
+        let result1 = verify_key_rotation(&identity_after_first, &original_vk_hex, &first_new_vk);
+        assert!(result1.is_ok(), "first rotation should verify");
+
+        server.rotate_server_keys().expect("second rotation");
+        let second_new_vk = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        let identity_after_second = server.well_known_identity();
+        let result2 = verify_key_rotation(&identity_after_second, &first_new_vk, &second_new_vk);
+        assert!(
+            result2.is_ok(),
+            "second rotation should verify from first new key"
+        );
+
+        let result_wrong =
+            verify_key_rotation(&identity_after_second, &original_vk_hex, &second_new_vk);
+        assert!(
+            result_wrong.is_err(),
+            "should not verify from original key (need chain)"
+        );
+    }
+
+    #[test]
+    fn test_server_signs_with_new_key_after_rotation() {
+        let mut server = Server::new();
+        server.set_server_namespace_id(42);
+
+        server
+            .rotate_server_keys()
+            .expect("rotation should succeed");
+        let new_vk_hex = vk_to_hex(&server.server_keypair.signing_verifying_key());
+
+        let test_data = b"test data after rotation";
+        let sig = server.sign_data(test_data);
+
+        let new_vk = ed25519_dalek::VerifyingKey::from_bytes(
+            crate::crypto::keys::hex_decode(&new_vk_hex)
+                .unwrap()
+                .as_slice()
+                .try_into()
+                .unwrap(),
+        )
+        .unwrap();
+
+        let sig_arr: [u8; 64] = sig.as_slice().try_into().unwrap();
+        let signature = ed25519_dalek::Signature::from_slice(&sig_arr).unwrap();
+        assert!(
+            new_vk.verify_strict(test_data, &signature).is_ok(),
+            "server should sign with new key after rotation"
+        );
     }
 }
