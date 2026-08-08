@@ -20,6 +20,15 @@ export interface DirectoryServer {
   quarantined?: boolean;
   first_seen?: number | null;
   successful_resolutions?: number;
+  last_seen?: number | null;
+}
+
+function timeAgo(unixSec: number): string {
+  const diff = Math.floor(Date.now() / 1000) - unixSec;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
 }
 
 interface ServerDirectoryProps {
@@ -206,6 +215,7 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
           placeholder="http://alice.example.com:8081"
           value={addAddress}
           onChange={(e) => setAddAddress(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && addAddress.trim() && !loading) { e.preventDefault(); void handleAdd(); } }}
           style={{ flex: 1 }}
         />
         <button
@@ -241,9 +251,10 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
             </span>
             {isNew && !srv.quarantined && (
               <span style={{
-                fontSize: 8, fontWeight: 700, color: "#fff", background: "var(--accent)",
-                padding: "1px 5px", borderRadius: 8, textTransform: "uppercase", letterSpacing: 0.5,
-              }}>NEW</span>
+                fontSize: 8, fontWeight: 700, color: "#fff", background: "#d97706",
+                padding: "2px 6px", borderRadius: 3, textTransform: "uppercase",
+                letterSpacing: 0.5, userSelect: "none", lineHeight: 1,
+              }}>New</span>
             )}
             {srv.quarantined && (
               <span style={{
@@ -258,13 +269,16 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
           {srv.description && (
             <div className="ws-conn-excerpt">{srv.description}</div>
           )}
-          {!srv.quarantined && daysKnown !== null && (
+          {!srv.quarantined && (daysKnown !== null || srv.last_seen) && (
             <div style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 2 }}>
-              Known {daysKnown === 0 ? "today" : `${daysKnown}d`}
+              {daysKnown !== null && (daysKnown === 0 ? "Known today" : `Known ${daysKnown}d`)}
               {srv.successful_resolutions !== undefined && srv.successful_resolutions > 0
                 ? ` · ${srv.successful_resolutions} resolves`
                 : ""
               }
+              {srv.last_seen && (
+                <span> · Last seen {timeAgo(srv.last_seen)}</span>
+              )}
             </div>
           )}
           {!srv.quarantined && (
