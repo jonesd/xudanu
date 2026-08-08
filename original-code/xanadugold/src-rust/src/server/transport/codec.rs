@@ -3295,7 +3295,7 @@ impl JsonCodec {
             OperationCode::ServerDirectoryRemove => {
                 #[derive(Deserialize)]
                 struct Args {
-                    server_id: u64,
+                    server_id: String,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
@@ -3307,7 +3307,7 @@ impl JsonCodec {
             OperationCode::ServerDirectorySetTrust => {
                 #[derive(Deserialize)]
                 struct Args {
-                    server_id: u64,
+                    server_id: String,
                     trusted: bool,
                 }
                 let args: Args = serde_json::from_value(p)

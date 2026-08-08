@@ -3657,7 +3657,7 @@ fn dispatch_inner(
                 .into_iter()
                 .map(|e| {
                     serde_json::json!({
-                        "server_id": e.server_id,
+                        "server_id": e.server_id.to_string(),
                         "address": e.address,
                         "port": e.port,
                         "verifying_key": e.verifying_key,
@@ -3687,16 +3687,25 @@ fn dispatch_inner(
         #[cfg(feature = "serde")]
         WireRequest::ServerDirectoryRemove { server_id } => {
             srv.ensure_logged_in(session_id)?;
-            let removed = srv.server_directory_remove(server_id);
+            let sid: u64 = server_id.parse().map_err(|_| {
+                crate::server::ServerError::InvalidArgument("invalid server_id".into())
+            })?;
+            let removed = srv.server_directory_remove(sid);
             srv.server_directory_save()?;
             Ok(ResponseValue::ServerDirectoryRemoveResult { removed })
         }
         #[cfg(feature = "serde")]
         WireRequest::ServerDirectorySetTrust { server_id, trusted } => {
             srv.ensure_logged_in(session_id)?;
-            srv.server_directory_set_trust(server_id, trusted);
+            let sid: u64 = server_id.parse().map_err(|_| {
+                crate::server::ServerError::InvalidArgument("invalid server_id".into())
+            })?;
+            srv.server_directory_set_trust(sid, trusted);
             srv.server_directory_save()?;
-            Ok(ResponseValue::ServerDirectorySetTrustResult { server_id, trusted })
+            Ok(ResponseValue::ServerDirectorySetTrustResult {
+                server_id: sid,
+                trusted,
+            })
         }
         #[cfg(feature = "serde")]
         WireRequest::CrossServerResolve {

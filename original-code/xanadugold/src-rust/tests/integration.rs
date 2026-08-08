@@ -11037,7 +11037,7 @@ async fn server_directory_remove_nonexistent_returns_false() {
         json_req(
             2,
             "server_directory_remove",
-            Some(serde_json::json!({"server_id": 999})),
+            Some(serde_json::json!({"server_id": "999"})),
         ),
     )
     .await;
@@ -11055,7 +11055,7 @@ async fn server_directory_set_trust_nonexistent() {
         json_req(
             2,
             "server_directory_set_trust",
-            Some(serde_json::json!({"server_id": 555, "trusted": true})),
+            Some(serde_json::json!({"server_id": "555", "trusted": true})),
         ),
     )
     .await;
@@ -11376,6 +11376,8 @@ async fn cross_server_resolve_invalid_hash() {
 #[test]
 fn server_directory_add_auto_discovery() {
     use std::io::{Read, Write};
+
+    xudanu::server::server::set_allow_loopback(true);
 
     let mut server_a = Server::new();
     server_a.set_server_name("Alice's Server".to_string());

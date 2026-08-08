@@ -49,6 +49,7 @@ services:
       - "Alice's server — content publisher"
       - --allowed-origin
       - "*"
+      - --allow-loopback-cross-server
     networks:
       xudanu-net:
         aliases:
@@ -79,6 +80,7 @@ services:
       - "Bob's server — commentator and transcluder"
       - --allowed-origin
       - "*"
+      - --allow-loopback-cross-server
     networks:
       xudanu-net:
         aliases:
@@ -109,6 +111,7 @@ services:
       - "Carol's server — newcomer, discovers and transcludes"
       - --allowed-origin
       - "*"
+      - --allow-loopback-cross-server
     networks:
       xudanu-net:
         aliases:

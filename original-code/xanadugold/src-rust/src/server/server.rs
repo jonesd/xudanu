@@ -1,5 +1,12 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Arc;
+
+static ALLOW_LOOPBACK: AtomicBool = AtomicBool::new(false);
+
+pub fn set_allow_loopback(allow: bool) {
+    ALLOW_LOOPBACK.store(allow, AtomicOrdering::SeqCst);
+}
 
 use super::admin::{AdminState, IdGrant, SessionInfo};
 use super::club::Club;
@@ -282,6 +289,51 @@ pub fn is_ssrf_address(addr: &str) -> bool {
     }
 
     false
+}
+
+fn is_ip_blocked(ip: &std::net::IpAddr) -> bool {
+    if ALLOW_LOOPBACK.load(AtomicOrdering::SeqCst) {
+        return false;
+    }
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified() || {
+                let octets = v4.octets();
+                octets[0] == 100 && octets[1] >= 64 && octets[1] <= 127
+            }
+        }
+        std::net::IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.segments()[0] & 0xfe00 == 0xfc00
+                || v6.segments()[0] & 0xffc0 == 0xfe80
+        }
+    }
+}
+
+pub fn resolve_and_verify_host(host: &str, port: u16) -> Result<Vec<std::net::SocketAddr>, String> {
+    use std::net::ToSocketAddrs;
+
+    let socket_addrs: Vec<std::net::SocketAddr> = (host, port)
+        .to_socket_addrs()
+        .map_err(|e| format!("DNS resolution failed for '{}': {}", host, e))?
+        .collect();
+
+    if socket_addrs.is_empty() {
+        return Err(format!("no addresses resolved for '{}'", host));
+    }
+
+    for addr in &socket_addrs {
+        if is_ip_blocked(&addr.ip()) {
+            return Err(format!(
+                "refusing to connect to resolved private/blocked address {} for host '{}'",
+                addr.ip(),
+                host
+            ));
+        }
+    }
+
+    Ok(socket_addrs)
 }
 
 #[derive(Debug, Clone)]
@@ -30778,8 +30830,10 @@ fn http_get_json_https(
         .with_root_certificates(root_cert_store)
         .with_no_client_auth();
 
+    let addrs = resolve_and_verify_host(host, port)?;
+
     let mut connector =
-        std::net::TcpStream::connect((host, port)).map_err(|e| format!("connect failed: {}", e))?;
+        std::net::TcpStream::connect(&addrs[..]).map_err(|e| format!("connect failed: {}", e))?;
 
     connector
         .set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
@@ -30846,8 +30900,9 @@ fn http_get_json_http(
     use std::net::TcpStream;
     use std::time::Duration;
 
+    let addrs = resolve_and_verify_host(host, port)?;
     let mut stream =
-        TcpStream::connect((host, port)).map_err(|e| format!("connect failed: {}", e))?;
+        TcpStream::connect(&addrs[..]).map_err(|e| format!("connect failed: {}", e))?;
 
     let request = format!(
         "GET {} HTTP/1.0\r\nHost: {}\r\nAccept: application/json\r\n\r\n",
@@ -30917,8 +30972,9 @@ pub fn http_post_json(url: &str, body: &str, timeout_secs: u64) -> Result<String
     use std::io::{Read, Write};
     use std::net::TcpStream;
 
+    let addrs = resolve_and_verify_host(host, port)?;
     let mut stream =
-        TcpStream::connect((host, port)).map_err(|e| format!("connect failed: {}", e))?;
+        TcpStream::connect(&addrs[..]).map_err(|e| format!("connect failed: {}", e))?;
     stream
         .set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
         .ok();
@@ -31355,5 +31411,126 @@ mod tests_revisions {
         // In test mode (no chunk store), this returns an error — acceptable.
         // In production (with chunk store + prev_chunk_history), this returns "version A".
         assert!(result.is_err() || result.unwrap() == "version A");
+    }
+}
+
+#[cfg(test)]
+mod tests_ssrf_guard {
+    use super::*;
+
+    #[test]
+    fn test_is_ssrf_localhost() {
+        assert!(is_ssrf_address("localhost"));
+        assert!(is_ssrf_address("127.0.0.1"));
+        assert!(is_ssrf_address("http://localhost"));
+        assert!(is_ssrf_address("http://127.0.0.1:8080"));
+    }
+
+    #[test]
+    fn test_is_ssrf_private_ranges() {
+        assert!(is_ssrf_address("10.0.0.1"));
+        assert!(is_ssrf_address("192.168.1.1"));
+        assert!(is_ssrf_address("172.16.0.1"));
+        assert!(is_ssrf_address("0.0.0.0"));
+    }
+
+    #[test]
+    fn test_is_ssrf_allows_public() {
+        assert!(!is_ssrf_address("example.com"));
+        assert!(!is_ssrf_address("93.184.216.34"));
+        assert!(!is_ssrf_address("alice.example.com:8081"));
+    }
+
+    #[test]
+    fn test_is_ip_blocked_loopback() {
+        assert!(is_ip_blocked(&"127.0.0.1".parse().unwrap()));
+        assert!(is_ip_blocked(&"::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_ip_blocked_private_v4() {
+        assert!(is_ip_blocked(&"10.0.0.1".parse().unwrap()));
+        assert!(is_ip_blocked(&"10.255.255.255".parse().unwrap()));
+        assert!(is_ip_blocked(&"192.168.1.1".parse().unwrap()));
+        assert!(is_ip_blocked(&"172.16.0.1".parse().unwrap()));
+        assert!(is_ip_blocked(&"172.31.255.255".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_ip_blocked_link_local() {
+        assert!(is_ip_blocked(&"169.254.1.1".parse().unwrap()));
+        assert!(is_ip_blocked(&"169.254.169.254".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_ip_blocked_cgnat() {
+        assert!(is_ip_blocked(&"100.64.0.1".parse().unwrap()));
+        assert!(is_ip_blocked(&"100.127.255.255".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_ip_blocked_unspecified() {
+        assert!(is_ip_blocked(&"0.0.0.0".parse().unwrap()));
+        assert!(is_ip_blocked(&"::".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_ip_blocked_ipv6_ula() {
+        assert!(is_ip_blocked(&"fc00::1".parse().unwrap()));
+        assert!(is_ip_blocked(&"fd00::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_ip_blocked_ipv6_link_local() {
+        assert!(is_ip_blocked(&"fe80::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_ip_blocked_allows_public() {
+        assert!(!is_ip_blocked(&"8.8.8.8".parse().unwrap()));
+        assert!(!is_ip_blocked(&"1.1.1.1".parse().unwrap()));
+        assert!(!is_ip_blocked(&"93.184.216.34".parse().unwrap()));
+        assert!(!is_ip_blocked(&"172.15.0.1".parse().unwrap()));
+        assert!(!is_ip_blocked(&"100.63.255.255".parse().unwrap()));
+        assert!(!is_ip_blocked(&"100.128.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_ip_blocked_allows_public_ipv6() {
+        assert!(!is_ip_blocked(&"2001:4860:4860::8888".parse().unwrap()));
+        assert!(!is_ip_blocked(&"2606:4700:4700::1111".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_ip_blocked_private_boundary() {
+        assert!(!is_ip_blocked(&"172.15.255.255".parse().unwrap()));
+        assert!(is_ip_blocked(&"172.16.0.0".parse().unwrap()));
+        assert!(is_ip_blocked(&"172.31.255.255".parse().unwrap()));
+        assert!(!is_ip_blocked(&"172.32.0.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_resolve_rejects_loopback_hostname() {
+        let result = resolve_and_verify_host("localhost", 8080);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("private") || err.contains("loopback") || err.contains("blocked"));
+    }
+
+    #[test]
+    fn test_resolve_rejects_numeric_loopback() {
+        let result = resolve_and_verify_host("127.0.0.1", 8080);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resolve_rejects_private_ip() {
+        assert!(resolve_and_verify_host("10.0.0.1", 80).is_err());
+        assert!(resolve_and_verify_host("192.168.1.1", 80).is_err());
+    }
+
+    #[test]
+    fn test_resolve_rejects_zero_ip() {
+        assert!(resolve_and_verify_host("0.0.0.0", 80).is_err());
     }
 }

@@ -678,6 +678,7 @@ async fn main() {
             }
             if allow_loopback {
                 server.allow_loopback_cross_server = true;
+                xudanu::server::server::set_allow_loopback(true);
                 tracing::warn!("Loopback addresses allowed for cross-server (testing only — do not use in production)");
             }
 

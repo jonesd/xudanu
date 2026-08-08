@@ -234,12 +234,12 @@
 .ws-body {
   grid-area: body;
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 280px;
+  grid-template-columns: 240px minmax(0, 1fr) 320px;
   overflow: hidden;
   min-height: 0;
 }
 .ws-body:has(.ws-left-rail.hidden) {
-  grid-template-columns: 0 1fr 280px;
+  grid-template-columns: 0 1fr 320px;
 }
 .ws-body:has(.ws-right-panel.hidden) {
   grid-template-columns: 240px 1fr 0;

@@ -75,7 +75,61 @@ pub fn build_router(state: SharedState) -> Router {
         )
         .route("/", get(index_handler))
         .fallback(get(static_fallback_handler))
+        .layer(axum::middleware::from_fn(security_headers_middleware))
         .with_state(state)
+}
+
+async fn security_headers_middleware(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+
+    headers.insert(
+        axum::http::HeaderName::from_static("x-frame-options"),
+        HeaderValue::from_static("DENY"),
+    );
+    headers.insert(
+        axum::http::HeaderName::from_static("x-content-type-options"),
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        axum::http::HeaderName::from_static("content-security-policy"),
+        HeaderValue::from_static(
+            "default-src 'self'; \
+             script-src 'self'; \
+             style-src 'self' 'unsafe-inline'; \
+             connect-src 'self' ws: wss: http: https:; \
+             img-src 'self' data: blob: https:; \
+             font-src 'self' data:; \
+             object-src 'none'; \
+             base-uri 'self'; \
+             frame-ancestors 'none'",
+        ),
+    );
+    headers.insert(
+        axum::http::HeaderName::from_static("permissions-policy"),
+        HeaderValue::from_static("camera=(), microphone=(), geolocation=(), payment=()"),
+    );
+    headers.insert(
+        axum::http::HeaderName::from_static("cross-origin-embedder-policy"),
+        HeaderValue::from_static("require-corp"),
+    );
+    headers.insert(
+        axum::http::HeaderName::from_static("cross-origin-opener-policy"),
+        HeaderValue::from_static("same-origin"),
+    );
+    headers.insert(
+        axum::http::HeaderName::from_static("referrer-policy"),
+        HeaderValue::from_static("strict-origin-when-cross-origin"),
+    );
+    headers.insert(
+        axum::http::HeaderName::from_static("strict-transport-security"),
+        HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+    );
+
+    response
 }
 
 const EMBEDDED_INDEX_HTML: &str = include_str!("../../../static/index.html");

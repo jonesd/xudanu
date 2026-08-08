@@ -15,6 +15,7 @@ import { RevisionTimeline } from "../RevisionTimeline";
 import { LinkCreator } from "../LinkCreator";
 import { ImportWizard } from "../ImportWizard";
 import { AttributionPanel } from "../AttributionPanel";
+import { ServerDirectoryPanel } from "../ServerDirectoryPanel";
 import { loadThemeState, saveThemeState, activePalette } from "../../theme";
 import type { ThemeMode } from "../../theme";
 import type { WorkListEntry, TrailPayload, AgainHop } from "../../api/crdt_sync";
@@ -42,12 +43,10 @@ import "../../app.css";
 import "../../theme.css";
 import "../../workspace.css";
 
-const WS_URL = window.location.port === "5173"
-  ? `ws://127.0.0.1:8080/xudanu`
-  : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/xudanu`;
+const WS_URL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/xudanu`;
 
 type LeftRailMode = "graph" | "outline";
-type RightPanelTab = "provenance" | "connections" | "trails" | "timeline" | "more";
+type RightPanelTab = "provenance" | "connections" | "trails" | "timeline" | "servers" | "more";
 
 interface WorkMeta {
   title: string;
@@ -3030,6 +3029,7 @@ export function WorkspaceShell() {
               ["connections", "Links"],
               ["trails", "Trails"],
               ["timeline", "History"],
+              ["servers", "Servers"],
               ["more", "More"],
             ] as const).map(([id, label]) => (
               <button
@@ -3422,6 +3422,13 @@ export function WorkspaceShell() {
                   }}
                 />
               </div>
+            )}
+            {rightPanelTab === "servers" && (
+              <ServerDirectoryPanel
+                client={connected ? clientRef.current : null}
+                connected={connected}
+                onNavigateToWork={(workId) => selectWork(workId)}
+              />
             )}
             {rightPanelTab === "more" && (
               <div className="ws-more-tab">

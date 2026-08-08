@@ -8,6 +8,32 @@ use crate::server::lock::LockCredential;
 pub const PROTOCOL_VERSION: u8 = 0x02;
 pub const MIN_SUPPORTED_VERSION: u8 = 0x01;
 
+#[cfg(feature = "serde")]
+fn deserialize_u64_flexible<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum NumOrStr {
+        Num(u64),
+        Str(String),
+    }
+    match NumOrStr::deserialize(deserializer)? {
+        NumOrStr::Num(n) => Ok(n),
+        NumOrStr::Str(s) => {
+            if let Some(hex) = s.strip_prefix("0x") {
+                u64::from_str_radix(hex, 16)
+                    .map_err(|e| Error::custom(format!("invalid hex u64: {}", e)))
+            } else {
+                s.parse::<u64>()
+                    .map_err(|e| Error::custom(format!("invalid u64: {}", e)))
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MessageType {
@@ -2045,11 +2071,11 @@ pub enum WireRequest {
     },
     #[cfg(feature = "serde")]
     ServerDirectoryRemove {
-        server_id: u64,
+        server_id: String,
     },
     #[cfg(feature = "serde")]
     ServerDirectorySetTrust {
-        server_id: u64,
+        server_id: String,
         trusted: bool,
     },
     #[cfg(feature = "serde")]
