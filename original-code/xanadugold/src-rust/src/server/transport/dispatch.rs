@@ -3834,11 +3834,12 @@ fn dispatch_inner(
                 remote_server_id,
                 link_type.clone(),
             );
+            let local_title = srv.work_title(local_work_id).unwrap_or_default();
             srv.send_backlink_notification(
                 remote_server_id,
                 &remote_tumbler,
                 local_work_id,
-                &remote_title,
+                &local_title,
                 "",
                 &link_type,
             );

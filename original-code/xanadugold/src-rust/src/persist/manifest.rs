@@ -1154,6 +1154,19 @@ pub struct SocialSection {
     pub compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
     #[serde(default)]
     pub cross_server_backlinks: Vec<CrossServerBacklinkEntry>,
+    #[serde(default)]
+    pub cross_server_links: Vec<CrossServerLinkEntry>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct CrossServerLinkEntry {
+    pub local_work_id: u64,
+    pub remote_tumbler: String,
+    pub remote_title: String,
+    pub remote_server_name: String,
+    pub remote_server_id: u64,
+    pub link_type: String,
+    pub created_at: u64,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]

@@ -126,7 +126,7 @@ export function WorkspaceShell() {
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("provenance");
   const [remoteView, setRemoteView] = useState<{
     title: string; text: string; originServerName: string;
-    license: string; tumbler: string; workId: string;
+    license: string; tumbler: string; workId: string; serverId: string;
   } | null>(null);
   const [rightPanelHidden, setRightPanelHidden] = useState(false);
   const [showIdentity, setShowIdentity] = useState(false);
@@ -2322,7 +2322,7 @@ export function WorkspaceShell() {
                               remote_tumbler: remoteView.tumbler,
                               remote_title: remoteView.title,
                               remote_server_name: remoteView.originServerName,
-                              remote_server_id: 0,
+                              remote_server_id: parseInt(remoteView.serverId, 10) || 0,
                               link_type: "reference",
                             });
                           } catch (e) { console.error("Link create failed:", e); }

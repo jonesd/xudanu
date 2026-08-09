@@ -31,7 +31,7 @@ interface ServerDirectoryProps {
   client: { sendRequest: (op: string, payload: Record<string, unknown>) => Promise<unknown> } | null;
   connected: boolean;
   onNavigateToWork: (workId: number) => void;
-  onViewRemoteWork?: (data: { title: string; text: string; originServerName: string; license: string; tumbler: string; workId: string }) => void;
+  onViewRemoteWork?: (data: { title: string; text: string; originServerName: string; license: string; tumbler: string; workId: string; serverId: string }) => void;
 }
 
 export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onNavigateToWork, onViewRemoteWork }: ServerDirectoryProps) {
@@ -177,7 +177,7 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
       const cached = data.cached === true;
 
       if (onViewRemoteWork) {
-        onViewRemoteWork({ title, text, originServerName: originName, license, tumbler, workId });
+        onViewRemoteWork({ title, text, originServerName: originName, license, tumbler, workId, serverId: browsingServerId || "0" });
       } else {
         setRemoteText({ workId, text, title });
       }

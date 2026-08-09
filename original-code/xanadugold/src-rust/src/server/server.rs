@@ -2505,6 +2505,10 @@ impl Server {
         &self.cross_server_links
     }
 
+    pub fn work_title(&self, work_id: BeId) -> Option<String> {
+        self.works.get(&work_id).map(|ws| ws.title().to_string())
+    }
+
     fn record_server_success(&mut self, server_id: u64) {
         if let Some(entry) = self.server_directory.get_mut(server_id) {
             entry.last_success = Some(Self::current_timestamp_secs());
@@ -8515,6 +8519,19 @@ impl Server {
                                             excerpt: e.excerpt.clone(),
                                             link_type: e.link_type.clone(),
                                             received_at: e.received_at,
+                                        })
+                                        .collect();
+                                    self.cross_server_links = social
+                                        .cross_server_links
+                                        .iter()
+                                        .map(|l| CrossServerLink {
+                                            local_work_id: l.local_work_id,
+                                            remote_tumbler: l.remote_tumbler.clone(),
+                                            remote_title: l.remote_title.clone(),
+                                            remote_server_name: l.remote_server_name.clone(),
+                                            remote_server_id: l.remote_server_id,
+                                            link_type: l.link_type.clone(),
+                                            created_at: l.created_at,
                                         })
                                         .collect();
                                     social.starred_works
@@ -17400,12 +17417,26 @@ pub(crate) mod persist_snapshot {
                         received_at: b.received_at,
                     })
                     .collect(),
+                cross_server_links: self
+                    .cross_server_links
+                    .iter()
+                    .map(|l| crate::persist::manifest::CrossServerLinkEntry {
+                        local_work_id: l.local_work_id,
+                        remote_tumbler: l.remote_tumbler.clone(),
+                        remote_title: l.remote_title.clone(),
+                        remote_server_name: l.remote_server_name.clone(),
+                        remote_server_id: l.remote_server_id,
+                        link_type: l.link_type.clone(),
+                        created_at: l.created_at,
+                    })
+                    .collect(),
             };
             if !social.starred_works.is_empty()
                 || !social.user_pins.is_empty()
                 || !social.trails.is_empty()
                 || !social.compound_editions.is_empty()
                 || !social.cross_server_backlinks.is_empty()
+                || !social.cross_server_links.is_empty()
             {
                 let social_json = serde_json::to_vec(&social)
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
