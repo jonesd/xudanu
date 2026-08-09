@@ -1,0 +1,40 @@
+# Caddyfile — Production HTTPS for xudanu.com
+# Caddy automatically obtains and renews Let's Encrypt certificates
+# No manual cert management needed
+
+xudanu.com {
+    # Reverse proxy to Xudanu server
+    reverse_proxy xudanu:8080 {
+        # WebSocket support (for /xudanu endpoint)
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+    }
+
+    # Security headers (Caddy adds these on top of Xudanu's own)
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+
+    # Gzip compression (saves bandwidth for text content)
+    encode gzip zstd
+
+    # Rate limiting (basic, per-IP)
+    # Note: Xudanu has its own rate limiter for API endpoints
+
+    # Access logs
+    log {
+        output file /data/access.log {
+            roll_size 100MB
+            roll_keep 5
+        }
+        format json
+    }
+}
+
+# Redirect www to apex
+www.xudanu.com {
+    redir https://xudanu.com{uri} permanent
+}

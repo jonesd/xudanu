@@ -1,0 +1,61 @@
+# docker-compose.prod.yml — Production deployment for xudanu.com
+# Single node with Caddy (auto-HTTPS) + Xudanu server
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Requirements:
+#   - DNS: xudanu.com → server IP
+#   - Caddyfile in same directory
+#   - Docker image built (docker build -t xudanu:latest .)
+
+services:
+  xudanu:
+    image: xudanu:latest
+    container_name: xudanu-prod
+    restart: unless-stopped
+    command:
+      - run
+      - "0.0.0.0:8080"
+      - /data
+      - --static-dir
+      - /app/dist
+      - --public-address
+      - "xudanu.com"
+      - --server-name
+      - "Xudanu"
+      - --server-description
+      - "The Xudanu docuverse — a permanent, interconnected document network"
+      - --allowed-origin
+      - "*"
+      - --key-passphrase
+      - "${XUDANU_KEY_PASSPHRASE:?Set XUDANU_KEY_PASSPHRASE in .env}"
+    volumes:
+      - xudanu-data:/data
+    networks:
+      - xudanu-internal
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: xudanu-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - xudanu
+    networks:
+      - xudanu-internal
+
+volumes:
+  xudanu-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  xudanu-internal:
+    driver: bridge
