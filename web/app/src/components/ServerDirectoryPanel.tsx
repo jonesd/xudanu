@@ -14,6 +14,9 @@ export interface DirectoryServer {
   first_seen?: number | null;
   successful_resolutions?: number;
   last_seen?: number | null;
+  last_success?: number | null;
+  last_failure?: number | null;
+  consecutive_failures?: number;
 }
 
 function timeAgo(unixSec: number): string {
@@ -211,6 +214,50 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
     setFedSearching(false);
   }, [client]);
 
+  const [discovered, setDiscovered] = useState<Array<{
+    server_id: number; name: string; address: string; verifying_key: string;
+    introduced_by: number;
+  }>>([]);
+  const [discovering, setDiscovering] = useState(false);
+
+  const handleDiscover = useCallback(async () => {
+    if (!client) return;
+    setDiscovering(true);
+    const allDiscovered: Array<{ server_id: number; name: string; address: string; verifying_key: string; introduced_by: number }> = [];
+    for (const srv of servers.filter(s => s.trusted && !s.quarantined)) {
+      try {
+        const resp = await client.sendRequest("fetch_introductions", { server_id: srv.server_id });
+        const val = (resp as Record<string, unknown>)?.value ?? resp;
+        const data = (val ?? {}) as Record<string, unknown>;
+        const intros = (data.introductions as Array<{ server_id: number; name: string; address: string; verifying_key: string; introduced_by: number; introduced_by_name?: string }>) || [];
+        for (const intro of intros) {
+          if (!allDiscovered.find(d => d.server_id === intro.server_id)) {
+            allDiscovered.push(intro);
+          }
+        }
+      } catch { /* skip unreachable servers */ }
+    }
+    setDiscovered(allDiscovered);
+    setDiscovering(false);
+  }, [client, servers]);
+
+  const handleAddDiscovered = useCallback(async (srv: { server_id: number; name: string; address: string; verifying_key: string; introduced_by: number }) => {
+    if (!client) return;
+    try {
+      await client.sendRequest("add_discovered_server", {
+        server_id: srv.server_id,
+        address: srv.address,
+        name: srv.name,
+        verifying_key: srv.verifying_key,
+        introduced_by: srv.introduced_by,
+      });
+      setDiscovered(prev => prev.filter(d => d.server_id !== srv.server_id));
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to add server");
+    }
+  }, [client, refresh]);
+
   if (!connected || !client) {
     return <div className="ws-placeholder"><div className="ws-placeholder-label">Not connected</div></div>;
   }
@@ -219,9 +266,16 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
     <div className="ws-server-directory">
       <div className="ws-conn-header">
         <span>Servers</span>
-        <button className="ws-concept-add-btn" style={{ fontSize: 10 }} onClick={() => void refresh()} title="Refresh">
-          ↻
-        </button>
+        <div style={{ display: "flex", gap: 2 }}>
+          {servers.some(s => s.trusted && !s.quarantined) && (
+            <button className="ws-concept-add-btn" style={{ fontSize: 9 }} onClick={() => void handleDiscover()} title="Discover servers through trusted peers" disabled={discovering}>
+              {discovering ? "..." : "Discover"}
+            </button>
+          )}
+          <button className="ws-concept-add-btn" style={{ fontSize: 10 }} onClick={() => void refresh()} title="Refresh">
+            ↻
+          </button>
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
@@ -240,6 +294,31 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
       </div>
 
       {fedSearching && <div className="ws-conn-empty">Searching all trusted servers...</div>}
+
+      {discovered.length > 0 && (
+        <div className="ws-conn-section" style={{ marginBottom: 8 }}>
+          <div className="ws-conn-header" style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <span>Discovered ({discovered.length})</span>
+            <button className="ws-concept-add-btn" style={{ fontSize: 10 }} onClick={() => setDiscovered([])}>✕</button>
+          </div>
+          {discovered.map((d) => (
+            <div key={d.server_id} className="ws-conn-item">
+              <div className="ws-conn-title" style={{ fontSize: 12 }}>{d.name}</div>
+              <div className="ws-conn-excerpt">
+                <span style={{ fontSize: 8, color: "#fff", background: "#d97706", padding: "1px 5px", borderRadius: 3 }}>via peer</span>
+                {" "}{d.address}
+              </div>
+              <button
+                className="ws-action-btn"
+                style={{ fontSize: 10, padding: "2px 8px", marginTop: 4 }}
+                onClick={() => void handleAddDiscovered(d)}
+              >
+                Add
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {federatedResults.length > 0 && (
         <div className="ws-conn-section" style={{ marginBottom: 8 }}>
@@ -304,7 +383,14 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
         <div key={srv.server_id} className="ws-conn-item" style={{ display: "flex", flexDirection: "column", alignItems: "stretch" }}>
           <div className="ws-conn-title" style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
             <span>
-              {srv.quarantined ? "⛔" : srv.trusted ? "✅" : "❓"} {srv.name || "Unknown"}
+              {(() => {
+                if (srv.quarantined) return "⛔";
+                if (!srv.trusted) return "❓";
+                const fails = srv.consecutive_failures ?? 0;
+                if (fails >= 3) return "🔴";
+                if (fails > 0) return "🟡";
+                return "🟢";
+              })()} {srv.name || "Unknown"}
             </span>
             {isNew && !srv.quarantined && (
               <span style={{

@@ -3670,6 +3670,9 @@ fn dispatch_inner(
                         "first_seen": e.first_seen,
                         "successful_resolutions": e.successful_resolutions,
                         "quarantined": e.quarantined,
+                        "last_success": e.last_success,
+                        "last_failure": e.last_failure,
+                        "consecutive_failures": e.consecutive_failures,
                     })
                 })
                 .collect();

@@ -2183,6 +2183,8 @@ impl Server {
                     }
                     entry.successful_resolutions += 1;
                     entry.last_seen = Some(Self::current_timestamp_secs());
+                    entry.last_success = Some(Self::current_timestamp_secs());
+                    entry.consecutive_failures = 0;
                 }
                 let _ = self.server_directory_save();
             }
@@ -2203,6 +2205,7 @@ impl Server {
                 tracing::warn!("TOFU mismatch on remote work fetch");
                 let alert = self.security_tracker.record_sig_failure(server_id);
                 self.handle_security_alert(server_id, alert);
+                self.record_server_failure(server_id);
                 return Err(ServerError::Internal(format!(
                     "remote work key mismatch: {}",
                     e
@@ -2212,6 +2215,7 @@ impl Server {
                 tracing::warn!("remote work signature failed: {}", e);
                 let alert = self.security_tracker.record_sig_failure(server_id);
                 self.handle_security_alert(server_id, alert);
+                self.record_server_failure(server_id);
                 return Err(ServerError::Internal(format!(
                     "remote work verification failed: {}",
                     e
@@ -2439,12 +2443,29 @@ impl Server {
     ) -> Result<(), ServerError> {
         let registry = self.trusted_server_registry.as_ref().ok_or_else(|| {
             ServerError::Internal("trusted server registry not configured".to_string())
-        })?;
+        });
 
-        crate::crypto::server_identity::verify_server_identity(server_id, reported_key, registry)
+        crate::crypto::server_identity::verify_server_identity(server_id, reported_key, registry?)
             .map_err(|e| {
                 ServerError::Internal(format!("server identity verification failed: {}", e))
             })
+    }
+
+    fn record_server_failure(&mut self, server_id: u64) {
+        if let Some(entry) = self.server_directory.get_mut(server_id) {
+            entry.last_failure = Some(Self::current_timestamp_secs());
+            entry.consecutive_failures += 1;
+        }
+        let _ = self.server_directory_save();
+    }
+
+    fn record_server_success(&mut self, server_id: u64) {
+        if let Some(entry) = self.server_directory.get_mut(server_id) {
+            entry.last_success = Some(Self::current_timestamp_secs());
+            entry.last_seen = Some(Self::current_timestamp_secs());
+            entry.consecutive_failures = 0;
+        }
+        let _ = self.server_directory_save();
     }
 
     pub fn is_server_trusted(&self, server_id: &str) -> bool {
