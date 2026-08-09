@@ -347,6 +347,17 @@ const SIG_FAILURE_THRESHOLD: u32 = 5;
 const ROTATION_RATE_LIMIT: u32 = 3;
 const ROTATION_RATE_WINDOW_SECS: u64 = 3600;
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CrossServerLink {
+    pub local_work_id: u64,
+    pub remote_tumbler: String,
+    pub remote_title: String,
+    pub remote_server_name: String,
+    pub remote_server_id: u64,
+    pub link_type: String,
+    pub created_at: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct RemoteWorkData {
     pub work_id: String,
@@ -563,6 +574,7 @@ pub struct Server {
     trusted_server_registry: Option<crate::crypto::server_identity::TrustedServerRegistry>,
     signed_introductions: Vec<SignedIntroduction>,
     security_tracker: CrossServerSecurityTracker,
+    cross_server_links: Vec<CrossServerLink>,
     pub(crate) server_name: String,
     server_description: String,
     server_namespace_id: u64,
@@ -1113,6 +1125,7 @@ impl Server {
             restore_errors: Vec::new(),
             trusted_server_registry: None,
             signed_introductions: Vec::new(),
+            cross_server_links: Vec::new(),
             security_tracker: CrossServerSecurityTracker::new(),
             server_name: "Xudanu Server".to_string(),
             server_description: String::new(),
@@ -2459,6 +2472,39 @@ impl Server {
         let _ = self.server_directory_save();
     }
 
+    pub fn add_cross_server_link(
+        &mut self,
+        local_work_id: u64,
+        remote_tumbler: String,
+        remote_title: String,
+        remote_server_name: String,
+        remote_server_id: u64,
+        link_type: String,
+    ) {
+        let link = CrossServerLink {
+            local_work_id,
+            remote_tumbler,
+            remote_title,
+            remote_server_name,
+            remote_server_id,
+            link_type,
+            created_at: Self::current_timestamp_secs(),
+        };
+        self.cross_server_links.push(link);
+        self.auto_checkpoint();
+    }
+
+    pub fn cross_server_links_for_work(&self, work_id: u64) -> Vec<&CrossServerLink> {
+        self.cross_server_links
+            .iter()
+            .filter(|l| l.local_work_id == work_id)
+            .collect()
+    }
+
+    pub fn all_cross_server_links(&self) -> &[CrossServerLink] {
+        &self.cross_server_links
+    }
+
     fn record_server_success(&mut self, server_id: u64) {
         if let Some(entry) = self.server_directory.get_mut(server_id) {
             entry.last_success = Some(Self::current_timestamp_secs());
@@ -2466,6 +2512,36 @@ impl Server {
             entry.consecutive_failures = 0;
         }
         let _ = self.server_directory_save();
+    }
+
+    pub fn send_backlink_notification(
+        &self,
+        remote_server_id: u64,
+        target_work_id: &str,
+        origin_work_id: u64,
+        origin_work_title: &str,
+        excerpt: &str,
+        link_type: &str,
+    ) {
+        if let Some(entry) = self.server_directory.get(remote_server_id) {
+            let address = entry.address.clone();
+            let port = entry.port.unwrap_or(8080);
+            let url = format!("http://{}:{}/api/backlink-notify", address, port);
+
+            let body = serde_json::json!({
+                "target_work_id": target_work_id,
+                "origin_server_address": self.public_address.as_deref().unwrap_or("unknown"),
+                "origin_server_name": &self.server_name,
+                "origin_work_id": format!("{:04x}", origin_work_id),
+                "origin_work_title": origin_work_title,
+                "excerpt": excerpt,
+                "link_type": link_type,
+            });
+
+            let body_str = body.to_string();
+            let _ = http_post_json(&url, &body_str, 10);
+            tracing::info!("Sent backlink notification to {}", url);
+        }
     }
 
     pub fn is_server_trusted(&self, server_id: &str) -> bool {
@@ -16450,6 +16526,7 @@ pub(crate) mod persist_snapshot {
                 restore_errors: Vec::new(),
                 trusted_server_registry: None,
                 signed_introductions: Vec::new(),
+                cross_server_links: Vec::new(),
                 security_tracker: CrossServerSecurityTracker::new(),
                 server_name: "Xudanu Server".to_string(),
                 server_description: String::new(),

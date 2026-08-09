@@ -3817,6 +3817,53 @@ fn dispatch_inner(
             Ok(ResponseValue::AddDiscoveredServerResult { added: true })
         }
         #[cfg(feature = "serde")]
+        WireRequest::CrossServerLinkCreate {
+            local_work_id,
+            remote_tumbler,
+            remote_title,
+            remote_server_name,
+            remote_server_id,
+            link_type,
+        } => {
+            srv.ensure_logged_in(session_id)?;
+            srv.add_cross_server_link(
+                local_work_id,
+                remote_tumbler.clone(),
+                remote_title.clone(),
+                remote_server_name.clone(),
+                remote_server_id,
+                link_type.clone(),
+            );
+            srv.send_backlink_notification(
+                remote_server_id,
+                &remote_tumbler,
+                local_work_id,
+                &remote_title,
+                "",
+                &link_type,
+            );
+            Ok(ResponseValue::CrossServerLinkCreateResult { created: true })
+        }
+        #[cfg(feature = "serde")]
+        WireRequest::CrossServerLinkList { work_id } => {
+            srv.ensure_session(session_id)?;
+            let links: Vec<serde_json::Value> = srv
+                .cross_server_links_for_work(work_id)
+                .iter()
+                .map(|l| {
+                    serde_json::json!({
+                        "remote_tumbler": l.remote_tumbler,
+                        "remote_title": l.remote_title,
+                        "remote_server_name": l.remote_server_name,
+                        "remote_server_id": l.remote_server_id,
+                        "link_type": l.link_type,
+                        "created_at": l.created_at,
+                    })
+                })
+                .collect();
+            Ok(ResponseValue::CrossServerLinkListResult { links })
+        }
+        #[cfg(feature = "serde")]
         WireRequest::FederationAttestationCreate {
             attestation_type,
             subject_server_id,

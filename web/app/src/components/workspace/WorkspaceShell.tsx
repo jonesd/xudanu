@@ -2311,10 +2311,36 @@ export function WorkspaceShell() {
                     >
                       Link
                     </button>
-                    <button
-                      type="button"
-                      className="ws-sel-btn note"
-                      disabled={!canEdit}
+                      <button
+                        type="button"
+                        disabled={!canEdit || !workBeId}
+                        onClick={async () => {
+                          if (!clientRef.current || workBeId === null || !remoteView) return;
+                          try {
+                            await clientRef.current.sendRequest("cross_server_link_create", {
+                              local_work_id: workBeId,
+                              remote_tumbler: remoteView.tumbler,
+                              remote_title: remoteView.title,
+                              remote_server_name: remoteView.originServerName,
+                              remote_server_id: 0,
+                              link_type: "reference",
+                            });
+                          } catch (e) { console.error("Link create failed:", e); }
+                          setRemoteView(null);
+                        }}
+                        style={{
+                          fontSize: 11, padding: "4px 12px",
+                          border: "1px solid var(--accent-blue)", borderRadius: 4,
+                          background: "transparent", color: "var(--accent-blue)",
+                          cursor: canEdit ? "pointer" : "not-allowed",
+                          opacity: canEdit ? 1 : 0.5, marginRight: 4,
+                        }}
+                      >
+                        Link to this
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canEdit}
                       onClick={handleCreateAnnotation}
                       title="Add a note or comment to this passage"
                     >

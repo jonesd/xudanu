@@ -106,7 +106,7 @@ describe("ServerDirectoryPanel", () => {
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
-      expect(screen.getByText(/Trusted/).textContent).toContain("✅");
+      expect(screen.getByText(/Trusted/).textContent).toContain("🟢");
     });
   });
 

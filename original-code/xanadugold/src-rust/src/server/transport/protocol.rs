@@ -390,6 +390,10 @@ pub enum OperationCode {
     #[cfg(feature = "serde")]
     AddDiscoveredServer,
     #[cfg(feature = "serde")]
+    CrossServerLinkCreate,
+    #[cfg(feature = "serde")]
+    CrossServerLinkList,
+    #[cfg(feature = "serde")]
     FederationAttestationCreate,
     #[cfg(feature = "serde")]
     FederationAttestationVerify,
@@ -741,6 +745,10 @@ impl OperationCode {
             0x0F09 => Some(OperationCode::FetchIntroductions),
             #[cfg(feature = "serde")]
             0x0F0A => Some(OperationCode::AddDiscoveredServer),
+            #[cfg(feature = "serde")]
+            0x0F0B => Some(OperationCode::CrossServerLinkCreate),
+            #[cfg(feature = "serde")]
+            0x0F0C => Some(OperationCode::CrossServerLinkList),
 
             _ => None,
         }
@@ -1058,6 +1066,10 @@ impl OperationCode {
             OperationCode::FetchIntroductions => 0x0F09,
             #[cfg(feature = "serde")]
             OperationCode::AddDiscoveredServer => 0x0F0A,
+            #[cfg(feature = "serde")]
+            OperationCode::CrossServerLinkCreate => 0x0F0B,
+            #[cfg(feature = "serde")]
+            OperationCode::CrossServerLinkList => 0x0F0C,
             #[cfg(feature = "serde")]
             OperationCode::FederationAttestationCreate => 0x0E02,
             #[cfg(feature = "serde")]
@@ -2164,6 +2176,19 @@ pub enum WireRequest {
         verifying_key: String,
         introduced_by: u64,
     },
+    #[cfg(feature = "serde")]
+    CrossServerLinkCreate {
+        local_work_id: u64,
+        remote_tumbler: String,
+        remote_title: String,
+        remote_server_name: String,
+        remote_server_id: u64,
+        link_type: String,
+    },
+    #[cfg(feature = "serde")]
+    CrossServerLinkList {
+        work_id: u64,
+    },
 }
 
 impl WireRequest {
@@ -2833,6 +2858,14 @@ pub enum ResponseValue {
     #[cfg(feature = "serde")]
     AddDiscoveredServerResult {
         added: bool,
+    },
+    #[cfg(feature = "serde")]
+    CrossServerLinkCreateResult {
+        created: bool,
+    },
+    #[cfg(feature = "serde")]
+    CrossServerLinkListResult {
+        links: Vec<serde_json::Value>,
     },
     #[cfg(feature = "serde")]
     FederationAttestationCreateResult {

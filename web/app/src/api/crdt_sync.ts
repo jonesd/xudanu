@@ -2328,6 +2328,36 @@ export class CrdtSyncClient {
     }>) || [];
   }
 
+  async crossServerLinkCreate(
+    localWorkId: number,
+    remoteTumbler: string,
+    remoteTitle: string,
+    remoteServerName: string,
+    remoteServerId: number,
+    linkType: string,
+  ): Promise<void> {
+    await this.sendRequest("cross_server_link_create", {
+      local_work_id: localWorkId,
+      remote_tumbler: remoteTumbler,
+      remote_title: remoteTitle,
+      remote_server_name: remoteServerName,
+      remote_server_id: remoteServerId,
+      link_type: linkType,
+    });
+  }
+
+  async crossServerLinkList(workId: number): Promise<Array<{
+    remote_tumbler: string; remote_title: string; remote_server_name: string;
+    remote_server_id: number; link_type: string; created_at: number;
+  }>> {
+    const resp = await this.sendRequest("cross_server_link_list", { work_id: workId });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.links as Array<{
+      remote_tumbler: string; remote_title: string; remote_server_name: string;
+      remote_server_id: number; link_type: string; created_at: number;
+    }>) || [];
+  }
+
   async workEndorse(workId: number, endorsements: Array<[number, number]>): Promise<void> {
     await this.sendRequest("work_endorse", { work_id: workId, endorsements });
   }
