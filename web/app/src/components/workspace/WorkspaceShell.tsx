@@ -1512,10 +1512,14 @@ export function WorkspaceShell() {
   }, [selectionRange, workBeId, clientRef, text, workMeta, rightPanelTab, loadTrailsForWork]);
 
   const resolvedAttributionSpans = useMemo(() => {
-    if (!identity) return attributionSpans;
     return attributionSpans.map(span => {
-      if (!span.author_display_name && identity.club_id && span.author_club_id === identity.club_id) {
+      if (span.author_display_name) return span;
+      if (identity?.club_id && span.author_club_id === identity.club_id) {
         return { ...span, author_display_name: identity.display_name };
+      }
+      if (span.author_public_key && span.author_public_key.length > 0) {
+        const hex = span.author_public_key.slice(0, 8).map(b => b.toString(16).padStart(2, "0")).join("");
+        return { ...span, author_display_name: `${hex}…` };
       }
       return span;
     });

@@ -2358,6 +2358,20 @@ export class CrdtSyncClient {
     }>) || [];
   }
 
+  async fetchRemoteIdentity(serverId: string, clubName: string): Promise<{
+    display_name: string; verifying_key: string;
+    home_server_name: string; home_server_address: string;
+  }> {
+    const resp = await this.sendRequest("fetch_remote_identity", { server_id: serverId, club_name: clubName });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return {
+      display_name: (val.display_name as string) || clubName,
+      verifying_key: (val.verifying_key as string) || "",
+      home_server_name: (val.home_server_name as string) || "Unknown",
+      home_server_address: (val.home_server_address as string) || "",
+    };
+  }
+
   async workEndorse(workId: number, endorsements: Array<[number, number]>): Promise<void> {
     await this.sendRequest("work_endorse", { work_id: workId, endorsements });
   }
