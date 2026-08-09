@@ -57,6 +57,7 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/.well-known/xanadu-server.json", get(well_known_handler))
         .route("/api/public/work/{work_id}", get(public_work_handler))
         .route("/api/public/works", get(public_works_list_handler))
+        .route("/api/public/identity", get(public_identity_handler))
         .route(
             "/api/public/work/{work_id}/range/{start}/{end}",
             get(public_work_range_handler),
@@ -279,6 +280,73 @@ async fn public_work_handler(
         )
             .into_response(),
         Err(_) => (axum::http::StatusCode::NOT_FOUND, "work not found").into_response(),
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct IdentityQuery {
+    pub q: Option<String>,
+}
+
+async fn public_identity_handler(
+    State(state): State<SharedState>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    Query(query): Query<IdentityQuery>,
+) -> impl IntoResponse {
+    if !state.rate_limiter.check_get(addr.ip()) {
+        return (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            "rate limit exceeded",
+        )
+            .into_response();
+    }
+    let q = query.q.unwrap_or_default();
+    let result = state.server.with_server_ref(|srv| {
+        let q_lower = q.to_lowercase();
+        for (name, &club_id) in &srv.club_names {
+            if name.to_lowercase().contains(&q_lower) {
+                if let Some(club) = srv.clubs.get(&club_id) {
+                    if club.is_personal() {
+                        let vk_hex: String = club
+                            .encrypted_signing_key()
+                            .map(|k| {
+                                k.verifying_key
+                                    .iter()
+                                    .map(|b| format!("{:02x}", b))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        return Some(serde_json::json!({
+                            "display_name": name,
+                            "verifying_key": vk_hex,
+                            "club_id": club_id,
+                        }));
+                    }
+                }
+            }
+        }
+        None
+    });
+    match result {
+        Some(identity) => {
+            let body = serde_json::json!({
+                "api_version": 1,
+                "implementation": "xudanu",
+                "identity": identity,
+            });
+            (
+                [
+                    (
+                        axum::http::header::CONTENT_TYPE,
+                        "application/json; charset=utf-8",
+                    ),
+                    (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+                ],
+                body.to_string(),
+            )
+                .into_response()
+        }
+        None => (axum::http::StatusCode::NOT_FOUND, "identity not found").into_response(),
     }
 }
 

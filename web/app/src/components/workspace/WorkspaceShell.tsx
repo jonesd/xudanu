@@ -2680,11 +2680,12 @@ export function WorkspaceShell() {
                       </button>
                     </div>
                     <div style={{
-                      padding: "8px 16px", borderBottom: "1px solid var(--border)",
-                      display: "flex", alignItems: "center", gap: 8, flexShrink: 0,
+                      padding: "10px 16px", borderBottom: "1px solid var(--border)",
+                      display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap",
+                      background: "var(--bg-elevated)",
                     }}>
-                      <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
-                        Select text to transclude, or copy the whole document to your server
+                      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)" }}>
+                        Actions:
                       </span>
                       <button
                         type="button"
@@ -2701,13 +2702,14 @@ export function WorkspaceShell() {
                           setRemoteView(null);
                         }}
                         style={{
-                          fontSize: 11, padding: "4px 12px",
-                          border: "1px solid var(--accent)", borderRadius: 4,
-                          background: "var(--accent)", color: "#fff", cursor: canEdit ? "pointer" : "not-allowed",
-                          opacity: canEdit ? 1 : 0.5,
+                          marginLeft: "auto", fontSize: 12, padding: "6px 14px",
+                          border: "2px solid var(--green)", borderRadius: 6,
+                          background: "var(--green)", color: "#fff",
+                          cursor: canEdit ? "pointer" : "not-allowed",
+                          opacity: canEdit ? 1 : 0.4, fontWeight: 600,
                         }}
                       >
-                        Insert passage
+                        Insert selected text
                       </button>
                       <button
                         type="button"

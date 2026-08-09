@@ -394,6 +394,8 @@ pub enum OperationCode {
     #[cfg(feature = "serde")]
     CrossServerLinkList,
     #[cfg(feature = "serde")]
+    FetchRemoteIdentity,
+    #[cfg(feature = "serde")]
     FederationAttestationCreate,
     #[cfg(feature = "serde")]
     FederationAttestationVerify,
@@ -749,6 +751,8 @@ impl OperationCode {
             0x0F0B => Some(OperationCode::CrossServerLinkCreate),
             #[cfg(feature = "serde")]
             0x0F0C => Some(OperationCode::CrossServerLinkList),
+            #[cfg(feature = "serde")]
+            0x0F0D => Some(OperationCode::FetchRemoteIdentity),
 
             _ => None,
         }
@@ -1070,6 +1074,8 @@ impl OperationCode {
             OperationCode::CrossServerLinkCreate => 0x0F0B,
             #[cfg(feature = "serde")]
             OperationCode::CrossServerLinkList => 0x0F0C,
+            #[cfg(feature = "serde")]
+            OperationCode::FetchRemoteIdentity => 0x0F0D,
             #[cfg(feature = "serde")]
             OperationCode::FederationAttestationCreate => 0x0E02,
             #[cfg(feature = "serde")]
@@ -2189,6 +2195,11 @@ pub enum WireRequest {
     CrossServerLinkList {
         work_id: u64,
     },
+    #[cfg(feature = "serde")]
+    FetchRemoteIdentity {
+        server_id: String,
+        club_name: String,
+    },
 }
 
 impl WireRequest {
@@ -2866,6 +2877,14 @@ pub enum ResponseValue {
     #[cfg(feature = "serde")]
     CrossServerLinkListResult {
         links: Vec<serde_json::Value>,
+    },
+    #[cfg(feature = "serde")]
+    FetchRemoteIdentityResult {
+        display_name: String,
+        verifying_key: String,
+        home_server_name: String,
+        home_server_address: String,
+        verified_at: u64,
     },
     #[cfg(feature = "serde")]
     FederationAttestationCreateResult {

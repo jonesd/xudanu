@@ -3433,6 +3433,20 @@ impl JsonCodec {
                     work_id: args.work_id,
                 })
             }
+            #[cfg(feature = "serde")]
+            OperationCode::FetchRemoteIdentity => {
+                #[derive(Deserialize)]
+                struct Args {
+                    server_id: String,
+                    club_name: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::FetchRemoteIdentity {
+                    server_id: args.server_id,
+                    club_name: args.club_name,
+                })
+            }
             OperationCode::WorkKindGet => {
                 #[derive(Deserialize)]
                 struct Args {

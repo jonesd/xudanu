@@ -3865,6 +3865,24 @@ fn dispatch_inner(
             Ok(ResponseValue::CrossServerLinkListResult { links })
         }
         #[cfg(feature = "serde")]
+        WireRequest::FetchRemoteIdentity {
+            server_id,
+            club_name,
+        } => {
+            srv.ensure_session(session_id)?;
+            let sid: u64 = server_id.parse().map_err(|_| {
+                crate::server::ServerError::InvalidArgument("invalid server_id".into())
+            })?;
+            let attestation = srv.fetch_remote_identity(sid, &club_name)?;
+            Ok(ResponseValue::FetchRemoteIdentityResult {
+                display_name: attestation.display_name,
+                verifying_key: attestation.verifying_key,
+                home_server_name: attestation.home_server_name,
+                home_server_address: attestation.home_server_address,
+                verified_at: attestation.verified_at,
+            })
+        }
+        #[cfg(feature = "serde")]
         WireRequest::FederationAttestationCreate {
             attestation_type,
             subject_server_id,

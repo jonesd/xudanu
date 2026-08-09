@@ -358,6 +358,17 @@ pub struct CrossServerLink {
     pub created_at: u64,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct IdentityAttestation {
+    pub display_name: String,
+    pub verifying_key: String,
+    pub home_server_id: u64,
+    pub home_server_name: String,
+    pub home_server_address: String,
+    pub club_id: u64,
+    pub verified_at: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct RemoteWorkData {
     pub work_id: String,
@@ -575,6 +586,7 @@ pub struct Server {
     signed_introductions: Vec<SignedIntroduction>,
     security_tracker: CrossServerSecurityTracker,
     cross_server_links: Vec<CrossServerLink>,
+    identity_attestations: HashMap<String, IdentityAttestation>,
     pub(crate) server_name: String,
     server_description: String,
     server_namespace_id: u64,
@@ -1126,6 +1138,7 @@ impl Server {
             trusted_server_registry: None,
             signed_introductions: Vec::new(),
             cross_server_links: Vec::new(),
+            identity_attestations: HashMap::new(),
             security_tracker: CrossServerSecurityTracker::new(),
             server_name: "Xudanu Server".to_string(),
             server_description: String::new(),
@@ -2507,6 +2520,84 @@ impl Server {
 
     pub fn work_title(&self, work_id: BeId) -> Option<String> {
         self.works.get(&work_id).map(|ws| ws.title().to_string())
+    }
+
+    pub fn fetch_remote_identity(
+        &mut self,
+        server_id: u64,
+        club_name: &str,
+    ) -> Result<IdentityAttestation, ServerError> {
+        let entry = self
+            .server_directory
+            .get(server_id)
+            .ok_or_else(|| ServerError::Internal("server not in directory".into()))?;
+
+        if !entry.trusted {
+            return Err(ServerError::Internal("server not trusted".into()));
+        }
+
+        let address = entry.address.clone();
+        let port = entry.port.unwrap_or(8080);
+        let home_server_name = entry.name.clone();
+        let home_server_address = address.clone();
+        drop(entry);
+
+        let url = format!(
+            "http://{}:{}/api/public/identity?q={}",
+            address,
+            port,
+            urlencode(club_name)
+        );
+
+        tracing::info!("Fetching remote identity: {}", url);
+
+        let response_text = http_get_json(&url, 10)
+            .map_err(|e| ServerError::Internal(format!("Failed to fetch identity: {}", e)))?;
+
+        let body: serde_json::Value = serde_json::from_str(&response_text)
+            .map_err(|e| ServerError::Internal(format!("Invalid JSON: {}", e)))?;
+
+        let name = body["display_name"]
+            .as_str()
+            .or_else(|| body["name"].as_str())
+            .unwrap_or(club_name)
+            .to_string();
+        let verifying_key = body["verifying_key"]
+            .as_str()
+            .ok_or_else(|| ServerError::Internal("identity missing verifying_key".into()))?
+            .to_string();
+        let club_id = body["club_id"]
+            .as_u64()
+            .or_else(|| body["be_id"].as_u64())
+            .unwrap_or(0);
+
+        let attestation = IdentityAttestation {
+            display_name: name,
+            verifying_key: verifying_key.clone(),
+            home_server_id: server_id,
+            home_server_name,
+            home_server_address,
+            club_id,
+            verified_at: Self::current_timestamp_secs(),
+        };
+
+        self.identity_attestations
+            .insert(verifying_key, attestation.clone());
+
+        tracing::info!(
+            "Identity attestation stored: {} from {}",
+            attestation.display_name,
+            attestation.home_server_name
+        );
+        Ok(attestation)
+    }
+
+    pub fn resolve_identity_by_key(&self, verifying_key: &str) -> Option<&IdentityAttestation> {
+        self.identity_attestations.get(verifying_key)
+    }
+
+    pub fn identity_attestations(&self) -> &HashMap<String, IdentityAttestation> {
+        &self.identity_attestations
     }
 
     fn record_server_success(&mut self, server_id: u64) {
@@ -16544,6 +16635,7 @@ pub(crate) mod persist_snapshot {
                 trusted_server_registry: None,
                 signed_introductions: Vec::new(),
                 cross_server_links: Vec::new(),
+                identity_attestations: HashMap::new(),
                 security_tracker: CrossServerSecurityTracker::new(),
                 server_name: "Xudanu Server".to_string(),
                 server_description: String::new(),
