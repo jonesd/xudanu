@@ -3331,6 +3331,108 @@ impl JsonCodec {
                     content_hash_hex: args.content_hash_hex,
                 })
             }
+            #[cfg(feature = "serde")]
+            OperationCode::CrossServerFetchWork => {
+                #[derive(Deserialize)]
+                struct Args {
+                    server_id: String,
+                    work_id: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CrossServerFetchWork {
+                    server_id: args.server_id,
+                    work_id: args.work_id,
+                })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::CrossServerListWorks => {
+                #[derive(Deserialize)]
+                struct Args {
+                    server_id: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CrossServerListWorks {
+                    server_id: args.server_id,
+                })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::FederatedSearch => {
+                #[derive(Deserialize)]
+                struct Args {
+                    query: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::FederatedSearch { query: args.query })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::FetchIntroductions => {
+                #[derive(Deserialize)]
+                struct Args {
+                    server_id: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::FetchIntroductions {
+                    server_id: args.server_id,
+                })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::AddDiscoveredServer => {
+                #[derive(Deserialize)]
+                struct Args {
+                    server_id: u64,
+                    address: String,
+                    name: String,
+                    verifying_key: String,
+                    introduced_by: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AddDiscoveredServer {
+                    server_id: args.server_id,
+                    address: args.address,
+                    name: args.name,
+                    verifying_key: args.verifying_key,
+                    introduced_by: args.introduced_by,
+                })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::CrossServerLinkCreate => {
+                #[derive(Deserialize)]
+                struct Args {
+                    local_work_id: u64,
+                    remote_tumbler: String,
+                    remote_title: String,
+                    remote_server_name: String,
+                    remote_server_id: u64,
+                    link_type: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CrossServerLinkCreate {
+                    local_work_id: args.local_work_id,
+                    remote_tumbler: args.remote_tumbler,
+                    remote_title: args.remote_title,
+                    remote_server_name: args.remote_server_name,
+                    remote_server_id: args.remote_server_id,
+                    link_type: args.link_type,
+                })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::CrossServerLinkList => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CrossServerLinkList {
+                    work_id: args.work_id,
+                })
+            }
             OperationCode::WorkKindGet => {
                 #[derive(Deserialize)]
                 struct Args {
