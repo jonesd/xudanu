@@ -3684,7 +3684,7 @@ fn dispatch_inner(
             let entry = srv.server_directory_add(&address, port)?;
             srv.server_directory_save()?;
             Ok(ResponseValue::ServerDirectoryAddResult {
-                server_id: entry.server_id,
+                server_id: entry.server_id.to_string(),
                 name: entry.name,
                 address: entry.address,
                 trusted: entry.trusted,

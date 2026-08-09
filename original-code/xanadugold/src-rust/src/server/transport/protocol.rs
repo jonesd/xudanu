@@ -2807,7 +2807,7 @@ pub enum ResponseValue {
     },
     #[cfg(feature = "serde")]
     ServerDirectoryAddResult {
-        server_id: u64,
+        server_id: String,
         name: String,
         address: String,
         trusted: bool,

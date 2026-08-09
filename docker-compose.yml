@@ -42,14 +42,14 @@ services:
       - --static-dir
       - /app/dist
       - --public-address
-      - "localhost:8081"
+      - "alice"
       - --server-name
       - "Alice"
       - --server-description
       - "Alice's server — content publisher"
       - --allowed-origin
       - "*"
-      - --allow-loopback-cross-server
+      - --allow-loopback
     networks:
       xudanu-net:
         aliases:
@@ -73,14 +73,14 @@ services:
       - --static-dir
       - /app/dist
       - --public-address
-      - "localhost:8082"
+      - "bob"
       - --server-name
       - "Bob"
       - --server-description
       - "Bob's server — commentator and transcluder"
       - --allowed-origin
       - "*"
-      - --allow-loopback-cross-server
+      - --allow-loopback
     networks:
       xudanu-net:
         aliases:
@@ -104,14 +104,14 @@ services:
       - --static-dir
       - /app/dist
       - --public-address
-      - "localhost:8083"
+      - "carol"
       - --server-name
       - "Carol"
       - --server-description
       - "Carol's server — newcomer, discovers and transcludes"
       - --allowed-origin
       - "*"
-      - --allow-loopback-cross-server
+      - --allow-loopback
     networks:
       xudanu-net:
         aliases:
