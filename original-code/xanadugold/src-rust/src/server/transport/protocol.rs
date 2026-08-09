@@ -386,6 +386,10 @@ pub enum OperationCode {
     #[cfg(feature = "serde")]
     FederatedSearch,
     #[cfg(feature = "serde")]
+    FetchIntroductions,
+    #[cfg(feature = "serde")]
+    AddDiscoveredServer,
+    #[cfg(feature = "serde")]
     FederationAttestationCreate,
     #[cfg(feature = "serde")]
     FederationAttestationVerify,
@@ -733,6 +737,10 @@ impl OperationCode {
             0x0F07 => Some(OperationCode::CrossServerListWorks),
             #[cfg(feature = "serde")]
             0x0F08 => Some(OperationCode::FederatedSearch),
+            #[cfg(feature = "serde")]
+            0x0F09 => Some(OperationCode::FetchIntroductions),
+            #[cfg(feature = "serde")]
+            0x0F0A => Some(OperationCode::AddDiscoveredServer),
 
             _ => None,
         }
@@ -1046,6 +1054,10 @@ impl OperationCode {
             OperationCode::CrossServerListWorks => 0x0F07,
             #[cfg(feature = "serde")]
             OperationCode::FederatedSearch => 0x0F08,
+            #[cfg(feature = "serde")]
+            OperationCode::FetchIntroductions => 0x0F09,
+            #[cfg(feature = "serde")]
+            OperationCode::AddDiscoveredServer => 0x0F0A,
             #[cfg(feature = "serde")]
             OperationCode::FederationAttestationCreate => 0x0E02,
             #[cfg(feature = "serde")]
@@ -2140,6 +2152,18 @@ pub enum WireRequest {
     FederatedSearch {
         query: String,
     },
+    #[cfg(feature = "serde")]
+    FetchIntroductions {
+        server_id: String,
+    },
+    #[cfg(feature = "serde")]
+    AddDiscoveredServer {
+        server_id: u64,
+        address: String,
+        name: String,
+        verifying_key: String,
+        introduced_by: u64,
+    },
 }
 
 impl WireRequest {
@@ -2801,6 +2825,14 @@ pub enum ResponseValue {
     #[cfg(feature = "serde")]
     FederatedSearchResult {
         results: Vec<serde_json::Value>,
+    },
+    #[cfg(feature = "serde")]
+    FetchIntroductionsResult {
+        introductions: Vec<serde_json::Value>,
+    },
+    #[cfg(feature = "serde")]
+    AddDiscoveredServerResult {
+        added: bool,
     },
     #[cfg(feature = "serde")]
     FederationAttestationCreateResult {

@@ -3791,6 +3791,29 @@ fn dispatch_inner(
             Ok(ResponseValue::FederatedSearchResult { results })
         }
         #[cfg(feature = "serde")]
+        WireRequest::FetchIntroductions { server_id } => {
+            srv.ensure_session(session_id)?;
+            let sid: u64 = server_id.parse().map_err(|_| {
+                crate::server::ServerError::InvalidArgument("invalid server_id".into())
+            })?;
+            let intros = srv.fetch_remote_introductions(sid)?;
+            Ok(ResponseValue::FetchIntroductionsResult {
+                introductions: intros,
+            })
+        }
+        #[cfg(feature = "serde")]
+        WireRequest::AddDiscoveredServer {
+            server_id,
+            address,
+            name,
+            verifying_key,
+            introduced_by,
+        } => {
+            srv.ensure_logged_in(session_id)?;
+            srv.add_discovered_server(server_id, address, name, verifying_key, introduced_by)?;
+            Ok(ResponseValue::AddDiscoveredServerResult { added: true })
+        }
+        #[cfg(feature = "serde")]
         WireRequest::FederationAttestationCreate {
             attestation_type,
             subject_server_id,

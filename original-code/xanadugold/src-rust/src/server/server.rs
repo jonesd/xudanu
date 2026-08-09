@@ -2282,6 +2282,147 @@ impl Server {
         Ok((works, server_name))
     }
 
+    pub fn fetch_remote_introductions(
+        &mut self,
+        server_id: u64,
+    ) -> Result<Vec<serde_json::Value>, ServerError> {
+        let entry = self
+            .server_directory
+            .get(server_id)
+            .ok_or_else(|| ServerError::Internal("server not in directory".into()))?;
+
+        if !entry.trusted {
+            return Err(ServerError::Internal("server not trusted".into()));
+        }
+
+        let address = entry.address.clone();
+        let port = entry.port.unwrap_or(8080);
+        let introducer_vk = entry
+            .pinned_key
+            .as_ref()
+            .unwrap_or(&entry.verifying_key)
+            .clone();
+        let introducer_ns = server_id;
+        drop(entry);
+
+        let url = format!("http://{}:{}/api/introductions", address, port);
+        tracing::info!("Fetching introductions from {}", url);
+
+        let response_text = http_get_json(&url, 10)
+            .map_err(|e| ServerError::Internal(format!("Failed to fetch introductions: {}", e)))?;
+
+        let body: serde_json::Value = serde_json::from_str(&response_text)
+            .map_err(|e| ServerError::Internal(format!("Invalid JSON: {}", e)))?;
+
+        let intros = body["introductions"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+
+        let mut verified: Vec<serde_json::Value> = Vec::new();
+        for intro in &intros {
+            let target_id = intro["target_server_id"].as_u64().unwrap_or(0);
+            let target_key = intro["target_verifying_key"].as_str().unwrap_or("");
+            let target_addr = intro["target_address"].as_str().unwrap_or("");
+            let target_name = intro["target_name"].as_str().unwrap_or("Unknown");
+            let sig = intro["signature"].as_str().unwrap_or("");
+
+            if target_id == 0 || target_key.is_empty() || target_addr.is_empty() {
+                continue;
+            }
+
+            if target_id == introducer_ns || target_id == self.server_namespace_id() {
+                continue;
+            }
+
+            if self.server_directory.get(target_id).is_some() {
+                continue;
+            }
+
+            let payload = format!(
+                "{}|{}|{}|{}|{}",
+                target_id,
+                target_key,
+                target_addr,
+                intro["introduced_by"].as_u64().unwrap_or(0),
+                intro["timestamp"].as_u64().unwrap_or(0)
+            );
+
+            let vk_bytes = match crate::crypto::keys::hex_decode(&introducer_vk) {
+                Ok(b) if b.len() == 32 => b,
+                _ => continue,
+            };
+            let vk = match ed25519_dalek::VerifyingKey::from_bytes(
+                vk_bytes.as_slice().try_into().unwrap(),
+            ) {
+                Ok(vk) => vk,
+                Err(_) => continue,
+            };
+            let sig_bytes = match crate::crypto::keys::hex_decode(sig) {
+                Ok(b) if b.len() == 64 => b,
+                _ => continue,
+            };
+            let sig_arr: [u8; 64] = sig_bytes.as_slice().try_into().unwrap();
+            let signature = match ed25519_dalek::Signature::from_slice(&sig_arr) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            if vk.verify_strict(payload.as_bytes(), &signature).is_ok() {
+                verified.push(serde_json::json!({
+                    "server_id": target_id,
+                    "name": target_name,
+                    "address": target_addr,
+                    "verifying_key": target_key,
+                    "introduced_by": intro["introduced_by"],
+                    "introduced_by_name": self.server_directory.get(server_id).map(|e| e.name.clone()).unwrap_or_default(),
+                }));
+            }
+        }
+
+        tracing::info!(
+            "Verified {} introductions from server {}",
+            verified.len(),
+            server_id
+        );
+        Ok(verified)
+    }
+
+    pub fn add_discovered_server(
+        &mut self,
+        server_id: u64,
+        address: String,
+        name: String,
+        verifying_key: String,
+        introduced_by: u64,
+    ) -> Result<(), ServerError> {
+        if self.server_directory.get(server_id).is_some() {
+            return Ok(());
+        }
+
+        let entry = crate::server::server_directory::DirectoryEntry {
+            server_id,
+            address,
+            port: None,
+            verifying_key: verifying_key.clone(),
+            pinned_key: Some(verifying_key),
+            supports_https: None,
+            name,
+            description: format!("Discovered via server {}", introduced_by),
+            trusted: false,
+            discovered: "introduction".to_string(),
+            referred_by: Some(introduced_by),
+            last_seen: None,
+            first_seen: Some(Self::current_timestamp_secs()),
+            successful_resolutions: 0,
+            quarantined: false,
+            quarantined_at: None,
+        };
+        self.server_directory.add(entry);
+        let _ = self.server_directory_save();
+        Ok(())
+    }
+
     pub fn verify_server_identity(
         &self,
         server_id: &str,
