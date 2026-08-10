@@ -2407,6 +2407,7 @@ export function WorkspaceShell() {
                       onClick={() => handleToggleBlock("code_block", "")}
                       title="Code block">&lt;/&gt;</button>
                     <span className="ws-sel-sep" style={{ marginLeft: "auto" }} />
+                    {crdt.llmEnabled && (
                     <button type="button" className="ws-sel-btn" onMouseDown={(e) => e.preventDefault()}
                       disabled={narrating}
                       onClick={async () => {
@@ -2420,6 +2421,8 @@ export function WorkspaceShell() {
                       style={{ color: "#d4a017" }}>
                       {narrating ? "Summarizing\u2026" : "\u2728 Summarize"}
                     </button>
+                    )}
+                    {crdt.llmEnabled && (
                     <button type="button" className="ws-sel-btn" onMouseDown={(e) => e.preventDefault()}
                       disabled={loadingFeedback}
                       onClick={async () => {
@@ -2433,6 +2436,8 @@ export function WorkspaceShell() {
                       style={{ color: "#d4a017" }}>
                       {loadingFeedback ? "Reviewing\u2026" : "\u2728 Feedback"}
                     </button>
+                    )}
+                    {crdt.llmEnabled && (
                     <button type="button" className="ws-sel-btn" onMouseDown={(e) => e.preventDefault()}
                       disabled={suggestingTitle}
                       onClick={async () => {
@@ -2446,6 +2451,8 @@ export function WorkspaceShell() {
                       style={{ color: "#d4a017" }}>
                       {suggestingTitle ? "Thinking\u2026" : "\u2728 Title"}
                     </button>
+                    )}
+                    {crdt.llmEnabled && (
                     <button type="button" className="ws-sel-btn" onMouseDown={(e) => e.preventDefault()}
                       disabled={autoTagging}
                       onClick={async () => {
@@ -2460,6 +2467,7 @@ export function WorkspaceShell() {
                       style={{ color: "#d4a017" }}>
                       {autoTagging ? "Tagging\u2026" : "\u2728 Auto-Tag"}
                     </button>
+                    )}
                   </div>
                 {addToSelector && selectionRange && (
                   <div className="ws-trail-picker">
