@@ -10,6 +10,7 @@
 set -e
 
 SERVER="root@178.105.99.41"
+SSH_KEY="$HOME/.ssh/id_hetzner"
 REMOTE_DIR="/opt/xudanu"
 
 cd "$(dirname "$0")/.."
@@ -27,14 +28,17 @@ git push github main
 
 # 3. Deploy to server
 echo "=== Deploying to xudanu.com ==="
+SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=no $SERVER"
+SCP_CMD="scp -i $SSH_KEY -o StrictHostKeyChecking=no"
+
 echo "Pulling code..."
-ssh $SERVER "cd $REMOTE_DIR/repo && git pull"
+$SSH_CMD "cd $REMOTE_DIR/repo && git pull"
 
 echo "Building Docker image (~15 min)..."
-ssh $SERVER "cd $REMOTE_DIR/repo && docker build -t xudanu:latest ."
+$SSH_CMD "cd $REMOTE_DIR/repo && docker build -t xudanu:latest ."
 
 echo "Restarting..."
-ssh $SERVER "cd $REMOTE_DIR && docker compose down && docker compose up -d"
+$SSH_CMD "cd $REMOTE_DIR && docker compose down && docker compose up -d"
 
 # 4. Health check
 echo "=== Health check ==="
