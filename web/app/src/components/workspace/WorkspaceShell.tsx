@@ -2292,7 +2292,12 @@ export function WorkspaceShell() {
                 )}
                 {viewingRevision ? (
                   <div style={{ padding: "16px 0", maxWidth: "38em", margin: "0 auto", fontFamily: "Source Serif 4, Georgia, serif", fontSize: 16, lineHeight: 1.7, color: "#000", whiteSpace: "pre-wrap" }}>
-                    {viewingRevision.text}
+                    {viewingRevision.text
+                      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+                      .replace(/\ufffc/g, "[image]")
+                      .replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]{50,}/g, "[image]")
+                      .replace(/https?:\/\/\S{50,}/g, (m) => m.substring(0, 47) + "...")
+                    }
                   </div>
                 ) : (
                   <>

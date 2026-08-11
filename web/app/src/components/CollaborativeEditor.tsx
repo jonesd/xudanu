@@ -2308,6 +2308,22 @@ export function CollaborativeEditor({
             onInput={handleInput}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            onDrop={(e) => {
+              const items = e.dataTransfer?.items;
+              if (items) {
+                let hasFile = false;
+                for (const item of items) {
+                  if (item.kind === "file") hasFile = true;
+                }
+                if (!hasFile) {
+                  e.preventDefault();
+                  return;
+                }
+              } else {
+                e.preventDefault();
+              }
+            }}
+            onDragOver={(e) => { e.preventDefault(); }}
             onClick={handleEditorClick}
             onMouseMove={handleEditorMouseMove}
             onMouseLeave={() => setPlacementIndicator(null)}
