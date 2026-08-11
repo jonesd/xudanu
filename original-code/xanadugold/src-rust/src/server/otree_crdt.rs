@@ -641,7 +641,17 @@ impl OtreeCrdtManager {
         let current = &wd.current_edition;
 
         let (merged, was_merged) = if base == current {
-            (author_edition, false)
+            if !session_base.span_provenance.is_empty() {
+                let delta_mapping =
+                    crate::edition::three_way::build_merge_mapping(&session_base, &author_edition);
+                let migrated_sp = crate::edition::three_way::migrate_span_provenance_single(
+                    &session_base.span_provenance,
+                    &delta_mapping,
+                );
+                (author_edition.with_span_provenance(migrated_sp), false)
+            } else {
+                (author_edition, false)
+            }
         } else {
             match three_way_merge(
                 base,

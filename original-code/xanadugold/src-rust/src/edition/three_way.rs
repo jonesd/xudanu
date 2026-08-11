@@ -1097,6 +1097,16 @@ fn try_migrate_span(span: &SpanProvenance, mapping: &Mapping) -> Option<SpanProv
     }
 }
 
+pub fn migrate_span_provenance_single(
+    spans: &[SpanProvenance],
+    mapping: &Mapping,
+) -> Vec<SpanProvenance> {
+    spans
+        .iter()
+        .filter_map(|span| try_migrate_span(span, mapping))
+        .collect()
+}
+
 fn migrate_span_provenance(
     a_spans: &[SpanProvenance],
     b_spans: &[SpanProvenance],
@@ -2277,5 +2287,83 @@ mod tests {
             2,
             "distinct span provenance from both sides should both survive"
         );
+    }
+
+    #[test]
+    fn delta_span_provenance_survives_append() {
+        let original = text_edition("ab");
+        let modified = text_edition("abc");
+
+        let mapping = build_merge_mapping(&original, &modified);
+
+        let span = SpanProvenance {
+            start: 0,
+            end: 2,
+            provenance: dummy_provenance(1),
+        };
+
+        let migrated = migrate_span_provenance_single(&[span], &mapping);
+        assert_eq!(migrated.len(), 1);
+        assert_eq!(migrated[0].start, 0);
+        assert_eq!(migrated[0].end, 2);
+    }
+
+    #[test]
+    fn delta_span_provenance_shifts_on_prepend() {
+        let original = text_edition("ab");
+        let modified = text_edition("Xab");
+
+        let mapping = build_merge_mapping(&original, &modified);
+
+        let span = SpanProvenance {
+            start: 0,
+            end: 2,
+            provenance: dummy_provenance(1),
+        };
+
+        let migrated = migrate_span_provenance_single(&[span], &mapping);
+        assert_eq!(migrated.len(), 1);
+        assert_eq!(migrated[0].start, 1);
+        assert_eq!(migrated[0].end, 3);
+    }
+
+    #[test]
+    fn delta_span_provenance_dropped_on_mid_insert() {
+        let original = text_edition("abc");
+        let modified = text_edition("aXbc");
+
+        let mapping = build_merge_mapping(&original, &modified);
+
+        let span = SpanProvenance {
+            start: 0,
+            end: 3,
+            provenance: dummy_provenance(1),
+        };
+
+        let migrated = migrate_span_provenance_single(&[span], &mapping);
+        assert_eq!(
+            migrated.len(),
+            0,
+            "insertion in middle of span creates non-contiguous mapping"
+        );
+    }
+
+    #[test]
+    fn delta_span_provenance_partial_survives_deletion() {
+        let original = text_edition("abcd");
+        let modified = text_edition("ad");
+
+        let mapping = build_merge_mapping(&original, &modified);
+
+        let span = SpanProvenance {
+            start: 0,
+            end: 4,
+            provenance: dummy_provenance(1),
+        };
+
+        let migrated = migrate_span_provenance_single(&[span], &mapping);
+        assert_eq!(migrated.len(), 1, "partially deleted span should survive");
+        assert_eq!(migrated[0].start, 0);
+        assert_eq!(migrated[0].end, 2);
     }
 }
