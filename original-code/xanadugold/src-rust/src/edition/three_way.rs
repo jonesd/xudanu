@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use super::edition::Edition;
 use super::mapping::Mapping;
+use super::provenance::SpanProvenance;
 use super::range_element::{Carrier, RangeElement};
 use super::xn_region::XnRegion;
 
@@ -732,6 +733,9 @@ pub fn three_way_merge(
     match strategy {
         MergeStrategy::LastWriterWins => {
             let (merged, a_map, b_map) = assemble_merge_lww(base, a, b, &diff);
+            let migrated_sp =
+                migrate_span_provenance(&a.span_provenance, &b.span_provenance, &a_map, &b_map);
+            let merged = merged.with_span_provenance(migrated_sp);
             Ok(MergeResult {
                 merged,
                 a_to_merged: a_map,
@@ -954,6 +958,32 @@ fn assemble_merge_lww(
                     }
                     m_pos += 1;
                 }
+
+                let source_fps: std::collections::HashSet<[u8; 32]> = source
+                    .iter()
+                    .map(|(_, c)| c.element.content_fingerprint())
+                    .collect();
+                for (src_pos, carrier) in &other {
+                    if !matches!(carrier.element, RangeElement::Text { .. }) {
+                        let fp = carrier.element.content_fingerprint();
+                        if !source_fps.contains(&fp) {
+                            let m_pos = next_pos;
+                            merged_entries.push((m_pos, carrier.clone()));
+                            next_pos += 1;
+                            if from_a {
+                                b_sub.push(Mapping::restricted(
+                                    m_pos - src_pos,
+                                    XnRegion::singleton(*src_pos),
+                                ));
+                            } else {
+                                a_sub.push(Mapping::restricted(
+                                    m_pos - src_pos,
+                                    XnRegion::singleton(*src_pos),
+                                ));
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1050,10 +1080,57 @@ fn group_consecutive(positions: &[i64]) -> Vec<(i64, i64)> {
     groups
 }
 
+fn try_migrate_span(span: &SpanProvenance, mapping: &Mapping) -> Option<SpanProvenance> {
+    let region = XnRegion::interval(span.start, span.end);
+    let mapped = mapping.of_region(&region);
+    let intervals = mapped.simple_regions();
+
+    if intervals.len() == 1 {
+        let (new_start, new_end) = intervals[0];
+        Some(SpanProvenance {
+            start: new_start,
+            end: new_end,
+            provenance: span.provenance.clone(),
+        })
+    } else {
+        None
+    }
+}
+
+fn migrate_span_provenance(
+    a_spans: &[SpanProvenance],
+    b_spans: &[SpanProvenance],
+    a_to_merged: &Mapping,
+    b_to_merged: &Mapping,
+) -> Vec<SpanProvenance> {
+    let mut result = Vec::new();
+
+    for span in a_spans {
+        if let Some(migrated) = try_migrate_span(span, a_to_merged) {
+            result.push(migrated);
+        }
+    }
+    for span in b_spans {
+        if let Some(migrated) = try_migrate_span(span, b_to_merged) {
+            let is_dup = result.iter().any(|existing| {
+                existing.start == migrated.start
+                    && existing.end == migrated.end
+                    && existing.provenance.author_public_key
+                        == migrated.provenance.author_public_key
+            });
+            if !is_dup {
+                result.push(migrated);
+            }
+        }
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::edition::RangeElement;
+    use crate::edition::{Provenance, RangeElement};
 
     fn text_edition(s: &str) -> Edition {
         Edition::from_text(s)
@@ -2030,6 +2107,175 @@ mod tests {
         assert!(
             !intervals.is_empty(),
             "should have at least one changed interval"
+        );
+    }
+
+    fn dummy_provenance(author: u8) -> Provenance {
+        Provenance {
+            author_public_key: [author; 32],
+            signature: [0u8; 64],
+            timestamp: 1000,
+            server_id: [0u8; 32],
+        }
+    }
+
+    #[test]
+    fn merge_conflict_preserves_non_text_from_losing_side() {
+        let base = text_edition("X");
+
+        let a = text_edition("A");
+
+        let mut b = text_edition("B");
+        b = b.with(1, RangeElement::data(vec![9]));
+
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+
+        let has_data = mr
+            .merged
+            .all_entries()
+            .iter()
+            .any(|(_, c)| matches!(c.element, RangeElement::Data { .. }));
+        assert!(
+            has_data,
+            "non-text element from losing side should survive conflict"
+        );
+    }
+
+    #[test]
+    fn merge_conflict_preserves_transclusion_from_losing_side() {
+        let base = text_edition("X");
+
+        let a = text_edition("A");
+
+        let mut b = text_edition("B");
+        b = b.with(1, RangeElement::edition(42));
+
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+
+        let has_edition = mr
+            .merged
+            .all_entries()
+            .iter()
+            .any(|(_, c)| matches!(c.element, RangeElement::Edition { .. }));
+        assert!(
+            has_edition,
+            "edition-ref (transclusion) from losing side should survive conflict"
+        );
+    }
+
+    #[test]
+    fn merge_span_provenance_preserved_no_changes() {
+        let base = text_edition("ab");
+        let a = text_edition("ab");
+        let b = text_edition("ab");
+
+        let a_sp = a.with_span_provenance(vec![SpanProvenance {
+            start: 0,
+            end: 2,
+            provenance: dummy_provenance(1),
+        }]);
+
+        let mr = three_way_merge(&base, &a_sp, &b, MergeStrategy::LastWriterWins).unwrap();
+
+        assert_eq!(mr.merged.span_provenance().len(), 1);
+        assert_eq!(mr.merged.span_provenance()[0].start, 0);
+        assert_eq!(mr.merged.span_provenance()[0].end, 2);
+    }
+
+    #[test]
+    fn merge_span_provenance_shifted_by_other_insertion() {
+        let base = text_edition("cd");
+        let a = text_edition("cd");
+        let b = text_edition("abcd");
+
+        let a_sp = a.with_span_provenance(vec![SpanProvenance {
+            start: 0,
+            end: 2,
+            provenance: dummy_provenance(1),
+        }]);
+
+        let mr = three_way_merge(&base, &a_sp, &b, MergeStrategy::LastWriterWins).unwrap();
+
+        assert_eq!(mr.merged.to_text(), "abcd");
+        let sp = mr.merged.span_provenance();
+        assert_eq!(sp.len(), 1, "span provenance should survive");
+        assert_eq!(sp[0].start, 2, "start should shift by B's insertion length");
+        assert_eq!(sp[0].end, 4, "end should shift by B's insertion length");
+    }
+
+    #[test]
+    fn merge_span_provenance_dropped_on_non_contiguous() {
+        let base = text_edition("ac");
+        let a = text_edition("abc");
+        let b = text_edition("aXYZWc");
+
+        let a_sp = a.with_span_provenance(vec![SpanProvenance {
+            start: 0,
+            end: 3,
+            provenance: dummy_provenance(1),
+        }]);
+
+        let mr = three_way_merge(&base, &a_sp, &b, MergeStrategy::LastWriterWins).unwrap();
+
+        assert_eq!(mr.merged.to_text(), "abXYZWc");
+        let sp = mr.merged.span_provenance();
+        assert_eq!(
+            sp.len(),
+            0,
+            "span mapping to non-contiguous positions should be dropped"
+        );
+    }
+
+    #[test]
+    fn merge_span_provenance_dedup_identical() {
+        let base = text_edition("ab");
+        let a = text_edition("ab");
+        let b = text_edition("ab");
+
+        let prov = dummy_provenance(1);
+        let a_sp = a.with_span_provenance(vec![SpanProvenance {
+            start: 0,
+            end: 2,
+            provenance: prov.clone(),
+        }]);
+        let b_sp = b.with_span_provenance(vec![SpanProvenance {
+            start: 0,
+            end: 2,
+            provenance: prov,
+        }]);
+
+        let mr = three_way_merge(&base, &a_sp, &b_sp, MergeStrategy::LastWriterWins).unwrap();
+
+        assert_eq!(
+            mr.merged.span_provenance().len(),
+            1,
+            "identical span provenance from both sides should dedup"
+        );
+    }
+
+    #[test]
+    fn merge_span_provenance_both_sides_distinct() {
+        let base = text_edition("abcd");
+        let a = text_edition("abcd");
+        let b = text_edition("abcd");
+
+        let a_sp = a.with_span_provenance(vec![SpanProvenance {
+            start: 0,
+            end: 2,
+            provenance: dummy_provenance(1),
+        }]);
+        let b_sp = b.with_span_provenance(vec![SpanProvenance {
+            start: 2,
+            end: 4,
+            provenance: dummy_provenance(2),
+        }]);
+
+        let mr = three_way_merge(&base, &a_sp, &b_sp, MergeStrategy::LastWriterWins).unwrap();
+
+        assert_eq!(
+            mr.merged.span_provenance().len(),
+            2,
+            "distinct span provenance from both sides should both survive"
         );
     }
 }

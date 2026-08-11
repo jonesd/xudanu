@@ -356,6 +356,15 @@ impl Edition {
         self
     }
 
+    pub fn with_span_provenance(mut self, sp: Vec<SpanProvenance>) -> Self {
+        self.span_provenance = sp;
+        self
+    }
+
+    pub fn span_provenance(&self) -> &[SpanProvenance] {
+        &self.span_provenance
+    }
+
     pub fn fetch_all(&self) -> Vec<(i64, Arc<Carrier>)> {
         self.orgl.all_entries()
     }
