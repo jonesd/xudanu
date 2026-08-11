@@ -52,7 +52,7 @@ pub use canopy::{BertCanopy, CanopyCrumData, CanopyCrumKind, SensorCanopy};
 #[cfg(feature = "serde")]
 pub use compound::{CompoundEdition, CompoundElement, CompoundSpan};
 pub use content_address::ContentAddressIndex;
-pub use edition::{jaccard_similarity, Edition};
+pub use edition::{jaccard_similarity, Edition, EntryIdentity};
 pub use endorsement::{
     endorsement_ids_to_grandmap, endorsements_from_ids, Endorseable, Endorsement,
     EndorsementFilter, EndorsementSet,

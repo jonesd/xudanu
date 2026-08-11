@@ -300,9 +300,6 @@ pub fn apply_text_delta_to_edition(
     ops: &[TextDeltaOp],
     author: Option<&OtreeAuthorIdentity>,
 ) -> Edition {
-    let old_text = edition.to_text();
-    let new_text = crate::server::transport::protocol::apply_text_delta(&old_text, ops);
-
     let timestamp = current_timestamp_secs();
     let prov = author.map(|a| ElementProvenance {
         author_public_key: a.public_key,
@@ -330,7 +327,7 @@ pub fn apply_text_delta_to_edition(
     let mut old_char_pos = 0usize;
     let mut current_entry_idx = 0usize;
     let mut new_entries: Vec<(i64, Arc<Carrier>)> =
-        Vec::with_capacity(new_text.len().max(old_entries.len()));
+        Vec::with_capacity(old_entries.len() + ops.len());
     let mut new_pos = 0i64;
     let mut pending_insert = String::new();
 
@@ -644,7 +641,17 @@ impl OtreeCrdtManager {
         let current = &wd.current_edition;
 
         let (merged, was_merged) = if base == current {
-            (author_edition, false)
+            if !session_base.span_provenance.is_empty() {
+                let delta_mapping =
+                    crate::edition::three_way::build_merge_mapping(&session_base, &author_edition);
+                let migrated_sp = crate::edition::three_way::migrate_span_provenance_single(
+                    &session_base.span_provenance,
+                    &delta_mapping,
+                );
+                (author_edition.with_span_provenance(migrated_sp), false)
+            } else {
+                (author_edition, false)
+            }
         } else {
             match three_way_merge(
                 base,
@@ -683,7 +690,7 @@ impl OtreeCrdtManager {
             let insert_len: usize = ops
                 .iter()
                 .map(|op| match op {
-                    TextDeltaOp::Insert { text } => text.len(),
+                    TextDeltaOp::Insert { text } => text.chars().count(),
                     _ => 0,
                 })
                 .sum();
@@ -694,14 +701,14 @@ impl OtreeCrdtManager {
                     _ => 0,
                 })
                 .sum();
-            let old_len = wd.current_edition.to_text().len() as u64;
+            let old_len = wd.current_edition.char_len() as u64;
             (old_len + insert_len as u64).saturating_sub(delete_sum) as usize
         };
 
         wd.current_edition = merged.clone();
         wd.session_bases.insert(sender_session, merged);
         if !was_merged && expected_len > 0 {
-            let actual_len = wd.current_edition.to_text().len();
+            let actual_len = wd.current_edition.char_len();
             if actual_len > expected_len * 2
                 || (expected_len > 100 && actual_len > expected_len + expected_len / 2)
             {

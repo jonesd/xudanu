@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use super::edition::Edition;
 use super::mapping::Mapping;
+use super::provenance::SpanProvenance;
 use super::range_element::{Carrier, RangeElement};
 use super::xn_region::XnRegion;
 
@@ -732,6 +733,9 @@ pub fn three_way_merge(
     match strategy {
         MergeStrategy::LastWriterWins => {
             let (merged, a_map, b_map) = assemble_merge_lww(base, a, b, &diff);
+            let migrated_sp =
+                migrate_span_provenance(&a.span_provenance, &b.span_provenance, &a_map, &b_map);
+            let merged = merged.with_span_provenance(migrated_sp);
             Ok(MergeResult {
                 merged,
                 a_to_merged: a_map,
@@ -954,6 +958,32 @@ fn assemble_merge_lww(
                     }
                     m_pos += 1;
                 }
+
+                let source_fps: std::collections::HashSet<[u8; 32]> = source
+                    .iter()
+                    .map(|(_, c)| c.element.content_fingerprint())
+                    .collect();
+                for (src_pos, carrier) in &other {
+                    if !matches!(carrier.element, RangeElement::Text { .. }) {
+                        let fp = carrier.element.content_fingerprint();
+                        if !source_fps.contains(&fp) {
+                            let m_pos = next_pos;
+                            merged_entries.push((m_pos, carrier.clone()));
+                            next_pos += 1;
+                            if from_a {
+                                b_sub.push(Mapping::restricted(
+                                    m_pos - src_pos,
+                                    XnRegion::singleton(*src_pos),
+                                ));
+                            } else {
+                                a_sub.push(Mapping::restricted(
+                                    m_pos - src_pos,
+                                    XnRegion::singleton(*src_pos),
+                                ));
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1050,10 +1080,68 @@ fn group_consecutive(positions: &[i64]) -> Vec<(i64, i64)> {
     groups
 }
 
+fn try_migrate_span(span: &SpanProvenance, mapping: &Mapping) -> Option<SpanProvenance> {
+    let region = XnRegion::interval(span.start, span.end);
+    let mapped = mapping.of_region(&region);
+    let intervals = mapped.simple_regions();
+
+    if intervals.len() == 1 {
+        let (new_start, new_end) = intervals[0];
+        Some(SpanProvenance {
+            start: new_start,
+            end: new_end,
+            provenance: span.provenance.clone(),
+        })
+    } else {
+        None
+    }
+}
+
+pub fn migrate_span_provenance_single(
+    spans: &[SpanProvenance],
+    mapping: &Mapping,
+) -> Vec<SpanProvenance> {
+    spans
+        .iter()
+        .filter_map(|span| try_migrate_span(span, mapping))
+        .collect()
+}
+
+fn migrate_span_provenance(
+    a_spans: &[SpanProvenance],
+    b_spans: &[SpanProvenance],
+    a_to_merged: &Mapping,
+    b_to_merged: &Mapping,
+) -> Vec<SpanProvenance> {
+    let mut result = Vec::new();
+
+    for span in a_spans {
+        if let Some(migrated) = try_migrate_span(span, a_to_merged) {
+            result.push(migrated);
+        }
+    }
+    for span in b_spans {
+        if let Some(migrated) = try_migrate_span(span, b_to_merged) {
+            let is_dup = result.iter().any(|existing| {
+                existing.start == migrated.start
+                    && existing.end == migrated.end
+                    && existing.provenance.author_public_key
+                        == migrated.provenance.author_public_key
+            });
+            if !is_dup {
+                result.push(migrated);
+            }
+        }
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::edition::RangeElement;
+    use crate::edition::{Provenance, RangeElement};
+    use proptest::prelude::*;
 
     fn text_edition(s: &str) -> Edition {
         Edition::from_text(s)
@@ -2031,5 +2119,450 @@ mod tests {
             !intervals.is_empty(),
             "should have at least one changed interval"
         );
+    }
+
+    fn dummy_provenance(author: u8) -> Provenance {
+        Provenance {
+            author_public_key: [author; 32],
+            signature: [0u8; 64],
+            timestamp: 1000,
+            server_id: [0u8; 32],
+        }
+    }
+
+    #[test]
+    fn merge_conflict_preserves_non_text_from_losing_side() {
+        let base = text_edition("X");
+
+        let a = text_edition("A");
+
+        let mut b = text_edition("B");
+        b = b.with(1, RangeElement::data(vec![9]));
+
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+
+        let has_data = mr
+            .merged
+            .all_entries()
+            .iter()
+            .any(|(_, c)| matches!(c.element, RangeElement::Data { .. }));
+        assert!(
+            has_data,
+            "non-text element from losing side should survive conflict"
+        );
+    }
+
+    #[test]
+    fn merge_conflict_preserves_transclusion_from_losing_side() {
+        let base = text_edition("X");
+
+        let a = text_edition("A");
+
+        let mut b = text_edition("B");
+        b = b.with(1, RangeElement::edition(42));
+
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+
+        let has_edition = mr
+            .merged
+            .all_entries()
+            .iter()
+            .any(|(_, c)| matches!(c.element, RangeElement::Edition { .. }));
+        assert!(
+            has_edition,
+            "edition-ref (transclusion) from losing side should survive conflict"
+        );
+    }
+
+    #[test]
+    fn merge_span_provenance_preserved_no_changes() {
+        let base = text_edition("ab");
+        let a = text_edition("ab");
+        let b = text_edition("ab");
+
+        let a_sp = a.with_span_provenance(vec![SpanProvenance {
+            start: 0,
+            end: 2,
+            provenance: dummy_provenance(1),
+        }]);
+
+        let mr = three_way_merge(&base, &a_sp, &b, MergeStrategy::LastWriterWins).unwrap();
+
+        assert_eq!(mr.merged.span_provenance().len(), 1);
+        assert_eq!(mr.merged.span_provenance()[0].start, 0);
+        assert_eq!(mr.merged.span_provenance()[0].end, 2);
+    }
+
+    #[test]
+    fn merge_span_provenance_shifted_by_other_insertion() {
+        let base = text_edition("cd");
+        let a = text_edition("cd");
+        let b = text_edition("abcd");
+
+        let a_sp = a.with_span_provenance(vec![SpanProvenance {
+            start: 0,
+            end: 2,
+            provenance: dummy_provenance(1),
+        }]);
+
+        let mr = three_way_merge(&base, &a_sp, &b, MergeStrategy::LastWriterWins).unwrap();
+
+        assert_eq!(mr.merged.to_text(), "abcd");
+        let sp = mr.merged.span_provenance();
+        assert_eq!(sp.len(), 1, "span provenance should survive");
+        assert_eq!(sp[0].start, 2, "start should shift by B's insertion length");
+        assert_eq!(sp[0].end, 4, "end should shift by B's insertion length");
+    }
+
+    #[test]
+    fn merge_span_provenance_dropped_on_non_contiguous() {
+        let base = text_edition("ac");
+        let a = text_edition("abc");
+        let b = text_edition("aXYZWc");
+
+        let a_sp = a.with_span_provenance(vec![SpanProvenance {
+            start: 0,
+            end: 3,
+            provenance: dummy_provenance(1),
+        }]);
+
+        let mr = three_way_merge(&base, &a_sp, &b, MergeStrategy::LastWriterWins).unwrap();
+
+        assert_eq!(mr.merged.to_text(), "abXYZWc");
+        let sp = mr.merged.span_provenance();
+        assert_eq!(
+            sp.len(),
+            0,
+            "span mapping to non-contiguous positions should be dropped"
+        );
+    }
+
+    #[test]
+    fn merge_span_provenance_dedup_identical() {
+        let base = text_edition("ab");
+        let a = text_edition("ab");
+        let b = text_edition("ab");
+
+        let prov = dummy_provenance(1);
+        let a_sp = a.with_span_provenance(vec![SpanProvenance {
+            start: 0,
+            end: 2,
+            provenance: prov.clone(),
+        }]);
+        let b_sp = b.with_span_provenance(vec![SpanProvenance {
+            start: 0,
+            end: 2,
+            provenance: prov,
+        }]);
+
+        let mr = three_way_merge(&base, &a_sp, &b_sp, MergeStrategy::LastWriterWins).unwrap();
+
+        assert_eq!(
+            mr.merged.span_provenance().len(),
+            1,
+            "identical span provenance from both sides should dedup"
+        );
+    }
+
+    #[test]
+    fn merge_span_provenance_both_sides_distinct() {
+        let base = text_edition("abcd");
+        let a = text_edition("abcd");
+        let b = text_edition("abcd");
+
+        let a_sp = a.with_span_provenance(vec![SpanProvenance {
+            start: 0,
+            end: 2,
+            provenance: dummy_provenance(1),
+        }]);
+        let b_sp = b.with_span_provenance(vec![SpanProvenance {
+            start: 2,
+            end: 4,
+            provenance: dummy_provenance(2),
+        }]);
+
+        let mr = three_way_merge(&base, &a_sp, &b_sp, MergeStrategy::LastWriterWins).unwrap();
+
+        assert_eq!(
+            mr.merged.span_provenance().len(),
+            2,
+            "distinct span provenance from both sides should both survive"
+        );
+    }
+
+    #[test]
+    fn delta_span_provenance_survives_append() {
+        let original = text_edition("ab");
+        let modified = text_edition("abc");
+
+        let mapping = build_merge_mapping(&original, &modified);
+
+        let span = SpanProvenance {
+            start: 0,
+            end: 2,
+            provenance: dummy_provenance(1),
+        };
+
+        let migrated = migrate_span_provenance_single(&[span], &mapping);
+        assert_eq!(migrated.len(), 1);
+        assert_eq!(migrated[0].start, 0);
+        assert_eq!(migrated[0].end, 2);
+    }
+
+    #[test]
+    fn delta_span_provenance_shifts_on_prepend() {
+        let original = text_edition("ab");
+        let modified = text_edition("Xab");
+
+        let mapping = build_merge_mapping(&original, &modified);
+
+        let span = SpanProvenance {
+            start: 0,
+            end: 2,
+            provenance: dummy_provenance(1),
+        };
+
+        let migrated = migrate_span_provenance_single(&[span], &mapping);
+        assert_eq!(migrated.len(), 1);
+        assert_eq!(migrated[0].start, 1);
+        assert_eq!(migrated[0].end, 3);
+    }
+
+    #[test]
+    fn delta_span_provenance_dropped_on_mid_insert() {
+        let original = text_edition("abc");
+        let modified = text_edition("aXbc");
+
+        let mapping = build_merge_mapping(&original, &modified);
+
+        let span = SpanProvenance {
+            start: 0,
+            end: 3,
+            provenance: dummy_provenance(1),
+        };
+
+        let migrated = migrate_span_provenance_single(&[span], &mapping);
+        assert_eq!(
+            migrated.len(),
+            0,
+            "insertion in middle of span creates non-contiguous mapping"
+        );
+    }
+
+    #[test]
+    fn delta_span_provenance_partial_survives_deletion() {
+        let original = text_edition("abcd");
+        let modified = text_edition("ad");
+
+        let mapping = build_merge_mapping(&original, &modified);
+
+        let span = SpanProvenance {
+            start: 0,
+            end: 4,
+            provenance: dummy_provenance(1),
+        };
+
+        let migrated = migrate_span_provenance_single(&[span], &mapping);
+        assert_eq!(migrated.len(), 1, "partially deleted span should survive");
+        assert_eq!(migrated[0].start, 0);
+        assert_eq!(migrated[0].end, 2);
+    }
+
+    #[test]
+    fn provenance_survives_merge_prefers_carrier_with_provenance() {
+        let base = text_edition("abc");
+        let a = text_edition("abc");
+        let b = text_edition("abc");
+
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+
+        let text = mr.merged.to_text();
+        assert_eq!(text, "abc");
+    }
+
+    #[test]
+    fn entry_identities_match_after_coalesce() {
+        let edition = Edition::from_text("abc");
+        let coalesced = edition.coalesce();
+
+        let orig_ids = edition.entry_identities();
+        let coal_ids = coalesced.entry_identities();
+
+        assert_eq!(orig_ids.len(), 3, "from_text creates per-char entries");
+        assert!(
+            coal_ids.len() <= orig_ids.len(),
+            "coalesce should not increase entry count"
+        );
+    }
+
+    #[test]
+    fn merge_preserves_element_provenance_from_winning_side() {
+        let base = text_edition("X");
+
+        let mut a_entries: Vec<(i64, Arc<Carrier>)> = Vec::new();
+        let mut c = Carrier::new(RangeElement::text("A".to_string()));
+        c = c.with_provenance(crate::edition::provenance::ElementProvenance {
+            author_public_key: [1; 32],
+            author_display_name: "Alice".to_string(),
+            author_club_id: 0,
+            timestamp: 1000,
+            author_type: crate::edition::provenance::AuthorType::Human,
+            llm_model: None,
+            historical_author_id: None,
+            source_work_id: None,
+            transcluded_by: None,
+            derived_by: None,
+        });
+        a_entries.push((0, Arc::new(c)));
+        let a = Edition::from_entries(a_entries);
+
+        let b = text_edition("B");
+
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+
+        let a_carrier = mr
+            .merged
+            .all_entries()
+            .into_iter()
+            .find(|(_, c)| c.provenance.is_some());
+
+        assert!(
+            a_carrier.is_some(),
+            "provenance from winning side (A has provenance, B doesn't) should survive"
+        );
+        if let Some((_, c)) = a_carrier {
+            assert_eq!(c.provenance.as_ref().unwrap().author_display_name, "Alice");
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn prop_merge_idempotent(text in "[a-z]{0,50}") {
+            let base = text_edition(&text);
+            let a = base.clone();
+            let b = base.clone();
+
+            let mr = three_way_merge(
+                &base, &a, &b, MergeStrategy::LastWriterWins,
+            ).unwrap();
+
+            prop_assert_eq!(mr.merged.to_text(), text);
+        }
+
+        #[test]
+        fn prop_merge_all_content_survives(
+            base_text in "[a-z]{1,30}",
+            a_text in "[a-z]{1,30}",
+            b_text in "[a-z]{1,30}"
+        ) {
+            let base = text_edition(&base_text);
+            let a = text_edition(&a_text);
+            let b = text_edition(&b_text);
+
+            let mr = three_way_merge(
+                &base, &a, &b, MergeStrategy::LastWriterWins,
+            ).unwrap();
+
+            let merged_text = mr.merged.to_text();
+            let merged_len = merged_text.len();
+            let sum = a_text.len() + b_text.len();
+
+            prop_assert!(
+                merged_len <= sum * 3,
+                "merged should not be absurdly large: merged={}, a+b={}",
+                merged_len, sum
+            );
+        }
+
+        #[test]
+        fn prop_merge_preserves_data_elements(
+            base_text in "[a-z]{1,20}",
+            a_text in "[a-z]{1,20}",
+        ) {
+            let mut base = text_edition(&base_text);
+            let data_pos = base_text.len() as i64;
+            base = base.with(data_pos, RangeElement::data(vec![1, 2, 3]));
+
+            let mut a = base.clone();
+            a = a.with(0, RangeElement::text("X"));
+
+            let b = base.clone();
+
+            let mr = three_way_merge(
+                &base, &a, &b, MergeStrategy::LastWriterWins,
+            ).unwrap();
+
+            let has_data = mr.merged.all_entries().iter()
+                .any(|(_, c)| matches!(c.element, RangeElement::Data { .. }));
+            prop_assert!(has_data, "data element should survive merge");
+        }
+
+        #[test]
+        fn prop_span_provenance_positions_valid(
+            base_text in "[a-z]{2,20}",
+            a_text in "[a-z]{2,20}",
+            b_text in "[a-z]{2,20}"
+        ) {
+            let base = text_edition(&base_text);
+            let a = text_edition(&a_text);
+            let b = text_edition(&b_text);
+
+            let a_sp = a.with_span_provenance(vec![SpanProvenance {
+                start: 0,
+                end: a_text.len() as i64,
+                provenance: dummy_provenance(1),
+            }]);
+
+            let mr = three_way_merge(
+                &base, &a_sp, &b, MergeStrategy::LastWriterWins,
+            ).unwrap();
+
+            let merged_count = mr.merged.count() as i64;
+            for span in mr.merged.span_provenance() {
+                prop_assert!(span.start >= 0, "span start must be non-negative");
+                prop_assert!(
+                    span.end <= merged_count,
+                    "span end must be within merged bounds"
+                );
+                prop_assert!(span.start < span.end, "span must be non-empty");
+            }
+        }
+
+        #[test]
+        fn prop_merge_does_not_duplicate(
+            base_text in "[a-z]{1,30}",
+            delta_text in "[a-z]{0,20}",
+        ) {
+            let base = text_edition(&base_text);
+            let a = text_edition(&(delta_text.clone() + &base_text));
+            let b = base.clone();
+
+            let mr = three_way_merge(
+                &base, &a, &b, MergeStrategy::LastWriterWins,
+            ).unwrap();
+
+            let merged = mr.merged.to_text();
+            let expected_len = delta_text.len() + base_text.len();
+            let actual_len = merged.len();
+            prop_assert!(
+                actual_len <= expected_len * 2,
+                "merge should not wildly duplicate: expected ~{}, got {}",
+                expected_len, actual_len
+            );
+        }
+
+        #[test]
+        fn prop_entry_identities_consistent(
+            text in "[a-z]{1,50}",
+        ) {
+            let edition = text_edition(&text);
+            let ids = edition.entry_identities();
+
+            prop_assert_eq!(ids.len(), text.len());
+            for (i, id) in ids.iter().enumerate() {
+                prop_assert_eq!(id.position, i as i64);
+                prop_assert!(id.is_text);
+            }
+        }
     }
 }
