@@ -1141,6 +1141,7 @@ fn migrate_span_provenance(
 mod tests {
     use super::*;
     use crate::edition::{Provenance, RangeElement};
+    use proptest::prelude::*;
 
     fn text_edition(s: &str) -> Edition {
         Edition::from_text(s)
@@ -2431,6 +2432,137 @@ mod tests {
         );
         if let Some((_, c)) = a_carrier {
             assert_eq!(c.provenance.as_ref().unwrap().author_display_name, "Alice");
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn prop_merge_idempotent(text in "[a-z]{0,50}") {
+            let base = text_edition(&text);
+            let a = base.clone();
+            let b = base.clone();
+
+            let mr = three_way_merge(
+                &base, &a, &b, MergeStrategy::LastWriterWins,
+            ).unwrap();
+
+            prop_assert_eq!(mr.merged.to_text(), text);
+        }
+
+        #[test]
+        fn prop_merge_all_content_survives(
+            base_text in "[a-z]{1,30}",
+            a_text in "[a-z]{1,30}",
+            b_text in "[a-z]{1,30}"
+        ) {
+            let base = text_edition(&base_text);
+            let a = text_edition(&a_text);
+            let b = text_edition(&b_text);
+
+            let mr = three_way_merge(
+                &base, &a, &b, MergeStrategy::LastWriterWins,
+            ).unwrap();
+
+            let merged_text = mr.merged.to_text();
+            let merged_len = merged_text.len();
+            let sum = a_text.len() + b_text.len();
+
+            prop_assert!(
+                merged_len <= sum * 3,
+                "merged should not be absurdly large: merged={}, a+b={}",
+                merged_len, sum
+            );
+        }
+
+        #[test]
+        fn prop_merge_preserves_data_elements(
+            base_text in "[a-z]{1,20}",
+            a_text in "[a-z]{1,20}",
+        ) {
+            let mut base = text_edition(&base_text);
+            let data_pos = base_text.len() as i64;
+            base = base.with(data_pos, RangeElement::data(vec![1, 2, 3]));
+
+            let mut a = base.clone();
+            a = a.with(0, RangeElement::text("X"));
+
+            let b = base.clone();
+
+            let mr = three_way_merge(
+                &base, &a, &b, MergeStrategy::LastWriterWins,
+            ).unwrap();
+
+            let has_data = mr.merged.all_entries().iter()
+                .any(|(_, c)| matches!(c.element, RangeElement::Data { .. }));
+            prop_assert!(has_data, "data element should survive merge");
+        }
+
+        #[test]
+        fn prop_span_provenance_positions_valid(
+            base_text in "[a-z]{2,20}",
+            a_text in "[a-z]{2,20}",
+            b_text in "[a-z]{2,20}"
+        ) {
+            let base = text_edition(&base_text);
+            let a = text_edition(&a_text);
+            let b = text_edition(&b_text);
+
+            let a_sp = a.with_span_provenance(vec![SpanProvenance {
+                start: 0,
+                end: a_text.len() as i64,
+                provenance: dummy_provenance(1),
+            }]);
+
+            let mr = three_way_merge(
+                &base, &a_sp, &b, MergeStrategy::LastWriterWins,
+            ).unwrap();
+
+            let merged_count = mr.merged.count() as i64;
+            for span in mr.merged.span_provenance() {
+                prop_assert!(span.start >= 0, "span start must be non-negative");
+                prop_assert!(
+                    span.end <= merged_count,
+                    "span end must be within merged bounds"
+                );
+                prop_assert!(span.start < span.end, "span must be non-empty");
+            }
+        }
+
+        #[test]
+        fn prop_merge_does_not_duplicate(
+            base_text in "[a-z]{1,30}",
+            delta_text in "[a-z]{0,20}",
+        ) {
+            let base = text_edition(&base_text);
+            let a = text_edition(&(delta_text.clone() + &base_text));
+            let b = base.clone();
+
+            let mr = three_way_merge(
+                &base, &a, &b, MergeStrategy::LastWriterWins,
+            ).unwrap();
+
+            let merged = mr.merged.to_text();
+            let expected_len = delta_text.len() + base_text.len();
+            let actual_len = merged.len();
+            prop_assert!(
+                actual_len <= expected_len * 2,
+                "merge should not wildly duplicate: expected ~{}, got {}",
+                expected_len, actual_len
+            );
+        }
+
+        #[test]
+        fn prop_entry_identities_consistent(
+            text in "[a-z]{1,50}",
+        ) {
+            let edition = text_edition(&text);
+            let ids = edition.entry_identities();
+
+            prop_assert_eq!(ids.len(), text.len());
+            for (i, id) in ids.iter().enumerate() {
+                prop_assert_eq!(id.position, i as i64);
+                prop_assert!(id.is_text);
+            }
         }
     }
 }
