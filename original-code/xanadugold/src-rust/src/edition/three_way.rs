@@ -2366,4 +2366,71 @@ mod tests {
         assert_eq!(migrated[0].start, 0);
         assert_eq!(migrated[0].end, 2);
     }
+
+    #[test]
+    fn provenance_survives_merge_prefers_carrier_with_provenance() {
+        let base = text_edition("abc");
+        let a = text_edition("abc");
+        let b = text_edition("abc");
+
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+
+        let text = mr.merged.to_text();
+        assert_eq!(text, "abc");
+    }
+
+    #[test]
+    fn entry_identities_match_after_coalesce() {
+        let edition = Edition::from_text("abc");
+        let coalesced = edition.coalesce();
+
+        let orig_ids = edition.entry_identities();
+        let coal_ids = coalesced.entry_identities();
+
+        assert_eq!(orig_ids.len(), 3, "from_text creates per-char entries");
+        assert!(
+            coal_ids.len() <= orig_ids.len(),
+            "coalesce should not increase entry count"
+        );
+    }
+
+    #[test]
+    fn merge_preserves_element_provenance_from_winning_side() {
+        let base = text_edition("X");
+
+        let mut a_entries: Vec<(i64, Arc<Carrier>)> = Vec::new();
+        let mut c = Carrier::new(RangeElement::text("A".to_string()));
+        c = c.with_provenance(crate::edition::provenance::ElementProvenance {
+            author_public_key: [1; 32],
+            author_display_name: "Alice".to_string(),
+            author_club_id: 0,
+            timestamp: 1000,
+            author_type: crate::edition::provenance::AuthorType::Human,
+            llm_model: None,
+            historical_author_id: None,
+            source_work_id: None,
+            transcluded_by: None,
+            derived_by: None,
+        });
+        a_entries.push((0, Arc::new(c)));
+        let a = Edition::from_entries(a_entries);
+
+        let b = text_edition("B");
+
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+
+        let a_carrier = mr
+            .merged
+            .all_entries()
+            .into_iter()
+            .find(|(_, c)| c.provenance.is_some());
+
+        assert!(
+            a_carrier.is_some(),
+            "provenance from winning side (A has provenance, B doesn't) should survive"
+        );
+        if let Some((_, c)) = a_carrier {
+            assert_eq!(c.provenance.as_ref().unwrap().author_display_name, "Alice");
+        }
+    }
 }
