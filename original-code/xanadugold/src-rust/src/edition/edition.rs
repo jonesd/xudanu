@@ -55,6 +55,14 @@ pub struct OutlineEntry {
     pub char_offset: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntryIdentity {
+    pub position: i64,
+    pub content_fingerprint: [u8; 32],
+    pub has_provenance: bool,
+    pub is_text: bool,
+}
+
 /// A blob (image) element found in an edition, with its character position.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -513,12 +521,12 @@ impl Edition {
     }
 
     pub fn to_text(&self) -> String {
-        let mut result = String::new();
-        for i in 0..self.count() as i64 {
-            if let Some(carrier) = self.orgl.fetch(i) {
-                if let Some(s) = carrier.element.as_text() {
-                    result.push_str(s);
-                }
+        let entries = self.cached_entries();
+        let mut result =
+            String::with_capacity(entries.iter().map(|(_, c)| c.char_len()).sum::<usize>());
+        for (_, carrier) in entries {
+            if let Some(s) = carrier.element.as_text() {
+                result.push_str(s);
             }
         }
         result
@@ -604,11 +612,22 @@ impl Edition {
     }
 
     pub fn char_len(&self) -> usize {
-        self.orgl
-            .all_entries()
+        self.cached_entries()
             .iter()
             .map(|(_, c)| c.char_len())
             .sum()
+    }
+
+    pub fn entry_identities(&self) -> Vec<EntryIdentity> {
+        self.cached_entries()
+            .iter()
+            .map(|(pos, carrier)| EntryIdentity {
+                position: *pos,
+                content_fingerprint: carrier.element.content_fingerprint(),
+                has_provenance: carrier.provenance.is_some(),
+                is_text: matches!(carrier.element, RangeElement::Text { .. }),
+            })
+            .collect()
     }
 
     pub fn extract_outline(&self) -> Vec<OutlineEntry> {
