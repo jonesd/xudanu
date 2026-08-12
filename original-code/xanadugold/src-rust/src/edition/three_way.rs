@@ -278,12 +278,47 @@ pub fn three_way_diff(base: &Edition, a: &Edition, b: &Edition) -> ThreeWayDiff 
     }
 }
 
+fn compute_chunk_matches(
+    source: &[(i64, Arc<Carrier>)],
+    target: &[(i64, Arc<Carrier>)],
+    chunk_size: usize,
+) -> Vec<bool> {
+    if chunk_size == 0 || source.is_empty() {
+        return Vec::new();
+    }
+    let n_chunks = (source.len() + chunk_size - 1) / chunk_size;
+    let mut matches = Vec::with_capacity(n_chunks);
+    for chunk_idx in 0..n_chunks {
+        let start = chunk_idx * chunk_size;
+        let end = (start + chunk_size).min(source.len());
+        let src_chunk = &source[start..end];
+        let tgt_chunk = &target[start..end.min(target.len())];
+        let m = src_chunk.len() == tgt_chunk.len()
+            && src_chunk
+                .iter()
+                .zip(tgt_chunk.iter())
+                .all(|((sp, sc), (tp, tc))| {
+                    sp == tp && sc.element.content_fingerprint() == tc.element.content_fingerprint()
+                });
+        matches.push(m);
+    }
+    matches
+}
+
 fn compute_alignment(
     source: &[(i64, Arc<Carrier>)],
     target: &[(i64, Arc<Carrier>)],
 ) -> Vec<Option<usize>> {
     if source.is_empty() {
         return Vec::new();
+    }
+
+    if source.len() == target.len() && source.len() > 128 {
+        let chunk_size = 64usize;
+        let matching = compute_chunk_matches(source, target, chunk_size);
+        if matching.iter().all(|&m| m) {
+            return (0..source.len()).map(Some).collect();
+        }
     }
 
     let source_fps: Vec<[u8; 32]> = source.iter().map(|e| fp(e)).collect();

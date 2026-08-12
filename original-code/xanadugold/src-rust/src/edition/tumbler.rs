@@ -693,4 +693,100 @@ mod tests {
         assert_eq!(mid[0].0, 1);
         assert_eq!(mid[2].0, 3);
     }
+
+    #[test]
+    fn integration_position_to_cross_server_ref() {
+        use crate::edition::links::CrossServerRef;
+
+        let arr = DocumentArrangement::new("alice.com", 42);
+        let tumbler = arr.to_tumbler_range(10, 20);
+
+        let csr = CrossServerRef::new(tumbler.to_string(), [0u8; 32], "Alice", [0u8; 32]);
+
+        assert_eq!(csr.work_id(), Some(42));
+        assert_eq!(csr.char_range(), Some((10, 20)));
+        assert_eq!(
+            csr.parent_tumbler(),
+            Some("\"alice.com\".42.10".to_string())
+        );
+    }
+
+    #[test]
+    fn integration_hyperref_tumbler_roundtrip() {
+        use crate::edition::links::{CrossServerRef, HyperRef};
+
+        let original_tumbler = XudanuTumbler::cross("alice.com", vec![42, 10, 20]);
+        let hr = HyperRef::for_tumbler_span(original_tumbler.clone());
+
+        let recovered = hr.tumbler_address().unwrap();
+        assert_eq!(recovered.server(), "alice.com");
+        assert_eq!(recovered.first(), Some(42));
+        assert_eq!(recovered.char_range(), Some((10, 20)));
+    }
+
+    #[test]
+    fn integration_compound_span_cross_server() {
+        use crate::edition::compound::CompoundSpan;
+
+        let arr = DocumentArrangement::new("bob.com", 99);
+        let span = CompoundSpan::new(99, 5, 15);
+        let tumbler = span.to_tumbler(&arr);
+
+        assert_eq!(tumbler.server(), "bob.com");
+        assert_eq!(tumbler.path(), &[99, 5, 15]);
+
+        let back = CompoundSpan::from_tumbler(&tumbler).unwrap();
+        assert_eq!(back.source_work_id(), 99);
+        assert_eq!(back.char_start(), 5);
+        assert_eq!(back.char_end(), 15);
+    }
+
+    #[test]
+    fn integration_document_hierarchy_navigation() {
+        let arr = DocumentArrangement::new("alice.com", 5);
+
+        let char_10 = arr.to_tumbler(10);
+        let char_20 = arr.to_tumbler(20);
+        let char_30 = arr.to_tumbler(30);
+
+        assert!(char_10.starts_with_path(&[5]));
+        assert_eq!(char_10.common_prefix_len(&char_20), 1);
+        assert_eq!(char_20.common_prefix_len(&char_30), 1);
+
+        let work_tumbler = arr.work_tumbler();
+        assert_eq!(work_tumbler.path(), &[5]);
+    }
+
+    #[test]
+    fn integration_tumbler_to_sequence_and_back() {
+        let t = XudanuTumbler::cross("alice.com", vec![5, 3, 10, 7]);
+        let seq = t.to_sequence();
+
+        let numbers: Vec<i64> = seq.numbers().to_vec();
+        assert_eq!(numbers, vec![5, 3, 10, 7]);
+
+        let back = XudanuTumbler::from_sequence("alice.com", &seq);
+        assert_eq!(back, t);
+    }
+
+    #[test]
+    fn integration_csr_same_server_check() {
+        use crate::edition::links::CrossServerRef;
+
+        let make_csr = |server: &str, work: u64| {
+            CrossServerRef::new(
+                format!("\"{}\".{}.0.0", server, work),
+                [0u8; 32],
+                "",
+                [0u8; 32],
+            )
+        };
+
+        let a = make_csr("alice.com", 5);
+        let b = make_csr("alice.com", 10);
+        let c = make_csr("bob.com", 5);
+
+        assert!(a.same_server_as(&b), "same server should match");
+        assert!(!a.same_server_as(&c), "different server should not match");
+    }
 }

@@ -46,7 +46,7 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
   const [searchQuery, setSearchQuery] = useState("");
   const [remoteLoading, setRemoteLoading] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
-  const [remoteText, setRemoteText] = useState<{ workId: string; text: string; title: string } | null>(null);
+  const [remoteText, setRemoteText] = useState<{ workId: string; text: string; title: string; tumbler?: string } | null>(null);
   const [textLoading, setTextLoading] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -179,7 +179,7 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
       if (onViewRemoteWork) {
         onViewRemoteWork({ title, text, originServerName: originName, license, tumbler, workId, serverId: browsingServerId || "0" });
       } else {
-        setRemoteText({ workId, text, title });
+        setRemoteText({ workId, text, title, tumbler: tumbler || undefined });
       }
       if (cached) {
         setRemoteError(`(cached copy — source may be offline)`);
@@ -489,6 +489,9 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
               <div className="ws-conn-excerpt">
                 {w.char_count} chars · {w.revision} revisions
               </div>
+              <div style={{ fontSize: 9, color: "var(--text-dim)", fontFamily: "monospace" }}>
+                "{browsingServer}".{w.work_id}
+              </div>
             </div>
           ))}
           {textLoading && <div className="ws-conn-empty">Loading text...</div>}
@@ -501,7 +504,10 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
                 {remoteText.text.slice(0, 2000)}
                 {remoteText.text.length > 2000 ? "..." : ""}
               </div>
-              <div style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 4 }}>
+              <div style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 4, fontFamily: "monospace" }}>
+                {remoteText.tumbler || `"${browsingServer}".${remoteText.workId}`}
+              </div>
+              <div style={{ fontSize: 9, color: "var(--text-dim)" }}>
                 Work ID: {remoteText.workId} — use this ID to create a cross-server link
               </div>
             </div>

@@ -63,6 +63,14 @@ pub struct EntryIdentity {
     pub is_text: bool,
 }
 
+/// Entry-level edit operation for `Edition::apply_edits()`.
+#[derive(Debug, Clone)]
+pub enum EditionEdit {
+    Insert(i64, RangeElement),
+    Delete(i64),
+    Replace(i64, RangeElement),
+}
+
 /// A blob (image) element found in an edition, with its character position.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -629,6 +637,41 @@ impl Edition {
 
     pub fn crum(&self) -> Option<crate::edition::orgl::Crum> {
         self.orgl.crum()
+    }
+
+    /// Apply a batch of entry-level edits via tree operations.
+    ///
+    /// Each edit is applied via `OrglRoot::with()` / `without()` — O(log n)
+    /// per edit. After all edits, positions are renumbered to sequential
+    /// integers (O(n)).
+    ///
+    /// For small edit batches (k << n), this is O(k log n + n) — faster than
+    /// the text-delta path which is O(n) for every edit.
+    ///
+    /// When tumbler positions arrive (Phase I), the renumbering step
+    /// is eliminated, making this O(k log n).
+    pub fn apply_edits(&self, edits: &[EditionEdit]) -> Edition {
+        let mut orgl = self.orgl.clone();
+        for edit in edits {
+            match edit {
+                EditionEdit::Insert(pos, element) => {
+                    orgl = orgl.with(*pos, Arc::new(Carrier::new(element.clone())));
+                }
+                EditionEdit::Delete(pos) => {
+                    orgl = orgl.without(*pos);
+                }
+                EditionEdit::Replace(pos, element) => {
+                    orgl = orgl.with(*pos, Arc::new(Carrier::new(element.clone())));
+                }
+            }
+        }
+        let entries = orgl.all_entries();
+        let renumbered: Vec<(i64, Arc<Carrier>)> = entries
+            .into_iter()
+            .enumerate()
+            .map(|(i, (_, c))| (i as i64, c))
+            .collect();
+        Edition::from_entries(renumbered)
     }
 
     /// Splay the tree around a region for locality optimization.
@@ -3298,6 +3341,69 @@ mod tests {
             result,
             crate::edition::orgl::SplayResult::FullyContained,
             "splay on entire domain should return FullyContained"
+        );
+    }
+
+    #[test]
+    fn apply_edits_insert() {
+        let ed = Edition::from_text("ac");
+        let result = ed.apply_edits(&[EditionEdit::Insert(5, RangeElement::text("b".to_string()))]);
+        let entries = result.all_entries();
+        assert_eq!(entries.len(), 3, "should have 3 entries after insert");
+        let text = result.to_text();
+        assert!(text.contains('a'));
+        assert!(text.contains('b'));
+        assert!(text.contains('c'));
+    }
+
+    #[test]
+    fn apply_edits_delete() {
+        let ed = Edition::from_text("abc");
+        let result = ed.apply_edits(&[EditionEdit::Delete(1)]);
+        let entries = result.all_entries();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].0, 0);
+        assert_eq!(entries[1].0, 1);
+    }
+
+    #[test]
+    fn apply_edits_replace() {
+        let ed = Edition::from_text("abc");
+        let result =
+            ed.apply_edits(&[EditionEdit::Replace(1, RangeElement::text("X".to_string()))]);
+        assert_eq!(result.to_text(), "aXc");
+    }
+
+    #[test]
+    fn apply_edits_batch() {
+        let ed = Edition::from_text("abc");
+        let result = ed.apply_edits(&[
+            EditionEdit::Delete(0),
+            EditionEdit::Insert(3, RangeElement::text("d".to_string())),
+        ]);
+        let text = result.to_text();
+        assert!(text.contains('b'));
+        assert!(text.contains('c'));
+        assert!(text.contains('d'));
+        assert!(!text.contains('a'));
+    }
+
+    #[test]
+    fn apply_edits_noop() {
+        let ed = Edition::from_text("abc");
+        let result = ed.apply_edits(&[]);
+        assert_eq!(ed.to_text(), result.to_text());
+    }
+
+    #[test]
+    fn apply_edits_renumbers_sequential() {
+        let ed = Edition::from_text("abc");
+        let result = ed.apply_edits(&[EditionEdit::Delete(1)]);
+        let positions: Vec<i64> = result.all_entries().iter().map(|(p, _)| *p).collect();
+        assert_eq!(
+            positions,
+            vec![0, 1],
+            "positions should be sequential after renumber"
         );
     }
 }
