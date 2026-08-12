@@ -361,6 +361,11 @@ export function WorkspaceShell() {
 
   const identityName = identity?.display_name || null;
 
+  const sourceUpdateCount = useMemo(
+    () => compound.spanRanges.filter((sr) => sr.source_changed).length,
+    [compound.spanRanges],
+  );
+
   const transclusionCompliance = useMemo(() => {
     if (compound.spanRanges.length === 0) return "none" as const;
     const hasArr = compound.spanRanges.some((sr) => {
@@ -2361,6 +2366,29 @@ export function WorkspaceShell() {
                     }}
                     title="Paste a tumbler address and press Enter to navigate"
                   />
+                  {sourceUpdateCount > 0 && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: "#d29922",
+                        background: "rgba(210, 153, 34, 0.1)",
+                        border: "1px solid rgba(210, 153, 34, 0.3)",
+                        borderRadius: 10,
+                        padding: "1px 8px",
+                        cursor: "pointer",
+                        userSelect: "none",
+                      }}
+                      title={`${sourceUpdateCount} transclusion source${sourceUpdateCount !== 1 ? "s" : ""} updated — see Connections panel`}
+                      onClick={() => {
+                        setRightPanelTab("connections");
+                        const panel = document.querySelector('[class*="ctx-section"]');
+                        if (panel) panel.scrollIntoView({ behavior: "smooth", block: "center" });
+                      }}
+                    >
+                      {sourceUpdateCount} source update{sourceUpdateCount !== 1 ? "s" : ""}
+                    </span>
+                  )}
                 </div>
               </header>
 

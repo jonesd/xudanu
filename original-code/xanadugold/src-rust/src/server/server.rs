@@ -337,10 +337,22 @@ pub fn resolve_and_verify_host(host: &str, port: u16) -> Result<Vec<std::net::So
 }
 
 #[derive(Debug, Clone)]
+pub struct TransclusionBlobRef {
+    pub char_position: usize,
+    pub content_hash: u64,
+    pub mime_type: String,
+    pub byte_size: u64,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub source_work_id: u64,
+}
+
+#[derive(Debug, Clone)]
 pub struct InlineTransclusionResult {
     pub text: String,
     pub span_ranges: Vec<crate::edition::compound::SpanRange>,
     pub source_titles: HashMap<BeId, String>,
+    pub transcluded_blobs: Vec<TransclusionBlobRef>,
 }
 
 const SIG_FAILURE_THRESHOLD: u32 = 5;
@@ -12247,6 +12259,20 @@ impl Server {
             None => return Ok(0),
         };
 
+        let source_crum_map: std::collections::HashMap<u64, ([u8; 32], Option<u64>)> = compound
+            .elements()
+            .iter()
+            .filter_map(|e| match e {
+                crate::edition::compound::CompoundElement::Span { span } => {
+                    let ws = self.works.get(&(span.source_work_id() as BeId))?;
+                    let crum = ws.work().current_edition().crum().unwrap_or([0u8; 32]);
+                    let rev = ws.work().revision_count();
+                    Some((span.source_work_id(), (crum, Some(rev))))
+                }
+                _ => None,
+            })
+            .collect();
+
         let ws = self
             .works
             .get_mut(&work_id)
@@ -12279,13 +12305,25 @@ impl Server {
                         }
                     }
                     crate::edition::compound::CompoundElement::Span { span } => {
-                        let tc = crate::edition::range_element::Carrier::new(
-                            RangeElement::transclusion(
-                                span.source_work_id(),
-                                span.char_start(),
-                                span.char_end(),
-                            ),
+                        let (crum, rev) = source_crum_map
+                            .get(&span.source_work_id())
+                            .cloned()
+                            .unwrap_or(([0u8; 32], None));
+                        let mut elem = RangeElement::structural_transclusion(
+                            span.source_work_id(),
+                            span.char_start() as i64,
+                            span.char_end() as i64,
+                            crum,
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs(),
+                            None,
                         );
+                        if let Some(r) = rev {
+                            elem.set_structural_revision(r);
+                        }
+                        let tc = crate::edition::range_element::Carrier::new(elem);
                         new_entries.push((pos, std::sync::Arc::new(tc)));
                         pos += 1;
                         compound_idx += 1;
@@ -12318,20 +12356,22 @@ impl Server {
         let mut stack: Vec<BeId> = Vec::new();
         let mut span_ranges = Vec::new();
         let mut source_titles = HashMap::new();
-
-        let text = self.resolve_inline_recursive(
+        let mut transcluded_blobs = Vec::new();
+        let result = self.resolve_inline_recursive(
             work_id,
             &mut cache,
             &mut stack,
             &mut span_ranges,
             &mut source_titles,
+            &mut transcluded_blobs,
             0,
         )?;
 
         Ok(InlineTransclusionResult {
-            text,
+            text: result,
             span_ranges,
             source_titles,
+            transcluded_blobs,
         })
     }
 
@@ -12344,6 +12384,7 @@ impl Server {
         stack: &mut Vec<BeId>,
         span_ranges: &mut Vec<crate::edition::compound::SpanRange>,
         source_titles: &mut HashMap<BeId, String>,
+        transcluded_blobs: &mut Vec<TransclusionBlobRef>,
         depth: usize,
     ) -> Result<String, ServerError> {
         if depth >= Self::INLINE_MAX_DEPTH {
@@ -12397,33 +12438,104 @@ impl Server {
                 let e_end = *entry_end;
                 let crum = *source_crum;
 
-                let src_text = if let Some(src_ws) = self.works.get(&src_id) {
+                let (src_text, source_changed) = if let Some(src_ws) = self.works.get(&src_id) {
                     let src_edition = src_ws.work().current_edition();
-                    if let Some(current_crum) = src_edition.crum() {
-                        if current_crum == crum {
-                            tracing::debug!(
-                                "[structural_transclusion] source {:x} crum matches — live content",
-                                src_id
-                            );
-                        } else {
+                    let current_crum = src_edition.crum();
+
+                    let changed = match current_crum {
+                        Some(cc) => cc != crum,
+                        None => false,
+                    };
+
+                    if changed {
+                        if let Some(cc) = current_crum {
                             tracing::info!(
-                                "[structural_transclusion] source {:x} crum CHANGED (was {} now {}) — content updated",
+                                "[structural_transclusion] source {:x} crum CHANGED ({} → {}) — {} mode",
                                 src_id,
                                 hex::encode(crum),
-                                hex::encode(current_crum)
+                                hex::encode(cc),
+                                if stored_revision.is_some() { "PINNED (fetching revision)" } else { "LIVE (using current)" }
                             );
                         }
                     }
-                    let region = crate::edition::xn_region::XnRegion::interval(e_start, e_end);
-                    src_edition
-                        .entries_in_range(e_start, e_end)
-                        .iter()
-                        .map(|(_, c)| c.element.as_text().unwrap_or(""))
-                        .collect::<String>()
+
+                    if stored_revision.is_some() && changed {
+                        let rev = stored_revision.unwrap();
+                        let rev_edition = src_ws.work().fetch_revision(rev);
+                        if let Some(ed) = rev_edition {
+                            (
+                                ed.entries_in_range(e_start, e_end)
+                                    .iter()
+                                    .map(|(_, c)| c.element.as_text().unwrap_or(""))
+                                    .collect::<String>(),
+                                true,
+                            )
+                        } else {
+                            tracing::warn!(
+                                "[structural_transclusion] pinned revision {} not found for {:x}, falling back to current",
+                                rev, src_id
+                            );
+                            (
+                                src_edition
+                                    .entries_in_range(e_start, e_end)
+                                    .iter()
+                                    .map(|(_, c)| c.element.as_text().unwrap_or(""))
+                                    .collect::<String>(),
+                                true,
+                            )
+                        }
+                    } else {
+                        (
+                            src_edition
+                                .entries_in_range(e_start, e_end)
+                                .iter()
+                                .map(|(_, c)| c.element.as_text().unwrap_or(""))
+                                .collect::<String>(),
+                            changed,
+                        )
+                    }
                 } else {
                     tracing::warn!("[structural_transclusion] source {:x} not found", src_id);
                     continue;
                 };
+
+                let blob_entries = if stored_revision.is_some() && source_changed {
+                    let rev = stored_revision.unwrap();
+                    self.works
+                        .get(&src_id)
+                        .and_then(|ws| ws.work().fetch_revision(rev))
+                        .map(|ed| ed.entries_in_range(e_start, e_end))
+                        .unwrap_or_default()
+                } else {
+                    self.works
+                        .get(&src_id)
+                        .map(|ws| ws.work().current_edition().entries_in_range(e_start, e_end))
+                        .unwrap_or_default()
+                };
+
+                let mut char_pos = text_offset;
+                for (_, rc) in &blob_entries {
+                    if let RangeElement::Blob {
+                        content_hash,
+                        mime_type,
+                        byte_size,
+                        width,
+                        height,
+                        ..
+                    } = &rc.element
+                    {
+                        transcluded_blobs.push(TransclusionBlobRef {
+                            char_position: char_pos,
+                            content_hash: *content_hash,
+                            mime_type: mime_type.clone(),
+                            byte_size: *byte_size,
+                            width: *width,
+                            height: *height,
+                            source_work_id: src_id,
+                        });
+                    }
+                    char_pos += rc.char_len();
+                }
 
                 let content_len = src_text.chars().count();
 
@@ -12438,7 +12550,7 @@ impl Server {
                     resolved_content: src_text.clone(),
                     placed_at: *p_at,
                     placed_by: *p_by,
-                    source_changed: false,
+                    source_changed,
                 });
 
                 source_titles
@@ -12491,6 +12603,7 @@ impl Server {
                             stack,
                             span_ranges,
                             source_titles,
+                            transcluded_blobs,
                             depth + 1,
                         )?
                     }
@@ -12502,6 +12615,7 @@ impl Server {
                         stack,
                         span_ranges,
                         source_titles,
+                        transcluded_blobs,
                         depth + 1,
                     )?
                 };
