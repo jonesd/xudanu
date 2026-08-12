@@ -43,11 +43,18 @@ provenance, federation, web platform).
 | Tumbler resolve | Wire op 0x0F0E + paste-to-navigate UI | Resolve tumbler to local work |
 | Tumbler search | Server::search_by_tumbler_prefix | Find works by tumbler prefix |
 | Tumbler listing | Server::list_work_tumblers | All works with typed tumbler addresses |
+| Tumbler resolve | Wire op 0x0F0E + paste-to-navigate | Resolve tumbler to local work |
+| Tumbler permalink | URL hash routing + copy link button | Shareable document links |
+| Crum in metadata | WorkListEntry + RevisionMetaEntry | O(1) change detection |
+| Playwright E2E | 8 browser tests | Real UI flow testing |
+| Transclusion fix | Metadata preserved through migration | placed_at/by, content_hash survive |
+| Depth limit fix | 32 → 1000 (cycle detection is real protection) | No arbitrary limits |
+| Structural transclusion | RangeElement::StructuralTransclusion | Enfilade subtree references, live content |
 | Provenance | Span migration, non-text preservation | Attribution survives merges |
 | Blob hash | u64 -> String migration | JS precision fix |
 | Property tests | 17 properties x 256 cases | Correctness verification |
 
-### Test counts: 2994 Rust lib + 280 integration + 696 frontend = 3970
+### Test counts: 2998 Rust lib + 280 integration + 696 frontend + 8 E2E = 3982
 
 ### Performance comparison
 
