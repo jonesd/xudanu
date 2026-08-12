@@ -116,7 +116,7 @@ export function ConnectionsSection({
       type: "backlink" as const,
       title: csb.origin_server_name || csb.origin_server_address,
       excerpt: csb.excerpt.slice(0, 80),
-      meta: "cross-server",
+      meta: `cross-server · "${csb.origin_server_address}".${csb.origin_work_id}`,
       workId: 0,
     });
   }
