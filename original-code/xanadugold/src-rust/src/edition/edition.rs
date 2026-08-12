@@ -627,6 +627,10 @@ impl Edition {
             .sum()
     }
 
+    pub fn crum(&self) -> Option<crate::edition::orgl::Crum> {
+        self.orgl.crum()
+    }
+
     pub fn entry_identities(&self) -> Vec<EntryIdentity> {
         self.cached_entries()
             .iter()

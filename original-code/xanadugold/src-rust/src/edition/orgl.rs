@@ -5,6 +5,50 @@ use super::xn_region::XnRegion;
 
 const MAX_LEAF_SIZE: usize = 16384;
 
+pub type Crum = [u8; 32];
+
+fn compute_leaf_crum(
+    entries: &[(i64, Arc<Carrier>)],
+    region: &XnRegion,
+    default: &Option<Arc<Carrier>>,
+) -> Crum {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"leaf:");
+    for (start, end) in region.intervals() {
+        hasher.update(&start.to_le_bytes());
+        hasher.update(&end.to_le_bytes());
+    }
+    for (pos, carrier) in entries {
+        hasher.update(&pos.to_le_bytes());
+        hasher.update(&carrier.element.content_fingerprint());
+    }
+    if let Some(d) = default {
+        hasher.update(b"d:");
+        hasher.update(&d.element.content_fingerprint());
+    }
+    *hasher.finalize().as_bytes()
+}
+
+fn compute_split_crum(split: &XnRegion, in_crum: &Crum, out_crum: &Crum) -> Crum {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"split:");
+    for (start, end) in split.intervals() {
+        hasher.update(&start.to_le_bytes());
+        hasher.update(&end.to_le_bytes());
+    }
+    hasher.update(in_crum);
+    hasher.update(out_crum);
+    *hasher.finalize().as_bytes()
+}
+
+fn compute_dsp_crum(offset: i64, child_crum: &Crum) -> Crum {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"dsp:");
+    hasher.update(&offset.to_le_bytes());
+    hasher.update(child_crum);
+    *hasher.finalize().as_bytes()
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Loaf {
     Leaf {
@@ -25,6 +69,24 @@ pub(crate) enum Loaf {
 
 #[allow(dead_code)]
 impl Loaf {
+    pub fn compute_crum(&self) -> Crum {
+        match self {
+            Loaf::Leaf {
+                entries,
+                region,
+                default,
+                ..
+            } => compute_leaf_crum(entries, region, default),
+            Loaf::Split {
+                split,
+                in_child,
+                out_child,
+                ..
+            } => compute_split_crum(split, &in_child.compute_crum(), &out_child.compute_crum()),
+            Loaf::Dsp { offset, child, .. } => compute_dsp_crum(*offset, &child.compute_crum()),
+        }
+    }
+
     fn new_leaf(region: XnRegion, entries: Vec<(i64, Arc<Carrier>)>) -> Self {
         Loaf::Leaf {
             region,
@@ -1024,6 +1086,13 @@ impl OrglRoot {
         }
     }
 
+    pub fn crum(&self) -> Option<Crum> {
+        match &self.inner {
+            OrglInner::Empty => None,
+            OrglInner::Actual { loaf, .. } => Some(loaf.compute_crum()),
+        }
+    }
+
     pub fn transformed_by(&self, offset: i64) -> OrglRoot {
         match &self.inner {
             OrglInner::Empty => OrglRoot::empty(),
@@ -1056,6 +1125,7 @@ impl OrglRoot {
 mod tests {
     use super::*;
     use crate::edition::range_element::RangeElement;
+    use crate::edition::Edition;
 
     fn make_text_loaf(text: &str) -> Loaf {
         let entries: Vec<(i64, Arc<Carrier>)> = text
@@ -1544,5 +1614,138 @@ mod tests {
     fn finite_leaf_not_infinite() {
         let loaf = make_text_loaf("abc");
         assert!(!loaf.is_infinite());
+    }
+
+    #[test]
+    fn crum_identical_editions_match() {
+        let e1 = Edition::from_text("hello world");
+        let e2 = Edition::from_text("hello world");
+        assert_eq!(
+            e1.crum(),
+            e2.crum(),
+            "identical content must have matching crums"
+        );
+    }
+
+    #[test]
+    fn crum_different_content_differs() {
+        let e1 = Edition::from_text("hello world");
+        let e2 = Edition::from_text("hello earth");
+        assert_ne!(
+            e1.crum(),
+            e2.crum(),
+            "different content must have different crums"
+        );
+    }
+
+    #[test]
+    fn crum_position_sensitive() {
+        let mut e1 = Edition::from_text("ab");
+        e1 = e1.with(2, RangeElement::text("c".to_string()));
+        let mut e2 = Edition::from_text("ac");
+        e2 = e2.with(2, RangeElement::text("b".to_string()));
+        assert_ne!(
+            e1.crum(),
+            e2.crum(),
+            "same characters at different positions must differ"
+        );
+    }
+
+    #[test]
+    fn crum_empty_edition_is_none() {
+        let e = Edition::empty();
+        assert!(e.crum().is_none(), "empty edition should have no crum");
+    }
+
+    #[test]
+    fn crum_nonempty_edition_is_some() {
+        let e = Edition::from_text("x");
+        assert!(e.crum().is_some(), "non-empty edition should have a crum");
+    }
+
+    #[test]
+    fn crum_bulk_vs_with_same_content() {
+        let bulk = Edition::from_text("abc");
+        let with = Edition::empty()
+            .with(0, RangeElement::text("a".to_string()))
+            .with(1, RangeElement::text("b".to_string()))
+            .with(2, RangeElement::text("c".to_string()));
+        assert_eq!(
+            bulk.crum(),
+            with.crum(),
+            "same entries (same content at same positions) must have matching crums regardless of tree structure"
+        );
+    }
+
+    #[test]
+    fn crum_dsp_different_offset_differs() {
+        let e1 = Edition::from_text("abc");
+        let e2 = e1.transformed_by(5);
+        assert_ne!(
+            e1.orgl.crum(),
+            e2.orgl.crum(),
+            "Dsp with different offset must have different crum"
+        );
+    }
+
+    #[test]
+    fn crum_dsp_zero_offset_matches() {
+        let e1 = Edition::from_text("abc");
+        let e2 = e1.transformed_by(0);
+        assert_eq!(
+            e1.orgl.crum(),
+            e2.orgl.crum(),
+            "Dsp with zero offset should be identity (same crum)"
+        );
+    }
+
+    #[test]
+    fn crum_with_changes_crum() {
+        let e1 = Edition::from_text("hello");
+        let e2 = e1.with(0, RangeElement::text("X".to_string()));
+        assert_ne!(e1.crum(), e2.crum(), "mutation must change crum");
+    }
+
+    #[test]
+    fn crum_without_changes_crum() {
+        let e1 = Edition::from_text("abc");
+        let e2 = e1.without(1);
+        assert_ne!(e1.crum(), e2.crum(), "deletion must change crum");
+    }
+
+    #[test]
+    fn crum_large_edition_consistent() {
+        let text: String = (0..500)
+            .map(|i| char::from_u32(97 + i % 26).unwrap())
+            .collect();
+        let e1 = Edition::from_text(&text);
+        let e2 = Edition::from_text(&text);
+        assert_eq!(
+            e1.crum(),
+            e2.crum(),
+            "large identical editions must have matching crums"
+        );
+    }
+
+    #[test]
+    fn crum_data_element_differs_from_text() {
+        let e1 = Edition::from_one(0, RangeElement::text("hello".to_string()));
+        let e2 = Edition::from_one(0, RangeElement::data(vec![1, 2, 3]));
+        assert_ne!(
+            e1.crum(),
+            e2.crum(),
+            "different element types must have different crums"
+        );
+    }
+
+    #[test]
+    fn crum_coalesced_differs_from_uncoalesced() {
+        let per_char = Edition::from_text("abc");
+        let coalesced = per_char.coalesce();
+        assert_ne!(
+            per_char.crum(),
+            coalesced.crum(),
+            "coalesce changes entry structure (3 entries -> 1), so crum should differ"
+        );
     }
 }

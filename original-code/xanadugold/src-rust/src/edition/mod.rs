@@ -69,7 +69,7 @@ pub use links::{
     EditionResolver, FollowError, HashMapResolver, HyperLink, HyperRef, HyperRefKind, Path,
 };
 pub use mapping::Mapping;
-pub use orgl::{OrglRoot, SplayResult};
+pub use orgl::{Crum, OrglRoot, SplayResult};
 pub use pool::{ContentHash, ContentPool};
 pub use props::{
     init_endorsement_flags, BertProp, Prop, PropFinder, SensorProp, IS_NOT_PARTIALIZABLE_FLAG,
