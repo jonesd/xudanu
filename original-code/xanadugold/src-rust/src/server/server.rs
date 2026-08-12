@@ -8182,6 +8182,7 @@ impl Server {
                 author_display_name,
                 author_type,
                 timestamp: ws.revision_timestamps.get(&rev_num).copied(),
+                content_crum: ed.crum().map(|c| c.iter().map(|b| format!("{:02x}", b)).collect()),
             });
         }
 

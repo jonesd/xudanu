@@ -4180,6 +4180,8 @@ pub struct RevisionMetaEntry {
     pub author_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_crum: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

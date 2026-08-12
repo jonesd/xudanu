@@ -204,6 +204,8 @@ export interface RevisionMeta {
   author_club_id: number | null;
   author_display_name: string | null;
   author_type: string | null;
+  timestamp?: number;
+  content_crum?: string;
 }
 
 export interface WorkVersionTimeline {
