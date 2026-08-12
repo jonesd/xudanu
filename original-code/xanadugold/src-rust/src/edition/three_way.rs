@@ -756,6 +756,42 @@ pub fn three_way_merge(
         });
     }
 
+    if diff.only_a.is_empty() && diff.conflict.is_empty() && !diff.only_b.is_empty() {
+        let merged = b.clone();
+        let b_to_merged = build_merge_mapping(b, &merged);
+        let a_to_merged = build_merge_mapping(a, &merged);
+        let migrated_sp = migrate_span_provenance(
+            &a.span_provenance,
+            &b.span_provenance,
+            &a_to_merged,
+            &b_to_merged,
+        );
+        let merged = merged.with_span_provenance(migrated_sp);
+        return Ok(MergeResult {
+            merged,
+            a_to_merged,
+            b_to_merged,
+        });
+    }
+
+    if diff.only_b.is_empty() && diff.conflict.is_empty() && !diff.only_a.is_empty() {
+        let merged = a.clone();
+        let a_to_merged = build_merge_mapping(a, &merged);
+        let b_to_merged = build_merge_mapping(b, &merged);
+        let migrated_sp = migrate_span_provenance(
+            &a.span_provenance,
+            &b.span_provenance,
+            &a_to_merged,
+            &b_to_merged,
+        );
+        let merged = merged.with_span_provenance(migrated_sp);
+        return Ok(MergeResult {
+            merged,
+            a_to_merged,
+            b_to_merged,
+        });
+    }
+
     match strategy {
         MergeStrategy::LastWriterWins => {
             let (merged, a_map, b_map) = assemble_merge_lww(base, a, b, &diff);
