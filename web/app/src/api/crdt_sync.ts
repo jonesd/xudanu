@@ -2372,6 +2372,20 @@ export class CrdtSyncClient {
     };
   }
 
+  async resolveTumbler(tumbler: string): Promise<{
+    work_id: string | null; title: string | null;
+    is_local: boolean; server: string;
+  }> {
+    const resp = await this.sendRequest("tumbler_resolve", { tumbler });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return {
+      work_id: (val.work_id as string) || null,
+      title: (val.title as string) || null,
+      is_local: (val.is_local as boolean) ?? false,
+      server: (val.server as string) || "",
+    };
+  }
+
   async workEndorse(workId: number, endorsements: Array<[number, number]>): Promise<void> {
     await this.sendRequest("work_endorse", { work_id: workId, endorsements });
   }

@@ -456,6 +456,20 @@ export function WorkspaceShell() {
     return () => clearInterval(interval);
   }, [connected, fetchWorkList]);
 
+  const handleTumblerNavigate = useCallback(async (tumblerStr: string) => {
+    const client = clientRef.current;
+    if (!client || !tumblerStr.trim()) return;
+    try {
+      const result = await client.resolveTumbler(tumblerStr.trim());
+      if (result.work_id && result.is_local) {
+        const workId = parseInt(result.work_id, 16);
+        selectWork(workId);
+      }
+    } catch (e) {
+      console.error("[tumbler] resolve failed:", e);
+    }
+  }, [clientRef, selectWork]);
+
   const handleCreateWork = useCallback(async () => {
     if (!createWork) return;
     const newId = await createWork();
@@ -2291,6 +2305,27 @@ export function WorkspaceShell() {
                   >
                     "{serverDomain}".{workIdDisplay}
                   </span>
+                  <input
+                    className="ws-tumbler-input"
+                    placeholder="paste tumbler..."
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        void handleTumblerNavigate((e.target as HTMLInputElement).value);
+                        (e.target as HTMLInputElement).value = "";
+                      }
+                    }}
+                    style={{
+                      fontSize: 9,
+                      fontFamily: "monospace",
+                      background: "var(--bg)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 3,
+                      padding: "1px 4px",
+                      color: "var(--text-muted)",
+                      width: 120,
+                    }}
+                    title="Paste a tumbler address and press Enter to navigate"
+                  />
                 </div>
               </header>
 

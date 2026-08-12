@@ -3441,6 +3441,17 @@ impl JsonCodec {
                     club_name: args.club_name,
                 })
             }
+            OperationCode::TumblerResolve => {
+                #[derive(Deserialize)]
+                struct Args {
+                    tumbler: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TumblerResolve {
+                    tumbler: args.tumbler,
+                })
+            }
             OperationCode::WorkKindGet => {
                 #[derive(Deserialize)]
                 struct Args {

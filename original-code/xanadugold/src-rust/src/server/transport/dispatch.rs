@@ -3884,6 +3884,30 @@ fn dispatch_inner(
                 verified_at: attestation.verified_at,
             })
         }
+        WireRequest::TumblerResolve { tumbler } => {
+            srv.ensure_session(session_id)?;
+            let parsed = crate::edition::tumbler::XudanuTumbler::parse(&tumbler);
+            let server_addr = parsed.server().to_string();
+            if let Some(work_id) = srv.resolve_local_tumbler(&parsed) {
+                let title = srv
+                    .works
+                    .get(&work_id)
+                    .map(|ws| ws.cached_title().to_string());
+                Ok(ResponseValue::TumblerResolveResult {
+                    work_id: Some(format!("{:04x}", work_id)),
+                    title,
+                    is_local: true,
+                    server: server_addr,
+                })
+            } else {
+                Ok(ResponseValue::TumblerResolveResult {
+                    work_id: None,
+                    title: None,
+                    is_local: false,
+                    server: server_addr,
+                })
+            }
+        }
         #[cfg(feature = "serde")]
         WireRequest::FederationAttestationCreate {
             attestation_type,

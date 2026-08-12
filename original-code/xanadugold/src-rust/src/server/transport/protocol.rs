@@ -427,6 +427,8 @@ pub enum OperationCode {
     #[cfg(feature = "serde")]
     FetchRemoteIdentity,
     #[cfg(feature = "serde")]
+    TumblerResolve,
+    #[cfg(feature = "serde")]
     FederationAttestationCreate,
     #[cfg(feature = "serde")]
     FederationAttestationVerify,
@@ -784,6 +786,7 @@ impl OperationCode {
             0x0F0C => Some(OperationCode::CrossServerLinkList),
             #[cfg(feature = "serde")]
             0x0F0D => Some(OperationCode::FetchRemoteIdentity),
+            0x0F0E => Some(OperationCode::TumblerResolve),
 
             _ => None,
         }
@@ -1107,6 +1110,7 @@ impl OperationCode {
             OperationCode::CrossServerLinkList => 0x0F0C,
             #[cfg(feature = "serde")]
             OperationCode::FetchRemoteIdentity => 0x0F0D,
+            OperationCode::TumblerResolve => 0x0F0E,
             #[cfg(feature = "serde")]
             OperationCode::FederationAttestationCreate => 0x0E02,
             #[cfg(feature = "serde")]
@@ -2213,6 +2217,9 @@ pub enum WireRequest {
         server_id: String,
         club_name: String,
     },
+    TumblerResolve {
+        tumbler: String,
+    },
 }
 
 impl WireRequest {
@@ -2898,6 +2905,13 @@ pub enum ResponseValue {
         home_server_name: String,
         home_server_address: String,
         verified_at: u64,
+    },
+    #[cfg(feature = "serde")]
+    TumblerResolveResult {
+        work_id: Option<String>,
+        title: Option<String>,
+        is_local: bool,
+        server: String,
     },
     #[cfg(feature = "serde")]
     FederationAttestationCreateResult {
