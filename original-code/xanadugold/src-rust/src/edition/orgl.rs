@@ -2034,4 +2034,95 @@ mod tests {
         assert_eq!(a.combine_overlapping(&empty).count(), 1);
         assert_eq!(empty.combine_overlapping(&a).count(), 1);
     }
+
+    proptest! {
+        #[test]
+        fn prop_combine_overlapping_preserves_content(
+            a_text in "[a-z]{1,20}",
+            b_text in "[a-z]{1,20}",
+        ) {
+            let a_entries: Vec<(i64, Arc<Carrier>)> = a_text.chars().enumerate()
+                .map(|(i, c)| (i as i64, Arc::new(Carrier::new(RangeElement::text(c.to_string())))))
+                .collect();
+            let b_entries: Vec<(i64, Arc<Carrier>)> = b_text.chars().enumerate()
+                .map(|(i, c)| (i as i64, Arc::new(Carrier::new(RangeElement::text(c.to_string())))))
+                .collect();
+            let a = OrglRoot::from_bulk_entries(a_entries, None,
+                XnRegion::interval(0, a_text.len() as i64));
+            let b = OrglRoot::from_bulk_entries(b_entries, None,
+                XnRegion::interval(0, b_text.len() as i64));
+
+            let combined = a.combine_overlapping(&b);
+            let n = a_text.len().max(b_text.len());
+            for i in 0..n {
+                let fetched = combined.fetch(i as i64);
+                if i < b_text.len() {
+                    let expected: String = b_text.chars().nth(i).unwrap().into();
+                    let actual: String = fetched.unwrap().element.as_text().unwrap_or("").to_string();
+                    prop_assert_eq!(actual, expected, "position {} should have b's value (LWW)", i);
+                } else if i < a_text.len() {
+                    let expected: String = a_text.chars().nth(i).unwrap().into();
+                    let actual: String = fetched.unwrap().element.as_text().unwrap_or("").to_string();
+                    prop_assert_eq!(actual, expected, "position {} should have a's value (only in a)", i);
+                }
+            }
+        }
+
+        #[test]
+        fn prop_splayed_preserves_all_entries(
+            text in "[a-z\n]{1,50}",
+            s in 0usize..50,
+            e in 0usize..50,
+        ) {
+            let ed = Edition::from_text_batched(&text);
+            let (start, end) = if s <= e { (s, e) } else { (e, s) };
+            let region = XnRegion::interval(start as i64, end as i64);
+            let (splayed, _) = ed.splayed(&region);
+            let orig = ed.all_entries();
+            let spl = splayed.all_entries();
+            prop_assert_eq!(orig.len(), spl.len(), "entry count must match");
+            for (a, b) in orig.iter().zip(spl.iter()) {
+                prop_assert_eq!(a.0, b.0, "position must match");
+                prop_assert_eq!(a.1.element.as_text(), b.1.element.as_text(), "content must match");
+            }
+        }
+
+        #[test]
+        fn prop_chunk_crums_deterministic(
+            text in "[a-z]{10,50}",
+            chunk_size in 2usize..10,
+        ) {
+            let e1 = Edition::from_text(&text);
+            let e2 = Edition::from_text(&text);
+            let c1 = e1.chunk_crums(chunk_size);
+            let c2 = e2.chunk_crums(chunk_size);
+            prop_assert_eq!(c1.len(), c2.len());
+            for (a, b) in c1.iter().zip(c2.iter()) {
+                prop_assert_eq!(a.2, b.2, "crums must be deterministic");
+            }
+        }
+
+        #[test]
+        fn prop_chunk_diff_identical_all_match(
+            text in "[a-z]{10,50}",
+        ) {
+            let e1 = Edition::from_text(&text);
+            let e2 = Edition::from_text(&text);
+            let (matching, differing) = e1.chunk_diff(&e2, 3);
+            prop_assert!(differing.is_empty(), "identical editions have no differing blocks");
+            prop_assert!(!matching.is_empty());
+        }
+
+        #[test]
+        fn prop_document_arrangement_roundtrip(
+            work_id in 1u64..1000,
+            position in 0i64..1000,
+        ) {
+            let arr = crate::edition::tumbler::DocumentArrangement::new("server.com", work_id);
+            let tumbler = arr.to_tumbler(position);
+            let back = arr.from_tumbler(&tumbler);
+            prop_assert_eq!(back, Some(position), "roundtrip must recover position");
+            prop_assert!(arr.owns_tumbler(&tumbler), "arrangement must own the tumbler");
+        }
+    }
 }
