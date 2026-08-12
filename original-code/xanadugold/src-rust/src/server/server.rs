@@ -5118,21 +5118,11 @@ impl Server {
             ws.work.current_edition().clone()
         };
 
-        // TODO(Phase 2 — Priority): Use source_fingerprint_set to gate attribution.
-        // Currently all entries in range get attributed regardless of whether their
-        // content actually matches the source work. Wire this up to only attribute
-        // entries whose content_fingerprint() appears in the source's fingerprint set,
-        // enabling verified (not assumed) attribution.
-        let _source_fingerprint_set = source_work_id.and_then(|sid| {
-            self.works.get(&sid).map(|ws| {
-                let entries = ws.work.current_edition().all_entries();
-                let mut set = std::collections::HashSet::new();
-                for (_, c) in &entries {
-                    set.insert(c.element.content_fingerprint());
-                }
-                set
-            })
-        });
+        // TODO: Attribution fingerprint gating requires character-level (not entry-level)
+        // fingerprint comparison, because batched and per-char entries produce different
+        // content_fingerprint() values for the same text. For now, all entries in the
+        // paste range get attributed. Future: build a character-level fingerprint set
+        // from the source text to verify attribution.
 
         let elem_provenance = crate::edition::provenance::ElementProvenance {
             author_type: crate::edition::provenance::AuthorType::Historical,
@@ -8182,7 +8172,9 @@ impl Server {
                 author_display_name,
                 author_type,
                 timestamp: ws.revision_timestamps.get(&rev_num).copied(),
-                content_crum: ed.crum().map(|c| c.iter().map(|b| format!("{:02x}", b)).collect()),
+                content_crum: ed
+                    .crum()
+                    .map(|c| c.iter().map(|b| format!("{:02x}", b)).collect()),
             });
         }
 
@@ -12613,7 +12605,10 @@ impl Server {
                         source_work_id: sid,
                         char_start,
                         char_end,
-                        ..
+                        placed_at,
+                        placed_by,
+                        content_hash,
+                        source_revision,
                     } = &new_carrier.element
                     {
                         if *sid == source_work_id {
@@ -12622,8 +12617,13 @@ impl Server {
                                 *char_end,
                                 &delta_ops,
                             );
-                            new_carrier.element =
-                                crate::edition::RangeElement::transclusion(*sid, ns, ne);
+                            let mut new_elem = crate::edition::RangeElement::transclusion_with_meta(
+                                *sid, ns, ne, *placed_at, *placed_by,
+                            );
+                            if let Some(hash) = content_hash {
+                                new_elem.set_transclusion_hash(*hash, source_revision.unwrap_or(0));
+                            }
+                            new_carrier.element = new_elem;
                         }
                     }
                     new_entries.push((pos, std::sync::Arc::new(new_carrier)));
@@ -29053,6 +29053,94 @@ mod tests {
             after.text, "Intro Hello End.",
             "transclusion should still resolve to 'Hello' after insert before it"
         );
+    }
+
+    #[test]
+    fn transclusion_metadata_preserved_through_migration() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+
+        let mut transclusion_elem =
+            RangeElement::transclusion_with_meta(src, 0, 5, 12345, Some(99));
+        transclusion_elem.set_transclusion_hash([0xAB; 32], 2);
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("Intro "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    transclusion_elem,
+                )),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" End."),
+                )),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        server.work_grab(sid, src).unwrap();
+        server
+            .work_revise(sid, src, Edition::from_text("GPS Hello World"))
+            .unwrap();
+
+        let delta_ops = vec![
+            crate::server::transport::protocol::TextDeltaOp::Insert {
+                text: "GPS ".to_string(),
+            },
+            crate::server::transport::protocol::TextDeltaOp::Retain {
+                count: "Hello World".chars().count() as u64,
+            },
+        ];
+
+        server.migrate_inline_transclusions_for_delta(src, &delta_ops);
+
+        let doc_entries = server
+            .works
+            .get(&doc)
+            .unwrap()
+            .work
+            .current_edition()
+            .all_entries();
+
+        let transclusion = doc_entries
+            .iter()
+            .find(|(_, c)| matches!(c.element, RangeElement::Transclusion { .. }));
+        assert!(transclusion.is_some(), "transclusion element should exist");
+
+        if let Some((_, carrier)) = transclusion {
+            if let RangeElement::Transclusion {
+                placed_at,
+                placed_by,
+                content_hash,
+                source_revision,
+                ..
+            } = &carrier.element
+            {
+                assert_eq!(*placed_at, 12345, "placed_at must survive migration");
+                assert_eq!(*placed_by, Some(99), "placed_by must survive migration");
+                assert_eq!(
+                    content_hash,
+                    &Some([0xAB; 32]),
+                    "content_hash must survive migration"
+                );
+                assert_eq!(
+                    source_revision,
+                    &Some(2),
+                    "source_revision must survive migration"
+                );
+            }
+        }
     }
 
     #[test]
