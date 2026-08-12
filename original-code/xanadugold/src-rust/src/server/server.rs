@@ -4239,11 +4239,15 @@ impl Server {
                         .get(&club_id)
                         .and_then(|c| c.display_name().map(|s| s.to_string()))
                         .unwrap_or_else(|| {
-                            self.club_names
-                                .iter()
-                                .find(|(_, id)| **id == club_id)
-                                .map(|(name, _)| name.clone())
-                                .unwrap_or_else(|| format!("club:{:04x}", club_id))
+                            if !ep.author_display_name.is_empty() {
+                                ep.author_display_name.clone()
+                            } else {
+                                self.club_names
+                                    .iter()
+                                    .find(|(_, id)| **id == club_id)
+                                    .map(|(name, _)| name.clone())
+                                    .unwrap_or_else(|| format!("club:{:04x}", club_id))
+                            }
                         });
                     (Some(name), Some(club_id))
                 } else {
