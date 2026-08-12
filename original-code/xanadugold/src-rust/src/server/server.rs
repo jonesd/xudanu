@@ -29968,7 +29968,7 @@ mod tests {
         );
         let payload = RangeElementPayload::from_range_element(&re);
         assert_eq!(payload.elem_type, "blob");
-        assert_eq!(payload.blob_hash, Some(0xABCD));
+        assert_eq!(payload.blob_hash, Some("43981".to_string()));
         assert_eq!(payload.blob_mime.as_deref(), Some("image/png"));
         assert_eq!(payload.blob_size, Some(1024));
         assert_eq!(payload.blob_width, Some(800));

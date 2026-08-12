@@ -2074,18 +2074,20 @@ fn dispatch_inner(
             ))
         }
         WireRequest::BlobGet { content_hash } => {
-            let data = srv.blob_get(content_hash)?;
+            let data = srv.blob_get(content_hash.parse().unwrap_or(0))?;
             Ok(ResponseValue::BlobData(data))
         }
-        WireRequest::BlobGetPreview { content_hash } => match srv.blob_preview(content_hash)? {
-            Some(data) => Ok(ResponseValue::BlobData(data)),
-            None => Ok(ResponseValue::Void),
-        },
-        WireRequest::BlobExists { content_hash } => {
-            Ok(ResponseValue::Boolean(srv.blob_exists(content_hash)))
+        WireRequest::BlobGetPreview { content_hash } => {
+            match srv.blob_preview(content_hash.parse().unwrap_or(0))? {
+                Some(data) => Ok(ResponseValue::BlobData(data)),
+                None => Ok(ResponseValue::Void),
+            }
         }
+        WireRequest::BlobExists { content_hash } => Ok(ResponseValue::Boolean(
+            srv.blob_exists(content_hash.parse().unwrap_or(0)),
+        )),
         WireRequest::BlobInfo { content_hash } => {
-            let meta = srv.blob_info(content_hash)?;
+            let meta = srv.blob_info(content_hash.parse().unwrap_or(0))?;
             Ok(ResponseValue::BlobMeta(
                 super::protocol::BlobMetaPayload::from_blob_meta(&meta),
             ))
@@ -4436,18 +4438,20 @@ fn dispatch_inner_read(
             Ok(ResponseValue::LinkTypes(types))
         }
         WireRequest::BlobGet { content_hash } => {
-            let data = srv.blob_get(content_hash)?;
+            let data = srv.blob_get(content_hash.parse().unwrap_or(0))?;
             Ok(ResponseValue::BlobData(data))
         }
-        WireRequest::BlobGetPreview { content_hash } => match srv.blob_preview(content_hash)? {
-            Some(data) => Ok(ResponseValue::BlobData(data)),
-            None => Ok(ResponseValue::Void),
-        },
-        WireRequest::BlobExists { content_hash } => {
-            Ok(ResponseValue::Boolean(srv.blob_exists(content_hash)))
+        WireRequest::BlobGetPreview { content_hash } => {
+            match srv.blob_preview(content_hash.parse().unwrap_or(0))? {
+                Some(data) => Ok(ResponseValue::BlobData(data)),
+                None => Ok(ResponseValue::Void),
+            }
         }
+        WireRequest::BlobExists { content_hash } => Ok(ResponseValue::Boolean(
+            srv.blob_exists(content_hash.parse().unwrap_or(0)),
+        )),
         WireRequest::BlobInfo { content_hash } => {
-            let meta = srv.blob_info(content_hash)?;
+            let meta = srv.blob_info(content_hash.parse().unwrap_or(0))?;
             Ok(ResponseValue::BlobMeta(
                 super::protocol::BlobMetaPayload::from_blob_meta(&meta),
             ))

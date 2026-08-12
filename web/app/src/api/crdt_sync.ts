@@ -172,7 +172,7 @@ export interface SpanRangePayload {
 export type RangeElementPayload =
   | { type: "text"; text: string }
   | { type: "transclusion"; transclusion_source: number; transclusion_start: number; transclusion_end: number }
-  | { type: "blob"; blob_hash: number; blob_mime: string; blob_size: number; blob_width?: number; blob_height?: number; blob_caption?: string };
+  | { type: "blob"; blob_hash: string; blob_mime: string; blob_size: number; blob_width?: number; blob_height?: number; blob_caption?: string };
 
 export interface AuthorContribution {
   club_id: number;
@@ -385,7 +385,7 @@ export interface BlobMeta {
 
 export interface BlobEntry {
   char_position: number;
-  content_hash: number;
+  content_hash: string;
   mime_type: string;
   byte_size: number;
   width?: number | null;
@@ -1453,7 +1453,7 @@ export class CrdtSyncClient {
     return extractValue(resp) as BlobMeta;
   }
 
-  async blobGet(hashU64: number): Promise<Uint8Array> {
+  async blobGet(hashU64: string): Promise<Uint8Array> {
     const resp = await this.sendRequest("blob_get", { content_hash: hashU64 });
     const val = extractValue(resp);
     if (val instanceof Uint8Array) return val;
@@ -1461,7 +1461,7 @@ export class CrdtSyncClient {
     return new Uint8Array(arr);
   }
 
-  async blobGetPreview(hashU64: number): Promise<Uint8Array | null> {
+  async blobGetPreview(hashU64: string): Promise<Uint8Array | null> {
     const resp = await this.sendRequest("blob_get_preview", { content_hash: hashU64 });
     const val = extractValue(resp);
     if (val === null || val === undefined) return null;
@@ -1470,12 +1470,12 @@ export class CrdtSyncClient {
     return arr.length > 0 ? new Uint8Array(arr) : null;
   }
 
-  async blobExists(hashU64: number): Promise<boolean> {
+  async blobExists(hashU64: string): Promise<boolean> {
     const resp = await this.sendRequest("blob_exists", { content_hash: hashU64 });
     return extractValue(resp) as boolean;
   }
 
-  async blobInfo(hashU64: number): Promise<BlobMeta> {
+  async blobInfo(hashU64: string): Promise<BlobMeta> {
     const resp = await this.sendRequest("blob_info", { content_hash: hashU64 });
     return extractValue(resp) as BlobMeta;
   }

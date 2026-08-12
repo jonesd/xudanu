@@ -164,7 +164,7 @@ export function buildTransclusionDom(
 
 export function insertInlineImages(
   el: HTMLElement,
-  blobs: Array<{ charPos: number; hash: number; url?: string; mime?: string; width?: number; height?: number }>,
+  blobs: Array<{ charPos: number; hash: string; url?: string; mime?: string; width?: number; height?: number }>,
 ) {
   el.querySelectorAll(".inline-image-wrapper").forEach((n) => n.remove());
   if (blobs.length === 0) return;
@@ -206,7 +206,7 @@ export function insertInlineImages(
       const img = document.createElement("img");
       img.className = "inline-image";
       img.src = blob.url;
-      img.alt = `blob:${blob.hash.toString(16)}`;
+      img.alt = `blob:${blob.hash}`;
       const displayW = blob.width ? Math.min(blob.width, 400) : 400;
       img.style.width = "100%";
       img.style.height = "auto";

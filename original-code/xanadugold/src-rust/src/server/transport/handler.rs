@@ -105,11 +105,11 @@ async fn security_headers_middleware(
         axum::http::HeaderName::from_static("content-security-policy"),
         HeaderValue::from_static(
             "default-src 'self'; \
-             script-src 'self'; \
-             style-src 'self' 'unsafe-inline'; \
+             script-src 'self' 'unsafe-inline'; \
+             style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; \
              connect-src 'self' ws: wss: http: https:; \
              img-src 'self' data: blob: https:; \
-             font-src 'self' data:; \
+             font-src 'self' data: https://fonts.gstatic.com; \
              object-src 'none'; \
              base-uri 'self'; \
              frame-ancestors 'none'",
@@ -988,13 +988,16 @@ fn safe_content_type(mime: &str) -> axum::http::HeaderValue {
 }
 
 async fn blob_get_handler(
-    axum::extract::Path(hash_hex): axum::extract::Path<String>,
+    axum::extract::Path(hash_str): axum::extract::Path<String>,
     State(state): State<SharedState>,
 ) -> axum::response::Response {
-    let hash_u64 = match u64::from_str_radix(&hash_hex, 16) {
-        Ok(h) => h,
-        Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
-    };
+    let hash_u64 = hash_str
+        .parse::<u64>()
+        .or_else(|_| u64::from_str_radix(&hash_str, 16))
+        .unwrap_or(0);
+    if hash_u64 == 0 {
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
+    }
 
     let path_info: Option<(std::path::PathBuf, String)> =
         state
@@ -1034,13 +1037,16 @@ async fn blob_get_handler(
 }
 
 async fn blob_preview_handler(
-    axum::extract::Path(hash_hex): axum::extract::Path<String>,
+    axum::extract::Path(hash_str): axum::extract::Path<String>,
     State(state): State<SharedState>,
 ) -> axum::response::Response {
-    let hash_u64 = match u64::from_str_radix(&hash_hex, 16) {
-        Ok(h) => h,
-        Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
-    };
+    let hash_u64 = hash_str
+        .parse::<u64>()
+        .or_else(|_| u64::from_str_radix(&hash_str, 16))
+        .unwrap_or(0);
+    if hash_u64 == 0 {
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
+    }
 
     let path_info: Option<(std::path::PathBuf, String)> =
         state
@@ -1773,7 +1779,7 @@ async fn blob_upload_handler(
         Ok(meta) => {
             let hash_u64 = meta.hash_u64();
             axum::response::Json(serde_json::json!({
-                "content_hash": hash_u64,
+                "content_hash": hash_u64.to_string(),
                 "byte_size": meta.byte_size,
                 "mime_type": meta.mime_type,
                 "width": meta.width,

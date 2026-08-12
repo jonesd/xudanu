@@ -9,11 +9,17 @@ use xudanu::server::transport::{
 use xudanu::server::Server;
 
 fn parse_hash_hex(v: &serde_json::Value) -> u64 {
-    u64::from_str_radix(v.as_str().unwrap(), 16).unwrap()
+    if let Some(s) = v.as_str() {
+        s.parse::<u64>()
+            .or_else(|_| u64::from_str_radix(s, 16))
+            .unwrap()
+    } else {
+        v.as_u64().unwrap()
+    }
 }
 
 fn hash_hex(n: u64) -> String {
-    format!("{:016x}", n)
+    n.to_string()
 }
 
 struct TestServer {
@@ -3032,7 +3038,7 @@ async fn overlay_apply_and_get() {
             11,
             "overlay_apply",
             Some(serde_json::json!({
-                "base_hash": hash_hex(base_hash),
+                "base_hash": base_hash,
                 "ops": [{"Brightness": 800}, "Grayscale"],
                 "mime_type": "image/png"
             })),
@@ -3051,7 +3057,7 @@ async fn overlay_apply_and_get() {
             12,
             "overlay_get",
             Some(serde_json::json!({
-                "overlay_hash": hash_hex(overlay_hash)
+                "overlay_hash": overlay_hash
             })),
         ),
     )
@@ -3086,7 +3092,7 @@ async fn overlay_requires_login() {
             2,
             "overlay_apply",
             Some(serde_json::json!({
-                "base_hash": hash_hex(1), "ops": [], "mime_type": "image/png"
+                "base_hash": 1u64, "ops": [], "mime_type": "image/png"
             })),
         ),
     )
@@ -11465,7 +11471,7 @@ fn element_insert_blob_with_correct_field_names() {
         work_id: None,
         edition_id: None,
         id_holder: None,
-        blob_hash: Some(12345),
+        blob_hash: Some("12345".to_string()),
         blob_mime: Some("image/png".to_string()),
         blob_size: Some(6789),
         blob_width: Some(800),
@@ -11488,7 +11494,7 @@ fn element_insert_blob_with_correct_field_names() {
 fn blob_payload_json_roundtrip() {
     let json = serde_json::json!({
         "type": "blob",
-        "blob_hash": 12345u64,
+        "blob_hash": "12345",
         "blob_mime": "image/png",
         "blob_size": 6789u64,
         "blob_width": 800u32,
@@ -11497,7 +11503,7 @@ fn blob_payload_json_roundtrip() {
     let payload: xudanu::server::transport::protocol::RangeElementPayload =
         serde_json::from_value(json).unwrap();
     assert_eq!(payload.elem_type, "blob");
-    assert_eq!(payload.blob_hash, Some(12345));
+    assert_eq!(payload.blob_hash, Some("12345".to_string()));
     let elem = payload.to_range_element();
     assert!(
         elem.is_some(),
@@ -11509,7 +11515,7 @@ fn blob_payload_json_roundtrip() {
 fn blob_payload_old_field_names_work_via_alias() {
     let json = serde_json::json!({
         "type": "blob",
-        "content_hash": 12345u64,
+        "content_hash": "12345",
         "mime_type": "image/png",
         "byte_size": 6789u64
     });
@@ -11517,7 +11523,7 @@ fn blob_payload_old_field_names_work_via_alias() {
         serde_json::from_value(json).unwrap();
     assert_eq!(
         payload.blob_hash,
-        Some(12345),
+        Some("12345".to_string()),
         "content_hash should map to blob_hash via alias"
     );
     let elem = payload.to_range_element();
@@ -11551,7 +11557,7 @@ fn image_insert_end_to_end() {
 
     let element = xudanu::server::transport::protocol::RangeElementPayload {
         elem_type: "blob".to_string(),
-        blob_hash: Some(meta.hash_u64()),
+        blob_hash: Some(meta.hash_u64().to_string()),
         blob_mime: Some("image/png".to_string()),
         blob_size: Some(meta.byte_size as u64),
         blob_width: meta.width,

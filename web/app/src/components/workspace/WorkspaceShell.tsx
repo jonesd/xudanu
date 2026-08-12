@@ -148,7 +148,7 @@ export function WorkspaceShell() {
   const [showUndoToast, setShowUndoToast] = useState(false);
   const [editorMode, setEditorMode] = useState<"authoring" | "reading">("authoring");
   const [highlightRange, setHighlightRange] = useState<{ start: number; end: number } | null>(null);
-  const [pendingImage, setPendingImage] = useState<{ hash: number; mime: string; byte_size: number; width?: number; height?: number } | null>(null);
+  const [pendingImage, setPendingImage] = useState<{ hash: string; mime: string; byte_size: number; width?: number; height?: number } | null>(null);
   const useMDE = new URLSearchParams(window.location.search).has("mde");
   const [followState, setFollowState] = useState<{ following: boolean; busy: boolean; error: string | null }>({
     following: false,
@@ -238,12 +238,12 @@ export function WorkspaceShell() {
     return () => window.removeEventListener("xudanu-open-import", handler);
   }, []);
   // Track uploaded images locally for display
-  const [imageEntries, setImageEntries] = useState<Array<{ hash: number; mime: string; width?: number; height?: number; url?: string; loading: boolean; charPos?: number; caption?: string }>>([]);
+  const [imageEntries, setImageEntries] = useState<Array<{ hash: string; mime: string; width?: number; height?: number; url?: string; loading: boolean; charPos?: number; caption?: string }>>([]);
   const [cursorPos, setCursorPos] = useState<number | null>(null);
   const [docMode] = useState<"edit" | "layout">("edit");
-  const [imageSizes, setImageSizes] = useState<Map<number, number>>(new Map());
-  const [lightboxHash, setLightboxHash] = useState<number | null>(null);
-  const [cropTarget, setCropTarget] = useState<number | null>(null);
+  const [imageSizes, setImageSizes] = useState<Map<string, number>>(new Map());
+  const [lightboxHash, setLightboxHash] = useState<string | null>(null);
+  const [cropTarget, setCropTarget] = useState<string | null>(null);
 
   const crdt = useCrdtSync(WS_URL, workBeId);
   const {
@@ -321,17 +321,17 @@ export function WorkspaceShell() {
           if (cancelled) return;
           const blob = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: mime });
           const url = URL.createObjectURL(blob);
-          setImageEntries((prev) => prev.map((e) => e.hash === hash ? { ...e, url, loading: false } : e));
+          setImageEntries((prev) => prev.map((e) => e.hash === String(hash) ? { ...e, url, loading: false } : e));
         }).catch(() => {
           if (cancelled) return;
           client.blobGet(hash).then((fullBytes) => {
             if (cancelled) return;
             const blob = new Blob([fullBytes as BlobPart], { type: mime });
             const url = URL.createObjectURL(blob);
-            setImageEntries((prev) => prev.map((e) => e.hash === hash ? { ...e, url, loading: false } : e));
+            setImageEntries((prev) => prev.map((e) => e.hash === String(hash) ? { ...e, url, loading: false } : e));
           }).catch(() => {
             if (cancelled) return;
-            setImageEntries((prev) => prev.map((e) => e.hash === hash ? { ...e, loading: false } : e));
+            setImageEntries((prev) => prev.map((e) => e.hash === String(hash) ? { ...e, loading: false } : e));
           });
         });
       });
@@ -664,7 +664,10 @@ export function WorkspaceShell() {
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 4000);
+    if (msg.toLowerCase().includes("fail") || msg.toLowerCase().includes("error")) {
+      console.error("[TOAST ERROR]", msg);
+    }
+    setTimeout(() => setToast(null), 5000);
   }, []);
 
   // Handle ?demo=1 — create demo work on load
@@ -882,12 +885,12 @@ export function WorkspaceShell() {
         showToast(`Upload failed: ${errBody}`);
         return;
       }
-      const meta = await httpResp.json() as { content_hash: number; byte_size: number; mime_type: string; width?: number; height?: number };
-      const hashNum = meta.content_hash;
+      const meta = await httpResp.json() as { content_hash: string; byte_size: number; mime_type: string; width?: number; height?: number };
+      const hashStr = meta.content_hash;
       const insertPos = cursorPos ?? text.length;
       await client.elementInsert(workBeId, insertPos, {
         type: "blob",
-        blob_hash: hashNum,
+        blob_hash: hashStr,
         blob_mime: meta.mime_type,
         blob_size: meta.byte_size,
         blob_width: meta.width,
@@ -895,7 +898,7 @@ export function WorkspaceShell() {
       });
       showToast(`✓ Image placed (${meta.byte_size.toLocaleString()} bytes)`);
       const newEntry = {
-        hash: hashNum,
+        hash: hashStr,
         mime: meta.mime_type,
         width: meta.width ?? undefined,
         height: meta.height ?? undefined,
@@ -905,18 +908,18 @@ export function WorkspaceShell() {
         const next = [...prev, newEntry];
         return next;
       });
-      client.blobGetPreview(hashNum).then((previewBytes) => {
+      client.blobGetPreview(hashStr).then((previewBytes) => {
         const imgBytes = previewBytes || new Uint8Array();
         const blob = new Blob([imgBytes as BlobPart], { type: meta.mime_type });
         const url = URL.createObjectURL(blob);
-        setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, url, loading: false } : e));
+        setImageEntries((prev) => prev.map((e) => e.hash === hashStr ? { ...e, url, loading: false } : e));
       }).catch(() => {
-        client.blobGet(hashNum).then((fullBytes) => {
+        client.blobGet(hashStr).then((fullBytes) => {
           const blob = new Blob([fullBytes as BlobPart], { type: meta.mime_type });
           const url = URL.createObjectURL(blob);
-          setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, url, loading: false } : e));
+          setImageEntries((prev) => prev.map((e) => e.hash === hashStr ? { ...e, url, loading: false } : e));
         }).catch(() => {
-          setImageEntries((prev) => prev.map((e) => e.hash === hashNum ? { ...e, loading: false } : e));
+          setImageEntries((prev) => prev.map((e) => e.hash === hashStr ? { ...e, loading: false } : e));
         });
       });
     } catch (e) {
@@ -925,7 +928,7 @@ export function WorkspaceShell() {
     }
   }, [clientRef, workBeId, showToast]);
 
-  const handleCaptionChange = useCallback(async (hash: number, caption: string) => {
+  const handleCaptionChange = useCallback(async (hash: string, caption: string) => {
     if (!clientRef.current || workBeId === null) return;
     const entry = imageEntries.find((e) => e.hash === hash);
     if (!entry || entry.charPos == null) return;
@@ -944,7 +947,7 @@ export function WorkspaceShell() {
     }
   }, [clientRef, workBeId, imageEntries]);
 
-  const handleCropImage = useCallback(async (hash: number, cropX: number, cropY: number, cropW: number, cropH: number) => {
+  const handleCropImage = useCallback(async (hash: string, cropX: number, cropY: number, cropW: number, cropH: number) => {
     if (!clientRef.current || workBeId === null) return;
     const entry = imageEntries.find((e) => e.hash === hash);
     if (!entry || !entry.url || entry.charPos == null) return;
@@ -967,7 +970,7 @@ export function WorkspaceShell() {
         body: buf,
       });
       if (!httpResp.ok) { showToast("Crop upload failed"); return; }
-      const meta = await httpResp.json() as { content_hash: number; byte_size: number; width?: number; height?: number };
+      const meta = await httpResp.json() as { content_hash: string; byte_size: number; width?: number; height?: number };
       await clientRef.current.elementUpdate(workBeId, entry.charPos, {
         type: "blob",
         blob_hash: meta.content_hash,
@@ -980,7 +983,7 @@ export function WorkspaceShell() {
       const previewBytes = await clientRef.current.blobGetPreview(meta.content_hash);
       const previewBlob = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: "image/png" });
       const newUrl = URL.createObjectURL(previewBlob);
-      setImageEntries((prev) => prev.map((e) => e.hash === hash ? {
+      setImageEntries((prev) => prev.map((e) => e.hash === String(hash) ? {
         ...e, hash: meta.content_hash, url: newUrl, width: meta.width, height: meta.height, mime: "image/png",
       } : e));
       showToast("Image cropped");
@@ -989,7 +992,7 @@ export function WorkspaceShell() {
     }
   }, [clientRef, workBeId, imageEntries, showToast]);
 
-  const handleMoveImage = useCallback(async (hash: number, direction: "up" | "down") => {
+  const handleMoveImage = useCallback(async (hash: string, direction: "up" | "down") => {
     if (!clientRef.current || workBeId === null) return;
     const sorted = [...imageEntries].sort((a, b) => (a.charPos ?? 0) - (b.charPos ?? 0));
     const idx = sorted.findIndex((e) => e.hash === hash);
@@ -2882,7 +2885,7 @@ export function WorkspaceShell() {
                                   <button
                                     className="ws-layout-fig-btn"
                                     title="Crop image"
-                                    onClick={() => setCropTarget(cropTarget === img.hash ? null : img.hash)}
+                                    onClick={() => setCropTarget(cropTarget === String(img.hash) ? null : String(img.hash))}
                                   >Crop</button>
                                 </>
                               )}
@@ -2890,7 +2893,7 @@ export function WorkspaceShell() {
                                 className="ws-layout-fig-btn"
                                 onClick={async () => {
                                   if (!clientRef.current) return;
-                                  const fullBytes = await clientRef.current.blobGet(img.hash);
+                                  const fullBytes = await clientRef.current.blobGet(String(img.hash));
                                   const blob = new Blob([fullBytes as BlobPart], { type: img.mime });
                                   const url = URL.createObjectURL(blob);
                                   window.open(url, "_blank");
@@ -2905,7 +2908,7 @@ export function WorkspaceShell() {
                               {img.loading ? (
                                 <div className="ws-image-loading">Loading…</div>
                               ) : img.url ? (
-                                cropTarget === img.hash && img.width && img.height ? (
+                                cropTarget === String(img.hash) && img.width && img.height ? (
                                   <CropOverlay
                                     src={img.url}
                                     natW={img.width}
@@ -2921,13 +2924,13 @@ export function WorkspaceShell() {
                                     src={img.url}
                                     alt={img.caption || ""}
                                     className="ws-layout-img"
-                                    onClick={() => setLightboxHash(img.hash)}
+                                    onClick={() => setLightboxHash(String(img.hash))}
                                   />
                                 )
                               ) : (
                                 <div className="ws-image-error">Failed to load</div>
                               )}
-                              {cropTarget !== img.hash && (
+                              {cropTarget !== String(img.hash) && (
                                 <div
                                   className="ws-resize-handle"
                                   onMouseDown={(e) => {
@@ -3000,7 +3003,7 @@ export function WorkspaceShell() {
                             className="ws-doc-image-action"
                             onClick={async () => {
                               if (!clientRef.current) return;
-                              const fullBytes = await clientRef.current.blobGet(img.hash);
+                              const fullBytes = await clientRef.current.blobGet(String(img.hash));
                               const blob = new Blob([fullBytes as BlobPart], { type: img.mime });
                               const url = URL.createObjectURL(blob);
                               window.open(url, "_blank");
@@ -3024,7 +3027,7 @@ export function WorkspaceShell() {
                               cursor: "pointer",
                               display: "block",
                             }}
-                            onClick={() => setLightboxHash(img.hash)}
+                            onClick={() => setLightboxHash(String(img.hash))}
                           />
                         ) : (
                           <div className="ws-image-error">Failed to load</div>
@@ -3619,7 +3622,7 @@ export function WorkspaceShell() {
                             style={{ maxWidth: "100%", borderRadius: "4px", cursor: "pointer" }}
                             onClick={async () => {
                               if (!clientRef.current) return;
-                              const fullBytes = await clientRef.current.blobGet(img.hash);
+                              const fullBytes = await clientRef.current.blobGet(String(img.hash));
                               const blob = new Blob([fullBytes as BlobPart], { type: img.mime });
                               const url = URL.createObjectURL(blob);
                               window.open(url, "_blank");
@@ -3927,7 +3930,7 @@ export function WorkspaceShell() {
           onClick={() => setLightboxHash(null)}
         >
           {(() => {
-            const img = imageEntries.find((e) => e.hash === lightboxHash);
+            const img = imageEntries.find((e) => e.hash === lightboxHash || String(e.hash) === lightboxHash);
             if (!img || !img.url) return null;
             return (
               <>
@@ -3940,7 +3943,7 @@ export function WorkspaceShell() {
                     onClick={async (e) => {
                       e.stopPropagation();
                       if (!clientRef.current) return;
-                      const fullBytes = await clientRef.current.blobGet(img.hash);
+                      const fullBytes = await clientRef.current.blobGet(String(img.hash));
                       const blob = new Blob([fullBytes as BlobPart], { type: img.mime });
                       const url = URL.createObjectURL(blob);
                       window.open(url, "_blank");

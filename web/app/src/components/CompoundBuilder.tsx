@@ -141,7 +141,7 @@ export function CompoundBuilder({
             // Load thumbnails
             for (const blob of blobs) {
               const hashU64 = typeof blob.content_hash === "number" ? blob.content_hash : 0;
-              client.blobGetPreview(hashU64).then((previewBytes) => {
+              client.blobGetPreview(String(hashU64)).then((previewBytes) => {
                 const blobObj = new Blob([(previewBytes || new Uint8Array()) as BlobPart], { type: blob.mime_type });
                 const url = URL.createObjectURL(blobObj);
                 setSources((prev) => prev.map((s) => {
@@ -149,7 +149,7 @@ export function CompoundBuilder({
                   return { ...s, images: s.images.map((img) => img.hash === hashU64 ? { ...img, url, loading: false } : img) };
                 }));
               }).catch(() => {
-                client.blobGet(hashU64).then((fullBytes) => {
+                client.blobGet(String(hashU64)).then((fullBytes) => {
                   const blobObj = new Blob([fullBytes as BlobPart], { type: blob.mime_type });
                   const url = URL.createObjectURL(blobObj);
                   setSources((prev) => prev.map((s) => {

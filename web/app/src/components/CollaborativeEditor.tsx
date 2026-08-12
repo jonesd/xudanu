@@ -61,8 +61,8 @@ interface CollaborativeEditorProps {
   onNavigateToWork?: (workId: number) => void;
   onCrossServerResolve?: (tumbler: string, contentHash: string) => Promise<{ text: string; hashVerified: boolean; cached: boolean } | null>;
   onTraceProvenance?: (workId: number, charStart: number, charEnd: number) => Promise<AgainHop[]>;
-  blobEntries?: Array<{ charPos: number; hash: number; url?: string; mime?: string; width?: number; height?: number }>;
-  pendingImagePlacement?: { hash: number; mime: string; byte_size: number; width?: number; height?: number } | null;
+  blobEntries?: Array<{ charPos: number; hash: string; url?: string; mime?: string; width?: number; height?: number }>;
+  pendingImagePlacement?: { hash: string; mime: string; byte_size: number; width?: number; height?: number } | null;
   onPlaceImage?: (position: number) => void;
   onShowBacklinks?: (workId: number, excerpt: string) => void;
   onPasteText?: (text: string, pasteStart: number) => void;

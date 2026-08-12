@@ -34,6 +34,37 @@ where
     }
 }
 
+fn deserialize_optional_u64_string<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    let opt: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+    match opt {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(s)) => {
+            if let Some(hex) = s.strip_prefix("0x") {
+                u64::from_str_radix(hex, 16)
+                    .map(Some)
+                    .map_err(|e| Error::custom(format!("invalid hex u64: {}", e)))
+            } else {
+                s.parse::<u64>()
+                    .map(Some)
+                    .map_err(|e| Error::custom(format!("invalid u64: {}", e)))
+            }
+        }
+        Some(serde_json::Value::Number(n)) => n
+            .as_u64()
+            .map(Some)
+            .ok_or_else(|| Error::custom("u64 value out of range")),
+        Some(v) => v
+            .to_string()
+            .parse::<u64>()
+            .map(Some)
+            .map_err(|e| Error::custom(format!("invalid u64: {}", e))),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MessageType {
@@ -1611,48 +1642,30 @@ pub enum WireRequest {
         mime_type: String,
     },
     BlobGet {
-        #[serde(
-            serialize_with = "u64_hex::serialize",
-            deserialize_with = "u64_hex::deserialize"
-        )]
-        content_hash: u64,
+        #[serde()]
+        content_hash: String,
     },
     BlobGetPreview {
-        #[serde(
-            serialize_with = "u64_hex::serialize",
-            deserialize_with = "u64_hex::deserialize"
-        )]
-        content_hash: u64,
+        #[serde()]
+        content_hash: String,
     },
     BlobExists {
-        #[serde(
-            serialize_with = "u64_hex::serialize",
-            deserialize_with = "u64_hex::deserialize"
-        )]
-        content_hash: u64,
+        #[serde()]
+        content_hash: String,
     },
     BlobInfo {
-        #[serde(
-            serialize_with = "u64_hex::serialize",
-            deserialize_with = "u64_hex::deserialize"
-        )]
-        content_hash: u64,
+        #[serde()]
+        content_hash: String,
     },
     BlobStats,
     OverlayApply {
-        #[serde(
-            serialize_with = "u64_hex::serialize",
-            deserialize_with = "u64_hex::deserialize"
-        )]
+        #[serde()]
         base_hash: u64,
         ops: Vec<ImageOp>,
         mime_type: String,
     },
     OverlayGet {
-        #[serde(
-            serialize_with = "u64_hex::serialize",
-            deserialize_with = "u64_hex::deserialize"
-        )]
+        #[serde()]
         overlay_hash: u64,
     },
 
@@ -3399,7 +3412,7 @@ pub struct RangeElementPayload {
         skip_serializing_if = "Option::is_none",
         alias = "content_hash"
     )]
-    pub blob_hash: Option<u64>,
+    pub blob_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "mime_type")]
     pub blob_mime: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "byte_size")]
@@ -3434,17 +3447,18 @@ impl RangeElementPayload {
             "work" => self.work_id.map(crate::edition::RangeElement::work),
             "edition" => self.edition_id.map(crate::edition::RangeElement::edition),
             "id_holder" => self.id_holder.map(crate::edition::RangeElement::id_holder),
-            "blob" => self.blob_hash.map(|h| {
+            "blob" => self.blob_hash.as_ref().and_then(|h| {
+                let h_u64 = h.parse::<u64>().ok()?;
                 let mime = self.blob_mime.clone().unwrap_or_default();
                 let size = self.blob_size.unwrap_or(0);
-                crate::edition::RangeElement::blob_with_caption(
-                    h,
+                Some(crate::edition::RangeElement::blob_with_caption(
+                    h_u64,
                     mime,
                     size,
                     self.blob_width,
                     self.blob_height,
                     self.blob_caption.clone(),
-                )
+                ))
             }),
             "transclusion" => {
                 if let (Some(src), Some(start), Some(end)) = (
@@ -3562,7 +3576,7 @@ impl RangeElementPayload {
                 work_id: None,
                 edition_id: None,
                 id_holder: None,
-                blob_hash: Some(*content_hash),
+                blob_hash: Some(content_hash.to_string()),
                 blob_mime: Some(mime_type.clone()),
                 blob_size: Some(*byte_size),
                 blob_width: *width,
@@ -3798,11 +3812,8 @@ pub mod u64_option_hex {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlobMetaPayload {
-    #[serde(
-        serialize_with = "u64_hex::serialize",
-        deserialize_with = "u64_hex::deserialize"
-    )]
-    pub content_hash: u64,
+    #[serde()]
+    pub content_hash: String,
     pub byte_size: u64,
     pub mime_type: String,
     #[serde(
@@ -3817,7 +3828,7 @@ pub struct BlobMetaPayload {
 impl BlobMetaPayload {
     pub fn from_blob_meta(meta: &crate::edition::BlobMeta) -> Self {
         BlobMetaPayload {
-            content_hash: meta.hash_u64(),
+            content_hash: meta.hash_u64().to_string(),
             byte_size: meta.byte_size,
             mime_type: meta.mime_type.clone(),
             preview_hash: meta.preview_hash.map(|h| crate::edition::u64_from_hash(&h)),
@@ -3835,15 +3846,9 @@ pub struct BlobStatsPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverlayPayload {
-    #[serde(
-        serialize_with = "u64_hex::serialize",
-        deserialize_with = "u64_hex::deserialize"
-    )]
+    #[serde()]
     pub overlay_hash: u64,
-    #[serde(
-        serialize_with = "u64_hex::serialize",
-        deserialize_with = "u64_hex::deserialize"
-    )]
+    #[serde()]
     pub base_hash: u64,
     pub operations: Vec<ImageOp>,
     pub mime_type: String,
