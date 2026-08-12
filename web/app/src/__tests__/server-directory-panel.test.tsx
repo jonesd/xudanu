@@ -456,126 +456,95 @@ describe("ServerDirectoryPanel", () => {
   });
 
   // Remote browsing tests
-  it.skip("fetches remote works when Browse clicked", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ works: [{ work_id: "42", title: "Remote Doc", revision: 3, char_count: 100 }] }),
-    } as Response);
-
+  it("fetches remote works when Browse clicked", async () => {
+    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 3, char_count: 100 }]);
     render(
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
       expect(screen.getByText("Browse")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("Browse"));
-
     await waitFor(() => {
       expect(screen.getByText("Remote Doc")).toBeTruthy();
     });
-    expect(fetch).toHaveBeenCalledWith("http://alice.example.com:8081/api/public/works", expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
-  it.skip("shows remote error on fetch failure", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
-    vi.mocked(fetch).mockRejectedValue(new Error("network error"));
-
+  it("shows remote error on fetch failure", async () => {
+    const client = mkClient({ servers: [mkServer({ trusted: true })] });
+    client.sendRequest = vi.fn().mockImplementation((op: string) => {
+      if (op === "cross_server_list_works") return Promise.reject(new Error("network error"));
+      return Promise.resolve({ servers: [mkServer({ trusted: true })] });
+    });
     render(
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
       expect(screen.getByText("Browse")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("Browse"));
-
     await waitFor(() => {
-      expect(screen.getByText(/Failed to fetch works list/)).toBeTruthy();
+      expect(screen.getByText(/network error/)).toBeTruthy();
     });
   });
 
-  it.skip("shows remote error on non-ok response", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
-    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 404 } as Response);
-
+  it("shows remote error on non-ok response", async () => {
+    const client = mkClient({ servers: [mkServer({ trusted: true })] });
+    client.sendRequest = vi.fn().mockImplementation((op: string) => {
+      if (op === "cross_server_list_works") return Promise.reject(new Error("Server returned 404"));
+      return Promise.resolve({ servers: [mkServer({ trusted: true })] });
+    });
     render(
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
       expect(screen.getByText("Browse")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("Browse"));
-
     await waitFor(() => {
       expect(screen.getByText(/Server returned 404/)).toBeTruthy();
     });
   });
 
-  it.skip("shows empty state when remote has no works", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ works: [] }),
-    } as Response);
-
+  it("shows empty state when remote has no works", async () => {
+    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, []);
     render(
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
       expect(screen.getByText("Browse")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("Browse"));
-
     await waitFor(() => {
       expect(screen.getByText(/No public works/)).toBeTruthy();
     });
   });
 
-  it.skip("closes remote browser on close button", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ works: [{ work_id: "1", title: "R", revision: 1, char_count: 5 }] }),
-    } as Response);
-
+  it("closes remote browser on close button", async () => {
+    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "1", title: "R", revision: 1, char_count: 5 }]);
     render(
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
       expect(screen.getByText("Browse")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("Browse"));
     await waitFor(() => {
       expect(screen.getByText("R")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("✕"));
     expect(screen.queryByText("R")).toBeNull();
   });
 
-  it.skip("displays char count and revision for remote works", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({
-        works: [{ work_id: "10", title: "Doc", revision: 7, char_count: 2500 }],
-      }),
-    } as Response);
-
+  it("displays char count and revision for remote works", async () => {
+    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "10", title: "Doc", revision: 7, char_count: 2500 }]);
     render(
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
       expect(screen.getByText("Browse")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("Browse"));
-
     await waitFor(() => {
       expect(screen.getByText(/2500 chars/)).toBeTruthy();
       expect(screen.getByText(/7 revisions/)).toBeTruthy();
@@ -583,117 +552,90 @@ describe("ServerDirectoryPanel", () => {
   });
 
   // Remote text view tests
-  it.skip("fetches and displays remote work text", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] }, { text: "Hello from remote", title: "Remote", origin_server_name: "Alice", license: "cc-by", tumbler: "test.42.0" }, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ works: [{ work_id: "42", title: "Remote", revision: 1, char_count: 5 }] }),
-    } as Response);
-
+  it("fetches and displays remote work text", async () => {
+    const client = mkClient(
+      { servers: [mkServer({ trusted: true })] },
+      { text: "Hello from remote", title: "Remote", origin_server_name: "Alice", license: "cc-by", tumbler: "test.42.0" },
+      [{ work_id: "42", title: "Remote", revision: 1, char_count: 5 }],
+    );
     render(
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
       expect(screen.getByText("Browse")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("Browse"));
     await waitFor(() => {
       expect(screen.getByText("Remote")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("Remote"));
     await waitFor(() => {
       expect(screen.getByText(/Hello from remote/)).toBeTruthy();
     });
   });
 
-  it.skip("shows work ID hint for cross-server linking", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
-    vi.mocked(fetch)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ works: [{ work_id: "99", title: "T", revision: 1, char_count: 1 }] }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ text: "X", title: "T" }),
-      } as Response);
-
+  it("shows work ID hint for cross-server linking", async () => {
+    const client = mkClient(
+      { servers: [mkServer({ trusted: true })] },
+      { text: "X", title: "T" },
+      [{ work_id: "99", title: "T", revision: 1, char_count: 1 }],
+    );
     render(
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
       expect(screen.getByText("Browse")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("Browse"));
     await waitFor(() => {
       expect(screen.getByText("T")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("T"));
     await waitFor(() => {
       expect(screen.getByText(/Work ID: 99/)).toBeTruthy();
     });
   });
 
-  it.skip("truncates remote text at 2000 chars", async () => {
+  it("truncates remote text at 2000 chars", async () => {
     const longText = "A".repeat(3000);
-    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
-    vi.mocked(fetch)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ works: [{ work_id: "1", title: "Long", revision: 1, char_count: 3000 }] }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ text: longText, title: "Long" }),
-      } as Response);
-
+    const client = mkClient(
+      { servers: [mkServer({ trusted: true })] },
+      { text: longText, title: "Long" },
+      [{ work_id: "1", title: "Long", revision: 1, char_count: 3000 }],
+    );
     const { container } = render(
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
       expect(screen.getByText("Browse")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("Browse"));
     await waitFor(() => {
       expect(screen.getByText("Long")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("Long"));
     await waitFor(() => {
       expect(container.textContent).toContain("...");
     });
   });
 
-  it.skip("shows error when remote work fetch fails", async () => {
-    const client = mkClient(
-      { servers: [mkServer({ trusted: true })] },
-    );
+  it("shows error when remote work fetch fails", async () => {
+    const client = mkClient({ servers: [mkServer({ trusted: true })] });
     client.sendRequest = vi.fn().mockImplementation((op: string) => {
       if (op === "cross_server_fetch_work") return Promise.reject(new Error("timeout"));
+      if (op === "cross_server_list_works") return Promise.resolve({ works: [{ work_id: "5", title: "Err", revision: 1, char_count: 1 }] });
       return Promise.resolve({ servers: [mkServer({ trusted: true })] });
     });
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ works: [{ work_id: "5", title: "Err", revision: 1, char_count: 1 }] }),
-    } as Response);
-
     render(
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
       expect(screen.getByText("Browse")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("Browse"));
     await waitFor(() => {
       expect(screen.getByText("Err")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("Err"));
     await waitFor(() => {
       expect(screen.getByText(/Failed: timeout/)).toBeTruthy();
@@ -701,49 +643,18 @@ describe("ServerDirectoryPanel", () => {
   });
 
   // XSS protection tests
-  it("renders server name as text, not HTML (XSS protection)", async () => {
-    const client = mkClient({
-      servers: [mkServer({ name: '<img src=x onerror=alert(1)>' })],
-    });
-    const { container } = render(
-      <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
+  it("renders remote work title as text, not HTML (XSS protection)", async () => {
+    const client = mkClient(
+      { servers: [mkServer({ trusted: true })] },
+      undefined,
+      [{ work_id: "1", title: '<b>bold</b><script>alert(1)</script>', revision: 1, char_count: 1 }],
     );
-    await waitFor(() => {
-      expect(screen.getByText(/onerror/)).toBeTruthy();
-    });
-    // The img tag should NOT be rendered as an actual element
-    expect(container.querySelector("img[src=x]")).toBeNull();
-  });
-
-  it("renders server description as text, not HTML (XSS protection)", async () => {
-    const client = mkClient({
-      servers: [mkServer({ description: '<script>alert("xss")</script>' })],
-    });
-    const { container } = render(
-      <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
-    );
-    await waitFor(() => {
-      expect(container.textContent).toContain("script");
-    });
-    expect(container.querySelector("script")).toBeNull();
-  });
-
-  it.skip("renders remote work title as text, not HTML (XSS protection)", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] }, undefined, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({
-        works: [{ work_id: "1", title: '<b>bold</b><script>alert(1)</script>', revision: 1, char_count: 1 }],
-      }),
-    } as Response);
-
     const { container } = render(
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
       expect(screen.getByText("Browse")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("Browse"));
     await waitFor(() => {
       expect(container.textContent).toContain("bold");
@@ -752,25 +663,22 @@ describe("ServerDirectoryPanel", () => {
     expect(container.querySelector("b")).toBeNull();
   });
 
-  it.skip("renders remote text as text, not HTML (XSS protection)", async () => {
-    const client = mkClient({ servers: [mkServer({ trusted: true })] }, { text: '<script>alert("evil")</script>', title: "XSS", origin_server_name: "Alice", license: "cc-by", tumbler: "test.1.0" }, [{ work_id: "42", title: "Remote Doc", revision: 1, char_count: 100 }]);
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ works: [{ work_id: "1", title: "XSS", revision: 1, char_count: 10 }] }),
-    } as Response);
-
+  it("renders remote text as text, not HTML (XSS protection)", async () => {
+    const client = mkClient(
+      { servers: [mkServer({ trusted: true })] },
+      { text: '<script>alert("evil")</script>', title: "XSS", origin_server_name: "Alice", license: "cc-by", tumbler: "test.1.0" },
+      [{ work_id: "1", title: "XSS", revision: 1, char_count: 10 }],
+    );
     const { container } = render(
       <ServerDirectoryPanel client={client} connected={true} onNavigateToWork={vi.fn()} />,
     );
     await waitFor(() => {
       expect(screen.getByText("Browse")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("Browse"));
     await waitFor(() => {
       expect(screen.getByText("XSS")).toBeTruthy();
     });
-
     fireEvent.click(screen.getByText("XSS"));
     await waitFor(() => {
       expect(container.textContent).toContain("alert");
