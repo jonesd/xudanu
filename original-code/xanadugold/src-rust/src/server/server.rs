@@ -1353,6 +1353,24 @@ impl Server {
         }
     }
 
+    /// Resolve a tumbler to a local work ID.
+    /// Returns None if the tumbler doesn't reference a work on this server
+    /// or the work doesn't exist locally.
+    pub fn resolve_local_tumbler(
+        &self,
+        tumbler: &crate::edition::tumbler::XudanuTumbler,
+    ) -> Option<BeId> {
+        let work_id = tumbler.first()?;
+        if !self.owns_tumbler(tumbler) {
+            return None;
+        }
+        if self.works.contains_key(&(work_id as BeId)) {
+            Some(work_id as BeId)
+        } else {
+            None
+        }
+    }
+
     pub fn total_revision_count(&self) -> u64 {
         self.works
             .values()
@@ -2188,7 +2206,6 @@ impl Server {
             .unwrap_or(&entry.verifying_key)
             .clone();
 
-
         let scheme = "http";
         let url = format!(
             "{}://{}:{}/api/public/work/{}",
@@ -2335,7 +2352,6 @@ impl Server {
         let port = entry.port.unwrap_or(8080);
         let server_name = entry.name.clone();
 
-
         let url = format!("http://{}:{}/api/public/works", address, port);
 
         tracing::info!("Fetching remote works list from {}", url);
@@ -2377,7 +2393,6 @@ impl Server {
             .unwrap_or(&entry.verifying_key)
             .clone();
         let introducer_ns = server_id;
-
 
         let url = format!("http://{}:{}/api/introductions", address, port);
         tracing::info!("Fetching introductions from {}", url);
@@ -2578,7 +2593,6 @@ impl Server {
         let port = entry.port.unwrap_or(8080);
         let home_server_name = entry.name.clone();
         let home_server_address = address.clone();
-
 
         let url = format!(
             "http://{}:{}/api/public/identity?q={}",
@@ -34381,5 +34395,40 @@ mod tests_security_tracker {
         let recovered = arr.from_tumbler(&tumbler);
         assert_eq!(recovered, Some(pos));
         assert!(arr.owns_tumbler(&tumbler));
+    }
+
+    #[test]
+    fn server_resolve_local_tumbler() {
+        let mut server = Server::new();
+        server.public_address = Some("alice.com".to_string());
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let work_id = server
+            .create_work(sid, crate::edition::Edition::from_text("hello"))
+            .unwrap();
+
+        let tumbler = server.work_tumbler(work_id, 0);
+        let resolved = server.resolve_local_tumbler(&tumbler);
+        assert_eq!(resolved, Some(work_id));
+    }
+
+    #[test]
+    fn server_resolve_local_tumbler_not_found() {
+        let mut server = Server::new();
+        server.public_address = Some("alice.com".to_string());
+
+        let tumbler = crate::edition::tumbler::XudanuTumbler::cross("alice.com", vec![9999, 0]);
+        let resolved = server.resolve_local_tumbler(&tumbler);
+        assert_eq!(resolved, None);
+    }
+
+    #[test]
+    fn server_resolve_local_tumbler_foreign() {
+        let mut server = Server::new();
+        server.public_address = Some("alice.com".to_string());
+
+        let tumbler = crate::edition::tumbler::XudanuTumbler::cross("bob.com", vec![5, 0]);
+        let resolved = server.resolve_local_tumbler(&tumbler);
+        assert_eq!(resolved, None, "foreign server tumbler should not resolve");
     }
 }
