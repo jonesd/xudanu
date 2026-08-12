@@ -689,6 +689,40 @@ impl HyperRef {
         }
     }
 
+    /// Compute a tumbler address for this HyperRef.
+    /// For local refs: `"local".work_id.start.end`
+    /// For cross-server refs: uses the CrossServerRef's tumbler
+    pub fn tumbler_address(&self) -> Option<super::tumbler::XudanuTumbler> {
+        if let Some(csr) = &self.cross_server_ref {
+            return Some(csr.parsed_tumbler());
+        }
+        let work_id = self.work_context?;
+        let start = self.start_position.unwrap_or(0);
+        let end = self.end_position.unwrap_or(start);
+        Some(super::tumbler::XudanuTumbler::local(vec![
+            work_id,
+            start as u64,
+            end as u64,
+        ]))
+    }
+
+    /// Create a HyperRef pointing at a tumbler-addressed span.
+    pub fn for_tumbler_span(tumbler: super::tumbler::XudanuTumbler) -> Self {
+        let work_id = tumbler.first().unwrap_or(0);
+        let (start, end) = tumbler.char_range().unwrap_or((0, 0));
+        let server = tumbler.server().to_string();
+
+        let hr = HyperRef::single(None, Some(work_id), None, None)
+            .with_span(Some(start as i64), Some(end as i64));
+
+        if server.is_empty() {
+            hr
+        } else {
+            let csr = CrossServerRef::new(&tumbler.to_string(), [0u8; 32], "", [0u8; 32]);
+            hr.with_cross_server_ref(csr)
+        }
+    }
+
     pub fn with_ref(&self, new_ref: HyperRef) -> Self {
         match &self.kind {
             HyperRefKind::Multi { refs } => {
@@ -1758,5 +1792,48 @@ mod tests {
         let a = make_csr("\"alice.com\".5.3.10.7");
         let b = make_csr("\"alice.com\".5.3.20.1");
         assert_eq!(a.common_prefix_depth(&b), 2);
+    }
+
+    #[test]
+    fn hyperref_local_tumbler_address() {
+        let hr = HyperRef::single(None, Some(5), None, None).with_span(Some(10), Some(20));
+        let t = hr.tumbler_address().unwrap();
+        assert!(t.is_local());
+        assert_eq!(t.path(), &[5, 10, 20]);
+    }
+
+    #[test]
+    fn hyperref_cross_server_tumbler_address() {
+        let csr = CrossServerRef::new("\"alice.com\".5.10.20", [0u8; 32], "Alice", [0u8; 32]);
+        let hr = HyperRef::single(None, Some(5), None, None).with_cross_server_ref(csr);
+        let t = hr.tumbler_address().unwrap();
+        assert!(t.is_cross_server());
+        assert_eq!(t.server(), "alice.com");
+        assert_eq!(t.path(), &[5, 10, 20]);
+    }
+
+    #[test]
+    fn hyperref_no_tumbler_without_work_context() {
+        let hr = HyperRef::single(None, None, None, None);
+        assert!(hr.tumbler_address().is_none());
+    }
+
+    #[test]
+    fn hyperref_for_tumbler_span_local() {
+        let t = crate::edition::tumbler::XudanuTumbler::local(vec![5, 10, 20]);
+        let hr = HyperRef::for_tumbler_span(t);
+        assert_eq!(hr.work_context(), Some(5));
+        assert_eq!(hr.start_position(), Some(10));
+        assert_eq!(hr.end_position(), Some(20));
+        assert!(!hr.is_cross_server());
+    }
+
+    #[test]
+    fn hyperref_for_tumbler_span_remote() {
+        let t = crate::edition::tumbler::XudanuTumbler::cross("alice.com", vec![5, 10, 20]);
+        let hr = HyperRef::for_tumbler_span(t);
+        assert!(hr.is_cross_server());
+        let addr = hr.tumbler_address().unwrap();
+        assert_eq!(addr.server(), "alice.com");
     }
 }

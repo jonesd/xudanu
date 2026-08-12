@@ -671,6 +671,57 @@ impl Edition {
             .collect()
     }
 
+    /// Partition entries into fixed-size chunks and compute a crum per chunk.
+    /// Enables block-level comparison: "first 64 entries are identical" → skip.
+    pub fn chunk_crums(&self, chunk_size: usize) -> Vec<(i64, i64, crate::edition::orgl::Crum)> {
+        if chunk_size == 0 {
+            return Vec::new();
+        }
+        let entries = self.cached_entries();
+        let mut result = Vec::new();
+        let mut i = 0;
+        while i < entries.len() {
+            let chunk_end = (i + chunk_size).min(entries.len());
+            let start_pos = entries[i].0;
+            let end_pos = if chunk_end < entries.len() {
+                entries[chunk_end].0
+            } else {
+                entries[chunk_end - 1].0 + 1
+            };
+            let chunk: Vec<_> = entries[i..chunk_end].to_vec();
+            let region = XnRegion::interval(start_pos, end_pos);
+            let crum = crate::edition::orgl::compute_leaf_crum(&chunk, &region, &None);
+            result.push((start_pos, end_pos, crum));
+            i = chunk_end;
+        }
+        result
+    }
+
+    /// Compare two editions at the block level using chunk crums.
+    /// Returns (matching_blocks, differing_blocks) as position ranges.
+    pub fn chunk_diff(
+        &self,
+        other: &Edition,
+        chunk_size: usize,
+    ) -> (Vec<(i64, i64)>, Vec<(i64, i64)>) {
+        let my_crums = self.chunk_crums(chunk_size);
+        let other_crums = other.chunk_crums(chunk_size);
+        let mut matching = Vec::new();
+        let mut differing = Vec::new();
+
+        let other_map: std::collections::HashMap<&crate::edition::orgl::Crum, (i64, i64)> =
+            other_crums.iter().map(|(s, e, c)| (c, (*s, *e))).collect();
+
+        for (start, end, crum) in &my_crums {
+            if other_map.contains_key(crum) {
+                matching.push((*start, *end));
+            } else {
+                differing.push((*start, *end));
+            }
+        }
+        (matching, differing)
+    }
+
     pub fn extract_outline(&self) -> Vec<OutlineEntry> {
         let text = self.to_text();
         let mut results = Vec::new();
@@ -3091,5 +3142,67 @@ mod tests {
         let (start, _char, ctx) = ed.get_context(1, 0);
         assert_eq!(start, 1);
         assert_eq!(ctx, "line1");
+    }
+
+    #[test]
+    fn chunk_crums_identical_editions() {
+        let e1 = Edition::from_text("hello world this is a test");
+        let e2 = Edition::from_text("hello world this is a test");
+        let c1 = e1.chunk_crums(4);
+        let c2 = e2.chunk_crums(4);
+        assert_eq!(c1.len(), c2.len());
+        for (a, b) in c1.iter().zip(c2.iter()) {
+            assert_eq!(a.2, b.2, "crums should match for identical content");
+        }
+    }
+
+    #[test]
+    fn chunk_crums_different_editions() {
+        let e1 = Edition::from_text("hello world this is a test");
+        let e2 = Edition::from_text("hello earth this is a test");
+        let c1 = e1.chunk_crums(4);
+        let c2 = e2.chunk_crums(4);
+        let any_diff = c1.iter().zip(c2.iter()).any(|(a, b)| a.2 != b.2);
+        assert!(any_diff, "at least one chunk should differ");
+    }
+
+    #[test]
+    fn chunk_diff_finds_matching_blocks() {
+        let e1 = Edition::from_text("abcdefghij");
+        let e2 = Edition::from_text("abcdefghij");
+        let (matching, differing) = e1.chunk_diff(&e2, 3);
+        assert!(
+            differing.is_empty(),
+            "identical editions should have no differing blocks"
+        );
+        assert!(!matching.is_empty());
+    }
+
+    #[test]
+    fn chunk_diff_finds_changed_blocks() {
+        let e1 = Edition::from_text("abcdefghij");
+        let e2 = Edition::from_text("abXdefghij");
+        let (matching, differing) = e1.chunk_diff(&e2, 3);
+        assert!(
+            !differing.is_empty(),
+            "different editions should have differing blocks"
+        );
+    }
+
+    #[test]
+    fn range_crum_consistency() {
+        let ed = Edition::from_text("hello world");
+        let crum1 = ed.range_crum(0, 5);
+        let crum2 = ed.range_crum(0, 5);
+        assert_eq!(crum1, crum2);
+    }
+
+    #[test]
+    fn entries_in_range_boundaries() {
+        let ed = Edition::from_text("abc");
+        let all = ed.entries_in_range(0, 3);
+        assert_eq!(all.len(), 3);
+        let none = ed.entries_in_range(10, 20);
+        assert!(none.is_empty());
     }
 }
