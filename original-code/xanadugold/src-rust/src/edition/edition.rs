@@ -631,6 +631,25 @@ impl Edition {
         self.orgl.crum()
     }
 
+    /// Splay the tree around a region for locality optimization.
+    /// Returns a new Edition with the tree restructured so that entries
+    /// in the given region are co-located under a single subtree.
+    ///
+    /// After splaying, subsequent operations on the same region
+    /// (fetch, diff, copy) descend into only one branch — O(log k)
+    /// instead of O(log n) where k = region size.
+    pub fn splayed(&self, region: &XnRegion) -> (Edition, crate::edition::orgl::SplayResult) {
+        let mut orgl = self.orgl.clone();
+        let result = orgl.splay(region);
+        let edition = Edition {
+            orgl,
+            endorsements: self.endorsements.clone(),
+            entries_cache: Arc::new(OnceLock::new()),
+            span_provenance: self.span_provenance.clone(),
+        };
+        (edition, result)
+    }
+
     pub fn entry_identities(&self) -> Vec<EntryIdentity> {
         self.cached_entries()
             .iter()
@@ -3204,5 +3223,81 @@ mod tests {
         assert_eq!(all.len(), 3);
         let none = ed.entries_in_range(10, 20);
         assert!(none.is_empty());
+    }
+
+    #[test]
+    fn splayed_preserves_content() {
+        let ed = Edition::from_text("hello world");
+        let region = XnRegion::interval(2, 6);
+        let (splayed, result) = ed.splayed(&region);
+        assert_eq!(
+            splayed.to_text(),
+            "hello world",
+            "splay must not change content"
+        );
+        assert_ne!(
+            result,
+            crate::edition::orgl::SplayResult::Outside,
+            "splay should find the region"
+        );
+    }
+
+    #[test]
+    fn splayed_preserves_entries() {
+        let ed = Edition::from_text_batched("line1\nline2\nline3");
+        let original_entries = ed.all_entries();
+        let region = XnRegion::interval(0, 2);
+        let (splayed, _) = ed.splayed(&region);
+        let splayed_entries = splayed.all_entries();
+        assert_eq!(
+            original_entries.len(),
+            splayed_entries.len(),
+            "splay must preserve entry count"
+        );
+        for (a, b) in original_entries.iter().zip(splayed_entries.iter()) {
+            assert_eq!(a.0, b.0, "positions must match");
+            assert_eq!(a.1.element, b.1.element, "elements must match");
+        }
+    }
+
+    #[test]
+    fn splayed_crum_differs() {
+        let ed = Edition::from_text_batched("line1\nline2\nline3\nline4\nline5");
+        let region = XnRegion::interval(1, 3);
+        let (splayed, _) = ed.splayed(&region);
+        assert_ne!(
+            ed.crum(),
+            splayed.crum(),
+            "splay restructures the tree, so crum should change"
+        );
+    }
+
+    #[test]
+    fn splayed_outside_region_unchanged() {
+        let ed = Edition::from_text("abc");
+        let region = XnRegion::interval(100, 200);
+        let (splayed, result) = ed.splayed(&region);
+        assert_eq!(
+            result,
+            crate::edition::orgl::SplayResult::Outside,
+            "splay on non-overlapping region should return Outside"
+        );
+        assert_eq!(
+            ed.crum(),
+            splayed.crum(),
+            "splay Outside should not modify the tree"
+        );
+    }
+
+    #[test]
+    fn splayed_fully_contained() {
+        let ed = Edition::from_text_batched("hello\nworld");
+        let region = ed.domain();
+        let (_splayed, result) = ed.splayed(&region);
+        assert_eq!(
+            result,
+            crate::edition::orgl::SplayResult::FullyContained,
+            "splay on entire domain should return FullyContained"
+        );
     }
 }
