@@ -2634,8 +2634,11 @@ impl Server {
             });
 
             let body_str = body.to_string();
-            let _ = http_post_json(&url, &body_str, 10);
-            tracing::info!("Sent backlink notification to {}", url);
+            let url_clone = url.clone();
+            std::thread::spawn(move || {
+                let _ = http_post_json(&url, &body_str, 10);
+                tracing::info!("Sent backlink notification to {}", url_clone);
+            });
         }
     }
 
