@@ -1027,6 +1027,31 @@ impl OrglRoot {
         Err("combine: overlapping domains not yet supported".into())
     }
 
+    /// Combine two OrglRoots, resolving overlapping positions with LWW
+    /// (other wins at overlapping positions). Unlike `combine`, this
+    /// method never fails — it handles both disjoint and overlapping domains.
+    pub fn combine_overlapping(&self, other: &OrglRoot) -> OrglRoot {
+        if self.is_empty() {
+            return other.clone();
+        }
+        if other.is_empty() {
+            return self.clone();
+        }
+        let overlap = self.domain().intersect(&other.domain());
+        if overlap.is_empty() {
+            return self.combine(other).unwrap_or_else(|_| {
+                let split = self.domain();
+                let loaf = Loaf::Split {
+                    split,
+                    in_child: Box::new(self.loaf().clone()),
+                    out_child: Box::new(other.loaf().clone()),
+                };
+                OrglRoot::from_loaf(loaf)
+            });
+        }
+        self.replace(other)
+    }
+
     pub fn replace(&self, other: &OrglRoot) -> OrglRoot {
         if other.is_empty() {
             return self.clone();
@@ -1933,5 +1958,80 @@ mod tests {
                 "batched single-line edition should have same crum as coalesced per-char edition"
             );
         }
+    }
+
+    #[test]
+    fn combine_overlapping_disjoint() {
+        let a = OrglRoot::from_bulk_entries(
+            vec![(
+                0,
+                Arc::new(Carrier::new(RangeElement::text("a".to_string()))),
+            )],
+            None,
+            XnRegion::interval(0, 1),
+        );
+        let b = OrglRoot::from_bulk_entries(
+            vec![(
+                1,
+                Arc::new(Carrier::new(RangeElement::text("b".to_string()))),
+            )],
+            None,
+            XnRegion::interval(1, 2),
+        );
+        let combined = a.combine_overlapping(&b);
+        assert_eq!(combined.count(), 2);
+        assert_eq!(combined.fetch(0).unwrap().element.as_text(), Some("a"));
+        assert_eq!(combined.fetch(1).unwrap().element.as_text(), Some("b"));
+    }
+
+    #[test]
+    fn combine_overlapping_lww() {
+        let a = OrglRoot::from_bulk_entries(
+            vec![
+                (
+                    0,
+                    Arc::new(Carrier::new(RangeElement::text("a".to_string()))),
+                ),
+                (
+                    1,
+                    Arc::new(Carrier::new(RangeElement::text("b".to_string()))),
+                ),
+            ],
+            None,
+            XnRegion::interval(0, 2),
+        );
+        let b = OrglRoot::from_bulk_entries(
+            vec![
+                (
+                    1,
+                    Arc::new(Carrier::new(RangeElement::text("X".to_string()))),
+                ),
+                (
+                    2,
+                    Arc::new(Carrier::new(RangeElement::text("c".to_string()))),
+                ),
+            ],
+            None,
+            XnRegion::interval(1, 3),
+        );
+        let combined = a.combine_overlapping(&b);
+        assert_eq!(combined.fetch(0).unwrap().element.as_text(), Some("a"));
+        assert_eq!(combined.fetch(1).unwrap().element.as_text(), Some("X"));
+        assert_eq!(combined.fetch(2).unwrap().element.as_text(), Some("c"));
+    }
+
+    #[test]
+    fn combine_overlapping_empty() {
+        let a = OrglRoot::from_bulk_entries(
+            vec![(
+                0,
+                Arc::new(Carrier::new(RangeElement::text("a".to_string()))),
+            )],
+            None,
+            XnRegion::interval(0, 1),
+        );
+        let empty = OrglRoot::empty();
+        assert_eq!(a.combine_overlapping(&empty).count(), 1);
+        assert_eq!(empty.combine_overlapping(&a).count(), 1);
     }
 }
