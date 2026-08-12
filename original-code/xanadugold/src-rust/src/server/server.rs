@@ -12335,7 +12335,7 @@ impl Server {
         })
     }
 
-    const INLINE_MAX_DEPTH: usize = 32;
+    const INLINE_MAX_DEPTH: usize = 1000;
 
     fn resolve_inline_recursive(
         &self,
@@ -12347,6 +12347,11 @@ impl Server {
         depth: usize,
     ) -> Result<String, ServerError> {
         if depth >= Self::INLINE_MAX_DEPTH {
+            tracing::warn!(
+                "[transclusion] depth limit {} reached for work {:04x} — chain too deep, returning partial content",
+                Self::INLINE_MAX_DEPTH,
+                work_id
+            );
             return Ok(String::new());
         }
         if stack.contains(&work_id) {
@@ -31767,7 +31772,7 @@ mod tests {
         let result = server.resolve_inline_transclusions(prev).unwrap();
         assert!(
             result.text.contains("X") || result.span_ranges.len() > 0,
-            "28-level chain should resolve or have spans (within 32 depth limit)"
+            "28-level chain should resolve or have spans"
         );
     }
 
@@ -31786,7 +31791,7 @@ mod tests {
         let result = server.resolve_inline_transclusions(prev).unwrap();
         assert!(
             !result.text.contains("DEPTH") || result.text.contains("DEPTH"),
-            "at 35+ depth, resolution may truncate (max 32) — should not panic"
+            "deep chain should not panic"
         );
     }
 
