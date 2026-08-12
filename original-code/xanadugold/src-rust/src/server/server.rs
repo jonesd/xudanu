@@ -1337,6 +1337,24 @@ impl Server {
             .append(revision)
     }
 
+    /// Extract work ID from a typed tumbler.
+    pub fn tumbler_to_work_id(
+        tumbler: &crate::edition::tumbler::XudanuTumbler,
+    ) -> Option<BeId> {
+        tumbler.first().map(|id| id as BeId)
+    }
+
+    /// Check if a tumbler references a work on this server.
+    pub fn owns_tumbler(&self, tumbler: &crate::edition::tumbler::XudanuTumbler) -> bool {
+        if tumbler.is_local() {
+            return true;
+        }
+        match &self.public_address {
+            Some(addr) => tumbler.server() == addr,
+            None => false,
+        }
+    }
+
     pub fn total_revision_count(&self) -> u64 {
         self.works
             .values()

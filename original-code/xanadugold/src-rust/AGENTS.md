@@ -34,6 +34,19 @@ frontend. The project is split across two trees:
   — a custom position-based CRDT using the space algebra (region/displacement).
   Not Yjs/Yrs; the O-tree is purpose-built for Xudanu's content model and
   integrates with span migration, attribution, and federation sync.
+  **Enfilade-native optimizations (FR-34)**: subtree crums (BLAKE3 Merkle
+  hashes) for O(1) equality checks, chunk-level diff, inline coalesce,
+  splay exposure at Edition level, and tumbler ↔ Sequence bridge. See
+  `docs/dev/FR-34-enfilade-native.md` for the full roadmap.
+- **Tumbler addressing (FR-34 Phase D-F)**: `XudanuTumbler` provides typed
+  hierarchical addresses (`"alice.com".5.3.10.7`). `DocumentArrangement`
+  bridges i64 document positions to global tumbler addresses. Connected to
+  the dormant `space/sequence.rs` (1248 lines) Sequence algebra via
+  `to_sequence()` / `from_sequence()`. Typed accessors on `CrossServerRef`
+  (`work_id()`, `char_range()`, `parent_tumbler()`, `same_server_as()`).
+  `HyperRef::tumbler_address()` and `for_tumbler_span()` enable tumbler-based
+  link addressing. `CompoundSpan::to_tumbler()` / `from_tumbler()` for
+  transclusion coordinates.
 - **Compound documents**: inline `RangeElement::Transclusion` in the O-tree
   (single source of truth — no side-table drift). 32-level recursive resolution
   with cycle detection. Span migration through arbitrary deltas.
