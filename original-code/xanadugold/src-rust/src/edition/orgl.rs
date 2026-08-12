@@ -1126,6 +1126,7 @@ mod tests {
     use super::*;
     use crate::edition::range_element::RangeElement;
     use crate::edition::Edition;
+    use proptest::prelude::*;
 
     fn make_text_loaf(text: &str) -> Loaf {
         let entries: Vec<(i64, Arc<Carrier>)> = text
@@ -1747,5 +1748,190 @@ mod tests {
             coalesced.crum(),
             "coalesce changes entry structure (3 entries -> 1), so crum should differ"
         );
+    }
+
+    #[test]
+    fn crum_copy_preserves_subtree() {
+        let e = Edition::from_text("abcdef");
+        let region = XnRegion::interval(1, 4);
+        let copied = e.copy(&region);
+        let copied_crum = copied.crum();
+        assert!(copied_crum.is_some(), "non-empty copy should have a crum");
+        let entries = copied.all_entries();
+        assert_eq!(entries.len(), 3, "copy should contain 3 entries");
+    }
+
+    #[test]
+    fn crum_copy_empty_is_none() {
+        let e = Edition::from_text("abc");
+        let region = XnRegion::interval(10, 20);
+        let copied = e.copy(&region);
+        assert!(
+            copied.crum().is_none(),
+            "copy of non-overlapping region should be empty (no crum)"
+        );
+    }
+
+    #[test]
+    fn crum_identical_batched_match() {
+        let e1 = Edition::from_text_batched("hello\nworld\nfoo");
+        let e2 = Edition::from_text_batched("hello\nworld\nfoo");
+        assert_eq!(
+            e1.crum(),
+            e2.crum(),
+            "identical batched editions must have matching crums"
+        );
+    }
+
+    #[test]
+    fn crum_provenance_does_not_change_crum() {
+        use crate::edition::provenance::{AuthorType, ElementProvenance};
+        let plain = Edition::from_text("hello");
+        let prov = ElementProvenance {
+            author_public_key: [1; 32],
+            author_display_name: "Alice".to_string(),
+            author_club_id: 0,
+            timestamp: 1000,
+            author_type: AuthorType::Human,
+            llm_model: None,
+            historical_author_id: None,
+            source_work_id: None,
+            transcluded_by: None,
+            derived_by: None,
+        };
+        let entries: Vec<(i64, Arc<Carrier>)> = plain
+            .all_entries()
+            .into_iter()
+            .map(|(pos, carrier)| {
+                let c = (*carrier).clone().with_provenance(prov.clone());
+                (pos, Arc::new(c))
+            })
+            .collect();
+        let with_prov = Edition::from_entries(entries);
+        assert_eq!(
+            plain.crum(),
+            with_prov.crum(),
+            "crum represents content identity; provenance is metadata and should not affect crum"
+        );
+    }
+
+    #[test]
+    fn crum_merge_preserves_unchanged() {
+        use crate::edition::three_way::{three_way_merge, MergeStrategy};
+        let base = Edition::from_text("hello world");
+        let a = Edition::from_text("hello world");
+        let b = Edition::from_text("hello world");
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+        assert_eq!(
+            base.crum(),
+            mr.merged.crum(),
+            "merge of identical editions should preserve crum"
+        );
+    }
+
+    #[test]
+    fn crum_merge_different_from_base() {
+        use crate::edition::three_way::{three_way_merge, MergeStrategy};
+        let base = Edition::from_text("hello world");
+        let a = Edition::from_text("hello earth");
+        let b = Edition::from_text("hello world");
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+        assert_ne!(
+            base.crum(),
+            mr.merged.crum(),
+            "merge with changes should produce different crum from base"
+        );
+    }
+
+    #[test]
+    fn crum_deterministic_across_construction_methods() {
+        let from_bulk = Edition::from_text("xyz");
+        let from_with = Edition::empty()
+            .with(0, RangeElement::text("x".to_string()))
+            .with(1, RangeElement::text("y".to_string()))
+            .with(2, RangeElement::text("z".to_string()));
+        assert_eq!(
+            from_bulk.crum(),
+            from_with.crum(),
+            "same content at same positions must produce same crum regardless of construction method"
+        );
+    }
+
+    #[test]
+    fn crum_transclusion_differs_from_text() {
+        let e1 = Edition::from_one(0, RangeElement::text("a".to_string()));
+        let e2 = Edition::from_one(0, RangeElement::edition(42));
+        assert_ne!(
+            e1.crum(),
+            e2.crum(),
+            "text vs edition-ref at same position must have different crums"
+        );
+    }
+
+    #[test]
+    fn crum_different_edition_refs_differ() {
+        let e1 = Edition::from_one(0, RangeElement::edition(42));
+        let e2 = Edition::from_one(0, RangeElement::edition(99));
+        assert_ne!(
+            e1.crum(),
+            e2.crum(),
+            "different edition IDs must produce different crums"
+        );
+    }
+
+    proptest! {
+        #[test]
+        fn prop_crum_deterministic(text in "[a-z]{0,100}") {
+            let e1 = Edition::from_text(&text);
+            let e2 = Edition::from_text(&text);
+            prop_assert_eq!(e1.crum(), e2.crum(), "identical text must always produce identical crum");
+        }
+
+        #[test]
+        fn prop_crum_different_text_differs(
+            a in "[a-z]{1,50}",
+            b in "[a-z]{1,50}",
+        ) {
+            prop_assume!(a != b);
+            let e1 = Edition::from_text(&a);
+            let e2 = Edition::from_text(&b);
+            prop_assert_ne!(e1.crum(), e2.crum(), "different text must produce different crums");
+        }
+
+        #[test]
+        fn prop_crum_with_then_without_identity(
+            text in "[a-z]{1,50}",
+            pos in 0usize..50,
+        ) {
+            prop_assume!(pos < text.len());
+            let original = Edition::from_text(&text);
+            let ch = text.chars().nth(pos).unwrap();
+            let modified = original.without(pos as i64);
+            let restored = modified.with(pos as i64, RangeElement::text(ch.to_string()));
+            prop_assert_ne!(
+                original.crum(),
+                modified.crum(),
+                "deletion must change crum"
+            );
+            prop_assert_eq!(
+                original.crum(),
+                restored.crum(),
+                "delete + re-add same content should restore crum"
+            );
+        }
+
+        #[test]
+        fn prop_crum_batched_vs_perchar(
+            text in "[a-z]{1,80}",
+        ) {
+            let per_char = Edition::from_text(&text);
+            let coalesced = per_char.coalesce();
+            let batched = Edition::from_text_batched(&text);
+            prop_assert_eq!(
+                batched.crum(),
+                coalesced.crum(),
+                "batched single-line edition should have same crum as coalesced per-char edition"
+            );
+        }
     }
 }
