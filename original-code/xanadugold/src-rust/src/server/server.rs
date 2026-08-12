@@ -12382,7 +12382,73 @@ impl Server {
         let mut resolved_text = String::new();
 
         for (_, carrier) in entries.iter() {
-            if let crate::edition::RangeElement::Transclusion {
+            if let crate::edition::RangeElement::StructuralTransclusion {
+                source_work_id,
+                entry_start,
+                entry_end,
+                source_crum,
+                placed_at: p_at,
+                placed_by: p_by,
+                source_revision: stored_revision,
+            } = &carrier.element
+            {
+                let src_id = *source_work_id;
+                let e_start = *entry_start;
+                let e_end = *entry_end;
+                let crum = *source_crum;
+
+                let src_text = if let Some(src_ws) = self.works.get(&src_id) {
+                    let src_edition = src_ws.work().current_edition();
+                    if let Some(current_crum) = src_edition.crum() {
+                        if current_crum == crum {
+                            tracing::debug!(
+                                "[structural_transclusion] source {:x} crum matches — live content",
+                                src_id
+                            );
+                        } else {
+                            tracing::info!(
+                                "[structural_transclusion] source {:x} crum CHANGED (was {} now {}) — content updated",
+                                src_id,
+                                hex::encode(crum),
+                                hex::encode(current_crum)
+                            );
+                        }
+                    }
+                    let region = crate::edition::xn_region::XnRegion::interval(e_start, e_end);
+                    src_edition
+                        .entries_in_range(e_start, e_end)
+                        .iter()
+                        .map(|(_, c)| c.element.as_text().unwrap_or(""))
+                        .collect::<String>()
+                } else {
+                    tracing::warn!("[structural_transclusion] source {:x} not found", src_id);
+                    continue;
+                };
+
+                let content_len = src_text.chars().count();
+
+                span_ranges.push(crate::edition::compound::SpanRange {
+                    source_work_id: src_id,
+                    char_start: e_start as usize,
+                    char_end: e_end as usize,
+                    flat_start: text_offset,
+                    flat_end: text_offset + content_len,
+                    content_len,
+                    otree_position: crdt_offset,
+                    resolved_content: src_text.clone(),
+                    placed_at: *p_at,
+                    placed_by: *p_by,
+                    source_changed: false,
+                });
+
+                source_titles
+                    .entry(src_id)
+                    .or_insert_with(|| format!("Work {:x}", src_id));
+
+                resolved_text.push_str(&src_text);
+                text_offset += content_len;
+                crdt_offset += 1;
+            } else if let crate::edition::RangeElement::Transclusion {
                 source_work_id,
                 char_start,
                 char_end,
@@ -12553,7 +12619,7 @@ impl Server {
                 .current_edition()
                 .cached_entries()
                 .iter()
-                .any(|(_, c)| c.element.is_transclusion())
+                .any(|(_, c)| c.element.is_any_transclusion())
         } else {
             false
         }
@@ -29144,6 +29210,176 @@ mod tests {
                     &Some(2),
                     "source_revision must survive migration"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn structural_transclusion_resolves_content() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work
+            .current_edition()
+            .crum()
+            .unwrap();
+
+        let structural_elem =
+            RangeElement::structural_transclusion(source, 0, 3, source_crum, 1000, Some(1));
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("Before "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(structural_elem)),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" After"),
+                )),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+        assert!(
+            result.text.contains("Hel"),
+            "structural transclusion should resolve source entries 0-2 (Hel)"
+        );
+        assert!(
+            result.text.starts_with("Before "),
+            "text before transclusion should be preserved"
+        );
+        assert!(
+            result.text.ends_with(" After"),
+            "text after transclusion should be preserved"
+        );
+        assert_eq!(
+            result.span_ranges.len(),
+            1,
+            "should have one span range for the structural transclusion"
+        );
+    }
+
+    #[test]
+    fn structural_transclusion_detects_source_change() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+
+        let original_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work
+            .current_edition()
+            .crum()
+            .unwrap();
+
+        let structural_elem =
+            RangeElement::structural_transclusion(source, 0, 5, original_crum, 1000, Some(1));
+
+        let entries = vec![(
+            0i64,
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(structural_elem)),
+        )];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let result1 = server.resolve_inline_transclusions(doc).unwrap();
+        assert!(result1.text.contains("Hello"));
+
+        server.work_grab(sid, source).unwrap();
+        server
+            .work_revise(sid, source, Edition::from_text("CHANGED Content"))
+            .unwrap();
+
+        let result2 = server.resolve_inline_transclusions(doc).unwrap();
+        assert!(
+            result2.text.contains("CHANG"),
+            "structural transclusion should reflect source update — content should be live"
+        );
+    }
+
+    #[test]
+    fn structural_transclusion_preserves_metadata_through_migration() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work
+            .current_edition()
+            .crum()
+            .unwrap();
+
+        let mut elem =
+            RangeElement::structural_transclusion(source, 0, 5, source_crum, 99999, Some(42));
+        elem.set_structural_revision(7);
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("A"),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(elem)),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("B"),
+                )),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let doc_entries = server
+            .works
+            .get(&doc)
+            .unwrap()
+            .work
+            .current_edition()
+            .all_entries();
+
+        let st = doc_entries
+            .iter()
+            .find(|(_, c)| c.element.is_structural_transclusion());
+        assert!(st.is_some(), "structural transclusion should exist");
+
+        if let Some((_, carrier)) = st {
+            if let RangeElement::StructuralTransclusion {
+                placed_at,
+                placed_by,
+                source_revision,
+                ..
+            } = &carrier.element
+            {
+                assert_eq!(*placed_at, 99999, "placed_at preserved");
+                assert_eq!(*placed_by, Some(42), "placed_by preserved");
+                assert_eq!(*source_revision, Some(7), "source_revision preserved");
             }
         }
     }

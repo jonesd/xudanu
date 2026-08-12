@@ -60,6 +60,16 @@ pub enum RangeElement {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source_revision: Option<u64>,
     },
+    StructuralTransclusion {
+        source_work_id: u64,
+        entry_start: i64,
+        entry_end: i64,
+        source_crum: [u8; 32],
+        placed_at: u64,
+        placed_by: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source_revision: Option<u64>,
+    },
 }
 
 impl RangeElement {
@@ -190,6 +200,46 @@ impl RangeElement {
             *ch = Some(content_hash);
             *sr = Some(source_revision);
         }
+    }
+
+    pub fn structural_transclusion(
+        source_work_id: u64,
+        entry_start: i64,
+        entry_end: i64,
+        source_crum: [u8; 32],
+        placed_at: u64,
+        placed_by: Option<u64>,
+    ) -> Self {
+        RangeElement::StructuralTransclusion {
+            source_work_id,
+            entry_start,
+            entry_end,
+            source_crum,
+            placed_at,
+            placed_by,
+            source_revision: None,
+        }
+    }
+
+    pub fn set_structural_revision(&mut self, revision: u64) {
+        if let RangeElement::StructuralTransclusion {
+            source_revision: ref mut sr,
+            ..
+        } = self
+        {
+            *sr = Some(revision);
+        }
+    }
+
+    pub fn is_structural_transclusion(&self) -> bool {
+        matches!(self, RangeElement::StructuralTransclusion { .. })
+    }
+
+    pub fn is_any_transclusion(&self) -> bool {
+        matches!(
+            self,
+            RangeElement::Transclusion { .. } | RangeElement::StructuralTransclusion { .. }
+        )
     }
 
     /// Get the content hash from a Transclusion element, if set.
@@ -415,6 +465,21 @@ impl RangeElement {
                 hasher.update(&source_work_id.to_le_bytes());
                 hasher.update(&(*char_start as u64).to_le_bytes());
                 hasher.update(&(*char_end as u64).to_le_bytes());
+                *hasher.finalize().as_bytes()
+            }
+            RangeElement::StructuralTransclusion {
+                source_work_id,
+                entry_start,
+                entry_end,
+                source_crum,
+                ..
+            } => {
+                let mut hasher = blake3::Hasher::new();
+                hasher.update(b"structural_transclusion:");
+                hasher.update(&source_work_id.to_le_bytes());
+                hasher.update(&entry_start.to_le_bytes());
+                hasher.update(&entry_end.to_le_bytes());
+                hasher.update(source_crum);
                 *hasher.finalize().as_bytes()
             }
         }
