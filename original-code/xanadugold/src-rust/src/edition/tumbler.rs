@@ -219,6 +219,68 @@ impl XudanuTumbler {
             path: migrated,
         }
     }
+
+    /// Navigate up one level (remove last path element).
+    /// `"alice.com".5.3.10` → `"alice.com".5.3`
+    pub fn parent(&self) -> Option<Self> {
+        if self.path.is_empty() {
+            return None;
+        }
+        Some(XudanuTumbler {
+            server: self.server.clone(),
+            path: self.path[..self.path.len() - 1].to_vec(),
+        })
+    }
+
+    /// Replace the last path element (sibling navigation).
+    /// `"alice.com".5.3.10` with n=20 → `"alice.com".5.3.20`
+    pub fn sibling(&self, n: u64) -> Option<Self> {
+        if self.path.is_empty() {
+            return None;
+        }
+        let mut path = self.path.clone();
+        *path.last_mut().unwrap() = n;
+        Some(XudanuTumbler {
+            server: self.server.clone(),
+            path,
+        })
+    }
+
+    /// Convert to `Sequence` (space algebra position).
+    /// Enables SequenceDsp arithmetic, SequenceRegion prefix queries,
+    /// and CrossSpace composition with IntegerSpace.
+    pub fn to_sequence(&self) -> crate::space::Sequence {
+        crate::space::Sequence::from_numbers(self.path.iter().map(|&n| n as i64).collect())
+    }
+
+    pub fn from_sequence(server: &str, seq: &crate::space::Sequence) -> Self {
+        XudanuTumbler {
+            server: server.to_string(),
+            path: seq.numbers().iter().map(|&n| n as u64).collect(),
+        }
+    }
+
+    /// Create a tumbler addressing a character range within a work.
+    /// Format: `"server".work_id.start_pos.end_pos`
+    pub fn for_char_range(server: &str, work_id: u64, start: usize, end: usize) -> Self {
+        XudanuTumbler::cross(server, vec![work_id, start as u64, end as u64])
+    }
+
+    /// Create a tumbler addressing a work (no position detail).
+    /// Format: `"server".work_id`
+    pub fn for_work(server: &str, work_id: u64) -> Self {
+        XudanuTumbler::cross(server, vec![work_id])
+    }
+
+    /// Extract the character range (start, end) from path elements 2 and 3.
+    /// Returns None if the path doesn't have at least 4 elements.
+    pub fn char_range(&self) -> Option<(usize, usize)> {
+        if self.path.len() >= 4 {
+            Some((self.path[2] as usize, self.path[3] as usize))
+        } else {
+            None
+        }
+    }
 }
 
 impl fmt::Display for XudanuTumbler {
@@ -399,5 +461,91 @@ mod tests {
     fn display_format() {
         let t = XudanuTumbler::cross("alice.com", vec![5, 3]);
         assert_eq!(format!("{}", t), "\"alice.com\".5.3");
+    }
+
+    #[test]
+    fn parent_navigation() {
+        let t = XudanuTumbler::cross("alice.com", vec![5, 3, 10, 7]);
+        assert_eq!(t.parent().unwrap().path(), &[5, 3, 10]);
+        assert_eq!(t.parent().unwrap().server(), "alice.com");
+        assert_eq!(t.parent().unwrap().parent().unwrap().path(), &[5, 3]);
+    }
+
+    #[test]
+    fn parent_of_empty() {
+        let t = XudanuTumbler::local(vec![]);
+        assert!(t.parent().is_none());
+    }
+
+    #[test]
+    fn sibling_navigation() {
+        let t = XudanuTumbler::cross("alice.com", vec![5, 3, 10]);
+        let s = t.sibling(20).unwrap();
+        assert_eq!(s.path(), &[5, 3, 20]);
+        assert_eq!(s.server(), "alice.com");
+    }
+
+    #[test]
+    fn sibling_of_empty() {
+        let t = XudanuTumbler::local(vec![]);
+        assert!(t.sibling(1).is_none());
+    }
+
+    #[test]
+    fn sequence_conversion() {
+        let t = XudanuTumbler::cross("alice.com", vec![5, 3, 10, 7]);
+        let seq = t.to_sequence();
+        assert_eq!(seq.numbers(), &[5, 3, 10, 7]);
+
+        let back = XudanuTumbler::from_sequence("alice.com", &seq);
+        assert_eq!(back.path(), &[5, 3, 10, 7]);
+        assert_eq!(back.server(), "alice.com");
+    }
+
+    #[test]
+    fn sequence_arithmetic() {
+        let t = XudanuTumbler::cross("alice.com", vec![5, 3]);
+        let seq = t.to_sequence();
+        let offset = crate::space::Sequence::two(0, 10);
+        let shifted = seq.plus(&offset);
+        let result = XudanuTumbler::from_sequence("alice.com", &shifted);
+        assert_eq!(result.path(), &[5, 13]);
+    }
+
+    #[test]
+    fn for_char_range_constructor() {
+        let t = XudanuTumbler::for_char_range("alice.com", 5, 10, 20);
+        assert_eq!(t.path(), &[5, 10, 20]);
+        assert_eq!(t.server(), "alice.com");
+        assert_eq!(t.first(), Some(5));
+    }
+
+    #[test]
+    fn for_work_constructor() {
+        let t = XudanuTumbler::for_work("alice.com", 42);
+        assert_eq!(t.path(), &[42]);
+        assert_eq!(t.first(), Some(42));
+    }
+
+    #[test]
+    fn char_range_extraction() {
+        let t = XudanuTumbler::cross("alice.com", vec![5, 3, 10, 20]);
+        assert_eq!(t.char_range(), Some((10, 20)));
+
+        let short = XudanuTumbler::cross("alice.com", vec![5, 3]);
+        assert_eq!(short.char_range(), None);
+    }
+
+    #[test]
+    fn prefix_hierarchy() {
+        let doc = XudanuTumbler::cross("alice.com", vec![5]);
+        let section = doc.append(3);
+        let para = section.append(10);
+        let char_pos = para.append(7);
+
+        assert!(char_pos.starts_with_path(doc.path()));
+        assert!(char_pos.starts_with_path(section.path()));
+        assert_eq!(char_pos.common_prefix_len(&section), 2);
+        assert_eq!(section.parent().unwrap(), doc);
     }
 }
