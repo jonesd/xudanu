@@ -259,7 +259,33 @@ fn split_text_carrier(carrier: &Carrier, start: usize, end: usize) -> Option<Car
     }
 }
 
-fn flush_batched_insert(
+fn push_coalesced(entries: &mut Vec<(i64, Arc<Carrier>)>, pos: &mut i64, carrier: Carrier) {
+    if *pos > 0 {
+        if let Some(last) = entries.last_mut() {
+            if last.0 + 1 == *pos
+                && last.1.provenance == carrier.provenance
+                && last.1.label == carrier.label
+            {
+                if let (
+                    RangeElement::Text { text: last_text },
+                    RangeElement::Text { text: new_text },
+                ) = (&last.1.element, &carrier.element)
+                {
+                    let combined = format!("{}{}", last_text, new_text);
+                    let mut merged = Carrier::new(RangeElement::text(combined));
+                    merged.label = carrier.label.clone();
+                    merged.provenance = carrier.provenance.clone();
+                    last.1 = Arc::new(merged);
+                    return;
+                }
+            }
+        }
+    }
+    entries.push((*pos, Arc::new(carrier)));
+    *pos += 1;
+}
+
+fn flush_batched_insert_coalesced(
     pending: &mut String,
     prov: &Option<ElementProvenance>,
     entries: &mut Vec<(i64, Arc<Carrier>)>,
@@ -278,8 +304,7 @@ fn flush_batched_insert(
                 Some(p) => carrier.with_provenance(p.clone()),
                 None => carrier,
             };
-            entries.push((*pos, Arc::new(carrier)));
-            *pos += 1;
+            push_coalesced(entries, pos, carrier);
             start = i + ch.len_utf8();
         }
     }
@@ -290,8 +315,7 @@ fn flush_batched_insert(
             Some(p) => carrier.with_provenance(p.clone()),
             None => carrier,
         };
-        entries.push((*pos, Arc::new(carrier)));
-        *pos += 1;
+        push_coalesced(entries, pos, carrier);
     }
 }
 
@@ -334,7 +358,12 @@ pub fn apply_text_delta_to_edition(
     for op in ops {
         match op {
             TextDeltaOp::Retain { count } => {
-                flush_batched_insert(&mut pending_insert, &prov, &mut new_entries, &mut new_pos);
+                flush_batched_insert_coalesced(
+                    &mut pending_insert,
+                    &prov,
+                    &mut new_entries,
+                    &mut new_pos,
+                );
                 let target_char_pos = old_char_pos + *count as usize;
 
                 while old_char_pos < target_char_pos {
@@ -358,13 +387,11 @@ pub fn apply_text_delta_to_edition(
                     let take = remaining.min(available);
 
                     if within == 0 && take == entry_len {
-                        new_entries.push((new_pos, entry.1.clone()));
-                        new_pos += 1;
+                        push_coalesced(&mut new_entries, &mut new_pos, (*entry.1).clone());
                     } else if let Some(carrier) =
                         split_text_carrier(&entry.1, within, within + take)
                     {
-                        new_entries.push((new_pos, Arc::new(carrier)));
-                        new_pos += 1;
+                        push_coalesced(&mut new_entries, &mut new_pos, carrier);
                     }
 
                     old_char_pos += take;
@@ -374,7 +401,12 @@ pub fn apply_text_delta_to_edition(
                 }
             }
             TextDeltaOp::Delete { count } => {
-                flush_batched_insert(&mut pending_insert, &prov, &mut new_entries, &mut new_pos);
+                flush_batched_insert_coalesced(
+                    &mut pending_insert,
+                    &prov,
+                    &mut new_entries,
+                    &mut new_pos,
+                );
                 let target_char_pos = old_char_pos + *count as usize;
                 while old_char_pos < target_char_pos {
                     if current_entry_idx >= old_entries.len() {
@@ -402,7 +434,7 @@ pub fn apply_text_delta_to_edition(
         }
     }
 
-    flush_batched_insert(&mut pending_insert, &prov, &mut new_entries, &mut new_pos);
+    flush_batched_insert_coalesced(&mut pending_insert, &prov, &mut new_entries, &mut new_pos);
 
     if current_entry_idx < old_entries.len() {
         let entry_start = entry_char_start[current_entry_idx];
@@ -413,8 +445,7 @@ pub fn apply_text_delta_to_edition(
                 within,
                 old_entries[current_entry_idx].1.char_len(),
             ) {
-                new_entries.push((new_pos, Arc::new(carrier)));
-                new_pos += 1;
+                push_coalesced(&mut new_entries, &mut new_pos, carrier);
             }
             current_entry_idx += 1;
         }
@@ -422,13 +453,12 @@ pub fn apply_text_delta_to_edition(
 
     while current_entry_idx < old_entries.len() {
         let entry = &old_entries[current_entry_idx];
-        new_entries.push((new_pos, entry.1.clone()));
-        new_pos += 1;
+        push_coalesced(&mut new_entries, &mut new_pos, (*entry.1).clone());
         current_entry_idx += 1;
     }
 
     let result = {
-        let ed = Edition::from_entries(new_entries).coalesce();
+        let ed = Edition::from_entries(new_entries);
         tracing::debug!(
             "[apply_delta] old_entries={} result_entries={} ops={}",
             old_entries.len(),
