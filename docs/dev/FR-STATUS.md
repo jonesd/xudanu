@@ -90,13 +90,31 @@ and code/test mapping. Updated with each commit.
 | 33.2 | Public identity endpoint | ✅ | handler.rs:public_identity_handler | manual |
 | 33.3 | Identity attestation storage | ✅ | server.rs:identity_attestations | manual |
 | 33.4 | Identity resolution by key | ✅ | server.rs:resolve_identity_by_key | manual |
-| 33.5 | Attribution display from key | 🔨 | WorkspaceShell.tsx (key hash shown) | needs wiring to attestation |
+| 33.5 | Attribution display from key | ✅ | server.rs:attribution_query (provenance fallback) | lib: attribution tests |
+
+## Enfilade-Native CRDT (FR-34)
+
+| Phase | Feature | Status | Key Files | Tests |
+|-------|---------|--------|-----------|-------|
+| P0 | Subtree crums (BLAKE3 Merkle) | ✅ | orgl.rs:compute_crum | 24 crum tests |
+| P1 | Inline coalesce | ✅ | otree_crdt.rs:push_coalesced | CRDT tests |
+| A | Crum fast-path (O(1) merge) | ✅ | three_way.rs:three_way_diff | 90 three_way tests |
+| B | Alignment skip via crum | ✅ | three_way.rs:compute_alignment | property tests |
+| C | Assembly skip for single-sided | ✅ | three_way.rs:three_way_merge | property tests |
+| D | Tumbler ↔ Sequence bridge | ✅ | tumbler.rs, links.rs | 26 tumbler tests |
+| E | Vec clone elimination | ✅ | otree_crdt.rs:apply_text_delta_to_edition | CRDT tests |
+| F | DocumentArrangement, chunk crums | ✅ | edition.rs, tumbler.rs | 13 tests + 5 property |
+| G | Splay exposed at Edition level | ✅ | edition.rs:splayed | 5 splay tests |
+| H | Compound span tumbler addressing | ✅ | compound.rs | 6 compound tests |
+| I | O(log n) delta (tumbler positions) | 📋 | Needs enfilade tumbler migration | — |
+| J | Overlapping-domain combine | ✅ | orgl.rs:combine_overlapping | 3 tests + property |
+
+See `FR-34-enfilade-native.md` for the full design document.
 
 ## Planned / Not Started
 
 | FR | Feature | Status | Notes |
 |----|---------|--------|-------|
-| 34 | Live transclusion (element-level) | 📋 | Phase 4: ghost works or new element type |
 | 35 | Self-signed TLS + TOFU cert pinning | 📋 | For servers without domain names |
 | 36 | Cross-server edit permission | 📋 | All-or-nothing for now; future: fine-grained |
 | 37 | Reading history per remote server | 📋 | Track viewed remote works |
@@ -108,15 +126,15 @@ and code/test mapping. Updated with each commit.
 
 | Suite | Count | Status |
 |-------|-------|--------|
-| Rust lib tests | 2865 | ✅ all pass |
+| Rust lib tests | 2992 | ✅ all pass |
 | Rust integration tests | 280 | ✅ all pass |
-| Frontend tests | 686 pass + 12 skip | ✅ (skipped: browse mock tests, replaced by real server) |
-| Property-based tests | 12 (256 cases each) | ✅ |
+| Frontend tests | 696 (0 skipped) | ✅ all pass |
+| Property-based tests | 17 (256 cases each) | ✅ |
 | Fuzz-equivalent tests | 24 | ✅ |
 | Adversarial tests | 5 | ✅ |
 | Security tracker tests | 9 | ✅ |
-| 3-node Docker test | 13/15 pass | ⚠️ 2 fail (backlink POST blocks) |
-| **Total** | **~3894** | |
+| 3-node Docker test | 13/15 pass | ⚠️ 2 fail (pre-backlink-fix) |
+| **Total** | **~3968** | |
 
 ## FR Numbering Convention
 
