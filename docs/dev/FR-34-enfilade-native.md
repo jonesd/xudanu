@@ -40,11 +40,14 @@ provenance, federation, web platform).
 | Phase G | Splay exposed at Edition level | Locality optimization available |
 | Phase H | Compound span tumbler addressing | Transclusion coordinates via tumblers |
 | Phase J | Overlapping-domain combine | Structural merge without flatten |
+| Tumbler resolve | Wire op 0x0F0E + paste-to-navigate UI | Resolve tumbler to local work |
+| Tumbler search | Server::search_by_tumbler_prefix | Find works by tumbler prefix |
+| Tumbler listing | Server::list_work_tumblers | All works with typed tumbler addresses |
 | Provenance | Span migration, non-text preservation | Attribution survives merges |
 | Blob hash | u64 -> String migration | JS precision fix |
-| Property tests | 5 properties x 256 cases for F-J | Correctness verification |
+| Property tests | 17 properties x 256 cases | Correctness verification |
 
-### Test counts: 2969 Rust lib + 280 integration + 686 frontend = 3935
+### Test counts: 2994 Rust lib + 280 integration + 696 frontend = 3970
 
 ### Performance comparison
 

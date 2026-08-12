@@ -1371,6 +1371,40 @@ impl Server {
         }
     }
 
+    /// Find all local works that match a tumbler prefix.
+    /// Returns (work_id, title) pairs for works whose tumbler starts
+    /// with the given path elements.
+    ///
+    /// Example: prefix [5] finds work 5. Prefix [] finds all works.
+    pub fn search_by_tumbler_prefix(&self, prefix: &[u64]) -> Vec<(BeId, String)> {
+        self.works
+            .iter()
+            .filter(|(work_id, _)| {
+                let work_val = **work_id as u64;
+                if prefix.is_empty() {
+                    return true;
+                }
+                prefix[0] == work_val
+            })
+            .map(|(work_id, ws)| (*work_id, ws.cached_title().to_string()))
+            .collect()
+    }
+
+    /// List all works with their tumbler addresses.
+    pub fn list_work_tumblers(
+        &self,
+    ) -> Vec<(BeId, String, crate::edition::tumbler::XudanuTumbler)> {
+        let server = self.public_address.as_deref().unwrap_or("localhost");
+        self.works
+            .iter()
+            .map(|(work_id, ws)| {
+                let tumbler =
+                    crate::edition::tumbler::XudanuTumbler::cross(server, vec![*work_id as u64]);
+                (*work_id, ws.cached_title().to_string(), tumbler)
+            })
+            .collect()
+    }
+
     pub fn total_revision_count(&self) -> u64 {
         self.works
             .values()
@@ -34430,5 +34464,43 @@ mod tests_security_tracker {
         let tumbler = crate::edition::tumbler::XudanuTumbler::cross("bob.com", vec![5, 0]);
         let resolved = server.resolve_local_tumbler(&tumbler);
         assert_eq!(resolved, None, "foreign server tumbler should not resolve");
+    }
+
+    #[test]
+    fn server_search_by_tumbler_prefix() {
+        let mut server = Server::new();
+        server.public_address = Some("alice.com".to_string());
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let w1 = server
+            .create_work(sid, crate::edition::Edition::from_text("doc1"))
+            .unwrap();
+        let w2 = server
+            .create_work(sid, crate::edition::Edition::from_text("doc2"))
+            .unwrap();
+
+        let all = server.search_by_tumbler_prefix(&[]);
+        assert_eq!(all.len(), 2);
+
+        let specific = server.search_by_tumbler_prefix(&[w1 as u64]);
+        assert_eq!(specific.len(), 1);
+        assert_eq!(specific[0].0, w1);
+    }
+
+    #[test]
+    fn server_list_work_tumblers() {
+        let mut server = Server::new();
+        server.public_address = Some("alice.com".to_string());
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let w1 = server
+            .create_work(sid, crate::edition::Edition::from_text("hello"))
+            .unwrap();
+
+        let tumblers = server.list_work_tumblers();
+        assert_eq!(tumblers.len(), 1);
+        assert_eq!(tumblers[0].0, w1);
+        assert_eq!(tumblers[0].2.server(), "alice.com");
+        assert_eq!(tumblers[0].2.first(), Some(w1 as u64));
     }
 }
