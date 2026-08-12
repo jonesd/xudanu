@@ -2187,7 +2187,7 @@ impl Server {
             .as_ref()
             .unwrap_or(&entry.verifying_key)
             .clone();
-        drop(entry);
+
 
         let scheme = "http";
         let url = format!(
@@ -2334,7 +2334,7 @@ impl Server {
         let address = entry.address.clone();
         let port = entry.port.unwrap_or(8080);
         let server_name = entry.name.clone();
-        drop(entry);
+
 
         let url = format!("http://{}:{}/api/public/works", address, port);
 
@@ -2377,7 +2377,7 @@ impl Server {
             .unwrap_or(&entry.verifying_key)
             .clone();
         let introducer_ns = server_id;
-        drop(entry);
+
 
         let url = format!("http://{}:{}/api/introductions", address, port);
         tracing::info!("Fetching introductions from {}", url);
@@ -2578,7 +2578,7 @@ impl Server {
         let port = entry.port.unwrap_or(8080);
         let home_server_name = entry.name.clone();
         let home_server_address = address.clone();
-        drop(entry);
+
 
         let url = format!(
             "http://{}:{}/api/public/identity?q={}",
