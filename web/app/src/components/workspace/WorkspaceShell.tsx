@@ -456,6 +456,25 @@ export function WorkspaceShell() {
     return () => clearInterval(interval);
   }, [connected, fetchWorkList]);
 
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash.startsWith("#tumbler=")) {
+      const tumblerStr = decodeURIComponent(hash.slice("#tumbler=".length));
+      const client = clientRef.current;
+      if (client) {
+        void client.resolveTumbler(tumblerStr).then((result) => {
+          if (result.work_id && result.is_local) {
+            const wid = parseInt(result.work_id, 16);
+            if (!isNaN(wid)) {
+              selectWork(wid);
+              window.history.replaceState({}, "", window.location.pathname + window.location.search);
+            }
+          }
+        }).catch(() => {});
+      }
+    }
+  }, []);
+
   const handleTumblerNavigate = useCallback(async (tumblerStr: string) => {
     const client = clientRef.current;
     if (!client || !tumblerStr.trim()) return;
@@ -2305,6 +2324,22 @@ export function WorkspaceShell() {
                   >
                     "{serverDomain}".{workIdDisplay}
                   </span>
+                  <button
+                    title="Copy shareable link"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const tumbler = `"${serverDomain}".${workIdDisplay}`;
+                      const url = `${window.location.origin}${window.location.pathname}#tumbler=${encodeURIComponent(tumbler)}`;
+                      navigator.clipboard?.writeText(url);
+                    }}
+                    style={{
+                      fontSize: 9, cursor: "pointer", border: "1px solid var(--border)",
+                      background: "var(--bg)", color: "var(--text-muted)",
+                      borderRadius: 3, padding: "1px 4px",
+                    }}
+                  >
+                    link
+                  </button>
                   <input
                     className="ws-tumbler-input"
                     placeholder="paste tumbler..."

@@ -3079,6 +3079,8 @@ pub struct WorkListEntry {
     pub is_starred: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_crum: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

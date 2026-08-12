@@ -347,6 +347,7 @@ export interface WorkListEntry {
   source_edition_info?: string;
   is_starred?: boolean;
   updated_at?: number;
+  content_crum?: string;
 }
 
 export type WorkKind = "document" | "note" | "person" | "concept" | "collection" | "commentary" | "book";

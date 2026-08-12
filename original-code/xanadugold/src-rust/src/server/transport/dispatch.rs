@@ -1246,6 +1246,7 @@ fn dispatch_inner(
                             source_edition_info,
                             is_starred: starred.contains(&work_id),
                             updated_at: None,
+                            content_crum: None,
                         }
                     },
                 )
@@ -1502,6 +1503,11 @@ fn dispatch_inner(
                         source_edition_info: ws.source_edition_info().map(|s| s.to_string()),
                         is_starred: starred.contains(id),
                         updated_at: ws.latest_revision_timestamp(),
+                        content_crum: ws
+                            .work()
+                            .current_edition()
+                            .crum()
+                            .map(|c| c.iter().map(|b| format!("{:02x}", b)).collect()),
                     });
                 }
             }
@@ -1541,6 +1547,7 @@ fn dispatch_inner(
                         source_edition_info: None,
                         is_starred: starred.contains(&work_id),
                         updated_at: None,
+                        content_crum: None,
                     }
                 })
                 .collect();
@@ -3540,6 +3547,7 @@ fn dispatch_inner(
                             source_edition_info,
                             is_starred: starred.contains(&work_id),
                             updated_at: None,
+                            content_crum: None,
                         }
                     },
                 )
@@ -4117,6 +4125,7 @@ fn dispatch_inner_read(
                             source_edition_info,
                             is_starred: starred.contains(&work_id),
                             updated_at: None,
+                            content_crum: None,
                         }
                     },
                 )
@@ -4309,6 +4318,11 @@ fn dispatch_inner_read(
                         source_edition_info: ws.source_edition_info().map(|s| s.to_string()),
                         is_starred: starred.contains(id),
                         updated_at: ws.latest_revision_timestamp(),
+                        content_crum: ws
+                            .work()
+                            .current_edition()
+                            .crum()
+                            .map(|c| c.iter().map(|b| format!("{:02x}", b)).collect()),
                     });
                 }
             }
@@ -4348,6 +4362,7 @@ fn dispatch_inner_read(
                         source_edition_info: None,
                         is_starred: starred.contains(&work_id),
                         updated_at: None,
+                        content_crum: None,
                     }
                 })
                 .collect();
