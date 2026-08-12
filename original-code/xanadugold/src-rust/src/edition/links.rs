@@ -323,6 +323,40 @@ pub struct CrossServerRef {
     pub excerpt: String,
 }
 
+impl CrossServerRef {
+    /// Parse the tumbler string into a typed `XudanuTumbler`.
+    /// Enables prefix queries, parent navigation, and Sequence algebra.
+    pub fn parsed_tumbler(&self) -> super::tumbler::XudanuTumbler {
+        super::tumbler::XudanuTumbler::parse(&self.tumbler)
+    }
+
+    /// Extract the work ID (first path element) from the tumbler.
+    pub fn work_id(&self) -> Option<u64> {
+        self.parsed_tumbler().first()
+    }
+
+    /// Extract character range from the tumbler path (elements 2-3).
+    pub fn char_range(&self) -> Option<(usize, usize)> {
+        self.parsed_tumbler().char_range()
+    }
+
+    /// Navigate to the parent tumbler (one level up).
+    pub fn parent_tumbler(&self) -> Option<String> {
+        self.parsed_tumbler().parent().map(|t| t.to_string())
+    }
+
+    /// Check if this reference is on the same server as another.
+    pub fn same_server_as(&self, other: &CrossServerRef) -> bool {
+        self.parsed_tumbler().same_server(&other.parsed_tumbler())
+    }
+
+    /// Length of common path prefix with another reference's tumbler.
+    pub fn common_prefix_depth(&self, other: &CrossServerRef) -> usize {
+        self.parsed_tumbler()
+            .common_prefix_len(&other.parsed_tumbler())
+    }
+}
+
 /// Parse the server component from a tumbler string.
 /// Returns (numeric_id, optional_domain_address).
 ///
@@ -1655,5 +1689,74 @@ mod tests {
         let (id, addr) = parse_tumbler_server("0.1");
         assert_eq!(id, 0);
         assert!(addr.is_none());
+    }
+
+    #[test]
+    fn cross_server_ref_tumbler_methods() {
+        let csr = CrossServerRef {
+            tumbler: "\"alice.example.com\".5.3.10.20".to_string(),
+            origin_server_id: 0,
+            origin_server_address: Some("alice.example.com".to_string()),
+            content_hash: [0u8; 32],
+            mime_type: "text/plain".to_string(),
+            byte_size: 100,
+            origin_author: "Alice".to_string(),
+            origin_author_key: [0u8; 32],
+            origin_server_sig: vec![],
+            fetched_at: 1000,
+            excerpt: "hello".to_string(),
+        };
+
+        assert_eq!(csr.work_id(), Some(5));
+        assert_eq!(csr.char_range(), Some((10, 20)));
+        assert_eq!(
+            csr.parent_tumbler(),
+            Some("\"alice.example.com\".5.3.10".to_string())
+        );
+    }
+
+    #[test]
+    fn cross_server_ref_same_server() {
+        let make_csr = |tumbler: &str| CrossServerRef {
+            tumbler: tumbler.to_string(),
+            origin_server_id: 0,
+            origin_server_address: None,
+            content_hash: [0u8; 32],
+            mime_type: "text/plain".to_string(),
+            byte_size: 0,
+            origin_author: String::new(),
+            origin_author_key: [0u8; 32],
+            origin_server_sig: vec![],
+            fetched_at: 0,
+            excerpt: String::new(),
+        };
+
+        let a = make_csr("\"alice.com\".5.3");
+        let b = make_csr("\"alice.com\".10.20");
+        let c = make_csr("\"bob.com\".5.3");
+
+        assert!(a.same_server_as(&b));
+        assert!(!a.same_server_as(&c));
+    }
+
+    #[test]
+    fn cross_server_ref_common_prefix() {
+        let make_csr = |tumbler: &str| CrossServerRef {
+            tumbler: tumbler.to_string(),
+            origin_server_id: 0,
+            origin_server_address: None,
+            content_hash: [0u8; 32],
+            mime_type: "text/plain".to_string(),
+            byte_size: 0,
+            origin_author: String::new(),
+            origin_author_key: [0u8; 32],
+            origin_server_sig: vec![],
+            fetched_at: 0,
+            excerpt: String::new(),
+        };
+
+        let a = make_csr("\"alice.com\".5.3.10.7");
+        let b = make_csr("\"alice.com\".5.3.20.1");
+        assert_eq!(a.common_prefix_depth(&b), 2);
     }
 }
