@@ -7,255 +7,309 @@ Udanax Gold C++ codebase. It is a balanced tree (Loaf/Split/Dsp) that
 supports efficient point lookup, region extraction, lazy displacement,
 and content-addressed subtree hashing.
 
-Currently the CRDT treats the enfilade as a dumb array: flatten the tree
-to a Vec at every operation, walk the Vec, then rebuild the tree from
-scratch. This document describes the plan to make the CRDT operate ON
-the tree directly, using the enfilade's structural properties.
+This document tracks the multi-phase plan to make the CRDT operate ON
+the tree directly, progressively approaching the original Gold enfilade
+design while retaining modern features (CRDT convergence, cryptographic
+provenance, federation, web platform).
 
 ## Design Principles
 
 - **Crum-first** -- use subtree hashes (crums) to skip identical regions
-- **Position-model-agnostic** -- Phase B/C work with any position type
-- **Tumbler layering** -- add SequenceSpace addressing alongside IntegerSpace
+- **Tumbler-native** -- migrate toward SequenceSpace positions
 - **Incremental delivery** -- each phase is independently shippable
 - **Non-breaking** -- existing serialized data continues to work
+- **Gold-inspired, not Gold-limited** -- adopt Gold concepts where they
+  add value, add modern features (CRDT, crypto, federation) that Gold
+  never had
 
-## Architecture Context
+## Current State (August 2025)
 
-### What the enfilade already provides
+### Completed
 
-| Capability | Status | Used in CRDT? |
+| Phase | What | Impact |
 |---|---|---|
-| `Loaf::compute_crum()` | Shipped (P0) | Yes -- Phase A fast-path |
-| `OrglRoot::with(pos, carrier)` | Production | No -- CRDT rebuilds from Vec |
-| `OrglRoot::without(pos)` | Production | No |
-| `OrglRoot::copy(region)` | Production | No |
-| `OrglRoot::combine(other)` | Production (disjoint only) | No |
-| `OrglRoot::splay(region)` | Tested, dormant | No |
-| `transformed_by(offset)` (Dsp) | Production | No |
-| `shared_region(other)` | Production | No |
+| Enfilade-merge 1-5 | Entry-level CRDT, provenance lifecycle | Foundation |
+| P0 | Subtree crums (BLAKE3 Merkle) | O(1) equality, 24 tests |
+| P1 | Inline coalesce in delta path | ~40% faster deltas |
+| Phase A | Crum fast-path in diff | O(1) merge, no concurrent edits |
+| Phase B | Alignment skip via crum | Skip O(n) when one side unchanged |
+| Phase C | Assembly skip for single-sided | No tree rebuild |
+| Phase D | Tumbler <-> Sequence bridge | Typed accessors on CrossServerRef |
+| Phase E | Eliminate Vec clone in delta | Remove O(n) allocation per edit |
+| Provenance | Span migration, non-text preservation | Attribution survives merges |
+| Blob hash | u64 -> String migration | JS precision fix |
 
-### What the space algebra provides (unused)
+### Test counts: 2931 Rust lib + 280 integration + 686 frontend = 3897
 
-| Module | Lines | Purpose |
-|---|---|---|
-| `space/sequence.rs` | 1248 | Tumbler positions (hierarchical, infinitely insertable) |
-| `space/integer.rs` | 726 | Integer positions (what enfilade uses now) |
-| `space/cross.rs` | 413 | CrossSpace: combines two spaces (document x character) |
-| `space/arrangement.rs` | 115 | Mappings between spaces (transclusion coordinates) |
-| `space/traits.rs` | 187 | Space, Position, Region, Dsp traits |
-| `space/order.rs` | 132 | Ordering specifications |
+### Performance comparison
 
-### What we lost by choosing i64 positions
-
-1. **Infinite insertability** -- with tumblers, inserting between 3 and 4
-   creates 3.1; no renumbering. With integers, everything above shifts.
-2. **Cross-document addressing** -- tumblers span documents natively;
-   integers are local to one edition.
-3. **Hierarchical operations** -- tumbler prefixes enable section-level
-   extraction and comparison; integers require a separate index.
-4. **Arrangement transforms** -- the arrangement module maps between
-   spaces for transclusion coordinates; this is not connected.
-
-### What we keep by staying i64 for now
-
-1. **Simplicity** -- every developer understands position 42.
-2. **Performance** -- i64 comparison is one instruction; tumbler
-   comparison loops over a Vec.
-3. **Memory** -- 8 bytes vs 24+ bytes per position.
-4. **Compatibility** -- all serialized data uses integer positions.
-
-## Phases
-
-### Phase A: Crum Fast-Path -- DONE
-
-**Committed**: `945f01a`
-
-Check root crums before doing any work in `three_way_diff`. When all
-three editions (base, A, B) have matching crums, return immediately.
-
-| Scenario | Before | After |
-|---|---|---|
-| No concurrent edits (most common) | O(n) | **O(1)** |
-| One side unchanged | O(n) | O(n) |
-| Both sides changed | O(n) | O(n) |
-
-### Phase B: Subtree Structural Diff
-
-Walk all three trees in parallel. Where subtree crums match across all
-three, skip that subtree entirely. Only descend into differing subtrees.
-
-**Algorithm**:
-```
-structural_diff(base, a, b):
-  if base.crum == a.crum and base.crum == b.crum:
-    return Unchanged  -- O(1) skip
-  if base.crum == a.crum:
-    return diff_base_vs_b(base, b)  -- only B changed
-  if base.crum == b.crum:
-    return diff_base_vs_a(base, a)  -- only A changed
-  -- all three differ -- descend
-  if all are Split nodes with compatible structure:
-    recurse into in_child and out_child triples
-  else:
-    fallback to entry-level alignment (existing code, small region only)
-```
-
-**Challenge**: The three trees may have different split points and
-depths. Walk in position space, not by matching tree nodes. Find
-"change boundaries" where crums diverge, skip between them.
-
-| Scenario | Before | After |
-|---|---|---|
-| Both edit different paragraphs | O(n) | **O(log n x k)** k=changed regions |
-| Both edit same paragraph | O(n) | O(leaf_size) |
-| Complete rewrite | O(n) | O(n) (degenerates) |
-
-**Estimated effort**: 1-2 days
-
-### Phase C: Tree-Native Merge Assembly
-
-Build the merged edition using `orgl.copy()` for unchanged regions
-instead of `from_bulk_entries()` for the entire result.
-
-**Current**:
-```
-assemble_merge_lww -> Vec<(pos, carrier)> -> from_bulk_entries -> O(n) rebuild
-```
-
-**Phase C**:
-```
-unchanged regions -> orgl.copy(region)    -> O(log n) per region
-changed regions   -> from_entries(small)  -> O(k) for changed only
-combined          -> orgl.combine()        -> O(log n)
-final renumber    -> single pass           -> O(n) but no alignment
-```
-
-**Position renumbering**: After assembly, positions must be sequential.
-Options:
-- Single-pass renumber (O(n) but simple, no alignment cost)
-- Dsp nodes (O(1) per shift, but creates chains)
-- Periodic compaction (renumber on save)
-
-**Estimated effort**: 1 day
-
-### Phase D: Tumbler Layer
-
-Add `SequenceSpace` (tumbler) addressing alongside the existing
-`IntegerSpace`. Use tumblers for cross-document features where they
-provide the most value; keep integers for document-level editing.
-
-**What tumblers enable**:
-
-1. **O(1) insertions** -- inserting between positions 3 and 4 creates
-   position 3.1. No renumbering. Eliminates the position problem that
-   makes enfilade-native delta application difficult.
-
-2. **Cross-document addressing** -- tumbler `doc_id.5.3` references
-   document doc_id, section 5, character 3. Native transclusion
-   coordinates without side tables.
-
-3. **Prefix-based section operations** -- "all content under section
-   1.2" is a prefix query. `orgl.copy(prefix_region(1.2))` extracts
-   a section in O(log n). Section-level crums compare two documents
-   section-by-section.
-
-4. **Arrangement transforms** -- the arrangement module maps between
-   spaces, enabling transclusion coordinate transforms: "show document
-   B's chars 10-20 at position 5 in document A."
-
-**Architecture**:
-```
-Document enfilade:    IntegerSpace (i64 positions)     -- existing, unchanged
-Cross-doc addressing: SequenceSpace (tumbler positions) -- new layer
-Compound enfilade:    CrossSpace(Seq, Int)             -- future
-Transclusion map:     Arrangement                       -- connects spaces
-```
-
-**Migration approach** (layered, not replacement):
-- Keep i64 positions for document-level editing
-- Add SequenceSpace for cross-document features
-- Use Arrangement to map between them
-- Existing serialized data continues to work
-
-**Estimated effort**: 3-5 days
-
-### Phase E: Enfilade-Native Delta Application
-
-With tumbler infrastructure in place, replace the flatten-walk-rebuild
-delta path with direct tree operations.
-
-**Current**:
-```
-apply_text_delta_to_edition:
-  flatten tree to Vec  -> O(n)
-  walk ops on Vec      -> O(ops)
-  rebuild tree         -> O(n)
-  coalesce             -> O(n)  [eliminated in P1]
-  Total: ~2x O(n)
-```
-
-**Phase E**:
-```
-apply_delta_to_orgl:
-  map char positions to entry positions (walk touched entries only)
-  for each delete: orgl.without(pos)    -> O(log n)
-  for each insert: orgl.with(pos, carrier) -> O(log n)
-  for each split:  without + two withs   -> O(log n)
-  Total: O(k log n) where k = touched entries
-```
-
-| Scenario | Before | After |
-|---|---|---|
-| Single char edit in 10K doc | O(10000) | **O(log 10000) ~ 14** |
-| Delete a paragraph | O(n) | O(s log n) s=paragraph size |
-| Paste 5 pages | O(n) | O(n log n) -- regression, use batch path |
-
-**Mitigation for large pastes**: detect large inserts (> threshold), fall
-back to batch `from_entries()` path. Best of both worlds.
-
-**Position management with tumblers**: O(1) insertions, no Dsp chains,
-no renumbering. This is the key advantage of having the tumbler layer.
-
-**Estimated effort**: 2-3 days (after Phase D)
-
-## Performance Summary
-
-| Operation | Before | Phase A-C | Phase D-E |
+| Operation | Before | After | Gold |
 |---|---|---|---|
-| Merge: no concurrent edits | O(n) | **O(1)** | O(1) |
-| Merge: small concurrent edits | O(n) | **O(log n x k)** | O(log n x k) |
-| Delta: single char edit | O(n) | O(n) | **O(log n)** |
-| Delta: large paste | O(n) | O(n) | O(n) batch fallback |
+| Merge (no concurrent edits) | O(n) | **O(1)** | O(1) |
+| Merge (small concurrent edits) | O(n) | **~O(n/2)** | O(log n x k) |
+| Delta (single char edit) | ~4x O(n) | **~1x O(n)** | O(log n) |
 | Equality check | O(n) | **O(1)** | O(1) |
-| Cross-document transclusion | Side table | Side Table | **Native (tumbler)** |
 
-## Completed Work
+### Enfilade feature activation
 
-| Date | Commit | Phase | Description |
-|---|---|---|---|
-| 2025-08-11 | `47404c7` | Enfilade-merge 1 | Eliminate text flattening from hot paths |
-| 2025-08-11 | `6c66d4b` | Enfilade-merge 2 | Provenance preservation through merges |
-| 2025-08-11 | `f289ad2` | Enfilade-merge 3 | Span provenance migration through deltas |
-| 2025-08-11 | `e62cc7f` | Enfilade-merge 4 | Provenance lifecycle verification tests |
-| 2025-08-11 | `f12b850` | Enfilade-merge 5 | Property tests + merge fuzzing |
-| 2025-08-11 | `1ff205b` | P0 | Subtree crums (Merkle hashing) |
-| 2025-08-11 | `2892265` | P0 tests | Expanded crum test coverage (24 tests) |
-| 2025-08-11 | `9d819f1` | P1 | Inline coalesce during delta application |
-| 2025-08-11 | `945f01a` | Phase A | Crum fast-path for three-way diff |
+| Capability | Status | Gold equivalent |
+|---|---|---|
+| Crums (Merkle hashes) | **Active** (24 tests) | OCs (original crums) |
+| with/without | Available | Primary edit path |
+| copy | Available | Transclusion extraction |
+| combine | Available (disjoint only) | Compound assembly |
+| Dsp | Working | Position management |
+| Splay | Dormant | Active in Gold |
+| Tumbler bridge | **Connected** | Native |
+| CrossSpace | Dormant | Compound documents |
+| Arrangement | Dormant | Transclusion mapping |
+
+## Roadmap: Approaching Gold
+
+### Phase F: Tumbler Position Layer
+
+**Goal**: Make tumblers the primary addressing model for cross-document
+operations, while keeping i64 for document-level editing.
+
+**What Gold had**: Tumbler positions everywhere. Inserting between
+positions 3 and 4 creates 3.1 -- no renumbering. Cross-document
+addressing via tumbler hierarchy.
+
+**What we do now**: i64 positions within a document, string-based
+tumblers for cross-server references.
+
+**Phase F delivers**:
+
+1. **Arrangement mapping** -- connect IntegerSpace to SequenceSpace
+   - `space/arrangement.rs` (115 lines) maps between spaces
+   - A document arrangement maps i64 char positions to tumblers
+   - Enables "what tumbler addresses char 42 of work 5?"
+
+2. **Section-level crums** -- compare documents at section granularity
+   - Partition an edition's entries by tumbler prefix (e.g., sections)
+   - Compute crum per section
+   - Two documents compared section-by-section, not entry-by-entry
+   - "Section 1.2 is identical" --> skip in diff
+
+3. **Typed tumbler in HyperRef** -- replace string positions with typed
+   - `HyperRef.start_position` / `end_position` become `Option<i64>`
+     (document-local) but gain a `tumbler_address: Option<XudanuTumbler>`
+     for cross-document references
+   - Links reference content by tumbler, not just work_id + char offset
+
+4. **Tumbler-based region queries**
+   - `edition.entries_under_prefix(prefix)` -- all entries in a section
+   - `edition.section_crum(prefix)` -- crum for one section
+   - Enables outline-aware operations
+
+**Estimated effort**: 3-4 days
+
+**Depends on**: Phase D (done)
+
+### Phase G: Splay Activation
+
+**Goal**: Activate the dormant splay code (140 lines, tested) in the
+CRDT path for locality optimization.
+
+**What Gold had**: Splay reorganizes the enfilade tree so that edited
+regions are co-located under a single subtree. After splaying around
+a changed region, the diff only needs to descend into one branch.
+
+**What we do now**: The tree structure is determined by bulk-build and
+never reorganized for locality.
+
+**Phase G delivers**:
+
+1. **Pre-merge splay** -- before three-way diff, splay base/A/B trees
+   around the changed region (identified by crum divergence)
+   - Changed entries co-located under one subtree
+   - Diff descends into only that subtree
+
+2. **Post-edit splay** -- after `apply_text_delta_to_edition`, splay
+   the result tree around the edited region
+   - Next edit in the same region hits a shallow subtree
+   - Repeated edits to the same paragraph are O(log k) not O(log n)
+
+3. **Splay + crum synergy** -- splayed subtrees have their own crums
+   - Compare two splayed subtrees in O(1)
+   - Only the "changed" subtree needs detailed comparison
+
+**Estimated effort**: 2-3 days
+
+**Depends on**: Phase F (for section-level splay targets)
+
+### Phase H: Compound Documents via CrossSpace
+
+**Goal**: Enable compound documents where sections come from different
+source works, addressed via CrossSpace tumblers.
+
+**What Gold had**: CrossSpace(DocumentSpace, CharacterSpace) for
+addressing content across document boundaries. Compound documents
+assembled from tumbler-addressed spans of multiple works.
+
+**What we do now**: Inline `RangeElement::Transclusion` elements that
+reference source works by ID + char range. No structural composition.
+
+**Phase H delivers**:
+
+1. **CrossSpace enfilade** -- an enfilade instantiated with
+   `CrossSpace2<SequenceSpace, IntegerSpace>` for compound documents
+   - Positions are `Tuple2(doc_tumbler, char_position)`
+   - A compound document contains spans from multiple source works
+   - Each span retains its source document identity in the position
+
+2. **Compound assembly via combine** -- use `OrglRoot::combine()` to
+   merge content from multiple works into a compound enfilade
+   - Each source work contributes a subtree
+   - The compound enfilade shares tree structure with sources
+
+3. **Arrangement-based transclusion mapping**
+   - An arrangement maps compound positions to source positions
+   - "Compound doc position 5 = Source doc B, chars 10-20"
+   - Enables following a transclusion back to its source
+
+**Estimated effort**: 4-5 days
+
+**Depends on**: Phase F (tumbler layer)
+
+### Phase I: O(log n) Delta Application
+
+**Goal**: Replace flatten-walk-rebuild with direct tree operations.
+
+**What Gold had**: All edits were O(log n) tree operations.
+Insert/delete operate on the tree directly, no flattening.
+
+**What we do now**: Flatten to Vec, walk, rebuild. O(n) per edit.
+
+**Phase I delivers**:
+
+1. **Character-to-entry mapping** -- walk only the touched entries
+   to map character delta positions to entry positions
+   - O(k) where k = entries in the edited region
+   - Not O(n) for all entries
+
+2. **Tree-native insert/delete**
+   - For each deleted entry: `orgl.without(pos)` -- O(log n)
+   - For each inserted entry: `orgl.with(pos, carrier)` -- O(log n)
+   - For splits: `without` + two `with` calls
+
+3. **Tumbler position management** (requires Phase F)
+   - Insertions create new tumbler positions (e.g., 3.1 between 3 and 4)
+   - No renumbering of existing positions
+   - No Dsp chains needed
+
+4. **Batch fallback for large edits**
+   - Detect when delta touches > threshold entries (e.g., > 20% of doc)
+   - Fall back to batch `from_bulk_entries` for efficiency
+   - Best of both worlds: O(log n) for small edits, O(n) for large
+
+**Estimated effort**: 3-5 days (after Phase F)
+
+**Depends on**: Phase F (tumbler positions for O(1) insertions)
+
+### Phase J: Overlapping-Domain Combine
+
+**Goal**: Enable `OrglRoot::combine()` for overlapping domains,
+unlocking structural merge.
+
+**What Gold had**: Combine worked for any two enfilades, including
+overlapping positions (with conflict resolution).
+
+**What we do now**: Combine fails for overlapping domains ("not yet
+supported"). The merge assembles from a flattened Vec instead.
+
+**Phase J delivers**:
+
+1. **LWW combine** -- when two enfilades overlap, combine with
+   last-writer-wins resolution at each position
+   - Uses crums to identify matching subtrees
+   - Only overlapping regions need conflict resolution
+
+2. **Structural merge via combine** -- replace `assemble_merge_lww`
+   with `combine` + `copy` operations
+   - Unchanged regions: `orgl.copy(region)` -- shares subtree
+   - Changed regions: build small replacement subtree
+   - Combine all pieces structurally
+
+**Estimated effort**: 2-3 days
+
+**Depends on**: Phase G (splay for region isolation), Phase I (tree-native ops)
+
+## Modern Features Beyond Gold
+
+These features have no Gold equivalent but are essential for Xudanu:
+
+### CRDT Convergence
+The three-way merge with LWW conflict resolution provides CRDT
+convergence. Gold was single-user only.
+
+### Cryptographic Provenance
+Ed25519-signed span provenance with tamper-evident attribution log.
+Gold had unsigned revision history.
+
+### Federation
+Cross-server content sharing with TOFU trust, Ed25519 signature
+verification, key rotation, attack detection. Gold had no networking.
+
+### Collaborative Editing
+Real-time multi-user editing via WebSocket with O-tree CRDT.
+Gold was offline single-user.
+
+### Transcopyright
+Per-work license metadata with transclusion compliance badges.
+Gold predated modern licensing concerns.
+
+## Priority Order
+
+```
+Phase F (Tumbler Layer)     ████████████░░░░  FOUNDATION (3-4d)
+Phase G (Splay Activation)  ████████░░░░░░░░  LOCALITY (2-3d)
+Phase I (O(log n) Edits)    ██████████████░░  PERFORMANCE (3-5d)
+Phase H (Compound Docs)     ████████████████  XANADU VISION (4-5d)
+Phase J (Overlap Combine)   ██████████░░░░░░  STRUCTURAL MERGE (2-3d)
+```
+
+**Recommended next step**: Phase F (Tumbler Position Layer).
+
+This is the foundation that unlocks everything else:
+- Phase I needs tumblers for O(1) insertions
+- Phase G needs section-level splay targets
+- Phase H needs cross-document addressing
+- Phase J needs tumbler positions for overlap resolution
 
 ## Relationship to Original Xanadu Concepts
 
-The enfilade was designed by Ted Nelson's team for exactly this purpose:
-efficient document editing with content-addressed subtrees, structural
-operations, and lazy position management.
+| Xanadu concept | Our implementation | Status |
+|---|---|---|
+| Enfilade (Loaf/Split/Dsp) | `orgl.rs` (1595 lines) | Ported, active |
+| Crum / OC (subtree hash) | `compute_crum()` BLAKE3 | Active, 24 tests |
+| Tumbler (hierarchical address) | `XudanuTumbler` + `Sequence` | Bridged |
+| Splay (locality restructuring) | `splay()` 140 lines | Tested, dormant |
+| CrossSpace (multi-space) | `space/cross.rs` 413 lines | Dormant |
+| Arrangement (space mapping) | `space/arrangement.rs` 115 lines | Dormant |
+| Transclusion | `RangeElement::Transclusion` | Active |
+| Compound document | CrossSpace enfilade | Planned (Phase H) |
+| Backlinks | `HyperLink` bidirectional | Active |
+| Docuverse (federated) | Cross-server refs + trust | Active |
 
-- **Crums** = Xanadu "OC" (original crum) -- content-addressed subtree hashes
-- **Splay** = core restructuring operation for spatial locality
-- **Dsp** = lazy displacement node for position shifts
-- **Tumblers** = hierarchical addressing (1.2.3.4) for cross-document referencing
-- **Arrangement** = coordinate transform between spaces (transclusion mapping)
-- **CrossSpace** = combining document-level and character-level addressing
+## Completed Work Log
 
-Making the CRDT enfilade-native is using the enfilade as designed, rather
-than treating it as a storage container.
+| Date | Commit | Phase | Description |
+|---|---|---|---|
+| 2025-08-11 | `47404c7` | EM-1 | Eliminate text flattening from hot paths |
+| 2025-08-11 | `6c66d4b` | EM-2 | Provenance preservation through merges |
+| 2025-08-11 | `f289ad2` | EM-3 | Span provenance migration through deltas |
+| 2025-08-11 | `e62cc7f` | EM-4 | Provenance lifecycle verification tests |
+| 2025-08-11 | `f12b850` | EM-5 | Property tests + merge fuzzing |
+| 2025-08-11 | `1ff205b` | P0 | Subtree crums (Merkle hashing) |
+| 2025-08-11 | `2892265` | P0 | Expanded crum test coverage (24 tests) |
+| 2025-08-11 | `9d819f1` | P1 | Inline coalesce during delta application |
+| 2025-08-11 | `945f01a` | A | Crum fast-path for three-way diff |
+| 2025-08-11 | `8d79f4c` | B | Crum-based alignment skip |
+| 2025-08-11 | `202856e` | C | Skip merge assembly for single-sided edits |
+| 2025-08-11 | `b730ee4` | D | Tumbler enhancements + Sequence bridge |
+| 2025-08-11 | `ff16f50` | D | Typed tumbler accessors on CrossServerRef |
+| 2025-08-11 | `16fd000` | E | Eliminate Vec clone in delta hot path |
+| 2025-08-11 | `b6bac71` | fix | Attribution spans use provenance display name |
+| 2025-08-11 | `9163469` | fix | Backlink notification non-blocking |
+| 2025-08-11 | `04b4ae8` | fix | Blob hash u64->String migration |
