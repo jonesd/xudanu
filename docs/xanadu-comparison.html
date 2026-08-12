@@ -415,7 +415,7 @@ All trademarks belong to their respective owners.
 
 <h2 id="s5">5. Xudanu <span class="tag tag-xudanu">2026</span></h2>
 
-<p>Xudanu began as a direct reading of the Udanax-Gold C++ source, migrating concepts into Rust. Early development followed Gold's design closely. The project then diverged significantly: the adoption of BLAKE3 for content hashing opened the door to verifiable cross-server content (impossible in Gold's trust model); React and WebSocket replaced the traditional client architecture; and most fundamentally, the O-tree CRDT with inline transclusion elements replaced the enfilade as the core data structure. Many components from Gold were dropped along the way &mdash; the FeBe protocol, the enfilade tree, the Smalltalk cross-compilation pipeline. What remains is the conceptual DNA: tumblers, transclusion, typed links, bidirectional connections, provenance tracing, and the principle that links are unbreakable.</p>
+<p>Xudanu began as a direct reading of the Udanax-Gold C++ source, migrating concepts into Rust. Early development followed Gold's design closely. The project then diverged significantly: the adoption of BLAKE3 for content hashing opened the door to verifiable cross-server content (impossible in Gold's trust model); React and WebSocket replaced the traditional client architecture; and the O-tree CRDT with inline transclusion elements was layered on top of the enfilade for concurrent editing. The enfilade tree itself (ported from Gold, 1595 lines) remains as the core storage, now with subtree crums (BLAKE3 Merkle hashes), tumbler &harr; Sequence algebra bridge, splay locality optimization, and overlapping-domain combine (FR-34). What remains from Gold is both conceptual DNA and working code: the enfilade tree, tumblers, transclusion, typed links, bidirectional connections, provenance tracing, and the principle that links are unbreakable.</p>
 
 <h3 id="s5a">Architecture</h3>
 
@@ -509,11 +509,10 @@ All trademarks belong to their respective owners.
 <h3 id="s5c">Limitations</h3>
 
 <ul>
-  <li><span class="con">&#10007;</span> <strong>No enfilade</strong> &mdash; the O-tree CRDT is conceptually different; some Gold algorithms (cranking, umbing) have no equivalent</li>
+  <li><span class="pro">&#10003;</span> <strong>Enfilade-native CRDT (FR-34)</strong> &mdash; the Gold enfilade IS ported and active: subtree crums (BLAKE3 Merkle hashes) for O(1) equality, chunk-level diff, splay for locality, tumbler &harr; Sequence bridge, and overlapping-domain combine. See <code>docs/dev/FR-34-enfilade-native.md</code></li>
   <li><span class="pro">&#10003;</span> <strong>Intercomparison implemented</strong> &mdash; side-by-side document comparison with bezier connections, shared passage detection, coverage metrics, and AI-powered diff narration</li>
   <li><span class="con">&#10007;</span> <strong>No royalty system</strong> &mdash; byte tracking exists (record_royalty) but no payment mechanism; Transcopyright licensing (FR-24) provides the legal framework</li>
   <li><span class="con">&#10007;</span> <strong>Not production-hardened</strong> &mdash; v1.3.0, actively developed; suitable for self-hosted use</li>
-  <li><span class="con">&#10007;</span> <strong>Single-server focus</strong> &mdash; cluster federation (FR-3) exists but is optional; cross-server (FR-7) is the primary model</li>
   <li><span class="con">&#10007;</span> <strong>No mobile client</strong> &mdash; desktop browser only (though responsive design works on tablets)</li>
   <li><span class="con">&#10007;</span> <strong>Wasm incomplete</strong> &mdash; browser-side CRDT compilation is stubbed but not functional</li>
 </ul>
