@@ -2280,8 +2280,16 @@ export function WorkspaceShell() {
                   {workMeta?.collection && <span>· {workMeta.collection}</span>}
                   {workMeta?.publishedAt && <span>· {workMeta.publishedAt}</span>}
                   <span>· {workIdDisplay}</span>
-                  <span className="ws-doc-pid">
-                    xan://{serverDomain}.{workIdDisplay}
+                  <span
+                    className="ws-doc-pid"
+                    style={{ cursor: "pointer", userSelect: "all" }}
+                    title="Click to copy tumbler address"
+                    onClick={() => {
+                      const tumbler = `"${serverDomain}".${workIdDisplay}`;
+                      navigator.clipboard?.writeText(tumbler);
+                    }}
+                  >
+                    "{serverDomain}".{workIdDisplay}
                   </span>
                 </div>
               </header>
