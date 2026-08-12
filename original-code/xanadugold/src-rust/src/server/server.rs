@@ -1315,6 +1315,28 @@ impl Server {
         }
     }
 
+    /// Create a DocumentArrangement for a work on this server.
+    /// Enables typed tumbler addressing: position ↔ tumbler conversion,
+    /// parent navigation, prefix queries, Sequence algebra.
+    pub fn document_arrangement(
+        &self,
+        work_be_id: BeId,
+    ) -> crate::edition::tumbler::DocumentArrangement {
+        let server = self.public_address.as_deref().unwrap_or("localhost");
+        crate::edition::tumbler::DocumentArrangement::new(server, work_be_id as u64)
+    }
+
+    /// Generate a typed tumbler for a specific work + revision.
+    pub fn work_tumbler(
+        &self,
+        work_be_id: BeId,
+        revision: u64,
+    ) -> crate::edition::tumbler::XudanuTumbler {
+        self.document_arrangement(work_be_id)
+            .work_tumbler()
+            .append(revision)
+    }
+
     pub fn total_revision_count(&self) -> u64 {
         self.works
             .values()
@@ -34298,5 +34320,50 @@ mod tests_security_tracker {
             alert,
             SecurityAlert::ConsecutiveSignatureFailures { .. }
         ));
+    }
+
+    #[test]
+    fn server_document_arrangement() {
+        let mut server = Server::new();
+        server.public_address = Some("alice.example.com".to_string());
+        let arr = server.document_arrangement(42);
+        assert_eq!(arr.server(), "alice.example.com");
+        assert_eq!(arr.work_id(), 42);
+
+        let tumbler = arr.to_tumbler(10);
+        assert_eq!(tumbler.server(), "alice.example.com");
+        assert_eq!(tumbler.path(), &[42, 10]);
+    }
+
+    #[test]
+    fn server_work_tumbler() {
+        let mut server = Server::new();
+        server.public_address = Some("bob.com".to_string());
+        let tumbler = server.work_tumbler(5, 3);
+        assert_eq!(tumbler.server(), "bob.com");
+        assert_eq!(tumbler.path(), &[5, 3]);
+
+        let parent = tumbler.parent().unwrap();
+        assert_eq!(parent.path(), &[5]);
+    }
+
+    #[test]
+    fn server_document_arrangement_no_public_address() {
+        let server = Server::new();
+        let arr = server.document_arrangement(1);
+        assert_eq!(arr.server(), "localhost");
+    }
+
+    #[test]
+    fn server_tumbler_roundtrip() {
+        let mut server = Server::new();
+        server.public_address = Some("alice.com".to_string());
+
+        let arr = server.document_arrangement(42);
+        let pos = 15i64;
+        let tumbler = arr.to_tumbler(pos);
+        let recovered = arr.from_tumbler(&tumbler);
+        assert_eq!(recovered, Some(pos));
+        assert!(arr.owns_tumbler(&tumbler));
     }
 }
