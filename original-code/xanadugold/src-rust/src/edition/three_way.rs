@@ -2948,4 +2948,73 @@ mod tests {
         assert!(has_alice, "Alice attributable after 2 merge rounds");
         assert!(has_bob, "Bob attributable after 2 merge rounds");
     }
+
+    #[test]
+    fn benchmark_merge_no_concurrent_edits() {
+        let text: String = (0..1000)
+            .map(|i| char::from_u32(97 + i % 26).unwrap())
+            .collect();
+        let base = text_edition(&text);
+        let a = base.clone();
+        let b = base.clone();
+
+        let start = std::time::Instant::now();
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+        let elapsed = start.elapsed();
+
+        assert_eq!(mr.merged.to_text(), text);
+        println!("merge_no_concurrent (1000 entries): {:?}", elapsed);
+    }
+
+    #[test]
+    fn benchmark_merge_single_sided() {
+        let text: String = (0..1000)
+            .map(|i| char::from_u32(97 + i % 26).unwrap())
+            .collect();
+        let base = text_edition(&text);
+        let a = text_edition(&format!("{}!", &text));
+
+        let start = std::time::Instant::now();
+        let mr = three_way_merge(&base, &a, &base, MergeStrategy::LastWriterWins).unwrap();
+        let elapsed = start.elapsed();
+
+        assert!(mr.merged.to_text().contains('!'));
+        println!("merge_single_sided (1000 entries): {:?}", elapsed);
+    }
+
+    #[test]
+    fn benchmark_merge_both_sides_changed() {
+        let text: String = (0..1000)
+            .map(|i| char::from_u32(97 + i % 26).unwrap())
+            .collect();
+        let base = text_edition(&text);
+        let a = text_edition(&format!("X{}", &text[..999]));
+        let b = text_edition(&format!("{}{}", &text[..999], "Y"));
+
+        let start = std::time::Instant::now();
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+        let elapsed = start.elapsed();
+
+        println!("merge_both_changed (1000 entries): {:?}", elapsed);
+    }
+
+    #[test]
+    fn benchmark_crum_comparison() {
+        let text: String = (0..1000)
+            .map(|i| char::from_u32(97 + i % 26).unwrap())
+            .collect();
+        let e1 = text_edition(&text);
+        let e2 = text_edition(&text);
+        let e3 = text_edition(&format!("{}!", &text));
+
+        let start = std::time::Instant::now();
+        let c1 = e1.crum();
+        let c2 = e2.crum();
+        let c3 = e3.crum();
+        let elapsed = start.elapsed();
+
+        assert_eq!(c1, c2);
+        assert_ne!(c1, c3);
+        println!("crum_comparison (1000 entries): {:?}", elapsed);
+    }
 }

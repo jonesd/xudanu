@@ -1338,9 +1338,7 @@ impl Server {
     }
 
     /// Extract work ID from a typed tumbler.
-    pub fn tumbler_to_work_id(
-        tumbler: &crate::edition::tumbler::XudanuTumbler,
-    ) -> Option<BeId> {
+    pub fn tumbler_to_work_id(tumbler: &crate::edition::tumbler::XudanuTumbler) -> Option<BeId> {
         tumbler.first().map(|id| id as BeId)
     }
 
