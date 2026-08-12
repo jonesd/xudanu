@@ -275,10 +275,10 @@ impl XudanuTumbler {
     /// Extract the character range (start, end) from path elements 2 and 3.
     /// Returns None if the path doesn't have at least 4 elements.
     pub fn char_range(&self) -> Option<(usize, usize)> {
-        if self.path.len() >= 4 {
-            Some((self.path[2] as usize, self.path[3] as usize))
-        } else {
-            None
+        match self.path.len() {
+            3 => Some((self.path[1] as usize, self.path[2] as usize)),
+            n if n >= 4 => Some((self.path[2] as usize, self.path[3] as usize)),
+            _ => None,
         }
     }
 }
@@ -308,6 +308,78 @@ fn parse_path(s: &str) -> Vec<u64> {
         return Vec::new();
     }
     s.split('.').filter_map(|p| p.parse::<u64>().ok()).collect()
+}
+
+/// Arrangement mapping between IntegerSpace (document-local i64 positions)
+/// and SequenceSpace (global tumbler addresses).
+///
+/// A document arrangement knows its server identity and work ID, and can
+/// translate between local positions and global tumblers:
+///
+///   local position 42 in work 5 on "alice.com"  ↔  tumbler "alice.com".5.42
+///
+/// This is the bridge between the enfilade's i64 position model and the
+/// tumbler-based cross-document addressing model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocumentArrangement {
+    server: String,
+    work_id: u64,
+}
+
+impl DocumentArrangement {
+    /// Create a new arrangement for a document on a specific server.
+    pub fn new(server: &str, work_id: u64) -> Self {
+        DocumentArrangement {
+            server: server.to_string(),
+            work_id,
+        }
+    }
+
+    /// Map a local i64 position to a global tumbler address.
+    pub fn to_tumbler(&self, position: i64) -> XudanuTumbler {
+        XudanuTumbler::cross(&self.server, vec![self.work_id, position as u64])
+    }
+
+    /// Map a range of local positions to tumbler addresses.
+    pub fn to_tumbler_range(&self, start: i64, end: i64) -> XudanuTumbler {
+        XudanuTumbler::cross(&self.server, vec![self.work_id, start as u64, end as u64])
+    }
+
+    /// Try to map a tumbler back to a local position.
+    /// Returns None if the tumbler doesn't belong to this document.
+    pub fn from_tumbler(&self, tumbler: &XudanuTumbler) -> Option<i64> {
+        let path = tumbler.path();
+        if path.len() < 2 {
+            return None;
+        }
+        if path[0] != self.work_id {
+            return None;
+        }
+        if tumbler.server() != self.server {
+            return None;
+        }
+        Some(path[1] as i64)
+    }
+
+    /// Check if a tumbler belongs to this document.
+    pub fn owns_tumbler(&self, tumbler: &XudanuTumbler) -> bool {
+        tumbler.server() == self.server && tumbler.first() == Some(self.work_id)
+    }
+
+    /// The server identity.
+    pub fn server(&self) -> &str {
+        &self.server
+    }
+
+    /// The work ID.
+    pub fn work_id(&self) -> u64 {
+        self.work_id
+    }
+
+    /// Create a work-level tumbler (no position).
+    pub fn work_tumbler(&self) -> XudanuTumbler {
+        XudanuTumbler::for_work(&self.server, self.work_id)
+    }
 }
 
 #[cfg(test)]
@@ -547,5 +619,78 @@ mod tests {
         assert!(char_pos.starts_with_path(section.path()));
         assert_eq!(char_pos.common_prefix_len(&section), 2);
         assert_eq!(section.parent().unwrap(), doc);
+    }
+
+    #[test]
+    fn arrangement_position_to_tumbler() {
+        let arr = DocumentArrangement::new("alice.com", 5);
+        let t = arr.to_tumbler(42);
+        assert_eq!(t.server(), "alice.com");
+        assert_eq!(t.path(), &[5, 42]);
+    }
+
+    #[test]
+    fn arrangement_tumbler_to_position() {
+        let arr = DocumentArrangement::new("alice.com", 5);
+        let t = arr.to_tumbler(42);
+        assert_eq!(arr.from_tumbler(&t), Some(42));
+    }
+
+    #[test]
+    fn arrangement_rejects_foreign_tumbler() {
+        let arr = DocumentArrangement::new("alice.com", 5);
+        let foreign = XudanuTumbler::cross("bob.com", vec![5, 42]);
+        assert!(!arr.owns_tumbler(&foreign));
+        assert_eq!(arr.from_tumbler(&foreign), None);
+
+        let wrong_work = XudanuTumbler::cross("alice.com", vec![99, 42]);
+        assert!(!arr.owns_tumbler(&wrong_work));
+    }
+
+    #[test]
+    fn arrangement_range_to_tumbler() {
+        let arr = DocumentArrangement::new("alice.com", 5);
+        let t = arr.to_tumbler_range(10, 20);
+        assert_eq!(t.path(), &[5, 10, 20]);
+        assert_eq!(t.char_range(), Some((10, 20)));
+    }
+
+    #[test]
+    fn arrangement_work_tumbler() {
+        let arr = DocumentArrangement::new("alice.com", 5);
+        let wt = arr.work_tumbler();
+        assert_eq!(wt.path(), &[5]);
+        assert_eq!(wt.server(), "alice.com");
+    }
+
+    #[test]
+    fn range_crum_for_section() {
+        use crate::edition::Edition;
+        let ed = Edition::from_text("hello world");
+        let entries = ed.cached_entries();
+        let n = entries.len() as i64;
+        let crum1 = ed.range_crum(0, n);
+        let crum2 = ed.range_crum(0, n);
+        assert_eq!(crum1, crum2, "same range should produce same crum");
+
+        let crum_half = ed.range_crum(0, n / 2);
+        assert_ne!(crum1, crum_half, "different range should differ");
+    }
+
+    #[test]
+    fn range_crum_empty_is_none() {
+        use crate::edition::Edition;
+        let ed = Edition::from_text("hello");
+        assert!(ed.range_crum(100, 200).is_none());
+    }
+
+    #[test]
+    fn entries_in_range_query() {
+        use crate::edition::Edition;
+        let ed = Edition::from_text("abcde");
+        let mid = ed.entries_in_range(1, 4);
+        assert_eq!(mid.len(), 3);
+        assert_eq!(mid[0].0, 1);
+        assert_eq!(mid[2].0, 3);
     }
 }

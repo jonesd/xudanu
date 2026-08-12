@@ -643,6 +643,34 @@ impl Edition {
             .collect()
     }
 
+    /// Compute a crum for a range of entries within the edition.
+    /// Enables section-level comparison: two editions can be compared
+    /// section-by-section by computing range crums.
+    pub fn range_crum(&self, start_pos: i64, end_pos: i64) -> Option<crate::edition::orgl::Crum> {
+        let entries = self.cached_entries();
+        let filtered: Vec<_> = entries
+            .iter()
+            .filter(|(pos, _)| *pos >= start_pos && *pos < end_pos)
+            .cloned()
+            .collect();
+        if filtered.is_empty() {
+            return None;
+        }
+        let region = XnRegion::interval(start_pos, end_pos);
+        Some(crate::edition::orgl::compute_leaf_crum(
+            &filtered, &region, &None,
+        ))
+    }
+
+    /// Get entries within a position range.
+    pub fn entries_in_range(&self, start_pos: i64, end_pos: i64) -> Vec<(i64, Arc<Carrier>)> {
+        self.cached_entries()
+            .iter()
+            .filter(|(pos, _)| *pos >= start_pos && *pos < end_pos)
+            .cloned()
+            .collect()
+    }
+
     pub fn extract_outline(&self) -> Vec<OutlineEntry> {
         let text = self.to_text();
         let mut results = Vec::new();

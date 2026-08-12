@@ -7,7 +7,7 @@ const MAX_LEAF_SIZE: usize = 16384;
 
 pub type Crum = [u8; 32];
 
-fn compute_leaf_crum(
+pub fn compute_leaf_crum(
     entries: &[(i64, Arc<Carrier>)],
     region: &XnRegion,
     default: &Option<Arc<Carrier>>,
