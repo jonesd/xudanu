@@ -150,6 +150,24 @@ struct PosEntry {
 }
 
 pub fn three_way_diff(base: &Edition, a: &Edition, b: &Edition) -> ThreeWayDiff {
+    let base_crum = base.crum();
+    let a_crum = a.crum();
+    let b_crum = b.crum();
+
+    if base_crum.is_some() && base_crum == a_crum && base_crum == b_crum {
+        let base_positions: Vec<i64> = base.cached_entries().iter().map(|(p, _)| *p).collect();
+        return ThreeWayDiff {
+            unchanged: vec![AlignedRun {
+                a_positions: base_positions.clone(),
+                b_positions: base_positions.clone(),
+                base_positions,
+            }],
+            only_a: Vec::new(),
+            only_b: Vec::new(),
+            conflict: Vec::new(),
+        };
+    }
+
     let base_e = base.cached_entries();
     let a_e = a.cached_entries();
     let b_e = b.cached_entries();
