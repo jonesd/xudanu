@@ -181,8 +181,16 @@ pub fn three_way_diff(base: &Edition, a: &Edition, b: &Edition) -> ThreeWayDiff 
         };
     }
 
-    let base_to_a = compute_alignment(&base_e, &a_e);
-    let base_to_b = compute_alignment(&base_e, &b_e);
+    let base_to_a = if base_crum == a_crum && base_crum.is_some() {
+        (0..base_e.len()).map(Some).collect::<Vec<_>>()
+    } else {
+        compute_alignment(&base_e, &a_e)
+    };
+    let base_to_b = if base_crum == b_crum && base_crum.is_some() {
+        (0..base_e.len()).map(Some).collect::<Vec<_>>()
+    } else {
+        compute_alignment(&base_e, &b_e)
+    };
 
     let segments = build_segments(&base_e, &a_e, &b_e, &base_to_a, &base_to_b);
 
@@ -2582,6 +2590,46 @@ mod tests {
                 prop_assert_eq!(id.position, i as i64);
                 prop_assert!(id.is_text);
             }
+        }
+
+        #[test]
+        fn prop_crum_skip_one_side_unchanged(
+            base_text in "[a-z]{5,30}",
+            b_text in "[a-z]{5,30}",
+        ) {
+            prop_assume!(base_text != b_text);
+            let base = text_edition(&base_text);
+            let a = base.clone();
+            let b = text_edition(&b_text);
+
+            let diff = three_way_diff(&base, &a, &b);
+            let has_changes = !diff.only_b.is_empty() || !diff.conflict.is_empty();
+            prop_assert!(
+                has_changes,
+                "B differs from base, so diff should have changes"
+            );
+        }
+
+        #[test]
+        fn prop_crum_skip_both_sides_identical(
+            base_text in "[a-z]{5,30}",
+            edit_text in "[a-z]{5,30}",
+        ) {
+            prop_assume!(base_text != edit_text);
+            let base = text_edition(&base_text);
+            let a = text_edition(&edit_text);
+            let b = text_edition(&edit_text);
+
+            let mr = three_way_merge(
+                &base, &a, &b, MergeStrategy::LastWriterWins,
+            ).unwrap();
+
+            let merged = mr.merged.to_text();
+            prop_assert!(
+                merged.contains(&edit_text[..1]),
+                "merged should contain content from both sides (which agree): got {:?}",
+                merged
+            );
         }
     }
 

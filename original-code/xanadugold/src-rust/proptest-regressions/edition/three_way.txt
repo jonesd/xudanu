@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 281b6fd273b1df8d71656f56413b3d06787152dd6a3679f30f0b08ab1ebace71 # shrinks to base_text = "jbcb", a_text = "cccccckbk", b_text = "cab"
+cc 8d606e8b7707f0643bc7dd8918cd0e23308ad3a006c4bf22663cd33c31b21fd3 # shrinks to base_text = "cbdpc", b_text = "ccdpb"
