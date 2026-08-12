@@ -264,6 +264,41 @@ impl CompoundSpan {
         self.char_start = new_start;
         self.char_end = new_end;
     }
+
+    /// Convert this span to a tumbler address using a document arrangement.
+    /// Produces `"server".work_id.char_start.char_end`.
+    pub fn to_tumbler(
+        &self,
+        arrangement: &super::tumbler::DocumentArrangement,
+    ) -> super::tumbler::XudanuTumbler {
+        arrangement.to_tumbler_range(self.char_start as i64, self.char_end as i64)
+    }
+
+    /// Construct a CompoundSpan from a tumbler address.
+    /// The tumbler must have at least 3 path elements: [work_id, start, end].
+    pub fn from_tumbler(tumbler: &super::tumbler::XudanuTumbler) -> Option<Self> {
+        let path = tumbler.path();
+        if path.len() < 3 {
+            return None;
+        }
+        Some(CompoundSpan::new(
+            path[0],
+            path[1] as usize,
+            path[2] as usize,
+        ))
+    }
+
+    /// Check if this span references the same source as another.
+    pub fn same_source(&self, other: &CompoundSpan) -> bool {
+        self.source_work_id == other.source_work_id
+    }
+
+    /// Check if this span overlaps with another (same source, overlapping ranges).
+    pub fn overlaps(&self, other: &CompoundSpan) -> bool {
+        self.source_work_id == other.source_work_id
+            && self.char_start < other.char_end
+            && other.char_start < self.char_end
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -872,5 +907,62 @@ mod tests {
         );
         assert_eq!(s, 0);
         assert_eq!(e, 3);
+    }
+
+    #[test]
+    fn compound_span_to_tumbler() {
+        let span = CompoundSpan::new(5, 10, 20);
+        let arr = super::super::tumbler::DocumentArrangement::new("alice.com", 5);
+        let t = span.to_tumbler(&arr);
+        assert_eq!(t.server(), "alice.com");
+        assert_eq!(t.path(), &[5, 10, 20]);
+    }
+
+    #[test]
+    fn compound_span_from_tumbler() {
+        let t = super::super::tumbler::XudanuTumbler::cross("alice.com", vec![5, 10, 20]);
+        let span = CompoundSpan::from_tumbler(&t).unwrap();
+        assert_eq!(span.source_work_id(), 5);
+        assert_eq!(span.char_start(), 10);
+        assert_eq!(span.char_end(), 20);
+    }
+
+    #[test]
+    fn compound_span_from_tumbler_too_short() {
+        let t = super::super::tumbler::XudanuTumbler::cross("alice.com", vec![5]);
+        assert!(CompoundSpan::from_tumbler(&t).is_none());
+    }
+
+    #[test]
+    fn compound_span_overlaps() {
+        let a = CompoundSpan::new(5, 10, 20);
+        let b = CompoundSpan::new(5, 15, 25);
+        let c = CompoundSpan::new(5, 20, 30);
+        let d = CompoundSpan::new(6, 10, 20);
+
+        assert!(a.overlaps(&b), "overlapping ranges same source");
+        assert!(!a.overlaps(&c), "adjacent ranges don't overlap");
+        assert!(!a.overlaps(&d), "different source doesn't overlap");
+    }
+
+    #[test]
+    fn compound_span_same_source() {
+        let a = CompoundSpan::new(5, 0, 10);
+        let b = CompoundSpan::new(5, 20, 30);
+        let c = CompoundSpan::new(6, 0, 10);
+
+        assert!(a.same_source(&b));
+        assert!(!a.same_source(&c));
+    }
+
+    #[test]
+    fn compound_span_tumbler_roundtrip() {
+        let span = CompoundSpan::new(42, 100, 200);
+        let arr = super::super::tumbler::DocumentArrangement::new("bob.com", 42);
+        let tumbler = span.to_tumbler(&arr);
+        let back = CompoundSpan::from_tumbler(&tumbler).unwrap();
+        assert_eq!(back.source_work_id(), 42);
+        assert_eq!(back.char_start(), 100);
+        assert_eq!(back.char_end(), 200);
     }
 }
