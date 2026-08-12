@@ -1140,6 +1140,7 @@ fn migrate_span_provenance(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::edition::provenance::{AuthorType, ElementProvenance};
     use crate::edition::{Provenance, RangeElement};
     use proptest::prelude::*;
 
@@ -2564,5 +2565,250 @@ mod tests {
                 prop_assert!(id.is_text);
             }
         }
+    }
+
+    fn alice_prov() -> ElementProvenance {
+        ElementProvenance {
+            author_public_key: [1; 32],
+            author_display_name: "Alice".to_string(),
+            author_club_id: 0,
+            timestamp: 1000,
+            author_type: AuthorType::Human,
+            llm_model: None,
+            historical_author_id: None,
+            source_work_id: None,
+            transcluded_by: None,
+            derived_by: None,
+        }
+    }
+
+    fn bob_prov() -> ElementProvenance {
+        ElementProvenance {
+            author_public_key: [2; 32],
+            author_display_name: "Bob".to_string(),
+            author_club_id: 0,
+            timestamp: 2000,
+            author_type: AuthorType::Human,
+            llm_model: None,
+            historical_author_id: None,
+            source_work_id: None,
+            transcluded_by: None,
+            derived_by: None,
+        }
+    }
+
+    fn edition_chars_prov(text: &str, prov: &ElementProvenance) -> Edition {
+        let entries: Vec<(i64, Arc<Carrier>)> = text
+            .chars()
+            .enumerate()
+            .map(|(i, ch)| {
+                let carrier = Carrier::new(RangeElement::text(ch.to_string()))
+                    .with_provenance((*prov).clone());
+                (i as i64, Arc::new(carrier))
+            })
+            .collect();
+        Edition::from_entries(entries)
+    }
+
+    fn edition_mixed_prov(parts: &[(&str, &ElementProvenance)]) -> Edition {
+        let mut entries = Vec::new();
+        let mut pos = 0i64;
+        for (text, prov) in parts {
+            for ch in text.chars() {
+                let carrier = Carrier::new(RangeElement::text(ch.to_string()))
+                    .with_provenance((**prov).clone());
+                entries.push((pos, Arc::new(carrier)));
+                pos += 1;
+            }
+        }
+        Edition::from_entries(entries)
+    }
+
+    #[test]
+    fn lifecycle_multi_author_concurrent_edit() {
+        let alice = alice_prov();
+        let bob = bob_prov();
+
+        let base = edition_chars_prov("hello world", &alice);
+        let a = edition_chars_prov("hello world!", &alice);
+        let b = edition_mixed_prov(&[("HELLO", &bob), (" world", &alice)]);
+
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+
+        let merged_text = mr.merged.to_text();
+        assert!(merged_text.contains("HELLO"), "Bob's edit should survive");
+        assert!(
+            merged_text.contains(" world"),
+            "unchanged content should survive"
+        );
+        assert!(merged_text.contains('!'), "Alice's edit should survive");
+
+        let entries = mr.merged.all_entries();
+        let has_alice = entries.iter().any(|(_, c)| {
+            c.provenance
+                .as_ref()
+                .map_or(false, |p| p.author_display_name == "Alice")
+        });
+        let has_bob = entries.iter().any(|(_, c)| {
+            c.provenance
+                .as_ref()
+                .map_or(false, |p| p.author_display_name == "Bob")
+        });
+        assert!(has_alice, "Alice should be attributable in merged result");
+        assert!(has_bob, "Bob should be attributable in merged result");
+    }
+
+    #[test]
+    fn lifecycle_split_preserves_original_author() {
+        let alice = alice_prov();
+
+        let entries: Vec<(i64, Arc<Carrier>)> = vec![
+            (
+                0,
+                Arc::new(
+                    Carrier::new(RangeElement::text("hello".to_string()))
+                        .with_provenance(alice.clone()),
+                ),
+            ),
+            (
+                1,
+                Arc::new(
+                    Carrier::new(RangeElement::text("world".to_string()))
+                        .with_provenance(alice.clone()),
+                ),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+
+        use crate::server::otree_crdt::apply_text_delta_to_edition;
+        use crate::server::transport::protocol::TextDeltaOp;
+
+        let result = apply_text_delta_to_edition(
+            &edition,
+            &[
+                TextDeltaOp::Retain { count: 3 },
+                TextDeltaOp::Delete { count: 2 },
+                TextDeltaOp::Retain { count: 5 },
+            ],
+            None,
+        );
+
+        assert_eq!(result.to_text(), "helworld");
+        let all_have_alice = result
+            .all_entries()
+            .iter()
+            .filter(|(_, c)| c.element.as_text().is_some())
+            .all(|(_, c)| {
+                c.provenance
+                    .as_ref()
+                    .map_or(false, |p| p.author_display_name == "Alice")
+            });
+        assert!(
+            all_have_alice,
+            "all text entries should retain Alice's provenance after split"
+        );
+    }
+
+    #[test]
+    fn lifecycle_span_provenance_create_edit_merge() {
+        let alice = alice_prov();
+        let base = edition_chars_prov("abcdef", &alice);
+        let a = edition_chars_prov("abcdef", &alice);
+        let a_sp = a.with_span_provenance(vec![SpanProvenance {
+            start: 0,
+            end: 3,
+            provenance: dummy_provenance(1),
+        }]);
+        let b = edition_chars_prov("Xabcdef", &alice);
+
+        let mr = three_way_merge(&base, &a_sp, &b, MergeStrategy::LastWriterWins).unwrap();
+
+        assert_eq!(mr.merged.to_text(), "Xabcdef");
+        let sp = mr.merged.span_provenance();
+        assert_eq!(sp.len(), 1, "span should shift after B's prepend");
+        assert_eq!(sp[0].start, 1);
+        assert_eq!(sp[0].end, 4);
+    }
+
+    #[test]
+    fn lifecycle_non_text_survives_two_merges() {
+        let base = {
+            let mut e = text_edition("ab");
+            e = e.with(2, RangeElement::edition(100));
+            e = e.with(3, RangeElement::text("cd"));
+            e
+        };
+        let a = {
+            let mut e = text_edition("AXb");
+            e = e.with(3, RangeElement::edition(100));
+            e = e.with(4, RangeElement::text("cd"));
+            e
+        };
+        let b = {
+            let mut e = text_edition("ab");
+            e = e.with(2, RangeElement::edition(200));
+            e = e.with(3, RangeElement::text("cd"));
+            e
+        };
+
+        let mr1 = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+        let has_t1 = mr1
+            .merged
+            .all_entries()
+            .iter()
+            .any(|(_, c)| matches!(c.element, RangeElement::Edition { .. }));
+        assert!(has_t1, "transclusion should survive first merge");
+
+        let c = text_edition("different");
+        let mr2 = three_way_merge(&base, &mr1.merged, &c, MergeStrategy::LastWriterWins).unwrap();
+        let has_t2 = mr2
+            .merged
+            .all_entries()
+            .iter()
+            .any(|(_, c)| matches!(c.element, RangeElement::Edition { .. }));
+        assert!(has_t2, "transclusion should survive second merge");
+    }
+
+    #[test]
+    fn lifecycle_provenance_chain_two_merge_rounds() {
+        let alice = alice_prov();
+        let bob = bob_prov();
+
+        let base = edition_chars_prov("hello", &alice);
+        let round1 = edition_mixed_prov(&[("HELLO", &bob), (" world", &alice)]);
+        let mr1 = three_way_merge(&base, &round1, &base, MergeStrategy::LastWriterWins).unwrap();
+        let has_bob_1 = mr1.merged.all_entries().iter().any(|(_, c)| {
+            c.provenance
+                .as_ref()
+                .map_or(false, |p| p.author_display_name == "Bob")
+        });
+        assert!(has_bob_1, "Bob should be present after round 1");
+
+        let round2 = edition_mixed_prov(&[("HELLO", &bob), (" world", &alice), ("!", &alice)]);
+        let mr2 =
+            three_way_merge(&base, &mr1.merged, &round2, MergeStrategy::LastWriterWins).unwrap();
+
+        let final_text = mr2.merged.to_text();
+        assert!(
+            final_text.contains("HELLO"),
+            "Bob's edit should survive two rounds"
+        );
+        assert!(
+            final_text.contains('!'),
+            "Alice's addition should survive two rounds"
+        );
+
+        let has_alice = mr2.merged.all_entries().iter().any(|(_, c)| {
+            c.provenance
+                .as_ref()
+                .map_or(false, |p| p.author_display_name == "Alice")
+        });
+        let has_bob = mr2.merged.all_entries().iter().any(|(_, c)| {
+            c.provenance
+                .as_ref()
+                .map_or(false, |p| p.author_display_name == "Bob")
+        });
+        assert!(has_alice, "Alice attributable after 2 merge rounds");
+        assert!(has_bob, "Bob attributable after 2 merge rounds");
     }
 }
