@@ -499,14 +499,33 @@ export function WorkspaceShell() {
     const newId = await createWork();
     if (typeof newId === "number") {
       selectWork(newId);
-      setWorks(prev => prev.some(w => w.work_id === newId) ? prev : [...prev, {
+    }
+    if (fetchWorkList) {
+      try {
+        const entries = await fetchWorkList();
+        if (typeof newId === "number" && !entries.some((w) => w.work_id === newId)) {
+          entries.unshift({
+            work_id: newId, title: "", is_starred: false, is_source: false,
+            revision_count: 0, updated_at: Math.floor(Date.now() / 1000),
+            owner: 0, is_grabbed: false, read_club: 0,
+          } as WorkListEntry);
+        }
+        setWorks(entries);
+      } catch {
+        if (typeof newId === "number") {
+          setWorks((prev) => prev.some((w) => w.work_id === newId) ? prev : [{
+            work_id: newId, title: "", is_starred: false, is_source: false,
+            revision_count: 0, updated_at: Math.floor(Date.now() / 1000),
+            owner: 0, is_grabbed: false, read_club: 0,
+          } as WorkListEntry, ...prev]);
+        }
+      }
+    } else if (typeof newId === "number") {
+      setWorks((prev) => prev.some((w) => w.work_id === newId) ? prev : [{
         work_id: newId, title: "", is_starred: false, is_source: false,
         revision_count: 0, updated_at: Math.floor(Date.now() / 1000),
         owner: 0, is_grabbed: false, read_club: 0,
-      } as WorkListEntry]);
-    }
-    if (fetchWorkList) {
-      try { const entries = await fetchWorkList(); setWorks(entries); } catch { /* network error — will retry */ }
+      } as WorkListEntry, ...prev]);
     }
   }, [createWork, selectWork, fetchWorkList]);
 
