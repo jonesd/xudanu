@@ -36,10 +36,15 @@ provenance, federation, web platform).
 | Phase C | Assembly skip for single-sided | No tree rebuild |
 | Phase D | Tumbler <-> Sequence bridge | Typed accessors on CrossServerRef |
 | Phase E | Eliminate Vec clone in delta | Remove O(n) allocation per edit |
+| Phase F | DocumentArrangement, chunk crums | Section-level comparison, tumbler queries |
+| Phase G | Splay exposed at Edition level | Locality optimization available |
+| Phase H | Compound span tumbler addressing | Transclusion coordinates via tumblers |
+| Phase J | Overlapping-domain combine | Structural merge without flatten |
 | Provenance | Span migration, non-text preservation | Attribution survives merges |
 | Blob hash | u64 -> String migration | JS precision fix |
+| Property tests | 5 properties x 256 cases for F-J | Correctness verification |
 
-### Test counts: 2931 Rust lib + 280 integration + 686 frontend = 3897
+### Test counts: 2969 Rust lib + 280 integration + 686 frontend = 3935
 
 ### Performance comparison
 
