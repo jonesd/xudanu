@@ -338,11 +338,11 @@ pub fn apply_text_delta_to_edition(
         derived_by: None,
     });
 
-    let old_entries = edition.all_entries();
+    let old_entries = edition.cached_entries();
 
     let mut entry_char_start: Vec<usize> = Vec::with_capacity(old_entries.len());
     let mut cum = 0usize;
-    for (_, carrier) in &old_entries {
+    for (_, carrier) in old_entries {
         entry_char_start.push(cum);
         cum += carrier.char_len();
     }
