@@ -2923,8 +2923,8 @@ export function WorkspaceShell() {
                   editable={canEdit && editorMode === "authoring"}
                   />
                 ) : (
-                <CollaborativeEditor
-                  text={text}
+                  <CollaborativeEditor
+                  text={compound.hasCompound ? (compound.resolvedText || text) : text}
                   workId={workBeId ?? undefined}
                   onTextChange={canEdit ? setText : undefined}
                   onCursorChange={(idx) => {
