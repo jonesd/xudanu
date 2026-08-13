@@ -2355,9 +2355,19 @@ export function WorkspaceShell() {
                   </div>
                 </div>
                 <div className="ws-doc-meta">
-                  {saveState === "saving" && <span className="ws-save-indicator ws-save-saving">Saving...</span>}
-                  {saveState === "saved" && <span className="ws-save-indicator ws-save-saved">Saved</span>}
-                  {saveState === "error" && <span className="ws-save-indicator ws-save-error">Save error</span>}
+                  <span
+                    className="ws-save-dot"
+                    style={{
+                      display: "inline-block",
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: saveState === "error" ? "#f85149" : saveState === "saving" ? "#d29922" : "#3fb950",
+                      transition: "background 0.3s",
+                      cursor: "help",
+                    }}
+                    title={saveState === "error" ? "Save error — changes may not be saved" : saveState === "saving" ? "Saving..." : "All changes saved"}
+                  />
                   {workMeta?.author && <span>{workMeta.author}</span>}
                   {workMeta?.collection && <span>· {workMeta.collection}</span>}
                   {workMeta?.publishedAt && <span>· {workMeta.publishedAt}</span>}
