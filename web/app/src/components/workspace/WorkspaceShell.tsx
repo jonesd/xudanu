@@ -1105,27 +1105,17 @@ export function WorkspaceShell() {
   }, [annotationTarget, createAnnotation]);
 
   const handlePlaceTransclusion = useCallback(
-    async (position: number, padding?: string) => {
+    async (position: number, _padding?: string) => {
       if (workBeId === null) return;
       const pending = transclusion.pending;
       if (!pending) return;
       const rawExcerpt = pending.text;
 
-      let actualPos = position;
-      let fullText = text;
-      if (position < 0 || (padding && padding.length > 0)) {
-        const sep = padding || "\n\n";
-        fullText = text + sep;
-        setText(fullText);
-        await new Promise((r) => setTimeout(r, 300));
-        actualPos = fullText.length;
-      } else {
-        actualPos = Math.max(0, Math.min(position, text.length));
-      }
+      const clampedPos = Math.max(0, Math.min(position < 0 ? text.length : position, text.length));
 
       await compound.addSpan(
-        fullText,
-        actualPos,
+        text,
+        clampedPos,
         rawExcerpt,
         pending.sourceWorkId,
         pending.start,
