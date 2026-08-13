@@ -2364,7 +2364,6 @@ export function WorkspaceShell() {
                       borderRadius: "50%",
                       background: saveState === "error" ? "#f85149" : saveState === "saving" ? "#d29922" : "#3fb950",
                       transition: "background 0.3s",
-                      cursor: "help",
                     }}
                     title={saveState === "error" ? "Save error — changes may not be saved" : saveState === "saving" ? "Saving..." : "All changes saved"}
                   />
