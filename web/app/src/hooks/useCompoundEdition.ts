@@ -59,7 +59,7 @@ export function useCompoundEdition(
         refresh();
       });
 
-      const pollRef = setInterval(refresh, 30000);
+      const pollRef = setInterval(refresh, 10000);
       return () => {
         unsubSourceChange();
         clearInterval(pollRef);
