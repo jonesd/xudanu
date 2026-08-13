@@ -1112,24 +1112,31 @@ export function WorkspaceShell() {
       const rawExcerpt = pending.text;
 
       let actualPos = position;
+      let fullText = text;
       if (position < 0 || (padding && padding.length > 0)) {
-        const baseText = text;
         const sep = padding || "\n\n";
-        const newText = baseText + sep;
-        setText(newText);
-        actualPos = newText.length;
+        fullText = text + sep;
+        setText(fullText);
+        await new Promise((r) => setTimeout(r, 300));
+        actualPos = fullText.length;
       } else {
         actualPos = Math.max(0, Math.min(position, text.length));
       }
 
       await compound.addSpan(
-        text,
+        fullText,
         actualPos,
         rawExcerpt,
         pending.sourceWorkId,
         pending.start,
         pending.end,
       );
+      if (clientRef.current && workBeId !== null) {
+        try {
+          await clientRef.current.migrateCompoundToInline(workBeId);
+          await compound.reload();
+        } catch {}
+      }
       transclusion.clearPending();
       setShowUndoToast(true);
       setTimeout(() => setShowUndoToast(false), 6000);
