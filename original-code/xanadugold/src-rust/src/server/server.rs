@@ -29804,6 +29804,662 @@ mod tests {
     }
 
     #[test]
+    fn transclusion_recursive_cycle_a_b_a() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("content A"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("prefix "))
+            .unwrap();
+
+        server.work_grab(sid, work_b).unwrap();
+        let b_entries = server
+            .works
+            .get(&work_b)
+            .unwrap()
+            .work()
+            .current_edition()
+            .all_entries();
+        let mut new_b_entries: Vec<(i64, std::sync::Arc<crate::edition::Carrier>)> =
+            b_entries.clone();
+        new_b_entries.push((
+            1,
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                RangeElement::transclusion(work_a, 0, 9),
+            )),
+        ));
+        server
+            .work_revise(sid, work_b, Edition::from_entries(new_b_entries))
+            .unwrap();
+
+        server.work_grab(sid, work_a).unwrap();
+        let a_entries = server
+            .works
+            .get(&work_a)
+            .unwrap()
+            .work()
+            .current_edition()
+            .all_entries();
+        let mut new_a_entries: Vec<(i64, std::sync::Arc<crate::edition::Carrier>)> =
+            a_entries.clone();
+        new_a_entries.push((
+            1,
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                RangeElement::transclusion(work_b, 0, 100),
+            )),
+        ));
+        server
+            .work_revise(sid, work_a, Edition::from_entries(new_a_entries))
+            .unwrap();
+
+        let result = server.resolve_inline_transclusions(work_a).unwrap();
+        assert!(
+            !result.text.is_empty(),
+            "cycle should not crash or produce empty result"
+        );
+        assert!(
+            result.text.contains("content A"),
+            "cycle should include original content"
+        );
+    }
+
+    #[test]
+    fn transclusion_three_level_chain_a_b_c() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_c = server
+            .create_work(sid, Edition::from_text("deep content"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("middle "))
+            .unwrap();
+        let work_a = server.create_work(sid, Edition::from_text("top ")).unwrap();
+
+        server.work_grab(sid, work_b).unwrap();
+        let b_entries = server
+            .works
+            .get(&work_b)
+            .unwrap()
+            .work()
+            .current_edition()
+            .all_entries();
+        let mut new_b: Vec<_> = b_entries.clone();
+        new_b.push((
+            1,
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                RangeElement::transclusion(work_c, 0, 12),
+            )),
+        ));
+        server
+            .work_revise(sid, work_b, Edition::from_entries(new_b))
+            .unwrap();
+
+        server.work_grab(sid, work_a).unwrap();
+        let a_entries = server
+            .works
+            .get(&work_a)
+            .unwrap()
+            .work()
+            .current_edition()
+            .all_entries();
+        let mut new_a: Vec<_> = a_entries.clone();
+        new_a.push((
+            1,
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                RangeElement::transclusion(work_b, 0, 100),
+            )),
+        ));
+        server
+            .work_revise(sid, work_a, Edition::from_entries(new_a))
+            .unwrap();
+
+        let result = server.resolve_inline_transclusions(work_a).unwrap();
+        assert!(result.text.contains("top"), "should contain A's own text");
+        assert!(
+            result.text.contains("middle"),
+            "should contain B's text (1st level)"
+        );
+        assert!(
+            result.text.contains("deep content"),
+            "should contain C's text (2nd level — chain resolved)"
+        );
+    }
+
+    #[test]
+    fn transclusion_cached_content_survives_source_deletion() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("precious content"))
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work()
+            .current_edition()
+            .crum()
+            .unwrap();
+
+        let mut elem =
+            RangeElement::structural_transclusion(source, 0, 16, source_crum, 1000, Some(1));
+        elem.set_cached_content("precious content".to_string());
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("before "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(elem)),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" after"),
+                )),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let to_text = server
+            .works
+            .get(&doc)
+            .unwrap()
+            .work()
+            .current_edition()
+            .to_text();
+        assert!(
+            to_text.contains("precious content"),
+            "cached content should be visible in to_text even with source present"
+        );
+    }
+
+    #[test]
+    fn transclusion_migration_insert_before_range() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("0123456789"))
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work()
+            .current_edition()
+            .crum()
+            .unwrap();
+        let mut elem =
+            RangeElement::structural_transclusion(source, 3, 7, source_crum, 1000, Some(1));
+        elem.set_cached_content("3456".to_string());
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("doc "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(elem)),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        server.work_grab(sid, source).unwrap();
+        let ops = vec![
+            crate::server::transport::protocol::TextDeltaOp::Insert {
+                text: "XX".to_string(),
+            },
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 10 },
+        ];
+        server.migrate_inline_transclusions_for_delta(source, &ops);
+
+        let doc_text = server
+            .works
+            .get(&doc)
+            .unwrap()
+            .work()
+            .current_edition()
+            .to_text();
+        assert!(
+            doc_text.contains("doc "),
+            "text before transclusion should be preserved"
+        );
+    }
+
+    #[test]
+    fn transclusion_migration_delete_inside_range() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("ABCDEFGHIJ"))
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work()
+            .current_edition()
+            .crum()
+            .unwrap();
+        let mut elem =
+            RangeElement::structural_transclusion(source, 2, 8, source_crum, 1000, Some(1));
+        elem.set_cached_content("CDEFGH".to_string());
+
+        let entries = vec![(
+            0i64,
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(elem)),
+        )];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let text_before = server
+            .works
+            .get(&doc)
+            .unwrap()
+            .work()
+            .current_edition()
+            .to_text();
+        assert!(text_before.contains("CDEFGH"));
+
+        server.work_grab(sid, source).unwrap();
+        let ops = vec![
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 4 },
+            crate::server::transport::protocol::TextDeltaOp::Delete { count: 2 },
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 4 },
+        ];
+        server.migrate_inline_transclusions_for_delta(source, &ops);
+
+        let _ = server.stamp_structural_transclusion_cache(doc);
+
+        let text_after = server
+            .works
+            .get(&doc)
+            .unwrap()
+            .work()
+            .current_edition()
+            .to_text();
+        assert!(
+            !text_after.is_empty(),
+            "transclusion should still produce content after source deletion inside range"
+        );
+    }
+
+    #[test]
+    fn multiple_transclusions_same_source_different_ranges() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("ABCDEFGHIJ"))
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work()
+            .current_edition()
+            .crum()
+            .unwrap();
+        let mut t1 =
+            RangeElement::structural_transclusion(source, 0, 3, source_crum, 1000, Some(1));
+        t1.set_cached_content("ABC".to_string());
+        let mut t2 =
+            RangeElement::structural_transclusion(source, 5, 8, source_crum, 1000, Some(1));
+        t2.set_cached_content("FGH".to_string());
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(t1)),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" --- "),
+                )),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(t2)),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let text = server
+            .works
+            .get(&doc)
+            .unwrap()
+            .work()
+            .current_edition()
+            .to_text();
+        assert!(text.contains("ABC"), "first transclusion content");
+        assert!(text.contains("FGH"), "second transclusion content");
+        assert!(text.contains(" --- "), "separator text");
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+        assert_eq!(result.span_ranges.len(), 2, "should have 2 span ranges");
+    }
+
+    #[test]
+    fn transclusion_at_position_zero() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("source text"))
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work()
+            .current_edition()
+            .crum()
+            .unwrap();
+        let mut elem =
+            RangeElement::structural_transclusion(source, 0, 10, source_crum, 1000, Some(1));
+        elem.set_cached_content("source text".to_string());
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(elem)),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" trailing"),
+                )),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let text = server
+            .works
+            .get(&doc)
+            .unwrap()
+            .work()
+            .current_edition()
+            .to_text();
+        assert!(
+            text.starts_with("source text"),
+            "transclusion at position 0 should appear first"
+        );
+        assert!(text.ends_with("trailing"), "trailing text should follow");
+    }
+
+    #[test]
+    fn transclusion_at_end_of_document() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("end content"))
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work()
+            .current_edition()
+            .crum()
+            .unwrap();
+        let mut elem =
+            RangeElement::structural_transclusion(source, 0, 11, source_crum, 1000, Some(1));
+        elem.set_cached_content("end content".to_string());
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("leading "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(elem)),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let text = server
+            .works
+            .get(&doc)
+            .unwrap()
+            .work()
+            .current_edition()
+            .to_text();
+        assert!(
+            text.starts_with("leading "),
+            "leading text should come first"
+        );
+        assert!(
+            text.ends_with("end content"),
+            "transclusion should appear at end"
+        );
+    }
+
+    #[test]
+    fn transclusion_from_empty_source() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server.create_work(sid, Edition::empty()).unwrap();
+
+        let source_crum = [0u8; 32];
+        let elem = RangeElement::structural_transclusion(source, 0, 10, source_crum, 1000, Some(1));
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("before "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(elem)),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" after"),
+                )),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+        assert!(result.text.contains("before"), "text before should survive");
+        assert!(result.text.contains("after"), "text after should survive");
+    }
+
+    #[test]
+    fn transclusion_pinned_to_old_revision() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("original text"))
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work()
+            .current_edition()
+            .crum()
+            .unwrap();
+        let mut elem =
+            RangeElement::structural_transclusion(source, 0, 12, source_crum, 1000, Some(1));
+        elem.set_cached_content("original text".to_string());
+        elem.set_structural_revision(0);
+
+        let entries = vec![(
+            0i64,
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(elem)),
+        )];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        server.work_grab(sid, source).unwrap();
+        server
+            .work_revise(sid, source, Edition::from_text("CHANGED text"))
+            .unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+        assert!(
+            result
+                .span_ranges
+                .first()
+                .map_or(false, |sr| sr.source_changed),
+            "source_changed should be true after source revision"
+        );
+    }
+
+    #[test]
+    fn coalesce_does_not_merge_transclusion_with_text() {
+        use crate::edition::range_element::Carrier;
+
+        let source_crum = [0u8; 32];
+        let mut elem = RangeElement::structural_transclusion(999, 0, 5, source_crum, 1000, Some(1));
+        elem.set_cached_content("hello".to_string());
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(Carrier::new(RangeElement::text("before ".to_string()))),
+            ),
+            (1, std::sync::Arc::new(Carrier::new(elem))),
+            (
+                2,
+                std::sync::Arc::new(Carrier::new(RangeElement::text(" after".to_string()))),
+            ),
+        ];
+        let edition = Edition::from_entries(entries).coalesce();
+
+        let coalesced = edition.all_entries();
+        assert_eq!(
+            coalesced.len(),
+            3,
+            "coalesce should not merge transclusion element with adjacent text"
+        );
+
+        let has_transclusion = coalesced
+            .iter()
+            .any(|(_, c)| c.element.is_structural_transclusion());
+        assert!(
+            has_transclusion,
+            "structural transclusion element should survive coalesce"
+        );
+
+        let text = edition.to_text();
+        assert!(text.contains("before"));
+        assert!(text.contains("hello"));
+        assert!(text.contains("after"));
+    }
+
+    #[test]
+    fn transclusion_migration_replace_entire_range() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("ABCDEFGHIJ"))
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work()
+            .current_edition()
+            .crum()
+            .unwrap();
+        let mut elem =
+            RangeElement::structural_transclusion(source, 2, 8, source_crum, 1000, Some(1));
+        elem.set_cached_content("CDEFGH".to_string());
+
+        let entries = vec![(
+            0i64,
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(elem)),
+        )];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        server.work_grab(sid, source).unwrap();
+        let ops = vec![
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 2 },
+            crate::server::transport::protocol::TextDeltaOp::Delete { count: 6 },
+            crate::server::transport::protocol::TextDeltaOp::Insert {
+                text: "XYZWUV".to_string(),
+            },
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 2 },
+        ];
+        server.migrate_inline_transclusions_for_delta(source, &ops);
+        let _ = server.stamp_structural_transclusion_cache(doc);
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+        assert!(
+            !result.text.is_empty(),
+            "transclusion should produce content after entire range replaced"
+        );
+    }
+
+    #[test]
+    fn transclusion_source_with_unicode() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("héllo wörld 日本語"))
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work()
+            .current_edition()
+            .crum()
+            .unwrap();
+        let mut elem =
+            RangeElement::structural_transclusion(source, 0, 100, source_crum, 1000, Some(1));
+        elem.set_cached_content("héllo wörld 日本語".to_string());
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("prefix "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(elem)),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let text = server
+            .works
+            .get(&doc)
+            .unwrap()
+            .work()
+            .current_edition()
+            .to_text();
+        assert!(
+            text.contains("日本語"),
+            "unicode content should be preserved in cached transclusion"
+        );
+        assert!(text.contains("héllo"), "accented characters should survive");
+    }
+
+    #[test]
     fn inline_transclusion_recursive_chain() {
         let (mut server, sid) = setup_logged_in_server();
         let src = server
