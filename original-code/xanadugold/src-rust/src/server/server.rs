@@ -12375,6 +12375,69 @@ impl Server {
         })
     }
 
+    pub fn stamp_structural_transclusion_cache(
+        &mut self,
+        work_id: BeId,
+    ) -> Result<usize, ServerError> {
+        let ws = self
+            .works
+            .get(&work_id)
+            .ok_or(ServerError::WorkNotFound(work_id))?;
+        let edition = ws.work().current_edition().clone();
+        let entries = edition.cached_entries();
+        let needs_update = entries.iter().any(|(_, c)| {
+            matches!(
+                &c.element,
+                RangeElement::StructuralTransclusion {
+                    cached_content: None,
+                    ..
+                }
+            )
+        });
+        if !needs_update {
+            return Ok(0);
+        }
+
+        let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::Carrier>)> = Vec::new();
+        let mut pos = 0i64;
+        let mut updated = 0usize;
+
+        for (_, carrier) in entries.iter() {
+            let mut new_carrier = (**carrier).clone();
+            if let RangeElement::StructuralTransclusion {
+                source_work_id,
+                entry_start,
+                entry_end,
+                cached_content: None,
+                ..
+            } = &new_carrier.element
+            {
+                let src_id = *source_work_id;
+                let c_start = *entry_start as usize;
+                let c_end = *entry_end as usize;
+                if let Some(src_ws) = self.works.get(&src_id) {
+                    let full = src_ws.work().current_edition().to_text();
+                    let chars: Vec<char> = full.chars().collect();
+                    let s = c_start.min(chars.len());
+                    let e = c_end.min(chars.len());
+                    let content: String = chars[s..e].iter().collect();
+                    new_carrier.element.set_cached_content(content);
+                    updated += 1;
+                }
+            }
+            new_entries.push((pos, std::sync::Arc::new(new_carrier)));
+            pos += 1;
+        }
+
+        if updated > 0 {
+            let new_edition = crate::edition::Edition::from_entries(new_entries);
+            let ws = self.works.get_mut(&work_id).unwrap();
+            ws.work_mut().update_current_edition(new_edition);
+            ws.mark_dirty();
+        }
+        Ok(updated)
+    }
+
     const INLINE_MAX_DEPTH: usize = 1000;
 
     fn resolve_inline_recursive(
@@ -12431,6 +12494,7 @@ impl Server {
                 placed_at: p_at,
                 placed_by: p_by,
                 source_revision: stored_revision,
+                cached_content: _,
             } = &carrier.element
             {
                 let src_id = *source_work_id;
@@ -12784,6 +12848,8 @@ impl Server {
             .map(|(id, _)| *id)
             .collect();
 
+        let affected_for_cache = affected.clone();
+
         for wid in affected {
             if let Some(ws) = self.works.get_mut(&wid) {
                 let old_edition = ws.work().current_edition().clone();
@@ -12825,6 +12891,7 @@ impl Server {
                         placed_at,
                         placed_by,
                         source_revision,
+                        cached_content: _,
                     } = new_carrier.element.clone()
                     {
                         if sid == source_work_id {
@@ -12854,6 +12921,11 @@ impl Server {
                 ws.work_mut().update_current_edition(new_edition);
                 ws.mark_dirty();
             }
+        }
+
+        let affected_clone = affected_for_cache.clone();
+        for wid in affected_clone {
+            let _ = self.stamp_structural_transclusion_cache(wid);
         }
     }
 

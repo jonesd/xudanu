@@ -69,6 +69,8 @@ pub enum RangeElement {
         placed_by: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source_revision: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cached_content: Option<String>,
     },
 }
 
@@ -218,6 +220,7 @@ impl RangeElement {
             placed_at,
             placed_by,
             source_revision: None,
+            cached_content: None,
         }
     }
 
@@ -228,6 +231,28 @@ impl RangeElement {
         } = self
         {
             *sr = Some(revision);
+        }
+    }
+
+    pub fn set_cached_content(&mut self, content: String) {
+        if let RangeElement::StructuralTransclusion {
+            cached_content: ref mut cc,
+            ..
+        } = self
+        {
+            *cc = Some(content);
+        }
+    }
+
+    pub fn cached_content(&self) -> Option<&str> {
+        if let RangeElement::StructuralTransclusion {
+            cached_content: Some(cc),
+            ..
+        } = self
+        {
+            Some(cc)
+        } else {
+            None
         }
     }
 
@@ -266,6 +291,10 @@ impl RangeElement {
     pub fn as_text(&self) -> Option<&str> {
         match self {
             RangeElement::Text { text } => Some(text),
+            RangeElement::StructuralTransclusion {
+                cached_content: Some(cc),
+                ..
+            } => Some(cc),
             _ => None,
         }
     }
@@ -492,6 +521,10 @@ impl RangeElement {
     pub fn char_len(&self) -> usize {
         match self {
             RangeElement::Text { text } => text.chars().count(),
+            RangeElement::StructuralTransclusion {
+                cached_content: Some(cc),
+                ..
+            } => cc.chars().count(),
             _ => 0,
         }
     }
