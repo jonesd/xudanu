@@ -366,6 +366,8 @@ export function WorkspaceShell() {
     [compound.spanRanges],
   );
 
+  const recentWorkIds = useRef<number[]>([]);
+
   const transclusionCompliance = useMemo(() => {
     if (compound.spanRanges.length === 0) return "none" as const;
     const hasArr = compound.spanRanges.some((sr) => {
@@ -381,11 +383,13 @@ export function WorkspaceShell() {
   const selectWork = useCallback((id: number) => {
     setWorkBeId(id);
     setImageEntries([]);
+    recentWorkIds.current = recentWorkIds.current.filter((r) => r !== id);
+    recentWorkIds.current.push(id);
     if (navTab === "library") setNavTab("explore");
     const url = new URL(window.location.href);
     url.searchParams.set("work", `0x${id.toString(16)}`);
     window.history.replaceState({}, "", url.toString());
-  }, [navTab, workBeId]);
+  }, [navTab]);
 
   // Single effect: fetch works list when connected; set work metadata if available
   useEffect(() => {
@@ -1820,7 +1824,7 @@ export function WorkspaceShell() {
                 return (
                   <ul className="ws-concepts-list">
                     {recent.map((w) => {
-                      const title = w.title || `Work 0x${w.work_id.toString(16)}`;
+                      const title = w.title?.trim() || `Untitled 0x${w.work_id.toString(16)}`;
                       const kind = kindCache.get(w.work_id) || "document";
                       return (
                         <li
