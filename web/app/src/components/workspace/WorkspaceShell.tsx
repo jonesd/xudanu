@@ -1147,13 +1147,8 @@ export function WorkspaceShell() {
         pending.start,
         pending.end,
       );
-      if (clientRef.current && workBeId !== null) {
-        try {
-          await clientRef.current.migrateCompoundToInline(workBeId);
-        } catch {}
-        await compound.reload();
-        setTimeout(() => compound.reload(), 2000);
-      }
+      await compound.reload();
+      setTimeout(() => compound.reload(), 2000);
       transclusion.clearPending();
       setShowUndoToast(true);
       setTimeout(() => setShowUndoToast(false), 6000);
