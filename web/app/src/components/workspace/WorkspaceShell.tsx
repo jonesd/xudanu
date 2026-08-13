@@ -2945,7 +2945,7 @@ export function WorkspaceShell() {
                   />
                 ) : (
                   <CollaborativeEditor
-                  text={compound.hasCompound ? (compound.resolvedText || text) : text}
+                  text={text}
                   workId={workBeId ?? undefined}
                   onTextChange={canEdit ? setText : undefined}
                   onCursorChange={(idx) => {
