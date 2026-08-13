@@ -3651,6 +3651,27 @@ export function WorkspaceShell() {
                           <div className="ws-conn-excerpt">
                             [{sr.char_start}:{sr.char_end}]
                           </div>
+                          {canEdit && (
+                            <button
+                              className="ws-conn-delete"
+                              title="Remove this transclusion"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm("Remove this transclusion?")) {
+                                  compound.removeTransclusion(sr.source_work_id, sr.char_start, sr.char_end).then((ok) => {
+                                    if (ok) showToast("Transclusion removed");
+                                  });
+                                }
+                              }}
+                              style={{
+                                position: "absolute", top: 4, right: 4,
+                                background: "none", border: "none", cursor: "pointer",
+                                color: "var(--text-dim)", fontSize: 14, padding: 4,
+                              }}
+                            >
+                              {"\u2715"}
+                            </button>
+                          )}
                         </div>
                       );
                     })

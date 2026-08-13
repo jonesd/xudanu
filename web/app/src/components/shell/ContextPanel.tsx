@@ -22,6 +22,7 @@ interface ContextPanelProps {
   onToggleFocus: () => void;
   onDeleteLink?: (linkId: number) => void;
   onRetypeLink?: (linkId: number, typeId: number) => void;
+  onRemoveTransclusion?: (sourceWorkId: number, charStart: number, charEnd: number) => void;
   pinnedKeys: Set<string>;
   onTogglePin: (key: string, pinned: boolean) => void;
   crossServerBacklinks?: CrossServerBacklinkPayload[];
@@ -47,6 +48,7 @@ export function ContextPanel(props: ContextPanelProps) {
         onNavigateToWork={props.onNavigateToWork}
         onDeleteLink={props.onDeleteLink}
         onRetypeLink={props.onRetypeLink}
+        onRemoveTransclusion={props.onRemoveTransclusion}
         pinnedKeys={props.pinnedKeys}
         onTogglePin={props.onTogglePin}
         crossServerBacklinks={props.crossServerBacklinks}

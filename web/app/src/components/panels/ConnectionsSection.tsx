@@ -20,6 +20,7 @@ interface ConnectionsSectionProps {
   onNavigateToWork: (workId: number) => void;
   onDeleteLink?: (linkId: number) => void;
   onRetypeLink?: (linkId: number, typeId: number) => void;
+  onRemoveTransclusion?: (sourceWorkId: number, charStart: number, charEnd: number) => void;
   pinnedKeys: Set<string>;
   onTogglePin: (key: string, pinned: boolean) => void;
   crossServerBacklinks?: CrossServerBacklinkPayload[];
@@ -34,6 +35,7 @@ export function ConnectionsSection({
   onNavigateToWork,
   onDeleteLink,
   onRetypeLink,
+  onRemoveTransclusion,
   pinnedKeys,
   onTogglePin,
   crossServerBacklinks = [],
@@ -54,6 +56,9 @@ export function ConnectionsSection({
     workId: number;
     linkId?: number;
     linkTypeId?: number;
+    transclusionSource?: number;
+    transclusionStart?: number;
+    transclusionEnd?: number;
   };
 
   const items: ConnItem[] = [];
@@ -62,11 +67,14 @@ export function ConnectionsSection({
     const key = `transcl-${sr.source_work_id}-${sr.char_start}-${sr.char_end}`;
     items.push({
       key,
-      type: "transclusion",
+      type: "transclusion" as const,
       title: compoundSourceTitles[sr.source_work_id] || `work:${sr.source_work_id.toString(16)}`,
-      excerpt: sr.resolved_content?.slice(0, 80) || "...",
-      meta: `${sr.content_len || 0} chars`,
+      excerpt: (sr.resolved_content || "").slice(0, 80),
+      meta: `transclusion · [${sr.char_start}:${sr.char_end}]`,
       workId: sr.source_work_id,
+      transclusionSource: sr.source_work_id,
+      transclusionStart: sr.char_start,
+      transclusionEnd: sr.char_end,
     });
   }
 
@@ -230,6 +238,18 @@ export function ConnectionsSection({
                       onDeleteLink(item.linkId!);
                     }}
                     title="Delete link"
+                  >
+                    {"\u2715"}
+                  </button>
+                )}
+                {item.type === "transclusion" && onRemoveTransclusion && item.transclusionSource !== undefined && (
+                  <button
+                    className="conn-delete-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemoveTransclusion(item.transclusionSource!, item.transclusionStart!, item.transclusionEnd!);
+                    }}
+                    title="Remove transclusion"
                   >
                     {"\u2715"}
                   </button>
