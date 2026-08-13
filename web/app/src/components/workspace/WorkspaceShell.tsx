@@ -1105,12 +1105,31 @@ export function WorkspaceShell() {
   }, [annotationTarget, createAnnotation]);
 
   const handlePlaceTransclusion = useCallback(
-    async (position: number, _padding?: string) => {
+    async (position: number, padding?: string) => {
       if (workBeId === null) return;
       const pending = transclusion.pending;
       if (!pending) return;
 
-      const insertPos = Math.max(0, position < 0 ? text.length : Math.min(position, text.length));
+      let insertPos: number;
+
+      if (position < 0 && padding && padding.length > 0 && clientRef.current) {
+        const client = clientRef.current;
+        try {
+          await client.sendRequest("work_revise_delta", {
+            work_id: workBeId,
+            base_revision: 0,
+            ops: [
+              { type: "retain", count: text.length },
+              { type: "insert", text: padding },
+            ],
+          });
+        } catch {
+          // Delta failed — fall back to end of text
+        }
+        insertPos = text.length + padding.length;
+      } else {
+        insertPos = Math.max(0, Math.min(position, text.length));
+      }
 
       await compound.addSpan(
         text,
