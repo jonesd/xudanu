@@ -1717,11 +1717,30 @@ export function CollaborativeEditor({
     }
 
     const editorRect = el.getBoundingClientRect();
-    const endRange = document.createRange();
-    endRange.selectNodeContents(el);
-    endRange.collapse(false);
-    const endRect = endRange.getBoundingClientRect();
     const computedLineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20;
+
+    const lastTextNode = (() => {
+      const walker = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let last: Text | null = null;
+      let node: Node | null;
+      while ((node = walker.nextNode())) {
+        const t = (node as Text).textContent || "";
+        if (t.replace(/\u200B/g, "").length > 0) {
+          last = node as Text;
+        }
+      }
+      return last;
+    })();
+
+    const endRect = (() => {
+      if (lastTextNode) {
+        const r = doc.createRange();
+        r.selectNodeContents(lastTextNode);
+        r.collapse(false);
+        return r.getBoundingClientRect();
+      }
+      return editorRect;
+    })();
 
     if (clientY > endRect.bottom + 4) {
       const linesBelow = Math.max(1, Math.round((clientY - endRect.bottom) / computedLineHeight));
@@ -1730,10 +1749,7 @@ export function CollaborativeEditor({
     }
 
     if (!range) {
-      if (clientY >= editorRect.top && clientY <= editorRect.bottom + 200) {
-        return { pos: -1, rect: endRect, padding: "\n\n" };
-      }
-      return null;
+      return { pos: -1, rect: endRect, padding: "\n\n" };
     }
 
     const rect = range.getBoundingClientRect();
