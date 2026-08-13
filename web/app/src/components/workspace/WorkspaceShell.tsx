@@ -1105,44 +1105,24 @@ export function WorkspaceShell() {
   }, [annotationTarget, createAnnotation]);
 
   const handlePlaceTransclusion = useCallback(
-    async (position: number, padding?: string) => {
+    async (position: number, _padding?: string) => {
       if (workBeId === null) return;
       const pending = transclusion.pending;
       if (!pending) return;
-      const rawExcerpt = pending.text;
-      const client = clientRef.current;
 
-      let insertPos = position;
-      if (position < 0 && padding && padding.length > 0 && client) {
-        try {
-          await client.sendRequest("work_revise_delta", {
-            work_id: workBeId,
-            base_revision: 0,
-            ops: [
-              { type: "retain", count: text.length },
-              { type: "insert", text: padding },
-            ],
-          });
-          setText(text + padding);
-          insertPos = text.length + padding.length;
-        } catch {
-          insertPos = text.length;
-        }
-      } else {
-        insertPos = Math.max(0, Math.min(position, text.length));
-      }
+      const insertPos = Math.max(0, position < 0 ? text.length : Math.min(position, text.length));
 
       await compound.addSpan(
         text,
         insertPos,
-        rawExcerpt,
+        pending.text,
         pending.sourceWorkId,
         pending.start,
         pending.end,
       );
-      if (client && workBeId !== null) {
+      if (clientRef.current && workBeId !== null) {
         try {
-          await client.migrateCompoundToInline(workBeId);
+          await clientRef.current.migrateCompoundToInline(workBeId);
           await compound.reload();
         } catch {}
       }
@@ -1150,7 +1130,7 @@ export function WorkspaceShell() {
       setShowUndoToast(true);
       setTimeout(() => setShowUndoToast(false), 6000);
     },
-    [workBeId, text, setText, compound, transclusion, showToast]
+    [workBeId, text, compound, transclusion, showToast]
   );
 
   const handlePlaceImage = useCallback(
