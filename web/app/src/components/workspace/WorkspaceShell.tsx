@@ -368,6 +368,8 @@ export function WorkspaceShell() {
 
   const recentWorkIds = useRef<number[]>([]);
 
+  const prevSaveState = useRef(saveState);
+
   const transclusionCompliance = useMemo(() => {
     if (compound.spanRanges.length === 0) return "none" as const;
     const hasArr = compound.spanRanges.some((sr) => {
@@ -730,6 +732,13 @@ export function WorkspaceShell() {
     }
     setTimeout(() => setToast(null), 5000);
   }, []);
+
+  useEffect(() => {
+    if (saveState === "error" && prevSaveState.current !== "error") {
+      showToast("Save error — changes may not be saved. Check connection.");
+    }
+    prevSaveState.current = saveState;
+  }, [saveState, showToast]);
 
   // Handle ?demo=1 — create demo work on load
   const demoRan = useRef(false);
@@ -2356,7 +2365,7 @@ export function WorkspaceShell() {
                 </div>
                 <div className="ws-doc-meta">
                   <span
-                    className="ws-save-dot"
+                    className={`ws-save-dot${saveState === "error" ? " ws-save-dot-error" : ""}`}
                     style={{
                       display: "inline-block",
                       width: 8,
@@ -2364,8 +2373,9 @@ export function WorkspaceShell() {
                       borderRadius: "50%",
                       background: saveState === "error" ? "#f85149" : saveState === "saving" ? "#d29922" : "#3fb950",
                       transition: "background 0.3s",
+                      animation: saveState === "error" ? "ws-dot-pulse 1.5s infinite" : undefined,
                     }}
-                    title={saveState === "error" ? "Save error — changes may not be saved" : saveState === "saving" ? "Saving..." : "All changes saved"}
+                    title={saveState === "error" ? "Save error — changes may not be saved. Check your connection." : saveState === "saving" ? "Saving..." : "All changes saved"}
                   />
                   {workMeta?.author && <span>{workMeta.author}</span>}
                   {workMeta?.collection && <span>· {workMeta.collection}</span>}
