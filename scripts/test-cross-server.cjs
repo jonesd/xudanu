@@ -259,7 +259,7 @@ async function runTests() {
   await test("Fetch from offline server fails gracefully", async () => {
     // We can't easily kill Alice in this script, so we test with a bad server_id
     const resp = await bob.send("cross_server_list_works", { server_id: "999999" });
-    throw new Error("should have failed for unknown server"); // if we get here, it didn't fail
+    throw new Error(`should have failed for unknown server, got: ${JSON.stringify(resp).slice(0, 100)}`);
   });
 
   // ── Scenario 10: Persistence Check ──

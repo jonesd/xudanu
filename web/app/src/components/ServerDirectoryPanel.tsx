@@ -177,7 +177,7 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
       const cached = data.cached === true;
 
       if (onViewRemoteWork) {
-        onViewRemoteWork({ title, text, originServerName: originName, license, tumbler, workId, serverId: browsingServerId || "0" });
+        onViewRemoteWork({ title, text, originServerName: originName, license, tumbler, workId, serverId: browsingServerId ?? "0" });
       } else {
         setRemoteText({ workId, text, title, tumbler: tumbler || undefined });
       }
