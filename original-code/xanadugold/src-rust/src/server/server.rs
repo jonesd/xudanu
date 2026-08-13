@@ -12896,10 +12896,21 @@ impl Server {
                 .cached_entries()
                 .iter()
                 .any(|(_, c)| {
-                    c.element
-                        .as_transclusion()
-                        .map(|(sid, _, _)| sid == source_work_id)
-                        .unwrap_or(false)
+                    if let RangeElement::Transclusion {
+                        source_work_id: sid,
+                        ..
+                    } = &c.element
+                    {
+                        *sid == source_work_id
+                    } else if let RangeElement::StructuralTransclusion {
+                        source_work_id: sid,
+                        ..
+                    } = &c.element
+                    {
+                        *sid == source_work_id
+                    } else {
+                        false
+                    }
                 });
             if has_inline {
                 affected.insert(*wid);
