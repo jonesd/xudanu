@@ -1716,19 +1716,22 @@ export function CollaborativeEditor({
       }
     }
 
+    const editorRect = el.getBoundingClientRect();
+    const endRange = document.createRange();
+    endRange.selectNodeContents(el);
+    endRange.collapse(false);
+    const endRect = endRange.getBoundingClientRect();
+    const computedLineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20;
+
+    if (clientY > endRect.bottom + 4) {
+      const linesBelow = Math.max(1, Math.round((clientY - endRect.bottom) / computedLineHeight));
+      const padding = "\n".repeat(linesBelow);
+      return { pos: -1, rect: endRect, padding };
+    }
+
     if (!range) {
-      const editorRect = el.getBoundingClientRect();
       if (clientY >= editorRect.top && clientY <= editorRect.bottom + 200) {
-        const endRange = document.createRange();
-        endRange.selectNodeContents(el);
-        endRange.collapse(false);
-        const endRect = endRange.getBoundingClientRect();
-
-        const computedLineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20;
-        const linesBelow = Math.max(0, Math.round((clientY - endRect.bottom) / computedLineHeight));
-        const padding = "\n".repeat(linesBelow + 1);
-
-        return { pos: -1, rect: endRect, padding };
+        return { pos: -1, rect: endRect, padding: "\n\n" };
       }
       return null;
     }
@@ -1744,8 +1747,6 @@ export function CollaborativeEditor({
     el.querySelectorAll(".inline-transclusion").forEach((span) => {
       const spanRange = document.createRange();
       spanRange.selectNodeContents(span);
-      // Only subtract if the ENTIRE span ends before the caret
-      // (not just starts before — that over-subtracts when caret is near a span)
       if (spanRange.compareBoundaryPoints(Range.END_TO_END, pre) <= 0) {
         readonlyChars += (span.textContent || "").replace(/\u200B/g, "").length;
       }
