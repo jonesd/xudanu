@@ -12768,10 +12768,21 @@ impl Server {
                     .cached_entries()
                     .iter()
                     .any(|(_, c)| {
-                        c.element
-                            .as_transclusion()
-                            .map(|(sid, _, _)| sid == source_work_id)
-                            .unwrap_or(false)
+                        if let RangeElement::Transclusion {
+                            source_work_id: sid,
+                            ..
+                        } = &c.element
+                        {
+                            *sid == source_work_id
+                        } else if let RangeElement::StructuralTransclusion {
+                            source_work_id: sid,
+                            ..
+                        } = &c.element
+                        {
+                            *sid == source_work_id
+                        } else {
+                            false
+                        }
                     })
             })
             .map(|(id, _)| *id)
@@ -12809,6 +12820,35 @@ impl Server {
                                 new_elem.set_transclusion_hash(*hash, source_revision.unwrap_or(0));
                             }
                             new_carrier.element = new_elem;
+                        }
+                    } else if let crate::edition::RangeElement::StructuralTransclusion {
+                        source_work_id: sid,
+                        entry_start,
+                        entry_end,
+                        source_crum,
+                        placed_at,
+                        placed_by,
+                        source_revision,
+                    } = new_carrier.element.clone()
+                    {
+                        if sid == source_work_id {
+                            let (ns, ne) = crate::edition::compound::map_span_through_delta(
+                                entry_start as usize,
+                                entry_end as usize,
+                                &delta_ops,
+                            );
+                            let mut elem = crate::edition::RangeElement::structural_transclusion(
+                                sid,
+                                ns as i64,
+                                ne as i64,
+                                source_crum,
+                                placed_at,
+                                placed_by,
+                            );
+                            if let Some(rev) = source_revision {
+                                elem.set_structural_revision(rev);
+                            }
+                            new_carrier.element = elem;
                         }
                     }
                     new_entries.push((pos, std::sync::Arc::new(new_carrier)));
