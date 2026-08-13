@@ -867,7 +867,11 @@ pub struct OrglRoot {
 #[derive(Debug, Clone, PartialEq)]
 enum OrglInner {
     Empty,
-    Actual { loaf: Loaf, simple_domain: XnRegion },
+    Actual {
+        loaf: Loaf,
+        simple_domain: XnRegion,
+        cached_crum: Option<Crum>,
+    },
 }
 
 impl OrglRoot {
@@ -879,10 +883,12 @@ impl OrglRoot {
 
     pub(crate) fn from_loaf(loaf: Loaf) -> Self {
         let domain = loaf.domain();
+        let crum = loaf.compute_crum();
         OrglRoot {
             inner: OrglInner::Actual {
                 loaf,
                 simple_domain: domain,
+                cached_crum: Some(crum),
             },
         }
     }
@@ -1114,7 +1120,11 @@ impl OrglRoot {
     pub fn crum(&self) -> Option<Crum> {
         match &self.inner {
             OrglInner::Empty => None,
-            OrglInner::Actual { loaf, .. } => Some(loaf.compute_crum()),
+            OrglInner::Actual { cached_crum: Some(c), .. } => Some(*c),
+            OrglInner::Actual { loaf, cached_crum: None, .. } => {
+                let c = loaf.compute_crum();
+                Some(c)
+            }
         }
     }
 
