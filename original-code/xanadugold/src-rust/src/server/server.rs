@@ -12434,8 +12434,8 @@ impl Server {
             } = &carrier.element
             {
                 let src_id = *source_work_id;
-                let e_start = *entry_start;
-                let e_end = *entry_end;
+                let c_start = *entry_start as usize;
+                let c_end = *entry_end as usize;
                 let crum = *source_crum;
 
                 let (src_text, source_changed) = if let Some(src_ws) = self.works.get(&src_id) {
@@ -12459,40 +12459,28 @@ impl Server {
                         }
                     }
 
+                    let extract_text = |ed: &crate::edition::Edition| -> String {
+                        let full = ed.to_text();
+                        let chars: Vec<char> = full.chars().collect();
+                        let s = c_start.min(chars.len());
+                        let e = c_end.min(chars.len());
+                        chars[s..e].iter().collect()
+                    };
+
                     if stored_revision.is_some() && changed {
                         let rev = stored_revision.unwrap();
                         let rev_edition = src_ws.work().fetch_revision(rev);
                         if let Some(ed) = rev_edition {
-                            (
-                                ed.entries_in_range(e_start, e_end)
-                                    .iter()
-                                    .map(|(_, c)| c.element.as_text().unwrap_or(""))
-                                    .collect::<String>(),
-                                true,
-                            )
+                            (extract_text(ed), true)
                         } else {
                             tracing::warn!(
                                 "[structural_transclusion] pinned revision {} not found for {:x}, falling back to current",
                                 rev, src_id
                             );
-                            (
-                                src_edition
-                                    .entries_in_range(e_start, e_end)
-                                    .iter()
-                                    .map(|(_, c)| c.element.as_text().unwrap_or(""))
-                                    .collect::<String>(),
-                                true,
-                            )
+                            (extract_text(src_edition), true)
                         }
                     } else {
-                        (
-                            src_edition
-                                .entries_in_range(e_start, e_end)
-                                .iter()
-                                .map(|(_, c)| c.element.as_text().unwrap_or(""))
-                                .collect::<String>(),
-                            changed,
-                        )
+                        (extract_text(src_edition), changed)
                     }
                 } else {
                     tracing::warn!("[structural_transclusion] source {:x} not found", src_id);
@@ -12504,17 +12492,25 @@ impl Server {
                     self.works
                         .get(&src_id)
                         .and_then(|ws| ws.work().fetch_revision(rev))
-                        .map(|ed| ed.entries_in_range(e_start, e_end))
+                        .map(|ed| ed.all_entries())
                         .unwrap_or_default()
                 } else {
                     self.works
                         .get(&src_id)
-                        .map(|ws| ws.work().current_edition().entries_in_range(e_start, e_end))
+                        .map(|ws| ws.work().current_edition().all_entries())
                         .unwrap_or_default()
                 };
 
                 let mut char_pos = text_offset;
+                let mut cum_chars = 0usize;
                 for (_, rc) in &blob_entries {
+                    let entry_len = rc.char_len();
+                    let entry_start_char = cum_chars;
+                    let entry_end_char = cum_chars + entry_len;
+                    cum_chars = entry_end_char;
+                    if entry_end_char <= c_start || entry_start_char >= c_end {
+                        continue;
+                    }
                     if let RangeElement::Blob {
                         content_hash,
                         mime_type,
@@ -12541,8 +12537,8 @@ impl Server {
 
                 span_ranges.push(crate::edition::compound::SpanRange {
                     source_work_id: src_id,
-                    char_start: e_start as usize,
-                    char_end: e_end as usize,
+                    char_start: c_start,
+                    char_end: c_end,
                     flat_start: text_offset,
                     flat_end: text_offset + content_len,
                     content_len,
