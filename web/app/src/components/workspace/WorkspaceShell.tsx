@@ -1133,7 +1133,6 @@ export function WorkspaceShell() {
             ],
           });
         } catch {
-          // Delta failed — fall back to end of text
         }
         insertPos = text.length + padding.length;
       } else {
