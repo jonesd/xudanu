@@ -1110,16 +1110,21 @@ export function WorkspaceShell() {
       const pending = transclusion.pending;
       if (!pending) return;
       const rawExcerpt = pending.text;
-      let spanStart = position;
-      if (padding && padding.length > 0) {
-        const newText = text + padding;
+
+      let actualPos = position;
+      if (position < 0 || (padding && padding.length > 0)) {
+        const baseText = text;
+        const sep = padding || "\n\n";
+        const newText = baseText + sep;
         setText(newText);
-        spanStart = newText.length;
+        actualPos = newText.length;
+      } else {
+        actualPos = Math.max(0, Math.min(position, text.length));
       }
-      if (spanStart < 0) spanStart = 0;
+
       await compound.addSpan(
         text,
-        spanStart,
+        actualPos,
         rawExcerpt,
         pending.sourceWorkId,
         pending.start,

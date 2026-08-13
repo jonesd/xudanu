@@ -1718,7 +1718,7 @@ export function CollaborativeEditor({
 
     if (!range) {
       const editorRect = el.getBoundingClientRect();
-      if (clientY >= editorRect.top && clientY <= editorRect.bottom) {
+      if (clientY >= editorRect.top && clientY <= editorRect.bottom + 200) {
         const endRange = document.createRange();
         endRange.selectNodeContents(el);
         endRange.collapse(false);
@@ -1728,17 +1728,7 @@ export function CollaborativeEditor({
         const linesBelow = Math.max(0, Math.round((clientY - endRect.bottom) / computedLineHeight));
         const padding = "\n".repeat(linesBelow + 1);
 
-        const paddingNode = document.createTextNode(padding);
-        endRange.insertNode(paddingNode);
-        const afterRange = document.createRange();
-        afterRange.selectNodeContents(el);
-        afterRange.setStartAfter(paddingNode);
-        afterRange.collapse(true);
-        const afterRect = afterRange.getBoundingClientRect();
-
-        el.removeChild(paddingNode);
-
-        return { pos: -1, rect: afterRect, padding };
+        return { pos: -1, rect: endRect, padding };
       }
       return null;
     }
