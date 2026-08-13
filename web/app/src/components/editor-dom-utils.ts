@@ -124,30 +124,54 @@ export function buildTransclusionDom(
 
   try {
     const sorted = [...validRanges].sort((a, b) => a.flat_start - b.flat_start);
-    let pos = 0;
-
+    const breakpoints = new Set<number>();
+    breakpoints.add(0);
+    breakpoints.add(resolvedText.length);
     for (const sr of sorted) {
-      if (sr.flat_start > pos) {
-        let chunk = resolvedText.slice(pos, sr.flat_start);
-        chunk = chunk.replace(/\n+$/, "");
+      breakpoints.add(sr.flat_start);
+      breakpoints.add(sr.flat_end);
+    }
+    const segments = [...breakpoints].sort((a, b) => a - b);
+
+    for (let i = 0; i < segments.length - 1; i++) {
+      const segStart = segments[i];
+      const segEnd = segments[i + 1];
+      if (segStart >= segEnd) continue;
+
+      const coveringRanges = sorted.filter(
+        (sr) => sr.flat_start <= segStart && sr.flat_end >= segEnd,
+      );
+
+      let chunk = resolvedText.slice(segStart, segEnd);
+      chunk = chunk.replace(/^\n+/, "").replace(/\n+$/, "");
+      if (chunk.length === 0) continue;
+
+      if (coveringRanges.length === 0) {
         el.appendChild(document.createTextNode(chunk));
+      } else if (coveringRanges.length === 1) {
+        const sr = coveringRanges[0];
+        const title = sourceTitles?.[sr.source_work_id] || sr.source_work_id.toString(16);
+        const span = document.createElement("span");
+        span.className = "inline-transclusion";
+        span.textContent = chunk;
+        span.title = `Transclusion from: ${title} (click to navigate)`;
+        (span as HTMLElement).dataset.sourceWorkId = String(sr.source_work_id);
+        el.appendChild(span);
+      } else {
+        const sr = coveringRanges[0];
+        const title = sourceTitles?.[sr.source_work_id] || sr.source_work_id.toString(16);
+        const others = coveringRanges.slice(1).map(
+          (r) => sourceTitles?.[r.source_work_id] || r.source_work_id.toString(16),
+        );
+        const span = document.createElement("span");
+        span.className = "inline-transclusion inline-transclusion-overlap";
+        span.textContent = chunk;
+        span.title = `Overlapping transclusions from: ${title}, ${others.join(", ")}`;
+        (span as HTMLElement).dataset.sourceWorkId = String(sr.source_work_id);
+        el.appendChild(span);
       }
-      const content = resolvedText.slice(sr.flat_start, sr.flat_end).replace(/^\n+/, "").replace(/\n+$/, "");
-      const title = sourceTitles?.[sr.source_work_id] || sr.source_work_id.toString(16);
-      const span = document.createElement("span");
-      span.className = "inline-transclusion";
-      span.textContent = content;
-      span.title = `Transclusion from: ${title} (click to navigate)`;
-      (span as HTMLElement).dataset.sourceWorkId = String(sr.source_work_id);
-      el.appendChild(span);
-      pos = sr.flat_end;
     }
 
-    if (pos < resolvedText.length) {
-      let after = resolvedText.slice(pos);
-      after = after.replace(/^\n+/, "");
-      el.appendChild(document.createTextNode(after));
-    }
     if (resolvedText.endsWith("\n")) {
       el.appendChild(document.createTextNode("\u200B"));
     }
