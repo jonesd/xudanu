@@ -12341,6 +12341,7 @@ impl Server {
         ws.mark_dirty();
 
         self.compound_editions.remove(&work_id);
+        let _ = self.stamp_structural_transclusion_cache(work_id);
         Ok(migrated_count)
     }
 
