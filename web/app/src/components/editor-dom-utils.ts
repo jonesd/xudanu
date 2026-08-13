@@ -143,7 +143,6 @@ export function buildTransclusionDom(
       );
 
       let chunk = resolvedText.slice(segStart, segEnd);
-      chunk = chunk.replace(/^\n+/, "").replace(/\n+$/, "");
       if (chunk.length === 0) continue;
 
       if (coveringRanges.length === 0) {

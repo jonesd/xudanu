@@ -29436,6 +29436,191 @@ mod tests {
     }
 
     #[test]
+    fn overlapping_transclusions_resolve_independently() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("AAAAABBBBBCCCCC"))
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work
+            .current_edition()
+            .crum()
+            .unwrap();
+
+        let t1 = RangeElement::structural_transclusion(source, 0, 10, source_crum, 1000, Some(1));
+        let t2 = RangeElement::structural_transclusion(source, 5, 15, source_crum, 1000, Some(1));
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("before "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(t1)),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(t2)),
+            ),
+            (
+                3,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" after"),
+                )),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+
+        assert_eq!(
+            result.span_ranges.len(),
+            2,
+            "should have 2 span ranges for overlapping transclusions"
+        );
+
+        let r0 = &result.span_ranges[0];
+        let r1 = &result.span_ranges[1];
+        assert!(
+            r0.resolved_content.contains("AAAAA"),
+            "first transclusion should contain 'AAAAA': got {:?}",
+            r0.resolved_content
+        );
+        assert!(
+            r1.resolved_content.contains("CCCCC"),
+            "second transclusion should contain 'CCCCC': got {:?}",
+            r1.resolved_content
+        );
+
+        assert!(
+            r0.flat_end > r1.flat_start || r1.flat_end > r0.flat_start,
+            "transclusion ranges should overlap in resolved text"
+        );
+    }
+
+    #[test]
+    fn overlapping_transclusions_from_different_sources() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src_a = server
+            .create_work(sid, Edition::from_text("hello world foo"))
+            .unwrap();
+        let src_b = server
+            .create_work(sid, Edition::from_text("world bar baz"))
+            .unwrap();
+
+        let crum_a = server
+            .works
+            .get(&src_a)
+            .unwrap()
+            .work
+            .current_edition()
+            .crum()
+            .unwrap();
+        let crum_b = server
+            .works
+            .get(&src_b)
+            .unwrap()
+            .work
+            .current_edition()
+            .crum()
+            .unwrap();
+
+        let t1 = RangeElement::structural_transclusion(src_a, 0, 11, crum_a, 1000, Some(1));
+        let t2 = RangeElement::structural_transclusion(src_b, 0, 5, crum_b, 1000, Some(1));
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(t1)),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(t2)),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+
+        assert_eq!(result.span_ranges.len(), 2);
+        assert!(result.text.contains("hello world"));
+        assert!(result.text.contains("world"));
+    }
+
+    #[test]
+    fn transclusion_preserves_newlines_in_resolved_text() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(
+                sid,
+                Edition::from_text_batched("line one\nline two\nline three"),
+            )
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work
+            .current_edition()
+            .crum()
+            .unwrap();
+
+        let t = RangeElement::structural_transclusion(source, 0, 20, source_crum, 1000, Some(1));
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("before\n\n"),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(t)),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("\n\nafter"),
+                )),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+
+        assert!(
+            result.text.contains("line one"),
+            "should contain source line 1: got {:?}",
+            result.text
+        );
+        assert!(
+            result.text.contains("line two"),
+            "should contain source line 2: got {:?}",
+            result.text
+        );
+        assert!(
+            result.text.contains("before"),
+            "should preserve text before transclusion"
+        );
+        assert!(
+            result.text.contains("after"),
+            "should preserve text after transclusion"
+        );
+    }
+
+    #[test]
     fn structural_transclusion_detects_source_change() {
         let (mut server, sid) = setup_logged_in_server();
         let source = server
