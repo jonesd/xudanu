@@ -1106,37 +1106,31 @@ export function WorkspaceShell() {
 
   const handlePlaceTransclusion = useCallback(
     async (position: number, _padding?: string) => {
-      if (workBeId === null || !clientRef.current) return;
+      if (workBeId === null) return;
       const pending = transclusion.pending;
       if (!pending) return;
-      const client = clientRef.current;
 
       const insertPos = Math.max(0, position < 0 ? text.length : Math.min(position, text.length));
-      const excerpt = pending.text;
-      const sep = insertPos > 0 && insertPos < text.length ? "" : (insertPos > 0 ? "\n\n" : "");
 
-      const newText = text.slice(0, insertPos) + sep + excerpt + text.slice(insertPos);
-      setText(newText);
-
-      try {
-        const linkId = await client.linkCreate(
-          pending.sourceWorkId,
-          workBeId,
-          { excerpt, start: pending.start, end: pending.end },
-          { excerpt, start: insertPos + sep.length, end: insertPos + sep.length + excerpt.length },
-        );
+      await compound.addSpan(
+        text,
+        insertPos,
+        pending.text,
+        pending.sourceWorkId,
+        pending.start,
+        pending.end,
+      );
+      if (clientRef.current && workBeId !== null) {
         try {
-          await client.applyTransclusionAttribution(linkId);
+          await clientRef.current.migrateCompoundToInline(workBeId);
+          await compound.reload();
         } catch {}
-      } catch (e) {
-        console.error("Transclusion link failed:", e);
       }
-
       transclusion.clearPending();
       setShowUndoToast(true);
       setTimeout(() => setShowUndoToast(false), 6000);
     },
-    [workBeId, text, setText, compound, transclusion, showToast]
+    [workBeId, text, compound, transclusion, showToast]
   );
 
   const handlePlaceImage = useCallback(
