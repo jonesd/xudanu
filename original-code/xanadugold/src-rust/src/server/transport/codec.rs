@@ -3452,15 +3452,27 @@ impl JsonCodec {
                     tumbler: args.tumbler,
                 })
             }
-            OperationCode::BloomFilterGet => Ok(WireRequest::BloomFilterGet),
+            OperationCode::BloomFilterGet => {
+                #[derive(Deserialize)]
+                struct Args {
+                    server_id: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::BloomFilterGet {
+                    server_id: args.server_id,
+                })
+            }
             OperationCode::BloomFilterCheck => {
                 #[derive(Deserialize)]
                 struct Args {
+                    server_id: String,
                     work_id: u64,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::BloomFilterCheck {
+                    server_id: args.server_id,
                     work_id: args.work_id,
                 })
             }

@@ -57,6 +57,7 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/.well-known/xanadu-server.json", get(well_known_handler))
         .route("/api/public/work/{work_id}", get(public_work_handler))
         .route("/api/public/works", get(public_works_list_handler))
+        .route("/api/bloom-filter", get(bloom_filter_handler))
         .route("/api/public/identity", get(public_identity_handler))
         .route(
             "/api/public/work/{work_id}/range/{start}/{end}",
@@ -286,6 +287,30 @@ async fn public_work_handler(
 #[derive(Debug, serde::Deserialize)]
 pub struct IdentityQuery {
     pub q: Option<String>,
+}
+
+async fn bloom_filter_handler(State(state): State<SharedState>) -> axum::response::Response {
+    let filter = state.server.with_server_ref(|srv| srv.build_bloom_filter());
+
+    let bits_hex: String = filter
+        .bits_as_vec()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+
+    let body = serde_json::json!({
+        "bits": bits_hex,
+        "num_hashes": filter.num_hashes(),
+        "num_bits": filter.num_bits(),
+        "item_count": filter.item_count(),
+        "timestamp": filter.timestamp(),
+    });
+
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        body.to_string(),
+    )
+        .into_response()
 }
 
 async fn public_identity_handler(

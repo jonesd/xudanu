@@ -1434,6 +1434,36 @@ impl Server {
         self.works.contains_key(&(work_id as BeId))
     }
 
+    pub fn fetch_remote_bloom_filter(
+        &self,
+        server_id: u64,
+    ) -> Result<crate::server::bloom::ServerBloomFilter, ServerError> {
+        let entry = self
+            .server_directory
+            .get(server_id)
+            .ok_or(ServerError::Internal("server not in directory".into()))?;
+        let base_url = format!("http://{}:{}", entry.address, entry.port.unwrap_or(8080));
+        let url = format!("{}/api/bloom-filter", base_url);
+        let resp_str = http_get_json(&url, 10).map_err(|e| ServerError::Internal(e))?;
+        let resp: serde_json::Value = serde_json::from_str(&resp_str)
+            .map_err(|e| ServerError::Internal(format!("json parse: {}", e)))?;
+        let bits_hex = resp
+            .get("bits")
+            .and_then(|v| v.as_str())
+            .ok_or(ServerError::Internal("missing bits field".into()))?;
+        let bits = hex::decode(bits_hex)
+            .map_err(|e| ServerError::Internal(format!("hex decode: {}", e)))?;
+        let num_hashes = resp.get("num_hashes").and_then(|v| v.as_u64()).unwrap_or(7) as usize;
+        let num_bits = resp.get("num_bits").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+        let item_count = resp.get("item_count").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+        let timestamp = resp.get("timestamp").and_then(|v| v.as_u64()).unwrap_or(0);
+
+        crate::server::bloom::ServerBloomFilter::from_network(
+            bits, num_hashes, num_bits, item_count, timestamp,
+        )
+        .map_err(|e| ServerError::Internal(format!("bloom filter rejected: {}", e)))
+    }
+
     pub fn bloom_contains_blob(&self, hash: &[u8; 32]) -> bool {
         self.blob_store.exists(hash).unwrap_or(false)
     }

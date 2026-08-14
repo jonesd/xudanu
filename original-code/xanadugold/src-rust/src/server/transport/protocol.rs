@@ -2228,8 +2228,11 @@ pub enum WireRequest {
     TumblerResolve {
         tumbler: String,
     },
-    BloomFilterGet,
+    BloomFilterGet {
+        server_id: String,
+    },
     BloomFilterCheck {
+        server_id: String,
         work_id: u64,
     },
 }

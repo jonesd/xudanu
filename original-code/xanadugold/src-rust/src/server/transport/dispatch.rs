@@ -3916,9 +3916,12 @@ fn dispatch_inner(
                 })
             }
         }
-        WireRequest::BloomFilterGet => {
+        WireRequest::BloomFilterGet { server_id } => {
             srv.ensure_session(session_id)?;
-            let filter = srv.build_bloom_filter();
+            let sid: u64 = server_id.parse().map_err(|_| {
+                crate::server::ServerError::InvalidArgument("invalid server_id".into())
+            })?;
+            let filter = srv.fetch_remote_bloom_filter(sid)?;
             Ok(ResponseValue::BloomFilterResult {
                 bits: filter.bits_as_vec(),
                 num_hashes: filter.num_hashes(),
@@ -3927,10 +3930,14 @@ fn dispatch_inner(
                 timestamp: filter.timestamp(),
             })
         }
-        WireRequest::BloomFilterCheck { work_id } => {
+        WireRequest::BloomFilterCheck { server_id, work_id } => {
             srv.ensure_session(session_id)?;
+            let sid: u64 = server_id.parse().map_err(|_| {
+                crate::server::ServerError::InvalidArgument("invalid server_id".into())
+            })?;
+            let filter = srv.fetch_remote_bloom_filter(sid)?;
             Ok(ResponseValue::BloomFilterCheckResult {
-                present: srv.bloom_contains_work(work_id),
+                present: filter.contains(&work_id.to_le_bytes()),
             })
         }
         #[cfg(feature = "serde")]
