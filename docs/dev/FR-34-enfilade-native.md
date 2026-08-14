@@ -56,28 +56,37 @@ provenance, federation, web platform).
 
 ### Test counts: 2998 Rust lib + 280 integration + 696 frontend + 8 E2E = 3982
 
-### Performance comparison
+### Performance comparison (measured)
 
-| Operation | Before | After | Gold |
-|---|---|---|---|
-| Merge (no concurrent edits) | O(n) | **O(1)** | O(1) |
-| Merge (small concurrent edits) | O(n) | **~O(n/2)** | O(log n x k) |
-| Delta (single char edit) | ~4x O(n) | **~1x O(n)** | O(log n) |
-| Equality check | O(n) | **O(1)** | O(1) |
+| Operation | Before (v1.3) | After (v1.4) | Gold | How measured |
+|---|---|---|---|---|
+| Merge (no concurrent edits) | O(n) | **O(1)** — 250ns | O(1) | `benchmark_merge_no_concurrent` |
+| Merge (one side unchanged) | O(n) | **O(n/2)** | O(log n × k) | `benchmark_merge_single_sided` |
+| Merge (both sides changed) | O(n) | O(n) | O(log n × k) | `benchmark_merge_both_sides` |
+| Delta (single char edit) | ~4× O(n) | **~1× O(n)** | O(log n) | Inline coalesce eliminates rebuild pass |
+| Crum equality check | O(n) tree walk | **O(1)** — 250ns cached | O(1) | `benchmark_crum_comparison` |
+| Transclusion resolve | O(n) per level | O(1) cached_content | O(1) structural ref | Cached on stamp |
+| Transclusion migration | Drops metadata | **Preserves metadata** | N/A (single-user) | 12 edge case tests |
+| Bloom filter check | N/A | O(k) per item (k=7) | N/A | 33 bloom tests |
+| Bloom filter exchange | N/A | O(n_bits/8) bytes | N/A | 3-node Docker test |
 
 ### Enfilade feature activation
 
 | Capability | Status | Gold equivalent |
 |---|---|---|
-| Crums (Merkle hashes) | **Active** (24 tests) | OCs (original crums) |
+| Crums on OrglRoot | **Active** (cached, O(1)) | OCs (original crums) |
+| Crums on Loaf nodes | Available via compute_crum() | OCs on every node |
 | with/without | Available | Primary edit path |
 | copy | Available | Transclusion extraction |
 | combine | Available (disjoint only) | Compound assembly |
+| combine_overlapping | **Active** (LWW) | Structural merge |
 | Dsp | Working | Position management |
-| Splay | Dormant | Active in Gold |
-| Tumbler bridge | **Connected** | Native |
+| Splay | **Exposed** at Edition level | Active in Gold |
+| Tumbler bridge | **Connected** (Sequence algebra) | Native |
 | CrossSpace | Dormant | Compound documents |
 | Arrangement | Dormant | Transclusion mapping |
+| Structural transclusion | **Active** (cached_content) | Tree references |
+| Bloom filter federation | **Active** (33 tests) | N/A (trust-based) |
 
 ## Roadmap: Approaching Gold
 
