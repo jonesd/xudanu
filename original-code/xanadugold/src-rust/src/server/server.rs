@@ -1417,6 +1417,27 @@ impl Server {
             .collect()
     }
 
+    pub fn build_bloom_filter(&self) -> crate::server::bloom::ServerBloomFilter {
+        let work_count = self.works.len();
+        let mut filter = crate::server::bloom::ServerBloomFilter::new(work_count.max(8), 0.01);
+        for (id, _) in &self.works {
+            filter.insert(&id.to_le_bytes());
+        }
+        filter
+    }
+
+    pub fn build_blob_bloom_filter(&self) -> crate::server::bloom::ServerBloomFilter {
+        crate::server::bloom::ServerBloomFilter::empty()
+    }
+
+    pub fn bloom_contains_work(&self, work_id: u64) -> bool {
+        self.works.contains_key(&(work_id as BeId))
+    }
+
+    pub fn bloom_contains_blob(&self, hash: &[u8; 32]) -> bool {
+        self.blob_store.exists(hash).unwrap_or(false)
+    }
+
     pub fn total_revision_count(&self) -> u64 {
         self.works
             .values()

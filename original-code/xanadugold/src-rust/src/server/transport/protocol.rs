@@ -429,6 +429,10 @@ pub enum OperationCode {
     #[cfg(feature = "serde")]
     TumblerResolve,
     #[cfg(feature = "serde")]
+    BloomFilterGet,
+    #[cfg(feature = "serde")]
+    BloomFilterCheck,
+    #[cfg(feature = "serde")]
     FederationAttestationCreate,
     #[cfg(feature = "serde")]
     FederationAttestationVerify,
@@ -787,6 +791,8 @@ impl OperationCode {
             #[cfg(feature = "serde")]
             0x0F0D => Some(OperationCode::FetchRemoteIdentity),
             0x0F0E => Some(OperationCode::TumblerResolve),
+            0x0F0F => Some(OperationCode::BloomFilterGet),
+            0x0F10 => Some(OperationCode::BloomFilterCheck),
 
             _ => None,
         }
@@ -1111,6 +1117,8 @@ impl OperationCode {
             #[cfg(feature = "serde")]
             OperationCode::FetchRemoteIdentity => 0x0F0D,
             OperationCode::TumblerResolve => 0x0F0E,
+            OperationCode::BloomFilterGet => 0x0F0F,
+            OperationCode::BloomFilterCheck => 0x0F10,
             #[cfg(feature = "serde")]
             OperationCode::FederationAttestationCreate => 0x0E02,
             #[cfg(feature = "serde")]
@@ -2220,6 +2228,10 @@ pub enum WireRequest {
     TumblerResolve {
         tumbler: String,
     },
+    BloomFilterGet,
+    BloomFilterCheck {
+        work_id: u64,
+    },
 }
 
 impl WireRequest {
@@ -2912,6 +2924,18 @@ pub enum ResponseValue {
         title: Option<String>,
         is_local: bool,
         server: String,
+    },
+    #[cfg(feature = "serde")]
+    BloomFilterResult {
+        bits: Vec<u8>,
+        num_hashes: usize,
+        num_bits: usize,
+        item_count: usize,
+        timestamp: u64,
+    },
+    #[cfg(feature = "serde")]
+    BloomFilterCheckResult {
+        present: bool,
     },
     #[cfg(feature = "serde")]
     FederationAttestationCreateResult {

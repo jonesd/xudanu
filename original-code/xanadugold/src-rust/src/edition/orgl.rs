@@ -1120,8 +1120,15 @@ impl OrglRoot {
     pub fn crum(&self) -> Option<Crum> {
         match &self.inner {
             OrglInner::Empty => None,
-            OrglInner::Actual { cached_crum: Some(c), .. } => Some(*c),
-            OrglInner::Actual { loaf, cached_crum: None, .. } => {
+            OrglInner::Actual {
+                cached_crum: Some(c),
+                ..
+            } => Some(*c),
+            OrglInner::Actual {
+                loaf,
+                cached_crum: None,
+                ..
+            } => {
                 let c = loaf.compute_crum();
                 Some(c)
             }

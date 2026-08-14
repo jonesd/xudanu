@@ -3916,6 +3916,23 @@ fn dispatch_inner(
                 })
             }
         }
+        WireRequest::BloomFilterGet => {
+            srv.ensure_session(session_id)?;
+            let filter = srv.build_bloom_filter();
+            Ok(ResponseValue::BloomFilterResult {
+                bits: filter.bits_as_vec(),
+                num_hashes: filter.num_hashes(),
+                num_bits: filter.num_bits(),
+                item_count: filter.item_count(),
+                timestamp: filter.timestamp(),
+            })
+        }
+        WireRequest::BloomFilterCheck { work_id } => {
+            srv.ensure_session(session_id)?;
+            Ok(ResponseValue::BloomFilterCheckResult {
+                present: srv.bloom_contains_work(work_id),
+            })
+        }
         #[cfg(feature = "serde")]
         WireRequest::FederationAttestationCreate {
             attestation_type,

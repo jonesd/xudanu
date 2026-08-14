@@ -1,6 +1,8 @@
 #[cfg(feature = "server")]
 pub mod admin;
 #[cfg(feature = "server")]
+pub mod bloom;
+#[cfg(feature = "server")]
 pub mod club;
 #[cfg(feature = "server")]
 pub mod crdt_manager;
