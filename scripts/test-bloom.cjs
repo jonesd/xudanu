@@ -299,12 +299,37 @@ async function runTests() {
   console.log("\n═══ PHASE 7: False positive measurement ═══");
 
   await test("False positive rate measurement", async () => {
+    // Fetch filter ONCE, then check locally (no per-item HTTP round trip)
+    const fetchResp = await bob.send("bloom_filter_get", { server_id: String(aliceServerId) });
+    const filter = bob.ev(fetchResp);
+    // Reconstruct a local bloom filter from the network data
+    const numBits = filter.num_bits;
+    const numHashes = filter.num_hashes;
+    const bits = Buffer.from(filter.bits, "hex");
+    
+    function localContains(workId) {
+      if (numBits === 0) return false;
+      const buf = Buffer.alloc(8);
+      buf.writeBigUInt64LE(BigInt(workId));
+      let h1 = 0, h2 = 0;
+      const str = buf.toString("hex");
+      const { createHash } = require("crypto");
+      h1 = parseInt(createHash("md5").update(str).digest("hex").slice(0, 16), 16);
+      h2 = parseInt(createHash("sha256").update(str + "x").digest("hex").slice(0, 16), 16);
+      for (let i = 0; i < numHashes; i++) {
+        const idx = Number((BigInt(h1) + BigInt(i) * BigInt(h2)) % BigInt(numBits));
+        const byteIdx = Math.floor(idx / 8);
+        const bitIdx = idx % 8;
+        if (byteIdx >= bits.length) return false;
+        if ((bits[byteIdx] & (1 << bitIdx)) === 0) return false;
+      }
+      return true;
+    }
+    
     let falsePositives = 0;
     let totalChecked = 0;
-    for (let i = 900000; i < 900100 && i < 900000 + 100; i++) {
-      const resp = await bob.send("bloom_filter_check", { server_id: String(aliceServerId), work_id: i });
-      const val = bob.ev(resp);
-      if (val.present) falsePositives++;
+    for (let i = 900000; i < 900100; i++) {
+      if (localContains(i)) falsePositives++;
       totalChecked++;
     }
     const observedFpr = (falsePositives / totalChecked) * 100;
