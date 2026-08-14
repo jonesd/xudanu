@@ -152,6 +152,7 @@ export function buildTransclusionDom(
         const title = sourceTitles?.[sr.source_work_id] || sr.source_work_id.toString(16);
         const span = document.createElement("span");
         span.className = "inline-transclusion";
+        span.setAttribute("contenteditable", "false");
         span.textContent = chunk;
         span.title = `Transclusion from: ${title} (click to navigate)`;
         (span as HTMLElement).dataset.sourceWorkId = String(sr.source_work_id);
@@ -164,6 +165,7 @@ export function buildTransclusionDom(
         );
         const span = document.createElement("span");
         span.className = "inline-transclusion inline-transclusion-overlap";
+        span.setAttribute("contenteditable", "false");
         span.textContent = chunk;
         span.title = `Overlapping transclusions from: ${title}, ${others.join(", ")}`;
         (span as HTMLElement).dataset.sourceWorkId = String(sr.source_work_id);
