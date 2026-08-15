@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
-# Pre-push validation: mirrors exactly what GitHub CI + Release workflows check.
-# Matches .github/workflows/ci.yml and .github/workflows/release.yml.
+# Pre-push validation: fast static checks. CI runs the full test suites.
+#
+# Rationale: the full lib test suite takes 10-15 min; CI runs it on every
+# push anyway (ci.yml), so running it in the hook duplicates work and makes
+# pushes painfully slow. Run tests explicitly before tagging/releasing:
 #
 # Usage:
-#   ./scripts/pre-push.sh           # full check (all tests + frontend build)
-#   ./scripts/pre-push.sh --quick   # skip integration tests and vite build
-#   ./scripts/pre-push.sh --release # also verify --release compiles
+#   ./scripts/pre-push.sh            # fast: scan + fmt + clippy + lint + tsc
+#   ./scripts/pre-push.sh --tests    # also run lib + integration tests
+#   ./scripts/pre-push.sh --quick    # skip vite build
+#   ./scripts/pre-push.sh --release  # also verify --release compiles
 set -euo pipefail
 
 QUICK=false
 RELEASE=false
+TESTS=false
 for arg in "$@"; do
     case "$arg" in
         --quick)   QUICK=true ;;
         --release) RELEASE=true ;;
+        --tests)   TESTS=true ;;
     esac
 done
 
@@ -58,21 +64,26 @@ else
 fi
 echo "(warnings above are informational — CI does not fail on them)"
 
-# ── 3. cargo test --lib (ci.yml + release.yml) ──────────────────────────────
-step "3/6. cargo test --features server --lib"
-if cargo test --features server --lib 2>&1; then ok; else
-    echo ""; echo "FAIL: Lib tests failed."; exit 1
+# ── 3. cargo test --lib (CI runs this on every push; opt in locally) ─────────
+if [ "$TESTS" = true ]; then
+    step "3/6. cargo test --features server --lib"
+    if cargo test --features server --lib 2>&1; then ok; else
+        echo ""; echo "FAIL: Lib tests failed."; exit 1
+    fi
+else
+    step "3/6. cargo test --features server --lib"
+    skip "(CI runs tests; use --tests to run locally)"
 fi
 
-# ── 4. cargo test --test integration (stricter than CI) ─────────────────────
-if [ "$QUICK" = true ]; then
-    step "4/6. cargo test --features server --test integration"
-    skip "(--quick mode)"
-else
+# ── 4. cargo test --test integration (opt in via --tests) ───────────────────
+if [ "$TESTS" = true ]; then
     step "4/6. cargo test --features server --test integration"
     if cargo test --features server --test integration 2>&1; then ok; else
         echo ""; echo "FAIL: Integration tests failed."; exit 1
     fi
+else
+    step "4/6. cargo test --features server --test integration"
+    skip "(CI runs tests; use --tests to run locally)"
 fi
 
 # ── 5. ESLint with security rules (catches credential leaks, eval, etc.) ─────
