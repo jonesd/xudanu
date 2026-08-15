@@ -752,7 +752,7 @@ pub fn read_manifest(path: &Path) -> Result<Manifest, ManifestError> {
     read_manifest_from_str(&content)
 }
 
- pub fn read_manifest_from_str(content: &str) -> Result<Manifest, ManifestError> {
+pub fn read_manifest_from_str(content: &str) -> Result<Manifest, ManifestError> {
     let manifest: Manifest = serde_json::from_str(content)?;
 
     if manifest.format_version > CURRENT_MANIFEST_VERSION {

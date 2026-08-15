@@ -2,13 +2,13 @@ pub mod chunk_store;
 pub mod counter;
 pub mod edition_chunks;
 pub mod engine;
-pub mod root_chunk;
 pub mod file_storage;
 pub mod manifest;
 pub mod memory;
 pub mod migrations;
 pub mod packer;
 pub mod persistent;
+pub mod root_chunk;
 pub mod snarf;
 #[cfg(test)]
 mod stress;

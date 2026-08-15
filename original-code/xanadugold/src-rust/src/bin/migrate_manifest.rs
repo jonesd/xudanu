@@ -46,23 +46,41 @@ fn main() {
                 eprintln!("         Attempting to re-read with checksum bypass...");
                 let raw = match std::fs::read_to_string(&manifest_path) {
                     Ok(r) => r,
-                    Err(io) => { eprintln!("Cannot read manifest file: {}", io); std::process::exit(1); }
+                    Err(io) => {
+                        eprintln!("Cannot read manifest file: {}", io);
+                        std::process::exit(1);
+                    }
                 };
                 let mut val: serde_json::Value = match serde_json::from_str(&raw) {
                     Ok(v) => v,
-                    Err(j) => { eprintln!("Cannot parse manifest JSON: {}", j); std::process::exit(1); }
+                    Err(j) => {
+                        eprintln!("Cannot parse manifest JSON: {}", j);
+                        std::process::exit(1);
+                    }
                 };
                 if let Some(obj) = val.as_object_mut() {
-                    obj.insert("checksum".to_string(), serde_json::Value::String(String::new()));
+                    obj.insert(
+                        "checksum".to_string(),
+                        serde_json::Value::String(String::new()),
+                    );
                 }
                 let patched = match serde_json::to_string(&val) {
                     Ok(p) => p,
-                    Err(j) => { eprintln!("Cannot re-serialize manifest: {}", j); std::process::exit(1); }
+                    Err(j) => {
+                        eprintln!("Cannot re-serialize manifest: {}", j);
+                        std::process::exit(1);
+                    }
                 };
                 match manifest::read_manifest_from_str(&patched) {
                     Ok(m) => m,
-                    Ok(e2) => { eprintln!("Checksum bypass also failed: {:?}", e2); std::process::exit(1); }
-                    Err(e2) => { eprintln!("Checksum bypass also failed: {}", e2); std::process::exit(1); }
+                    Ok(e2) => {
+                        eprintln!("Checksum bypass also failed: {:?}", e2);
+                        std::process::exit(1);
+                    }
+                    Err(e2) => {
+                        eprintln!("Checksum bypass also failed: {}", e2);
+                        std::process::exit(1);
+                    }
                 }
             } else {
                 eprintln!("Error reading manifest: {}", e);
@@ -71,23 +89,40 @@ fn main() {
         }
     };
 
-    println!("Manifest: sequence={}, works={}, clubs={}, standalone_editions={}",
-        m.sequence, m.works.len(), m.clubs.len(), m.standalone_editions.len());
+    println!(
+        "Manifest: sequence={}, works={}, clubs={}, standalone_editions={}",
+        m.sequence,
+        m.works.len(),
+        m.clubs.len(),
+        m.standalone_editions.len()
+    );
 
     if dry_run {
         println!();
         println!("=== DRY RUN (nothing will be written) ===");
         println!("Would write sections:");
-        println!("  works: {} entries → WorkStateChunks + WorksIndexChunk", m.works.len());
-        println!("  clubs: {} entries → ClubStateChunks + ClubIndexChunk", m.clubs.len());
-        println!("  standalone_editions: {} entries → StandaloneEditionsChunk", m.standalone_editions.len());
+        println!(
+            "  works: {} entries → WorkStateChunks + WorksIndexChunk",
+            m.works.len()
+        );
+        println!(
+            "  clubs: {} entries → ClubStateChunks + ClubIndexChunk",
+            m.clubs.len()
+        );
+        println!(
+            "  standalone_editions: {} entries → StandaloneEditionsChunk",
+            m.standalone_editions.len()
+        );
         println!("  admin: AdminChunk");
         println!("  system_clubs: SystemClubsChunk");
         println!("  links_hash: {:?}", m.links_chunk_hash);
         println!("  social_hash: {:?}", m.social_chunk_hash);
         println!("  blob_metas_hash: {:?}", m.blob_metas_chunk_hash);
         println!("  content_address_hash: {:?}", m.content_address_chunk_hash);
-        println!("  historical_authors_hash: {:?}", m.historical_authors_chunk_hash);
+        println!(
+            "  historical_authors_hash: {:?}",
+            m.historical_authors_chunk_hash
+        );
         println!("  fossil_snapshots_hash: {:?}", m.fossil_snapshots_hash);
         println!("Then: ServerRootChunk → root_manifest.json");
         return;
@@ -96,11 +131,18 @@ fn main() {
     let chunk_store = match ChunkStore::open(&data_dir) {
         Ok(cs) => cs,
         Err(e) => {
-            eprintln!("Error opening chunk store at '{}': {:?}", data_dir.join("chunks").display(), e);
+            eprintln!(
+                "Error opening chunk store at '{}': {:?}",
+                data_dir.join("chunks").display(),
+                e
+            );
             std::process::exit(1);
         }
     };
-    println!("Chunk store opened at {}", data_dir.join("chunks").display());
+    println!(
+        "Chunk store opened at {}",
+        data_dir.join("chunks").display()
+    );
 
     let root_hash = migrate_manifest(&chunk_store, &data_dir, &m).unwrap_or_else(|e| {
         eprintln!("Migration failed: {}", e);
@@ -139,14 +181,19 @@ fn migrate_manifest(
         None
     } else {
         let h = root_chunk::write_works_index_chunk(
-            &WorksIndexChunk { format_version: 0, entries: work_index_entries },
+            &WorksIndexChunk {
+                format_version: 0,
+                entries: work_index_entries,
+            },
             chunk_store,
         )?;
         written_chunks += 1;
         Some(h)
     };
-    println!("  works: {} WorkStateChunks + WorksIndexChunk",
-        m.works.len());
+    println!(
+        "  works: {} WorkStateChunks + WorksIndexChunk",
+        m.works.len()
+    );
 
     // --- Clubs: ClubStateChunks + ClubIndexChunk ---
     let mut club_index_entries = Vec::with_capacity(m.clubs.len());
@@ -165,20 +212,26 @@ fn migrate_manifest(
         None
     } else {
         let h = root_chunk::write_club_index_chunk(
-            &ClubIndexChunk { format_version: 0, entries: club_index_entries },
+            &ClubIndexChunk {
+                format_version: 0,
+                entries: club_index_entries,
+            },
             chunk_store,
         )?;
         written_chunks += 1;
         Some(h)
     };
-    println!("  clubs: {} ClubStateChunks + ClubIndexChunk",
-        m.clubs.len());
+    println!(
+        "  clubs: {} ClubStateChunks + ClubIndexChunk",
+        m.clubs.len()
+    );
 
     // --- Standalone Editions ---
     let standalone_editions_hash = if m.standalone_editions.is_empty() {
         None
     } else {
-        let entries: Vec<root_chunk::StandaloneEditionEntry> = m.standalone_editions
+        let entries: Vec<root_chunk::StandaloneEditionEntry> = m
+            .standalone_editions
             .iter()
             .map(|se| root_chunk::StandaloneEditionEntry {
                 format_version: 0,
@@ -186,7 +239,10 @@ fn migrate_manifest(
                 edition_ref_hash: se.edition_ref.root_hash,
             })
             .collect();
-        let chunk = root_chunk::StandaloneEditionsChunk { format_version: 0, entries };
+        let chunk = root_chunk::StandaloneEditionsChunk {
+            format_version: 0,
+            entries,
+        };
         let hash = root_chunk::write_standalone_editions_chunk(&chunk, chunk_store)?;
         written_chunks += 1;
         Some(hash)
@@ -214,7 +270,10 @@ fn migrate_manifest(
         format_version: 0,
         system_clubs: m.system_clubs.clone(),
     };
-    let system_clubs_hash = Some(root_chunk::write_system_clubs_chunk(&sys_chunk, chunk_store)?);
+    let system_clubs_hash = Some(root_chunk::write_system_clubs_chunk(
+        &sys_chunk,
+        chunk_store,
+    )?);
     written_chunks += 1;
     println!("  system_clubs: SystemClubsChunk written");
 

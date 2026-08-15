@@ -1,6 +1,6 @@
 use crate::edition::backend::BeId;
-use crate::edition::WorkKind;
 use crate::edition::License;
+use crate::edition::WorkKind;
 use crate::persist::chunk_store::{ChunkError, ChunkStore, CHUNK_FORMAT_POSTCARD};
 use crate::persist::edition_chunks::{EditionChunkRef, WorkChunkRef};
 use crate::persist::manifest::RevisionMeta;
@@ -50,10 +50,18 @@ impl std::fmt::Display for RootChunkError {
             RootChunkError::ChunkStore(e) => write!(f, "root chunk store error: {}", e),
             RootChunkError::CorruptData(e) => write!(f, "corrupt root chunk: {}", e),
             RootChunkError::WrongFormat { expected, actual } => {
-                write!(f, "root chunk format 0x{:02x}, expected 0x{:02x}", actual, expected)
+                write!(
+                    f,
+                    "root chunk format 0x{:02x}, expected 0x{:02x}",
+                    actual, expected
+                )
             }
             RootChunkError::MissingChunk(h) => {
-                write!(f, "missing root chunk: 0x{:08x}", u64::from_be_bytes(h[..8].try_into().unwrap_or([0; 8])) )
+                write!(
+                    f,
+                    "missing root chunk: 0x{:08x}",
+                    u64::from_be_bytes(h[..8].try_into().unwrap_or([0; 8]))
+                )
             }
         }
     }
@@ -127,80 +135,80 @@ pub struct WorksIndexChunk {
 
 // ── ServerRootChunk ─────────────────────────────────────────────────────────
 
-    // Club state chunks
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    pub struct ClubIndexChunk {
-        #[serde(default)]
-        pub format_version: u32,
-        pub entries: Vec<ClubIndexEntry>,
-    }
+// Club state chunks
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ClubIndexChunk {
+    #[serde(default)]
+    pub format_version: u32,
+    pub entries: Vec<ClubIndexEntry>,
+}
 
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    pub struct ClubIndexEntry {
-        #[serde(default)]
-        pub format_version: u32,
-        pub be_id: BeId,
-        pub club_state_hash: [u8; 32],
-    }
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ClubIndexEntry {
+    #[serde(default)]
+    pub format_version: u32,
+    pub be_id: BeId,
+    pub club_state_hash: [u8; 32],
+}
 
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    pub struct ClubStateChunk {
-        #[serde(default)]
-        pub format_version: u32,
-        pub be_id: BeId,
-        pub name: Option<String>,
-        pub signature_club: Option<BeId>,
-        pub work_root: WorkChunkRef,
-        pub default_read_club: Option<BeId>,
-        pub default_edit_club: Option<BeId>,
-        pub is_personal: bool,
-        pub display_name: Option<String>,
-        pub credential: Option<crate::server::club::Credential>,
-        pub encrypted_signing_key: Option<crate::crypto::club_keys::EncryptedSigningKey>,
-        pub email: Option<String>,
-        pub verified: bool,
-        pub members: Vec<BeId>,
-        pub sponsored_works: Vec<BeId>,
-    }
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ClubStateChunk {
+    #[serde(default)]
+    pub format_version: u32,
+    pub be_id: BeId,
+    pub name: Option<String>,
+    pub signature_club: Option<BeId>,
+    pub work_root: WorkChunkRef,
+    pub default_read_club: Option<BeId>,
+    pub default_edit_club: Option<BeId>,
+    pub is_personal: bool,
+    pub display_name: Option<String>,
+    pub credential: Option<crate::server::club::Credential>,
+    pub encrypted_signing_key: Option<crate::crypto::club_keys::EncryptedSigningKey>,
+    pub email: Option<String>,
+    pub verified: bool,
+    pub members: Vec<BeId>,
+    pub sponsored_works: Vec<BeId>,
+}
 
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    pub struct StandaloneEditionsChunk {
-        #[serde(default)]
-        pub format_version: u32,
-        pub entries: Vec<StandaloneEditionEntry>,
-    }
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StandaloneEditionsChunk {
+    #[serde(default)]
+    pub format_version: u32,
+    pub entries: Vec<StandaloneEditionEntry>,
+}
 
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    pub struct StandaloneEditionEntry {
-        #[serde(default)]
-        pub format_version: u32,
-        pub be_id: BeId,
-        pub edition_ref_hash: [u8; 32],
-    }
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StandaloneEditionEntry {
+    #[serde(default)]
+    pub format_version: u32,
+    pub be_id: BeId,
+    pub edition_ref_hash: [u8; 32],
+}
 
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    pub struct AdminChunk {
-        #[serde(default)]
-        pub format_version: u32,
-        pub admin: crate::persist::manifest::AdminEntry,
-        pub accepting_connections: bool,
-        pub shutdown_requested: bool,
-        pub grants: Vec<(BeId, String)>,
-        pub server_name: Option<String>,
-        pub server_description: Option<String>,
-        pub server_namespace_id: Option<u64>,
-        pub public_address: Option<String>,
-    }
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AdminChunk {
+    #[serde(default)]
+    pub format_version: u32,
+    pub admin: crate::persist::manifest::AdminEntry,
+    pub accepting_connections: bool,
+    pub shutdown_requested: bool,
+    pub grants: Vec<(BeId, String)>,
+    pub server_name: Option<String>,
+    pub server_description: Option<String>,
+    pub server_namespace_id: Option<u64>,
+    pub public_address: Option<String>,
+}
 
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    pub struct SystemClubsChunk {
-        #[serde(default)]
-        pub format_version: u32,
-        pub system_clubs: crate::server::SystemClubs,
-    }
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SystemClubsChunk {
+    #[serde(default)]
+    pub format_version: u32,
+    pub system_clubs: crate::server::SystemClubs,
+}
 
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    pub struct ServerRootChunk {
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ServerRootChunk {
     pub format_version: u32,
     pub sequence: u64,
     pub checkpoint_at: String,
@@ -366,7 +374,11 @@ pub fn checkpoint_write_root(
             content_start_line: entry.content_start_line,
             content_end_line: entry.content_end_line,
             is_archived: entry.is_archived,
-            revisions: manifest.revisions.get(&entry.be_id).cloned().unwrap_or_default(),
+            revisions: manifest
+                .revisions
+                .get(&entry.be_id)
+                .cloned()
+                .unwrap_or_default(),
         };
         let ws_hash = write_work_state_chunk(&ws, chunk_store)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
@@ -623,10 +635,7 @@ pub fn read_standalone_editions_chunk(
     deserialize_from_bytes(&data)
 }
 
-pub fn read_admin_chunk(
-    hash: &[u8; 32],
-    store: &ChunkStore,
-) -> Result<AdminChunk, RootChunkError> {
+pub fn read_admin_chunk(hash: &[u8; 32], store: &ChunkStore) -> Result<AdminChunk, RootChunkError> {
     let data = store.read_chunk(hash)?;
     deserialize_from_bytes(&data)
 }
@@ -792,7 +801,9 @@ pub fn read_root_as_manifest(
 
     // ── System Clubs ──────────────────────────────────────────────────────
     let system_clubs = if let Some(h) = root.system_clubs_hash {
-        read_system_clubs_chunk(&h, store).ok().map(|sc| sc.system_clubs)
+        read_system_clubs_chunk(&h, store)
+            .ok()
+            .map(|sc| sc.system_clubs)
     } else {
         None
     };
@@ -810,13 +821,11 @@ pub fn read_root_as_manifest(
         grand_map_id_counter: root.grand_map_id_counter,
         session_counter: root.session_counter,
         operation_counter: root.operation_counter,
-        system_clubs: system_clubs.unwrap_or_else(|| {
-            crate::server::SystemClubs {
-                public_club: crate::edition::backend::BeId::default(),
-                admin_club: crate::edition::backend::BeId::default(),
-                access_club: crate::edition::backend::BeId::default(),
-                empty_club: crate::edition::backend::BeId::default(),
-            }
+        system_clubs: system_clubs.unwrap_or_else(|| crate::server::SystemClubs {
+            public_club: crate::edition::backend::BeId::default(),
+            admin_club: crate::edition::backend::BeId::default(),
+            access_club: crate::edition::backend::BeId::default(),
+            empty_club: crate::edition::backend::BeId::default(),
         }),
         works: all_work_entries,
         clubs: all_club_refs,
@@ -830,9 +839,7 @@ pub fn read_root_as_manifest(
         links_chunk_hash: root.links_hash,
         reconcile_store: root
             .reconcile_store_hash
-            .and_then(|h| {
-                crate::persist::manifest::read_section_chunk(store, &h).ok()
-            })
+            .and_then(|h| crate::persist::manifest::read_section_chunk(store, &h).ok())
             .unwrap_or_default(),
         reconcile_counter: 0,
         federation: None,
@@ -874,7 +881,11 @@ mod tests {
     fn temp_dir() -> PathBuf {
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        std::env::temp_dir().join(format!("xudanu_root_chunk_test_{}_{}", std::process::id(), id))
+        std::env::temp_dir().join(format!(
+            "xudanu_root_chunk_test_{}_{}",
+            std::process::id(),
+            id
+        ))
     }
 
     fn make_test_hash(seed: u8) -> [u8; 32] {
@@ -901,7 +912,11 @@ mod tests {
             endorsements: vec![(5, 6)],
             current_edition_hash: make_test_hash(1),
             revision_count: 3,
-            history: vec![(0, make_test_hash(2)), (1, make_test_hash(3)), (2, make_test_hash(4))],
+            history: vec![
+                (0, make_test_hash(2)),
+                (1, make_test_hash(3)),
+                (2, make_test_hash(4)),
+            ],
             source_author_id: Some(100),
             source_fingerprint: Some(vec![1, 2, 3]),
             lifecycle_history: vec![crate::edition::work::WorkLifecycleEvent {
@@ -995,9 +1010,21 @@ mod tests {
         let chunk = WorksIndexChunk {
             format_version: 1,
             entries: vec![
-                WorkIndexEntry { format_version: 0, be_id: 1, work_state_hash: make_test_hash(10) },
-                WorkIndexEntry { format_version: 0, be_id: 2, work_state_hash: make_test_hash(20) },
-                WorkIndexEntry { format_version: 0, be_id: 3, work_state_hash: make_test_hash(30) },
+                WorkIndexEntry {
+                    format_version: 0,
+                    be_id: 1,
+                    work_state_hash: make_test_hash(10),
+                },
+                WorkIndexEntry {
+                    format_version: 0,
+                    be_id: 2,
+                    work_state_hash: make_test_hash(20),
+                },
+                WorkIndexEntry {
+                    format_version: 0,
+                    be_id: 3,
+                    work_state_hash: make_test_hash(30),
+                },
             ],
         };
 
@@ -1017,7 +1044,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let store = ChunkStore::open(&dir).unwrap();
 
-        let chunk = WorksIndexChunk { format_version: 0, entries: vec![] };
+        let chunk = WorksIndexChunk {
+            format_version: 0,
+            entries: vec![],
+        };
         let hash = write_works_index_chunk(&chunk, &store).unwrap();
         let restored = read_works_index_chunk(&hash, &store).unwrap();
         assert!(restored.entries.is_empty());
@@ -1149,7 +1179,10 @@ mod tests {
         let hash = write_root_chunk(&chunk, &store).unwrap();
         let data = store.read_chunk(&hash).unwrap();
 
-        assert_eq!(data[0], CHUNK_FORMAT_ROOT, "first byte should be 0x52 (ROOT format tag)");
+        assert_eq!(
+            data[0], CHUNK_FORMAT_ROOT,
+            "first byte should be 0x52 (ROOT format tag)"
+        );
         assert_eq!(data.len(), 1 + postcard::to_allocvec(&chunk).unwrap().len());
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -1159,13 +1192,19 @@ mod tests {
     fn wrong_format_tag_rejected() {
         let bad_data = vec![
             CHUNK_FORMAT_POSTCARD, // 0x50, not 0x52
-            0x01, 0x00, 0x00, 0x00, // format_version = 1
+            0x01,
+            0x00,
+            0x00,
+            0x00, // format_version = 1
         ];
 
         let result = deserialize_from_bytes::<ServerRootChunk>(&bad_data);
         assert!(result.is_err());
         match result.unwrap_err() {
-            RootChunkError::WrongFormat { expected: 0x52, actual: 0x50 } => {}
+            RootChunkError::WrongFormat {
+                expected: 0x52,
+                actual: 0x50,
+            } => {}
             other => panic!("expected WrongFormat, got: {}", other),
         }
     }
@@ -1205,7 +1244,10 @@ mod tests {
 
         let h1 = write_root_chunk(&make_root(), &store).unwrap();
         let h2 = write_root_chunk(&make_root(), &store).unwrap();
-        assert_eq!(h1, h2, "identical root chunks must produce identical hashes");
+        assert_eq!(
+            h1, h2,
+            "identical root chunks must produce identical hashes"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1292,11 +1334,18 @@ mod tests {
 
         let hash = write_root_chunk(&chunk, &store).unwrap();
 
-        let hex = hash.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+        let hex = hash
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>();
         let prefix = &hex[..2];
         let chunk_dir = dir.join("chunks").join(prefix);
         let chunk_file = chunk_dir.join(format!("{}.xchunk", hex));
-        std::fs::write(&chunk_file, b"corrupted data that is not a valid root chunk").unwrap();
+        std::fs::write(
+            &chunk_file,
+            b"corrupted data that is not a valid root chunk",
+        )
+        .unwrap();
         store.clear_cache();
 
         let result = read_root_chunk(&hash, &store);
@@ -1460,9 +1509,21 @@ mod tests {
         let index = WorksIndexChunk {
             format_version: 0,
             entries: vec![
-                WorkIndexEntry { format_version: 0, be_id: 1, work_state_hash: h1 },
-                WorkIndexEntry { format_version: 0, be_id: 2, work_state_hash: h2 },
-                WorkIndexEntry { format_version: 0, be_id: 3, work_state_hash: h3 },
+                WorkIndexEntry {
+                    format_version: 0,
+                    be_id: 1,
+                    work_state_hash: h1,
+                },
+                WorkIndexEntry {
+                    format_version: 0,
+                    be_id: 2,
+                    work_state_hash: h2,
+                },
+                WorkIndexEntry {
+                    format_version: 0,
+                    be_id: 3,
+                    work_state_hash: h3,
+                },
             ],
         };
         let index_hash = write_works_index_chunk(&index, &store).unwrap();
@@ -1497,24 +1558,26 @@ mod tests {
         assert_eq!(restored_root.sequence, 1);
         assert_eq!(restored_root.works_index_hash, Some(index_hash));
 
-        let restored_index = read_works_index_chunk(
-            &restored_root.works_index_hash.unwrap(), &store,
-        ).unwrap();
+        let restored_index =
+            read_works_index_chunk(&restored_root.works_index_hash.unwrap(), &store).unwrap();
         assert_eq!(restored_index.entries.len(), 3);
 
-        let restored_w1 = read_work_state_chunk(&restored_index.entries[0].work_state_hash, &store).unwrap();
+        let restored_w1 =
+            read_work_state_chunk(&restored_index.entries[0].work_state_hash, &store).unwrap();
         assert_eq!(restored_w1.be_id, 1);
         assert_eq!(restored_w1.kind, WorkKind::Document);
         assert_eq!(restored_w1.license, License::CreativeCommonsBy);
         assert_eq!(restored_w1.revision_count, 2);
         assert_eq!(restored_w1.custom_title, Some("Doc One".to_string()));
 
-        let restored_w2 = read_work_state_chunk(&restored_index.entries[1].work_state_hash, &store).unwrap();
+        let restored_w2 =
+            read_work_state_chunk(&restored_index.entries[1].work_state_hash, &store).unwrap();
         assert_eq!(restored_w2.be_id, 2);
         assert_eq!(restored_w2.kind, WorkKind::Concept);
         assert!(restored_w2.is_source);
 
-        let restored_w3 = read_work_state_chunk(&restored_index.entries[2].work_state_hash, &store).unwrap();
+        let restored_w3 =
+            read_work_state_chunk(&restored_index.entries[2].work_state_hash, &store).unwrap();
         assert_eq!(restored_w3.be_id, 3);
         assert!(restored_w3.is_archived);
 
@@ -1524,7 +1587,9 @@ mod tests {
     // ── Helpers ───────────────────────────────────────────────────────
 
     fn hex_to_hash(hex: &str) -> Option<[u8; 32]> {
-        if hex.len() != 64 { return None; }
+        if hex.len() != 64 {
+            return None;
+        }
         let mut result = [0u8; 32];
         for i in 0..32 {
             result[i] = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;

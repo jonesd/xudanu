@@ -727,7 +727,9 @@ impl<'de> Deserialize<'de> for RemoteOriginRegistry {
             type Value = RemoteOriginRegistry;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("a sequence of (fingerprint, origin) pairs or a map with \"origins\" key")
+                f.write_str(
+                    "a sequence of (fingerprint, origin) pairs or a map with \"origins\" key",
+                )
             }
 
             fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
@@ -750,13 +752,14 @@ impl<'de> Deserialize<'de> for RemoteOriginRegistry {
                 let mut origins = HashMap::new();
                 if let Some(om) = origins_map {
                     for (hex_fp, origin) in om {
-                        let fp = ::hex::decode(&hex_fp).map_err(|e| de::Error::custom(
-                            format!("invalid hex fingerprint: {}", e)
-                        ))?;
+                        let fp = ::hex::decode(&hex_fp).map_err(|e| {
+                            de::Error::custom(format!("invalid hex fingerprint: {}", e))
+                        })?;
                         if fp.len() != 32 {
-                            return Err(de::Error::custom(
-                                format!("fingerprint must be 32 bytes, got {}", fp.len())
-                            ));
+                            return Err(de::Error::custom(format!(
+                                "fingerprint must be 32 bytes, got {}",
+                                fp.len()
+                            )));
                         }
                         let mut arr = [0u8; 32];
                         arr.copy_from_slice(&fp);

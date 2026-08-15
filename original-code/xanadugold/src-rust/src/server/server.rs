@@ -8554,11 +8554,16 @@ impl Server {
                             if current_hex.len() == 32 {
                                 let mut hash = [0u8; 32];
                                 hash.copy_from_slice(&current_hex);
-                                match crate::persist::root_chunk::read_root_as_manifest(&hash, &chunk_store) {
+                                match crate::persist::root_chunk::read_root_as_manifest(
+                                    &hash,
+                                    &chunk_store,
+                                ) {
                                     Ok(m) => {
                                         tracing::info!(
                                             "Restored from root chunk (seq {}, {} works, {} clubs)",
-                                            m.sequence, m.works.len(), m.clubs.len()
+                                            m.sequence,
+                                            m.works.len(),
+                                            m.clubs.len()
                                         );
                                         root_manifest_result = Some(m);
                                     }
@@ -8573,7 +8578,10 @@ impl Server {
                         }
                     }
                     Err(e) => {
-                        tracing::warn!("Failed to read root manifest (falling back to manifest): {}", e);
+                        tracing::warn!(
+                            "Failed to read root manifest (falling back to manifest): {}",
+                            e
+                        );
                     }
                 }
             }
@@ -18042,15 +18050,12 @@ pub(crate) mod persist_snapshot {
                 }
             };
 
-            let root_hash = crate::persist::root_chunk::checkpoint_write_root(
-                chunk_store,
-                data_dir,
-                &manifest,
-            )
-            .map_err(|e| {
-                tracing::error!("Failed to write root chunk: {}", e);
-                e
-            })?;
+            let root_hash =
+                crate::persist::root_chunk::checkpoint_write_root(chunk_store, data_dir, &manifest)
+                    .map_err(|e| {
+                        tracing::error!("Failed to write root chunk: {}", e);
+                        e
+                    })?;
             let root_hex: String = root_hash.iter().map(|b| format!("{:02x}", b)).collect();
             tracing::info!(
                 "[checkpoint] root chunk {} written (manifest.json write skipped)",
@@ -28099,9 +28104,10 @@ mod tests {
                 .unwrap();
             server.checkpoint_to_store().unwrap();
 
-            let rm =
-                crate::persist::root_chunk::read_root_manifest(&data_dir.join("root_manifest.json"))
-                    .unwrap();
+            let rm = crate::persist::root_chunk::read_root_manifest(
+                &data_dir.join("root_manifest.json"),
+            )
+            .unwrap();
             assert_ne!(
                 Some(rm.current_root_hash.clone()),
                 last_root_hash,
