@@ -239,7 +239,8 @@
         "fossil_snapshots_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
         "admin_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
         "key_history_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
-        "system_clubs_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] }
+        "system_clubs_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
+        "reconcile_store_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] }
       },
       "required": [
         "format_version", "sequence", "checkpoint_at",
@@ -247,7 +248,7 @@
         "works_index_hash", "clubs_index_hash", "standalone_editions_hash",
         "links_hash", "social_hash", "federation_hash", "annotations_hash",
         "blob_metas_hash", "content_address_hash", "historical_authors_hash",
-        "fossil_snapshots_hash", "admin_hash", "key_history_hash", "system_clubs_hash"
+        "fossil_snapshots_hash", "admin_hash", "key_history_hash", "system_clubs_hash", "reconcile_store_hash"
       ],
       "postcard_field_order": [
         "format_version", "sequence", "checkpoint_at",
@@ -255,14 +256,14 @@
         "works_index_hash", "clubs_index_hash", "standalone_editions_hash",
         "links_hash", "social_hash", "federation_hash", "annotations_hash",
         "blob_metas_hash", "content_address_hash", "historical_authors_hash",
-        "fossil_snapshots_hash", "admin_hash", "key_history_hash", "system_clubs_hash"
+        "fossil_snapshots_hash", "admin_hash", "key_history_hash", "system_clubs_hash", "reconcile_store_hash"
       ],
       "format_tag": "0x52",
       "serde_defaults": [
         "works_index_hash", "clubs_index_hash", "standalone_editions_hash",
         "links_hash", "social_hash", "federation_hash", "annotations_hash",
         "blob_metas_hash", "content_address_hash", "historical_authors_hash",
-        "fossil_snapshots_hash", "admin_hash", "key_history_hash", "system_clubs_hash"
+        "fossil_snapshots_hash", "admin_hash", "key_history_hash", "system_clubs_hash", "reconcile_store_hash"
       ],
       "description": "Top-level root chunk. All Option<Hash> fields have #[serde(default)]."
     },

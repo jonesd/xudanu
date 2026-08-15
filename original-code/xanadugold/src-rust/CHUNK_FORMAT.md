@@ -314,6 +314,7 @@ struct ServerRootChunk {
     admin_hash: Option<[u8; 32]>,
     key_history_hash: Option<[u8; 32]>,
     system_clubs_hash: Option<[u8; 32]>,
+    reconcile_store_hash: Option<[u8; 32]>,   // JSON section chunk (federation state)
 }
 ```
 
@@ -447,6 +448,7 @@ root_manifest.json
         ├── standalone_editions_hash? → StandaloneEditionsChunk
         ├── admin_hash? → AdminChunk
         ├── system_clubs_hash? → SystemClubsChunk
+        ├── reconcile_store_hash? → (JSON section chunk: ReconcileStore)
         ├── links_hash? → (section data, tag 0x50)
         ├── social_hash? → (section data, tag 0x50)
         ├── blob_metas_hash? → (section data, tag 0x50)

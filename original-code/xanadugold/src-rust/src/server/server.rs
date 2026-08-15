@@ -18116,78 +18116,99 @@ pub(crate) mod persist_snapshot {
                 }
             }
 
-            {
-                let manifest_path = match self.checkpoint_path.as_ref() {
-                    Some(p) => p,
-                    None => {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "no checkpoint path",
-                        ))
-                    }
-                };
-                let manifest = crate::persist::manifest::read_manifest(manifest_path);
-                let manifest = match manifest {
-                    Ok(m) => m,
+            // FR-36: protect the root chunk trees named by root_manifest.json
+            // (current + previous). This is the primary protection set since
+            // v1.5.0; failure to walk them must abort GC.
+            if let Some(ref data_dir) = self.data_dir {
+                match crate::persist::root_chunk::collect_root_manifest_tree_hashes(
+                    data_dir,
+                    chunk_store,
+                ) {
+                    Ok(hashes) => referenced.extend(hashes),
                     Err(e) => {
                         tracing::warn!(
-                            "GC: failed to read manifest for chunk protection ({}), \
+                            "GC: failed to walk root chunk tree ({}), \
                              skipping GC to avoid deleting valid chunks",
                             e
                         );
                         return Ok(0);
                     }
+                }
+            }
+
+            // Legacy manifest.json / manifest_v*.json protection (pre-v1.5.0
+            // data dirs, or dirs not yet cleaned up after migration). Missing
+            // files are normal now — only a present-but-unreadable primary
+            // manifest aborts GC.
+            {
+                let manifest_path = match self.checkpoint_path.as_ref() {
+                    Some(p) => p,
+                    None => return Ok(0),
                 };
-                // CHECKLIST: every Option<[u8; 32]> field in Manifest must be
-                // inserted into `referenced` here, or the GC will delete the
-                // chunk. Current fields (as of v0.9.0):
-                //   - historical_authors_hash
-                //   - blob_metas_hash
-                //   - content_address_hash
-                //   - links_hash
-                //   - annotations_hash
-                //   - fossil_snapshots_hash
-                //   - links_chunk_hash (v0.9.0 manifest refactor)
-                //   - federation_chunk_hash (v0.9.0 manifest refactor)
-                //   - content_address_chunk_hash (v0.9.0 manifest refactor)
-                //   - blob_metas_chunk_hash (v0.9.0 manifest refactor)
-                //   - historical_authors_chunk_hash (v0.9.0 manifest refactor)
-                //   - social_chunk_hash (v0.9.0 manifest refactor)
-                if let Some(hash) = manifest.historical_authors_hash {
-                    referenced.insert(hash);
-                }
-                if let Some(hash) = manifest.blob_metas_hash {
-                    referenced.insert(hash);
-                }
-                if let Some(hash) = manifest.content_address_hash {
-                    referenced.insert(hash);
-                }
-                if let Some(hash) = manifest.links_hash {
-                    referenced.insert(hash);
-                }
-                if let Some(hash) = manifest.annotations_hash {
-                    referenced.insert(hash);
-                }
-                if let Some(hash) = manifest.fossil_snapshots_hash {
-                    referenced.insert(hash);
-                }
-                if let Some(hash) = manifest.links_chunk_hash {
-                    referenced.insert(hash);
-                }
-                if let Some(hash) = manifest.federation_chunk_hash {
-                    referenced.insert(hash);
-                }
-                if let Some(hash) = manifest.content_address_chunk_hash {
-                    referenced.insert(hash);
-                }
-                if let Some(hash) = manifest.blob_metas_chunk_hash {
-                    referenced.insert(hash);
-                }
-                if let Some(hash) = manifest.historical_authors_chunk_hash {
-                    referenced.insert(hash);
-                }
-                if let Some(hash) = manifest.social_chunk_hash {
-                    referenced.insert(hash);
+                if manifest_path.exists() {
+                    match crate::persist::manifest::read_manifest(manifest_path) {
+                        Ok(manifest) => {
+                            // CHECKLIST: every Option<[u8; 32]> field in Manifest must be
+                            // inserted into `referenced` here, or the GC will delete the
+                            // chunk. Current fields (as of v0.9.0):
+                            //   - historical_authors_hash
+                            //   - blob_metas_hash
+                            //   - content_address_hash
+                            //   - links_hash
+                            //   - annotations_hash
+                            //   - fossil_snapshots_hash
+                            //   - links_chunk_hash (v0.9.0 manifest refactor)
+                            //   - federation_chunk_hash (v0.9.0 manifest refactor)
+                            //   - content_address_chunk_hash (v0.9.0 manifest refactor)
+                            //   - blob_metas_chunk_hash (v0.9.0 manifest refactor)
+                            //   - historical_authors_chunk_hash (v0.9.0 manifest refactor)
+                            //   - social_chunk_hash (v0.9.0 manifest refactor)
+                            if let Some(hash) = manifest.historical_authors_hash {
+                                referenced.insert(hash);
+                            }
+                            if let Some(hash) = manifest.blob_metas_hash {
+                                referenced.insert(hash);
+                            }
+                            if let Some(hash) = manifest.content_address_hash {
+                                referenced.insert(hash);
+                            }
+                            if let Some(hash) = manifest.links_hash {
+                                referenced.insert(hash);
+                            }
+                            if let Some(hash) = manifest.annotations_hash {
+                                referenced.insert(hash);
+                            }
+                            if let Some(hash) = manifest.fossil_snapshots_hash {
+                                referenced.insert(hash);
+                            }
+                            if let Some(hash) = manifest.links_chunk_hash {
+                                referenced.insert(hash);
+                            }
+                            if let Some(hash) = manifest.federation_chunk_hash {
+                                referenced.insert(hash);
+                            }
+                            if let Some(hash) = manifest.content_address_chunk_hash {
+                                referenced.insert(hash);
+                            }
+                            if let Some(hash) = manifest.blob_metas_chunk_hash {
+                                referenced.insert(hash);
+                            }
+                            if let Some(hash) = manifest.historical_authors_chunk_hash {
+                                referenced.insert(hash);
+                            }
+                            if let Some(hash) = manifest.social_chunk_hash {
+                                referenced.insert(hash);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "GC: failed to read manifest for chunk protection ({}), \
+                                 skipping GC to avoid deleting valid chunks",
+                                e
+                            );
+                            return Ok(0);
+                        }
+                    }
                 }
             }
             for club_ref in self.club_refs.values() {
@@ -26048,6 +26069,181 @@ mod tests {
         let sid = server.connect();
         let result = server.annotation_create(sid, 9999, 1, "note".into(), "x".into(), 0, 1, false);
         assert!(result.is_err());
+    }
+
+    // ── FR-36: GC safety ────────────────────────────────────────────────
+
+    /// Boot a server with one work, checkpoint, and return the data dir.
+    /// (TempDir guard is forgotten so the data outlives this fn.)
+    fn gc_test_setup(name: &str) -> std::path::PathBuf {
+        let dir = TempDir::new(name);
+        let data_dir = dir.snapshot_path().parent().unwrap().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        std::mem::forget(dir);
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            server
+                .create_work(sid, Edition::from_text("gc safety probe"))
+                .unwrap();
+            server.checkpoint_to_store().unwrap();
+        }
+        data_dir
+    }
+
+    fn root_tree_hashes(data_dir: &std::path::Path) -> std::collections::HashSet<[u8; 32]> {
+        let store = crate::persist::chunk_store::ChunkStore::open(data_dir).unwrap();
+        let rm =
+            crate::persist::root_chunk::read_root_manifest(&data_dir.join("root_manifest.json"))
+                .unwrap();
+        let hex = &rm.current_root_hash;
+        let mut root_hash = [0u8; 32];
+        root_hash.copy_from_slice(&hex::decode(hex).unwrap());
+        crate::persist::root_chunk::collect_root_tree_hashes(&root_hash, &store).unwrap()
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn gc_preserves_root_chunk_tree() {
+        let data_dir = gc_test_setup("gc_root_tree");
+        let before = root_tree_hashes(&data_dir);
+        assert!(!before.is_empty(), "checkpoint must produce a root tree");
+
+        let mut server = Server::new();
+        server.restore_from_data_dir(&data_dir, None).unwrap();
+        let removed = server.gc_orphaned_chunks().unwrap();
+
+        let store = crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap();
+        for hash in &before {
+            assert!(
+                store.chunk_exists(hash),
+                "GC deleted live root-tree chunk {} (removed {})",
+                hex::encode(hash),
+                removed
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn gc_preserves_previous_root_tree() {
+        let data_dir = gc_test_setup("gc_prev_tree");
+
+        // Second checkpoint makes the first root the "previous" fallback.
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            server
+                .create_work(sid, Edition::from_text("second revision"))
+                .unwrap();
+            server.checkpoint_to_store().unwrap();
+        }
+
+        let rm =
+            crate::persist::root_chunk::read_root_manifest(&data_dir.join("root_manifest.json"))
+                .unwrap();
+        let prev = rm
+            .previous_root_hash
+            .expect("two checkpoints → previous set");
+
+        let mut server = Server::new();
+        server.restore_from_data_dir(&data_dir, None).unwrap();
+        server.gc_orphaned_chunks().unwrap();
+
+        let store = crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap();
+        let mut prev_hash = [0u8; 32];
+        prev_hash.copy_from_slice(&hex::decode(&prev).unwrap());
+        assert!(
+            store.chunk_exists(&prev_hash),
+            "GC deleted the previous (fallback) root chunk"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn gc_skips_on_corrupt_root_tree() {
+        let data_dir = gc_test_setup("gc_corrupt_tree");
+        let before = root_tree_hashes(&data_dir);
+
+        // Boot the server while the tree is intact, then corrupt a tree
+        // chunk file — GC's walk must abort and delete nothing.
+        let mut server = Server::new();
+        server.restore_from_data_dir(&data_dir, None).unwrap();
+
+        let victim = *before.iter().next().unwrap();
+        let hex = hex::encode(victim);
+        let path = data_dir
+            .join("chunks")
+            .join(&hex[..2])
+            .join(format!("{}.xchunk", hex));
+        std::fs::write(&path, b"corrupted").unwrap();
+
+        let removed = server.gc_orphaned_chunks().unwrap();
+
+        // Walk fails → GC must skip entirely (0 removed, nothing swept).
+        assert_eq!(removed, 0, "corrupt tree must abort GC");
+        let store = crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap();
+        for hash in &before {
+            let still = store.chunk_exists(hash) || *hash == victim;
+            assert!(
+                still,
+                "GC deleted {} despite aborted walk",
+                hex::encode(hash)
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn gc_still_removes_true_orphans() {
+        let data_dir = gc_test_setup("gc_true_orphans");
+        let tree = root_tree_hashes(&data_dir);
+
+        // Plant one unreferenced chunk.
+        let store = crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap();
+        let orphan = store.write_chunk(b"a genuine orphan").unwrap();
+        assert!(!tree.contains(&orphan));
+
+        let mut server = Server::new();
+        server.restore_from_data_dir(&data_dir, None).unwrap();
+        let removed = server.gc_orphaned_chunks().unwrap();
+
+        assert_eq!(removed, 1, "exactly the planted orphan should go");
+        assert!(!store.chunk_exists(&orphan));
+        for hash in &tree {
+            assert!(
+                store.chunk_exists(hash),
+                "live chunk swept: {}",
+                hex::encode(hash)
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn gc_works_without_manifest_json() {
+        let data_dir = gc_test_setup("gc_no_manifest");
+        assert!(
+            !data_dir.join("manifest.json").exists(),
+            "fresh dir must not have manifest.json"
+        );
+
+        let mut server = Server::new();
+        server.restore_from_data_dir(&data_dir, None).unwrap();
+        // Must not error and must not sweep the root tree.
+        server.gc_orphaned_chunks().unwrap();
+        let tree = root_tree_hashes(&data_dir);
+        let store = crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap();
+        for hash in &tree {
+            assert!(
+                store.chunk_exists(hash),
+                "missing manifest must not starve GC safety"
+            );
+        }
     }
 
     #[test]

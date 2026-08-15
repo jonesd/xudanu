@@ -871,6 +871,175 @@ fn hash_to_hex(hash: &[u8; 32]) -> String {
     hash.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+// ── Root-tree hash collection (FR-36: GC safety) ────────────────────────────
+
+/// Collect every chunk hash needed to restore from one root tree.
+///
+/// GC uses this to build its protection set. Errors propagate to the
+/// caller, which must skip GC rather than risk deleting valid chunks.
+///
+/// FIELD CHECKLIST: every `Option<[u8; 32]>` on ServerRootChunk must be
+/// inserted below — enforced by `walker_covers_all_root_fields` test.
+pub fn collect_root_tree_hashes(
+    root_hash: &[u8; 32],
+    store: &ChunkStore,
+) -> Result<std::collections::HashSet<[u8; 32]>, RootChunkError> {
+    use std::collections::HashSet;
+
+    let mut refs: HashSet<[u8; 32]> = HashSet::new();
+    let root = read_root_chunk(root_hash, store)?;
+    refs.insert(*root_hash);
+
+    // Section-hash fields (all 16, exhaustive).
+    for h in [
+        root.works_index_hash,
+        root.clubs_index_hash,
+        root.standalone_editions_hash,
+        root.links_hash,
+        root.social_hash,
+        root.federation_hash,
+        root.annotations_hash,
+        root.blob_metas_hash,
+        root.content_address_hash,
+        root.historical_authors_hash,
+        root.fossil_snapshots_hash,
+        root.admin_hash,
+        root.key_history_hash,
+        root.system_clubs_hash,
+        root.reconcile_store_hash,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        refs.insert(h);
+    }
+
+    // Works: index → work-state chunks → edition subtrees.
+    if let Some(idx_hash) = root.works_index_hash {
+        let idx = read_works_index_chunk(&idx_hash, store)?;
+        refs.insert(idx_hash);
+        for entry in &idx.entries {
+            refs.insert(entry.work_state_hash);
+            let ws = read_work_state_chunk(&entry.work_state_hash, store)?;
+            let mut expand = |hash: &[u8; 32], refs: &mut HashSet<[u8; 32]>| {
+                let ed_ref = crate::persist::edition_chunks::EditionChunkRef {
+                    root_hash: *hash,
+                    entry_count: 0,
+                };
+                match crate::persist::edition_chunks::collect_edition_hashes(&ed_ref, store) {
+                    Ok(hashes) => refs.extend(hashes),
+                    Err(e) => {
+                        tracing::warn!(
+                            "root-tree walk: edition chunk collection failed for {}: {}",
+                            hash_to_hex(hash),
+                            e
+                        );
+                    }
+                }
+            };
+            expand(&ws.current_edition_hash, &mut refs);
+            for (_, h) in &ws.history {
+                expand(h, &mut refs);
+            }
+        }
+    }
+
+    // Clubs: index → club-state chunks → work subtrees.
+    if let Some(idx_hash) = root.clubs_index_hash {
+        let idx = read_club_index_chunk(&idx_hash, store)?;
+        refs.insert(idx_hash);
+        for entry in &idx.entries {
+            refs.insert(entry.club_state_hash);
+            let cs = read_club_state_chunk(&entry.club_state_hash, store)?;
+            match crate::persist::edition_chunks::collect_work_hashes(&cs.work_root, store) {
+                Ok(hashes) => refs.extend(hashes),
+                Err(e) => {
+                    tracing::warn!(
+                        "root-tree walk: club work hash collection failed for club {}: {}",
+                        cs.be_id,
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    // Standalone editions: entry hashes → edition subtrees.
+    if let Some(se_hash) = root.standalone_editions_hash {
+        let se = read_standalone_editions_chunk(&se_hash, store)?;
+        refs.insert(se_hash);
+        for entry in &se.entries {
+            refs.insert(entry.edition_ref_hash);
+            let ed_ref = crate::persist::edition_chunks::EditionChunkRef {
+                root_hash: entry.edition_ref_hash,
+                entry_count: 0,
+            };
+            match crate::persist::edition_chunks::collect_edition_hashes(&ed_ref, store) {
+                Ok(hashes) => refs.extend(hashes),
+                Err(e) => {
+                    tracing::warn!(
+                        "root-tree walk: standalone edition hash collection failed for {}: {}",
+                        cs_id_display(entry.be_id),
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(refs)
+}
+
+fn cs_id_display(be_id: BeId) -> String {
+    be_id.to_string()
+}
+
+/// Protect the current and previous root trees named by `root_manifest.json`.
+///
+/// Returns the union of both trees' hashes. If the root manifest exists but
+/// any tree walk fails, returns Err — callers must skip GC entirely.
+/// If `root_manifest.json` does not exist, returns an empty set (Ok).
+pub fn collect_root_manifest_tree_hashes(
+    data_dir: &std::path::Path,
+    store: &ChunkStore,
+) -> Result<std::collections::HashSet<[u8; 32]>, RootChunkError> {
+    use std::collections::HashSet;
+
+    let rm_path = data_dir.join("root_manifest.json");
+    if !rm_path.exists() {
+        return Ok(HashSet::new());
+    }
+    let rm = read_root_manifest(&rm_path)
+        .map_err(|e| RootChunkError::CorruptData(format!("root_manifest.json: {}", e)))?;
+
+    let mut refs = HashSet::new();
+    let current = hex_to_hash(&rm.current_root_hash)?;
+    refs.extend(collect_root_tree_hashes(&current, store)?);
+
+    if let Some(prev_hex) = rm.previous_root_hash {
+        if let Ok(prev) = hex_to_hash(&prev_hex) {
+            if prev != current && store.chunk_exists(&prev) {
+                refs.extend(collect_root_tree_hashes(&prev, store)?);
+            }
+        }
+    }
+    Ok(refs)
+}
+
+fn hex_to_hash(hex: &str) -> Result<[u8; 32], RootChunkError> {
+    let bytes = ::hex::decode(hex)
+        .map_err(|e| RootChunkError::CorruptData(format!("invalid hex hash: {}", e)))?;
+    if bytes.len() != 32 {
+        return Err(RootChunkError::CorruptData(format!(
+            "hash must be 32 bytes, got {}",
+            bytes.len()
+        )));
+    }
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(&bytes);
+    Ok(arr)
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1595,5 +1764,93 @@ mod tests {
             result[i] = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
         }
         Some(result)
+    }
+
+    // ── FR-36: GC safety ───────────────────────────────────────────────
+
+    #[test]
+    fn walker_covers_all_root_fields() {
+        // FIELD CHECKLIST enforcement: every Option<[u8; 32]> on
+        // ServerRootChunk must appear in collect_root_tree_hashes output.
+        // Sections that the walker reads (indexes) use real empty chunks;
+        // unread section hashes use distinct dummy values.
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = ChunkStore::open(&dir).unwrap();
+
+        // Readable empty index chunks for the three walked sections.
+        let works_idx_hash = write_works_index_chunk(
+            &WorksIndexChunk {
+                format_version: ROOT_CHUNK_FORMAT_VERSION,
+                entries: vec![],
+            },
+            &store,
+        )
+        .unwrap();
+        let clubs_idx_hash = write_club_index_chunk(
+            &ClubIndexChunk {
+                format_version: ROOT_CHUNK_FORMAT_VERSION,
+                entries: vec![],
+            },
+            &store,
+        )
+        .unwrap();
+        let standalone_hash = write_standalone_editions_chunk(
+            &StandaloneEditionsChunk {
+                format_version: ROOT_CHUNK_FORMAT_VERSION,
+                entries: vec![],
+            },
+            &store,
+        )
+        .unwrap();
+
+        // Distinct dummy hashes for unread sections (seed 1..=12).
+        let dummy = |n: u8| {
+            let mut h = [0u8; 32];
+            h[0] = n;
+            h
+        };
+
+        let root = ServerRootChunk {
+            format_version: ROOT_CHUNK_FORMAT_VERSION,
+            sequence: 1,
+            checkpoint_at: "2026-08-15T00:00:00Z".into(),
+            grand_map_id_counter: 1,
+            session_counter: 1,
+            operation_counter: 1,
+            link_counter: 1,
+            works_index_hash: Some(works_idx_hash),
+            clubs_index_hash: Some(clubs_idx_hash),
+            standalone_editions_hash: Some(standalone_hash),
+            links_hash: Some(dummy(1)),
+            social_hash: Some(dummy(2)),
+            federation_hash: Some(dummy(3)),
+            annotations_hash: Some(dummy(4)),
+            blob_metas_hash: Some(dummy(5)),
+            content_address_hash: Some(dummy(6)),
+            historical_authors_hash: Some(dummy(7)),
+            fossil_snapshots_hash: Some(dummy(8)),
+            admin_hash: Some(dummy(9)),
+            key_history_hash: Some(dummy(10)),
+            system_clubs_hash: Some(dummy(11)),
+            reconcile_store_hash: Some(dummy(12)),
+        };
+        let root_hash = write_root_chunk(&root, &store).unwrap();
+
+        let refs = collect_root_tree_hashes(&root_hash, &store).unwrap();
+
+        for n in 1u8..=12 {
+            assert!(
+                refs.contains(&dummy(n)),
+                "walker must cover section hash seed {}",
+                n
+            );
+        }
+        assert!(refs.contains(&works_idx_hash));
+        assert!(refs.contains(&clubs_idx_hash));
+        assert!(refs.contains(&standalone_hash));
+        assert!(refs.contains(&root_hash));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
