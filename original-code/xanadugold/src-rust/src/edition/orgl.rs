@@ -1148,7 +1148,18 @@ impl OrglRoot {
     pub(crate) fn splay(&mut self, region: &XnRegion) -> SplayResult {
         match &mut self.inner {
             OrglInner::Empty => SplayResult::Outside,
-            OrglInner::Actual { loaf, .. } => loaf.splay(region),
+            OrglInner::Actual {
+                loaf,
+                cached_crum,
+                simple_domain,
+                ..
+            } => {
+                let result = loaf.splay(region);
+                // Splay restructured the loaf: cached crum and domain are stale.
+                *cached_crum = None;
+                *simple_domain = loaf.domain();
+                result
+            }
         }
     }
 

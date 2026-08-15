@@ -3305,8 +3305,11 @@ mod tests {
 
     #[test]
     fn splayed_crum_differs() {
-        let ed = Edition::from_text_batched("line1\nline2\nline3\nline4\nline5");
-        let region = XnRegion::interval(1, 3);
+        // Needs enough entries to force a multi-level tree (Split nodes);
+        // a single-leaf edition has no structure for splay to restructure.
+        let text: String = (0..600).map(|i| format!("line{}\n", i)).collect();
+        let ed = Edition::from_text_batched(&text);
+        let region = XnRegion::interval(100, 300);
         let (splayed, _) = ed.splayed(&region);
         assert_ne!(
             ed.crum(),
