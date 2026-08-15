@@ -1,0 +1,498 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Xudanu Chunk Store Format Schema",
+  "version": "1.0.0",
+  "chunk_format_version": 1,
+  "description": "Language-neutral schema for the Xudanu content-addressed chunk store. Defines all chunk types, their wire formats, field orders, and constraints. Implementations MUST match field order exactly for postcard-serialized chunks.",
+
+  "definitions": {
+
+    "be_id": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18446744073709551615,
+      "description": "Backend ID (u64). Serialized as varint in postcard, as decimal integer in JSON."
+    },
+
+    "blake3_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "64-character lowercase hex BLAKE3 hash."
+    },
+
+    "blake3_hash_bytes": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0, "maximum": 255 },
+      "minItems": 32,
+      "maxItems": 32,
+      "description": "BLAKE3 hash as 32 raw bytes. Serialized as fixed-length array (length prefix 0x20) in postcard."
+    },
+
+    "rfc3339_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp string."
+    },
+
+    "format_tag": {
+      "type": "object",
+      "properties": {
+        "hex": { "type": "string", "pattern": "^[0-9A-Fa-f]{2}$" },
+        "ascii": { "type": "string", "minLength": 1, "maxLength": 1 },
+        "name": { "type": "string" },
+        "serialization": { "type": "string", "enum": ["postcard", "json", "none"] }
+      },
+      "required": ["hex", "ascii", "name", "serialization"],
+      "description": "First byte of a chunk file identifying its serialization format."
+    },
+
+    "format_tags": {
+      "type": "object",
+      "properties": {
+        "EDITION_POSTCARD": {
+          "allOf": [{ "$ref": "#/definitions/format_tag" }],
+          "description": "Tag 0x50 ('P'). Postcard-serialized edition chunk data."
+        },
+        "ROOT_POSTCARD": {
+          "allOf": [{ "$ref": "#/definitions/format_tag" }],
+          "description": "Tag 0x52 ('R'). Postcard-serialized root chunk tree data."
+        },
+        "SECTION_JSON": {
+          "allOf": [{ "$ref": "#/definitions/format_tag" }],
+          "description": "Tag 0x4A ('J'). Reserved for JSON-serialized section data. Currently unused (section chunks write raw JSON with no tag)."
+        }
+      }
+    },
+
+    "edition_chunk_ref": {
+      "type": "object",
+      "properties": {
+        "root_hash": { "$ref": "#/definitions/blake3_hash_bytes" },
+        "entry_count": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+      },
+      "required": ["root_hash", "entry_count"],
+      "postcard_field_order": ["root_hash", "entry_count"],
+      "description": "Handle pointing to an EditionRootChunk in the chunk store."
+    },
+
+    "work_chunk_ref": {
+      "type": "object",
+      "properties": {
+        "be_id": { "$ref": "#/definitions/be_id" },
+        "owner": { "oneOf": [{ "$ref": "#/definitions/be_id" }, { "type": "null" }] },
+        "revision_count": { "type": "integer", "minimum": 0 },
+        "current_root": { "$ref": "#/definitions/edition_chunk_ref" },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": { "$ref": "#/definitions/be_id" },
+              "value": { "$ref": "#/definitions/edition_chunk_ref" }
+            },
+            "required": ["key", "value"]
+          }
+        },
+        "read_club": { "oneOf": [{ "$ref": "#/definitions/be_id" }, { "type": "null" }] },
+        "edit_club": { "oneOf": [{ "$ref": "#/definitions/be_id" }, { "type": "null" }] },
+        "sponsors": { "type": "array", "items": { "$ref": "#/definitions/be_id" } },
+        "endorsements": { "type": "array", "items": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 } }
+      },
+      "required": ["be_id", "owner", "revision_count", "current_root", "history", "read_club", "edit_club", "sponsors", "endorsements"],
+      "postcard_field_order": ["be_id", "owner", "revision_count", "current_root", "history", "read_club", "edit_club", "sponsors", "endorsements"],
+      "description": "Metadata for a work including current and historical edition refs. NOT stored as a chunk itself — lives in manifest/root chunk tree."
+    },
+
+    "work_kind": {
+      "type": "string",
+      "enum": ["document", "code", "data", "media", "composite"],
+      "default": "document",
+      "serde_rename": "lowercase",
+      "description": "Type of work. Serialized as lowercase string."
+    },
+
+    "license": {
+      "type": "string",
+      "enum": ["public_domain", "cc_by", "cc_by_sa", "cc_by_nc", "cc_by_nc_sa", "cc_by_nd", "cc_by_nc_nd", "all_rights_reserved", "custom"],
+      "default": "public_domain",
+      "serde_rename": "snake_case",
+      "description": "License for a work."
+    },
+
+    "revision_meta": {
+      "type": "object",
+      "properties": {
+        "revision_id": { "type": "integer", "minimum": 0 },
+        "parent": { "oneOf": [{ "type": "integer" }, { "type": "null" }] },
+        "created_at": { "type": "integer", "minimum": 0 },
+        "created_by": { "oneOf": [{ "$ref": "#/definitions/be_id" }, { "type": "null" }] },
+        "description": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "is_notable": { "type": "boolean" },
+        "char_count": { "type": "integer", "minimum": 0 },
+        "change_summary": { "type": "string" }
+      },
+      "required": ["revision_id", "parent", "created_at", "created_by", "description", "is_notable", "char_count", "change_summary"],
+      "postcard_field_order": ["revision_id", "parent", "created_at", "created_by", "description", "is_notable", "char_count", "change_summary"]
+    },
+
+    "work_lifecycle_event": {
+      "type": "object",
+      "properties": {
+        "event_type": { "type": "string", "enum": ["created", "archived", "unarchived", "forked", "imported"] },
+        "timestamp": { "type": "integer", "minimum": 0 },
+        "actor": { "oneOf": [{ "$ref": "#/definitions/be_id" }, { "type": "null" }] }
+      },
+      "required": ["event_type", "timestamp", "actor"],
+      "postcard_field_order": ["event_type", "timestamp", "actor"]
+    },
+
+    "credential": {
+      "type": "object",
+      "oneOf": [
+        {
+          "properties": {
+            "Password": { "type": "object", "properties": { "phc_hash": { "type": "string" } }, "required": ["phc_hash"] }
+          },
+          "required": ["Password"]
+        },
+        {
+          "properties": {
+            "PublicKey": { "type": "object", "properties": { "verifying_key": { "$ref": "#/definitions/blake3_hash_bytes" } }, "required": ["verifying_key"] }
+          },
+          "required": ["PublicKey"]
+        }
+      ],
+      "description": "Authentication credential for a club."
+    },
+
+    "admin_entry": {
+      "type": "object",
+      "properties": {
+        "accepting_connections": { "type": "boolean" },
+        "shutdown_requested": { "type": "boolean" },
+        "grants": { "type": "array", "items": { "type": "array", "items": [{ "$ref": "#/definitions/be_id" }, { "type": "integer" }, { "type": "integer" }], "minItems": 3, "maxItems": 3 } }
+      },
+      "required": ["accepting_connections", "shutdown_requested", "grants"],
+      "postcard_field_order": ["accepting_connections", "shutdown_requested", "grants"]
+    },
+
+    "system_clubs": {
+      "type": "object",
+      "properties": {
+        "public_club": { "$ref": "#/definitions/be_id" },
+        "admin_club": { "$ref": "#/definitions/be_id" },
+        "access_club": { "$ref": "#/definitions/be_id" },
+        "empty_club": { "$ref": "#/definitions/be_id" }
+      },
+      "required": ["public_club", "admin_club", "access_club", "empty_club"],
+      "postcard_field_order": ["public_club", "admin_club", "access_club", "empty_club"]
+    },
+
+    "edition_root_chunk": {
+      "type": "object",
+      "properties": {
+        "default": { "type": ["null", "object"] },
+        "domain_start": { "oneOf": [{ "type": "integer" }, { "type": "null" }] },
+        "domain_infinite_above": { "type": "boolean" },
+        "entry_count": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "entry_chunk_hashes": { "type": "array", "items": { "$ref": "#/definitions/blake3_hash_bytes" } },
+        "provenance_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] }
+      },
+      "required": ["default", "domain_start", "domain_infinite_above", "entry_count", "entry_chunk_hashes", "provenance_hash"],
+      "postcard_field_order": ["default", "domain_start", "domain_infinite_above", "entry_count", "entry_chunk_hashes", "provenance_hash"],
+      "format_tag": "0x50",
+      "max_entry_chunks": "ceil(entry_count / 256)"
+    },
+
+    "entry_chunk": {
+      "type": "object",
+      "properties": {
+        "entries": { "type": "array", "items": { "type": "object" } },
+        "provenances": { "type": "array", "items": { "type": ["null", "object"] } }
+      },
+      "required": ["entries", "provenances"],
+      "postcard_field_order": ["entries", "provenances"],
+      "format_tag": "0x50",
+      "max_entries": 256
+    },
+
+    "server_root_chunk": {
+      "type": "object",
+      "properties": {
+        "format_version": { "type": "integer", "const": 1 },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "checkpoint_at": { "$ref": "#/definitions/rfc3339_timestamp" },
+        "grand_map_id_counter": { "$ref": "#/definitions/be_id" },
+        "session_counter": { "type": "integer", "minimum": 0 },
+        "operation_counter": { "type": "integer", "minimum": 0 },
+        "link_counter": { "$ref": "#/definitions/be_id" },
+        "works_index_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
+        "clubs_index_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
+        "standalone_editions_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
+        "links_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
+        "social_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
+        "federation_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
+        "annotations_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
+        "blob_metas_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
+        "content_address_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
+        "historical_authors_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
+        "fossil_snapshots_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
+        "admin_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
+        "key_history_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] },
+        "system_clubs_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash_bytes" }, { "type": "null" }] }
+      },
+      "required": [
+        "format_version", "sequence", "checkpoint_at",
+        "grand_map_id_counter", "session_counter", "operation_counter", "link_counter",
+        "works_index_hash", "clubs_index_hash", "standalone_editions_hash",
+        "links_hash", "social_hash", "federation_hash", "annotations_hash",
+        "blob_metas_hash", "content_address_hash", "historical_authors_hash",
+        "fossil_snapshots_hash", "admin_hash", "key_history_hash", "system_clubs_hash"
+      ],
+      "postcard_field_order": [
+        "format_version", "sequence", "checkpoint_at",
+        "grand_map_id_counter", "session_counter", "operation_counter", "link_counter",
+        "works_index_hash", "clubs_index_hash", "standalone_editions_hash",
+        "links_hash", "social_hash", "federation_hash", "annotations_hash",
+        "blob_metas_hash", "content_address_hash", "historical_authors_hash",
+        "fossil_snapshots_hash", "admin_hash", "key_history_hash", "system_clubs_hash"
+      ],
+      "format_tag": "0x52",
+      "serde_defaults": [
+        "works_index_hash", "clubs_index_hash", "standalone_editions_hash",
+        "links_hash", "social_hash", "federation_hash", "annotations_hash",
+        "blob_metas_hash", "content_address_hash", "historical_authors_hash",
+        "fossil_snapshots_hash", "admin_hash", "key_history_hash", "system_clubs_hash"
+      ],
+      "description": "Top-level root chunk. All Option<Hash> fields have #[serde(default)]."
+    },
+
+    "works_index_chunk": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "be_id": { "$ref": "#/definitions/be_id" },
+              "work_state_hash": { "$ref": "#/definitions/blake3_hash_bytes" }
+            },
+            "required": ["format_version", "be_id", "work_state_hash"]
+          }
+        }
+      },
+      "required": ["format_version", "entries"],
+      "postcard_field_order": ["format_version", "entries"],
+      "format_tag": "0x52"
+    },
+
+    "work_state_chunk": {
+      "type": "object",
+      "properties": {
+        "be_id": { "$ref": "#/definitions/be_id" },
+        "owner": { "oneOf": [{ "$ref": "#/definitions/be_id" }, { "type": "null" }] },
+        "read_club": { "oneOf": [{ "$ref": "#/definitions/be_id" }, { "type": "null" }] },
+        "edit_club": { "oneOf": [{ "$ref": "#/definitions/be_id" }, { "type": "null" }] },
+        "sponsors": { "type": "array", "items": { "$ref": "#/definitions/be_id" }, "default": [] },
+        "endorsements": { "type": "array", "items": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 }, "default": [] },
+        "current_edition_hash": { "$ref": "#/definitions/blake3_hash_bytes" },
+        "revision_count": { "type": "integer", "minimum": 0 },
+        "history": { "type": "array", "items": { "type": "array", "items": [{ "type": "integer" }, { "$ref": "#/definitions/blake3_hash_bytes" }], "minItems": 2, "maxItems": 2 }, "default": [] },
+        "source_author_id": { "oneOf": [{ "$ref": "#/definitions/be_id" }, { "type": "null" }] },
+        "source_fingerprint": { "oneOf": [{ "type": "array", "items": { "type": "integer" } }, { "type": "null" }] },
+        "lifecycle_history": { "type": "array", "items": { "$ref": "#/definitions/work_lifecycle_event" }, "default": [] },
+        "history_club": { "oneOf": [{ "$ref": "#/definitions/be_id" }, { "type": "null" }] },
+        "kind": { "$ref": "#/definitions/work_kind", "default": "document" },
+        "license": { "$ref": "#/definitions/license", "default": "public_domain" },
+        "custom_title": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "is_source": { "type": "boolean", "default": false },
+        "source_edition_info": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "content_start_line": { "oneOf": [{ "type": "integer" }, { "type": "null" }] },
+        "content_end_line": { "oneOf": [{ "type": "integer" }, { "type": "null" }] },
+        "is_archived": { "type": "boolean", "default": false },
+        "revisions": { "type": "array", "items": { "$ref": "#/definitions/revision_meta" }, "default": [] }
+      },
+      "required": [
+        "be_id", "owner", "read_club", "edit_club", "sponsors", "endorsements",
+        "current_edition_hash", "revision_count", "history",
+        "source_author_id", "source_fingerprint", "lifecycle_history", "history_club",
+        "kind", "license", "custom_title", "is_source", "source_edition_info",
+        "content_start_line", "content_end_line", "is_archived", "revisions"
+      ],
+      "postcard_field_order": [
+        "format_version", "be_id", "owner", "read_club", "edit_club", "sponsors", "endorsements",
+        "current_edition_hash", "revision_count", "history",
+        "source_author_id", "source_fingerprint", "lifecycle_history", "history_club",
+        "kind", "license", "custom_title", "is_source", "source_edition_info",
+        "content_start_line", "content_end_line", "is_archived", "revisions"
+      ],
+      "format_tag": "0x52",
+      "serde_defaults": ["sponsors", "endorsements", "history", "lifecycle_history", "kind", "license", "is_source", "is_archived", "revisions"]
+    },
+
+    "club_index_chunk": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "be_id": { "$ref": "#/definitions/be_id" },
+              "club_state_hash": { "$ref": "#/definitions/blake3_hash_bytes" }
+            },
+            "required": ["format_version", "be_id", "club_state_hash"]
+          }
+        }
+      },
+      "required": ["format_version", "entries"],
+      "postcard_field_order": ["format_version", "entries"],
+      "format_tag": "0x52"
+    },
+
+    "club_state_chunk": {
+      "type": "object",
+      "properties": {
+        "be_id": { "$ref": "#/definitions/be_id" },
+        "name": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "signature_club": { "oneOf": [{ "$ref": "#/definitions/be_id" }, { "type": "null" }] },
+        "work_root": { "$ref": "#/definitions/work_chunk_ref" },
+        "default_read_club": { "oneOf": [{ "$ref": "#/definitions/be_id" }, { "type": "null" }] },
+        "default_edit_club": { "oneOf": [{ "$ref": "#/definitions/be_id" }, { "type": "null" }] },
+        "is_personal": { "type": "boolean" },
+        "display_name": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "credential": { "oneOf": [{ "$ref": "#/definitions/credential" }, { "type": "null" }] },
+        "encrypted_signing_key": { "oneOf": [{ "type": "object" }, { "type": "null" }] },
+        "email": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "verified": { "type": "boolean" },
+        "members": { "type": "array", "items": { "$ref": "#/definitions/be_id" } },
+        "sponsored_works": { "type": "array", "items": { "$ref": "#/definitions/be_id" } }
+      },
+      "required": [
+        "be_id", "name", "signature_club", "work_root", "default_read_club", "default_edit_club",
+        "is_personal", "display_name", "credential", "encrypted_signing_key", "email",
+        "verified", "members", "sponsored_works"
+      ],
+      "postcard_field_order": [
+        "format_version", "be_id", "name", "signature_club", "work_root", "default_read_club", "default_edit_club",
+        "is_personal", "display_name", "credential", "encrypted_signing_key", "email",
+        "verified", "members", "sponsored_works"
+      ],
+      "format_tag": "0x52",
+      "serde_defaults": []
+    },
+
+    "standalone_editions_chunk": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "be_id": { "$ref": "#/definitions/be_id" },
+              "edition_ref_hash": { "$ref": "#/definitions/blake3_hash_bytes" }
+            },
+            "required": ["format_version", "be_id", "edition_ref_hash"]
+          }
+        }
+      },
+      "required": ["format_version", "entries"],
+      "postcard_field_order": ["format_version", "entries"],
+      "format_tag": "0x52"
+    },
+
+    "admin_chunk": {
+      "type": "object",
+      "properties": {
+        "admin": { "$ref": "#/definitions/admin_entry" },
+        "accepting_connections": { "type": "boolean" },
+        "shutdown_requested": { "type": "boolean" },
+        "grants": { "type": "array", "items": { "type": "array", "items": [{ "type": "integer" }, { "type": "string" }], "minItems": 2, "maxItems": 2 } },
+        "server_name": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "server_description": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "server_namespace_id": { "oneOf": [{ "type": "integer" }, { "type": "null" }] },
+        "public_address": { "oneOf": [{ "type": "string" }, { "type": "null" }] }
+      },
+      "required": ["admin", "accepting_connections", "shutdown_requested", "grants", "server_name", "server_description", "server_namespace_id", "public_address"],
+      "postcard_field_order": ["format_version", "admin", "accepting_connections", "shutdown_requested", "grants", "server_name", "server_description", "server_namespace_id", "public_address"],
+      "format_tag": "0x52"
+    },
+
+    "system_clubs_chunk": {
+      "type": "object",
+      "properties": {
+        "system_clubs": { "$ref": "#/definitions/system_clubs" }
+      },
+      "required": ["system_clubs"],
+      "postcard_field_order": ["format_version", "system_clubs"],
+      "format_tag": "0x52"
+    },
+
+    "root_manifest": {
+      "type": "object",
+      "properties": {
+        "current_root_hash": { "$ref": "#/definitions/blake3_hash" },
+        "previous_root_hash": { "oneOf": [{ "$ref": "#/definitions/blake3_hash" }, { "type": "null" }] },
+        "format_version": { "type": "integer", "const": 1 }
+      },
+      "required": ["current_root_hash", "format_version"],
+      "description": "Bootstrap file stored as root_manifest.json (JSON, NOT a chunk)."
+    }
+  },
+
+  "chunk_types_by_tag": {
+    "0x50": {
+      "name": "EDITION_POSTCARD",
+      "description": "Edition chunk data (content).",
+      "types": ["edition_root_chunk", "entry_chunk"]
+    },
+    "0x52": {
+      "name": "ROOT_POSTCARD",
+      "description": "Root chunk tree data (metadata).",
+      "types": [
+        "server_root_chunk", "works_index_chunk", "work_state_chunk",
+        "club_index_chunk", "club_state_chunk", "standalone_editions_chunk",
+        "admin_chunk", "system_clubs_chunk"
+      ]
+    }
+  },
+
+  "on_disk_rules": {
+    "path_pattern": "chunks/{hex[0:2]}/{hex}.xchunk",
+    "legacy_path_pattern": "chunks/{hex[0:2]}/{hex}",
+    "naming": "lowercase hex of BLAKE3(content) where content = tag_byte + payload",
+    "atomic_writes": "write to .tmp, then rename to .xchunk",
+    "integrity": "re-hash on read, compare to filename",
+    "immutable": "write-once; duplicate writes are no-ops",
+    "cleanup": "stale .tmp files removed on ChunkStore::open()"
+  },
+
+  "versioning": {
+    "current_format_version": 1,
+    "version_field": "format_version on every chunk struct, ServerRootChunk, and RootManifest",
+    "forward_compatibility": "Fields with #[serde(default)] may be absent in older chunks; use the default value.",
+    "backward_compatibility": "New fields MUST have #[serde(default)] to allow older readers to skip them.",
+    "breaking_changes_require": "Incrementing format_version on every chunk struct and publishing a new schema version."
+  },
+
+  "validation_checks": {
+    "required": [
+      "Filename matches BLAKE3 hash of file contents",
+      "Tag byte is 0x50 or 0x52",
+      "Postcard payload deserializes without error",
+      "ServerRootChunk.format_version == 1",
+      "All referenced child chunks exist in store",
+      "No orphan chunks (not referenced by any root)",
+      "root_manifest.json is valid JSON with required fields",
+      "Every chunk: format_version <= 1 (0 = legacy, absent)"
+    ],
+    "warnings": [
+      "Legacy filenames without .xchunk extension",
+      "Stale .tmp files present",
+      "Empty chunk files",
+      "Chunks not referenced by any root (potential orphans)"
+    ]
+  }
+}

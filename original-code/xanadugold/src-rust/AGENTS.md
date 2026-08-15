@@ -1,6 +1,7 @@
 # AGENTS.md — xudanu
 
 **GitHub:** https://github.com/jonesd/xudanu
+**Canonical local path:** `~/code/xu-gold-2026/original-code/xanadugold/src-rust/`
 
 > **Disclaimer:** Xudanu is an independent, open-source project (Apache 2.0).
 > It is not affiliated with, endorsed by, or sponsored by Ted Nelson,
@@ -230,3 +231,127 @@ Vite proxy config (`vite.config.ts`): `/api`, `/xudanu` (WS), `/csrf-token`,
 - Pre-push hook runs 6 checks. If it fails, fix the issue and re-push.
 - Git remotes: `origin` (self-hosted), `github` (github.com/jonesd/xudanu).
   GitHub Pages deploys from `github` remote.
+
+## Strategic Context
+
+### Current Priorities (as of v1.4.0, Aug 2026)
+
+1. **Stabilize read-only structural transclusion** — Highest priority. Active
+   development with 30+ commits in Aug 2026. Edge cases remain: padding
+   newlines, position migration on source edit, overlapping regions in DOM
+   builder. Must be solid for Roger Gregory engagement (see below).
+
+2. **Storage architecture refactoring** — Move JSON pseudo-pointers (indirection
+   from manifest into chunk store) so that all pointer references live in the
+   chunk store itself. This would clean up the architecture and make
+   non-blocking checkpoint feasible (flush chunks instead of serializing a
+   giant JSON state graph).
+
+3. **Cross-server network (federation) toward production** — Prototype exists
+   (Docker 3-node cluster, Ed25519/X25519 handshake, PBFT consensus, BLAKE3
+   content replication, FR-35 Bloom filter layer). Needs hardening to move from
+   promising prototype to production-grade. Scaling beyond ~10 nodes needs
+   gossip relay and incremental sync. Resource-constrained: testing on small
+   Docker clusters on available hardware, not hiring lots of machines.
+
+4. **Enfilade-native optimizations** — Increasing use of the enfilade data
+   structures where the Gold variant had its most important optimizations.
+   FR-34 covers subtree crums (BLAKE3 Merkle hashes for O(1) equality),
+   chunk-level diff, inline coalesce, splay exposure, tumbler-to-Sequence
+   bridge. See `docs/dev/FR-34-enfilade-native.md`.
+
+5. **Non-blocking checkpoint + backend perf** (issue #90, PERF_BACKLOG B6/B7)
+   — Auto-checkpoint blocks request dispatch. Background thread checkpoint
+   is prerequisite for real multi-user deployment.
+
+6. **Frontend polish** — The editor and overall UX are functional but not
+   consumer-ready. Transclusion placement UX is the hardest open problem
+   (placing content at arbitrary positions in a document). Active
+   improvement work underway.
+
+7. **Consumer-ready collaborative editing UX** (issue #35) — CRDT works
+   technically but needs polish: cursor presence, conflict visibility,
+   awareness, reconnection.
+
+### Key Relationships
+
+- **Roger Gregory** (original Xanadu / Udanax Gold team, working with Ted
+  Nelson). Roger is the foremost expert on the original Xanadu implementation.
+  He is working to bring the old Xanadu/Udanax-Gold variant back up. We have
+  a developing collaborative relationship with him. **Getting structural
+  transclusion right is important for this relationship** — it is the most
+  distinctive Xanadu feature and the one Roger would evaluate first-hand.
+
+- Xudanu imported some open-source Udanax Gold code but has built significant
+  functionality that is architecturally different from Xanadu (custom O-tree
+  CRDT, modern crypto, React frontend, Docker federation, Transcopyright
+  licensing, etc.).
+- The original Udanax Gold (early 90s) is text-based with no web frontend.
+  Xudanu benefits from building on modern tech (Rust, React, WASM, WebSockets,
+  CRDTs, modern crypto) that wasn't available to the original team.
+- Roger Gregory is working to bring the old Xanadu/Udanax-Gold variant back
+  up; as of last contact he had not started on a web-based frontend.
+
+### The Xanadu Model
+
+- Core principle: **no duplication** across the system. Transclusions are shared
+  content blocks — a passage exists once and is *included by reference* in any
+  number of documents. Editing the original updates all transclusions
+  automatically.
+- Xudanu has built a large portion of the Xanadu network model (documents,
+  transclusions, links, compound documents, tumbler addressing, enfilade-native
+  structures). Earlier Xanadu teams never reached production; Xudanu is farther
+  along but has incomplete knowledge of the underlying academic models.
+- **Transclusion placement UX is a major open problem.** Users should be able to
+  place transclusions anywhere on a page, not just appended. This has proven
+  technically difficult (cursor position tracking, padding newlines, CRDT
+  delta coordination, position migration on source edits, overlapping
+  transclusions in the DOM builder).
+
+### Deployment & Frontend
+
+- **Production server:** https://xudanu.com — small deployment, updated on each
+  release. Currently low traffic (bots only).
+- **Frontend needs significant polish.** The editor, panels, and overall UX
+  are functional but not yet consumer-ready. Active improvement work underway.
+- The user-facing app is a single-page React app served by the Rust server
+  (or behind a reverse proxy in production).
+
+### Quality Approach
+
+- **Tests are a first-class concern.** The codebase is still growing rapidly
+  (~10 commits/day). Every new feature and every bug fix must include thorough
+  test coverage. Tests serve as documentation, regression guards, and
+  architectural feedback. When in doubt, write the test first.
+- Existing: 2,500+ backend tests, 412+ frontend tests, integration tests
+  (two-server federation, 3-node Docker cluster, adversarial Bloom filter
+  network).
+- **Documentation is at https://dgjones.info/xudanu/** — includes both
+  user guides and visual/technical documents. Feature requirements (FR-1
+  through FR-24+) describe what we intend to build and are the design
+  authority for each feature. Consult the FR docs before implementing any
+  feature. Most FRs are now implemented; remaining work is refinement,
+  hardening, and closing gaps.
+- **Don't let knowledge slip away.** The project has moved fast with limited
+  documentation of design decisions and architectural rationale. When
+  implementing features, capture the "why" in comments, commit messages, and
+  FR docs. If something is tricky or non-obvious, document it — the team's
+  knowledge of the Xanadu model is incomplete and future contributors will
+  need the trail.
+
+### Project Status
+
+- v1.4.0, 35 releases, 893 commits on main. ~10 commits/day sustained
+  since April 2026.
+- 2,500+ backend tests, 412+ frontend tests.
+- 22 open GitHub issues.
+- Still actively developed.
+- **Time-sensitive:** The project needs to make a visible splash reasonably
+  soon or the window of opportunity will close. Prioritize work that is
+  user-visible and demonstrable over internal plumbing. Frontend polish,
+  stable transclusion, and the production deployment at xudanu.com are the
+  highest-leverage paths to this.
+- **Rollout uncertainty:** Ted Nelson and Roger Gregory are the prime movers
+  of the Xanadu narrative. Xudanu's story and timing relative to their work
+  is still being figured out. The project needs to be ready regardless of
+  how the broader narrative plays out.

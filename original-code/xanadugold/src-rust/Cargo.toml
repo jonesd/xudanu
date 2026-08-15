@@ -1,6 +1,6 @@
 [package]
 name = "xudanu"
-version = "1.4.0"
+version = "1.5.0"
 edition = "2021"
 license = "Apache-2.0"
 authors = ["David Jones <david@dgjones.info>"]
@@ -15,6 +15,14 @@ required-features = ["server"]
 
 [[bin]]
 name = "xudanu-cli"
+required-features = ["server"]
+
+[[bin]]
+name = "migrate_manifest"
+required-features = ["server"]
+
+[[bin]]
+name = "chunk_validator"
 required-features = ["server"]
 
 [features]

@@ -602,10 +602,18 @@ async fn main() {
             let mut server = if let Some(ref dir) = data_dir {
                 let path = PathBuf::from(dir);
                 let manifest_path = path.join("manifest.json");
+                let root_manifest_path = path.join("root_manifest.json");
                 let legacy_path = path.join("server.json");
 
-                if manifest_path.exists() {
-                    tracing::info!("Restoring from {}", manifest_path.display());
+                if manifest_path.exists() || root_manifest_path.exists() {
+                    tracing::info!(
+                        "Restoring from {}",
+                        if root_manifest_path.exists() {
+                            root_manifest_path.display()
+                        } else {
+                            manifest_path.display()
+                        }
+                    );
 
                     let preflight = xudanu::persist::manifest::preflight_check(&path);
                     tracing::info!("{}", preflight);

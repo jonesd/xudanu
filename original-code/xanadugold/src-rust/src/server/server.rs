@@ -901,7 +901,7 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         created_at: String::new(),
         server_version: String::new(),
         checksum: String::new(),
-        sequence: payload.manifest_sequence,
+        sequence: payload.manifest_sequence + 1,
         manifest_slot: next_slot,
         grand_map_id_counter: payload.grand_map_id_counter,
         session_counter: payload.session_counter,
@@ -940,43 +940,7 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         revisions: std::collections::HashMap::new(),
     };
 
-    let dual_path = payload
-        .data_dir
-        .join(format!("manifest_{}.json", next_slot));
-
-    crate::persist::manifest::rotate_manifest_backups(&payload.manifest_path, 3);
-    let mut manifest = manifest;
-    crate::persist::manifest::write_manifest(&mut manifest, &dual_path).map_err(|e| {
-        tracing::error!(
-            "Failed to write dual manifest to {}: {}",
-            dual_path.display(),
-            e
-        );
-        std::io::Error::new(std::io::ErrorKind::Other, e)
-    })?;
-
-    match std::fs::rename(&dual_path, &payload.manifest_path) {
-        Ok(()) => {}
-        Err(e) => {
-            tracing::warn!(
-                "Failed to promote {} to primary ({}), keeping as dual backup: {}",
-                dual_path.display(),
-                payload.manifest_path.display(),
-                e
-            );
-            if !payload.manifest_path.exists() {
-                return Err(e);
-            }
-        }
-    }
-
-    let backup =
-        crate::persist::manifest::backup_manifest_path(&payload.data_dir, manifest.sequence);
-    if let Err(e) =
-        crate::persist::manifest::write_backup_with_fsync(&payload.manifest_path, &backup)
-    {
-        tracing::warn!("Failed to create versioned manifest backup: {}", e);
-    }
+    tracing::info!("[checkpoint] manifest.json write skipped (root chunk is primary persistence)");
 
     if let Some(ref kh) = manifest.key_history {
         let kh_path = payload.data_dir.join("key_history.json");
@@ -1009,6 +973,13 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         dirty_club_count,
         dirty_edition_count,
     );
+
+    if let Err(e) =
+        crate::persist::root_chunk::checkpoint_write_root(store, &payload.data_dir, &manifest)
+    {
+        tracing::warn!("Failed to write root chunk (fatal): {}", e);
+        return Err(e);
+    }
 
     Ok(CheckpointResult {
         manifest_sequence: manifest.sequence,
@@ -8573,7 +8544,44 @@ impl Server {
         let chunk_store = crate::persist::chunk_store::ChunkStore::open(data_dir)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
-        let manifest = if manifest_path.exists() {
+        let mut root_manifest_result: Option<crate::persist::manifest::Manifest> = None;
+        {
+            let root_manifest_path = data_dir.join("root_manifest.json");
+            if root_manifest_path.exists() {
+                match crate::persist::root_chunk::read_root_manifest(&root_manifest_path) {
+                    Ok(rm) => {
+                        if let Ok(current_hex) = hex::decode(&rm.current_root_hash) {
+                            if current_hex.len() == 32 {
+                                let mut hash = [0u8; 32];
+                                hash.copy_from_slice(&current_hex);
+                                match crate::persist::root_chunk::read_root_as_manifest(&hash, &chunk_store) {
+                                    Ok(m) => {
+                                        tracing::info!(
+                                            "Restored from root chunk (seq {}, {} works, {} clubs)",
+                                            m.sequence, m.works.len(), m.clubs.len()
+                                        );
+                                        root_manifest_result = Some(m);
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "Root chunk read failed (falling back to manifest): {}",
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to read root manifest (falling back to manifest): {}", e);
+                    }
+                }
+            }
+        }
+
+        let manifest = if let Some(m) = root_manifest_result {
+            m
+        } else if manifest_path.exists() {
             match crate::persist::manifest::read_manifest_dual(data_dir) {
                 Ok(m) => m,
                 Err(e) => {
@@ -17589,15 +17597,12 @@ pub(crate) mod persist_snapshot {
                     "no chunk store configured",
                 ));
             }
-            let manifest_path = match self.checkpoint_path {
-                Some(ref p) => p.clone(),
-                None => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "no checkpoint path configured",
-                    ))
-                }
-            };
+            if self.checkpoint_path.is_none() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "no checkpoint path configured",
+                ));
+            }
             let start = std::time::Instant::now();
 
             let chunk_store = self.chunk_store.as_ref().unwrap();
@@ -17756,7 +17761,7 @@ pub(crate) mod persist_snapshot {
                 created_at: String::new(),
                 server_version: String::new(),
                 checksum: String::new(),
-                sequence: self.manifest_sequence,
+                sequence: self.manifest_sequence + 1,
                 manifest_slot: next_slot,
                 grand_map_id_counter: self.grand_map.id_counter(),
                 session_counter: self.session_counter,
@@ -18037,52 +18042,24 @@ pub(crate) mod persist_snapshot {
                 }
             };
 
-            let next_slot = if self.manifest_slot == 'a' { 'b' } else { 'a' };
-            let dual_path = data_dir.join(format!("manifest_{}.json", next_slot));
-
-            crate::persist::manifest::rotate_manifest_backups(&manifest_path, 3);
-            crate::persist::manifest::write_manifest(&mut manifest, &dual_path).map_err(|e| {
-                tracing::error!(
-                    "Failed to write dual manifest to {}: {}",
-                    dual_path.display(),
-                    e
-                );
-                std::io::Error::new(std::io::ErrorKind::Other, e)
+            let root_hash = crate::persist::root_chunk::checkpoint_write_root(
+                chunk_store,
+                data_dir,
+                &manifest,
+            )
+            .map_err(|e| {
+                tracing::error!("Failed to write root chunk: {}", e);
+                e
             })?;
-
-            match std::fs::rename(&dual_path, &manifest_path) {
-                Ok(()) => {}
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to promote {} to primary ({}), keeping as dual backup: {}",
-                        dual_path.display(),
-                        manifest_path.display(),
-                        e
-                    );
-                    if !manifest_path.exists() {
-                        tracing::error!(
-                            "Primary manifest missing and rename failed — data at risk"
-                        );
-                        return Err(e);
-                    }
-                }
-            }
+            let root_hex: String = root_hash.iter().map(|b| format!("{:02x}", b)).collect();
+            tracing::info!(
+                "[checkpoint] root chunk {} written (manifest.json write skipped)",
+                &root_hex[..16]
+            );
 
             self.manifest_sequence = manifest.sequence;
-            self.manifest_slot = next_slot;
 
             self.dirty_clubs.clear();
-
-            {
-                let backup =
-                    crate::persist::manifest::backup_manifest_path(data_dir, manifest.sequence);
-                match crate::persist::manifest::write_backup_with_fsync(&manifest_path, &backup) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        tracing::warn!("Failed to create versioned manifest backup: {}", e);
-                    }
-                }
-            }
             self.save_key_history();
 
             if let Err(e) = self.gc_orphaned_chunks() {
@@ -26112,9 +26089,17 @@ mod tests {
             server.checkpoint_to_store().unwrap();
 
             let ann_hash = {
-                let cp = data_dir.join("manifest.json");
-                let m = crate::persist::manifest::read_manifest(&cp).unwrap();
-                m.annotations_hash.unwrap()
+                let rm = crate::persist::root_chunk::read_root_manifest(
+                    &data_dir.join("root_manifest.json"),
+                )
+                .unwrap();
+                let store = crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap();
+                let hash_bytes = hex::decode(&rm.current_root_hash).unwrap();
+                let mut root_hash = [0u8; 32];
+                root_hash.copy_from_slice(&hash_bytes);
+                let root_chunk =
+                    crate::persist::root_chunk::read_root_chunk(&root_hash, &store).unwrap();
+                root_chunk.annotations_hash.unwrap()
             };
             let hex: String = ann_hash.iter().map(|b| format!("{:02x}", b)).collect();
             let chunk_dir = data_dir.join("chunks");
@@ -26728,13 +26713,17 @@ mod tests {
             );
         }
 
-        let manifest = crate::persist::manifest::read_manifest(
-            &crate::persist::manifest::manifest_path(&data_dir),
-        )
-        .unwrap();
+        let rm =
+            crate::persist::root_chunk::read_root_manifest(&data_dir.join("root_manifest.json"))
+                .unwrap();
+        let store = crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap();
+        let hash_bytes = hex::decode(&rm.current_root_hash).unwrap();
+        let mut root_hash = [0u8; 32];
+        root_hash.copy_from_slice(&hash_bytes);
+        let root_chunk = crate::persist::root_chunk::read_root_chunk(&root_hash, &store).unwrap();
         assert!(
-            manifest.fossil_snapshots_hash.is_some(),
-            "manifest should have fossil_snapshots_hash"
+            root_chunk.fossil_snapshots_hash.is_some(),
+            "root chunk should have fossil_snapshots_hash"
         );
 
         let _ = std::fs::remove_dir_all(&data_dir);
@@ -26764,12 +26753,16 @@ mod tests {
             server.checkpoint_to_store().unwrap();
         }
 
-        let manifest = crate::persist::manifest::read_manifest(
-            &crate::persist::manifest::manifest_path(&data_dir),
-        )
-        .unwrap();
+        let rm =
+            crate::persist::root_chunk::read_root_manifest(&data_dir.join("root_manifest.json"))
+                .unwrap();
+        let store = crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap();
+        let hash_bytes = hex::decode(&rm.current_root_hash).unwrap();
+        let mut root_hash = [0u8; 32];
+        root_hash.copy_from_slice(&hash_bytes);
+        let root_chunk = crate::persist::root_chunk::read_root_chunk(&root_hash, &store).unwrap();
         assert!(
-            manifest.fossil_snapshots_hash.is_none(),
+            root_chunk.fossil_snapshots_hash.is_none(),
             "empty recorder system should not produce fossil hash"
         );
 
@@ -27110,14 +27103,27 @@ mod tests {
 
         server.checkpoint_to_store().unwrap();
 
-        let primary = data_dir.join("manifest.json");
-        assert!(primary.exists(), "primary manifest should exist");
-
-        let slot = server.manifest_slot;
+        let root_manifest_path = data_dir.join("root_manifest.json");
         assert!(
-            slot == 'a' || slot == 'b',
-            "manifest_slot should be 'a' or 'b', got '{}'",
-            slot
+            root_manifest_path.exists(),
+            "root_manifest.json should exist after checkpoint"
+        );
+        assert!(
+            !data_dir.join("manifest.json").exists(),
+            "manifest.json should never be written anymore"
+        );
+
+        let rm = crate::persist::root_chunk::read_root_manifest(&root_manifest_path).unwrap();
+        let hash_bytes = hex::decode(&rm.current_root_hash).unwrap();
+        assert_eq!(hash_bytes.len(), 32, "root hash should be 32 bytes");
+        let hex_str: String = hash_bytes.iter().map(|b| format!("{:02x}", b)).collect();
+        let chunk_path = data_dir
+            .join("chunks")
+            .join(&hex_str[..2])
+            .join(format!("{}.xchunk", hex_str));
+        assert!(
+            chunk_path.exists(),
+            "root chunk must exist in chunks/ after checkpoint"
         );
 
         let _ = std::fs::remove_dir_all(&data_dir);
@@ -27125,22 +27131,31 @@ mod tests {
 
     #[test]
     #[cfg(feature = "server")]
-    fn checkpoint_store_alternates_slots() {
+    fn checkpoint_store_advances_root_hash() {
         let (mut server, data_dir) = setup_chunk_store_server("slot_alternation");
         let sid = server.connect();
         server.login_public(sid).unwrap();
         server.create_work(sid, Edition::from_text("test")).unwrap();
 
-        let slot_init = server.manifest_slot;
+        server.checkpoint_to_store().unwrap();
+        let rm1 =
+            crate::persist::root_chunk::read_root_manifest(&data_dir.join("root_manifest.json"))
+                .unwrap();
 
         server.checkpoint_to_store().unwrap();
-        let slot1 = server.manifest_slot;
+        let rm2 =
+            crate::persist::root_chunk::read_root_manifest(&data_dir.join("root_manifest.json"))
+                .unwrap();
 
-        server.checkpoint_to_store().unwrap();
-        let slot2 = server.manifest_slot;
-
-        assert_ne!(slot1, slot2, "slots should alternate");
-        assert_ne!(slot_init, slot1, "first checkpoint should change slot");
+        assert_ne!(
+            rm1.current_root_hash, rm2.current_root_hash,
+            "root hash should change between checkpoints"
+        );
+        assert_eq!(
+            rm2.previous_root_hash.as_deref(),
+            Some(rm1.current_root_hash.as_str()),
+            "previous_root_hash should point at the prior root after the second checkpoint"
+        );
 
         let _ = std::fs::remove_dir_all(&data_dir);
     }
@@ -27936,71 +27951,45 @@ mod tests {
 
     #[test]
     #[cfg(feature = "server")]
-    fn dual_manifest_crash_simulation() {
-        let data_dir = std::env::temp_dir().join(format!(
-            "xudanu_crash_sim_test_{}_{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis()
-        ));
-        let _ = std::fs::remove_dir_all(&data_dir);
-        std::fs::create_dir_all(&data_dir).unwrap();
+    fn root_chunk_immutability_simulation() {
+        let (mut server, data_dir) = setup_chunk_store_server("crash_sim");
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
 
-        let doc_id;
-        {
-            let mut server = Server::new();
-            server.init_data_dir(&data_dir, None).unwrap();
-            let sid = server.connect();
-            server.login_public(sid).unwrap();
+        let doc_id = server
+            .create_work(sid, Edition::from_text("survives crash"))
+            .unwrap();
+        server.checkpoint_to_store().unwrap();
 
-            doc_id = server
-                .create_work(sid, Edition::from_text("survives crash"))
+        let rm1 =
+            crate::persist::root_chunk::read_root_manifest(&data_dir.join("root_manifest.json"))
                 .unwrap();
-            server.checkpoint_to_store().unwrap();
+        let first_root_hash = rm1.current_root_hash.clone();
 
-            server.work_grab(sid, doc_id).unwrap();
-            server
-                .work_revise(sid, doc_id, Edition::from_text("updated before crash"))
+        server.work_grab(sid, doc_id).unwrap();
+        server
+            .work_revise(sid, doc_id, Edition::from_text("updated before crash"))
+            .unwrap();
+        server.work_release(sid, doc_id).unwrap();
+        server.checkpoint_to_store().unwrap();
+
+        let store = crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap();
+        let hash_bytes = hex::decode(&first_root_hash).unwrap();
+        let mut first_hash = [0u8; 32];
+        first_hash.copy_from_slice(&hash_bytes);
+        assert!(
+            store.chunk_exists(&first_hash),
+            "first root chunk must still exist on disk after the second checkpoint"
+        );
+
+        let rm2 =
+            crate::persist::root_chunk::read_root_manifest(&data_dir.join("root_manifest.json"))
                 .unwrap();
-            server.work_release(sid, doc_id).unwrap();
-            server.checkpoint_to_store().unwrap();
-        }
-
-        {
-            let primary = data_dir.join("manifest.json");
-            let content = std::fs::read_to_string(&primary).unwrap();
-            let corrupted = content.replace("updated before crash", "CORRUPTED_DATA");
-            std::fs::write(&primary, corrupted).unwrap();
-        }
-
-        {
-            let mut server = Server::new();
-            match server.restore_from_data_dir(&data_dir, None) {
-                Ok(()) => {
-                    let text = server.work_edition(doc_id).unwrap().to_text();
-                    assert!(
-                        text.contains("updated before crash") || text.contains("survives crash"),
-                        "should recover from backup, got: {}",
-                        text
-                    );
-                }
-                Err(_) => {
-                    let mut found_backup = false;
-                    if let Ok(entries) = std::fs::read_dir(&data_dir) {
-                        for entry in entries.flatten() {
-                            let name = entry.file_name();
-                            let name_str = name.to_str().unwrap_or("");
-                            if name_str.starts_with("manifest_v") {
-                                found_backup = true;
-                            }
-                        }
-                    }
-                    assert!(found_backup, "recovery should succeed via versioned backup");
-                }
-            }
-        }
+        assert_eq!(
+            rm2.previous_root_hash.as_deref(),
+            Some(first_root_hash.as_str()),
+            "previous_root_hash should fall back to the first root"
+        );
 
         let _ = std::fs::remove_dir_all(&data_dir);
     }
@@ -28058,111 +28047,85 @@ mod tests {
     #[test]
     #[cfg(feature = "server")]
     fn schema_migration_with_new_fields() {
-        let data_dir = std::env::temp_dir().join(format!(
-            "xudanu_schema_test_{}_{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis()
-        ));
-        let _ = std::fs::remove_dir_all(&data_dir);
-        std::fs::create_dir_all(&data_dir).unwrap();
+        let (mut server, data_dir) = setup_chunk_store_server("schema_test");
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let doc_id = server
+            .create_work(sid, Edition::from_text("schema test"))
+            .unwrap();
+        server.checkpoint_to_store().unwrap();
 
-        {
-            let mut server = Server::new();
-            server.init_data_dir(&data_dir, None).unwrap();
-            let sid = server.connect();
-            server.login_public(sid).unwrap();
-            server
-                .create_work(sid, Edition::from_text("schema test"))
+        let rm =
+            crate::persist::root_chunk::read_root_manifest(&data_dir.join("root_manifest.json"))
                 .unwrap();
-            server.checkpoint_to_store().unwrap();
-        }
+        let store = crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap();
+        let hash_bytes = hex::decode(&rm.current_root_hash).unwrap();
+        let mut root_hash = [0u8; 32];
+        root_hash.copy_from_slice(&hash_bytes);
 
-        {
-            let primary = data_dir.join("manifest.json");
-            let content = std::fs::read_to_string(&primary).unwrap();
-            let modified = content.replace("\"manifest_slot\": \"b\"", "\"manifest_slot\": \"x\"");
-            std::fs::write(&primary, modified).unwrap();
-        }
-
-        {
-            let mut server = Server::new();
-            assert!(
-                server.restore_from_data_dir(&data_dir, None).is_ok(),
-                "should handle invalid manifest_slot gracefully"
-            );
-            assert_eq!(
-                server.manifest_slot, 'a',
-                "invalid slot should default to 'a'"
-            );
-        }
+        let roundtrip =
+            crate::persist::root_chunk::read_root_as_manifest(&root_hash, &store).unwrap();
+        assert_eq!(
+            roundtrip.works.len(),
+            1,
+            "root chunk round-trip should preserve work entries"
+        );
+        assert_eq!(
+            roundtrip.works[0].be_id, doc_id,
+            "work id should survive the root chunk round-trip"
+        );
+        assert!(
+            roundtrip.fossil_snapshots_hash.is_none(),
+            "absent optional fields should stay None through the round-trip"
+        );
 
         let _ = std::fs::remove_dir_all(&data_dir);
     }
 
     #[test]
     #[cfg(feature = "server")]
-    fn multiple_checkpoints_create_versioned_backups() {
+    fn multiple_checkpoints_advance_sequence() {
         let (mut server, data_dir) = setup_chunk_store_server("versioned_backups");
         let sid = server.connect();
         server.login_public(sid).unwrap();
 
-        for i in 0..10 {
+        let store = crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap();
+        let mut last_sequence: Option<u64> = None;
+        let mut last_root_hash: Option<String> = None;
+
+        for i in 0..3 {
             server
                 .create_work(sid, Edition::from_text(&format!("doc{}", i)))
                 .unwrap();
             server.checkpoint_to_store().unwrap();
-        }
 
-        let mut backup_count = 0;
-        for entry in std::fs::read_dir(&data_dir).unwrap() {
-            let entry = entry.unwrap();
-            let name = entry.file_name();
-            let name_str = name.to_str().unwrap_or("");
-            if name_str.starts_with("manifest_v") && name_str.ends_with(".json") {
-                backup_count += 1;
+            let rm =
+                crate::persist::root_chunk::read_root_manifest(&data_dir.join("root_manifest.json"))
+                    .unwrap();
+            assert_ne!(
+                Some(rm.current_root_hash.clone()),
+                last_root_hash,
+                "root hash should change on each checkpoint"
+            );
+            last_root_hash = Some(rm.current_root_hash.clone());
+
+            let hash_bytes = hex::decode(&rm.current_root_hash).unwrap();
+            let mut root_hash = [0u8; 32];
+            root_hash.copy_from_slice(&hash_bytes);
+            let root_chunk =
+                crate::persist::root_chunk::read_root_chunk(&root_hash, &store).unwrap();
+            if let Some(prev) = last_sequence {
+                assert!(
+                    root_chunk.sequence > prev,
+                    "root chunk sequence should strictly increase ({} > {})",
+                    root_chunk.sequence,
+                    prev
+                );
             }
+            last_sequence = Some(root_chunk.sequence);
         }
 
-        assert!(
-            backup_count <= 4,
-            "should keep at most 3 old + 1 new versioned backups, found {}",
-            backup_count
-        );
-        assert!(
-            backup_count >= 1,
-            "should have at least 1 versioned backup, found {}",
-            backup_count
-        );
-
-        let _ = std::fs::remove_dir_all(&data_dir);
-    }
-
-    #[test]
-    #[cfg(feature = "server")]
-    fn checkpoint_backup_uses_fsync() {
-        let (mut server, data_dir) = setup_chunk_store_server("fsync_backup");
-        let sid = server.connect();
-        server.login_public(sid).unwrap();
-        server
-            .create_work(sid, Edition::from_text("fsync test"))
-            .unwrap();
-
-        server.checkpoint_to_store().unwrap();
-
-        let seq = server.manifest_sequence;
-        let backup_path = crate::persist::manifest::backup_manifest_path(&data_dir, seq);
-        assert!(backup_path.exists(), "backup should exist");
-
-        let primary = data_dir.join("manifest.json");
-        let primary_content = std::fs::read_to_string(&primary).unwrap();
-        let backup_content = std::fs::read_to_string(&backup_path).unwrap();
-        assert_eq!(
-            primary_content, backup_content,
-            "backup should match primary"
-        );
+        assert!(last_sequence.is_some(), "should have written root chunks");
 
         let _ = std::fs::remove_dir_all(&data_dir);
     }

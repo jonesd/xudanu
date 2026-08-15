@@ -96,9 +96,26 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
+  # ── Frontend unit tests (gate for all builds) ─────────────────────────────
+  frontend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Run frontend unit tests
+        run: |
+          cd web/app
+          npm ci
+          npm test
+
   # ── Build for each selected target ───────────────────────────────────────
   build:
-    needs: matrix-prep
+    needs: [matrix-prep, frontend-tests]
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.continue_on_error || false }}
@@ -152,6 +169,8 @@ jobs:
           mkdir -p dist
           cp target/${{ matrix.target }}/release/xudanu-server dist/
           cp target/${{ matrix.target }}/release/xudanu-cli dist/
+          cp target/${{ matrix.target }}/release/migrate_manifest dist/ 2>/dev/null || true
+          cp target/${{ matrix.target }}/release/chunk_validator dist/ 2>/dev/null || true
           cp -r web/app/dist dist/
           [ -f LICENSE ] && cp LICENSE dist/ || true
           [ -f NOTICE ] && cp NOTICE dist/ || true
@@ -164,6 +183,8 @@ jobs:
           mkdir dist
           cp target/${{ matrix.target }}/release/xudanu-server.exe dist/
           cp target/${{ matrix.target }}/release/xudanu-cli.exe dist/
+          cp target/${{ matrix.target }}/release/migrate_manifest.exe dist/
+          cp target/${{ matrix.target }}/release/chunk_validator.exe dist/
           cp -r web/app/dist dist/
           if (Test-Path LICENSE) { cp LICENSE dist/ }
           if (Test-Path NOTICE) { cp NOTICE dist/ }

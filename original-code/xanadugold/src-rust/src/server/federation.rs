@@ -718,12 +718,56 @@ impl<'de> Deserialize<'de> for RemoteOriginRegistry {
     where
         D: serde::Deserializer<'de>,
     {
-        let entries: Vec<([u8; 32], RemoteOrigin)> = Vec::deserialize(deserializer)?;
-        let mut origins = HashMap::new();
-        for (fp, origin) in entries {
-            origins.insert(fp, origin);
+        use serde::de::{self, MapAccess, SeqAccess, Visitor};
+        use std::fmt;
+
+        struct RemoteOriginRegistryVisitor;
+
+        impl<'de> Visitor<'de> for RemoteOriginRegistryVisitor {
+            type Value = RemoteOriginRegistry;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a sequence of (fingerprint, origin) pairs or a map with \"origins\" key")
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                let mut origins = HashMap::new();
+                while let Some((fp, origin)) = seq.next_element()? {
+                    origins.insert(fp, origin);
+                }
+                Ok(RemoteOriginRegistry { origins })
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let mut origins_map: Option<HashMap<String, RemoteOrigin>> = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    if key == "origins" {
+                        origins_map = Some(map.next_value()?);
+                    } else {
+                        let _: de::IgnoredAny = map.next_value()?;
+                    }
+                }
+                let mut origins = HashMap::new();
+                if let Some(om) = origins_map {
+                    for (hex_fp, origin) in om {
+                        let fp = ::hex::decode(&hex_fp).map_err(|e| de::Error::custom(
+                            format!("invalid hex fingerprint: {}", e)
+                        ))?;
+                        if fp.len() != 32 {
+                            return Err(de::Error::custom(
+                                format!("fingerprint must be 32 bytes, got {}", fp.len())
+                            ));
+                        }
+                        let mut arr = [0u8; 32];
+                        arr.copy_from_slice(&fp);
+                        origins.insert(arr, origin);
+                    }
+                }
+                Ok(RemoteOriginRegistry { origins })
+            }
         }
-        Ok(RemoteOriginRegistry { origins })
+
+        deserializer.deserialize_any(RemoteOriginRegistryVisitor)
     }
 }
 

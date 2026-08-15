@@ -752,7 +752,7 @@ pub fn read_manifest(path: &Path) -> Result<Manifest, ManifestError> {
     read_manifest_from_str(&content)
 }
 
-fn read_manifest_from_str(content: &str) -> Result<Manifest, ManifestError> {
+ pub fn read_manifest_from_str(content: &str) -> Result<Manifest, ManifestError> {
     let manifest: Manifest = serde_json::from_str(content)?;
 
     if manifest.format_version > CURRENT_MANIFEST_VERSION {
@@ -1045,12 +1045,23 @@ pub fn preflight_check(data_dir: &Path) -> PreflightReport {
     }
 
     if !found_valid_backup {
-        report.errors.push(format!(
-            "No valid backup found either. Options: \
-             (1) Run 'xudanu-server rebuild-manifest {}', or \
-             (2) Delete the data directory to start fresh (all data will be lost).",
-            data_dir.display()
-        ));
+        let root_manifest_path = data_dir.join("root_manifest.json");
+        if root_manifest_path.exists() {
+            report.errors.clear();
+            report.warnings.push(
+                "Primary manifest and all backups have checksum issues, \
+                 but root_manifest.json exists. Server will restore from root chunk tree."
+                    .to_string(),
+            );
+            report.can_start = true;
+        } else {
+            report.errors.push(format!(
+                "No valid backup found either. Options: \
+                 (1) Run 'xudanu-server rebuild-manifest {}', or \
+                 (2) Delete the data directory to start fresh (all data will be lost).",
+                data_dir.display()
+            ));
+        }
     }
 
     let _ = manifest;

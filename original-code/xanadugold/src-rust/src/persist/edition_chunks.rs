@@ -27,7 +27,7 @@ pub struct WorkChunkRef {
     pub read_club: Option<BeId>,
     pub edit_club: Option<BeId>,
     pub sponsors: Vec<BeId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub endorsements: Vec<(u64, u64)>,
 }
 
