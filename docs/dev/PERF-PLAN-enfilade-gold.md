@@ -16,9 +16,12 @@ Companion doc: `FR-34-enfilade-native.md`
 | S4 Stable positions | **Done** | `af4b923` | gap allocator; audit pinned by tests; dense layouts load unchanged |
 | S5 Arc tree sharing | **Done** | `527b656` | `with()` flat 1.8ms @100k; copy/combine O(1) |
 | S5 Tree-native deltas | **Done** | `68513fa` + `e543f78` | steady 1-char edit: fragmented 100k 21->4.8ms, batched 9k 25->0.45ms |
-| S3 Splay activation | Pending | | measurement-gated |
-| S7 Structural merge | Pending | | depends on S2+S4 (both done) |
-| S8 Documentation (final) | This commit | | numbers below |
+| S8 Documentation (final) | **Done** | `201ffd6` | numbers above |
+| S3 Splay activation | **Done — not justified** | `cb3bdb7` | honest measurement: no win (assembly already localizes); caught + fixed a latent splay content-loss bug |
+| S7 Linear merge | **Done** | `7ef0707` | both-sides merge 207s -> 3.87s @100k (53x): patience alignment, set-based claiming, lockstep assembly |
+| Gold comparison | **Done** | this commit | `GOLD-VS-XUDANU.md` |
+
+**Pipeline complete.** All stages landed or honestly closed.
 
 Investigation addendum (S6): the dominant per-edit cost was not the
 combine fold but the fingerprint matcher rescanning used positions on
