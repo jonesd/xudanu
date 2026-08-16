@@ -768,6 +768,12 @@ impl Edition {
         let starts = self.cached_char_starts();
         let mut summary = SpanLicenseSummary::default();
 
+        // Zero-width spans cover nothing (harmonized with the FR-38
+        // overlay; previously the entry containing the start leaked in).
+        if char_start >= char_end {
+            return summary;
+        }
+
         let mut current_owner: Option<BeId> = None;
         let mut run_started = false;
         let mut run_start = char_start;
@@ -823,6 +829,16 @@ impl Edition {
                 .push((run_start, char_end, current_owner, summary.pending_class));
         }
         summary
+    }
+
+    /// Build the ownership overlay for this edition (FR-38 Phase 2).
+    /// O(n) over the cached entries; callers on the server side cache
+    /// the result keyed by content generation.
+    pub fn license_overlay(&self) -> super::license_overlay::LicenseOverlay {
+        super::license_overlay::LicenseOverlay::build(
+            self.cached_entries(),
+            self.cached_char_starts(),
+        )
     }
 
     pub fn crum(&self) -> Option<crate::edition::orgl::Crum> {
