@@ -245,6 +245,43 @@ impl Edition {
         }
     }
 
+    /// Build an Edition that PRESERVES the given (possibly sparse)
+    /// positions (PERF-PLAN Stage 4). Entries must be strictly
+    /// increasing; they are sorted defensively and rejected otherwise.
+    ///
+    /// Unlike `from_entries` (dense 0..n) and `coalesce` (renumbers),
+    /// this is the constructor for gap-allocated layouts where an edit
+    /// never renumbers unrelated entries. Do NOT call `.coalesce()` on
+    /// the result — it would renumber.
+    pub fn from_entries_at_positions(entries: Vec<(i64, Arc<Carrier>)>) -> Result<Self, String> {
+        let mut sorted = entries;
+        sorted.sort_by_key(|(p, _)| *p);
+        for w in sorted.windows(2) {
+            if w[0].0 >= w[1].0 {
+                return Err(format!(
+                    "positions must be strictly increasing, got {} then {}",
+                    w[0].0, w[1].0
+                ));
+            }
+        }
+        let region = match (sorted.first(), sorted.last()) {
+            (Some(f), Some(l)) => XnRegion::interval(f.0, l.0 + 1),
+            _ => XnRegion::empty(),
+        };
+        Ok(Edition {
+            orgl: OrglRoot::from_bulk_entries(sorted, None, region),
+            endorsements: EndorsementSet::new(),
+            entries_cache: Arc::new(OnceLock::new()),
+            span_provenance: Vec::new(),
+        })
+    }
+
+    /// Sorted entry positions (increasing). For locating allocation
+    /// neighbors in the tree-native delta path (Stage 5).
+    pub fn positions(&self) -> Vec<i64> {
+        self.cached_entries().iter().map(|(p, _)| *p).collect()
+    }
+
     pub fn from_text_elements(elements: &[RangeElement]) -> Self {
         let entries: Vec<(i64, Arc<Carrier>)> = elements
             .iter()
@@ -3310,6 +3347,167 @@ mod tests {
             crate::edition::orgl::SplayResult::Outside,
             "splay should find the region"
         );
+    }
+
+    /// Stage 4: sparse positions are preserved verbatim by the
+    /// position-preserving constructor.
+    #[test]
+    fn from_entries_at_positions_preserves_sparse_layout() {
+        let entries: Vec<(i64, Arc<Carrier>)> =
+            [(0i64, "alpha"), (65536, "beta"), (131072, "gamma")]
+                .iter()
+                .map(|(p, t)| {
+                    (
+                        *p,
+                        Arc::new(Carrier::new(RangeElement::text(t.to_string()))),
+                    )
+                })
+                .collect();
+        let ed = Edition::from_entries_at_positions(entries).unwrap();
+        assert_eq!(ed.positions(), vec![0, 65536, 131072]);
+        assert_eq!(ed.domain(), XnRegion::interval(0, 131073));
+        assert_eq!(ed.to_text(), "alphabetagamma");
+    }
+
+    /// Stage 4: rejects duplicate/decreasing positions.
+    #[test]
+    fn from_entries_at_positions_rejects_non_increasing() {
+        let mk = |ps: &[i64]| -> Vec<(i64, Arc<Carrier>)> {
+            ps.iter()
+                .map(|p| (*p, Arc::new(Carrier::new(RangeElement::text("x")))))
+                .collect()
+        };
+        assert!(Edition::from_entries_at_positions(mk(&[0, 0])).is_err());
+        // Out-of-order input is sorted defensively: [5, 3] -> [3, 5].
+        assert!(Edition::from_entries_at_positions(mk(&[5, 3])).is_ok());
+        assert!(Edition::from_entries_at_positions(mk(&[0, 1, 1])).is_err());
+        assert!(Edition::from_entries_at_positions(mk(&[])).is_ok());
+        assert!(Edition::from_entries_at_positions(mk(&[7])).is_ok());
+    }
+
+    /// Stage 4 core invariant: tree ops (with/without) never move
+    /// unrelated entries; an edit lands exactly at the allocated
+    /// position (gap midpoint).
+    #[test]
+    fn tree_ops_preserve_unrelated_positions() {
+        use crate::space::position_allocator::{allocate_between, spaced_layout, DEFAULT_SPACING};
+
+        let ps = spaced_layout(6, DEFAULT_SPACING);
+        let entries: Vec<(i64, Arc<Carrier>)> = ps
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                (
+                    *p,
+                    Arc::new(Carrier::new(RangeElement::text(format!("e{}", i)))),
+                )
+            })
+            .collect();
+        let ed = Edition::from_entries_at_positions(entries).unwrap();
+
+        // Insert between entries 2 and 3 at the gap midpoint.
+        let mid = allocate_between(ps[2], ps[3]).unwrap();
+        let ed2 = ed.with(mid, RangeElement::text("INSERTED"));
+
+        let mut got = ed2.positions();
+        assert!(got.contains(&mid), "allocated position present");
+        // Every original position survives untouched.
+        for p in &ps {
+            assert!(got.contains(p), "original position {} preserved", p);
+        }
+        got.sort_unstable();
+        assert_eq!(
+            got.windows(2).filter(|w| w[0] >= w[1]).count(),
+            0,
+            "strictly increasing"
+        );
+
+        // Delete an unrelated entry; the rest keep positions.
+        let ed3 = ed2.without(ps[4]);
+        let ps3 = ed3.positions();
+        assert!(!ps3.contains(&ps[4]));
+        assert!(ps3.contains(&mid));
+        for p in &ps[0..4] {
+            assert!(ps3.contains(p));
+        }
+        assert!(ps3.contains(&ps[5]));
+    }
+
+    /// Stage 4: sparse editions survive the persistence round-trip
+    /// (EditionSnapshot stores raw positions).
+    #[test]
+    fn sparse_positions_survive_snapshot_round_trip() {
+        let entries: Vec<(i64, Arc<Carrier>)> = [(0i64, "a"), (10, "b"), (20, "c"), (3000, "d")]
+            .iter()
+            .map(|(p, t)| {
+                (
+                    *p,
+                    Arc::new(Carrier::new(RangeElement::text(t.to_string()))),
+                )
+            })
+            .collect();
+        let ed = Edition::from_entries_at_positions(entries).unwrap();
+
+        let snap = crate::edition::persistent::EditionSnapshot::from_edition(&ed);
+        let restored = snap.to_edition();
+        assert_eq!(restored.positions(), vec![0, 10, 20, 3000]);
+        assert_eq!(restored.to_text(), "abcd");
+    }
+
+    /// Stage 4: three-way diff/merge operate correctly on sparse inputs —
+    /// the audit found they are interval+fingerprint based, and this test
+    /// pins that behavior for gap-allocated layouts.
+    #[test]
+    fn three_way_merge_on_sparse_positions() {
+        let mk = |pairs: &[(i64, &str)]| -> Edition {
+            let entries: Vec<(i64, Arc<Carrier>)> = pairs
+                .iter()
+                .map(|(p, t)| {
+                    (
+                        *p,
+                        Arc::new(Carrier::new(RangeElement::text(t.to_string()))),
+                    )
+                })
+                .collect();
+            Edition::from_entries_at_positions(entries).unwrap()
+        };
+
+        let base = mk(&[(0, "hello"), (100, "world")]);
+        let a = mk(&[(0, "hello"), (50, "brave"), (100, "world")]);
+        let b = mk(&[(0, "HELLO"), (100, "world")]);
+
+        let result = crate::edition::three_way::three_way_merge(
+            &base,
+            &a,
+            &b,
+            crate::edition::three_way::MergeStrategy::LastWriterWins,
+        )
+        .unwrap();
+        let text = result.merged.to_text();
+        assert!(text.contains("HELLO"), "b's edit applied: {}", text);
+        assert!(text.contains("brave"), "a's insert applied: {}", text);
+        assert!(text.contains("world"));
+    }
+
+    /// Stage 4: DocumentArrangement names sparse positions as tumblers
+    /// (Phase D bridge works on gap-allocated layouts).
+    #[test]
+    fn sparse_positions_tumbler_bridge() {
+        let entries: Vec<(i64, Arc<Carrier>)> = [(0i64, "a"), (65536, "b"), (131072, "c")]
+            .iter()
+            .map(|(p, t)| {
+                (
+                    *p,
+                    Arc::new(Carrier::new(RangeElement::text(t.to_string()))),
+                )
+            })
+            .collect();
+        let ed = Edition::from_entries_at_positions(entries).unwrap();
+        let arr = crate::edition::tumbler::DocumentArrangement::new("alice.com", 5);
+        for p in ed.positions() {
+            let t = arr.to_tumbler(p);
+            assert_eq!(arr.from_tumbler(&t), Some(p), "round trip for {}", p);
+        }
     }
 
     #[test]
