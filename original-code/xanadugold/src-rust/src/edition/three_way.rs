@@ -1085,12 +1085,8 @@ fn assemble_merge_lww(
         }
     }
 
-    let a_to_merged = a_sub
-        .into_iter()
-        .fold(Mapping::empty(), |acc, m| acc.combine(&m));
-    let b_to_merged = b_sub
-        .into_iter()
-        .fold(Mapping::empty(), |acc, m| acc.combine(&m));
+    let a_to_merged = Mapping::from_parts(a_sub);
+    let b_to_merged = Mapping::from_parts(b_sub);
 
     if merged_entries.is_empty() {
         return (Edition::empty(), a_to_merged, b_to_merged);
@@ -1133,29 +1129,32 @@ pub fn build_merge_mapping(source: &Edition, merged: &Edition) -> Mapping {
         source_by_fp.entry(key).or_default().push(*pos);
     }
 
+    // Positions are matched greedily in list order: the k-th merged entry
+    // with a given fingerprint consumes the k-th source position with that
+    // fingerprint. A per-key cursor reproduces the historical
+    // first-unused-position scan without the O(n^2) rescan over duplicate
+    // fingerprints (PERF-PLAN Stage 6).
     let mut sub_mappings = Vec::new();
-    let mut used_sources: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    let mut cursors: std::collections::HashMap<[u8; 8], usize> = std::collections::HashMap::new();
 
     for (merged_pos, carrier) in merged_entries {
         let fp_val = carrier.element.content_fingerprint();
         let mut key = [0u8; 8];
         key.copy_from_slice(&fp_val[..8]);
         if let Some(source_positions) = source_by_fp.get(&key) {
-            for &src_pos in source_positions {
-                if used_sources.insert(src_pos) {
-                    sub_mappings.push(Mapping::restricted(
-                        merged_pos - src_pos,
-                        XnRegion::singleton(src_pos),
-                    ));
-                    break;
-                }
+            let cursor = cursors.entry(key).or_insert(0);
+            if *cursor < source_positions.len() {
+                let src_pos = source_positions[*cursor];
+                *cursor += 1;
+                sub_mappings.push(Mapping::restricted(
+                    merged_pos - src_pos,
+                    XnRegion::singleton(src_pos),
+                ));
             }
         }
     }
 
-    let mapping = sub_mappings
-        .into_iter()
-        .fold(Mapping::empty(), |acc, m| acc.combine(&m));
+    let mapping = Mapping::from_parts(sub_mappings);
 
     let elapsed = started.elapsed();
     if elapsed.as_millis() >= 1 {
@@ -1510,6 +1509,75 @@ mod tests {
     fn group_consecutive_gap() {
         let groups = group_consecutive(&[1, 2, 5, 6]);
         assert_eq!(groups, vec![(1, 3), (5, 7)]);
+    }
+
+    /// Stage 6: cursor-based matching must reproduce the historical
+    /// first-unused-position scan exactly, including duplicate-heavy text.
+    #[test]
+    fn build_merge_mapping_cursor_equivalence() {
+        // Reference: the original O(n^2) rescan implementation.
+        fn reference(source: &Edition, merged: &Edition) -> Vec<(i64, i64)> {
+            let source_entries = source.cached_entries();
+            let mut source_by_fp: std::collections::HashMap<[u8; 8], Vec<i64>> =
+                std::collections::HashMap::new();
+            for (pos, carrier) in source_entries {
+                let fp_val = carrier.element.content_fingerprint();
+                let mut key = [0u8; 8];
+                key.copy_from_slice(&fp_val[..8]);
+                source_by_fp.entry(key).or_default().push(*pos);
+            }
+            let mut used = std::collections::HashSet::new();
+            let mut pairs = Vec::new();
+            for (merged_pos, carrier) in merged.cached_entries() {
+                let fp_val = carrier.element.content_fingerprint();
+                let mut key = [0u8; 8];
+                key.copy_from_slice(&fp_val[..8]);
+                if let Some(positions) = source_by_fp.get(&key) {
+                    for &src_pos in positions {
+                        if used.insert(src_pos) {
+                            pairs.push((*merged_pos, src_pos));
+                            break;
+                        }
+                    }
+                }
+            }
+            pairs
+        }
+
+        fn actual_pairs(source: &Edition, merged: &Edition) -> Vec<(i64, i64)> {
+            let mapping = build_merge_mapping(source, merged);
+            let mut pairs = Vec::new();
+            for (pos, _) in source.cached_entries() {
+                if let Some(new_pos) = mapping.of(*pos) {
+                    pairs.push((new_pos, *pos));
+                }
+            }
+            pairs.sort();
+            pairs
+        }
+
+        let cases = [
+            ("aaaa", "aa"),
+            ("ab", "ba"),
+            ("aabbcc", "abcabc"),
+            ("hello world", "hello brave world"),
+            ("xyz", ""),
+            ("", "xyz"),
+            ("mississippi", "mississippi"),
+        ];
+        for (src, mrg) in cases {
+            let source = text_edition(src);
+            let merged = text_edition(mrg);
+            let mut expected = reference(&source, &merged);
+            expected.sort();
+            assert_eq!(
+                actual_pairs(&source, &merged),
+                expected,
+                "cursor matching diverged for {:?} -> {:?}",
+                src,
+                mrg
+            );
+        }
     }
 
     #[test]

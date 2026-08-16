@@ -75,11 +75,7 @@ pub fn map_span_through_delta(
                 )
             })
             .collect();
-        let mut result = super::mapping::Mapping::empty();
-        for m in mappings {
-            result = result.combine(&m);
-        }
-        result
+        super::mapping::Mapping::from_parts(mappings)
     };
 
     let new_span = dsp.of_region(&span);
