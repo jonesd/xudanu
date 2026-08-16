@@ -682,7 +682,7 @@ impl Default for Server {
 }
 
 #[cfg(feature = "server")]
-struct DirtyWorkData {
+pub(crate) struct DirtyWorkData {
     be_id: BeId,
     work: Work,
     is_source: bool,
@@ -706,11 +706,14 @@ pub(crate) struct CheckpointPayload {
     manifest_path: std::path::PathBuf,
     data_dir: std::path::PathBuf,
 
-    sub_content_address: Vec<u8>,
-    sub_historical_authors: Vec<u8>,
-    sub_annotations: Vec<u8>,
-    sub_blob_metas: Vec<u8>,
-    sub_fossil_snapshots: Option<Vec<u8>>,
+    // Typed snapshots: serialization (tag_json) happens in
+    // checkpoint_persist on the blocking thread, NOT under the server
+    // write lock (PERF-PLAN Stage 1a).
+    content_address_data: ContentAddressIndex,
+    historical_authors_data: crate::server::historical_author::HistoricalAuthorRegistry,
+    annotations_data: Vec<(BeId, Vec<crate::server::otree_crdt::OtreeAnnotation>)>,
+    blob_metas_data: Vec<crate::persist::manifest::BlobMetaEntry>,
+    fossil_snapshots_data: Vec<crate::edition::recorder::Fossil>,
 
     links: Vec<crate::persist::manifest::LinkEntry>,
 
@@ -741,7 +744,7 @@ pub(crate) struct CheckpointPayload {
     trail_counter: BeId,
     compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
     key_history: Option<crate::persist::manifest::KeyHistoryEntry>,
-    ticket_nonces_data: Option<Vec<u8>>,
+    ticket_nonces_map: Option<std::collections::HashMap<String, u64>>,
 }
 
 #[cfg(feature = "server")]
@@ -755,6 +758,25 @@ pub(crate) struct CheckpointResult {
     pub dirty_work_count: u64,
     pub dirty_club_count: u64,
     pub dirty_edition_count: u64,
+}
+
+/// Accumulator for sliced checkpoint collection (PERF-PLAN Stage 1b).
+/// Works/clubs/editions are visited in batches across separate server
+/// lock acquisitions; `checkpoint_finalize` performs residual scans so
+/// items that appeared or changed mid-checkpoint are still captured.
+#[cfg(feature = "server")]
+#[derive(Default)]
+pub(crate) struct CheckpointPartial {
+    pub(crate) dirty_works: Vec<DirtyWorkData>,
+    pub(crate) dirty_work_gens: Vec<(BeId, u64)>,
+    pub(crate) dirty_clubs: Vec<(BeId, Club)>,
+    pub(crate) dirty_editions: Vec<(BeId, Edition)>,
+    pub(crate) clean_work_entries: Vec<crate::persist::manifest::WorkEntry>,
+    pub(crate) clean_club_refs: Vec<crate::persist::manifest::ClubChunkRef>,
+    pub(crate) clean_edition_refs: Vec<crate::persist::manifest::StandaloneEditionChunkRef>,
+    pub(crate) works_visited: HashSet<BeId>,
+    pub(crate) clubs_visited: HashSet<BeId>,
+    pub(crate) editions_visited: HashSet<BeId>,
 }
 
 #[cfg(feature = "server")]
@@ -771,6 +793,20 @@ fn tag_json(value: &impl serde::Serialize) -> std::io::Result<Vec<u8>> {
 pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<CheckpointResult> {
     let start = std::time::Instant::now();
     let store = &payload.chunk_store;
+
+    // Serialization moved here from checkpoint_prepare (PERF-PLAN Stage 1a):
+    // this runs on the blocking thread, outside the server write lock.
+    let sub_content_address = tag_json(&payload.content_address_data)?;
+    let sub_historical_authors = tag_json(&payload.historical_authors_data)?;
+    let sub_annotations = tag_json(&payload.annotations_data)?;
+    let sub_blob_metas = tag_json(&payload.blob_metas_data)?;
+    let sub_fossil_snapshots = if payload.fossil_snapshots_data.is_empty() {
+        None
+    } else {
+        Some(tag_json(&payload.fossil_snapshots_data)?)
+    };
+    let ticket_nonces_inline: std::collections::HashMap<String, u64> =
+        payload.ticket_nonces_map.clone().unwrap_or_default();
 
     let dirty_work_gens = payload.dirty_work_gens;
     let mut work_refs = Vec::with_capacity(dirty_work_gens.len());
@@ -856,25 +892,25 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
     );
     let content_address_hash = Some(
         store
-            .write_chunk(&payload.sub_content_address)
+            .write_chunk(&sub_content_address)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
     );
     let blob_metas_hash = Some(
         store
-            .write_chunk(&payload.sub_blob_metas)
+            .write_chunk(&sub_blob_metas)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
     );
     let historical_authors_hash = Some(
         store
-            .write_chunk(&payload.sub_historical_authors)
+            .write_chunk(&sub_historical_authors)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
     );
     let annotations_hash = Some(
         store
-            .write_chunk(&payload.sub_annotations)
+            .write_chunk(&sub_annotations)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
     );
-    let fossil_snapshots_hash = if let Some(ref fs_data) = payload.sub_fossil_snapshots {
+    let fossil_snapshots_hash = if let Some(ref fs_data) = sub_fossil_snapshots {
         Some(
             store
                 .write_chunk(fs_data)
@@ -883,13 +919,6 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
     } else {
         None
     };
-
-    let ticket_nonces_inline: std::collections::HashMap<String, u64> =
-        if let Some(ref td) = payload.ticket_nonces_data {
-            serde_json::from_slice(td).unwrap_or_default()
-        } else {
-            std::collections::HashMap::new()
-        };
 
     let next_slot = if payload.manifest_slot == 'a' {
         'b'
@@ -6588,6 +6617,28 @@ impl Server {
             let rev = self
                 .crdt_materialize_any_session(work_id)
                 .unwrap_or_else(|_| self.materialize_pending_force(work_id));
+            if rev > 0 {
+                saved += 1;
+                tracing::debug!("auto-save: materialized work {} rev {}", work_id, rev);
+            }
+        }
+        saved
+    }
+
+    /// Pending CRDT work ids, for sliced materialization (Stage 1b).
+    pub fn pending_crdt_work_ids(&self) -> Vec<BeId> {
+        self.otree_crdt.pending_work_ids()
+    }
+
+    /// Materialize a specific batch of pending works. The id list is
+    /// computed once by the caller (matching materialize_all_pending
+    /// semantics) and processed in slices so edits interleave.
+    pub fn materialize_pending_ids(&mut self, ids: &[BeId]) -> usize {
+        let mut saved = 0;
+        for work_id in ids {
+            let rev = self
+                .crdt_materialize_any_session(*work_id)
+                .unwrap_or_else(|_| self.materialize_pending_force(*work_id));
             if rev > 0 {
                 saved += 1;
                 tracing::debug!("auto-save: materialized work {} rev {}", work_id, rev);
@@ -17295,52 +17346,68 @@ pub(crate) mod persist_snapshot {
         }
 
         pub fn checkpoint_prepare(&self) -> std::io::Result<CheckpointPayload> {
-            let chunk_store = self.chunk_store_arc().ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::Other, "no chunk store configured")
-            })?;
-            let manifest_path = self.checkpoint_path.clone().ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::Other, "no checkpoint path configured")
-            })?;
-            let data_dir = self
-                .data_dir
-                .clone()
-                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "no data dir"))?;
+            let mut partial = CheckpointPartial::default();
+            let (work_ids, club_ids, edition_ids) = self.checkpoint_id_lists();
+            self.checkpoint_visit_works(&work_ids, &mut partial);
+            self.checkpoint_visit_clubs(&club_ids, &mut partial);
+            self.checkpoint_visit_editions(&edition_ids, &mut partial);
+            self.checkpoint_finalize(partial)
+        }
 
-            let mut dirty_works = Vec::new();
-            let mut clean_work_entries = Vec::new();
-            let mut dirty_work_gens = Vec::new();
+        /// Id lists for sliced checkpoint collection. Callers acquire these
+        /// in one short lock pass, then visit in batches so edits interleave
+        /// between slices (PERF-PLAN Stage 1b).
+        pub fn checkpoint_id_lists(&self) -> (Vec<BeId>, Vec<BeId>, Vec<BeId>) {
+            (
+                self.works.keys().copied().collect(),
+                self.clubs.keys().copied().collect(),
+                self.standalone_editions.keys().copied().collect(),
+            )
+        }
 
-            for (id, ws) in &self.works {
+        /// Visit a batch of works, classifying each as clean (has a
+        /// persisted chunk ref) or dirty (snapshot clone). Idempotent per
+        /// id via `works_visited`.
+        pub fn checkpoint_visit_works(&self, ids: &[BeId], partial: &mut CheckpointPartial) {
+            for id in ids {
+                let Some(ws) = self.works.get(id) else {
+                    continue;
+                };
+                if !partial.works_visited.insert(*id) {
+                    continue;
+                }
                 let is_archived = ws.work.is_archived();
                 let lifecycle_history = ws.work.lifecycle_history().to_vec();
                 let history_club = ws.work.history_club();
                 if let Some(ref existing_ref) = ws.chunk_ref {
-                    clean_work_entries.push(crate::persist::manifest::WorkEntry {
-                        be_id: *id,
-                        work_ref: existing_ref.clone(),
-                        is_source: ws.is_source,
-                        source_author_id: ws.source_author_id,
-                        source_edition_info: ws.source_edition_info.clone(),
-                        content_start_line: ws.content_start_line,
-                        content_end_line: ws.content_end_line,
-                        source_fingerprint: ws.source_fingerprint.map(|fp| fp.to_vec()),
-                        is_archived,
-                        lifecycle_history: lifecycle_history.clone(),
-                        history_club,
-                        kind: ws.work.kind(),
-                        license: ws.work.license(),
-                        custom_title: {
-                            let auto = Server::extract_title(&ws.work.current_edition());
-                            if ws.cached_title != auto {
-                                Some(ws.cached_title.clone())
-                            } else {
-                                None
-                            }
-                        },
-                    });
+                    partial
+                        .clean_work_entries
+                        .push(crate::persist::manifest::WorkEntry {
+                            be_id: *id,
+                            work_ref: existing_ref.clone(),
+                            is_source: ws.is_source,
+                            source_author_id: ws.source_author_id,
+                            source_edition_info: ws.source_edition_info.clone(),
+                            content_start_line: ws.content_start_line,
+                            content_end_line: ws.content_end_line,
+                            source_fingerprint: ws.source_fingerprint.map(|fp| fp.to_vec()),
+                            is_archived,
+                            lifecycle_history: lifecycle_history.clone(),
+                            history_club,
+                            kind: ws.work.kind(),
+                            license: ws.work.license(),
+                            custom_title: {
+                                let auto = Server::extract_title(&ws.work.current_edition());
+                                if ws.cached_title != auto {
+                                    Some(ws.cached_title.clone())
+                                } else {
+                                    None
+                                }
+                            },
+                        });
                 } else {
-                    dirty_work_gens.push((*id, ws.dirty_gen));
-                    dirty_works.push(DirtyWorkData {
+                    partial.dirty_work_gens.push((*id, ws.dirty_gen));
+                    partial.dirty_works.push(DirtyWorkData {
                         be_id: *id,
                         work: ws.work.clone(),
                         is_source: ws.is_source,
@@ -17357,32 +17424,95 @@ pub(crate) mod persist_snapshot {
                     });
                 }
             }
+        }
 
-            let dirty_club_ids = self.dirty_clubs.clone();
-            let mut dirty_clubs = Vec::new();
-            let mut clean_club_refs = Vec::new();
-            for (id, club) in &self.clubs {
+        /// Visit a batch of clubs. Clean = not dirty AND has a persisted
+        /// ref; everything else is cloned for re-persist.
+        pub fn checkpoint_visit_clubs(&self, ids: &[BeId], partial: &mut CheckpointPartial) {
+            for id in ids {
+                let Some(club) = self.clubs.get(id) else {
+                    continue;
+                };
+                if !partial.clubs_visited.insert(*id) {
+                    continue;
+                }
                 if !self.dirty_clubs.contains(id) {
                     if let Some(existing_ref) = self.club_refs.get(id) {
-                        clean_club_refs.push(existing_ref.clone());
+                        partial.clean_club_refs.push(existing_ref.clone());
                         continue;
                     }
                 }
-                dirty_clubs.push((*id, club.clone()));
+                partial.dirty_clubs.push((*id, club.clone()));
             }
+        }
 
-            let mut dirty_editions = Vec::new();
-            let mut clean_edition_refs = Vec::new();
-            for (id, edition) in &self.standalone_editions {
+        /// Visit a batch of standalone editions.
+        pub fn checkpoint_visit_editions(&self, ids: &[BeId], partial: &mut CheckpointPartial) {
+            for id in ids {
+                let Some(edition) = self.standalone_editions.get(id) else {
+                    continue;
+                };
+                if !partial.editions_visited.insert(*id) {
+                    continue;
+                }
                 if let Some(existing_ref) = self.standalone_edition_refs.get(id) {
-                    clean_edition_refs.push(crate::persist::manifest::StandaloneEditionChunkRef {
-                        be_id: *id,
-                        edition_ref: existing_ref.clone(),
-                    });
+                    partial.clean_edition_refs.push(
+                        crate::persist::manifest::StandaloneEditionChunkRef {
+                            be_id: *id,
+                            edition_ref: existing_ref.clone(),
+                        },
+                    );
                 } else {
-                    dirty_editions.push((*id, edition.clone()));
+                    partial.dirty_editions.push((*id, edition.clone()));
                 }
             }
+        }
+
+        /// Final assembly: residual scans for works/clubs/editions that
+        /// appeared or changed after their sliced visits (completeness
+        /// guarantee — every item lands in exactly one list), plus all
+        /// non-work server state. Serialization is deferred to
+        /// checkpoint_persist (Stage 1a).
+        pub fn checkpoint_finalize(
+            &self,
+            mut partial: CheckpointPartial,
+        ) -> std::io::Result<CheckpointPayload> {
+            let chunk_store = self.chunk_store_arc().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::Other, "no chunk store configured")
+            })?;
+            let manifest_path = self.checkpoint_path.clone().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::Other, "no checkpoint path configured")
+            })?;
+            let data_dir = self
+                .data_dir
+                .clone()
+                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "no data dir"))?;
+
+            let residual_works: Vec<BeId> = self
+                .works
+                .keys()
+                .filter(|id| !partial.works_visited.contains(*id))
+                .copied()
+                .collect();
+            self.checkpoint_visit_works(&residual_works, &mut partial);
+
+            let residual_clubs: Vec<BeId> = self
+                .clubs
+                .keys()
+                .filter(|id| !partial.clubs_visited.contains(*id))
+                .copied()
+                .collect();
+            self.checkpoint_visit_clubs(&residual_clubs, &mut partial);
+
+            let residual_editions: Vec<BeId> = self
+                .standalone_editions
+                .keys()
+                .filter(|id| !partial.editions_visited.contains(*id))
+                .copied()
+                .collect();
+            self.checkpoint_visit_editions(&residual_editions, &mut partial);
+
+            let dirty_club_ids = self.dirty_clubs.clone();
 
             let links: Vec<crate::persist::manifest::LinkEntry> =
                 self.links
@@ -17484,34 +17614,24 @@ pub(crate) mod persist_snapshot {
                 .map(|(id, c)| (*id, c.clone()))
                 .collect();
 
-            let sub_content_address = tag_json(&self.content_address)?;
-            let sub_historical_authors = tag_json(&self.historical_authors)?;
-            let sub_annotations = tag_json(&annotations)?;
-            let sub_blob_metas = tag_json(&blob_metas)?;
-            let sub_fossil_snapshots = if fossil_snapshots.is_empty() {
-                None
-            } else {
-                Some(tag_json(&fossil_snapshots)?)
-            };
-
             Ok(CheckpointPayload {
                 chunk_store,
                 manifest_path,
                 data_dir,
-                sub_content_address,
-                sub_historical_authors,
-                sub_annotations,
-                sub_blob_metas,
-                sub_fossil_snapshots,
+                content_address_data: self.content_address.clone(),
+                historical_authors_data: self.historical_authors.clone(),
+                annotations_data: annotations,
+                blob_metas_data: blob_metas,
+                fossil_snapshots_data: fossil_snapshots,
                 links,
-                dirty_works,
-                dirty_work_gens,
-                dirty_clubs,
+                dirty_works: partial.dirty_works,
+                dirty_work_gens: partial.dirty_work_gens,
+                dirty_clubs: partial.dirty_clubs,
                 dirty_club_ids,
-                dirty_editions,
-                clean_work_entries,
-                clean_club_refs,
-                clean_edition_refs,
+                dirty_editions: partial.dirty_editions,
+                clean_work_entries: partial.clean_work_entries,
+                clean_club_refs: partial.clean_club_refs,
+                clean_edition_refs: partial.clean_edition_refs,
                 manifest_sequence: self.manifest_sequence,
                 manifest_slot: self.manifest_slot,
                 grand_map_id_counter: self.grand_map.id_counter(),
@@ -17529,7 +17649,7 @@ pub(crate) mod persist_snapshot {
                 trail_counter: self.trail_counter,
                 compound_editions,
                 key_history,
-                ticket_nonces_data: {
+                ticket_nonces_map: {
                     let now = crate::server::session_ticket::now_secs();
                     let tickets: std::collections::HashMap<String, u64> = self
                         .ticket_nonces
@@ -17542,7 +17662,7 @@ pub(crate) mod persist_snapshot {
                     if tickets.is_empty() {
                         None
                     } else {
-                        Some(serde_json::to_vec(&tickets).ok()).unwrap_or(None)
+                        Some(tickets)
                     }
                 },
             })
@@ -27936,6 +28056,266 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&data_dir_a);
         let _ = std::fs::remove_dir_all(&data_dir_b);
+    }
+
+    /// Stage 1 sliced checkpoint: a work created after the id list was
+    /// snapshotted (mid-checkpoint race) must still be captured by the
+    /// finalize residual scan — completeness guarantee against data loss.
+    #[test]
+    #[cfg(feature = "server")]
+    fn sliced_checkpoint_captures_work_created_mid_checkpoint() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_sliced_race_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let early_id;
+        let raced_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            early_id = server
+                .create_work(sid, Edition::from_text("early work"))
+                .unwrap();
+
+            let (work_ids, club_ids, edition_ids) = server.checkpoint_id_lists();
+            let mut partial = super::CheckpointPartial::default();
+            server.checkpoint_visit_works(&work_ids, &mut partial);
+
+            // Race: a new work appears after the id list was taken.
+            raced_id = server
+                .create_work(sid, Edition::from_text("raced work"))
+                .unwrap();
+
+            server.checkpoint_visit_clubs(&club_ids, &mut partial);
+            server.checkpoint_visit_editions(&edition_ids, &mut partial);
+            let payload = server.checkpoint_finalize(partial).unwrap();
+
+            let visited: std::collections::HashSet<BeId> = payload
+                .clean_work_entries
+                .iter()
+                .map(|w| w.be_id)
+                .chain(payload.dirty_works.iter().map(|w| w.be_id))
+                .collect();
+            assert!(visited.contains(&early_id), "early work must be in payload");
+            assert!(
+                visited.contains(&raced_id),
+                "work created mid-checkpoint must be captured by residual scan"
+            );
+
+            let result = super::checkpoint_persist(payload).unwrap();
+            server.checkpoint_commit(result).unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert_eq!(
+                server.work_edition(early_id).unwrap().to_text(),
+                "early work"
+            );
+            assert_eq!(
+                server.work_edition(raced_id).unwrap().to_text(),
+                "raced work",
+                "raced work must survive restore — no data loss"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    /// Stage 1 sliced checkpoint: a work edited after its snapshot was
+    /// taken must stay dirty (dirty_gen guard) and be re-persisted on the
+    /// next checkpoint with the newer content.
+    #[test]
+    #[cfg(feature = "server")]
+    fn sliced_checkpoint_edit_after_snapshot_stays_consistent() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_sliced_stale_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            doc_id = server
+                .create_work(sid, Edition::from_text("version one"))
+                .unwrap();
+
+            let (work_ids, club_ids, edition_ids) = server.checkpoint_id_lists();
+            let mut partial = super::CheckpointPartial::default();
+            server.checkpoint_visit_works(&work_ids, &mut partial);
+
+            // Edit after snapshot: newer content in memory, stale in payload.
+            server.work_grab(sid, doc_id).unwrap();
+            server
+                .work_revise(sid, doc_id, Edition::from_text("version two"))
+                .unwrap();
+
+            server.checkpoint_visit_clubs(&club_ids, &mut partial);
+            server.checkpoint_visit_editions(&edition_ids, &mut partial);
+            let payload = server.checkpoint_finalize(partial).unwrap();
+            let result = super::checkpoint_persist(payload).unwrap();
+            server.checkpoint_commit(result).unwrap();
+
+            let ws = server.works.get(&doc_id).unwrap();
+            assert!(
+                ws.chunk_ref.is_none(),
+                "edited-after-snapshot work must stay dirty"
+            );
+
+            // Next checkpoint persists the current (newer) content.
+            let payload2 = server.checkpoint_prepare().unwrap();
+            let result2 = super::checkpoint_persist(payload2).unwrap();
+            server.checkpoint_commit(result2).unwrap();
+            assert!(server.works.get(&doc_id).unwrap().chunk_ref.is_some());
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert_eq!(
+                server.work_edition(doc_id).unwrap().to_text(),
+                "version two",
+                "latest checkpoint content must win on restore"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    /// Stage 1 sliced checkpoint: sliced orchestration must produce the
+    /// same persisted state as the one-shot path for identical operations.
+    #[test]
+    #[cfg(feature = "server")]
+    fn sliced_checkpoint_equivalent_to_one_shot() {
+        let mk_text = |n: usize| {
+            (0..n)
+                .map(|i| format!("line {i} of the sliced equivalence corpus\n"))
+                .collect::<String>()
+        };
+
+        let data_dir_sliced = std::env::temp_dir().join(format!(
+            "xudanu_sliced_eq_s_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let data_dir_oneshot = std::env::temp_dir().join(format!(
+            "xudanu_sliced_eq_o_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir_sliced);
+        let _ = std::fs::remove_dir_all(&data_dir_oneshot);
+
+        let mut ids = Vec::new();
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir_sliced, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            for i in 0..12 {
+                ids.push(
+                    server
+                        .create_work(sid, Edition::from_text(&mk_text(5 + i)))
+                        .unwrap(),
+                );
+            }
+
+            let pending = server.pending_crdt_work_ids();
+            for batch in pending.chunks(4) {
+                server.materialize_pending_ids(batch);
+            }
+
+            let (work_ids, club_ids, edition_ids) = server.checkpoint_id_lists();
+            let mut partial = super::CheckpointPartial::default();
+            for batch in work_ids.chunks(3) {
+                server.checkpoint_visit_works(batch, &mut partial);
+            }
+            for batch in club_ids.chunks(8) {
+                server.checkpoint_visit_clubs(batch, &mut partial);
+            }
+            for batch in edition_ids.chunks(8) {
+                server.checkpoint_visit_editions(batch, &mut partial);
+            }
+            let payload = server.checkpoint_finalize(partial).unwrap();
+            let result = super::checkpoint_persist(payload).unwrap();
+            server.checkpoint_commit(result).unwrap();
+
+            for id in &ids {
+                assert!(
+                    server.works.get(id).unwrap().chunk_ref.is_some(),
+                    "all works clean after sliced checkpoint"
+                );
+            }
+        }
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir_oneshot, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            for i in 0..12 {
+                server
+                    .create_work(sid, Edition::from_text(&mk_text(5 + i)))
+                    .unwrap();
+            }
+            let payload = server.checkpoint_prepare().unwrap();
+            let result = super::checkpoint_persist(payload).unwrap();
+            server.checkpoint_commit(result).unwrap();
+        }
+
+        let texts_sliced: Vec<String> = {
+            let mut server = Server::new();
+            server
+                .restore_from_data_dir(&data_dir_sliced, None)
+                .unwrap();
+            ids.iter()
+                .map(|id| server.work_edition(*id).unwrap().to_text())
+                .collect()
+        };
+        let texts_oneshot: Vec<String> = {
+            let mut server = Server::new();
+            server
+                .restore_from_data_dir(&data_dir_oneshot, None)
+                .unwrap();
+            ids.iter()
+                .map(|i| server.work_edition(*i).unwrap().to_text())
+                .collect()
+        };
+
+        assert_eq!(texts_sliced, texts_oneshot);
+        for (i, t) in texts_sliced.iter().enumerate() {
+            assert_eq!(t, &mk_text(5 + i));
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir_sliced);
+        let _ = std::fs::remove_dir_all(&data_dir_oneshot);
     }
 
     #[test]

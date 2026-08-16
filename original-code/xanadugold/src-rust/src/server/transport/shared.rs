@@ -15,6 +15,13 @@ pub const MAX_CSRF_TOKENS: usize = 10_000;
 /// spikes attributable to server-lock contention are visible in traces.
 const LOCK_WAIT_LOG_THRESHOLD: std::time::Duration = std::time::Duration::from_millis(5);
 
+/// Batch sizes for sliced checkpoint collection (Stage 1b). Each batch is
+/// one server write-lock acquisition; smaller batches mean shorter holds
+/// and more interleaving room for dispatch, at the cost of more acquisitions.
+const MATERIALIZE_BATCH: usize = 4;
+const WORK_SNAPSHOT_BATCH: usize = 4;
+const AUX_SNAPSHOT_BATCH: usize = 8;
+
 pub type SharedState = Arc<AppState>;
 
 pub struct AppState {
@@ -243,31 +250,65 @@ impl ServerHandle {
         barrier.wait_for_write_timeout(timeout)
     }
 
+    /// Non-blocking checkpoint (issue #90, PERF-PLAN Stage 1).
+    ///
+    /// The prepare phase is sliced: the server write lock is acquired in
+    /// short bursts (prune, per-batch materialization, per-batch work/
+    /// club/edition snapshots, final assembly) so dispatch interleaves
+    /// between slices instead of stalling behind one long hold.
+    /// Serialization (tag_json) runs in checkpoint_persist on the
+    /// blocking thread. Correctness under interleaving:
+    /// - dirty_gen comparison at commit discards stale work snapshots
+    /// - checkpoint_finalize residual scans capture anything that
+    ///   appeared or changed mid-checkpoint (completeness guarantee)
     pub async fn checkpoint_async(&self) -> std::io::Result<()> {
         let prep_start = std::time::Instant::now();
-        let payload = self.with_server(|srv| -> std::io::Result<_> {
-            let t_prune = std::time::Instant::now();
-            let _ = srv.prune_disconnected_sessions();
-            let prune_ms = t_prune.elapsed().as_secs_f64() * 1000.0;
 
-            let t_mat = std::time::Instant::now();
-            let materialized = srv.materialize_all_pending();
-            let materialize_ms = t_mat.elapsed().as_secs_f64() * 1000.0;
+        self.with_server(|srv| srv.prune_disconnected_sessions());
 
-            let t_snap = std::time::Instant::now();
-            let payload = srv.checkpoint_prepare()?;
-            let snapshot_ms = t_snap.elapsed().as_secs_f64() * 1000.0;
+        let pending = self.with_server(|srv| srv.pending_crdt_work_ids());
+        let mut materialized = 0usize;
+        let mut materialize_ms = 0f64;
+        for batch in pending.chunks(MATERIALIZE_BATCH) {
+            let t = std::time::Instant::now();
+            materialized += self.with_server(|srv| srv.materialize_pending_ids(batch));
+            materialize_ms += t.elapsed().as_secs_f64() * 1000.0;
+        }
 
-            tracing::info!(
-                "[checkpoint] prepare (write-lock held) in {:.2}ms: prune {:.2}ms, materialize {} work(s) {:.2}ms, snapshot {:.2}ms",
-                prep_start.elapsed().as_secs_f64() * 1000.0,
-                prune_ms,
-                materialized,
-                materialize_ms,
-                snapshot_ms,
-            );
-            Ok(payload)
-        })?;
+        let (work_ids, club_ids, edition_ids) = self.with_server(|srv| srv.checkpoint_id_lists());
+
+        let mut partial = crate::server::server::CheckpointPartial::default();
+        let mut works_ms = 0f64;
+        for batch in work_ids.chunks(WORK_SNAPSHOT_BATCH) {
+            let t = std::time::Instant::now();
+            self.with_server(|srv| srv.checkpoint_visit_works(batch, &mut partial));
+            works_ms += t.elapsed().as_secs_f64() * 1000.0;
+        }
+        let mut aux_ms = 0f64;
+        for batch in club_ids.chunks(AUX_SNAPSHOT_BATCH) {
+            let t = std::time::Instant::now();
+            self.with_server(|srv| srv.checkpoint_visit_clubs(batch, &mut partial));
+            aux_ms += t.elapsed().as_secs_f64() * 1000.0;
+        }
+        for batch in edition_ids.chunks(AUX_SNAPSHOT_BATCH) {
+            let t = std::time::Instant::now();
+            self.with_server(|srv| srv.checkpoint_visit_editions(batch, &mut partial));
+            aux_ms += t.elapsed().as_secs_f64() * 1000.0;
+        }
+
+        let t_final = std::time::Instant::now();
+        let payload = self.with_server(|srv| srv.checkpoint_finalize(partial))?;
+        let finalize_ms = t_final.elapsed().as_secs_f64() * 1000.0;
+
+        tracing::info!(
+            "[checkpoint] prepare (sliced) in {:.2}ms: materialize {} work(s) {:.2}ms, works {:.2}ms, clubs+editions {:.2}ms, finalize {:.2}ms",
+            prep_start.elapsed().as_secs_f64() * 1000.0,
+            materialized,
+            materialize_ms,
+            works_ms,
+            aux_ms,
+            finalize_ms,
+        );
 
         let result =
             tokio::task::spawn_blocking(move || crate::server::server::checkpoint_persist(payload))
