@@ -74,8 +74,10 @@ provenance, federation, web platform).
 | Bloom filter check | N/A | O(k) per item (k=7) | N/A | 33 bloom tests |
 | Bloom filter exchange | N/A | O(n_bits/8) bytes | N/A | 3-node Docker test |
 | Tree op (with) | O(n) eager rehash | **O(log n)** — 9ms @100k (was 363ms) | O(log n) | `benchmark_tree_op_on_large_editions` |
+| Tree op (with, Arc sharing) | — | **flat 1.8ms @100k** (5-0) | O(log n) | same |
 | Merge mapping build | O(n^2) rescan + refold | **O(n log n)** — 74-109ms @9k (was 6.4s) | N/A | `benchmark_build_merge_mapping_scale` |
 | Checkpoint prepare | full lock hold | sliced lock bursts, dispatch interleaves | N/A | `sliced_checkpoint_*` tests |
+| Delta (1-char, steady) | O(n) flatten-walk-rebuild | **tree-native**: fragmented 100k 21->4.8ms; batched 9k 25->0.45ms | O(log n) | `benchmark_apply_delta_at_scale` |
 
 ### Enfilade feature activation
 
@@ -89,7 +91,7 @@ provenance, federation, web platform).
 | combine_overlapping | **Active** (LWW) | Structural merge |
 | Dsp | Working | Position management |
 | Splay | **Exposed** at Edition level | Active in Gold |
-| Tumbler bridge | **Connected** (Sequence algebra) | Native |
+| Tumbler bridge | **Connected** (Sequence algebra; DocumentArrangement bridges gap-allocated positions) | Native |
 | CrossSpace | Dormant | Compound documents |
 | Arrangement | Dormant | Transclusion mapping |
 | Structural transclusion | **Active** (cached_content) | Tree references |
@@ -205,14 +207,21 @@ reference source works by ID + char range. No structural composition.
 
 ### Phase I: O(log n) Delta Application
 
-> **Status (2026-08-16): NOT implemented.** The delta path remains
-> flatten-walk-rebuild in `apply_text_delta_to_edition`. Prerequisite
-> work has landed: tree ops are now O(log n) with incrementally
-> maintained crums (PERF-PLAN S2), and the per-edit merge-mapping cost
-> is linear (S6). The remaining blocker is unchanged: contiguous i64
-> positions force renumbering after every insert, capping tree-native
-> edits at O(n). See PERF-PLAN Stage 4 (gap-based stable positions) —
-> Phase I (Stage 5) depends on it.
+> **Status (2026-08-16): IMPLEMENTED (PERF-PLAN Stages 4+5).**
+> `apply_text_delta_to_edition` dispatches to a tree-native fast path:
+> char->entry via cached cumulative starts, ops clamped to the touched
+> neighborhood, untouched prefix/suffix shared via `copy()`+`combine`
+> (O(1) structural sharing after the Arc refactor), positions from the
+> gap allocator so unrelated entries never renumber. The bulk path
+> remains as fallback (infinite domains, >max(64, 20%) entry deltas,
+> pathological inputs). Dense layouts self-heal to spaced on first
+> edit (one-time rebase). Steady-state 1-char edit (debug): fragmented
+> 100k entries 21ms -> 4.8ms; batched 9k entries 25ms -> 0.45ms.
+> Equivalence with the bulk path is property-tested. Item 3 of the
+> original plan (tumbler positions eliminating renumbering entirely)
+> is delivered as gap-allocated i64 positions bridged to tumblers via
+> DocumentArrangement — same never-renumber property, integer-native
+> implementation.
 
 **Goal**: Replace flatten-walk-rebuild with direct tree operations.
 
@@ -302,20 +311,16 @@ Gold predated modern licensing concerns.
 ## Priority Order
 
 ```
-Phase F (Tumbler Layer)     ████████████░░░░  FOUNDATION (3-4d)
-Phase G (Splay Activation)  ████████░░░░░░░░  LOCALITY (2-3d)
-Phase I (O(log n) Edits)    ██████████████░░  PERFORMANCE (3-5d)
-Phase H (Compound Docs)     ████████████████  XANADU VISION (4-5d)
-Phase J (Overlap Combine)   ██████████░░░░░░  STRUCTURAL MERGE (2-3d)
+Phase F (Tumbler Layer)     DONE
+Phase G (Splay Activation)  exposed; activation = PERF-PLAN S3 (pending)
+Phase I (O(log n) Edits)    DONE (PERF-PLAN S4+S5, 2026-08-16)
+Phase H (Compound Docs)     see FR docs; inline Transclusion active
+Phase J (Overlap Combine)   combine_overlapping active; structural
+                            assembly = PERF-PLAN S7 (pending)
 ```
 
-**Recommended next step**: Phase F (Tumbler Position Layer).
-
-This is the foundation that unlocks everything else:
-- Phase I needs tumblers for O(1) insertions
-- Phase G needs section-level splay targets
-- Phase H needs cross-document addressing
-- Phase J needs tumbler positions for overlap resolution
+**Remaining perf work** lives in `PERF-PLAN-enfilade-gold.md`
+(S3 splay activation, S7 structural merge assembly).
 
 ## Relationship to Original Xanadu Concepts
 
@@ -358,3 +363,7 @@ This is the foundation that unlocks everything else:
 | 2026-08-16 | `8135474` | S1 | Sliced non-blocking checkpoint prepare (#90) |
 | 2026-08-16 | `f71e98a` | S2 | Per-node crum/domain caches; MAX_LEAF_SIZE 16384->1024 |
 | 2026-08-16 | `29e7743` | S6 | Linear merge mapping (cursor match + from_parts) |
+| 2026-08-16 | `af4b923` | S4 | Gap-based stable positions (allocator + audit tests) |
+| 2026-08-16 | `527b656` | S5-0 | Arc-shared Loaf children (structural sharing) |
+| 2026-08-16 | `68513fa` | S5/I | Tree-native delta fast path + 3 merge bug fixes |
+| 2026-08-16 | `e543f78` | fix | EditionPayload::Text position-layout leak over wire |

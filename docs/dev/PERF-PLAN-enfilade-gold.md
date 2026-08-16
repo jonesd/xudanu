@@ -12,15 +12,26 @@ Companion doc: `FR-34-enfilade-native.md`
 | S1 Non-blocking checkpoint | **Done** | `8135474` | sliced prepare; dispatch interleaves |
 | S2 Incremental crums | **Done** | `f71e98a` | `with()` 363ms -> 9ms @100k; stress test unblocked |
 | S6 Linear merge mapping | **Done** | `29e7743` | 6.4s -> ~100ms @9k (87x) |
+| S8 Documentation (first pass) | **Done** | `a754ab7` | FR-34 updated; #90 closed |
+| S4 Stable positions | **Done** | `af4b923` | gap allocator; audit pinned by tests; dense layouts load unchanged |
+| S5 Arc tree sharing | **Done** | `527b656` | `with()` flat 1.8ms @100k; copy/combine O(1) |
+| S5 Tree-native deltas | **Done** | `68513fa` + `e543f78` | steady 1-char edit: fragmented 100k 21->4.8ms, batched 9k 25->0.45ms |
 | S3 Splay activation | Pending | | measurement-gated |
-| S4 Stable positions | Pending | | Phase I enabler |
-| S5 Tree-native delta | Pending | | depends on S2+S4 |
-| S7 Structural merge | Pending | | depends on S2+S4 |
-| S8 Documentation | **Done** | this commit | FR-34 updated; #90 closed |
+| S7 Structural merge | Pending | | depends on S2+S4 (both done) |
+| S8 Documentation (final) | This commit | | numbers below |
 
 Investigation addendum (S6): the dominant per-edit cost was not the
 combine fold but the fingerprint matcher rescanning used positions on
 duplicate-heavy text. Fixed with provably-equivalent per-key cursors.
+
+Stage 5 addendum: finer segmentation surfaced three latent merge bugs,
+now fixed and regression-tested — conflict resolution dropped one side
+of concurrent inserts (now: both sides emitted, identical changes
+deduped), trailing inserts misanchored when the preceding entry was
+not in an Unchanged run (now: nearest-anchor scan), and
+EditionPayload::Text leaked the dense-layout assumption over the wire
+(now: content-level check). One stash mishap during development was
+recovered via `git fsck` unreachable-commit search — no work lost.
 
 ## Goal
 
