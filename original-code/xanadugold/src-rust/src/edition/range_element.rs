@@ -71,6 +71,12 @@ pub enum RangeElement {
         source_revision: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cached_content: Option<String>,
+        /// Generation of the source work at cache time (FR-37 Phase 2).
+        /// Monotonic per source, bumped on every revise; the cheap
+        /// in-memory staleness check. Mismatch -> re-resolve at read
+        /// time. `source_crum` remains the cross-restart authority.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source_generation: Option<u64>,
     },
 }
 
@@ -221,6 +227,7 @@ impl RangeElement {
             placed_by,
             source_revision: None,
             cached_content: None,
+            source_generation: None,
         }
     }
 
@@ -241,6 +248,45 @@ impl RangeElement {
         } = self
         {
             *cc = Some(content);
+        }
+    }
+
+    /// Stamp the generation the cache was built against (FR-37 Phase 2).
+    pub fn set_source_generation(&mut self, generation: u64) {
+        if let RangeElement::StructuralTransclusion {
+            source_generation: ref mut g,
+            ..
+        } = self
+        {
+            *g = Some(generation);
+        }
+    }
+
+    pub fn source_generation(&self) -> Option<u64> {
+        if let RangeElement::StructuralTransclusion {
+            source_generation: g,
+            ..
+        } = self
+        {
+            *g
+        } else {
+            None
+        }
+    }
+
+    /// Is the cached content usable without re-resolution? (FR-37
+    /// Phase 2.) True when a generation was stamped and the source's
+    /// current generation matches it. No stamped generation -> false
+    /// (legacy caches re-resolve once, then carry generations).
+    pub fn cache_is_current(&self, current_generation: u64) -> bool {
+        if let RangeElement::StructuralTransclusion {
+            source_generation: Some(g),
+            ..
+        } = self
+        {
+            *g == current_generation
+        } else {
+            false
         }
     }
 

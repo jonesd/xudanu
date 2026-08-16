@@ -671,6 +671,9 @@ fn dispatch_inner(
         }
         WireRequest::WorkGetEdition { work_id } => {
             srv.ensure_can_read(session_id, work_id)?;
+            // FR-37 Phase 2: re-resolve generation-stale transclusion
+            // caches before serving (no staleness window for readers).
+            srv.stamp_structural_transclusion_cache(work_id)?;
             let ed = srv.work_edition(work_id)?;
             Ok(ResponseValue::Edition(EditionPayload::from_edition(&ed)))
         }
@@ -678,6 +681,11 @@ fn dispatch_inner(
             srv.ensure_authenticated(session_id)?;
             let ed = edition.to_edition();
             let rev = srv.work_revise(session_id, work_id, ed)?;
+            // FR-37 Phase 2: a full-edition revise changes source
+            // content exactly like a delta — dependents' caches must be
+            // re-checked (generation stamps make this cheap; unchanged
+            // sources are O(1) no-ops).
+            srv.migrate_inline_transclusions_for_delta(work_id, &[]);
             Ok(ResponseValue::Humber(rev))
         }
         WireRequest::WorkReviseDelta {
@@ -4029,6 +4037,12 @@ fn dispatch_inner_read(
         }
         WireRequest::WorkGetEdition { work_id } => {
             srv.ensure_can_read(session_id, work_id)?;
+            if srv.has_stale_transclusion_cache(work_id) {
+                tracing::debug!(
+                    "[work_get_edition] stale transclusion caches on {:x}; EditionPayload serves resolved spans via resolve paths",
+                    work_id
+                );
+            }
             let ed = srv.work_edition(work_id)?;
             Ok(ResponseValue::Edition(EditionPayload::from_edition(&ed)))
         }

@@ -9893,6 +9893,84 @@ impl Server {
         self.checkpoint_path.as_deref()
     }
 
+    /// Monotonic generation of a work's content (FR-37 Phase 2):
+    /// bumps on every mutation via mark_dirty. Readers compare a
+    /// StructuralTransclusion's stamped source_generation against
+    /// this to decide cache validity without touching source content.
+    pub fn work_generation(&self, work_id: BeId) -> Option<u64> {
+        self.works.get(&work_id).map(|ws| ws.dirty_gen)
+    }
+
+    /// Does this work hold any generation-stale transclusion caches?
+    /// Immutable read-side check (FR-37 Phase 2): read-only dispatch
+    /// paths log; the next write-path stamp (or work_text_fresh)
+    /// re-resolves.
+    pub fn has_stale_transclusion_cache(&self, work_id: BeId) -> bool {
+        let Some(ws) = self.works.get(&work_id) else {
+            return false;
+        };
+        ws.work()
+            .current_edition()
+            .cached_entries()
+            .iter()
+            .any(|(_, c)| {
+                if let RangeElement::StructuralTransclusion {
+                    source_work_id,
+                    source_generation,
+                    ..
+                } = &c.element
+                {
+                    match self.work_generation(*source_work_id) {
+                        Some(cur) => source_generation.map_or(true, |g| g != cur),
+                        None => false,
+                    }
+                } else {
+                    false
+                }
+            })
+    }
+
+    /// Fresh text for a work (FR-37 Phase 2): like reading
+    /// current_edition().to_text(), but any StructuralTransclusion
+    /// whose cached_content is generation-stale is re-resolved from
+    /// its source FIRST — the reader never observes the staleness
+    /// window. O(1) when all caches are current.
+    pub fn work_text_fresh(&mut self, work_id: BeId) -> Result<String, ServerError> {
+        // Fast path: no stale transclusions -> no re-stamp.
+        let has_stale = {
+            let Some(ws) = self.works.get(&work_id) else {
+                return Err(ServerError::WorkNotFound(work_id));
+            };
+            ws.work()
+                .current_edition()
+                .cached_entries()
+                .iter()
+                .any(|(_, c)| {
+                    if let RangeElement::StructuralTransclusion {
+                        source_work_id,
+                        source_generation,
+                        ..
+                    } = &c.element
+                    {
+                        match self.work_generation(*source_work_id) {
+                            Some(cur) => source_generation.map_or(true, |g| g != cur),
+                            None => false,
+                        }
+                    } else {
+                        false
+                    }
+                })
+        };
+        if has_stale {
+            self.stamp_structural_transclusion_cache(work_id)?;
+        }
+        let ws = self
+            .works
+            .get(&work_id)
+            .ok_or(ServerError::WorkNotFound(work_id))?;
+        Ok(ws.work().current_edition().to_text())
+    }
+
     pub fn last_checkpoint_time(&self) -> u64 {
         self.last_checkpoint_time
     }
@@ -12498,6 +12576,11 @@ impl Server {
         &mut self,
         work_id: BeId,
     ) -> Result<usize, ServerError> {
+        // FR-37 Phase 2: caches carry source generations. A cache is
+        // stale when its stamped generation differs from the source's
+        // current generation — re-resolve AT STAMP TIME rather than
+        // serving stale content until a background pass runs. Legacy
+        // caches (no generation) re-resolve once, then carry stamps.
         let ws = self
             .works
             .get(&work_id)
@@ -12505,13 +12588,26 @@ impl Server {
         let edition = ws.work().current_edition().clone();
         let entries = edition.cached_entries();
         let needs_update = entries.iter().any(|(_, c)| {
-            matches!(
-                &c.element,
+            match &c.element {
                 RangeElement::StructuralTransclusion {
                     cached_content: None,
                     ..
-                }
-            )
+                } => true,
+                RangeElement::StructuralTransclusion {
+                    source_work_id,
+                    source_generation,
+                    ..
+                } => match source_generation {
+                    // Legacy cache (content present, no stamp):
+                    // re-resolve once.
+                    None => true,
+                    Some(g) => self
+                        .work_generation(*source_work_id)
+                        .map(|cur| cur != *g)
+                        .unwrap_or(false),
+                },
+                _ => false,
+            }
         });
         if !needs_update {
             return Ok(0);
@@ -12523,27 +12619,38 @@ impl Server {
 
         for (_, carrier) in entries.iter() {
             let mut new_carrier = (**carrier).clone();
+            let mut stale = false;
             if let RangeElement::StructuralTransclusion {
                 source_work_id,
                 entry_start,
                 entry_end,
-                cached_content: None,
+                source_generation,
                 ..
             } = &new_carrier.element
             {
                 let src_id = *source_work_id;
                 let c_start = *entry_start as usize;
                 let c_end = *entry_end as usize;
-                if let Some(src_ws) = self.works.get(&src_id) {
-                    let full = src_ws.work().current_edition().to_text();
-                    let chars: Vec<char> = full.chars().collect();
-                    let s = c_start.min(chars.len());
-                    let e = c_end.min(chars.len());
-                    let content: String = chars[s..e].iter().collect();
-                    new_carrier.element.set_cached_content(content);
-                    updated += 1;
+                if let Some(current_gen) = self.work_generation(src_id) {
+                    stale = match source_generation {
+                        None => true, // legacy cache: re-resolve once
+                        Some(g) => *g != current_gen,
+                    };
+                    if stale {
+                        if let Some(src_ws) = self.works.get(&src_id) {
+                            let full = src_ws.work().current_edition().to_text();
+                            let chars: Vec<char> = full.chars().collect();
+                            let s = c_start.min(chars.len());
+                            let e = c_end.min(chars.len());
+                            let content: String = chars[s..e].iter().collect();
+                            new_carrier.element.set_cached_content(content);
+                            new_carrier.element.set_source_generation(current_gen);
+                            updated += 1;
+                        }
+                    }
                 }
             }
+            let _ = stale;
             new_entries.push((pos, std::sync::Arc::new(new_carrier)));
             pos += 1;
         }
@@ -12614,6 +12721,7 @@ impl Server {
                 placed_by: p_by,
                 source_revision: stored_revision,
                 cached_content: _,
+                ..
             } = &carrier.element
             {
                 let src_id = *source_work_id;
@@ -13011,6 +13119,7 @@ impl Server {
                         placed_by,
                         source_revision,
                         cached_content: _,
+                        ..
                     } = new_carrier.element.clone()
                     {
                         if sid == source_work_id {
@@ -30519,6 +30628,112 @@ mod tests {
             result.text.contains("deep content"),
             "should contain C's text (2nd level — chain resolved)"
         );
+    }
+
+    /// FR-37 Phase 2: editing a source immediately changes readers'
+    /// view of its transclusions — zero stale reads. A dependent work
+    /// whose StructuralTransclusion cache was stamped at generation g
+    /// must re-resolve when the source revises (generation g+1).
+    #[test]
+    fn fr37_phase2_no_staleness_window_after_source_edit() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("version one"))
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work()
+            .current_edition()
+            .crum()
+            .unwrap();
+
+        let mut elem =
+            RangeElement::structural_transclusion(source, 0, 10, source_crum, 1000, Some(1));
+        let entries = vec![(
+            0i64,
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(elem)),
+        )];
+        let dependent = server
+            .create_work(sid, Edition::from_entries(entries))
+            .unwrap();
+
+        // Initial stamp: cache resolves and carries the generation.
+        let updated = server
+            .stamp_structural_transclusion_cache(dependent)
+            .unwrap();
+        assert_eq!(updated, 1);
+        let text = server.work_text_fresh(dependent).unwrap();
+        assert_eq!(text, "version on", "char range 0..10 of the source");
+        assert!(!server.has_stale_transclusion_cache(dependent));
+
+        // Source revises (full-edition replace — the path that used to
+        // skip dependent migration entirely).
+        server.work_grab(sid, source).unwrap();
+        server
+            .work_revise(sid, source, Edition::from_text("version two"))
+            .unwrap();
+
+        // The dependent's cache is now generation-stale...
+        assert!(
+            server.has_stale_transclusion_cache(dependent),
+            "generation bump must mark the dependent stale"
+        );
+
+        // ...and work_text_fresh re-resolves: the reader never sees
+        // "version on" after the source edit.
+        let text = server.work_text_fresh(dependent).unwrap();
+        assert_eq!(text, "version tw", "no staleness window");
+        assert!(!server.has_stale_transclusion_cache(dependent));
+
+        // Re-stamp is now a no-op (generations match).
+        let updated = server
+            .stamp_structural_transclusion_cache(dependent)
+            .unwrap();
+        assert_eq!(updated, 0);
+    }
+
+    /// FR-37 Phase 2: legacy caches (no stamped generation, e.g.
+    /// restored from older data) re-resolve once and then carry
+    /// generations.
+    #[test]
+    fn fr37_phase2_legacy_cache_re_resolves_once() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("abc def"))
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work()
+            .current_edition()
+            .crum()
+            .unwrap();
+
+        // Legacy element: cached content, NO generation stamp.
+        let mut elem =
+            RangeElement::structural_transclusion(source, 0, 7, source_crum, 1000, Some(1));
+        elem.set_cached_content("stale!".to_string());
+
+        let entries = vec![(
+            0i64,
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(elem)),
+        )];
+        let dependent = server
+            .create_work(sid, Edition::from_entries(entries))
+            .unwrap();
+
+        // A legacy cache counts as stale (unknown generation)...
+        assert!(server.has_stale_transclusion_cache(dependent));
+
+        // ...and fresh reading replaces the stale bytes.
+        let text = server.work_text_fresh(dependent).unwrap();
+        assert_eq!(text, "abc def", "legacy stale cache replaced");
+        assert!(!server.has_stale_transclusion_cache(dependent));
     }
 
     #[test]
