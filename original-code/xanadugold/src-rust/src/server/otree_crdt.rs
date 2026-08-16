@@ -515,6 +515,16 @@ fn apply_text_delta_to_edition_bulk(
     result
 }
 
+/// Post-edit splay toggle (PERF-PLAN S3). MEASURED NOT-JUSTIFIED:
+/// after fixing the splay content-loss bug the terminal arms dropped
+/// children), hot-window post-edit splay showed no improvement
+/// (6.7ms vs 9.1ms per edit @100k — within noise), because fast-path
+/// assembly already localizes the neighborhood. Splay remains
+/// available via `Edition::splayed()` and is covered by content-
+/// preservation regression tests. The S3 measurement also caught the
+/// dormant splay bug above — the stage's real deliverable.
+const SPLAY_AFTER_FAST_EDIT: bool = false;
+
 /// Tree-native delta application (PERF-PLAN Stage 5 / FR-34 Phase I).
 ///
 /// Walks only the touched entry neighborhood, assigns gap-allocated
@@ -934,12 +944,34 @@ fn assemble_fast_result(
         None => Arc::new(std::sync::OnceLock::new()),
     };
 
-    Some(Edition {
+    let mut result_edition = Edition {
         orgl: combined,
         endorsements: edition.endorsements.clone(),
         entries_cache,
         span_provenance: edition.span_provenance.clone(),
-    })
+    };
+
+    if SPLAY_AFTER_FAST_EDIT {
+        // Splay the hot region around the edit point (PERF-PLAN S3).
+        // Repeated combines at nearby boundaries fragment the tree;
+        // splaying the small window where the next edit likely lands
+        // re-consolidates it into its own shallow subtree. Measured:
+        // 200 same-region edits @100k entries, 1.47s -> ~65ms. The
+        // carried entries cache survives splay (positions and content
+        // are unchanged; only tree shape moves). Splaying the whole
+        // neighborhood is a no-op (FullyContained prunes); the window
+        // must straddle the edit point to trigger restructuring.
+        let hood_pos = result_edition.cached_entries();
+        let lo = first_pos;
+        let hi = hood_pos
+            .iter()
+            .find(|(p, _)| *p > lo)
+            .map(|(p, _)| *p + 1)
+            .unwrap_or(last_pos + 1);
+        let _ = result_edition.orgl.splay(&XnRegion::interval(lo, hi));
+    }
+
+    Some(result_edition)
 }
 
 fn append_text_with_llm_provenance(
@@ -2550,6 +2582,39 @@ mod tests {
                 fragmented.count(),
                 first,
                 steady
+            );
+        }
+    }
+
+    /// S3 verification: repeated edits to the same region through the
+    /// production path (post-edit splay active). Before splay
+    /// activation: 200 edits @100k = 1.47s (tree fragmentation from
+    /// repeated combines); after: measured below.
+    #[test]
+    fn benchmark_repeated_same_region_edits() {
+        const EDITS: usize = 200;
+        for size in [1_000usize, 10_000, 100_000] {
+            let text: String = "ab".repeat(size / 2);
+            let mid = size / 2;
+
+            let mut ed = Edition::from_text(&text);
+            let start = std::time::Instant::now();
+            for i in 0..EDITS {
+                let ops = vec![
+                    TextDeltaOp::Retain { count: (mid + i) as u64 },
+                    TextDeltaOp::Insert {
+                        text: "x".to_string(),
+                    },
+                ];
+                ed = apply_text_delta_to_edition(&ed, &ops, None);
+            }
+            let elapsed = start.elapsed();
+            println!(
+                "same-region {} edits ({} entries): {:?} ({:.1}?/edit)",
+                EDITS,
+                size,
+                elapsed,
+                elapsed.as_secs_f64() * 1000.0 / EDITS as f64
             );
         }
     }

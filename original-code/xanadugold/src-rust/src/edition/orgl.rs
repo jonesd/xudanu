@@ -690,10 +690,21 @@ impl Loaf {
 
                 match (in_res, out_res) {
                     (SplayResult::FullyContained, SplayResult::Outside) => {
+                        // Terminal results: no restructuring — restore the
+                        // taken-out children (dropping them here loses
+                        // content; bug found by the S3 probe, Aug 2026).
+                        *in_child = Arc::new(in_owned);
+                        *out_child = Arc::new(out_owned);
                         SplayResult::FullyContained
                     }
-                    (SplayResult::Outside, SplayResult::Outside) => SplayResult::Outside,
+                    (SplayResult::Outside, SplayResult::Outside) => {
+                        *in_child = Arc::new(in_owned);
+                        *out_child = Arc::new(out_owned);
+                        SplayResult::Outside
+                    }
                     (SplayResult::FullyContained, SplayResult::FullyContained) => {
+                        *in_child = Arc::new(in_owned);
+                        *out_child = Arc::new(out_owned);
                         SplayResult::FullyContained
                     }
                     _ => {
@@ -1426,6 +1437,58 @@ mod tests {
         let mut loaf = make_text_loaf("abc");
         let result = loaf.splay(&XnRegion::interval(10, 20));
         assert_eq!(result, SplayResult::Outside);
+    }
+
+    /// Regression (Aug 2026): splaying a small region fully inside one
+    /// child of a Split hit the terminal (FullyContained, Outside) arm,
+    /// which dropped the taken-out children — total content loss.
+    /// Found by the S3 probe (repeated edit+splay loop emptied the doc).
+    #[test]
+    fn loaf_splay_region_inside_one_child_preserves_content() {
+        // Build a proper split: out child shifted to positions 3..6.
+        let mut loaf = Loaf::split_from(
+            XnRegion::below(3),
+            Arc::new(make_text_loaf("ab")),
+            Arc::new(Loaf::dsp_from(3, Arc::new(make_text_loaf("cde")))),
+        );
+        let before = loaf.all_entries();
+        assert_eq!(before.len(), 5);
+        // Region fully inside the OUT child.
+        let r = loaf.splay(&XnRegion::interval(3, 4));
+        let after = loaf.all_entries();
+        assert_eq!(after.len(), 5, "content must survive splay");
+        assert_eq!(before, after, "content must survive splay");
+
+        // Region fully inside the IN child.
+        let mut loaf2 = Loaf::split_from(
+            XnRegion::below(3),
+            Arc::new(make_text_loaf("ab")),
+            Arc::new(Loaf::dsp_from(3, Arc::new(make_text_loaf("cde")))),
+        );
+        let before2 = loaf2.all_entries();
+        let r2 = loaf2.splay(&XnRegion::interval(1, 2));
+        assert_eq!(r2, SplayResult::Partial);
+        assert_eq!(before2, loaf2.all_entries());
+    }
+
+    /// Repeated small-region splays at moving positions must never lose
+    /// content (the failure mode the S3 probe exposed).
+    #[test]
+    fn loaf_splay_repeated_moving_regions_preserve_content() {
+        let entries: Vec<(i64, Arc<Carrier>)> = (0..200)
+            .map(|i| (i, Arc::new(Carrier::new(RangeElement::text(format!("{:03}", i))))))
+            .collect();
+        let mut loaf = Loaf::new_leaf(XnRegion::interval(0, 200), entries);
+        let expected: String = (0..200).map(|i| format!("{:03}", i)).collect();
+        for start in [0i64, 1, 5, 50, 51, 100, 150, 198] {
+            let _ = loaf.splay(&XnRegion::interval(start, start + 2));
+            let text: String = loaf
+                .all_entries()
+                .iter()
+                .map(|(_, c)| c.element.as_text().unwrap_or("").to_string())
+                .collect();
+            assert_eq!(text, expected, "content lost after splay at {}", start);
+        }
     }
 
     #[test]

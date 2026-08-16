@@ -3565,6 +3565,34 @@ mod tests {
         }
     }
 
+    /// Regression (Aug 2026): repeated small-region splays at moving
+    /// positions on a real edition must never lose content — the
+    /// failure mode the S3 probe exposed (half the document vanished).
+    #[test]
+    fn splayed_repeated_moving_regions_preserve_content() {
+        let text: String = (0..500).map(|i| char::from_u32(97 + i % 26).unwrap()).collect();
+        let ed = Edition::from_text(&text);
+        let mut cur = ed;
+        for i in 0..40usize {
+            let positions = cur.positions();
+            let idx = (i * 7 + 3).min(positions.len() - 2);
+            let lo = positions[idx];
+            let hi = positions[idx + 1] + 1;
+            let (splayed, _) = cur.splayed(&XnRegion::interval(lo, hi));
+            assert_eq!(
+                splayed.char_len(),
+                text.chars().count(),
+                "content lost at splay {} (idx {}, [{},{}))",
+                i,
+                idx,
+                lo,
+                hi
+            );
+            cur = splayed;
+        }
+        assert_eq!(cur.to_text(), text);
+    }
+
     #[test]
     fn splayed_preserves_entries() {
         let ed = Edition::from_text_batched("line1\nline2\nline3");
