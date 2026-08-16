@@ -2329,6 +2329,7 @@ pub enum EditionPayload {
     Empty,
 }
 
+#[allow(dead_code)]
 fn is_contiguous_text(entries: &[(i64, RangeElement)]) -> bool {
     if entries.is_empty() {
         return true;
@@ -2367,7 +2368,10 @@ impl EditionPayload {
             .collect();
         if entries.is_empty() {
             EditionPayload::Empty
-        } else if is_contiguous_text(&entries) {
+        } else if entries.iter().all(|(_, e)| e.as_text().is_some()) {
+            // Content-level payload: positions and segmentation are not
+            // transported, so contiguity is not required (tree-native
+            // edits produce gap-allocated positions).
             let s: String = entries
                 .iter()
                 .map(|(_, e)| e.as_text().unwrap_or(""))
