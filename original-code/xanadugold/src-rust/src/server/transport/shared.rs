@@ -11,6 +11,10 @@ use crate::server::Server;
 
 pub const MAX_CSRF_TOKENS: usize = 10_000;
 
+/// Lock waits at or above this threshold are logged (debug) so latency
+/// spikes attributable to server-lock contention are visible in traces.
+const LOCK_WAIT_LOG_THRESHOLD: std::time::Duration = std::time::Duration::from_millis(5);
+
 pub type SharedState = Arc<AppState>;
 
 pub struct AppState {
@@ -158,18 +162,34 @@ impl ServerHandle {
     }
 
     pub fn with_server<R>(&self, f: impl FnOnce(&mut Server) -> R) -> R {
+        let started = std::time::Instant::now();
         let mut guard = self.inner.write().unwrap_or_else(|e| {
             tracing::error!("Server rwlock poisoned, recovering: {}", e);
             e.into_inner()
         });
+        let lock_wait = started.elapsed();
+        if lock_wait >= LOCK_WAIT_LOG_THRESHOLD {
+            tracing::debug!(
+                "[lock] write dispatch waited {:.1}ms for server write lock",
+                lock_wait.as_secs_f64() * 1000.0
+            );
+        }
         f(&mut guard)
     }
 
     pub fn with_server_ref<R>(&self, f: impl FnOnce(&Server) -> R) -> R {
+        let started = std::time::Instant::now();
         let guard = self.inner.read().unwrap_or_else(|e| {
             tracing::error!("Server rwlock poisoned, recovering: {}", e);
             e.into_inner()
         });
+        let lock_wait = started.elapsed();
+        if lock_wait >= LOCK_WAIT_LOG_THRESHOLD {
+            tracing::debug!(
+                "[lock] read dispatch waited {:.1}ms for server read lock",
+                lock_wait.as_secs_f64() * 1000.0
+            );
+        }
         f(&guard)
     }
 
@@ -224,10 +244,29 @@ impl ServerHandle {
     }
 
     pub async fn checkpoint_async(&self) -> std::io::Result<()> {
+        let prep_start = std::time::Instant::now();
         let payload = self.with_server(|srv| -> std::io::Result<_> {
+            let t_prune = std::time::Instant::now();
             let _ = srv.prune_disconnected_sessions();
-            srv.materialize_all_pending();
-            srv.checkpoint_prepare()
+            let prune_ms = t_prune.elapsed().as_secs_f64() * 1000.0;
+
+            let t_mat = std::time::Instant::now();
+            let materialized = srv.materialize_all_pending();
+            let materialize_ms = t_mat.elapsed().as_secs_f64() * 1000.0;
+
+            let t_snap = std::time::Instant::now();
+            let payload = srv.checkpoint_prepare()?;
+            let snapshot_ms = t_snap.elapsed().as_secs_f64() * 1000.0;
+
+            tracing::info!(
+                "[checkpoint] prepare (write-lock held) in {:.2}ms: prune {:.2}ms, materialize {} work(s) {:.2}ms, snapshot {:.2}ms",
+                prep_start.elapsed().as_secs_f64() * 1000.0,
+                prune_ms,
+                materialized,
+                materialize_ms,
+                snapshot_ms,
+            );
+            Ok(payload)
         })?;
 
         let result =
@@ -287,6 +326,39 @@ mod tests {
         let _guard = handle.inner.write().unwrap();
         let result = handle.try_with_server_ref(|_| 42);
         assert_eq!(result, None);
+    }
+
+    /// Benchmark: how long a write dispatch waits when the server write
+    /// lock is held (e.g. by checkpoint prepare). Documents the dispatch
+    /// stall mechanism behind issue #90 — the target of non-blocking
+    /// checkpoint (PERF-PLAN Stage 1). The wait should approximate the
+    /// remaining hold time, not the total checkpoint duration.
+    #[test]
+    fn benchmark_write_dispatch_wait_under_held_lock() {
+        let handle = ServerHandle::new(Server::new());
+        let inner = handle.inner.clone();
+        let lock_acquired = Arc::new(std::sync::Barrier::new(2));
+        let barrier_clone = lock_acquired.clone();
+
+        let holder = std::thread::spawn(move || {
+            let _guard = inner.write().unwrap();
+            barrier_clone.wait();
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        });
+
+        lock_acquired.wait();
+        let start = std::time::Instant::now();
+        let sessions = handle.with_server(|srv| srv.session_count());
+        let waited = start.elapsed();
+        holder.join().unwrap();
+
+        assert_eq!(sessions, 0);
+        assert!(
+            waited >= std::time::Duration::from_millis(40),
+            "expected ~50ms lock wait, got {:?}",
+            waited
+        );
+        println!("write dispatch waited {:?} behind 50ms lock hold", waited);
     }
 
     #[test]

@@ -2538,6 +2538,33 @@ mod tests {
         assert!(coalesced_entries[1].1.label.is_none());
     }
 
+    /// Benchmark: single tree op (`Edition::with`) on progressively larger
+    /// editions. Documents the cost of path-clone + eager full-tree crum
+    /// recomputation in `from_loaf` — the target of the incremental-crum
+    /// stage (PERF-PLAN Stage 2). A flat curve means the tree op no longer
+    /// scales with document size.
+    #[test]
+    fn benchmark_tree_op_on_large_editions() {
+        for size in [1_000usize, 10_000, 100_000] {
+            let text: String = "ab".repeat(size / 2);
+            let ed = Edition::from_text(&text);
+            let mid = (size / 2) as i64;
+
+            let start = std::time::Instant::now();
+            let edited = ed.with(mid, RangeElement::text("X"));
+            let elapsed = start.elapsed();
+
+            assert_eq!(edited.count(), size as u64);
+            assert_eq!(
+                edited
+                    .fetch(mid)
+                    .and_then(|e| e.as_text().map(|s| s.to_string())),
+                Some("X".to_string())
+            );
+            println!("tree_op_with ({} entries): {:?}", size, elapsed);
+        }
+    }
+
     /// Benchmark: Run-length Carrier vs Per-char Element Storage
     ///
     /// Measures the performance and memory impact of `from_text_batched()` (per-line

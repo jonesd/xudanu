@@ -324,6 +324,7 @@ pub fn apply_text_delta_to_edition(
     ops: &[TextDeltaOp],
     author: Option<&OtreeAuthorIdentity>,
 ) -> Edition {
+    let started = std::time::Instant::now();
     let timestamp = current_timestamp_secs();
     let prov = author.map(|a| ElementProvenance {
         author_public_key: a.public_key,
@@ -460,10 +461,11 @@ pub fn apply_text_delta_to_edition(
     let result = {
         let ed = Edition::from_entries(new_entries);
         tracing::debug!(
-            "[apply_delta] old_entries={} result_entries={} ops={}",
+            "[apply_delta] old_entries={} result_entries={} ops={} elapsed_ms={:.3}",
             old_entries.len(),
             ed.all_entries().len(),
-            ops.len()
+            ops.len(),
+            started.elapsed().as_secs_f64() * 1000.0,
         );
         for (i, (p, c)) in ed.all_entries().iter().take(8).enumerate() {
             let txt_len = c.element.as_text().map(|t| t.len()).unwrap_or(0);
@@ -1833,6 +1835,66 @@ mod tests {
 
         let text = mgr2.current_text(work_id).unwrap();
         assert_eq!(text, "hello world");
+    }
+
+    /// Benchmark: single-character delta at increasing scale, for both
+    /// batched (per-line entries) and fragmented (per-char entries)
+    /// editions. Documents the flatten-walk-rebuild O(n) cost of the
+    /// delta path — the target of tree-native delta application
+    /// (PERF-PLAN Stage 5). A flat curve means per-edit cost no longer
+    /// scales with document size.
+    ///
+    /// NOTE: fragmented sizes are capped small because incremental text
+    /// coalescing concatenates into a growing String (quadratic bytes);
+    /// batched sizes exercise the same walk at full scale.
+    #[test]
+    fn benchmark_apply_delta_at_scale() {
+        for size in [1_000usize, 10_000, 100_000] {
+            let text: String = "abcdefghij\n".repeat(size / 11);
+            let chars = text.chars().count();
+            let mid = chars / 2;
+            let ops = vec![
+                TextDeltaOp::Retain { count: mid as u64 },
+                TextDeltaOp::Insert {
+                    text: "X".to_string(),
+                },
+            ];
+
+            let batched = Edition::from_text_batched(&text);
+            let start = std::time::Instant::now();
+            let result = apply_text_delta_to_edition(&batched, &ops, None);
+            let elapsed = start.elapsed();
+            assert_eq!(result.char_len(), chars + 1);
+            println!(
+                "apply_delta batched ({} chars, {} entries): {:?}",
+                size,
+                batched.count(),
+                elapsed
+            );
+        }
+
+        for size in [1_000usize, 5_000, 20_000] {
+            let text: String = "ab".repeat(size / 2);
+            let mid = size / 2;
+            let ops = vec![
+                TextDeltaOp::Retain { count: mid as u64 },
+                TextDeltaOp::Insert {
+                    text: "X".to_string(),
+                },
+            ];
+
+            let fragmented = Edition::from_text(&text);
+            let start = std::time::Instant::now();
+            let result = apply_text_delta_to_edition(&fragmented, &ops, None);
+            let elapsed = start.elapsed();
+            assert_eq!(result.char_len(), size + 1);
+            println!(
+                "apply_delta fragmented ({} chars, {} entries): {:?}",
+                size,
+                fragmented.count(),
+                elapsed
+            );
+        }
     }
 
     #[test]

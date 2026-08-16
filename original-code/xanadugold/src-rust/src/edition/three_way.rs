@@ -1120,6 +1120,7 @@ fn collect_range(
 }
 
 pub fn build_merge_mapping(source: &Edition, merged: &Edition) -> Mapping {
+    let started = std::time::Instant::now();
     let source_entries = source.cached_entries();
     let merged_entries = merged.cached_entries();
 
@@ -1152,9 +1153,20 @@ pub fn build_merge_mapping(source: &Edition, merged: &Edition) -> Mapping {
         }
     }
 
-    sub_mappings
+    let mapping = sub_mappings
         .into_iter()
-        .fold(Mapping::empty(), |acc, m| acc.combine(&m))
+        .fold(Mapping::empty(), |acc, m| acc.combine(&m));
+
+    let elapsed = started.elapsed();
+    if elapsed.as_millis() >= 1 {
+        tracing::debug!(
+            "[merge_mapping] {} source entries -> mapping in {:.2}ms",
+            source_entries.len(),
+            elapsed.as_secs_f64() * 1000.0,
+        );
+    }
+
+    mapping
 }
 
 fn group_consecutive(positions: &[i64]) -> Vec<(i64, i64)> {
@@ -2947,6 +2959,34 @@ mod tests {
         });
         assert!(has_alice, "Alice attributable after 2 merge rounds");
         assert!(has_bob, "Bob attributable after 2 merge rounds");
+    }
+
+    /// Benchmark: build_merge_mapping at increasing scale. Documents the
+    /// O(n) fingerprint-map build run on every edit (twice in the no-merge
+    /// path) — the target of incremental merge mapping (PERF-PLAN Stage 6).
+    ///
+    /// NOTE: sizes are capped small because Mapping::combine canonicalizes
+    /// the full parts list on every fold step, making the total fold
+    /// quadratic — this is itself a measured cost of the current design.
+    #[test]
+    fn benchmark_build_merge_mapping_scale() {
+        for size in [1_000usize, 3_000, 9_000] {
+            let text: String = "ab".repeat(size / 2);
+            let base = text_edition(&text);
+            let mid = size / 2;
+            let edited = text_edition(&format!("{}X{}", &text[..mid], &text[mid..]));
+
+            let start = std::time::Instant::now();
+            let mapping = build_merge_mapping(&base, &edited);
+            let elapsed = start.elapsed();
+
+            let mapped = mapping
+                .of_region(&crate::edition::XnRegion::interval(0, 1))
+                .intervals()
+                .len();
+            assert_eq!(mapped, 1);
+            println!("build_merge_mapping ({} entries): {:?}", size, elapsed);
+        }
     }
 
     #[test]
