@@ -86,14 +86,14 @@ pub(crate) enum Loaf {
     },
     Split {
         split: XnRegion,
-        in_child: Box<Loaf>,
-        out_child: Box<Loaf>,
+        in_child: Arc<Loaf>,
+        out_child: Arc<Loaf>,
         domain: XnRegion,
         crum: Crum,
     },
     Dsp {
         offset: i64,
-        child: Box<Loaf>,
+        child: Arc<Loaf>,
         domain: XnRegion,
         crum: Crum,
     },
@@ -191,8 +191,8 @@ impl Loaf {
         let split = XnRegion::below(split_pos);
         let in_region = region.intersect(&split);
         let out_region = region.intersect(&XnRegion::above(split_pos));
-        let in_child = Box::new(Loaf::build_bulk(in_entries, default.clone(), in_region));
-        let out_child = Box::new(Loaf::build_bulk(out_entries, default.clone(), out_region));
+        let in_child = Arc::new(Loaf::build_bulk(in_entries, default.clone(), in_region));
+        let out_child = Arc::new(Loaf::build_bulk(out_entries, default.clone(), out_region));
         Loaf::split_from(split, in_child, out_child)
     }
 
@@ -210,7 +210,7 @@ impl Loaf {
 
     /// Build a Split maintaining crum/domain caches from the children's
     /// caches — O(intervals), no subtree walks (PERF-PLAN Stage 2).
-    pub(crate) fn split_from(split: XnRegion, in_child: Box<Loaf>, out_child: Box<Loaf>) -> Self {
+    pub(crate) fn split_from(split: XnRegion, in_child: Arc<Loaf>, out_child: Arc<Loaf>) -> Self {
         let domain = in_child.cached_domain().union(out_child.cached_domain());
         let crum = compute_split_crum(&split, &in_child.compute_crum(), &out_child.compute_crum());
         Loaf::Split {
@@ -223,7 +223,7 @@ impl Loaf {
     }
 
     /// Build a Dsp maintaining crum/domain caches — O(intervals).
-    pub(crate) fn dsp_from(offset: i64, child: Box<Loaf>) -> Self {
+    pub(crate) fn dsp_from(offset: i64, child: Arc<Loaf>) -> Self {
         let domain = shift_region(child.cached_domain(), offset);
         let crum = compute_dsp_crum(offset, &child.compute_crum());
         Loaf::Dsp {
@@ -440,16 +440,16 @@ impl Loaf {
             } => {
                 if split.contains(position) {
                     let new_in = in_child.with(position, carrier);
-                    Loaf::split_from(split.clone(), Box::new(new_in), out_child.clone())
+                    Loaf::split_from(split.clone(), Arc::new(new_in), out_child.clone())
                 } else {
                     let new_out = out_child.with(position, carrier);
-                    Loaf::split_from(split.clone(), in_child.clone(), Box::new(new_out))
+                    Loaf::split_from(split.clone(), in_child.clone(), Arc::new(new_out))
                 }
             }
             Loaf::Dsp { offset, child, .. } => {
                 let child_pos = position - offset;
                 let new_child = child.with(child_pos, carrier);
-                Loaf::dsp_from(*offset, Box::new(new_child))
+                Loaf::dsp_from(*offset, Arc::new(new_child))
             }
         }
     }
@@ -502,16 +502,16 @@ impl Loaf {
             } => {
                 if split.contains(position) {
                     let new_in = in_child.without(position);
-                    Loaf::split_from(split.clone(), Box::new(new_in), out_child.clone())
+                    Loaf::split_from(split.clone(), Arc::new(new_in), out_child.clone())
                 } else {
                     let new_out = out_child.without(position);
-                    Loaf::split_from(split.clone(), in_child.clone(), Box::new(new_out))
+                    Loaf::split_from(split.clone(), in_child.clone(), Arc::new(new_out))
                 }
             }
             Loaf::Dsp { offset, child, .. } => {
                 let child_pos = position - offset;
                 let new_child = child.without(child_pos);
-                Loaf::dsp_from(*offset, Box::new(new_child))
+                Loaf::dsp_from(*offset, Arc::new(new_child))
             }
         }
     }
@@ -580,7 +580,7 @@ impl Loaf {
                 } else if new_out.is_empty() {
                     new_in
                 } else {
-                    Loaf::split_from(split.clone(), Box::new(new_in), Box::new(new_out))
+                    Loaf::split_from(split.clone(), Arc::new(new_in), Arc::new(new_out))
                 }
             }
             Loaf::Dsp { offset, child, .. } => {
@@ -589,7 +589,7 @@ impl Loaf {
                 if new_child.is_empty() {
                     Loaf::empty_leaf()
                 } else {
-                    Loaf::dsp_from(*offset, Box::new(new_child))
+                    Loaf::dsp_from(*offset, Arc::new(new_child))
                 }
             }
         }
@@ -659,7 +659,7 @@ impl Loaf {
                     crum: out_crum,
                 };
                 let split = region.intersect(leaf_region);
-                *self = Loaf::split_from(split, Box::new(in_loaf), Box::new(out_loaf));
+                *self = Loaf::split_from(split, Arc::new(in_loaf), Arc::new(out_loaf));
                 SplayResult::Partial
             }
             Loaf::Split {
@@ -668,12 +668,23 @@ impl Loaf {
                 out_child,
                 ..
             } => {
-                let mut in_res = in_child.splay(region);
-                let mut out_res = out_child.splay(&region.minus(split));
+                // Children are Arc-shared across editions (structural
+                // sharing). Take them out; unwrap_or_clone clones only
+                // when another edition still references the subtree, so
+                // in-place restructuring never mutates a shared node.
+                let mut in_owned =
+                    Arc::unwrap_or_clone(std::mem::replace(in_child, Arc::new(Loaf::empty_leaf())));
+                let mut out_owned = Arc::unwrap_or_clone(std::mem::replace(
+                    out_child,
+                    Arc::new(Loaf::empty_leaf()),
+                ));
+
+                let mut in_res = in_owned.splay(region);
+                let mut out_res = out_owned.splay(&region.minus(split));
 
                 if out_res as u8 > in_res as u8 {
                     std::mem::swap(&mut in_res, &mut out_res);
-                    std::mem::swap(in_child, out_child);
+                    std::mem::swap(&mut in_owned, &mut out_owned);
                     *split = split.complement();
                 }
 
@@ -688,40 +699,37 @@ impl Loaf {
                     _ => {
                         match (in_res, out_res) {
                             (SplayResult::Partial, SplayResult::Outside) => {
-                                let new_in = in_child.extract_in_part();
-                                let new_out_inner = in_child.extract_out_part();
-                                let old_out =
-                                    std::mem::replace(out_child, Box::new(Loaf::empty_leaf()));
-                                *in_child = Box::new(new_in);
-                                *out_child = Box::new(Loaf::make_split(
-                                    split.clone(),
-                                    new_out_inner,
-                                    *old_out,
-                                ));
+                                let new_in = in_owned.extract_in_part();
+                                let new_out_inner = in_owned.extract_out_part();
+                                let new_out =
+                                    Loaf::make_split(split.clone(), new_out_inner, out_owned);
+                                *in_child = Arc::new(new_in);
+                                *out_child = Arc::new(new_out);
                             }
                             (SplayResult::FullyContained, SplayResult::Partial) => {
-                                let old_in =
-                                    std::mem::replace(in_child, Box::new(Loaf::empty_leaf()));
                                 let new_in_inner = Loaf::make_split(
                                     split.clone(),
-                                    *old_in,
-                                    out_child.extract_in_part(),
+                                    in_owned,
+                                    out_owned.extract_in_part(),
                                 );
-                                let new_out = out_child.extract_out_part();
-                                *in_child = Box::new(new_in_inner);
-                                *out_child = Box::new(new_out);
+                                let new_out = out_owned.extract_out_part();
+                                *in_child = Arc::new(new_in_inner);
+                                *out_child = Arc::new(new_out);
                             }
                             (SplayResult::Partial, SplayResult::Partial) => {
-                                let in_in = in_child.extract_in_part();
-                                let in_out = in_child.extract_out_part();
-                                let out_in = out_child.extract_in_part();
-                                let out_out = out_child.extract_out_part();
+                                let in_in = in_owned.extract_in_part();
+                                let in_out = in_owned.extract_out_part();
+                                let out_in = out_owned.extract_in_part();
+                                let out_out = out_owned.extract_out_part();
                                 let new_in = Loaf::make_split(split.clone(), in_in, out_in);
                                 let new_out = Loaf::make_split(split.clone(), in_out, out_out);
-                                *in_child = Box::new(new_in);
-                                *out_child = Box::new(new_out);
+                                *in_child = Arc::new(new_in);
+                                *out_child = Arc::new(new_out);
                             }
-                            _ => {}
+                            _ => {
+                                *in_child = Arc::new(in_owned);
+                                *out_child = Arc::new(out_owned);
+                            }
                         }
                         let in_dom = in_child.domain();
                         let out_dom = out_child.domain();
@@ -733,15 +741,19 @@ impl Loaf {
             }
             Loaf::Dsp { offset, child, .. } => {
                 let child_region = shift_region_inverted(region, *offset);
-                let result = child.splay(&child_region);
+                let mut child_owned =
+                    Arc::unwrap_or_clone(std::mem::replace(child, Arc::new(Loaf::empty_leaf())));
+                let result = child_owned.splay(&child_region);
                 if result == SplayResult::Partial {
                     let offset = *offset;
                     let materialized = Loaf::split_from(
-                        shift_region(&child.cached_domain(), offset),
-                        Box::new(child.extract_in_part().transformed_by(offset)),
-                        Box::new(child.extract_out_part().transformed_by(offset)),
+                        shift_region(&child_owned.cached_domain(), offset),
+                        Arc::new(child_owned.extract_in_part().transformed_by(offset)),
+                        Arc::new(child_owned.extract_out_part().transformed_by(offset)),
                     );
                     *self = materialized;
+                } else {
+                    *child = Arc::new(child_owned);
                 }
                 result
             }
@@ -751,7 +763,9 @@ impl Loaf {
     fn extract_in_part(&mut self) -> Loaf {
         match self {
             Loaf::Leaf { .. } => self.clone(),
-            Loaf::Split { in_child, .. } => std::mem::replace(&mut **in_child, Loaf::empty_leaf()),
+            Loaf::Split { in_child, .. } => {
+                Arc::unwrap_or_clone(std::mem::replace(in_child, Arc::new(Loaf::empty_leaf())))
+            }
             Loaf::Dsp { .. } => self.clone(),
         }
     }
@@ -760,7 +774,7 @@ impl Loaf {
         match self {
             Loaf::Leaf { .. } => Loaf::empty_leaf(),
             Loaf::Split { out_child, .. } => {
-                std::mem::replace(&mut **out_child, Loaf::empty_leaf())
+                Arc::unwrap_or_clone(std::mem::replace(out_child, Arc::new(Loaf::empty_leaf())))
             }
             Loaf::Dsp { .. } => Loaf::empty_leaf(),
         }
@@ -776,7 +790,7 @@ impl Loaf {
         if out_child.is_empty() {
             return in_child;
         }
-        Loaf::split_from(split, Box::new(in_child), Box::new(out_child))
+        Loaf::split_from(split, Arc::new(in_child), Arc::new(out_child))
     }
 
     fn maybe_split(self) -> Loaf {
@@ -808,14 +822,14 @@ impl Loaf {
                 in_fingerprints.shrink_to_fit();
                 Loaf::split_from(
                     XnRegion::below(split_pos),
-                    Box::new(Loaf::Leaf {
+                    Arc::new(Loaf::Leaf {
                         region: in_region,
                         entries: in_entries,
                         fingerprints: in_fingerprints,
                         default: default.clone(),
                         crum: in_crum,
                     }),
-                    Box::new(Loaf::Leaf {
+                    Arc::new(Loaf::Leaf {
                         region: out_region,
                         entries: out_entries,
                         fingerprints: out_fingerprints,
@@ -878,7 +892,7 @@ impl Loaf {
         if offset == 0 {
             return self.clone();
         }
-        Loaf::dsp_from(offset, Box::new(self.clone()))
+        Loaf::dsp_from(offset, Arc::new(self.clone()))
     }
 
     fn transform_materialized(&self, offset: i64) -> Loaf {
@@ -915,8 +929,8 @@ impl Loaf {
                 let new_split = shift_region(split, offset);
                 Loaf::split_from(
                     new_split,
-                    Box::new(in_child.transform_materialized(offset)),
-                    Box::new(out_child.transform_materialized(offset)),
+                    Arc::new(in_child.transform_materialized(offset)),
+                    Arc::new(out_child.transform_materialized(offset)),
                 )
             }
             Loaf::Dsp {
@@ -952,7 +966,7 @@ impl Loaf {
             return self_copy;
         }
         let split = self_copy.domain();
-        Loaf::split_from(split, Box::new(self_copy), Box::new(other_copy))
+        Loaf::split_from(split, Arc::new(self_copy), Arc::new(other_copy))
     }
 }
 
@@ -1180,8 +1194,8 @@ impl OrglRoot {
             let split = in_root.domain();
             let loaf = Loaf::split_from(
                 split,
-                Box::new(in_root.loaf().clone()),
-                Box::new(out_root.loaf().clone()),
+                Arc::new(in_root.loaf().clone()),
+                Arc::new(out_root.loaf().clone()),
             );
             return Ok(OrglRoot::from_loaf(loaf));
         }
@@ -1204,8 +1218,8 @@ impl OrglRoot {
                 let split = self.domain();
                 let loaf = Loaf::split_from(
                     split,
-                    Box::new(self.loaf().clone()),
-                    Box::new(other.loaf().clone()),
+                    Arc::new(self.loaf().clone()),
+                    Arc::new(other.loaf().clone()),
                 );
                 OrglRoot::from_loaf(loaf)
             });
@@ -1226,8 +1240,8 @@ impl OrglRoot {
             kept.combine(other).unwrap_or_else(|_| {
                 let loaf = Loaf::split_from(
                     kept.domain(),
-                    Box::new(kept.loaf().clone()),
-                    Box::new(other.loaf().clone()),
+                    Arc::new(kept.loaf().clone()),
+                    Arc::new(other.loaf().clone()),
                 );
                 OrglRoot::from_loaf(loaf)
             })
@@ -1418,8 +1432,8 @@ mod tests {
     fn loaf_splay_split_rotates() {
         let mut loaf = Loaf::split_from(
             XnRegion::below(3),
-            Box::new(make_text_loaf("ab")),
-            Box::new(make_text_loaf("cde")),
+            Arc::new(make_text_loaf("ab")),
+            Arc::new(make_text_loaf("cde")),
         );
         let result = loaf.splay(&XnRegion::interval(1, 4));
         assert_eq!(result, SplayResult::Partial);
@@ -1576,7 +1590,7 @@ mod tests {
     #[test]
     fn dsp_loaf_fetch() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::dsp_from(10, Box::new(inner));
+        let dsp = Loaf::dsp_from(10, Arc::new(inner));
         assert_eq!(dsp.fetch(10).unwrap().element.as_text(), Some("a"));
         assert_eq!(dsp.fetch(12).unwrap().element.as_text(), Some("c"));
         assert!(dsp.fetch(0).is_none());
@@ -1585,14 +1599,14 @@ mod tests {
     #[test]
     fn dsp_loaf_domain() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::dsp_from(5, Box::new(inner));
+        let dsp = Loaf::dsp_from(5, Arc::new(inner));
         assert_eq!(dsp.domain(), XnRegion::interval(5, 8));
     }
 
     #[test]
     fn dsp_loaf_has_position() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::dsp_from(100, Box::new(inner));
+        let dsp = Loaf::dsp_from(100, Arc::new(inner));
         assert!(dsp.has_position(100));
         assert!(dsp.has_position(102));
         assert!(!dsp.has_position(0));
@@ -1602,7 +1616,7 @@ mod tests {
     #[test]
     fn dsp_loaf_with() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::dsp_from(10, Box::new(inner));
+        let dsp = Loaf::dsp_from(10, Arc::new(inner));
         let new_dsp = dsp.with(13, Arc::new(Carrier::new(RangeElement::text("X"))));
         assert_eq!(new_dsp.fetch(13).unwrap().element.as_text(), Some("X"));
         assert_eq!(new_dsp.fetch(10).unwrap().element.as_text(), Some("a"));
@@ -1611,7 +1625,7 @@ mod tests {
     #[test]
     fn dsp_loaf_without() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::dsp_from(10, Box::new(inner));
+        let dsp = Loaf::dsp_from(10, Arc::new(inner));
         let new_dsp = dsp.without(11);
         assert!(!new_dsp.has_position(11));
         assert!(new_dsp.has_position(10));
@@ -1620,7 +1634,7 @@ mod tests {
     #[test]
     fn dsp_loaf_all_entries() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::dsp_from(5, Box::new(inner));
+        let dsp = Loaf::dsp_from(5, Arc::new(inner));
         let entries = dsp.all_entries();
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].0, 5);
@@ -1630,8 +1644,8 @@ mod tests {
     #[test]
     fn dsp_loaf_chained() {
         let inner = make_text_loaf("abc");
-        let dsp1 = Loaf::dsp_from(10, Box::new(inner));
-        let dsp2 = Loaf::dsp_from(5, Box::new(dsp1));
+        let dsp1 = Loaf::dsp_from(10, Arc::new(inner));
+        let dsp2 = Loaf::dsp_from(5, Arc::new(dsp1));
         assert_eq!(dsp2.domain(), XnRegion::interval(15, 18));
         assert_eq!(dsp2.fetch(15).unwrap().element.as_text(), Some("a"));
     }
@@ -1639,7 +1653,7 @@ mod tests {
     #[test]
     fn dsp_loaf_copy() {
         let inner = make_text_loaf("abcde");
-        let dsp = Loaf::dsp_from(10, Box::new(inner));
+        let dsp = Loaf::dsp_from(10, Arc::new(inner));
         let copied = dsp.copy(&XnRegion::interval(11, 14));
         assert!(copied.has_position(11));
         assert!(copied.has_position(13));
@@ -1760,7 +1774,7 @@ mod tests {
             XnRegion::above(0),
             Arc::new(Carrier::new(RangeElement::text("."))),
         );
-        let dsp = Loaf::dsp_from(100, Box::new(inner));
+        let dsp = Loaf::dsp_from(100, Arc::new(inner));
         assert!(dsp.is_infinite());
         assert_eq!(dsp.fetch(150).unwrap().element.as_text(), Some("."));
     }

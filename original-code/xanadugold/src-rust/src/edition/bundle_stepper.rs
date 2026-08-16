@@ -349,8 +349,8 @@ mod tests {
     fn bundle_stepper_from_loaf_split() {
         let loaf = Loaf::split_from(
             XnRegion::below(2),
-            Box::new(make_text_loaf("ab")),
-            Box::new(make_text_loaf("cde")),
+            Arc::new(make_text_loaf("ab")),
+            Arc::new(make_text_loaf("cde")),
         );
         let region = XnRegion::interval(0, 4);
         let stepper = loaf_bundle_stepper(&loaf, &region);
@@ -360,7 +360,7 @@ mod tests {
 
     #[test]
     fn bundle_stepper_from_loaf_dsp() {
-        let loaf = Loaf::dsp_from(10, Box::new(make_text_loaf("ab")));
+        let loaf = Loaf::dsp_from(10, Arc::new(make_text_loaf("ab")));
         let region = XnRegion::interval(10, 12);
         let stepper = loaf_bundle_stepper(&loaf, &region);
         let bundles = stepper.collect_all();
@@ -428,8 +428,8 @@ mod tests {
     fn loaf_merge_stepper_split_preserves_order() {
         let loaf = Loaf::split_from(
             XnRegion::below(2),
-            Box::new(make_text_loaf("ab")),
-            Box::new(make_text_loaf("cde")),
+            Arc::new(make_text_loaf("ab")),
+            Arc::new(make_text_loaf("cde")),
         );
         let region = XnRegion::interval(0, 5);
         let ms = loaf_merge_stepper(&loaf, &region);
@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn loaf_merge_stepper_dsp_shifts() {
-        let loaf = Loaf::dsp_from(100, Box::new(make_text_loaf("xy")));
+        let loaf = Loaf::dsp_from(100, Arc::new(make_text_loaf("xy")));
         let region = XnRegion::interval(100, 102);
         let ms = loaf_merge_stepper(&loaf, &region);
         let bundles = ms.collect_all();
