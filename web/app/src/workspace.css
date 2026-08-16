@@ -2,7 +2,7 @@
    Grid layout: top bar + 3-column body + bottom lens row.
    All zones collapsible; the document surface reclaims freed space. */
 
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&display=swap');
+/* Fonts bundled locally via @fontsource (no runtime Google Fonts dependency) */
 
 /* ── Brand ── */
 .ws-brand-text {
