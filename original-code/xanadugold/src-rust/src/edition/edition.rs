@@ -3570,7 +3570,9 @@ mod tests {
     /// failure mode the S3 probe exposed (half the document vanished).
     #[test]
     fn splayed_repeated_moving_regions_preserve_content() {
-        let text: String = (0..500).map(|i| char::from_u32(97 + i % 26).unwrap()).collect();
+        let text: String = (0..500)
+            .map(|i| char::from_u32(97 + i % 26).unwrap())
+            .collect();
         let ed = Edition::from_text(&text);
         let mut cur = ed;
         for i in 0..40usize {

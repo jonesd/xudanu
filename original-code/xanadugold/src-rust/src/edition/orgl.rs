@@ -1476,7 +1476,12 @@ mod tests {
     #[test]
     fn loaf_splay_repeated_moving_regions_preserve_content() {
         let entries: Vec<(i64, Arc<Carrier>)> = (0..200)
-            .map(|i| (i, Arc::new(Carrier::new(RangeElement::text(format!("{:03}", i))))))
+            .map(|i| {
+                (
+                    i,
+                    Arc::new(Carrier::new(RangeElement::text(format!("{:03}", i)))),
+                )
+            })
             .collect();
         let mut loaf = Loaf::new_leaf(XnRegion::interval(0, 200), entries);
         let expected: String = (0..200).map(|i| format!("{:03}", i)).collect();

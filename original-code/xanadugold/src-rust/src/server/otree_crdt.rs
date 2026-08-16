@@ -2601,7 +2601,9 @@ mod tests {
             let start = std::time::Instant::now();
             for i in 0..EDITS {
                 let ops = vec![
-                    TextDeltaOp::Retain { count: (mid + i) as u64 },
+                    TextDeltaOp::Retain {
+                        count: (mid + i) as u64,
+                    },
                     TextDeltaOp::Insert {
                         text: "x".to_string(),
                     },

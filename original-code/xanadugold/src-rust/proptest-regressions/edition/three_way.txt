@@ -6,3 +6,5 @@
 # everyone who runs the test benefits from these saved cases.
 cc 281b6fd273b1df8d71656f56413b3d06787152dd6a3679f30f0b08ab1ebace71 # shrinks to base_text = "jbcb", a_text = "cccccckbk", b_text = "cab"
 cc 8d606e8b7707f0643bc7dd8918cd0e23308ad3a006c4bf22663cd33c31b21fd3 # shrinks to base_text = "cbdpc", b_text = "ccdpb"
+cc 34af5d53ad68302a48c5f15f95fcbf06df227f9258edd3a89d8b28cd4f016881 # shrinks to base_text = "to", a_text = "ot", b_text = "to"
+cc 6e18c1d09c59aad300ef3aa4a6d836f83c08b0306d596e299cbdd39011d0b5bf # shrinks to base_text = "leaaa", edit_text = "eaaal"
