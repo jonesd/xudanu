@@ -194,14 +194,47 @@ instincts.
    could make spacing a storage invariant.
 2. **Release-build benchmarking** — all numbers above are debug-build;
    release profiles will shift constants (not classes).
-3. **Fullsm/virtual-enfilade features** (`OExpandingLoaf` in Gold) —
-   Xudanu has no equivalent of expanding loaves / wrapper machinery
-   for virtual structures; `wrapper.rs` is a stub.
-4. **CrossSpace/Sequence as storage** — `space/sequence.rs` (1248
+3. **Virtual structures / OExpandingLoaf** — planned as **FR-37**
+   (virtual enfilade resolution; Phase 1 groundwork landed). Gold's
+   computed-on-demand loaves are the endgame of Xudanu's
+   StructuralTransclusion.
+4. **License summary overlays (dual-use permission crums)** — planned
+   as **FR-38** (Phase 1 groundwork landed: `LicenseClass` bits +
+   ground-truth `span_license_classes` query). Gold's CanopyCrum
+   flag-widding, kept as a separate overlay so content crums stay pure.
+5. **CrossSpace/Sequence as storage** — `space/sequence.rs` (1248
    lines) and `space/cross.rs` remain dormant as anything but naming;
-   activating them is the Phase H compound-document path.
-5. **Tumbler-addressed federation at scale** — cross-server tumblers
+   activating them is the Phase H compound-document path (overlaps
+   FR-26 Phase 4 spanfilade).
+6. **Tumbler-addressed federation at scale** — cross-server tumblers
    exist; routing and caching across servers is future work (FR-6+).
-6. **Pre-existing infra debt** (from before the pipeline): 10
+7. **Pre-existing infra debt** (from before the pipeline): 10
    integration-test failures and a broken default-features build,
    both root-chunk-migration fallout; tracked on the branch.
+
+## 6. Combination opportunities (pipeline enhancements × features)
+
+Unplanned capabilities that fall out of combining the 2026 pipeline
+work with existing Xudanu features — candidates for future FRs:
+
+- **Section-level federation sync** — O(1) crum equality + chunk
+  crums let FR-35's Bloom-filter exchange skip whole identical
+  sections instead of whole works: "sections 1-3 match, sync only 4".
+  Replication granularity drops from document to section with no new
+  machinery beyond a crum-walk diff.
+- **Never-breaking permalinks through merges** — stable positions +
+  the tumbler bridge mean a tumbler address into a document survives
+  concurrent-edit merges that would have renumbered it under dense
+  layouts. Merge history becomes addressable without a redirect map.
+- **Cheap document branching** — Arc structural sharing makes
+  snapshotting an edition O(1)-ish; version timelines (FR-23) could
+  offer branch/fork with shared history the way Gold's image
+  persistence did implicitly.
+- **Alignment-powered source detection** — the S7 patience alignment
+  is a general "find matching runs between two documents" primitive;
+  `source_matcher.rs`/`detector.rs` (copy detection) and backfollow
+  could reuse it for near-duplicate detection at scale.
+- **License-filtered views** — FR-38 overlays composed with virtual
+  enfilades (FR-37 Phase 4): "this document as visible to club X" or
+  "quotable-only spans" become computed documents. Gold's
+  permission-pruned canopy searches, reborn as first-class views.

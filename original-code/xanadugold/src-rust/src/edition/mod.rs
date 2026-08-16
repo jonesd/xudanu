@@ -104,6 +104,7 @@ pub use transclusion::{
     TrailBlazer, TransclusionIndex, TransclusionQuery, TransclusionResult, WorkQuery,
 };
 pub use work::License;
+pub use work::LicenseClass;
 pub use work::Work;
 pub use work::WorkKind;
 pub use wrapper::{

@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::sync::OnceLock;
 
+use super::backend::BeId;
 use super::bundle::{
     compute_storage_cost, element_byte_size, fingerprint_u64, retrieve_bundles, Bundle, CostMethod,
     RetrieveFlags, StorageCost,
@@ -13,6 +14,7 @@ use super::range_element::{Carrier, RangeElement};
 use super::shared_mapping::{
     content_map_shared_onto, content_map_shared_to, content_shared_region, SharedMapping,
 };
+use super::work::License;
 use super::xn_region::XnRegion;
 
 /// Lazily-built flat view of an edition: sorted entries plus the
@@ -59,6 +61,22 @@ pub struct OutlineEntry {
     pub text: String,
     pub line: u64,
     pub char_offset: u64,
+}
+
+/// Ground-truth result of a per-span license query (FR-38 Phase 1).
+/// `total_class` is the OR of every entry's license class in the span;
+/// `boundaries` lists the ownership runs crossed with their per-run
+/// classes. This structure is what the FR-38 overlay answers in
+/// O(log n + b); here it is computed by scan (O(span entries)) — the
+/// authoritative fallback and the overlay's seed/regression source.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SpanLicenseSummary {
+    pub total_class: super::work::LicenseClass,
+    pub pending_class: super::work::LicenseClass,
+    /// (char_start, char_end, owner_club, run_class) per ownership run.
+    pub boundaries: Vec<(usize, usize, Option<BeId>, super::work::LicenseClass)>,
+    pub distinct_owners: usize,
+    pub unresolved_entries: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -725,6 +743,86 @@ impl Edition {
             .iter()
             .map(|(_, c)| c.char_len())
             .sum()
+    }
+
+    /// License classes covering a char span, computed from ground truth
+    /// (FR-38 Phase 1): each entry in the span resolves to (provenance
+    /// owner -> owner's license). This is the authoritative per-span
+    /// query the FR-38 overlay accelerates; owner resolution is the
+    /// caller's concern (the server maps club ids to works/licenses),
+    /// passed as a resolver closure.
+    ///
+    /// Zero-char entries adopt the ongoing run's class (they don't
+    /// fragment ownership). Entries with unresolvable owners contribute
+    /// UNKNOWN — the safe default; licenses are display-only per FR-24.
+    pub fn span_license_classes<F>(
+        &self,
+        char_start: usize,
+        char_end: usize,
+        owner_license: F,
+    ) -> SpanLicenseSummary
+    where
+        F: Fn(BeId) -> Option<License>,
+    {
+        let entries = self.cached_entries();
+        let starts = self.cached_char_starts();
+        let mut summary = SpanLicenseSummary::default();
+
+        let mut current_owner: Option<BeId> = None;
+        let mut run_started = false;
+        let mut run_start = char_start;
+
+        for (idx, (_, carrier)) in entries.iter().enumerate() {
+            let entry_start = starts[idx];
+            let entry_len = carrier.char_len();
+            let entry_end = entry_start + entry_len;
+
+            if entry_len == 0 {
+                continue;
+            }
+            if entry_end <= char_start {
+                continue;
+            }
+            if entry_start >= char_end {
+                break;
+            }
+
+            let overlap_start = entry_start.max(char_start);
+            let (class, owner) = match &carrier.provenance {
+                Some(p) => match owner_license(p.author_club_id) {
+                    Some(l) => (l.license_class(), Some(p.author_club_id)),
+                    None => (super::work::LicenseClass::UNKNOWN, Some(p.author_club_id)),
+                },
+                None => (super::work::LicenseClass::UNKNOWN, None),
+            };
+
+            if !run_started || owner != current_owner {
+                if run_started {
+                    summary.boundaries.push((
+                        run_start,
+                        overlap_start,
+                        current_owner,
+                        summary.pending_class,
+                    ));
+                }
+                run_start = overlap_start;
+                run_started = true;
+                current_owner = owner;
+                summary.pending_class = super::work::LicenseClass::default();
+                summary.distinct_owners += 1;
+            }
+            summary.pending_class = summary.pending_class.combine(class);
+            if class.contains(super::work::LicenseClass::UNKNOWN) {
+                summary.unresolved_entries += 1;
+            }
+            summary.total_class = summary.total_class.combine(class);
+        }
+        if run_started {
+            summary
+                .boundaries
+                .push((run_start, char_end, current_owner, summary.pending_class));
+        }
+        summary
     }
 
     pub fn crum(&self) -> Option<crate::edition::orgl::Crum> {
@@ -3593,6 +3691,116 @@ mod tests {
             cur = splayed;
         }
         assert_eq!(cur.to_text(), text);
+    }
+
+    /// FR-38 Phase 1: ground-truth span license query.
+    #[test]
+    fn span_license_classes_mixed_ownership() {
+        use crate::edition::provenance::ElementProvenance;
+        use crate::edition::work::{License, LicenseClass};
+
+        let alice = ElementProvenance {
+            author_public_key: [1; 32],
+            author_display_name: "Alice".to_string(),
+            author_club_id: 10,
+            timestamp: 1,
+            author_type: crate::edition::provenance::AuthorType::Human,
+            llm_model: None,
+            historical_author_id: None,
+            source_work_id: None,
+            transcluded_by: None,
+            derived_by: None,
+        };
+        let bob = ElementProvenance {
+            author_club_id: 20,
+            ..alice.clone()
+        };
+
+        // Alice (TCo) owns chars 0-5; Bob (ARR) owns 5-10.
+        let entries = vec![
+            (
+                0i64,
+                Arc::new(
+                    Carrier::new(RangeElement::text("aaaaa".to_string()))
+                        .with_provenance(alice.clone()),
+                ),
+            ),
+            (
+                1i64,
+                Arc::new(
+                    Carrier::new(RangeElement::text("bbbbb".to_string()))
+                        .with_provenance(bob.clone()),
+                ),
+            ),
+        ];
+        let ed = Edition::from_entries(entries);
+
+        let licenses = |owner: BeId| -> Option<License> {
+            match owner {
+                10 => Some(License::Transcopyright),
+                20 => Some(License::AllRightsReserved),
+                _ => None,
+            }
+        };
+
+        let s = ed.span_license_classes(0, 10, licenses);
+        assert!(s.total_class.contains(LicenseClass::TRANSCLUSION_OK));
+        assert!(s.total_class.contains(LicenseClass::RESTRICTED));
+        assert_eq!(s.distinct_owners, 2);
+        assert_eq!(s.boundaries.len(), 2);
+        assert_eq!(s.boundaries[0].0, 0);
+        assert_eq!(s.boundaries[0].1, 5);
+        assert_eq!(s.boundaries[0].2, Some(10));
+        assert!(s.boundaries[0].3.contains(LicenseClass::TRANSCLUSION_OK));
+        assert!(s.boundaries[1].3.contains(LicenseClass::RESTRICTED));
+
+        // Partial span inside one owner: single boundary, one class.
+        let s2 = ed.span_license_classes(0, 5, licenses);
+        assert!(s2.total_class.contains(LicenseClass::TRANSCLUSION_OK));
+        assert!(!s2.total_class.contains(LicenseClass::RESTRICTED));
+        assert_eq!(s2.distinct_owners, 1);
+    }
+
+    /// FR-38 Phase 1: unresolvable owners and provenance-less entries
+    /// contribute UNKNOWN (the safe default), never a wrong class.
+    #[test]
+    fn span_license_classes_unknown_fallbacks() {
+        use crate::edition::work::{License, LicenseClass};
+
+        let ed = Edition::from_text("hello world");
+        let nothing = |_: BeId| -> Option<License> { None };
+        let s = ed.span_license_classes(0, 11, nothing);
+        assert!(s.total_class.contains(LicenseClass::UNKNOWN));
+        assert_eq!(s.unresolved_entries, 11, "per-char entries all unresolved");
+        assert_eq!(s.distinct_owners, 1);
+        assert!(s.boundaries[0].2.is_none(), "no owner attributable");
+    }
+
+    /// FR-38 Phase 1: LicenseClass monoid + License derivation.
+    #[test]
+    fn license_class_bits() {
+        use crate::edition::work::{License, LicenseClass};
+
+        assert!(License::PublicDomain
+            .license_class()
+            .contains(LicenseClass::FREE));
+        assert!(License::Transcopyright
+            .license_class()
+            .contains(LicenseClass::TRANSCLUSION_OK));
+        assert!(License::CreativeCommonsBy
+            .license_class()
+            .contains(LicenseClass::ATTRIBUTION));
+        assert!(License::AllRightsReserved
+            .license_class()
+            .contains(LicenseClass::RESTRICTED));
+
+        let combined = LicenseClass::FREE.combine(LicenseClass::RESTRICTED);
+        assert!(combined.contains(LicenseClass::FREE));
+        assert!(combined.contains(LicenseClass::RESTRICTED));
+        assert!(!combined.contains(LicenseClass::ATTRIBUTION));
+        assert_eq!(LicenseClass::default().bits(), 0);
+        let s = format!("{}", combined);
+        assert!(s.contains("free") && s.contains("restricted"));
     }
 
     #[test]
