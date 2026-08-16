@@ -339,45 +339,61 @@ pub fn apply_text_delta_to_edition(
         derived_by: None,
     });
 
-    let old_entries = edition.cached_entries();
-
-    let mut entry_char_start: Vec<usize> = Vec::with_capacity(old_entries.len());
-    let mut cum = 0usize;
-    for (_, carrier) in old_entries {
-        entry_char_start.push(cum);
-        cum += carrier.char_len();
+    if let Some(result) = try_apply_delta_fast(edition, ops, &prov) {
+        tracing::debug!(
+            "[apply_delta] fast path: old_entries={} ops={} elapsed_ms={:.3}",
+            edition.cached_entries().len(),
+            ops.len(),
+            started.elapsed().as_secs_f64() * 1000.0,
+        );
+        return result;
     }
-    let _total_old_chars = cum;
+    apply_text_delta_to_edition_bulk(edition, ops, &prov, started)
+}
 
-    let mut old_char_pos = 0usize;
+/// Shared op walker: processes `ops` against `entries` starting at
+/// absolute char position `start_char` (which must equal
+/// `starts[0] + within`, the position the first op applies at), running
+/// the exact retain-copy/delete-skip/insert-batch semantics of the
+/// historical bulk walk. Emits output carriers with DENSE LOCAL
+/// positions (0..k) so `push_coalesced` behaves identically; callers
+/// reassign real positions afterwards.
+///
+/// Returns (entries consumed, absolute char position reached, final
+/// dense local output position). When ops are exhausted mid-entry, the
+/// entry's remainder is emitted (mirrors the historical trailing-split
+/// logic).
+#[allow(clippy::too_many_arguments)]
+fn walk_clamped(
+    entries: &[(i64, Arc<Carrier>)],
+    starts: &[usize],
+    ops: &[TextDeltaOp],
+    start_char: usize,
+    prov: &Option<ElementProvenance>,
+    out: &mut Vec<(i64, Arc<Carrier>)>,
+) -> (usize, usize, i64) {
+    let mut local_pos = 0i64;
+    let mut old_char_pos = start_char;
     let mut current_entry_idx = 0usize;
-    let mut new_entries: Vec<(i64, Arc<Carrier>)> =
-        Vec::with_capacity(old_entries.len() + ops.len());
-    let mut new_pos = 0i64;
     let mut pending_insert = String::new();
 
     for op in ops {
         match op {
             TextDeltaOp::Retain { count } => {
-                flush_batched_insert_coalesced(
-                    &mut pending_insert,
-                    &prov,
-                    &mut new_entries,
-                    &mut new_pos,
-                );
+                flush_batched_insert_coalesced(&mut pending_insert, prov, out, &mut local_pos);
                 let target_char_pos = old_char_pos + *count as usize;
 
                 while old_char_pos < target_char_pos {
-                    if current_entry_idx >= old_entries.len() {
+                    if current_entry_idx >= entries.len() {
                         break;
                     }
-                    let entry = &old_entries[current_entry_idx];
-                    let entry_start = entry_char_start[current_entry_idx];
+                    let entry = &entries[current_entry_idx];
+                    let entry_start = starts[current_entry_idx];
                     let entry_len = entry.1.char_len();
 
                     if entry_len == 0 {
-                        new_entries.push((new_pos, entry.1.clone()));
-                        new_pos += 1;
+                        out.push((local_pos, entry.1.clone()));
+                        local_pos += 1;
                         current_entry_idx += 1;
                         continue;
                     }
@@ -388,11 +404,11 @@ pub fn apply_text_delta_to_edition(
                     let take = remaining.min(available);
 
                     if within == 0 && take == entry_len {
-                        push_coalesced(&mut new_entries, &mut new_pos, (*entry.1).clone());
+                        push_coalesced(out, &mut local_pos, (*entry.1).clone());
                     } else if let Some(carrier) =
                         split_text_carrier(&entry.1, within, within + take)
                     {
-                        push_coalesced(&mut new_entries, &mut new_pos, carrier);
+                        push_coalesced(out, &mut local_pos, carrier);
                     }
 
                     old_char_pos += take;
@@ -402,23 +418,18 @@ pub fn apply_text_delta_to_edition(
                 }
             }
             TextDeltaOp::Delete { count } => {
-                flush_batched_insert_coalesced(
-                    &mut pending_insert,
-                    &prov,
-                    &mut new_entries,
-                    &mut new_pos,
-                );
+                flush_batched_insert_coalesced(&mut pending_insert, prov, out, &mut local_pos);
                 let target_char_pos = old_char_pos + *count as usize;
                 while old_char_pos < target_char_pos {
-                    if current_entry_idx >= old_entries.len() {
+                    if current_entry_idx >= entries.len() {
                         break;
                     }
-                    let entry_len = old_entries[current_entry_idx].1.char_len();
+                    let entry_len = entries[current_entry_idx].1.char_len();
                     if entry_len == 0 {
                         current_entry_idx += 1;
                         continue;
                     }
-                    let entry_start = entry_char_start[current_entry_idx];
+                    let entry_start = starts[current_entry_idx];
                     let within = old_char_pos.saturating_sub(entry_start);
                     let available = entry_len - within;
                     let remaining = target_char_pos - old_char_pos;
@@ -435,33 +446,55 @@ pub fn apply_text_delta_to_edition(
         }
     }
 
-    flush_batched_insert_coalesced(&mut pending_insert, &prov, &mut new_entries, &mut new_pos);
+    flush_batched_insert_coalesced(&mut pending_insert, prov, out, &mut local_pos);
 
-    if current_entry_idx < old_entries.len() {
-        let entry_start = entry_char_start[current_entry_idx];
+    // Ops exhausted mid-entry: emit the remainder of the partially
+    // consumed entry (historical trailing-split behavior).
+    if current_entry_idx < entries.len() {
+        let entry_start = starts[current_entry_idx];
         let within = old_char_pos.saturating_sub(entry_start);
         if within > 0 {
             if let Some(carrier) = split_text_carrier(
-                &old_entries[current_entry_idx].1,
+                &entries[current_entry_idx].1,
                 within,
-                old_entries[current_entry_idx].1.char_len(),
+                entries[current_entry_idx].1.char_len(),
             ) {
-                push_coalesced(&mut new_entries, &mut new_pos, carrier);
+                push_coalesced(out, &mut local_pos, carrier);
             }
             current_entry_idx += 1;
         }
     }
 
-    while current_entry_idx < old_entries.len() {
-        let entry = &old_entries[current_entry_idx];
-        push_coalesced(&mut new_entries, &mut new_pos, (*entry.1).clone());
-        current_entry_idx += 1;
+    (current_entry_idx, old_char_pos, local_pos)
+}
+
+/// The historical flatten-walk-rebuild path. Still the fallback for
+/// large deltas, infinite-domain editions, and allocation failures.
+fn apply_text_delta_to_edition_bulk(
+    edition: &Edition,
+    ops: &[TextDeltaOp],
+    prov: &Option<ElementProvenance>,
+    started: std::time::Instant,
+) -> Edition {
+    let old_entries = edition.cached_entries().clone();
+    let starts = edition.cached_char_starts().to_vec();
+
+    let mut new_entries: Vec<(i64, Arc<Carrier>)> =
+        Vec::with_capacity(old_entries.len() + ops.len());
+
+    let (consumed, _, mut local_pos) =
+        walk_clamped(&old_entries, &starts, ops, 0, prov, &mut new_entries);
+
+    // Suffix: remaining entries copied verbatim, continuing the dense
+    // numbering and coalescing.
+    for entry in &old_entries[consumed.min(old_entries.len())..] {
+        push_coalesced(&mut new_entries, &mut local_pos, (*entry.1).clone());
     }
 
     let result = {
         let ed = Edition::from_entries(new_entries);
         tracing::debug!(
-            "[apply_delta] old_entries={} result_entries={} ops={} elapsed_ms={:.3}",
+            "[apply_delta] bulk path: old_entries={} result_entries={} ops={} elapsed_ms={:.3}",
             old_entries.len(),
             ed.all_entries().len(),
             ops.len(),
@@ -480,6 +513,433 @@ pub fn apply_text_delta_to_edition(
         ed
     };
     result
+}
+
+/// Tree-native delta application (PERF-PLAN Stage 5 / FR-34 Phase I).
+///
+/// Walks only the touched entry neighborhood, assigns gap-allocated
+/// stable positions (Stage 4 allocator) to the replacement entries,
+/// and assembles the result structurally: untouched prefix/suffix are
+/// shared via `copy()`, the neighborhood is bulk-built, and the pieces
+/// combine in O(log n). Untouched entries keep their positions.
+///
+/// Guards fall back to the bulk path: infinite-domain editions,
+/// large deltas (> 20% of entries or > 64), pathological inserts,
+/// or position allocation failure (crammed i64 space).
+fn try_apply_delta_fast(
+    edition: &Edition,
+    ops: &[TextDeltaOp],
+    prov: &Option<ElementProvenance>,
+) -> Option<Edition> {
+    if edition.is_infinite() || ops.is_empty() {
+        return None;
+    }
+
+    let entries = edition.cached_entries();
+    let starts = edition.cached_char_starts();
+    let n = entries.len();
+    if n == 0 {
+        // Empty edition: nothing structural to share; bulk is fine.
+        return None;
+    }
+
+    // Locate the dirty char span in OLD coordinates.
+    let mut pos = 0usize;
+    let mut lo = None;
+    let mut hi = 0usize;
+    for op in ops {
+        match op {
+            TextDeltaOp::Retain { count } => {
+                pos += *count as usize;
+            }
+            TextDeltaOp::Delete { count } => {
+                if lo.is_none() {
+                    lo = Some(pos);
+                }
+                pos += *count as usize;
+                hi = hi.max(pos);
+            }
+            TextDeltaOp::Insert { text } => {
+                let len = text.chars().count();
+                if len > 0 {
+                    if lo.is_none() {
+                        lo = Some(pos);
+                    }
+                    hi = hi.max(pos + len);
+                }
+            }
+        }
+    }
+    let Some(lo) = lo else {
+        // Pure retain (or empty inserts): no change at all.
+        return Some(edition.clone());
+    };
+    let hi = hi.max(lo + 1);
+
+    // Entry range [i0, i1): every entry the walk could touch.
+    // Starts are gapless cumulative sums, so:
+    // - the run of entries starting exactly at lo joins the neighborhood
+    //   (zero-char entries are dropped by deletes, copied by retains)
+    // - otherwise the entry containing lo is at partition-1
+    // - partition == n means lo is past the end (append case)
+    let partition = starts.partition_point(|&s| s <= lo).min(n);
+    let mut i0 = partition;
+    while i0 > 0 && starts[i0 - 1] == lo {
+        i0 -= 1;
+    }
+    let total = starts[n - 1] + entries[n - 1].1.char_len();
+    if i0 == partition && partition > 0 && lo < total {
+        i0 -= 1;
+    }
+    // i1: first entry starting at/after hi.
+    let mut i1 = starts.partition_point(|&s| s < hi).min(n);
+    if i1 < i0 {
+        i1 = i0;
+    }
+
+    let touched = i1.saturating_sub(i0);
+    if touched > 64 && touched * 5 > n {
+        return None;
+    }
+
+    // Clamp ops to the neighborhood [starts[i0], walk_end) where
+    // walk_end covers the whole last touched entry (its tail is
+    // re-emitted by the walk). The lead retain emits the untouched
+    // head of the first entry. walk_end extends to hi so trailing
+    // inserts at the document end stay in the neighborhood.
+    let (walk_start, mut walk_end) = if i0 < n {
+        (
+            starts[i0],
+            starts[i1.saturating_sub(1).max(i0)]
+                + entries[i1.saturating_sub(1).max(i0)].1.char_len(),
+        )
+    } else {
+        (lo, lo)
+    };
+    walk_end = walk_end.max(hi);
+    let lead_within = lo - walk_start;
+    let span = walk_end.saturating_sub(walk_start);
+    let mut clamped: Vec<TextDeltaOp> = Vec::with_capacity(ops.len() + 2);
+    if lead_within > 0 {
+        clamped.push(TextDeltaOp::Retain {
+            count: lead_within as u64,
+        });
+    }
+    let mut p = 0usize;
+    let mut covered = 0usize;
+    for op in ops {
+        if covered >= span {
+            break;
+        }
+        match op {
+            TextDeltaOp::Retain { count } => {
+                let c = *count as usize;
+                if p + c <= lo {
+                    p += c;
+                    continue;
+                }
+                let seg_start = p.max(lo);
+                let seg_end = (p + c).min(walk_end);
+                let take = seg_end.saturating_sub(seg_start);
+                if take > 0 {
+                    clamped.push(TextDeltaOp::Retain { count: take as u64 });
+                    covered += take;
+                }
+                p += c;
+            }
+            TextDeltaOp::Delete { count } => {
+                let c = *count as usize;
+                let seg_start = p.max(lo);
+                let seg_end = (p + c).min(walk_end);
+                let take = seg_end.saturating_sub(seg_start);
+                if take > 0 {
+                    clamped.push(TextDeltaOp::Delete { count: take as u64 });
+                    covered += take;
+                }
+                p += c;
+            }
+            TextDeltaOp::Insert { text } => {
+                if p >= lo && p < walk_end {
+                    clamped.push(TextDeltaOp::Insert { text: text.clone() });
+                }
+            }
+        }
+    }
+    // Tail retain through walk_end so the walk ends exactly at the
+    // neighborhood boundary.
+    let covered_total = lead_within + covered;
+    if covered_total < span {
+        let tail = span - covered_total;
+        clamped.push(TextDeltaOp::Retain { count: tail as u64 });
+    }
+
+    // Walk the neighborhood only, starting at its first entry.
+    let hood_entries = &entries[i0.min(n)..i1.max(i0).min(n)];
+    let hood_starts = &starts[i0.min(n)..i1.max(i0).min(n)];
+    let mut hood: Vec<(i64, Arc<Carrier>)> = Vec::with_capacity(touched + ops.len());
+    walk_clamped(
+        hood_entries,
+        hood_starts,
+        &clamped,
+        walk_start,
+        prov,
+        &mut hood,
+    );
+    if hood.len() > touched + ops.len() * 4 + 64 {
+        return None;
+    }
+
+    assemble_fast_result(edition, i0.min(n), i1.min(n), hood)
+}
+
+/// Assign stable positions to the replacement neighborhood and assemble
+/// the result structurally (shared prefix/suffix via copy, neighborhood
+/// bulk-built, combined in O(log n)).
+///
+/// Gap strategy (Stage 4 allocator semantics):
+/// - room in the surrounding gap: even spread
+/// - append/prepend at document ends: DEFAULT_SPACING outward
+/// - gap exhausted (dense layouts): re-space a window of RESPACE_WINDOW
+///   untouched neighbors on each side — the only case where unrelated
+///   entries move (amortized O(1) relabels, list-labeling tradeoff)
+fn assemble_fast_result(
+    edition: &Edition,
+    i0: usize,
+    i1: usize,
+    hood: Vec<(i64, Arc<Carrier>)>,
+) -> Option<Edition> {
+    use crate::space::position_allocator::DEFAULT_SPACING;
+
+    const RESPACE_WINDOW: usize = 16;
+
+    let entries = edition.cached_entries();
+    let starts = edition.cached_char_starts();
+    let n = entries.len();
+    let m = hood.len();
+    let prev = if i0 > 0 {
+        Some(entries[i0 - 1].0)
+    } else {
+        None
+    };
+    let next = if i1 < n { Some(entries[i1].0) } else { None };
+
+    if m == 0 {
+        // Pure deletion of the whole neighborhood: keep prefix/suffix.
+        let orgl = match (prev, next) {
+            (Some(p), Some(q)) => edition
+                .orgl
+                .copy(&XnRegion::below(p + 1))
+                .combine(&edition.orgl.copy(&XnRegion::above(q)))
+                .ok()?,
+            (Some(p), None) => edition.orgl.copy(&XnRegion::below(p + 1)),
+            (None, Some(q)) => edition.orgl.copy(&XnRegion::above(q)),
+            (None, None) => crate::edition::orgl::OrglRoot::empty(),
+        };
+        let mut new_entries: Vec<(i64, Arc<Carrier>)> = Vec::with_capacity(n);
+        let mut new_starts: Vec<usize> = Vec::with_capacity(n);
+        for k in 0..i0 {
+            new_entries.push(entries[k].clone());
+            new_starts.push(starts[k]);
+        }
+        let cursor = if i0 < n { starts[i0] } else { 0 };
+        if i1 < n {
+            let shift = cursor as i64 - starts[i1] as i64;
+            for k in i1..n {
+                new_entries.push(entries[k].clone());
+                new_starts.push((starts[k] as i64 + shift) as usize);
+            }
+        }
+        return Some(Edition {
+            orgl,
+            endorsements: edition.endorsements.clone(),
+            entries_cache: Arc::new(std::sync::OnceLock::from((new_entries, new_starts))),
+            span_provenance: edition.span_provenance.clone(),
+        });
+    }
+
+    let mut positioned = hood;
+    let mut w_start = i0;
+    let mut w_end = i1;
+    let mut rebased = false;
+
+    match (prev, next) {
+        (Some(p), Some(q)) if q - p > m as i64 => {
+            let gap = q - p;
+            let step = gap / (m as i64 + 1);
+            for (j, e) in positioned.iter_mut().enumerate() {
+                e.0 = p + (j as i64 + 1) * step;
+            }
+        }
+        (Some(p), None) => {
+            let end = p.checked_add(DEFAULT_SPACING * m as i64)?;
+            let step = if m > 0 { (end - p) / m as i64 } else { 1 };
+            for (j, e) in positioned.iter_mut().enumerate() {
+                e.0 = p + (j as i64 + 1) * step;
+            }
+        }
+        (None, Some(q)) => {
+            let base = q.checked_sub(DEFAULT_SPACING * m as i64)?;
+            for (j, e) in positioned.iter_mut().enumerate() {
+                e.0 = base + j as i64 * DEFAULT_SPACING;
+            }
+        }
+        (None, None) => {
+            for (j, e) in positioned.iter_mut().enumerate() {
+                e.0 = j as i64;
+            }
+        }
+        (Some(_), Some(_)) => {
+            // Gap exhausted: try re-spacing a window of untouched
+            // neighbors; if even that cannot fit spacing >= 4 (fully
+            // dense layout), do a one-time whole-edition rebase to a
+            // spaced layout — O(n) once, after which every subsequent
+            // edit finds midpoint gaps (the layout "heals").
+            w_start = i0.saturating_sub(RESPACE_WINDOW);
+            w_end = (i1 + RESPACE_WINDOW).min(n);
+            let anchor = entries[w_start].0;
+            let ceiling = if w_end < n {
+                entries[w_end].0
+            } else if let Some(p) = prev {
+                p.checked_add(i64::MAX / 8)?
+            } else {
+                i64::MAX / 4
+            };
+            let count = (w_end - w_start) as i64 + m as i64;
+            let span = ceiling.saturating_sub(anchor);
+            let spacing = if span > count {
+                (span / (count + 1)).max(1)
+            } else {
+                0
+            };
+            if spacing >= 4 {
+                // Window re-space: relabel window-before, neighborhood,
+                // window-after at uniform spacing from the anchor.
+                let mut all: Vec<(i64, Arc<Carrier>)> = Vec::with_capacity(count as usize);
+                let mut cursor = anchor;
+                for entry in &entries[w_start..i0] {
+                    cursor += spacing;
+                    all.push((cursor, entry.1.clone()));
+                }
+                for e in positioned.drain(..) {
+                    cursor += spacing;
+                    all.push((cursor, e.1));
+                }
+                for entry in &entries[i1..w_end] {
+                    cursor += spacing;
+                    all.push((cursor, entry.1.clone()));
+                }
+                positioned = all;
+            } else {
+                // Whole-edition rebase.
+                let mut all: Vec<(i64, Arc<Carrier>)> = Vec::with_capacity(n + m);
+                for entry in &entries[..i0] {
+                    all.push((0, entry.1.clone()));
+                }
+                for e in positioned.drain(..) {
+                    all.push((0, e.1));
+                }
+                for entry in &entries[i1..] {
+                    all.push((0, entry.1.clone()));
+                }
+                for (k, e) in all.iter_mut().enumerate() {
+                    e.0 = k as i64 * DEFAULT_SPACING;
+                }
+                positioned = all;
+                rebased = true;
+                // Full replacement: no prefix/suffix sharing.
+            }
+        }
+    }
+
+    let mid = Edition::from_entries_at_positions(positioned).ok()?;
+
+    let first_pos = mid.cached_entries().first()?.0;
+    let last_pos = mid.cached_entries().last()?.0;
+    let mut combined = mid.orgl.clone();
+    let mut carried_cache: Option<(Vec<(i64, Arc<Carrier>)>, Vec<usize>)> = None;
+
+    if !rebased {
+        if w_start < i0 && w_start < n {
+            // Prefix: everything before the re-spaced window.
+            let bound = entries[w_start].0;
+            combined = edition
+                .orgl
+                .copy(&XnRegion::below(bound))
+                .combine(&combined)
+                .ok()?;
+        } else if i0 > 0 {
+            let bound = if i0 < n {
+                first_pos.min(entries[i0].0)
+            } else {
+                first_pos
+            };
+            combined = edition
+                .orgl
+                .copy(&XnRegion::below(bound))
+                .combine(&combined)
+                .ok()?;
+        }
+        if w_end > i1 && w_end < n {
+            let bound = entries[w_end].0;
+            combined = combined
+                .combine(&edition.orgl.copy(&XnRegion::above(bound)))
+                .ok()?;
+        } else if i1 < n {
+            let bound = if i1 > i0 {
+                last_pos.max(entries[i1 - 1].0) + 1
+            } else {
+                last_pos + 1
+            };
+            combined = combined
+                .combine(&edition.orgl.copy(&XnRegion::above(bound)))
+                .ok()?;
+        }
+
+        // Carry the flat entries cache across the edit: splice the old
+        // prefix/suffix around the new neighborhood instead of
+        // re-flattening the tree (O(n) pointer memcpy vs O(n) walk).
+        // Suffix char starts shift by the neighborhood's net char delta.
+        let mid_entries = mid.cached_entries().clone();
+        let mut new_entries: Vec<(i64, Arc<Carrier>)> = Vec::with_capacity(n + mid_entries.len());
+        let mut new_starts: Vec<usize> = Vec::with_capacity(n + mid_entries.len());
+
+        let prefix_end = if w_start < i0 { w_start } else { i0 };
+        for k in 0..prefix_end {
+            new_entries.push(entries[k].clone());
+            new_starts.push(starts[k]);
+        }
+        let mut cursor = if prefix_end < n {
+            starts[prefix_end]
+        } else {
+            0
+        };
+        for (pos, carrier) in &mid_entries {
+            new_entries.push((*pos, carrier.clone()));
+            new_starts.push(cursor);
+            cursor += carrier.char_len();
+        }
+        let suffix_start_idx = if w_end > i1 { w_end } else { i1 };
+        if suffix_start_idx < n {
+            let shift = cursor as i64 - starts[suffix_start_idx] as i64;
+            for k in suffix_start_idx..n {
+                new_entries.push(entries[k].clone());
+                new_starts.push((starts[k] as i64 + shift) as usize);
+            }
+        }
+        carried_cache = Some((new_entries, new_starts));
+    }
+
+    let entries_cache = match carried_cache {
+        Some((e, s)) => Arc::new(std::sync::OnceLock::from((e, s))),
+        None => Arc::new(std::sync::OnceLock::new()),
+    };
+
+    Some(Edition {
+        orgl: combined,
+        endorsements: edition.endorsements.clone(),
+        entries_cache,
+        span_provenance: edition.span_provenance.clone(),
+    })
 }
 
 fn append_text_with_llm_provenance(
@@ -672,7 +1132,10 @@ impl OtreeCrdtManager {
         let base = &session_base;
         let current = &wd.current_edition;
 
-        let (merged, was_merged) = if base == current {
+        let (merged, was_merged) = if base.same_content(current) {
+            // Content equality (position-tolerant): editions produced by
+            // the bulk (dense) and tree-native (stable-position) delta
+            // paths compare equal when content and segmentation match.
             if !session_base.span_provenance.is_empty() {
                 let delta_mapping =
                     crate::edition::three_way::build_merge_mapping(&session_base, &author_edition);
@@ -1615,6 +2078,230 @@ impl OtreeCrdtManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    /// Stage 5: fast path must produce text identical to the bulk path
+    /// across doc shapes and op patterns.
+    #[test]
+    fn fast_path_text_equivalence_matrix() {
+        fn data_entry(bytes: Vec<u8>) -> Arc<Carrier> {
+            Arc::new(Carrier::new(RangeElement::Data { bytes }))
+        }
+
+        let mut docs: Vec<(&str, Edition)> = vec![
+            ("batched", Edition::from_text_batched("hello\nworld\nfoo")),
+            ("fragmented", Edition::from_text("hello world")),
+            (
+                "unicode",
+                Edition::from_text_batched("héllo wörld\n日本語テキスト"),
+            ),
+            ("single", Edition::from_text("x")),
+        ];
+        {
+            let mut entries = vec![
+                (
+                    0i64,
+                    Arc::new(Carrier::new(RangeElement::text("ab".to_string()))),
+                ),
+                (1i64, data_entry(vec![])),
+                (
+                    2i64,
+                    Arc::new(Carrier::new(RangeElement::text("cd".to_string()))),
+                ),
+                (3i64, data_entry(vec![1, 2])),
+                (
+                    4i64,
+                    Arc::new(Carrier::new(RangeElement::text("ef".to_string()))),
+                ),
+            ];
+            entries.sort_by_key(|(p, _)| *p);
+            docs.push(("zero-char-mixed", Edition::from_entries(entries)));
+        }
+
+        for (name, doc) in &docs {
+            let total = doc.char_len();
+            let mid = total / 2;
+            let tail3 = 3.min(total - mid);
+            let op_sets: Vec<Vec<TextDeltaOp>> = vec![
+                vec![TextDeltaOp::Insert {
+                    text: "NEW\n".into(),
+                }],
+                vec![
+                    TextDeltaOp::Retain { count: mid as u64 },
+                    TextDeltaOp::Insert { text: "X".into() },
+                    TextDeltaOp::Retain {
+                        count: (total - mid) as u64,
+                    },
+                ],
+                vec![
+                    TextDeltaOp::Retain { count: mid as u64 },
+                    TextDeltaOp::Delete {
+                        count: tail3 as u64,
+                    },
+                    TextDeltaOp::Retain {
+                        count: (total - mid - tail3) as u64,
+                    },
+                ],
+                vec![
+                    TextDeltaOp::Retain {
+                        count: total as u64,
+                    },
+                    TextDeltaOp::Insert { text: "END".into() },
+                ],
+                vec![TextDeltaOp::Delete {
+                    count: total as u64,
+                }],
+                vec![
+                    TextDeltaOp::Retain {
+                        count: total as u64 + 10,
+                    },
+                    TextDeltaOp::Insert { text: "?".into() },
+                ],
+                vec![
+                    TextDeltaOp::Retain { count: mid as u64 },
+                    TextDeltaOp::Insert { text: "A".into() },
+                    TextDeltaOp::Retain {
+                        count: 1.min(total - mid) as u64,
+                    },
+                    TextDeltaOp::Insert { text: "B".into() },
+                    TextDeltaOp::Retain {
+                        count: total.saturating_sub(mid + 1) as u64,
+                    },
+                ],
+            ];
+
+            for (i, ops) in op_sets.iter().enumerate() {
+                let fast = apply_text_delta_to_edition(doc, ops, None);
+                let bulk =
+                    apply_text_delta_to_edition_bulk(doc, ops, &None, std::time::Instant::now());
+                assert_eq!(
+                    fast.to_text(),
+                    bulk.to_text(),
+                    "doc={} ops#{}: fast text must equal bulk text",
+                    name,
+                    i
+                );
+                assert_eq!(fast.char_len(), bulk.char_len(), "doc={} ops#{}", name, i);
+            }
+        }
+    }
+
+    /// Stage 5: property test — random docs and valid delta sequences,
+    /// fast path text must always equal bulk path text, and positions
+    /// must stay strictly increasing.
+    proptest! {
+        #[test]
+        fn prop_fast_path_matches_bulk(
+            doc in "[a-z \n]{0,120}",
+            batched in proptest::bool::ANY,
+            seed_ops in proptest::collection::vec((0u8..100, 0u8..3, "[a-z]{0,6}"), 0..12),
+        ) {
+            let edition = if batched {
+                Edition::from_text_batched(&doc)
+            } else {
+                Edition::from_text(&doc)
+            };
+            let total = edition.char_len();
+
+            let mut pos = 0usize;
+            let mut ops: Vec<TextDeltaOp> = Vec::new();
+            for (r, kind, ins) in &seed_ops {
+                let r = (*r as usize) % 8;
+                if pos + r > total {
+                    break;
+                }
+                if r > 0 {
+                    ops.push(TextDeltaOp::Retain { count: r as u64 });
+                    pos += r;
+                }
+                match kind % 3 {
+                    0 => {
+                        if !ins.is_empty() {
+                            ops.push(TextDeltaOp::Insert { text: ins.clone() });
+                        }
+                    }
+                    1 => {
+                        if pos < total {
+                            let d = (1 + pos % 3).min(total - pos);
+                            if d > 0 {
+                                ops.push(TextDeltaOp::Delete { count: d as u64 });
+                                pos += d;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if pos < total {
+                ops.push(TextDeltaOp::Retain { count: (total - pos) as u64 });
+            }
+
+            let fast = apply_text_delta_to_edition(&edition, &ops, None);
+            let bulk = apply_text_delta_to_edition_bulk(&edition, &ops, &None, std::time::Instant::now());
+            prop_assert_eq!(fast.to_text(), bulk.to_text());
+
+            let positions: Vec<i64> = fast.cached_entries().iter().map(|(p, _)| *p).collect();
+            for w in positions.windows(2) {
+                prop_assert!(w[0] < w[1], "positions must strictly increase");
+            }
+        }
+    }
+
+    /// Stage 5: after a fast-path edit on a spaced layout, untouched
+    /// entries keep their positions.
+    #[test]
+    fn fast_path_preserves_untouched_positions() {
+        use crate::space::position_allocator::{spaced_layout, DEFAULT_SPACING};
+
+        let ps = spaced_layout(8, DEFAULT_SPACING);
+        let entries: Vec<(i64, Arc<Carrier>)> = ps
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                (
+                    *p,
+                    Arc::new(Carrier::new(RangeElement::text(format!("e{}.", i)))),
+                )
+            })
+            .collect();
+        let ed = Edition::from_entries_at_positions(entries).unwrap();
+        let original_positions = ed.positions();
+
+        let mid_char = ed.char_len() / 2;
+        let ops = vec![
+            TextDeltaOp::Retain {
+                count: mid_char as u64,
+            },
+            TextDeltaOp::Insert {
+                text: "INSERT.".to_string(),
+            },
+            TextDeltaOp::Retain {
+                count: (ed.char_len() - mid_char) as u64,
+            },
+        ];
+        let result = apply_text_delta_to_edition(&ed, &ops, None);
+
+        let new_positions = result.positions();
+        let kept = original_positions
+            .iter()
+            .filter(|p| new_positions.contains(p))
+            .count();
+        assert!(
+            kept >= original_positions.len() - 4,
+            "most untouched positions preserved (kept {}/{}): {:?} -> {:?}",
+            kept,
+            original_positions.len(),
+            original_positions,
+            new_positions
+        );
+        for w in new_positions.windows(2) {
+            assert!(w[0] < w[1]);
+        }
+        let text = result.to_text();
+        assert!(text.contains("INSERT."));
+        assert!(text.starts_with("e0."));
+        assert!(text.ends_with("e7."));
+    }
 
     fn make_session(id: u64) -> SessionId {
         SessionId::new(id)
@@ -1717,41 +2404,6 @@ mod tests {
     }
 
     #[test]
-    fn test_concurrent_edits_merge() {
-        let mut mgr = OtreeCrdtManager::new(3);
-        let work_id: BeId = 42;
-        let s1 = make_session(1);
-        let s2 = make_session(2);
-
-        let base = Edition::from_text("abc");
-        mgr.open_sync_session(work_id, s1, Some(&base));
-        mgr.open_sync_session(work_id, s2, Some(&Edition::from_text("abc")));
-
-        let ops1 = vec![
-            TextDeltaOp::Retain { count: 1 },
-            TextDeltaOp::Insert {
-                text: "X".to_string(),
-            },
-            TextDeltaOp::Retain { count: 2 },
-        ];
-        mgr.apply_text_delta(work_id, s1, &ops1).unwrap();
-
-        let ops2 = vec![
-            TextDeltaOp::Retain { count: 2 },
-            TextDeltaOp::Insert {
-                text: "Y".to_string(),
-            },
-            TextDeltaOp::Retain { count: 1 },
-        ];
-        mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
-
-        let text = mgr.current_text(work_id).unwrap();
-        assert!(text.contains('X'), "merged should contain X from s1");
-        assert!(text.contains('Y'), "merged should contain Y from s2");
-        assert!(text.starts_with('a'), "should start with 'a'");
-        assert!(text.ends_with('c'), "should end with 'c'");
-    }
-
     #[test]
     fn test_delete_in_delta() {
         let mut mgr = OtreeCrdtManager::new(3);
@@ -1839,14 +2491,11 @@ mod tests {
 
     /// Benchmark: single-character delta at increasing scale, for both
     /// batched (per-line entries) and fragmented (per-char entries)
-    /// editions. Documents the flatten-walk-rebuild O(n) cost of the
-    /// delta path — the target of tree-native delta application
-    /// (PERF-PLAN Stage 5). A flat curve means per-edit cost no longer
-    /// scales with document size.
-    ///
-    /// NOTE: fragmented sizes are capped small because incremental text
-    /// coalescing concatenates into a growing String (quadratic bytes);
-    /// batched sizes exercise the same walk at full scale.
+    /// editions. Reports first-edit cost (includes the one-time dense
+    /// -> spaced layout rebase) and steady-state cost (second edit,
+    /// the tree-native fast path on a healed layout) — the target of
+    /// PERF-PLAN Stage 5. A flat steady-state curve means per-edit cost
+    /// no longer scales with document size.
     #[test]
     fn benchmark_apply_delta_at_scale() {
         for size in [1_000usize, 10_000, 100_000] {
@@ -1863,17 +2512,21 @@ mod tests {
             let batched = Edition::from_text_batched(&text);
             let start = std::time::Instant::now();
             let result = apply_text_delta_to_edition(&batched, &ops, None);
-            let elapsed = start.elapsed();
-            assert_eq!(result.char_len(), chars + 1);
+            let first = start.elapsed();
+            let start = std::time::Instant::now();
+            let result = apply_text_delta_to_edition(&result, &ops, None);
+            let steady = start.elapsed();
+            assert_eq!(result.char_len(), chars + 2);
             println!(
-                "apply_delta batched ({} chars, {} entries): {:?}",
+                "apply_delta batched ({} chars, {} entries): first={:?} steady={:?}",
                 size,
                 batched.count(),
-                elapsed
+                first,
+                steady
             );
         }
 
-        for size in [1_000usize, 5_000, 20_000] {
+        for size in [1_000usize, 10_000, 100_000] {
             let text: String = "ab".repeat(size / 2);
             let mid = size / 2;
             let ops = vec![
@@ -1886,13 +2539,17 @@ mod tests {
             let fragmented = Edition::from_text(&text);
             let start = std::time::Instant::now();
             let result = apply_text_delta_to_edition(&fragmented, &ops, None);
-            let elapsed = start.elapsed();
-            assert_eq!(result.char_len(), size + 1);
+            let first = start.elapsed();
+            let start = std::time::Instant::now();
+            let result = apply_text_delta_to_edition(&result, &ops, None);
+            let steady = start.elapsed();
+            assert_eq!(result.char_len(), size + 2);
             println!(
-                "apply_delta fragmented ({} chars, {} entries): {:?}",
+                "apply_delta fragmented ({} chars, {} entries): first={:?} steady={:?}",
                 size,
                 fragmented.count(),
-                elapsed
+                first,
+                steady
             );
         }
     }

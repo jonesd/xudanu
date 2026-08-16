@@ -681,11 +681,19 @@ fn handle_trailing_a(
             i += 1;
         }
         let after_base = if start > 0 {
-            if let Some(pos) = find_base_pos_for_a(segments, a_e[start - 1].0) {
-                pos + 1
-            } else {
-                0
+            // Anchor to the nearest preceding entry found in an
+            // Unchanged run. The immediate predecessor may be missing
+            // from Unchanged (matched in only one side); the historical
+            // fallback of 0 misplaced such inserts (visible with
+            // non-dense position layouts).
+            let mut found = None;
+            for k in (0..start).rev() {
+                if let Some(pos) = find_base_pos_for_a(segments, a_e[k].0) {
+                    found = Some(pos + 1);
+                    break;
+                }
             }
+            found.unwrap_or(0)
         } else {
             -1
         };
@@ -714,11 +722,14 @@ fn handle_trailing_b(
             i += 1;
         }
         let after_base = if start > 0 {
-            if let Some(pos) = find_base_pos_for_b(segments, b_e[start - 1].0) {
-                pos + 1
-            } else {
-                0
+            let mut found = None;
+            for k in (0..start).rev() {
+                if let Some(pos) = find_base_pos_for_b(segments, b_e[k].0) {
+                    found = Some(pos + 1);
+                    break;
+                }
             }
+            found.unwrap_or(0)
         } else {
             -1
         };
@@ -1004,7 +1015,12 @@ fn assemble_merge_lww(
             AssemblyPiece::Conflict { a_span, b_span, .. } => {
                 let a_entries = collect_range(a.cached_entries(), a_span.0, a_span.1);
                 let b_entries = collect_range(b.cached_entries(), b_span.0, b_span.1);
-                // Prefer the side that has more entries with provenance — preserves attribution
+                // Both sides of a conflict survive: emit the side with
+                // more provenance first (attribution preference), then
+                // the other. Pick-one silently dropped concurrent edits
+                // whenever alignment granularity improved (Stage 5 made
+                // this visible: per-entry conflicts instead of the
+                // degenerate whole-document OnlyA/OnlyB concatenation).
                 let a_prov_count = a_entries
                     .iter()
                     .filter(|(_, c)| c.provenance.is_some())
@@ -1013,67 +1029,68 @@ fn assemble_merge_lww(
                     .iter()
                     .filter(|(_, c)| c.provenance.is_some())
                     .count();
-                let (source, from_a) = if a_prov_count >= b_prov_count {
-                    (a_entries, true)
+                let (first, second) = if a_prov_count >= b_prov_count {
+                    (a_entries.clone(), b_entries.clone())
                 } else {
-                    (b_entries, false)
+                    (b_entries.clone(), a_entries.clone())
                 };
-                let merged_start = next_pos;
-                for (src_pos, carrier) in &source {
-                    let m_pos = next_pos;
-                    merged_entries.push((m_pos, carrier.clone()));
-                    next_pos += 1;
-                    if from_a {
-                        a_sub.push(Mapping::restricted(
-                            m_pos - src_pos,
-                            XnRegion::singleton(*src_pos),
-                        ));
-                    } else {
-                        b_sub.push(Mapping::restricted(
-                            m_pos - src_pos,
-                            XnRegion::singleton(*src_pos),
-                        ));
-                    }
-                }
-                let other = if from_a {
-                    collect_range(b.cached_entries(), b_span.0, b_span.1)
-                } else {
-                    collect_range(a.cached_entries(), a_span.0, a_span.1)
-                };
-                let mut m_pos = merged_start;
-                for (src_pos, _) in &other {
-                    if from_a {
-                        b_sub.push(Mapping::restricted(
-                            m_pos - src_pos,
-                            XnRegion::singleton(*src_pos),
-                        ));
-                    } else {
-                        a_sub.push(Mapping::restricted(
-                            m_pos - src_pos,
-                            XnRegion::singleton(*src_pos),
-                        ));
-                    }
-                    m_pos += 1;
-                }
 
-                let source_fps: std::collections::HashSet<[u8; 32]> = source
-                    .iter()
-                    .map(|(_, c)| c.element.content_fingerprint())
-                    .collect();
-                for (src_pos, carrier) in &other {
-                    if !matches!(carrier.element, RangeElement::Text { .. }) {
-                        let fp = carrier.element.content_fingerprint();
-                        if !source_fps.contains(&fp) {
+                let identical = a_entries.len() == b_entries.len()
+                    && a_entries.iter().zip(b_entries.iter()).all(|(x, y)| {
+                        x.1.element.content_fingerprint() == y.1.element.content_fingerprint()
+                    });
+
+                if identical {
+                    // Both sides made the same change: emit once, map
+                    // both sides to the same merged positions.
+                    let (first_from_a, ref_iter): (bool, _) = if a_prov_count >= b_prov_count {
+                        (true, &a_entries)
+                    } else {
+                        (false, &b_entries)
+                    };
+                    let other = if first_from_a { &b_entries } else { &a_entries };
+                    for ((src_pos, carrier), (other_pos, _)) in ref_iter.iter().zip(other.iter()) {
+                        let m_pos = next_pos;
+                        merged_entries.push((m_pos, carrier.clone()));
+                        next_pos += 1;
+                        if first_from_a {
+                            a_sub.push(Mapping::restricted(
+                                m_pos - src_pos,
+                                XnRegion::singleton(*src_pos),
+                            ));
+                            b_sub.push(Mapping::restricted(
+                                m_pos - other_pos,
+                                XnRegion::singleton(*other_pos),
+                            ));
+                        } else {
+                            b_sub.push(Mapping::restricted(
+                                m_pos - src_pos,
+                                XnRegion::singleton(*src_pos),
+                            ));
+                            a_sub.push(Mapping::restricted(
+                                m_pos - other_pos,
+                                XnRegion::singleton(*other_pos),
+                            ));
+                        }
+                    }
+                } else {
+                    for (is_first_side, entries) in [(true, &first), (false, &second)] {
+                        let from_a = if a_prov_count >= b_prov_count {
+                            is_first_side
+                        } else {
+                            !is_first_side
+                        };
+                        for (src_pos, carrier) in entries {
                             let m_pos = next_pos;
                             merged_entries.push((m_pos, carrier.clone()));
                             next_pos += 1;
                             if from_a {
-                                b_sub.push(Mapping::restricted(
+                                a_sub.push(Mapping::restricted(
                                     m_pos - src_pos,
                                     XnRegion::singleton(*src_pos),
                                 ));
                             } else {
-                                a_sub.push(Mapping::restricted(
+                                b_sub.push(Mapping::restricted(
                                     m_pos - src_pos,
                                     XnRegion::singleton(*src_pos),
                                 ));

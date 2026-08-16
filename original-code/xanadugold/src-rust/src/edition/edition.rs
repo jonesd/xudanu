@@ -15,12 +15,18 @@ use super::shared_mapping::{
 };
 use super::xn_region::XnRegion;
 
+/// Lazily-built flat view of an edition: sorted entries plus the
+/// cumulative char-start of each entry (parallel arrays). Char starts
+/// enable binary-search char -> entry mapping for the tree-native
+/// delta path (PERF-PLAN Stage 5).
+pub(crate) type EntriesCache = (Vec<(i64, Arc<Carrier>)>, Vec<usize>);
+
 #[derive(Debug, Clone)]
 pub struct Edition {
     pub(crate) orgl: OrglRoot,
     pub(crate) endorsements: EndorsementSet,
     #[allow(dead_code)]
-    pub(crate) entries_cache: Arc<OnceLock<Vec<(i64, Arc<Carrier>)>>>,
+    pub(crate) entries_cache: Arc<OnceLock<EntriesCache>>,
     pub(crate) span_provenance: Vec<SpanProvenance>,
 }
 
@@ -114,7 +120,56 @@ impl PartialEq for Edition {
 }
 impl Edition {
     pub fn cached_entries(&self) -> &Vec<(i64, Arc<Carrier>)> {
-        self.entries_cache.get_or_init(|| self.orgl.all_entries())
+        &self
+            .entries_cache
+            .get_or_init(|| {
+                let entries = self.orgl.all_entries();
+                let mut starts = Vec::with_capacity(entries.len());
+                let mut cum = 0usize;
+                for (_, carrier) in &entries {
+                    starts.push(cum);
+                    cum += carrier.char_len();
+                }
+                (entries, starts)
+            })
+            .0
+    }
+
+    /// Cumulative char start of each cached entry (parallel to
+    /// `cached_entries`). Built once per edition.
+    pub fn cached_char_starts(&self) -> &[usize] {
+        &self
+            .entries_cache
+            .get_or_init(|| {
+                let entries = self.orgl.all_entries();
+                let mut starts = Vec::with_capacity(entries.len());
+                let mut cum = 0usize;
+                for (_, carrier) in &entries {
+                    starts.push(cum);
+                    cum += carrier.char_len();
+                }
+                (entries, starts)
+            })
+            .1
+    }
+
+    /// Content equality ignoring entry positions: same number of
+    /// entries and same text per entry. A position-tolerant superset of
+    /// `PartialEq` — editions produced by the bulk (dense renumbering)
+    /// and tree-native (stable position) delta paths compare equal when
+    /// their content and segmentation match.
+    pub fn same_content(&self, other: &Edition) -> bool {
+        if self.orgl.count() != other.orgl.count() {
+            return false;
+        }
+        let a = self.cached_entries();
+        let b = other.cached_entries();
+        if a.len() != b.len() {
+            return false;
+        }
+        a.iter()
+            .zip(b.iter())
+            .all(|(x, y)| x.1.element.as_text() == y.1.element.as_text())
     }
 
     pub fn empty() -> Self {
