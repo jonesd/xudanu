@@ -4,6 +4,24 @@ Branch: `perf/gold-enfilade-pipeline`
 Created: 2026-08-16
 Companion doc: `FR-34-enfilade-native.md`
 
+## Stage status
+
+| Stage | Status | Commit | Measured result |
+|---|---|---|---|
+| S0 Instrumentation | **Done** | `0f79c8b` | baselines captured |
+| S1 Non-blocking checkpoint | **Done** | `8135474` | sliced prepare; dispatch interleaves |
+| S2 Incremental crums | **Done** | `f71e98a` | `with()` 363ms -> 9ms @100k; stress test unblocked |
+| S6 Linear merge mapping | **Done** | `29e7743` | 6.4s -> ~100ms @9k (87x) |
+| S3 Splay activation | Pending | | measurement-gated |
+| S4 Stable positions | Pending | | Phase I enabler |
+| S5 Tree-native delta | Pending | | depends on S2+S4 |
+| S7 Structural merge | Pending | | depends on S2+S4 |
+| S8 Documentation | **Done** | this commit | FR-34 updated; #90 closed |
+
+Investigation addendum (S6): the dominant per-edit cost was not the
+combine fold but the fingerprint matcher rescanning used positions on
+duplicate-heavy text. Fixed with provably-equivalent per-key cursors.
+
 ## Goal
 
 Close the remaining performance gap to the original Gold enfilade design,

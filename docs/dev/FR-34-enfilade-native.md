@@ -53,8 +53,12 @@ provenance, federation, web platform).
 | Provenance | Span migration, non-text preservation | Attribution survives merges |
 | Blob hash | u64 -> String migration | JS precision fix |
 | Property tests | 17 properties x 256 cases | Correctness verification |
+| PERF-PLAN S0 | Instrumentation + benchmark harness | Measured baselines (`0f79c8b`) |
+| PERF-PLAN S1 | Sliced non-blocking checkpoint (#90) | Dispatch no longer stalls in prepare (`8135474`) |
+| PERF-PLAN S2 | Per-node crum/domain caches (Gold OCs) | `with()` flat: 363ms -> 9ms @100k (`f71e98a`) |
+| PERF-PLAN S6 | Linear merge mapping (cursors + from_parts) | 87x @9k entries (`29e7743`) |
 
-### Test counts: 2998 Rust lib + 280 integration + 696 frontend + 8 E2E = 3982
+### Test counts: ~3115 Rust lib (incl. 4 perf benchmarks + cache-equivalence property tests) + 282 integration + frontend/E2E unchanged
 
 ### Performance comparison (measured)
 
@@ -69,13 +73,16 @@ provenance, federation, web platform).
 | Transclusion migration | Drops metadata | **Preserves metadata** | N/A (single-user) | 12 edge case tests |
 | Bloom filter check | N/A | O(k) per item (k=7) | N/A | 33 bloom tests |
 | Bloom filter exchange | N/A | O(n_bits/8) bytes | N/A | 3-node Docker test |
+| Tree op (with) | O(n) eager rehash | **O(log n)** — 9ms @100k (was 363ms) | O(log n) | `benchmark_tree_op_on_large_editions` |
+| Merge mapping build | O(n^2) rescan + refold | **O(n log n)** — 74-109ms @9k (was 6.4s) | N/A | `benchmark_build_merge_mapping_scale` |
+| Checkpoint prepare | full lock hold | sliced lock bursts, dispatch interleaves | N/A | `sliced_checkpoint_*` tests |
 
 ### Enfilade feature activation
 
 | Capability | Status | Gold equivalent |
 |---|---|---|
 | Crums on OrglRoot | **Active** (cached, O(1)) | OCs (original crums) |
-| Crums on Loaf nodes | Available via compute_crum() | OCs on every node |
+| Crums on Loaf nodes | **Active** — per-node caches + per-entry fingerprints, incrementally maintained (S2) | OCs on every node |
 | with/without | Available | Primary edit path |
 | copy | Available | Transclusion extraction |
 | combine | Available (disjoint only) | Compound assembly |
@@ -197,6 +204,15 @@ reference source works by ID + char range. No structural composition.
 **Depends on**: Phase F (tumbler layer)
 
 ### Phase I: O(log n) Delta Application
+
+> **Status (2026-08-16): NOT implemented.** The delta path remains
+> flatten-walk-rebuild in `apply_text_delta_to_edition`. Prerequisite
+> work has landed: tree ops are now O(log n) with incrementally
+> maintained crums (PERF-PLAN S2), and the per-edit merge-mapping cost
+> is linear (S6). The remaining blocker is unchanged: contiguous i64
+> positions force renumbering after every insert, capping tree-native
+> edits at O(n). See PERF-PLAN Stage 4 (gap-based stable positions) —
+> Phase I (Stage 5) depends on it.
 
 **Goal**: Replace flatten-walk-rebuild with direct tree operations.
 
@@ -337,3 +353,8 @@ This is the foundation that unlocks everything else:
 | 2025-08-11 | `b6bac71` | fix | Attribution spans use provenance display name |
 | 2025-08-11 | `9163469` | fix | Backlink notification non-blocking |
 | 2025-08-11 | `04b4ae8` | fix | Blob hash u64->String migration |
+| 2026-08-16 | `bf67abc` | docs | PERF-PLAN: staged Gold-performance pipeline |
+| 2026-08-16 | `0f79c8b` | S0 | Instrumentation + benchmark harness (measured baselines) |
+| 2026-08-16 | `8135474` | S1 | Sliced non-blocking checkpoint prepare (#90) |
+| 2026-08-16 | `f71e98a` | S2 | Per-node crum/domain caches; MAX_LEAF_SIZE 16384->1024 |
+| 2026-08-16 | `29e7743` | S6 | Linear merge mapping (cursor match + from_parts) |
