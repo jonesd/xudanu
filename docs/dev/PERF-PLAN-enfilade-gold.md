@@ -19,9 +19,25 @@ Companion doc: `FR-34-enfilade-native.md`
 | S8 Documentation (final) | **Done** | `201ffd6` | numbers above |
 | S3 Splay activation | **Done — not justified** | `cb3bdb7` | honest measurement: no win (assembly already localizes); caught + fixed a latent splay content-loss bug |
 | S7 Linear merge | **Done** | `7ef0707` | both-sides merge 207s -> 3.87s @100k (53x): patience alignment, set-based claiming, lockstep assembly |
-| Gold comparison | **Done** | this commit | `GOLD-VS-XUDANU.md` |
+| Gold comparison | **Done** | `28f076b` | `GOLD-VS-XUDANU.md` |
 
 **Pipeline complete.** All stages landed or honestly closed.
+
+## Post-pipeline features (Gold-lineage FRs)
+
+| Feature | Phase | Commit | Notes |
+|---|---|---|---|
+| FR-38 LicenseClass groundwork | P1 | `74e7e0a` | bits + ground-truth span query |
+| FR-37 Generation-checked caches | P2 | `b16a4eb` | no staleness window; work_revise dependent-migration gap fixed |
+| FR-38 License overlay | P2 | `95d4c03` | run-length ownership index; query-time license resolution; property-proven |
+| FR-38 Span badges + egress | P3 | `a304a5d` | attribution stamps span classes; public API answers may-transclude |
+| FR-37 Virtual elements | P3 core | `a304a5d` | spec-fingerprint determinism; edit-time revision pinning; pinned resolution never stales |
+
+FR-37 follow-ups: wire-payload registration for Virtual elements;
+Phase 4 virtual enfilades (derived documents as addressable editions —
+trails, search, backlink views). FR-38 follow-up: federation
+hard-block as an operator policy layer when per-span enforcement
+becomes a product requirement.
 
 Investigation addendum (S6): the dominant per-edit cost was not the
 combine fold but the fingerprint matcher rescanning used positions on

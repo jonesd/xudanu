@@ -194,20 +194,26 @@ instincts.
    could make spacing a storage invariant.
 2. **Release-build benchmarking** — all numbers above are debug-build;
    release profiles will shift constants (not classes).
-3. **Virtual structures / OExpandingLoaf** — planned as **FR-37**
-   (virtual enfilade resolution; Phase 1 groundwork landed). Gold's
-   computed-on-demand loaves are the endgame of Xudanu's
-   StructuralTransclusion.
-4. **License summary overlays (dual-use permission crums)** — planned
-   as **FR-38** (Phase 1 groundwork landed: `LicenseClass` bits +
-   ground-truth `span_license_classes` query). Gold's CanopyCrum
-   flag-widding, kept as a separate overlay so content crums stay pure.
+3. **Virtual structures / OExpandingLoaf** — **FR-37, in progress**:
+   Phase 1-2 landed (unified resolution + generation-checked caches —
+   no staleness window); Phase 3 core landed (`RangeElement::Virtual`
+   with spec-fingerprint determinism and edit-time revision pinning;
+   remaining: wire-payload registration); Phase 4 (virtual enfilades
+   for derived documents) pending.
+4. **License summary overlays (dual-use permission crums)** — **FR-38,
+   Phases 1-3 landed**: run-length ownership overlay (licenses resolve
+   at query time — re-licensing never rebuilds, an improvement on
+   Gold's baked-in flag bits), span-level badges at transclusion
+   attribution, egress badges on the public content API. Federation
+   hard-block deliberately left as operator policy.
 5. **CrossSpace/Sequence as storage** — `space/sequence.rs` (1248
    lines) and `space/cross.rs` remain dormant as anything but naming;
    activating them is the Phase H compound-document path (overlaps
-   FR-26 Phase 4 spanfilade).
+   FR-26 Phase 4 spanfilade; FR-37 Phase 4 is the on-ramp).
 6. **Tumbler-addressed federation at scale** — cross-server tumblers
    exist; routing and caching across servers is future work (FR-6+).
+   The public content API now carries span license classes (FR-38
+   P3), so peers can compliance-check without provencence round trips.
 7. **Pre-existing infra debt** (from before the pipeline): 10
    integration-test failures and a broken default-features build,
    both root-chunk-migration fallout; tracked on the branch.
