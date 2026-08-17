@@ -3476,6 +3476,12 @@ pub struct RangeElementPayload {
     pub transclusion_start: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transclusion_end: Option<usize>,
+    // Virtual elements (FR-37 Phase 3): spec fields. `virtual_revision`
+    // is REQUIRED — unpinned virtuals are invalid on the wire.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub virtual_source: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub virtual_revision: Option<u64>,
 }
 
 impl RangeElementPayload {
@@ -3518,6 +3524,30 @@ impl RangeElementPayload {
                     None
                 }
             }
+            "virtual" => {
+                // FR-37 Phase 3: virtual elements cross the wire with
+                // their PINNED spec. Revision is mandatory — unpinned
+                // virtuals would break replica determinism.
+                if let (Some(src), Some(start), Some(end), Some(rev)) = (
+                    self.virtual_source,
+                    self.transclusion_start,
+                    self.transclusion_end,
+                    self.virtual_revision,
+                ) {
+                    Some(crate::edition::RangeElement::virtual_element(
+                        crate::edition::range_element::VirtualSpec {
+                            source_work_id: src,
+                            char_start: start,
+                            char_end: end,
+                            revision: rev,
+                            placed_at: 0,
+                            placed_by: None,
+                        },
+                    ))
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -3540,6 +3570,8 @@ impl RangeElementPayload {
                 transclusion_source: None,
                 transclusion_start: None,
                 transclusion_end: None,
+                virtual_source: None,
+                virtual_revision: None,
             },
             crate::edition::RangeElement::Label { label_id, inner } => RangeElementPayload {
                 elem_type: "label".to_string(),
@@ -3557,6 +3589,8 @@ impl RangeElementPayload {
                 transclusion_source: None,
                 transclusion_start: None,
                 transclusion_end: None,
+                virtual_source: None,
+                virtual_revision: None,
             },
             crate::edition::RangeElement::Work { work_id } => RangeElementPayload {
                 elem_type: "work".to_string(),
@@ -3574,6 +3608,8 @@ impl RangeElementPayload {
                 transclusion_source: None,
                 transclusion_start: None,
                 transclusion_end: None,
+                virtual_source: None,
+                virtual_revision: None,
             },
             crate::edition::RangeElement::Edition { edition_id } => RangeElementPayload {
                 elem_type: "edition".to_string(),
@@ -3591,6 +3627,8 @@ impl RangeElementPayload {
                 transclusion_source: None,
                 transclusion_start: None,
                 transclusion_end: None,
+                virtual_source: None,
+                virtual_revision: None,
             },
             crate::edition::RangeElement::IDHolder { id } => RangeElementPayload {
                 elem_type: "id_holder".to_string(),
@@ -3608,6 +3646,8 @@ impl RangeElementPayload {
                 transclusion_source: None,
                 transclusion_start: None,
                 transclusion_end: None,
+                virtual_source: None,
+                virtual_revision: None,
             },
             crate::edition::RangeElement::Blob {
                 content_hash,
@@ -3632,6 +3672,8 @@ impl RangeElementPayload {
                 transclusion_source: None,
                 transclusion_start: None,
                 transclusion_end: None,
+                virtual_source: None,
+                virtual_revision: None,
             },
             crate::edition::RangeElement::Transclusion {
                 source_work_id,
@@ -3654,6 +3696,27 @@ impl RangeElementPayload {
                 transclusion_source: Some(*source_work_id),
                 transclusion_start: Some(*char_start),
                 transclusion_end: Some(*char_end),
+                virtual_source: None,
+                virtual_revision: None,
+            },
+            crate::edition::RangeElement::Virtual { spec, .. } => RangeElementPayload {
+                elem_type: "virtual".to_string(),
+                text: None,
+                label_id: None,
+                work_id: None,
+                edition_id: None,
+                id_holder: None,
+                blob_hash: None,
+                blob_mime: None,
+                blob_size: None,
+                blob_width: None,
+                blob_height: None,
+                blob_caption: None,
+                transclusion_source: None,
+                transclusion_start: Some(spec.char_start),
+                transclusion_end: Some(spec.char_end),
+                virtual_source: Some(spec.source_work_id),
+                virtual_revision: Some(spec.revision),
             },
             _ => RangeElementPayload {
                 elem_type: "other".to_string(),
@@ -3671,6 +3734,8 @@ impl RangeElementPayload {
                 transclusion_source: None,
                 transclusion_start: None,
                 transclusion_end: None,
+                virtual_source: None,
+                virtual_revision: None,
             },
         }
     }
@@ -4293,3 +4358,90 @@ impl std::fmt::Display for FrameParseError {
 }
 
 impl std::error::Error for FrameParseError {}
+
+#[cfg(test)]
+mod fr37_wire_tests {
+    use super::*;
+
+    #[test]
+    fn virtual_element_round_trip() {
+        use crate::edition::range_element::{RangeElement, VirtualSpec};
+        let spec = VirtualSpec {
+            source_work_id: 0xABCD,
+            char_start: 3,
+            char_end: 20,
+            revision: 12,
+            placed_at: 1234,
+            placed_by: Some(7),
+        };
+        let elem = RangeElement::virtual_element(spec);
+
+        // Encode -> decode: spec survives; placed_at/by are placement
+        // metadata and intentionally not transported (decode stamps
+        // neutral values — same convention as other payload types).
+        let payload = RangeElementPayload::from_range_element(&elem);
+        assert_eq!(payload.elem_type, "virtual");
+        assert_eq!(payload.virtual_source, Some(0xABCD));
+        assert_eq!(payload.virtual_revision, Some(12));
+        assert_eq!(payload.transclusion_start, Some(3));
+        assert_eq!(payload.transclusion_end, Some(20));
+
+        let decoded = payload.to_range_element().expect("virtual decodes");
+        let got = decoded.virtual_spec().expect("virtual spec");
+        assert_eq!(got.source_work_id, spec.source_work_id);
+        assert_eq!(got.char_start, spec.char_start);
+        assert_eq!(got.char_end, spec.char_end);
+        assert_eq!(got.revision, spec.revision, "pin survives the wire");
+
+        // Spec-fingerprint identical across the round trip (replica
+        // determinism through the protocol).
+        assert_eq!(decoded.content_fingerprint(), elem.content_fingerprint());
+    }
+
+    #[test]
+    fn virtual_without_revision_rejected() {
+        // Unpinned virtuals are invalid on the wire: without a pinned
+        // revision, resolution would diverge across replicas.
+        let payload = RangeElementPayload {
+            elem_type: "virtual".to_string(),
+            text: None,
+            label_id: None,
+            work_id: None,
+            edition_id: None,
+            id_holder: None,
+            blob_hash: None,
+            blob_mime: None,
+            blob_size: None,
+            blob_width: None,
+            blob_height: None,
+            blob_caption: None,
+            transclusion_source: None,
+            transclusion_start: Some(0),
+            transclusion_end: Some(5),
+            virtual_source: Some(42),
+            virtual_revision: None,
+        };
+        assert!(payload.to_range_element().is_none());
+    }
+
+    #[test]
+    fn virtual_survives_json_serialization() {
+        use crate::edition::range_element::{RangeElement, VirtualSpec};
+        let spec = VirtualSpec {
+            source_work_id: 9,
+            char_start: 0,
+            char_end: 4,
+            revision: 3,
+            placed_at: 0,
+            placed_by: None,
+        };
+        let elem = RangeElement::virtual_element(spec);
+        let payload = RangeElementPayload::from_range_element(&elem);
+        let json = serde_json::to_string(&payload).unwrap();
+        let back: RangeElementPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            back.to_range_element().unwrap().content_fingerprint(),
+            elem.content_fingerprint()
+        );
+    }
+}

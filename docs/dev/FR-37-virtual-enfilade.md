@@ -2,8 +2,7 @@
 
 > **Status:** Phases 1-2 landed; Phase 3 core landed (element,
 > pinning, determinism, placement/materialize APIs, read-flow
-> integration). Follow-ups: wire-payload registration for Virtual
-> elements (protocol.rs RangeElementPayload), Phase 4 virtual
+> integration, wire-payload registration). Follow-up: Phase 4 virtual
 > enfilades.
 > **Estimated effort:** 3-4 weeks (Phases 1-2), 2-3 months (full)
 > **Risk:** Medium-High — touches transclusion resolution and CRDT paths
@@ -107,10 +106,13 @@ work_text_fresh — one pass per element, ever, since pinned revisions
 are immutable); zero-char-until-materialized reader contract (same
 precedent as unstamped StructuralTransclusion). Tests: pin stability
 across source edits, survival through unrelated delta edits,
-fingerprint determinism. Remaining for full Phase 3: wire-payload
-registration (RangeElementPayload variant) so Virtual elements can
-arrive over the protocol; delta-path neighborhood materialization
-(bulk fallback covers it today).
+fingerprint determinism. Wire-payload registration landed:
+RangeElementPayload carries `virtual` elements with mandatory
+`virtual_revision` (unpinned virtuals are rejected on the wire —
+replica determinism enforced at decode); spec fingerprints survive
+the JSON round trip; placed_at/by stay placement-side metadata.
+Delta-path neighborhood materialization remains bulk-fallback
+(adequate today).
 
 - `RangeElement::Virtual { source: VirtualSpec, span_len }` where
   `VirtualSpec` names (source work, tumbler address, revision pin)
