@@ -1044,6 +1044,7 @@ fn hex_to_hash(hex: &str) -> Result<[u8; 32], RootChunkError> {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use std::path::PathBuf;
 

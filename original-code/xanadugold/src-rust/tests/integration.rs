@@ -9261,6 +9261,11 @@ fn concurrent_checkpoint_while_editing() {
 
 #[test]
 fn corrupt_chunk_detected_on_restore() {
+    // v1.5 root-chunk contract: corrupting the ROOT chunk itself (the
+    // one root_manifest.json names) must make restore fail loud.
+    // Corrupting arbitrary deep chunks may or may not be in the
+    // restore path — that case is covered by gc_aborts_on_corrupt_chunk's
+    // GC invariant; here we make the corruption deterministic.
     let dir = temp_chunk_data_dir("corrupt_chunk");
     std::fs::create_dir_all(&dir).unwrap();
 
@@ -9277,38 +9282,30 @@ fn corrupt_chunk_detected_on_restore() {
     srv.checkpoint_to_store().unwrap();
     drop(srv);
 
-    let chunks_dir = dir.join("chunks");
-    for entry in std::fs::read_dir(&chunks_dir).unwrap() {
-        let entry = entry.unwrap();
-        if entry.path().is_dir() {
-            for file_entry in std::fs::read_dir(entry.path()).unwrap() {
-                let file_entry = file_entry.unwrap();
-                let name = file_entry.file_name().to_string_lossy().to_string();
-                if !name.ends_with(".tmp") && !name.ends_with(".json") {
-                    let path = file_entry.path();
-                    let original = std::fs::read(&path).unwrap();
-                    if original.len() > 10 {
-                        let mut corrupted = original.clone();
-                        corrupted[5] = !corrupted[5];
-                        corrupted[6] = !corrupted[6];
-                        std::fs::write(&path, corrupted).unwrap();
-                        break;
-                    }
-                }
-            }
-        }
+    // Corrupt the root chunk named by root_manifest.json.
+    {
+        let rm_raw = std::fs::read_to_string(dir.join("root_manifest.json")).unwrap();
+        let rm: serde_json::Value = serde_json::from_str(&rm_raw).unwrap();
+        let hex = rm["current_root_hash"].as_str().unwrap().to_string();
+        let chunk_path = dir
+            .join("chunks")
+            .join(&hex[..2])
+            .join(format!("{}.xchunk", hex));
+        assert!(chunk_path.exists(), "root chunk file at {:?}", chunk_path);
+        let original = std::fs::read(&chunk_path).unwrap();
+        let mut corrupted = original.clone();
+        // Flip payload bytes (past the 1-byte format tag) — same
+        // corruption class as the original test.
+        corrupted[5] = !corrupted[5];
+        corrupted[6] = !corrupted[6];
+        std::fs::write(&chunk_path, corrupted).unwrap();
     }
 
     let mut srv2 = xudanu::server::Server::new();
     let result = srv2.restore_from_data_dir(&dir, None);
     assert!(
-        result.is_ok(),
-        "restore should succeed with partial recovery (skipping corrupt chunks): {:?}",
-        result.err()
-    );
-    assert!(
-        srv2.work(wid).is_err(),
-        "corrupt work should be skipped during restore"
+        result.is_err(),
+        "restore must fail loud when the root chunk is corrupt (no partial recovery)"
     );
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -9316,6 +9313,8 @@ fn corrupt_chunk_detected_on_restore() {
 
 #[test]
 fn missing_chunk_detected_on_restore() {
+    // v1.5 contract: chunks directory emptied -> root tree unreadable
+    // -> restore fails loud (no silent partial recovery).
     let dir = temp_chunk_data_dir("missing_chunk");
     std::fs::create_dir_all(&dir).unwrap();
 
@@ -9336,20 +9335,12 @@ fn missing_chunk_detected_on_restore() {
     let mut srv2 = xudanu::server::Server::new();
     let result = srv2.restore_from_data_dir(&dir, None);
     assert!(
-        result.is_ok(),
-        "restore should succeed with partial recovery (skipping missing chunks): {:?}",
-        result.err()
-    );
-    assert!(
-        srv2.work(wid).is_err(),
-        "work with missing chunk should be skipped during restore"
+        result.is_err(),
+        "restore must fail when the root tree's chunks are missing"
     );
 
     let _ = std::fs::remove_dir_all(&dir);
 }
-
-// Dirty-only checkpoint tests
-// ================================================================
 
 #[test]
 fn dirty_checkpoint_only_reserializes_changed_works() {
@@ -9759,6 +9750,11 @@ fn gc_removes_orphaned_chunks_after_work_changes() {
 
 #[test]
 fn gc_aborts_on_corrupt_chunk() {
+    // v1.5 contract (rewritten Aug 2026): restore FAILS LOUD on a
+    // corrupt chunk (no partial recovery). The GC-abort behavior the
+    // original test verified is exercised on a server restored BEFORE
+    // the corruption: GC must refuse to delete (return 0) when a
+    // referenced chunk no longer hashes correctly.
     let dir = temp_chunk_data_dir("gc_corrupt_abort");
     std::fs::create_dir_all(&dir).unwrap();
 
@@ -9779,10 +9775,11 @@ fn gc_aborts_on_corrupt_chunk() {
         !chunks_before.is_empty(),
         "should have chunks on disk after checkpoint"
     );
-
     drop(srv);
 
-    // Corrupt one chunk file on disk (simulates bit-rot)
+    // Restore FIRST (clean tree), then corrupt one chunk on disk.
+    let mut srv2 = server_restore_chunk_store(&dir);
+
     let corrupt_hash = chunks_before[0];
     {
         let hex: String = corrupt_hash.iter().map(|b| format!("{:02x}", b)).collect();
@@ -9798,9 +9795,6 @@ fn gc_aborts_on_corrupt_chunk() {
         std::fs::write(&chunk_path, b"CORRUPTED_DATA_THAT_WILL_NOT_HASH_MATCH").unwrap();
     }
 
-    // Restore: will skip the work whose chunk is corrupt
-    let mut srv2 = server_restore_chunk_store(&dir);
-
     // Clear cache so GC reads from disk where the corruption lives
     srv2.chunk_store().unwrap().clear_cache();
 
@@ -9811,7 +9805,6 @@ fn gc_aborts_on_corrupt_chunk() {
          not delete chunks blindly"
     );
 
-    // No chunks should have been deleted
     let chunks_after = srv2.chunk_store().unwrap().all_chunk_hashes().unwrap();
     assert_eq!(
         chunks_after.len(),
@@ -9819,11 +9812,27 @@ fn gc_aborts_on_corrupt_chunk() {
         "no chunks should be deleted when GC aborts due to corrupt chunk"
     );
 
+    // A FRESH restore of the corrupted directory either fails loud
+    // (critical chunk) or succeeds (chunks[0] outside the restore
+    // path) — it must never serve wrong content silently. The
+    // fail-loud contract for critical chunks is pinned by
+    // corrupt_chunk_detected_on_restore; here the GC-abort invariant
+    // above is the point.
+
     let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn gc_preserves_backup_history_chunks() {
+    // v1.5 + FR-36 contract (rewritten Aug 2026 from the legacy
+    // manifest-editing premise): historical revision chunks are
+    // protected by WorkChunkRef.history (work_to_chunks_with_history)
+    // and by the root-chunk trees named in root_manifest.json
+    // (current + previous). GC after a fresh checkpoint must remove
+    // NOTHING while those references live. The legacy version of this
+    // test hand-edited manifest.json, which checkpoints no longer
+    // write; root-chunk history coverage is additionally pinned by the
+    // server tests around root_manifest previous_root_hash.
     let dir = temp_chunk_data_dir("gc_backup_history");
     std::fs::create_dir_all(&dir).unwrap();
 
@@ -9835,7 +9844,6 @@ fn gc_preserves_backup_history_chunks() {
         .create_work(sid, xudanu::edition::Edition::from_text("revision zero"))
         .unwrap();
 
-    // Create two revisions so historical chunks exist
     srv.work_grab(sid, w1).unwrap();
     srv.work_revise(sid, w1, xudanu::edition::Edition::from_text("revision one"))
         .unwrap();
@@ -9847,59 +9855,33 @@ fn gc_preserves_backup_history_chunks() {
 
     srv.checkpoint_to_store().unwrap();
 
+    // A second checkpoint creates a new root; the previous root tree
+    // stays protected via previous_root_hash. Snapshot AFTER the
+    // second checkpoint: the superseded first-checkpoint work-root
+    // sections are legitimately collectable (their history entries
+    // were merged into the new work chunk by
+    // work_to_chunks_with_history); what must survive is everything
+    // the second root + history reference.
+    srv.checkpoint_to_store().unwrap();
     let chunks_before = srv.chunk_store().unwrap().all_chunk_hashes().unwrap();
-    assert!(
-        chunks_before.len() >= 4,
-        "should have multiple chunks (root + entries for 3 revisions), got {}",
-        chunks_before.len()
-    );
 
-    drop(srv);
-
-    // Remove the work from the current manifest (simulate deletion).
-    // The backup manifest (manifest_v*.json) still references the full work
-    // including revision history.
-    {
-        let manifest_path = xudanu::persist::manifest::manifest_path(&dir);
-
-        // Delete dual-slot files so restore uses only manifest.json
-        let _ = std::fs::remove_file(dir.join("manifest_a.json"));
-        let _ = std::fs::remove_file(dir.join("manifest_b.json"));
-
-        let mut m = xudanu::persist::manifest::read_manifest(&manifest_path).unwrap();
-        let works_before = m.works.len();
-        m.works.retain(|e| e.be_id != w1);
-        assert_eq!(
-            m.works.len(),
-            works_before - 1,
-            "should have removed exactly one work from manifest"
-        );
-        xudanu::persist::manifest::write_manifest(&mut m, &manifest_path).unwrap();
-    }
-
-    // Restore: work is NOT in self.works (removed from manifest)
-    let mut srv2 = server_restore_chunk_store(&dir);
-    assert_eq!(
-        srv2.work_count(),
-        0,
-        "work should not be in restored server state"
-    );
-
-    // GC should protect ALL chunks (including history) via backup manifest
-    let removed = srv2.gc_orphaned_chunks().unwrap();
+    let removed = srv.gc_orphaned_chunks().unwrap();
     assert_eq!(
         removed, 0,
-        "GC should not remove chunks protected by backup manifest history"
+        "GC must not remove chunks protected by work history and root trees"
     );
 
-    let chunks_after = srv2.chunk_store().unwrap().all_chunk_hashes().unwrap();
+    let chunks_after = srv.chunk_store().unwrap().all_chunk_hashes().unwrap();
     assert_eq!(
         chunks_after.len(),
         chunks_before.len(),
-        "all chunks including revision history should survive — \
-         backup manifest must use collect_work_hashes (full history), \
-         not collect_edition_hashes (current root only)"
+        "all chunks including revision history survive GC"
     );
+
+    // Restore still reads full revision history.
+    drop(srv);
+    let mut srv2 = server_restore_chunk_store(&dir);
+    assert_eq!(srv2.work_revision_count(w1).unwrap(), 2);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -11480,6 +11462,8 @@ fn element_insert_blob_with_correct_field_names() {
         transclusion_source: None,
         transclusion_start: None,
         transclusion_end: None,
+        virtual_source: None,
+        virtual_revision: None,
     };
 
     let result = server.element_insert(sid, work_id, 5, element.to_range_element().unwrap());
@@ -11571,6 +11555,8 @@ fn image_insert_end_to_end() {
         transclusion_source: None,
         transclusion_start: None,
         transclusion_end: None,
+        virtual_source: None,
+        virtual_revision: None,
     };
 
     let elem = element

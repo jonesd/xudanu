@@ -111,13 +111,22 @@ pub struct WorkEntry {
 
 /// Metadata for a single revision of a work. Per FR-23.
 /// Stored in the manifest alongside the work's chunk references.
+///
+/// SERIALIZATION CONSTRAINT: this struct is embedded in
+/// WorkStateChunk, which is postcard-serialized (positional format).
+/// `skip_serializing_if` MUST NOT be used on its fields — skipping a
+/// field shifts every subsequent byte on write while deserialize
+/// still expects it, corrupting the chunk (the v1.5.0 migration hit
+/// this on WorkChunkRef.endorsements; RevisionMeta had the same bug —
+/// found by the root-chunk integration triage, Aug 2026).
+/// `#[serde(default)]` remains fine (deserialize-side tolerance).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RevisionMeta {
     /// Sequential revision number (0-based, matches edition_history key)
     pub revision_id: u64,
 
     /// Parent revision (None for the first revision)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub parent: Option<u64>,
 
     /// Unix timestamp (seconds) when this revision was created
@@ -125,11 +134,11 @@ pub struct RevisionMeta {
     pub created_at: u64,
 
     /// Identity (club ID) that created this revision
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub created_by: Option<BeId>,
 
     /// Author-supplied description ("Refined wording, added section on...")
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub description: Option<String>,
 
     /// Author-marked or auto-detected as notable (publishing event, major revision)
@@ -141,7 +150,7 @@ pub struct RevisionMeta {
     pub char_count: u64,
 
     /// Auto-detected change summary vs. parent ("+123 chars, 15% changed")
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(default)]
     pub change_summary: String,
 }
 

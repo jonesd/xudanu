@@ -8589,8 +8589,14 @@ impl Server {
         data_dir: &std::path::Path,
         passphrase: Option<&[u8]>,
     ) -> std::io::Result<()> {
-        let manifest_path = data_dir.join("manifest.json");
-        if manifest_path.exists() {
+        // Guard on every persistence marker this server writes:
+        // legacy manifest.json OR the root-chunk pointer (v1.5+).
+        // Guarding only on the legacy manifest let init re-initialize
+        // an existing chunk-rooted data dir — silent state loss
+        // (found by the root-chunk-migration test triage, Aug 2026).
+        let legacy_manifest = data_dir.join("manifest.json");
+        let root_manifest = data_dir.join("root_manifest.json");
+        if legacy_manifest.exists() || root_manifest.exists() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
                 format!("data directory already initialized: {}", data_dir.display()),
@@ -8608,7 +8614,7 @@ impl Server {
         self.restore_keypair_from_dir(data_dir, passphrase)?;
         self.restore_blob_store_from_dir(data_dir)?;
 
-        self.checkpoint_path = Some(manifest_path);
+        self.checkpoint_path = Some(legacy_manifest);
         self.attribution_log =
             match crate::server::transport::attribution_log::AttributionLog::open(data_dir) {
                 Ok(log) => log,
