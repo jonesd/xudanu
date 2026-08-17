@@ -60,3 +60,38 @@ jobs:
           workspaces: original-code/xanadugold/src-rust -> target
       - run: cargo clippy --features server -- -W clippy::all -A clippy::large-enum-variant -A clippy::manual-range-contains -A clippy::borrowed-box -A clippy::unnecessary-sort-by -A clippy::indexing_slicing
         working-directory: original-code/xanadugold/src-rust
+
+  # Build-matrix: every configuration the crate promises must compile.
+  # The default=[] build broke for ~3 months (May-Aug 2026) because CI
+  # only ever built --features server; ungated serde/tracing refs
+  # accumulated to 378 errors before anyone noticed. This job is the
+  # floor that prevents recurrence (paired with the pre-push
+  # cargo-check step for fix-it-on-the-spot).
+  build-matrix:
+    name: Build (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default-features
+            command: cargo check
+          - name: server
+            command: cargo check --features server --all-targets
+          - name: wasm
+            command: cargo check --features wasm --target wasm32-unknown-unknown
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@5b842231ba77f5c045dba54ac5c045dba54ac5560fed2db780e2 # stable
+        if: false # placeholder, replaced below
+      - uses: dtolnay/rust-toolchain@5b842231ba77f5c045dba54ac5560fed2db780e2 # stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: original-code/xanadugold/src-rust -> target
+      - run: ${{ matrix.command }}
+        working-directory: original-code/xanadugold/src-rust
