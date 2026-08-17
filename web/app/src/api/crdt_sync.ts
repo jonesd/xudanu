@@ -334,6 +334,12 @@ export interface TransclusionMarker {
   otherWorkIsArchived?: boolean;
   otherWorkOwner?: number | null;
   crossServerRef?: { tumbler: string; contentHash: string } | null;
+  /** Source-span coordinates in the OTHER work (the quoted origin) —
+   * set when the link's other-side ref carries positions; enables
+   * click-to-jump-to-source (same doc: highlight+scroll; other doc:
+   * navigate and land on the span). */
+  sourceSpanStart?: number | null;
+  sourceSpanEnd?: number | null;
 }
 
 export interface WorkListEntry {

@@ -58,6 +58,9 @@ interface CollaborativeEditorProps {
   onPlaceTransclusion?: (position: number, padding?: string) => void;
   /** FR-37: place as a pinned (revision-frozen) quotation. */
   onPlacePinnedTransclusion?: (position: number) => void;
+  /** Click-to-source: jump to the quoted span — same doc highlights
+   * in place; another doc navigates and lands on the span. */
+  onNavigateToSource?: (workId: number, spanStart: number | null, spanEnd: number | null) => void;
   selectionRange?: { start: number; end: number } | null;
   highlightRange?: { start: number; end: number } | null;
   onNavigateToWork?: (workId: number) => void;
@@ -853,6 +856,7 @@ export function CollaborativeEditor({
   transclusionMarkers = [],
   pendingTransclusion,
   onPlaceTransclusion,
+  onNavigateToSource,
   highlightRange,
   onNavigateToWork,
   onCrossServerResolve,
@@ -1216,10 +1220,16 @@ export function CollaborativeEditor({
 
     if (highlightRange) {
       requestAnimationFrame(draw);
+      // Scroll the highlighted span into view (same math as
+      // jumpToCharOffset) — highlight-without-scroll leaves long
+      // documents looking like nothing happened.
+      const line = buffer.getLineForChar(Math.max(0, Math.min(highlightRange.start, (el.textContent?.length ?? 1) - 1)));
+      const targetScroll = line * parseFloat(getComputedStyle(el).lineHeight || "20");
+      container.scrollTo({ top: Math.max(0, targetScroll - container.clientHeight / 3), behavior: "smooth" });
       const interval = setInterval(draw, 100);
       return () => clearInterval(interval);
     }
-  }, [highlightRange]);
+  }, [highlightRange, buffer]);
 
   useEffect(() => {
     if (recentChanges.length === 0) return;
@@ -1401,10 +1411,17 @@ export function CollaborativeEditor({
     if (e.detail === 2 && onShowBacklinks) {
       const excerpt = (hit.marker as unknown as Record<string, unknown>).excerpt as string || "";
       onShowBacklinks(hit.marker.otherWorkId, excerpt);
-    } else if (e.detail === 1 && onNavigateToWork) {
-      onNavigateToWork(hit.marker.otherWorkId);
+    } else if (e.detail === 1) {
+      // Click-to-source: when the quoted span's coordinates are known,
+      // jump TO THE SPAN (same-doc: highlight+scroll; cross-doc:
+      // navigate+land) instead of merely switching works.
+      if (onNavigateToSource && (hit.marker.sourceSpanStart != null || hit.marker.sourceSpanEnd != null)) {
+        onNavigateToSource(hit.marker.otherWorkId, hit.marker.sourceSpanStart ?? null, hit.marker.sourceSpanEnd ?? null);
+      } else if (onNavigateToWork) {
+        onNavigateToWork(hit.marker.otherWorkId);
+      }
     }
-  }, [onNavigateToWork, onShowBacklinks, toggleClusterExpansion, onEditLinkDescription, linkDescMap]);
+  }, [onNavigateToWork, onNavigateToSource, onShowBacklinks, toggleClusterExpansion, onEditLinkDescription, linkDescMap]);
 
   const getSelectionInEditor = useCallback((): { start: number; end: number } => {
     const el = editorRef.current;

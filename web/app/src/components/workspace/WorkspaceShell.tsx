@@ -1156,6 +1156,31 @@ export function WorkspaceShell() {
     [workBeId, text, compound, transclusion, showToast]
   );
 
+  const handleNavigateToSource = useCallback(
+    (workId: number, spanStart: number | null, spanEnd: number | null) => {
+      if (workId === workBeId && spanStart != null && spanEnd != null && spanEnd > spanStart) {
+        // Same document: highlight + smooth-scroll to the quoted span.
+        setHighlightRange({ start: spanStart, end: spanEnd });
+        setTimeout(() => setHighlightRange(null), 4000);
+      } else {
+        // Cross-document: navigate; the destination lands scrolled via
+        // the URL hash (#C<char>) the editor already honors when the
+        // new text arrives. Set the hash BEFORE selectWork — its
+        // replaceState rebuilds the URL from location.href and
+        // preserves the fragment.
+        if (spanStart != null) {
+          window.history.replaceState(
+            null,
+            "",
+            window.location.pathname + window.location.search + `#C${spanStart}`,
+          );
+        }
+        selectWork(workId);
+      }
+    },
+    [workBeId, selectWork]
+  );
+
   const handlePlacePinnedTransclusion = useCallback(
     async (position: number) => {
       if (workBeId === null) return;
@@ -2997,6 +3022,7 @@ export function WorkspaceShell() {
                   pendingTransclusion={transclusion.pending}
                   onPlaceTransclusion={handlePlaceTransclusion}
                   onPlacePinnedTransclusion={handlePlacePinnedTransclusion}
+                  onNavigateToSource={handleNavigateToSource}
                   selectionRange={selectionRange}
                   highlightRange={highlightRange}
                   onNavigateToWork={selectWork}

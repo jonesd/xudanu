@@ -206,6 +206,8 @@ export function useTransclusion(): TransclusionState {
               otherWorkIsArchived: !!otherArchived,
               otherWorkOwner: otherOwner ?? null,
               crossServerRef,
+              sourceSpanStart: remoteRef?.start_position ?? null,
+              sourceSpanEnd: remoteRef?.end_position ?? null,
             });
           }
         }
