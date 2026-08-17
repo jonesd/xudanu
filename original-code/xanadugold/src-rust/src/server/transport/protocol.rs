@@ -3326,6 +3326,13 @@ pub struct TrailStopPayload {
 pub struct TrailPayload {
     pub trail_id: BeId,
     pub name: String,
+    /// FR-37 4c: the derived work presenting this trail as an
+    /// addressable edition (None until first refresh).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub derived_work_id: Option<BeId>,
     #[cfg_attr(
         feature = "serde",
         serde(default, skip_serializing_if = "Option::is_none")

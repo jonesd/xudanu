@@ -634,6 +634,11 @@ struct TrailState {
     stops: Vec<TrailStop>,
     created_at: u64,
     updated_at: u64,
+    /// FR-37 Phase 4c: the derived WORK presenting this trail as a
+    /// real, addressable edition (built from the stops' pinned spans).
+    /// None for trails created before 4c or while the derived work is
+    /// being created; lazily rebuilt on demand.
+    derived_work_id: Option<BeId>,
 }
 
 #[derive(Clone)]
@@ -7169,6 +7174,7 @@ impl Server {
                 stops: Vec::new(),
                 created_at: now,
                 updated_at: now,
+                derived_work_id: None,
             },
         );
         if trail_id >= self.trail_counter {
@@ -7537,6 +7543,94 @@ impl Server {
             .ok_or_else(|| ServerError::InvalidArgument("no personal club for session".into()))
     }
 
+    /// Build the DerivedSpec for a trail's current stops (FR-37 4c).
+    /// Stops pin their source's CURRENT revision at add time (the
+    /// edit-time pinning rule); whole-work stops (no char range) span
+    /// the whole current text. Remote-domain stops are skipped for
+    /// the derived edition (cross-server spans are FR-6 future work)
+    /// — the metadata trail keeps them regardless.
+    fn trail_derived_spec(&self, t: &TrailState) -> crate::edition::derived::DerivedSpec {
+        let mut spec = crate::edition::derived::DerivedSpec::new(
+            crate::edition::derived::DerivedKind::Trail,
+            t.name.clone(),
+        );
+        let mut notes = Vec::new();
+        for s in &t.stops {
+            if s.server_domain.is_some() {
+                continue;
+            }
+            let Some(ws) = self.works.get(&s.work_id) else {
+                continue;
+            };
+            let revision = ws.work.revision_count();
+            let char_len = ws.work.current_edition().char_len();
+            let (start, end) = match (s.char_start, s.char_end) {
+                (Some(a), Some(b)) => (a as usize, (b as usize).min(char_len)),
+                _ => (0, char_len),
+            };
+            spec.stops.push(crate::edition::range_element::VirtualSpec {
+                source_work_id: s.work_id,
+                char_start: start.min(end),
+                char_end: end,
+                revision,
+                placed_at: t.updated_at,
+                placed_by: None,
+            });
+            notes.push(s.note.clone().unwrap_or_default());
+        }
+        spec.stop_notes = if notes.iter().all(|n| n.is_empty()) {
+            None
+        } else {
+            Some(notes)
+        };
+        spec
+    }
+
+    /// Create or refresh the derived WORK for a trail (FR-37 4c):
+    /// a real, addressable edition built from the trail's pinned
+    /// stops. Idempotent; returns the derived work id.
+    pub fn trail_refresh_derived_work(
+        &mut self,
+        session_id: SessionId,
+        trail_id: BeId,
+    ) -> Result<BeId, ServerError> {
+        let owner = self.trail_owner_club(session_id)?;
+        let t = self
+            .trails
+            .get(&trail_id)
+            .ok_or_else(|| ServerError::InvalidArgument("trail not found".into()))?;
+        if t.owner_club != owner {
+            return Err(ServerError::InvalidArgument("not your trail".into()));
+        }
+        let spec = self.trail_derived_spec(t);
+        let edition = crate::edition::derived::build_derived_edition(&spec)
+            .map_err(|e| ServerError::Internal(e))?;
+
+        match t.derived_work_id {
+            Some(wid) if self.works.contains_key(&wid) => {
+                let ws = self.works.get_mut(&wid).unwrap();
+                ws.work_mut().update_current_edition(edition);
+                ws.mark_dirty();
+                Ok(wid)
+            }
+            _ => {
+                // First refresh (or stale id after restore): create
+                // the derived work and remember it.
+                let sid = session_id;
+                let wid = self.create_work(sid, edition)?;
+                let title = spec.title.clone();
+                if let Some(ws) = self.works.get_mut(&wid) {
+                    ws.cached_title = title;
+                }
+                if let Some(t) = self.trails.get_mut(&trail_id) {
+                    t.derived_work_id = Some(wid);
+                }
+                self.auto_checkpoint();
+                Ok(wid)
+            }
+        }
+    }
+
     fn trail_to_payload(&self, t: &TrailState) -> super::transport::protocol::TrailPayload {
         let stops: Vec<super::transport::protocol::TrailStopPayload> = t
             .stops
@@ -7560,6 +7654,7 @@ impl Server {
         super::transport::protocol::TrailPayload {
             trail_id: t.trail_id,
             name: t.name.clone(),
+            derived_work_id: t.derived_work_id,
             introduction: t.introduction.clone(),
             categories: t.categories.clone(),
             published: t.published,
@@ -7596,6 +7691,7 @@ impl Server {
                 stops: Vec::new(),
                 created_at: now,
                 updated_at: now,
+                derived_work_id: None,
             },
         );
         if let Err(e) = self.wal.append_trail_create(
@@ -7691,6 +7787,25 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        // FR-37 4c: keep an existing derived work in sync with the
+        // new stop set (pins the CURRENT revision of the added stop's
+        // source). Lazily created works stay lazy until first read.
+        if let Some(wid) = t.derived_work_id {
+            drop(t);
+            let spec_source = self.trails.get(&trail_id).map(|tr| {
+                let mut spec = self.trail_derived_spec(tr);
+                let _ = &mut spec;
+                spec
+            });
+            if let Some(spec) = spec_source {
+                if let Ok(edition) = crate::edition::derived::build_derived_edition(&spec) {
+                    if let Some(ws) = self.works.get_mut(&wid) {
+                        ws.work_mut().update_current_edition(edition);
+                        ws.mark_dirty();
+                    }
+                }
+            }
+        }
         if let Err(e) =
             self.wal
                 .append_trail_add_stop(trail_id, work_id, char_start, char_end, note.as_deref())
@@ -7727,6 +7842,22 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        // FR-37 4c: sync the derived work to the smaller stop set.
+        if let Some(wid) = t.derived_work_id {
+            drop(t);
+            let spec = self
+                .trails
+                .get(&trail_id)
+                .map(|tr| self.trail_derived_spec(tr));
+            if let Some(spec) = spec {
+                if let Ok(edition) = crate::edition::derived::build_derived_edition(&spec) {
+                    if let Some(ws) = self.works.get_mut(&wid) {
+                        ws.work_mut().update_current_edition(edition);
+                        ws.mark_dirty();
+                    }
+                }
+            }
+        }
         if let Err(e) = self.wal.append_trail_remove_stop(trail_id, work_id) {
             tracing::warn!("WAL write failed for trail_remove_stop: {}", e);
         }
@@ -8863,6 +8994,7 @@ impl Server {
                                                     .collect(),
                                                 created_at: t.created_at,
                                                 updated_at: t.updated_at,
+                                                derived_work_id: None,
                                             },
                                         );
                                     }
@@ -8937,6 +9069,7 @@ impl Server {
                             .collect(),
                         created_at: t.created_at,
                         updated_at: t.updated_at,
+                        derived_work_id: None,
                     },
                 );
             }
@@ -17259,6 +17392,11 @@ pub(crate) mod persist_snapshot {
         stops: Vec<TrailStopSnapshot>,
         created_at: u64,
         updated_at: u64,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        derived_work_id: Option<BeId>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -17430,6 +17568,7 @@ pub(crate) mod persist_snapshot {
                             .collect(),
                         created_at: t.created_at,
                         updated_at: t.updated_at,
+                        derived_work_id: t.derived_work_id,
                     })
                     .collect(),
                 trail_counter: self.trail_counter,
@@ -17540,6 +17679,7 @@ pub(crate) mod persist_snapshot {
                                     .collect(),
                                 created_at: ts.created_at,
                                 updated_at: ts.updated_at,
+                                derived_work_id: ts.derived_work_id,
                             },
                         )
                     })
@@ -31177,6 +31317,99 @@ mod tests {
         assert_eq!(n2, 0);
         let n3 = server.materialize_virtual_elements(dest).unwrap();
         assert_eq!(n3, 0, "repeated reads stay O(1)");
+    }
+
+    /// FR-37 4c: trails become real derived works — create trail,
+    /// add stops, refresh: a derived WORK exists, is addressable,
+    /// materializes to the pinned-span concatenation, and follows
+    /// stop mutations.
+    #[test]
+    fn fr37_4c_trail_derived_work_lifecycle() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src1 = server
+            .create_work(sid, Edition::from_text("first passage here"))
+            .unwrap();
+        let src2 = server
+            .create_work(sid, Edition::from_text("second passage text"))
+            .unwrap();
+
+        let trail = server
+            .trail_create(sid, "reading path".to_string(), None, vec![])
+            .unwrap();
+
+        // Whole-work stop on src1; span stop (7..15, "passage") on src2.
+        server
+            .trail_add_stop(sid, trail, src1, None, None, None, None)
+            .unwrap();
+        server
+            .trail_add_stop(
+                sid,
+                trail,
+                src2,
+                Some(7),
+                Some(15),
+                Some("note".into()),
+                None,
+            )
+            .unwrap();
+
+        // Refresh: creates the derived work.
+        let dwid = server.trail_refresh_derived_work(sid, trail).unwrap();
+        assert!(server.work_edition(dwid).is_ok(), "derived work exists");
+
+        // Materialized through the read path: pinned spans, in order.
+        let text = server.work_text_fresh(dwid).unwrap();
+        assert_eq!(text, "first passage herepassage ", "got: {:?}", text);
+
+        // The trail payload exposes the derived work.
+        let payload = server.trail_get(sid, trail).unwrap();
+        assert_eq!(payload.derived_work_id, Some(dwid));
+
+        // Stop removal syncs the derived work.
+        server.trail_remove_stop(sid, trail, 1).unwrap();
+        let text = server.work_text_fresh(dwid).unwrap();
+        assert_eq!(text, "first passage here", "stop removal reflected");
+
+        // Adding a stop again re-syncs (pins CURRENT revision).
+        server
+            .trail_add_stop(sid, trail, src2, Some(0), Some(6), None, None)
+            .unwrap();
+        let text = server.work_text_fresh(dwid).unwrap();
+        assert_eq!(text, "first passage heresecond", "got: {}", text);
+    }
+
+    /// FR-37 4c: derived work identity — same stops rebuild the same
+    /// edition (determinism through the server path), and the
+    /// original source revisions stay pinned against later edits.
+    #[test]
+    fn fr37_4c_derived_work_pins_and_rebuilds() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server
+            .create_work(sid, Edition::from_text("stable start"))
+            .unwrap();
+        let trail = server
+            .trail_create(sid, "pin test".to_string(), None, vec![])
+            .unwrap();
+        server
+            .trail_add_stop(sid, trail, src, Some(0), Some(6), None, None)
+            .unwrap();
+        let dwid = server.trail_refresh_derived_work(sid, trail).unwrap();
+
+        // Source revises AFTER the pin: derived work shows pinned text.
+        server.work_grab(sid, src).unwrap();
+        server
+            .work_revise(sid, src, Edition::from_text("stable CHANGED"))
+            .unwrap();
+        let text = server.work_text_fresh(dwid).unwrap();
+        assert_eq!(text, "stable", "pinned span immune to source edit");
+
+        // Re-refresh from the SAME stops keeps the OLD pin (stops pin
+        // at add time, not refresh time — removal+re-add is how a
+        // curator moves to the new revision).
+        let dwid2 = server.trail_refresh_derived_work(sid, trail).unwrap();
+        assert_eq!(dwid2, dwid, "same derived work");
+        let text = server.work_text_fresh(dwid).unwrap();
+        assert_eq!(text, "stable", "refresh does not re-pin");
     }
 
     /// Restored from review note 5 (Aug 2026): the manager-level
