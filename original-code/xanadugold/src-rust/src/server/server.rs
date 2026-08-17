@@ -6061,6 +6061,23 @@ impl Server {
             hasher.finalize().to_hex().to_string()
         };
 
+        // FR-38 Phase 3: egress badge for the full document —
+        // overlay-derived span classes so peers can compliance-check
+        // without fetching provenance separately.
+        let span_license_classes_str = {
+            let work_license = ws.work.license();
+            let total = edition.char_len();
+            edition
+                .license_overlay()
+                .query(0, total, |owner| {
+                    owner
+                        .and_then(|o| self.works.get(&o).map(|ows| ows.work().license()))
+                        .or(Some(work_license))
+                })
+                .total_class
+                .to_string()
+        };
+
         let span_provenance: Vec<serde_json::Value> = edition
             .span_provenance
             .iter()
@@ -6106,6 +6123,7 @@ impl Server {
             "tumbler": format!("{}.0x{:x}.{}", self.server_tumbler_prefix(), work_be_id, revision),
             "span_provenance": span_provenance,
             "license": ws.work.license().as_str(),
+            "span_license_classes": span_license_classes_str,
             "server_namespace_id": self.server_namespace_id(),
             "server_public_key": server_pub_key_hex,
             "server_signature": server_sig_hex,
@@ -6146,6 +6164,20 @@ impl Server {
             hasher.finalize().to_hex().to_string()
         };
 
+        // FR-38 Phase 3: the origin server answers may-transclude at
+        // egress — peers fetching a span receive its license classes
+        // (overlay descent, O(log r + b)) so they can badge/comply
+        // without a second round trip. Owner -> license mirrors the
+        // server-side resolution (owner's work license, work-level
+        // fallback).
+        let work_license = ws.work.license();
+        let overlay = ws.work.current_edition().license_overlay();
+        let span_licenses = overlay.query(start, end, |owner| {
+            owner
+                .and_then(|o| self.works.get(&o).map(|ows| ows.work().license()))
+                .or(Some(work_license))
+        });
+
         Ok(serde_json::json!({
             "work_id": format!("{:04x}", work_be_id),
             "title": ws.title(),
@@ -6153,6 +6185,16 @@ impl Server {
             "range": [start, end],
             "content_hash_blake3": content_hash,
             "server_namespace_id": self.server_namespace_id(),
+            "license": work_license.as_str(),
+            "span_license_classes": span_licenses.total_class.to_string(),
+            "span_license_boundaries": span_licenses.boundaries.iter().map(|(s, e, owner, class)| {
+                serde_json::json!({
+                    "start": s,
+                    "end": e,
+                    "owner": owner,
+                    "classes": class.to_string(),
+                })
+            }).collect::<Vec<_>>(),
         }))
     }
 
@@ -9990,6 +10032,127 @@ impl Server {
         }))
     }
 
+    /// Place a virtual transclusion (FR-37 Phase 3): append a Virtual
+    /// element referencing [char_start, char_end) of `origin_work`,
+    /// PINNED to the origin's current revision. Edit-time pinning
+    /// makes resolution deterministic across replicas; the reference
+    /// is live in the sense that resolution happens on demand, and
+    /// stable in the sense that the pinned bytes can never change
+    /// (revision history + blob snapshots guarantee retrievability).
+    pub fn place_virtual_transclusion(
+        &mut self,
+        session_id: SessionId,
+        dest_work: BeId,
+        origin_work: BeId,
+        char_start: usize,
+        char_end: usize,
+    ) -> Result<(), ServerError> {
+        self.ensure_authenticated(session_id)?;
+        let revision = {
+            let ws = self
+                .works
+                .get(&origin_work)
+                .ok_or(ServerError::WorkNotFound(origin_work))?;
+            ws.work.revision_count()
+        };
+        let spec = crate::edition::range_element::VirtualSpec {
+            source_work_id: origin_work,
+            char_start,
+            char_end,
+            revision,
+            placed_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            placed_by: None,
+        };
+        let elem = RangeElement::virtual_element(spec);
+        let dest_edition = {
+            let ws = self
+                .works
+                .get(&dest_work)
+                .ok_or(ServerError::WorkNotFound(dest_work))?;
+            ws.work.current_edition().clone()
+        };
+        let mut entries = dest_edition.all_entries();
+        let pos = entries.last().map(|(p, _)| *p + 1).unwrap_or(0);
+        entries.push((pos, std::sync::Arc::new(crate::edition::Carrier::new(elem))));
+        self.work_grab(session_id, dest_work)?;
+        self.work_revise(session_id, dest_work, Edition::from_entries(entries))?;
+        self.work_release(session_id, dest_work)?;
+        Ok(())
+    }
+
+    /// Materialize Virtual elements in a work (FR-37 Phase 3):
+    /// resolve each unmaterialized element through its PINNED revision
+    /// and stamp the cache. Pinned revisions are immutable, so unlike
+    /// StructuralTransclusion caches these never go stale — one pass
+    /// per element, ever (until the element itself is edited away and
+    /// re-placed). Called from the same read/stamp flow as FR-37
+    /// Phase 2.
+    pub fn materialize_virtual_elements(&mut self, work_id: BeId) -> Result<usize, ServerError> {
+        let needs = {
+            let Some(ws) = self.works.get(&work_id) else {
+                return Err(ServerError::WorkNotFound(work_id));
+            };
+            ws.work
+                .current_edition()
+                .cached_entries()
+                .iter()
+                .any(|(_, c)| c.element.is_virtual())
+        };
+        if !needs {
+            return Ok(0);
+        }
+
+        let entries = {
+            let ws = self.works.get(&work_id).unwrap();
+            ws.work.current_edition().cached_entries().clone()
+        };
+        let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::Carrier>)> =
+            Vec::with_capacity(entries.len());
+        let mut materialized = 0usize;
+
+        for (pos, carrier) in entries.iter() {
+            let mut new_carrier = (**carrier).clone();
+            if let Some(spec) = new_carrier.element.virtual_spec() {
+                if new_carrier.element.as_text().is_none() {
+                    let src = self.works.get(&spec.source_work_id);
+                    let resolved = src.and_then(|ws| ws.work.fetch_revision(spec.revision));
+                    let edition = match resolved {
+                        Some(ed) => ed,
+                        None => {
+                            tracing::warn!(
+                                "[virtual] pinned revision {} of {:x} unavailable for {:x}; leaving unmaterialized",
+                                spec.revision,
+                                spec.source_work_id,
+                                work_id
+                            );
+                            new_entries.push((*pos, std::sync::Arc::new(new_carrier)));
+                            continue;
+                        }
+                    };
+                    let full = edition.to_text();
+                    let chars: Vec<char> = full.chars().collect();
+                    let s = spec.char_start.min(chars.len());
+                    let e = spec.char_end.min(chars.len());
+                    let content: String = chars[s..e].iter().collect();
+                    new_carrier.element.set_virtual_content(content);
+                    materialized += 1;
+                }
+            }
+            new_entries.push((*pos, std::sync::Arc::new(new_carrier)));
+        }
+
+        if materialized > 0 {
+            let new_edition = Edition::from_entries(new_entries);
+            let ws = self.works.get_mut(&work_id).unwrap();
+            ws.work_mut().update_current_edition(new_edition);
+            ws.mark_dirty();
+        }
+        Ok(materialized)
+    }
+
     /// Fresh text for a work (FR-37 Phase 2): like reading
     /// current_edition().to_text(), but any StructuralTransclusion
     /// whose cached_content is generation-stale is re-resolved from
@@ -10024,6 +10187,10 @@ impl Server {
         if has_stale {
             self.stamp_structural_transclusion_cache(work_id)?;
         }
+        // FR-37 Phase 3: unmaterialized Virtual elements contribute
+        // zero chars; materialize (pinned-resolution, one pass per
+        // element ever) before serving text.
+        self.materialize_virtual_elements(work_id)?;
         let ws = self
             .works
             .get(&work_id)
@@ -10584,17 +10751,54 @@ impl Server {
             // revision-path append (server.rs ~896) only covers author edits, so
             // without this transclusion events go unaudited (log stays at 0).
             {
+                let server_id = self.server_keypair.signing_key.verifying_key().to_bytes();
+                // FR-38 Phase 3: span-level license badge. The
+                // transcluded excerpt may cross ownership boundaries
+                // inside the origin work — a work-level lookup reports
+                // the wrong license whenever the span's owners differ
+                // from the work default. Query the origin's overlay
+                // for the excerpt's span; fall back to the work-level
+                // license when the excerpt can no longer be located
+                // (source edited since placement).
+                let src_license = {
+                    let origin_text = self
+                        .works
+                        .get(&origin_work_id)
+                        .map(|ws| ws.work.current_edition().to_text())
+                        .unwrap_or_default();
+                    let origin_lower = origin_text.to_lowercase();
+                    let excerpt_lower_owned = excerpt_lower.clone();
+                    let span = origin_lower.find(&excerpt_lower_owned).map(|byte_start| {
+                        let start_chars = origin_text[..byte_start].chars().count();
+                        let len_chars = excerpt_text.chars().count();
+                        (start_chars, start_chars + len_chars)
+                    });
+                    match span {
+                        Some((s, e)) => {
+                            let summary = self
+                                .work_span_license_classes(origin_work_id, s, e)
+                                .map(|sum| sum.total_class)
+                                .unwrap_or_default();
+                            if summary.is_empty() {
+                                self.works
+                                    .get(&origin_work_id)
+                                    .map(|ws| ws.work.license().as_str().to_string())
+                            } else {
+                                Some(summary.to_string())
+                            }
+                        }
+                        None => self
+                            .works
+                            .get(&origin_work_id)
+                            .map(|ws| ws.work.license().as_str().to_string()),
+                    }
+                };
                 let log = &mut self.attribution_log;
                 let revision = self
                     .works
                     .get(&dest_work_id)
                     .map(|ws| ws.work.revision_count())
                     .unwrap_or(0);
-                let server_id = self.server_keypair.signing_key.verifying_key().to_bytes();
-                let src_license = self
-                    .works
-                    .get(&origin_work_id)
-                    .map(|ws| ws.work.license().as_str().to_string());
                 let entry = crate::server::transport::attribution_log::AttributionEntry {
                     sequence: log.sequence(),
                     timestamp: source_prov.timestamp,
@@ -30760,6 +30964,122 @@ mod tests {
         assert!(!s2
             .total_class
             .contains(crate::edition::LicenseClass::RESTRICTED));
+    }
+
+    /// FR-37 Phase 3: placed virtual elements resolve to exactly the
+    /// pinned source span, and stay stable across later source edits
+    /// (pinning), and survive delta edits elsewhere in the document.
+    #[test]
+    fn fr37_phase3_virtual_placement_pins_and_resolves() {
+        let (mut server, sid) = setup_logged_in_server();
+        let origin = server
+            .create_work(sid, Edition::from_text("hello brave world"))
+            .unwrap();
+        let dest = server
+            .create_work(sid, Edition::from_text("prefix | suffix"))
+            .unwrap();
+
+        // Place a virtual reference to chars 6..11 ("brave").
+        server
+            .place_virtual_transclusion(sid, dest, origin, 6, 11)
+            .unwrap();
+
+        // Unmaterialized: zero chars — placement alone doesn't grow text.
+        let bare = server.work_edition(dest).unwrap().to_text();
+        assert_eq!(bare, "prefix | suffix");
+
+        // Fresh read materializes: "brave" appears at the end.
+        let text = server.work_text_fresh(dest).unwrap();
+        assert_eq!(
+            text, "prefix | suffixbrave",
+            "materialized virtual contributes its span"
+        );
+
+        // Source edit AFTER placement: pinned revision unchanged.
+        server.work_grab(sid, origin).unwrap();
+        server
+            .work_revise(sid, origin, Edition::from_text("hello edited world"))
+            .unwrap();
+        let text2 = server.work_text_fresh(dest).unwrap();
+        assert_eq!(
+            text2, "prefix | suffixbrave",
+            "pinned virtual is immune to later source edits"
+        );
+    }
+
+    /// FR-37 Phase 3: delta edits elsewhere in the document leave the
+    /// virtual element untouched and resolvable.
+    #[test]
+    fn fr37_phase3_virtual_survives_unrelated_edits() {
+        use crate::server::otree_crdt as otree;
+        let (mut server, sid) = setup_logged_in_server();
+        let origin = server
+            .create_work(sid, Edition::from_text("shared passage"))
+            .unwrap();
+        let dest = server.create_work(sid, Edition::from_text("A")).unwrap();
+        server
+            .place_virtual_transclusion(sid, dest, origin, 0, 15)
+            .unwrap();
+        let _ = server.work_text_fresh(dest).unwrap();
+
+        // Delta edit at the very start (far from the virtual at end).
+        let edition = server.work_edition(dest).unwrap();
+        let ops = vec![
+            crate::server::transport::protocol::TextDeltaOp::Insert {
+                text: "X".to_string(),
+            },
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 16 },
+        ];
+        let edited = otree::apply_text_delta_to_edition(&edition, &ops, None);
+        server.work_grab(sid, dest).unwrap();
+        server.work_revise(sid, dest, edited).unwrap();
+
+        let text = server.work_text_fresh(dest).unwrap();
+        assert_eq!(
+            text, "XAshared passage",
+            "virtual survived the edit: {}",
+            text
+        );
+        // Still exactly one virtual entry, still carrying its cache.
+        let entries = server.work_edition(dest).unwrap().all_entries();
+        let virtuals = entries
+            .iter()
+            .filter(|(_, c)| c.element.is_virtual())
+            .count();
+        assert_eq!(virtuals, 1);
+    }
+
+    /// FR-37 Phase 3 determinism rule: fingerprints cover the SPEC,
+    /// never the cache — replicas align without resolution.
+    #[test]
+    fn fr37_phase3_virtual_fingerprint_deterministic() {
+        use crate::edition::range_element::{RangeElement, VirtualSpec};
+        let spec = VirtualSpec {
+            source_work_id: 42,
+            char_start: 3,
+            char_end: 9,
+            revision: 7,
+            placed_at: 1000,
+            placed_by: None,
+        };
+        let mut a = RangeElement::virtual_element(spec);
+        let b = RangeElement::virtual_element(spec);
+        assert_eq!(a.content_fingerprint(), b.content_fingerprint());
+
+        // Materializing one side does NOT change its fingerprint.
+        a.set_virtual_content("resolved".to_string());
+        assert_eq!(
+            a.content_fingerprint(),
+            b.content_fingerprint(),
+            "cache state must not leak into identity"
+        );
+
+        // Different spec -> different fingerprint.
+        let c = RangeElement::virtual_element(VirtualSpec {
+            revision: 8,
+            ..spec
+        });
+        assert_ne!(a.content_fingerprint(), c.content_fingerprint());
     }
 
     #[test]

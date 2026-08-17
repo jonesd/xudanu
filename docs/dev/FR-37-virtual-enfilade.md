@@ -1,6 +1,10 @@
 # FR-37: Virtual Enfilade Resolution
 
-> **Status:** Planning (groundwork landed)
+> **Status:** Phases 1-2 landed; Phase 3 core landed (element,
+> pinning, determinism, placement/materialize APIs, read-flow
+> integration). Follow-ups: wire-payload registration for Virtual
+> elements (protocol.rs RangeElementPayload), Phase 4 virtual
+> enfilades.
 > **Estimated effort:** 3-4 weeks (Phases 1-2), 2-3 months (full)
 > **Risk:** Medium-High — touches transclusion resolution and CRDT paths
 > **Prerequisite:** FR-34 Phase I (done: tree-native deltas, stable
@@ -75,7 +79,11 @@ robustness wins. Phases 3-4 introduce true virtual structures.
 - All existing callers migrate to the unified API (no behavior change;
   regression tests pin outputs)
 
-### Phase 2 — Generation-checked resolution cache
+### Phase 2 — Generation-checked resolution cache (LANDED, commit b16a4eb)
+
+Delivered as specified; plus a pre-existing gap it exposed: plain
+work_revise (full-edition replace) never migrated dependents — fixed.
+
 
 - Extend `StructuralTransclusion` with `source_generation: Option<u64>`
   (monotonic per source work, bumped on every revise)
@@ -88,7 +96,21 @@ robustness wins. Phases 3-4 introduce true virtual structures.
   window without Phase 3
 - Effort: ~1 week. This alone makes transclusion observably live.
 
-### Phase 3 — Virtual elements
+### Phase 3 — Virtual elements (CORE LANDED)
+
+Landed: `RangeElement::Virtual { spec: VirtualSpec, cached_content }`
+with spec-fingerprint determinism (fingerprints cover the spec, never
+the cache — replicas align without resolution); edit-time revision
+pinning at placement (`place_virtual_transclusion`); pinned-resolution
+materialization (`materialize_virtual_elements`, wired into
+work_text_fresh — one pass per element, ever, since pinned revisions
+are immutable); zero-char-until-materialized reader contract (same
+precedent as unstamped StructuralTransclusion). Tests: pin stability
+across source edits, survival through unrelated delta edits,
+fingerprint determinism. Remaining for full Phase 3: wire-payload
+registration (RangeElementPayload variant) so Virtual elements can
+arrive over the protocol; delta-path neighborhood materialization
+(bulk fallback covers it today).
 
 - `RangeElement::Virtual { source: VirtualSpec, span_len }` where
   `VirtualSpec` names (source work, tumbler address, revision pin)

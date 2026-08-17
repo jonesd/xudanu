@@ -1,6 +1,15 @@
 # FR-38: License Summary Overlays
 
-> **Status:** Planning (groundwork landed)
+> **Status:** Phases 1-3 landed. Phase 2 delivered the overlay as a
+> run-length ownership index (licenses resolve at query time —
+> re-licensing never rebuilds; equivalence property-tested against
+> ground truth). Phase 3 wired the integration points: span-level
+> license badges at transclusion attribution (was work-level), and
+> egress badges on the public content API (full-document classes on
+> /api/public/work/{id}, span classes + boundaries on the range
+> endpoint — the origin server answers may-transclude in the payload,
+> no second round trip). Federation hard-block remains an operator
+> policy decision, deliberately not encoded.
 > **Estimated effort:** 1-2 weeks (Phases 1-2), 2-3 weeks (Phase 3)
 > **Risk:** Low-Medium — additive overlay; content crums untouched
 > **Prerequisite:** FR-24 (license model — done); FR-37 Phase 1
