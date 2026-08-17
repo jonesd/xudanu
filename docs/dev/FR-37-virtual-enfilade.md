@@ -143,6 +143,83 @@ Delta-path neighborhood materialization remains bulk-fallback
   it. Full spanfilade remains optional — Phases 1-3 deliver the
   user-visible value without it
 
+## Phase 4 Design Note — Virtual Enfilades (decided Aug 2026)
+
+### The fork
+
+Phase 4 can mean two different depths of "derived documents become
+real enfilades." The decision below was taken before implementation,
+per the project rule that design rationale gets captured where future
+contributors will find it.
+
+**Path A — Composition (CHOSEN for 4a-4d).** A derived document is an
+`Edition` whose entries are Phase 3 `Virtual` elements: a trail is a
+sequence of pinned spans from multiple works; a search view is
+matching spans; a backlink view is quoting spans. Everything deep
+already exists and is tested — spec determinism, edit-time pinning,
+pinned-revision resolution, zero-char-until-materialized, delta-path
+splitting. New work is a serializable `DerivedSpec`, a spec->edition
+builder, and server plumbing so trails/search/backlinks produce
+WORKS (addressable, linkable, transcludable-from) instead of JSON
+responses.
+
+**Path B — Enfilade-native (deferred; separate arc if ever).**
+Generalize `Edition::from_all`'s constant default into computed
+resolution: content with no entries until touched, Gold's true
+OExpandingLoaf structure. Deep: touches the Loaf type, region
+semantics over unresolved content, crum discipline for computed
+subtrees. Path A is its natural prerequisite either way — the spec
+algebra and resolver semantics get proven in A before B inherits them.
+
+**Rationale**: A delivers the user-visible Xanadu property ("derived
+views are first-class documents in the docuverse") on proven
+machinery in ~1-2 weeks; B is weeks of enfilade-internals work whose
+payoff (memory for enormous derived views) matters only at scales
+nothing currently reaches. If profiling later justifies B, the
+decision point is documented here.
+
+### Slices (each independently shippable)
+
+- **4a — `DerivedSpec` + determinism.** Serializable spec:
+  `kind (Trail|Search|Backlinks)`, ordered `VirtualSpec` list,
+  presentation metadata (titles, stops). Property test: same spec ->
+  same edition (byte-identical entry sequence, same crums), always.
+- **4b — Resolver + equivalence.** `build_derived_edition(spec)`:
+  one Virtual element per stop at spaced positions (Stage 4 allocator
+  spacing). Equivalence gate: a trail rendered as a derived edition
+  yields the SAME TEXT as today's trail JSON rendering — the
+  migration pin.
+- **4c — Trails as derived works.** Server: `trail_create` /
+  `trail_add_stop` build/refresh a derived work whose edition comes
+  from the spec; the existing trail JSON API becomes a read of that
+  work. Trails become grabbable, linkable, tumbler-addressable.
+- **4d — Generation-keyed derived-work refresh.** When a source work
+  revises, dependent derived works rebuild lazily on next read (same
+  generation discipline as FR-37 Phase 2 — no staleness window, no
+  eager invalidation storm).
+
+### Standing rules (inherited, non-negotiable)
+
+1. Nothing derived enters content crums — pure BLAKE3 stays.
+2. Every cache keyed by pinned revision (Phase 3 rule).
+3. Derived works are ordinary works: permissions, licensing (FR-38
+   span queries just work on them), federation, and GC treat them
+   identically. No special-casing downstream.
+
+### Explicitly out of scope for 4a-4d
+
+- Search/backlink views (the spec supports them; only the trail
+  builder ships — the others are follow-ups once the pattern proves).
+- Cross-server derived specs (stops referencing remote works —
+  blocked on FR-6 resolution maturity anyway).
+- Path B internals.
+
+### Success criteria
+
+- 4a property green; 4b equivalence green (trail text identical to
+  legacy rendering); 4c trail round-trip via wire as a real work;
+  4d concurrent source-edit/read interleave with zero stale reads.
+
 ## What We Explicitly Do NOT Do
 
 - No caching of resolved content inside crum-hashed structures —
