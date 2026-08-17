@@ -666,7 +666,8 @@ impl Loaf {
                 split,
                 in_child,
                 out_child,
-                ..
+                crum: node_crum,
+                domain: node_domain,
             } => {
                 // Children are Arc-shared across editions (structural
                 // sharing). Take them out; unwrap_or_clone clones only
@@ -688,7 +689,7 @@ impl Loaf {
                     *split = split.complement();
                 }
 
-                match (in_res, out_res) {
+                let result = match (in_res, out_res) {
                     (SplayResult::FullyContained, SplayResult::Outside) => {
                         // Terminal results: no restructuring — restore the
                         // taken-out children (dropping them here loses
@@ -748,7 +749,20 @@ impl Loaf {
                         *split = new_split;
                         SplayResult::Partial
                     }
-                }
+                };
+
+                // Node caches must reflect the (possibly swapped or
+                // restructured) children — the swap path and the
+                // restructure arms previously left the pre-splay crum
+                // in place, so crum() lied after splay (self-review
+                // HIGH-2, Aug 2026: consumers like source-change
+                // detection would see spurious diffs). Recompute from
+                // the children's caches — O(1) — on EVERY exit path;
+                // for terminal restores this is a harmless identity.
+                *node_crum =
+                    compute_split_crum(split, &in_child.compute_crum(), &out_child.compute_crum());
+                *node_domain = in_child.domain().union(&out_child.domain());
+                result
             }
             Loaf::Dsp { offset, child, .. } => {
                 let child_region = shift_region_inverted(region, *offset);
@@ -764,7 +778,18 @@ impl Loaf {
                     );
                     *self = materialized;
                 } else {
-                    *child = Arc::new(child_owned);
+                    // Non-Partial children are content-unchanged, but
+                    // refresh the crum anyway — symmetry with the Split
+                    // arm and free (one hash of 32-byte inputs).
+                    if let Loaf::Dsp {
+                        offset,
+                        child,
+                        crum,
+                        ..
+                    } = self
+                    {
+                        *crum = compute_dsp_crum(*offset, &child.compute_crum());
+                    }
                 }
                 result
             }
@@ -1493,6 +1518,46 @@ mod tests {
                 .map(|(_, c)| c.element.as_text().unwrap_or("").to_string())
                 .collect();
             assert_eq!(text, expected, "content lost after splay at {}", start);
+        }
+    }
+
+    /// Self-review HIGH-2 (Aug 2026): splaying a MULTI-LEVEL tree
+    /// previously left pre-splay crums on restructured/swap-modified
+    /// interior nodes, so crum() lied after splay. The existing
+    /// splayed_crum tests use single-leaf documents (MAX_LEAF_SIZE
+    /// 1024) and could not catch it. This tree forces splits.
+    #[test]
+    fn splay_multi_level_crum_stays_consistent() {
+        let n = 5000i64;
+        let entries: Vec<(i64, Arc<Carrier>)> = (0..n)
+            .map(|i| {
+                (
+                    i,
+                    Arc::new(Carrier::new(RangeElement::text(format!("e{}.", i)))),
+                )
+            })
+            .collect();
+        let region = XnRegion::interval(0, n);
+        let mut loaf = Loaf::build_bulk(entries, None, region);
+        assert!(
+            matches!(loaf, Loaf::Split { .. }),
+            "precondition: multi-level tree"
+        );
+
+        // Splay several regions across the tree.
+        for start in [0i64, 100, 1500, 3000, 4998] {
+            let r = loaf.splay(&XnRegion::interval(start, start + 2));
+            assert_ne!(r, SplayResult::Outside);
+            assert_eq!(
+                loaf.compute_crum(),
+                compute_crum_eager(&loaf),
+                "cached crum must equal eager recomputation after splay at {}",
+                start
+            );
+            let eager = eager_domain(&loaf);
+            assert_eq!(loaf.cached_domain().clone(), eager, "domain at {}", start);
+            // Content survives every step.
+            assert_eq!(loaf.count(), n as u64);
         }
     }
 

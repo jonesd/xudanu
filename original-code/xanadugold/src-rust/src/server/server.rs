@@ -10101,11 +10101,16 @@ impl Server {
             let Some(ws) = self.works.get(&work_id) else {
                 return Err(ServerError::WorkNotFound(work_id));
             };
+            // UNMATERIALIZED virtuals only (self-review HIGH-3, Aug
+            // 2026): `is_virtual()` alone was true for already-cached
+            // elements, so every read of a work containing ANY virtual
+            // paid a full entry clone + loop, defeating "one pass per
+            // element, ever".
             ws.work
                 .current_edition()
                 .cached_entries()
                 .iter()
-                .any(|(_, c)| c.element.is_virtual())
+                .any(|(_, c)| c.element.is_virtual() && c.element.as_text().is_none())
         };
         if !needs {
             return Ok(0);
@@ -17747,7 +17752,7 @@ pub(crate) mod persist_snapshot {
             Ok(())
         }
 
-        pub fn checkpoint_prepare(&self) -> std::io::Result<CheckpointPayload> {
+        pub fn checkpoint_prepare(&mut self) -> std::io::Result<CheckpointPayload> {
             let mut partial = CheckpointPartial::default();
             let (work_ids, club_ids, edition_ids) = self.checkpoint_id_lists();
             self.checkpoint_visit_works(&work_ids, &mut partial);
@@ -17876,7 +17881,7 @@ pub(crate) mod persist_snapshot {
         /// non-work server state. Serialization is deferred to
         /// checkpoint_persist (Stage 1a).
         pub fn checkpoint_finalize(
-            &self,
+            &mut self,
             mut partial: CheckpointPartial,
         ) -> std::io::Result<CheckpointPayload> {
             let chunk_store = self.chunk_store_arc().ok_or_else(|| {
@@ -17889,6 +17894,65 @@ pub(crate) mod persist_snapshot {
                 .data_dir
                 .clone()
                 .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "no data dir"))?;
+
+            // Residual CRDT materialization (self-review HIGH-1, Aug
+            // 2026): the sliced orchestration snapshots
+            // pending_crdt_work_ids() once, and a delta arriving after
+            // that snapshot does NOT touch WorkState — the work stays
+            // chunk_ref-clean and would be classified clean (or was
+            // already visited clean above), committing a checkpoint
+            // WITHOUT the edit (crash before the next checkpoint =
+            // lost edit). Materialize here, then drop every partial
+            // snapshot whose work is dirty NOW (prior clean visits are
+            // stale) and re-visit those works. &mut self is safe:
+            // finalize is the last prepare-phase slice.
+            let residual_pending = self.pending_crdt_work_ids();
+            for work_id in &residual_pending {
+                let _ = self
+                    .crdt_materialize_any_session(*work_id)
+                    .unwrap_or_else(|_| self.materialize_pending_force(*work_id));
+            }
+
+            // Works whose partial snapshot is missing or stale need a
+            // fresh visit: (a) dirty now but hold a CLEAN entry (edit or
+            // materialization landed after their visit), or (b) dirty
+            // with a moved gen (edited twice since their dirty visit).
+            // Works already snapshotted dirty at the current gen are
+            // LEFT ALONE — re-visiting them duplicates entries (the
+            // manifest would carry two chunks for one work and restore
+            // could pick either).
+            let mut refresh: Vec<BeId> = Vec::new();
+            partial.clean_work_entries.retain(|e| {
+                let stale_clean = self
+                    .works
+                    .get(&e.be_id)
+                    .map_or(true, |ws| ws.chunk_ref.is_none());
+                if stale_clean {
+                    refresh.push(e.be_id);
+                }
+                !stale_clean
+            });
+            partial
+                .dirty_work_gens
+                .retain(|(id, gen)| match self.works.get(id) {
+                    Some(ws) if ws.chunk_ref.is_none() && ws.dirty_gen != *gen => {
+                        refresh.push(*id);
+                        false
+                    }
+                    _ => true,
+                });
+            // The stale DirtyWorkData must go with its gen record, or
+            // persist writes TWO chunks for the work (old + new) and
+            // restore can serve either.
+            if !refresh.is_empty() {
+                partial
+                    .dirty_works
+                    .retain(|dw| !refresh.contains(&dw.be_id));
+            }
+            refresh.sort_unstable();
+            refresh.dedup();
+            partial.works_visited.retain(|id| !refresh.contains(id));
+            self.checkpoint_visit_works(&refresh, &mut partial);
 
             let residual_works: Vec<BeId> = self
                 .works
@@ -28460,6 +28524,99 @@ mod tests {
         let _ = std::fs::remove_dir_all(&data_dir_b);
     }
 
+    /// Self-review HIGH-1 (Aug 2026): a CRDT delta arriving AFTER the
+    /// sliced prepare's pending-work snapshot does not touch WorkState
+    /// — without the residual materialize in checkpoint_finalize, the
+    /// work stays chunk_ref-clean and the checkpoint commits WITHOUT
+    /// the edit (crash before next checkpoint = lost edit).
+    #[test]
+    #[cfg(feature = "server")]
+    fn sliced_checkpoint_captures_crdt_edit_after_snapshot() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_sliced_crdt_race_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            doc_id = server
+                .create_work(sid, Edition::from_text("base content"))
+                .unwrap();
+
+            // Checkpoint once so the work is chunk_ref-clean.
+            let payload = server.checkpoint_prepare().unwrap();
+            let result = super::checkpoint_persist(payload).unwrap();
+            server.checkpoint_commit(result).unwrap();
+            assert!(server.works.get(&doc_id).unwrap().chunk_ref.is_some());
+
+            // CRDT session opens on the work (with the current
+            // edition as base, as production dispatch does).
+            let base_edition = server.work_edition(doc_id).unwrap();
+            server
+                .otree_crdt
+                .open_sync_session(doc_id, sid, Some(&base_edition));
+
+            // Sliced prepare: snapshot id lists (this is where the
+            // pending-works list is implicitly frozen for the race)...
+            let (work_ids, club_ids, edition_ids) = server.checkpoint_id_lists();
+            let mut partial = super::CheckpointPartial::default();
+            server.checkpoint_visit_works(&work_ids, &mut partial);
+
+            // ...THEN a CRDT delta lands (after the snapshot; before
+            // finalize) through the real manager path, leaving a
+            // pending edition. It must NOT be lost.
+            use crate::server::otree_crdt::OtreeAuthorIdentity;
+            server
+                .otree_crdt
+                .register_author(
+                    doc_id,
+                    sid,
+                    OtreeAuthorIdentity::new([7u8; 32], "racer".to_string(), 0),
+                )
+                .unwrap();
+            let ops = vec![
+                crate::server::transport::protocol::TextDeltaOp::Retain { count: 4 },
+                crate::server::transport::protocol::TextDeltaOp::Insert {
+                    text: "INSERTED ".to_string(),
+                },
+                crate::server::transport::protocol::TextDeltaOp::Retain { count: 8 },
+            ];
+            server
+                .otree_crdt
+                .apply_text_delta(doc_id, sid, &ops)
+                .unwrap();
+
+            server.checkpoint_visit_clubs(&club_ids, &mut partial);
+            server.checkpoint_visit_editions(&edition_ids, &mut partial);
+            let payload = server.checkpoint_finalize(partial).unwrap();
+            let result = super::checkpoint_persist(payload).unwrap();
+            server.checkpoint_commit(result).unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            let text = server.work_edition(doc_id).unwrap().to_text();
+            assert_eq!(
+                text, "baseINSERTED  content",
+                "the post-snapshot CRDT edit must survive the checkpoint + restore"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
     /// Stage 1 sliced checkpoint: a work created after the id list was
     /// snapshotted (mid-checkpoint race) must still be captured by the
     /// finalize residual scan — completeness guarantee against data loss.
@@ -28580,12 +28737,17 @@ mod tests {
             server.checkpoint_commit(result).unwrap();
 
             let ws = server.works.get(&doc_id).unwrap();
+            // With the HIGH-1 fix, finalize re-visits post-visit edits:
+            // the edited content is captured in THIS checkpoint (a
+            // strictly stronger guarantee than the old stay-dirty-
+            // until-next-checkpoint behavior this test previously
+            // asserted).
             assert!(
-                ws.chunk_ref.is_none(),
-                "edited-after-snapshot work must stay dirty"
+                ws.chunk_ref.is_some(),
+                "edited-after-snapshot work must be captured by the re-visit"
             );
 
-            // Next checkpoint persists the current (newer) content.
+            // A second checkpoint is a no-op for this work.
             let payload2 = server.checkpoint_prepare().unwrap();
             let result2 = super::checkpoint_persist(payload2).unwrap();
             server.checkpoint_commit(result2).unwrap();
@@ -30991,6 +31153,77 @@ mod tests {
         assert!(!s2
             .total_class
             .contains(crate::edition::LicenseClass::RESTRICTED));
+    }
+
+    /// Self-review HIGH-3: already-materialized virtuals must NOT
+    /// retrigger the materialize pass (O(1) read path, "one pass per
+    /// element, ever").
+    #[test]
+    fn fr37_materialize_noop_when_all_virtuals_cached() {
+        let (mut server, sid) = setup_logged_in_server();
+        let origin = server
+            .create_work(sid, Edition::from_text("source text"))
+            .unwrap();
+        let dest = server.create_work(sid, Edition::from_text("A")).unwrap();
+        server
+            .place_virtual_transclusion(sid, dest, origin, 0, 11)
+            .unwrap();
+
+        // First read materializes (1 pass).
+        let n1 = server.materialize_virtual_elements(dest).unwrap();
+        assert_eq!(n1, 1);
+        // Second call: everything cached -> 0, no rebuild.
+        let n2 = server.materialize_virtual_elements(dest).unwrap();
+        assert_eq!(n2, 0);
+        let n3 = server.materialize_virtual_elements(dest).unwrap();
+        assert_eq!(n3, 0, "repeated reads stay O(1)");
+    }
+
+    /// Restored from review note 5 (Aug 2026): the manager-level
+    /// concurrent-session path (session bases + merge + relay) — the
+    /// only test covering two sessions' deltas merging through
+    /// apply_text_delta. Deleted during the S7 alignment rework;
+    /// scenario re-pinned here.
+    #[test]
+    fn test_concurrent_edits_merge_restored() {
+        use crate::server::otree_crdt::OtreeCrdtManager;
+        let make_session = |id: u64| SessionId::new(id);
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+        let s2 = make_session(2);
+
+        mgr.open_sync_session(work_id, s1, Some(&Edition::from_text("abc")));
+        mgr.open_sync_session(work_id, s2, Some(&Edition::from_text("abc")));
+
+        // s1 inserts 'X' at 1; s2 inserts 'Y' at 2 — both against the
+        // shared base; manager merges.
+        let ops1 = vec![
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 1 },
+            crate::server::transport::protocol::TextDeltaOp::Insert {
+                text: "X".to_string(),
+            },
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 2 },
+        ];
+        mgr.apply_text_delta(work_id, s1, &ops1).unwrap();
+
+        let ops2 = vec![
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 2 },
+            crate::server::transport::protocol::TextDeltaOp::Insert {
+                text: "Y".to_string(),
+            },
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 1 },
+        ];
+        mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
+
+        let text = mgr.current_text(work_id).unwrap();
+        assert!(text.contains('X'), "s1's insert survives: {}", text);
+        assert!(text.contains('Y'), "s2's insert survives: {}", text);
+        assert!(
+            text.starts_with('a') && text.ends_with('c'),
+            "ends intact: {}",
+            text
+        );
     }
 
     /// FR-37 Phase 3: placed virtual elements resolve to exactly the
