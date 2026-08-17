@@ -2556,11 +2556,10 @@ export function WorkspaceShell() {
                       </button>
                       <button
                         type="button"
-                        disabled={!canEdit}
-                      onClick={handleCreateAnnotation}
-                      title="Add a note or comment to this passage"
-                    >
-                      ✎ Note
+                        onClick={handleCreateAnnotation}
+                        title="Add a note to this passage — public (shared with readers) or private (only visible to you)"
+                      >
+                        Note
                     </button>
                     <button
                       type="button"
@@ -3276,7 +3275,12 @@ export function WorkspaceShell() {
                         onClick={() => {
                           const ta = document.querySelector<HTMLTextAreaElement>(".ws-anno-text");
                           const cb = document.querySelector<HTMLInputElement>("#ws-anno-private-cb");
-                          if (ta) void handleAnnotationSubmit(ta.value, cb?.checked ?? false);
+                          const txt = ta?.value.trim() ?? "";
+                          if (!txt) {
+                            ta?.focus();
+                            return;
+                          }
+                          void handleAnnotationSubmit(txt, cb?.checked ?? false);
                         }}
                       >
                         Save
@@ -3389,6 +3393,12 @@ export function WorkspaceShell() {
           )}
           {workBeId !== null && (
             <RelatedFooter
+              annotations={annotations}
+              onDeleteAnnotation={deleteAnnotation}
+              onJumpToSpan={(start, end) => {
+                setHighlightRange({ start, end });
+                setTimeout(() => setHighlightRange(null), 4000);
+              }}
               backlinks={transclusion.backlinks}
               outgoingLinks={transclusion.links}
               compoundSpanRanges={compound.spanRanges}

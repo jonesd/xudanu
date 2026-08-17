@@ -5269,6 +5269,58 @@ canvas._bridge {
 ._bridge { background: transparent; }
 .compound-placed-meta { font-size: 10px; color: #6a6a76; margin-left: 4px; }
 
+/* Notes section in the related footer (annotation surfacing) */
+.related-notes {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.related-notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+}
+.related-note-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  border-left: 3px solid rgba(255, 196, 0, 0.6);
+  background: rgba(255, 196, 0, 0.06);
+  cursor: pointer;
+  font-size: 0.85em;
+}
+.related-note-row:hover {
+  background: rgba(255, 196, 0, 0.12);
+}
+.related-note-kind {
+  flex-shrink: 0;
+  font-size: 0.85em;
+  opacity: 0.7;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.related-note-text {
+  flex: 1;
+  word-break: break-word;
+}
+.related-note-meta {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.5;
+  font-size: 0.9em;
+}
+.related-note-del {
+  background: none;
+  border: none;
+  color: var(--red, #f85149);
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 1em;
+}
+
 .related-footer-panel {
   flex-shrink: 0;
   border-top: 1px solid var(--border);
