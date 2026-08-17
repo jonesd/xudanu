@@ -236,6 +236,11 @@ pub struct TrailManifestEntry {
     pub stops: Vec<TrailStopManifestEntry>,
     pub created_at: u64,
     pub updated_at: u64,
+    /// FR-37 4c/4d: the derived work presenting this trail as an
+    /// addressable edition (serde-default: pre-4c manifests restore
+    /// as None -> lazy rebuild on first ensure).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub derived_work_id: Option<BeId>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

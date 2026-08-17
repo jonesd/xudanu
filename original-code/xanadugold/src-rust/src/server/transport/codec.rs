@@ -3205,6 +3205,17 @@ impl JsonCodec {
                     trail_id: args.trail_id,
                 })
             }
+            OperationCode::TrailDerivedWork => {
+                #[derive(Deserialize)]
+                struct Args {
+                    trail_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TrailDerivedWork {
+                    trail_id: args.trail_id,
+                })
+            }
             OperationCode::TrailPublish => {
                 #[derive(Deserialize)]
                 struct Args {

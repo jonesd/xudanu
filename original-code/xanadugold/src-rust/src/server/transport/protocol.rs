@@ -469,6 +469,7 @@ pub enum OperationCode {
     TrailUnpublish,
     TrailListPublished,
     TrailListCategories,
+    TrailDerivedWork,
 }
 
 impl OperationCode {
@@ -563,6 +564,7 @@ impl OperationCode {
             0x0346 => Some(OperationCode::TrailUnpublish),
             0x0347 => Some(OperationCode::TrailListPublished),
             0x0348 => Some(OperationCode::TrailListCategories),
+            0x0349 => Some(OperationCode::TrailDerivedWork),
             0x0349 => Some(OperationCode::ConnectionPinSet),
             0x034a => Some(OperationCode::ConnectionPinUnset),
             0x034b => Some(OperationCode::ConnectionPinsGet),
@@ -875,6 +877,7 @@ impl OperationCode {
             OperationCode::TrailUnpublish => 0x0346,
             OperationCode::TrailListPublished => 0x0347,
             OperationCode::TrailListCategories => 0x0348,
+            OperationCode::TrailDerivedWork => 0x0349,
             OperationCode::ConnectionPinSet => 0x0349,
             OperationCode::ConnectionPinUnset => 0x034a,
             OperationCode::ConnectionPinsGet => 0x034b,
@@ -1407,6 +1410,11 @@ pub enum WireRequest {
         category: Option<String>,
     },
     TrailListCategories,
+    /// FR-37 4d: ensure the trail's derived work exists and is in
+    /// sync with its stops (generation-checked); returns the work id.
+    TrailDerivedWork {
+        trail_id: BeId,
+    },
 
     WorkSetReadClub {
         work_id: BeId,

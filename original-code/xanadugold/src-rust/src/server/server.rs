@@ -800,6 +800,17 @@ fn tag_json(value: &impl serde::Serialize) -> std::io::Result<Vec<u8>> {
 }
 
 #[cfg(feature = "server")]
+/// Crum of the edition a spec would build (FR-37 4d generation
+/// check). None only for invalid specs (empty specs build empty
+/// editions, which have no crum — treated as always-rebuild, a
+/// one-entry cost).
+#[cfg(feature = "server")]
+fn build_crum(spec: &crate::edition::derived::DerivedSpec) -> Option<[u8; 32]> {
+    crate::edition::derived::build_derived_edition(spec)
+        .ok()
+        .and_then(|ed| ed.crum())
+}
+
 pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<CheckpointResult> {
     let start = std::time::Instant::now();
     let store = &payload.chunk_store;
@@ -7586,6 +7597,47 @@ impl Server {
         spec
     }
 
+    /// Generation-checked ensure (FR-37 4d): make sure the trail's
+    /// derived work exists and matches the current stops — cheaply.
+    ///
+    /// The generation check is CRUM EQUALITY: Virtual fingerprints
+    /// cover the spec and are blind to cached content (Phase 3
+    /// determinism rule), so build_derived_edition(&spec).crum() ==
+    /// derived_work.crum() holds exactly when the work was built from
+    /// these stops — even after materialization wrote caches into it.
+    /// Equal -> no rebuild (repeated reads are O(1) in the spec);
+    /// different or missing -> rebuild. This is the "rebuild lazily
+    /// on next read, no eager invalidation storm" contract from the
+    /// design note.
+    pub fn ensure_trail_derived_work(
+        &mut self,
+        session_id: SessionId,
+        trail_id: BeId,
+    ) -> Result<BeId, ServerError> {
+        let owner = self.trail_owner_club(session_id)?;
+        let t = self
+            .trails
+            .get(&trail_id)
+            .ok_or_else(|| ServerError::InvalidArgument("trail not found".into()))?;
+        if t.owner_club != owner && !t.published {
+            return Err(ServerError::InvalidArgument("not your trail".into()));
+        }
+        let spec = self.trail_derived_spec(t);
+
+        if let Some(wid) = t.derived_work_id {
+            if let Some(ws) = self.works.get(&wid) {
+                if let (Some(current), Some(want)) =
+                    (ws.work.current_edition().crum(), build_crum(&spec))
+                {
+                    if current == want {
+                        return Ok(wid); // in sync — generation check hit
+                    }
+                }
+            }
+        }
+        self.trail_refresh_derived_work(session_id, trail_id)
+    }
+
     /// Create or refresh the derived WORK for a trail (FR-37 4c):
     /// a real, addressable edition built from the trail's pinned
     /// stops. Idempotent; returns the derived work id.
@@ -8994,7 +9046,7 @@ impl Server {
                                                     .collect(),
                                                 created_at: t.created_at,
                                                 updated_at: t.updated_at,
-                                                derived_work_id: None,
+                                                derived_work_id: t.derived_work_id,
                                             },
                                         );
                                     }
@@ -9069,7 +9121,7 @@ impl Server {
                             .collect(),
                         created_at: t.created_at,
                         updated_at: t.updated_at,
-                        derived_work_id: None,
+                        derived_work_id: t.derived_work_id,
                     },
                 );
             }
@@ -18211,6 +18263,7 @@ pub(crate) mod persist_snapshot {
                         .collect(),
                     created_at: t.created_at,
                     updated_at: t.updated_at,
+                    derived_work_id: t.derived_work_id,
                 })
                 .collect();
 
@@ -18663,6 +18716,7 @@ pub(crate) mod persist_snapshot {
                             .collect(),
                         created_at: t.created_at,
                         updated_at: t.updated_at,
+                        derived_work_id: t.derived_work_id,
                     })
                     .collect(),
                 trail_counter: self.trail_counter,
@@ -31410,6 +31464,108 @@ mod tests {
         assert_eq!(dwid2, dwid, "same derived work");
         let text = server.work_text_fresh(dwid).unwrap();
         assert_eq!(text, "stable", "refresh does not re-pin");
+    }
+
+    /// FR-37 4d: ensure is generation-checked — an in-sync derived
+    /// work is NOT rebuilt (crum equality; works even materialized),
+    /// an out-of-sync one is.
+    #[test]
+    fn fr37_4d_ensure_generation_checked() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server
+            .create_work(sid, Edition::from_text("content for the trail stop"))
+            .unwrap();
+        let trail = server
+            .trail_create(sid, "gen test".to_string(), None, vec![])
+            .unwrap();
+        server
+            .trail_add_stop(sid, trail, src, Some(0), Some(7), None, None)
+            .unwrap();
+
+        // First ensure: creates (lazy creation on first read).
+        let wid = server.ensure_trail_derived_work(sid, trail).unwrap();
+        // Materialize it (caches written into the edition).
+        let text = server.work_text_fresh(wid).unwrap();
+        assert_eq!(text, "content");
+
+        // Second ensure: in sync (crum equality holds despite cached
+        // content) -> same id AND caches preserved — a rebuild would
+        // produce an UNMATERIALIZED edition (char_len 0), so char_len
+        // staying non-zero proves no rebuild happened.
+        let wid2 = server.ensure_trail_derived_work(sid, trail).unwrap();
+        assert_eq!(wid, wid2);
+        let len_after = server.work_edition(wid).unwrap().char_len();
+        assert_eq!(
+            len_after, 7,
+            "materialized caches preserved -> no rebuild (a rebuild would zero char_len)"
+        );
+
+        // Stop change -> out of sync -> rebuilt (new entries object).
+        server
+            .trail_add_stop(sid, trail, src, Some(0), Some(3), None, None)
+            .unwrap();
+        let wid3 = server.ensure_trail_derived_work(sid, trail).unwrap();
+        assert_eq!(wid3, wid);
+        let text = server.work_text_fresh(wid).unwrap();
+        assert_eq!(text, "contentcon", "rebuilt with both stops: {:?}", text);
+    }
+
+    /// FR-37 4d: derived work + its link survive checkpoint/restore;
+    /// ensure after restore is a no-op when in sync.
+    #[test]
+    fn fr37_4d_derived_work_survives_restore() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_4d_restore_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let (trail, wid);
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let src = server
+                .create_work(sid, Edition::from_text("persisted span"))
+                .unwrap();
+            trail = server
+                .trail_create(sid, "restore test".to_string(), None, vec![])
+                .unwrap();
+            server
+                .trail_add_stop(sid, trail, src, Some(0), Some(9), None, None)
+                .unwrap();
+            wid = server.ensure_trail_derived_work(sid, trail).unwrap();
+            let text = server.work_text_fresh(wid).unwrap();
+            assert_eq!(text, "persisted");
+            // Explicit checkpoint (production persists via the
+            // auto-checkpoint loop; the WAL trail records don't carry
+            // the derived-work link yet — WAL coverage is follow-up).
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            // Trail remembers its derived work.
+            let payload = server.trail_get(sid, trail).unwrap();
+            assert_eq!(payload.derived_work_id, Some(wid));
+            // Materialized content survived.
+            let text = server.work_edition(wid).unwrap().to_text();
+            assert_eq!(text, "persisted");
+            // Ensure is in-sync (no rebuild needed, same id).
+            let wid2 = server.ensure_trail_derived_work(sid, trail).unwrap();
+            assert_eq!(wid, wid2);
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 
     /// Restored from review note 5 (Aug 2026): the manager-level

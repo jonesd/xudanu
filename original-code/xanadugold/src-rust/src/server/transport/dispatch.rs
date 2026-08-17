@@ -1079,6 +1079,14 @@ fn dispatch_inner(
             srv.trail_update(session_id, trail_id, introduction, categories)?;
             Ok(ResponseValue::Void)
         }
+        WireRequest::TrailDerivedWork { trail_id } => {
+            // FR-37 4d: write op — first call may create the derived
+            // work; generation-checked (crum equality) so repeat calls
+            // are cheap.
+            srv.ensure_authenticated(session_id)?;
+            let wid = srv.ensure_trail_derived_work(session_id, trail_id)?;
+            Ok(ResponseValue::Humber(wid))
+        }
         WireRequest::TrailPublish { trail_id } => {
             srv.ensure_authenticated(session_id)?;
             srv.trail_publish(session_id, trail_id)?;
