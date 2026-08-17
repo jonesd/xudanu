@@ -255,6 +255,30 @@ fn split_text_carrier(carrier: &Carrier, start: usize, end: usize) -> Option<Car
             }
             Some(c)
         }
+        // FR-37 Phase 3 (delta-path materialization): splitting a
+        // MATERIALIZED virtual's cached span converts the piece to
+        // plain text. Editing inside a quotation is the explicit act
+        // that breaks the live link — the spec cannot describe a
+        // partial span, so the fragment keeps its bytes and drops the
+        // virtual identity. Before this, partial splits returned None
+        // and the walker silently DROPPED the piece (whole-quotation
+        // content loss on a 1-char edit).
+        RangeElement::Virtual {
+            cached_content: Some(text),
+            ..
+        } => {
+            let start_byte = char_index_to_byte(text, start)?;
+            let end_byte = char_index_to_byte(text, end)?;
+            if start_byte == end_byte {
+                return None;
+            }
+            let slice = &text[start_byte..end_byte];
+            let mut c = Carrier::new(RangeElement::text(slice.to_string()));
+            if let Some(prov) = &carrier.provenance {
+                c = c.with_provenance(prov.clone());
+            }
+            Some(c)
+        }
         _ => {
             if start == 0 && end >= 1 {
                 Some(carrier.clone())
@@ -2628,6 +2652,121 @@ mod tests {
     }
 
     #[test]
+
+    /// FR-37 Phase 3 (delta-path materialization): edits INSIDE a
+    /// materialized virtual's cached span split it like text — the
+    /// fragment keeps its bytes, drops the (now-unrepresentable) spec.
+    /// Before the fix, a partial split returned None and the walker
+    /// silently dropped the piece: whole-quotation content loss on a
+    /// 1-char edit ("AAxyzBB" deleting 'x' yielded "AABB").
+    #[test]
+    fn virtual_inside_edit_splits_like_text() {
+        use crate::edition::range_element::{RangeElement, VirtualSpec};
+        let mk = |mat: Option<&str>| {
+            let mut vm = RangeElement::virtual_element(VirtualSpec {
+                source_work_id: 1,
+                char_start: 0,
+                char_end: 3,
+                revision: 1,
+                placed_at: 0,
+                placed_by: None,
+            });
+            if let Some(m) = mat {
+                vm.set_virtual_content(m.to_string());
+            }
+            Edition::from_entries(vec![
+                (
+                    0i64,
+                    Arc::new(Carrier::new(RangeElement::text("AA".to_string()))),
+                ),
+                (1i64, Arc::new(Carrier::new(vm))),
+                (
+                    2i64,
+                    Arc::new(Carrier::new(RangeElement::text("BB".to_string()))),
+                ),
+            ])
+        };
+
+        // Delete one char inside the virtual ("xyz" -> "yz").
+        let ed = mk(Some("xyz"));
+        let ops = vec![
+            TextDeltaOp::Retain { count: 2 },
+            TextDeltaOp::Delete { count: 1 },
+            TextDeltaOp::Retain { count: 4 },
+        ];
+        let r = apply_text_delta_to_edition(&ed, &ops, None);
+        assert_eq!(r.to_text(), "AAyzBB");
+        assert_eq!(
+            r.cached_entries()
+                .iter()
+                .filter(|(_, c)| c.element.is_virtual())
+                .count(),
+            0
+        );
+
+        // Insert inside the virtual.
+        let ed = mk(Some("xyz"));
+        let ops = vec![
+            TextDeltaOp::Retain { count: 3 },
+            TextDeltaOp::Insert {
+                text: "-".to_string(),
+            },
+            TextDeltaOp::Retain { count: 4 },
+        ];
+        let r = apply_text_delta_to_edition(&ed, &ops, None);
+        assert_eq!(r.to_text(), "AAx-yzBB");
+
+        // Retain THROUGH a materialized virtual: spec survives intact.
+        let ed = mk(Some("xyz"));
+        let ops = vec![TextDeltaOp::Retain { count: 7 }];
+        let r = apply_text_delta_to_edition(&ed, &ops, None);
+        assert_eq!(
+            r.cached_entries()
+                .iter()
+                .filter(|(_, c)| c.element.is_virtual())
+                .count(),
+            1,
+            "unedit virtual keeps its spec"
+        );
+        assert_eq!(r.to_text(), "AAxyzBB");
+
+        // Delete covering exactly the whole virtual: it is removed.
+        let ed = mk(Some("xyz"));
+        let ops = vec![
+            TextDeltaOp::Retain { count: 2 },
+            TextDeltaOp::Delete { count: 3 },
+            TextDeltaOp::Retain { count: 2 },
+        ];
+        let r = apply_text_delta_to_edition(&ed, &ops, None);
+        assert_eq!(r.to_text(), "AABB");
+        assert_eq!(
+            r.cached_entries()
+                .iter()
+                .filter(|(_, c)| c.element.is_virtual())
+                .count(),
+            0
+        );
+
+        // Unmaterialized virtual in the neighborhood: passes through
+        // untouched (zero-char semantics).
+        let ed = mk(None);
+        let ops = vec![
+            TextDeltaOp::Retain { count: 2 },
+            TextDeltaOp::Insert {
+                text: "X".to_string(),
+            },
+        ];
+        let r = apply_text_delta_to_edition(&ed, &ops, None);
+        assert_eq!(
+            r.cached_entries()
+                .iter()
+                .filter(|(_, c)| c.element.is_virtual())
+                .count(),
+            1,
+            "unmaterialized virtual survives nearby edits"
+        );
+    }
+
     fn test_batched_insert_creates_fewer_elements() {
         let edition = Edition::from_text_batched("hello\nworld");
         let ops = vec![TextDeltaOp::Insert {
