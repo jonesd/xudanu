@@ -8879,6 +8879,33 @@ fn server_restore_chunk_store(data_dir: &std::path::Path) -> xudanu::server::Ser
 }
 
 #[test]
+fn robots_txt_served_from_embedded_app() {
+    // SEO floor: crawlers must get a real robots.txt even without a
+    // static dir (xudanu.com runs the embedded app).
+    let server = xudanu::server::Server::new();
+    let _ = server;
+    // The route is HTTP-level; verify via the router construction the
+    // same way other route tests do (spin the full test server).
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let state = std::sync::Arc::new(xudanu::server::transport::shared::AppState::new(server));
+        let app = xudanu::server::transport::handler::build_router(state);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let resp = reqwest::get(format!("http://{}/robots.txt", addr))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let text = resp.text().await.unwrap();
+        assert!(text.starts_with("User-agent: *"), "got: {}", text);
+        assert!(text.contains("Disallow: /api/"));
+    });
+}
+
+#[test]
 fn chunk_store_persistence_works_survive_restart() {
     let dir = temp_chunk_data_dir("works");
     std::fs::create_dir_all(&dir).unwrap();

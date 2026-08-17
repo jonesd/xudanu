@@ -53,6 +53,7 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/blobs/{hash}/preview", get(blob_preview_handler))
         .route("/api/blob/upload", post(blob_upload_handler))
         .route("/health", get(health_handler))
+        .route("/robots.txt", get(robots_txt_handler))
         .route("/.well-known/xudanu-server.json", get(well_known_handler))
         .route("/.well-known/xanadu-server.json", get(well_known_handler))
         .route("/api/public/work/{work_id}", get(public_work_handler))
@@ -177,6 +178,22 @@ async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
     (
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         json,
+    )
+}
+
+/// Crawler directive (served from embedded content so deployments
+/// without a static dir still answer). All crawling allowed; the API
+/// paths are disallowed because they're JSON surfaces, and the app
+/// itself is a WebSocket SPA crawlers can't usefully render — public
+/// CONTENT is meant to be surfaced via future read-only work pages
+/// and the docs/blog linking to them.
+async fn robots_txt_handler() -> impl IntoResponse {
+    (
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; charset=utf-8".to_string(),
+        )],
+        "User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /xudanu\n",
     )
 }
 
