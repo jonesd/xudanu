@@ -17,19 +17,19 @@ pub struct DirectoryEntry {
     pub discovered: String,
     pub referred_by: Option<u64>,
     pub last_seen: Option<u64>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub quarantined: bool,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub quarantined_at: Option<u64>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub first_seen: Option<u64>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub successful_resolutions: u64,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub last_success: Option<u64>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub last_failure: Option<u64>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub consecutive_failures: u32,
 }
 

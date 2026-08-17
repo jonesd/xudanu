@@ -68,9 +68,9 @@ impl std::fmt::Display for PeerAddress {
 pub struct FederationConfig {
     pub enabled: bool,
     pub peers: Vec<PeerAddress>,
-    #[serde(default = "default_mode")]
+    #[cfg_attr(feature = "serde", serde(default = "default_mode"))]
     pub mode: FederationMode,
-    #[serde(default = "default_min_endorsements")]
+    #[cfg_attr(feature = "serde", serde(default = "default_min_endorsements"))]
     pub min_endorsements: u32,
 }
 
@@ -113,7 +113,7 @@ impl FederationConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum FederationMode {
     Closed,
     Open,
@@ -167,7 +167,7 @@ pub struct RoyaltyEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum RoyaltyType {
     Transclusion,
     Reference,
@@ -575,7 +575,7 @@ pub struct SyncWorkEntry {
     pub origin_server_id: String,
     pub work_id: u64,
     pub edition_payload: crate::server::transport::protocol::EditionPayload,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub span_provenance: Vec<crate::edition::SpanProvenance>,
 }
 
@@ -605,7 +605,7 @@ pub struct SyncPush {
 pub struct SyncPull {
     pub server_id: String,
     pub known_fingerprints: Vec<String>,
-    #[serde(default = "default_max_entries")]
+    #[cfg_attr(feature = "serde", serde(default = "default_max_entries"))]
     pub max_entries: usize,
 }
 
@@ -619,7 +619,7 @@ pub const MAX_SYNC_ENTRIES: usize = 1000;
 pub struct CrdtWorkUpdate {
     pub work_id: BeId,
     pub update_bytes: Vec<u8>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub span_provenance: Vec<crate::edition::SpanProvenance>,
 }
 
@@ -682,7 +682,7 @@ pub struct RemoteOrigin {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum RemoteElementType {
     Work,
     Edition,
@@ -1410,7 +1410,7 @@ impl ReconcileStore {
 
 /// Status of a member in the federation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum MembershipStatus {
     Active,
     Suspended,
@@ -1525,7 +1525,7 @@ impl EndorsementProof {
 
 /// Result of a join request validation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum JoinResult {
     Accepted {
         server_id: String,
@@ -1793,7 +1793,7 @@ impl MembershipState {
 
 /// A governance transaction that must be agreed upon via PBFT consensus.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(tag = "type", rename_all = "snake_case"))]
 pub enum GovernanceTx {
     Admit {
         server_id: String,
@@ -1850,7 +1850,7 @@ pub struct PbftVote {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum PbftPhase {
     Prepare,
     Commit,
@@ -1878,7 +1878,7 @@ pub struct ConsensusRound {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum RoundPhase {
     PrePrepare,
     Prepare,

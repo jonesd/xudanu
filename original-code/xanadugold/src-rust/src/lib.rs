@@ -1,7 +1,9 @@
 pub mod edition;
 pub mod ent;
-pub mod persist;
 pub mod space;
+
+#[cfg(feature = "server")]
+pub mod persist;
 
 #[cfg(feature = "server")]
 pub mod crypto;

@@ -17,12 +17,12 @@ use crate::persist::traits::Persistent;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EditionSnapshot {
     pub entries: Vec<(i64, RangeElement)>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub provenances: Vec<Option<ElementProvenance>>,
     pub default: Option<RangeElement>,
     pub domain_start: Option<i64>,
     pub domain_infinite_above: bool,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub span_provenance: Vec<SpanProvenance>,
 }
 

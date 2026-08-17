@@ -348,6 +348,7 @@ impl BlobStore {
         Ok(meta)
     }
 
+    #[cfg(feature = "serde")]
     pub fn store_overlay(
         &self,
         base_hash: u64,
@@ -359,12 +360,14 @@ impl BlobStore {
         self.store(&json, "application/x-xudanu-overlay".to_string())
     }
 
+    #[cfg(feature = "serde")]
     pub fn retrieve_overlay(&self, hash: &[u8; 32]) -> Result<ImageOverlay, BlobError> {
         let data = self.backend.retrieve(hash)?;
         serde_json::from_slice(&data)
             .map_err(|e| BlobError::IoError(format!("invalid overlay: {}", e)))
     }
 
+    #[cfg(feature = "serde")]
     pub fn retrieve_overlay_by_u64(&self, hash_u64: u64) -> Result<ImageOverlay, BlobError> {
         let full_hash = self
             .by_u64

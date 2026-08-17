@@ -44,15 +44,32 @@ if rg -q 'localStorage\.setItem.*password|localStorage\.setItem.*secret|localSto
 fi
 ok
 
-# ── 1. cargo fmt --check (ci.yml: fmt job) ──────────────────────────────────
-step "1/6. cargo fmt --check"
+# ── 1. cargo check with DEFAULT features (AGENTS.md convention) ────────────
+# The bare library build (default = []) must stay green — it broke for
+# ~3 months (May-Aug 2026, 378 accumulated errors) because nothing
+# exercised it. cargo check is fast (no codegen); failures here are
+# ungated serde/tracing/crypto references, fixable on the spot with
+# cfg_attr. The wasm target builds on the same foundation.
+step "1/8. cargo check (default features — AGENTS.md convention)"
+cd "$SRC_RUST"
+if cargo check --quiet 2>&1; then ok; else
+    echo ""
+    echo "FAIL: default-features build broken."
+    echo "Fix on the spot: gate the failing refs with"
+    echo '  #[cfg_attr(feature = "serde", serde(...))]  (attributes)'
+    echo '  #[cfg(feature = "server")]                  (server-only items)'
+    exit 1
+fi
+
+# ── 2. cargo fmt --check (ci.yml: fmt job) ──────────────────────────────────
+step "2/8. cargo fmt --check"
 cd "$SRC_RUST"
 if cargo fmt --check 2>&1; then ok; else
     echo ""; echo "FAIL: Run 'cargo fmt' to fix."; exit 1
 fi
 
-# ── 2. cargo clippy (ci.yml: clippy job) ────────────────────────────────────
-step "2/6. cargo clippy --features server"
+# ── 3. cargo clippy (ci.yml: clippy job) ────────────────────────────────────
+step "3/8. cargo clippy --features server"
 if cargo clippy --features server -- -W clippy::all \
     -A clippy::large-enum-variant \
     -A clippy::manual-range-contains \
@@ -66,28 +83,28 @@ echo "(warnings above are informational — CI does not fail on them)"
 
 # ── 3. cargo test --lib (CI runs this on every push; opt in locally) ─────────
 if [ "$TESTS" = true ]; then
-    step "3/6. cargo test --features server --lib"
+    step "4/8. cargo test --features server --lib"
     if cargo test --features server --lib 2>&1; then ok; else
         echo ""; echo "FAIL: Lib tests failed."; exit 1
     fi
 else
-    step "3/6. cargo test --features server --lib"
+    step "4/8. cargo test --features server --lib"
     skip "(CI runs tests; use --tests to run locally)"
 fi
 
 # ── 4. cargo test --test integration (opt in via --tests) ───────────────────
 if [ "$TESTS" = true ]; then
-    step "4/6. cargo test --features server --test integration"
+    step "5/8. cargo test --features server --test integration"
     if cargo test --features server --test integration 2>&1; then ok; else
         echo ""; echo "FAIL: Integration tests failed."; exit 1
     fi
 else
-    step "4/6. cargo test --features server --test integration"
+    step "5/8. cargo test --features server --test integration"
     skip "(CI runs tests; use --tests to run locally)"
 fi
 
 # ── 5. ESLint with security rules (catches credential leaks, eval, etc.) ─────
-step "5/8. ESLint (security + recommended)"
+step "6/8. ESLint (security + recommended)"
 cd "$WEB_APP"
 LINT_OUT=$(npx eslint . 2>&1 || true)
 if echo "$LINT_OUT" | grep -q "security/"; then
@@ -101,7 +118,7 @@ fi
 ok
 
 # ── 6. TypeScript type check (release.yml: tsc -b) ───────────────────────────
-step "6/8. TypeScript type check (tsc -b)"
+step "7/8. TypeScript type check (tsc -b)"
 cd "$WEB_APP"
 if npx tsc -b 2>&1; then ok; else
     echo ""; echo "FAIL: TypeScript errors. These WILL fail the release build."; exit 1
@@ -109,10 +126,10 @@ fi
 
 # ── 6. Frontend build (release.yml: vite build) ─────────────────────────────
 if [ "$QUICK" = true ]; then
-    step "7/8. Frontend build (vite build)"
+    step "8/8. Frontend build (vite build)"
     skip "(--quick mode)"
 else
-    step "7/8. Frontend build (vite build)"
+    step "8/8. Frontend build (vite build)"
     if npx vite build 2>&1; then ok; else
         echo ""; echo "FAIL: Vite build failed. This WILL fail the release build."; exit 1
     fi

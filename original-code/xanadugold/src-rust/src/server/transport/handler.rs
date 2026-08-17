@@ -584,11 +584,9 @@ fn parse_work_id(hex: &str) -> Option<u64> {
 
 async fn csrf_token_handler(State(state): State<SharedState>) -> impl IntoResponse {
     if !state.csrf_enabled {
-        return (
-            axum::http::StatusCode::NOT_FOUND,
-            "CSRF protection not enabled",
-        )
-            .into_response();
+        // 200 + null token so clients (and browser consoles) see "disabled"
+        // as a normal state rather than a 404 on every page load.
+        return axum::Json(serde_json::json!({ "csrf_token": null })).into_response();
     }
     use rand::RngCore;
     let mut bytes = [0u8; 32];

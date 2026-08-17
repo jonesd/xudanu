@@ -104,6 +104,11 @@ pub(crate) struct WorkState {
     content_start_line: Option<u64>,
     content_end_line: Option<u64>,
     source_fingerprint: Option<crate::server::source_matcher::MinHashSignature>,
+    /// Cached license overlay (FR-38 Phase 2) with the content
+    /// generation it was built from. Invalidated implicitly: any
+    /// mutation bumps dirty_gen, so a mismatching generation triggers
+    /// rebuild on next query. Derived data only — never persisted.
+    license_overlay_cache: Option<(u64, crate::edition::license_overlay::LicenseOverlay)>,
 }
 
 impl WorkState {
@@ -682,7 +687,7 @@ impl Default for Server {
 }
 
 #[cfg(feature = "server")]
-struct DirtyWorkData {
+pub(crate) struct DirtyWorkData {
     be_id: BeId,
     work: Work,
     is_source: bool,
@@ -706,11 +711,14 @@ pub(crate) struct CheckpointPayload {
     manifest_path: std::path::PathBuf,
     data_dir: std::path::PathBuf,
 
-    sub_content_address: Vec<u8>,
-    sub_historical_authors: Vec<u8>,
-    sub_annotations: Vec<u8>,
-    sub_blob_metas: Vec<u8>,
-    sub_fossil_snapshots: Option<Vec<u8>>,
+    // Typed snapshots: serialization (tag_json) happens in
+    // checkpoint_persist on the blocking thread, NOT under the server
+    // write lock (PERF-PLAN Stage 1a).
+    content_address_data: ContentAddressIndex,
+    historical_authors_data: crate::server::historical_author::HistoricalAuthorRegistry,
+    annotations_data: Vec<(BeId, Vec<crate::server::otree_crdt::OtreeAnnotation>)>,
+    blob_metas_data: Vec<crate::persist::manifest::BlobMetaEntry>,
+    fossil_snapshots_data: Vec<crate::edition::recorder::Fossil>,
 
     links: Vec<crate::persist::manifest::LinkEntry>,
 
@@ -741,7 +749,7 @@ pub(crate) struct CheckpointPayload {
     trail_counter: BeId,
     compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
     key_history: Option<crate::persist::manifest::KeyHistoryEntry>,
-    ticket_nonces_data: Option<Vec<u8>>,
+    ticket_nonces_map: Option<std::collections::HashMap<String, u64>>,
 }
 
 #[cfg(feature = "server")]
@@ -755,6 +763,25 @@ pub(crate) struct CheckpointResult {
     pub dirty_work_count: u64,
     pub dirty_club_count: u64,
     pub dirty_edition_count: u64,
+}
+
+/// Accumulator for sliced checkpoint collection (PERF-PLAN Stage 1b).
+/// Works/clubs/editions are visited in batches across separate server
+/// lock acquisitions; `checkpoint_finalize` performs residual scans so
+/// items that appeared or changed mid-checkpoint are still captured.
+#[cfg(feature = "server")]
+#[derive(Default)]
+pub(crate) struct CheckpointPartial {
+    pub(crate) dirty_works: Vec<DirtyWorkData>,
+    pub(crate) dirty_work_gens: Vec<(BeId, u64)>,
+    pub(crate) dirty_clubs: Vec<(BeId, Club)>,
+    pub(crate) dirty_editions: Vec<(BeId, Edition)>,
+    pub(crate) clean_work_entries: Vec<crate::persist::manifest::WorkEntry>,
+    pub(crate) clean_club_refs: Vec<crate::persist::manifest::ClubChunkRef>,
+    pub(crate) clean_edition_refs: Vec<crate::persist::manifest::StandaloneEditionChunkRef>,
+    pub(crate) works_visited: HashSet<BeId>,
+    pub(crate) clubs_visited: HashSet<BeId>,
+    pub(crate) editions_visited: HashSet<BeId>,
 }
 
 #[cfg(feature = "server")]
@@ -771,6 +798,20 @@ fn tag_json(value: &impl serde::Serialize) -> std::io::Result<Vec<u8>> {
 pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<CheckpointResult> {
     let start = std::time::Instant::now();
     let store = &payload.chunk_store;
+
+    // Serialization moved here from checkpoint_prepare (PERF-PLAN Stage 1a):
+    // this runs on the blocking thread, outside the server write lock.
+    let sub_content_address = tag_json(&payload.content_address_data)?;
+    let sub_historical_authors = tag_json(&payload.historical_authors_data)?;
+    let sub_annotations = tag_json(&payload.annotations_data)?;
+    let sub_blob_metas = tag_json(&payload.blob_metas_data)?;
+    let sub_fossil_snapshots = if payload.fossil_snapshots_data.is_empty() {
+        None
+    } else {
+        Some(tag_json(&payload.fossil_snapshots_data)?)
+    };
+    let ticket_nonces_inline: std::collections::HashMap<String, u64> =
+        payload.ticket_nonces_map.clone().unwrap_or_default();
 
     let dirty_work_gens = payload.dirty_work_gens;
     let mut work_refs = Vec::with_capacity(dirty_work_gens.len());
@@ -856,25 +897,25 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
     );
     let content_address_hash = Some(
         store
-            .write_chunk(&payload.sub_content_address)
+            .write_chunk(&sub_content_address)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
     );
     let blob_metas_hash = Some(
         store
-            .write_chunk(&payload.sub_blob_metas)
+            .write_chunk(&sub_blob_metas)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
     );
     let historical_authors_hash = Some(
         store
-            .write_chunk(&payload.sub_historical_authors)
+            .write_chunk(&sub_historical_authors)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
     );
     let annotations_hash = Some(
         store
-            .write_chunk(&payload.sub_annotations)
+            .write_chunk(&sub_annotations)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
     );
-    let fossil_snapshots_hash = if let Some(ref fs_data) = payload.sub_fossil_snapshots {
+    let fossil_snapshots_hash = if let Some(ref fs_data) = sub_fossil_snapshots {
         Some(
             store
                 .write_chunk(fs_data)
@@ -883,13 +924,6 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
     } else {
         None
     };
-
-    let ticket_nonces_inline: std::collections::HashMap<String, u64> =
-        if let Some(ref td) = payload.ticket_nonces_data {
-            serde_json::from_slice(td).unwrap_or_default()
-        } else {
-            std::collections::HashMap::new()
-        };
 
     let next_slot = if payload.manifest_slot == 'a' {
         'b'
@@ -3355,6 +3389,7 @@ impl Server {
             content_start_line: None,
             content_end_line: None,
             source_fingerprint: None,
+            license_overlay_cache: None,
         };
         self.works.insert(be_id, ws);
 
@@ -5492,6 +5527,7 @@ impl Server {
             content_start_line: Some(content_start),
             content_end_line: Some(content_end),
             source_fingerprint: Some(crate::server::source_matcher::compute_minhash(&text)),
+            license_overlay_cache: None,
         };
         self.works.insert(be_id, ws);
 
@@ -6025,6 +6061,23 @@ impl Server {
             hasher.finalize().to_hex().to_string()
         };
 
+        // FR-38 Phase 3: egress badge for the full document —
+        // overlay-derived span classes so peers can compliance-check
+        // without fetching provenance separately.
+        let span_license_classes_str = {
+            let work_license = ws.work.license();
+            let total = edition.char_len();
+            edition
+                .license_overlay()
+                .query(0, total, |owner| {
+                    owner
+                        .and_then(|o| self.works.get(&o).map(|ows| ows.work().license()))
+                        .or(Some(work_license))
+                })
+                .total_class
+                .to_string()
+        };
+
         let span_provenance: Vec<serde_json::Value> = edition
             .span_provenance
             .iter()
@@ -6070,6 +6123,7 @@ impl Server {
             "tumbler": format!("{}.0x{:x}.{}", self.server_tumbler_prefix(), work_be_id, revision),
             "span_provenance": span_provenance,
             "license": ws.work.license().as_str(),
+            "span_license_classes": span_license_classes_str,
             "server_namespace_id": self.server_namespace_id(),
             "server_public_key": server_pub_key_hex,
             "server_signature": server_sig_hex,
@@ -6110,6 +6164,20 @@ impl Server {
             hasher.finalize().to_hex().to_string()
         };
 
+        // FR-38 Phase 3: the origin server answers may-transclude at
+        // egress — peers fetching a span receive its license classes
+        // (overlay descent, O(log r + b)) so they can badge/comply
+        // without a second round trip. Owner -> license mirrors the
+        // server-side resolution (owner's work license, work-level
+        // fallback).
+        let work_license = ws.work.license();
+        let overlay = ws.work.current_edition().license_overlay();
+        let span_licenses = overlay.query(start, end, |owner| {
+            owner
+                .and_then(|o| self.works.get(&o).map(|ows| ows.work().license()))
+                .or(Some(work_license))
+        });
+
         Ok(serde_json::json!({
             "work_id": format!("{:04x}", work_be_id),
             "title": ws.title(),
@@ -6117,6 +6185,16 @@ impl Server {
             "range": [start, end],
             "content_hash_blake3": content_hash,
             "server_namespace_id": self.server_namespace_id(),
+            "license": work_license.as_str(),
+            "span_license_classes": span_licenses.total_class.to_string(),
+            "span_license_boundaries": span_licenses.boundaries.iter().map(|(s, e, owner, class)| {
+                serde_json::json!({
+                    "start": s,
+                    "end": e,
+                    "owner": owner,
+                    "classes": class.to_string(),
+                })
+            }).collect::<Vec<_>>(),
         }))
     }
 
@@ -6588,6 +6666,28 @@ impl Server {
             let rev = self
                 .crdt_materialize_any_session(work_id)
                 .unwrap_or_else(|_| self.materialize_pending_force(work_id));
+            if rev > 0 {
+                saved += 1;
+                tracing::debug!("auto-save: materialized work {} rev {}", work_id, rev);
+            }
+        }
+        saved
+    }
+
+    /// Pending CRDT work ids, for sliced materialization (Stage 1b).
+    pub fn pending_crdt_work_ids(&self) -> Vec<BeId> {
+        self.otree_crdt.pending_work_ids()
+    }
+
+    /// Materialize a specific batch of pending works. The id list is
+    /// computed once by the caller (matching materialize_all_pending
+    /// semantics) and processed in slices so edits interleave.
+    pub fn materialize_pending_ids(&mut self, ids: &[BeId]) -> usize {
+        let mut saved = 0;
+        for work_id in ids {
+            let rev = self
+                .crdt_materialize_any_session(*work_id)
+                .unwrap_or_else(|_| self.materialize_pending_force(*work_id));
             if rev > 0 {
                 saved += 1;
                 tracing::debug!("auto-save: materialized work {} rev {}", work_id, rev);
@@ -8489,8 +8589,14 @@ impl Server {
         data_dir: &std::path::Path,
         passphrase: Option<&[u8]>,
     ) -> std::io::Result<()> {
-        let manifest_path = data_dir.join("manifest.json");
-        if manifest_path.exists() {
+        // Guard on every persistence marker this server writes:
+        // legacy manifest.json OR the root-chunk pointer (v1.5+).
+        // Guarding only on the legacy manifest let init re-initialize
+        // an existing chunk-rooted data dir — silent state loss
+        // (found by the root-chunk-migration test triage, Aug 2026).
+        let legacy_manifest = data_dir.join("manifest.json");
+        let root_manifest = data_dir.join("root_manifest.json");
+        if legacy_manifest.exists() || root_manifest.exists() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
                 format!("data directory already initialized: {}", data_dir.display()),
@@ -8508,7 +8614,7 @@ impl Server {
         self.restore_keypair_from_dir(data_dir, passphrase)?;
         self.restore_blob_store_from_dir(data_dir)?;
 
-        self.checkpoint_path = Some(manifest_path);
+        self.checkpoint_path = Some(legacy_manifest);
         self.attribution_log =
             match crate::server::transport::attribution_log::AttributionLog::open(data_dir) {
                 Ok(log) => log,
@@ -9123,6 +9229,7 @@ impl Server {
                         content_start_line: work_entry.content_start_line,
                         content_end_line: work_entry.content_end_line,
                         source_fingerprint,
+                        license_overlay_cache: None,
                     };
                     self.works.insert(work_entry.be_id, ws);
                 }
@@ -9842,6 +9949,266 @@ impl Server {
         self.checkpoint_path.as_deref()
     }
 
+    /// Monotonic generation of a work's content (FR-37 Phase 2):
+    /// bumps on every mutation via mark_dirty. Readers compare a
+    /// StructuralTransclusion's stamped source_generation against
+    /// this to decide cache validity without touching source content.
+    pub fn work_generation(&self, work_id: BeId) -> Option<u64> {
+        self.works.get(&work_id).map(|ws| ws.dirty_gen)
+    }
+
+    /// Does this work hold any generation-stale transclusion caches?
+    /// Immutable read-side check (FR-37 Phase 2): read-only dispatch
+    /// paths log; the next write-path stamp (or work_text_fresh)
+    /// re-resolves.
+    pub fn has_stale_transclusion_cache(&self, work_id: BeId) -> bool {
+        let Some(ws) = self.works.get(&work_id) else {
+            return false;
+        };
+        ws.work()
+            .current_edition()
+            .cached_entries()
+            .iter()
+            .any(|(_, c)| {
+                if let RangeElement::StructuralTransclusion {
+                    source_work_id,
+                    source_generation,
+                    ..
+                } = &c.element
+                {
+                    match self.work_generation(*source_work_id) {
+                        Some(cur) => source_generation.map_or(true, |g| g != cur),
+                        None => false,
+                    }
+                } else {
+                    false
+                }
+            })
+    }
+
+    /// License classes for a char span of a work (FR-38 Phase 2):
+    /// served from the per-work overlay, rebuilt lazily when the
+    /// content generation has moved. Owner -> license resolution
+    /// happens at query time (re-licensing never rebuilds the index);
+    /// owners resolve through their personal work's license, falling
+    /// back to the containing work's license, then UNKNOWN (safe
+    /// default).
+    pub fn work_span_license_classes(
+        &mut self,
+        work_id: BeId,
+        char_start: usize,
+        char_end: usize,
+    ) -> Result<crate::edition::SpanLicenseSummary, ServerError> {
+        let generation = self
+            .work_generation(work_id)
+            .ok_or(ServerError::WorkNotFound(work_id))?;
+
+        // Rebuild if the cached overlay predates the current content.
+        let stale = self
+            .works
+            .get(&work_id)
+            .unwrap()
+            .license_overlay_cache
+            .as_ref()
+            .map_or(true, |(g, _)| *g != generation);
+        if stale {
+            let overlay = {
+                let ws = self.works.get(&work_id).unwrap();
+                ws.work().current_edition().license_overlay()
+            };
+            let ws = self.works.get_mut(&work_id).unwrap();
+            ws.license_overlay_cache = Some((generation, overlay));
+        }
+
+        // Owner -> license: owner's personal work license first; no
+        // owner (provenance-less entry) or no personal work falls back
+        // to the containing work's license, then UNKNOWN.
+        let work_license = self
+            .works
+            .get(&work_id)
+            .map(|ws| ws.work().license())
+            .unwrap_or(crate::edition::License::AllRightsReserved);
+        let ws = self.works.get(&work_id).unwrap();
+        let overlay = &ws.license_overlay_cache.as_ref().unwrap().1;
+        let works = &self.works;
+        Ok(overlay.query(char_start, char_end, move |owner| {
+            owner
+                .and_then(|o| works.get(&o).map(|ows| ows.work().license()))
+                .or(Some(work_license))
+        }))
+    }
+
+    /// Place a virtual transclusion (FR-37 Phase 3): append a Virtual
+    /// element referencing [char_start, char_end) of `origin_work`,
+    /// PINNED to the origin's current revision. Edit-time pinning
+    /// makes resolution deterministic across replicas; the reference
+    /// is live in the sense that resolution happens on demand, and
+    /// stable in the sense that the pinned bytes can never change
+    /// (revision history + blob snapshots guarantee retrievability).
+    pub fn place_virtual_transclusion(
+        &mut self,
+        session_id: SessionId,
+        dest_work: BeId,
+        origin_work: BeId,
+        char_start: usize,
+        char_end: usize,
+    ) -> Result<(), ServerError> {
+        self.ensure_authenticated(session_id)?;
+        let revision = {
+            let ws = self
+                .works
+                .get(&origin_work)
+                .ok_or(ServerError::WorkNotFound(origin_work))?;
+            ws.work.revision_count()
+        };
+        let spec = crate::edition::range_element::VirtualSpec {
+            source_work_id: origin_work,
+            char_start,
+            char_end,
+            revision,
+            placed_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            placed_by: None,
+        };
+        let elem = RangeElement::virtual_element(spec);
+        let dest_edition = {
+            let ws = self
+                .works
+                .get(&dest_work)
+                .ok_or(ServerError::WorkNotFound(dest_work))?;
+            ws.work.current_edition().clone()
+        };
+        let mut entries = dest_edition.all_entries();
+        let pos = entries.last().map(|(p, _)| *p + 1).unwrap_or(0);
+        entries.push((pos, std::sync::Arc::new(crate::edition::Carrier::new(elem))));
+        self.work_grab(session_id, dest_work)?;
+        self.work_revise(session_id, dest_work, Edition::from_entries(entries))?;
+        self.work_release(session_id, dest_work)?;
+        Ok(())
+    }
+
+    /// Materialize Virtual elements in a work (FR-37 Phase 3):
+    /// resolve each unmaterialized element through its PINNED revision
+    /// and stamp the cache. Pinned revisions are immutable, so unlike
+    /// StructuralTransclusion caches these never go stale — one pass
+    /// per element, ever (until the element itself is edited away and
+    /// re-placed). Called from the same read/stamp flow as FR-37
+    /// Phase 2.
+    pub fn materialize_virtual_elements(&mut self, work_id: BeId) -> Result<usize, ServerError> {
+        let needs = {
+            let Some(ws) = self.works.get(&work_id) else {
+                return Err(ServerError::WorkNotFound(work_id));
+            };
+            // UNMATERIALIZED virtuals only (self-review HIGH-3, Aug
+            // 2026): `is_virtual()` alone was true for already-cached
+            // elements, so every read of a work containing ANY virtual
+            // paid a full entry clone + loop, defeating "one pass per
+            // element, ever".
+            ws.work
+                .current_edition()
+                .cached_entries()
+                .iter()
+                .any(|(_, c)| c.element.is_virtual() && c.element.as_text().is_none())
+        };
+        if !needs {
+            return Ok(0);
+        }
+
+        let entries = {
+            let ws = self.works.get(&work_id).unwrap();
+            ws.work.current_edition().cached_entries().clone()
+        };
+        let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::Carrier>)> =
+            Vec::with_capacity(entries.len());
+        let mut materialized = 0usize;
+
+        for (pos, carrier) in entries.iter() {
+            let mut new_carrier = (**carrier).clone();
+            if let Some(spec) = new_carrier.element.virtual_spec() {
+                if new_carrier.element.as_text().is_none() {
+                    let src = self.works.get(&spec.source_work_id);
+                    let resolved = src.and_then(|ws| ws.work.fetch_revision(spec.revision));
+                    let edition = match resolved {
+                        Some(ed) => ed,
+                        None => {
+                            tracing::warn!(
+                                "[virtual] pinned revision {} of {:x} unavailable for {:x}; leaving unmaterialized",
+                                spec.revision,
+                                spec.source_work_id,
+                                work_id
+                            );
+                            new_entries.push((*pos, std::sync::Arc::new(new_carrier)));
+                            continue;
+                        }
+                    };
+                    let full = edition.to_text();
+                    let chars: Vec<char> = full.chars().collect();
+                    let s = spec.char_start.min(chars.len());
+                    let e = spec.char_end.min(chars.len());
+                    let content: String = chars[s..e].iter().collect();
+                    new_carrier.element.set_virtual_content(content);
+                    materialized += 1;
+                }
+            }
+            new_entries.push((*pos, std::sync::Arc::new(new_carrier)));
+        }
+
+        if materialized > 0 {
+            let new_edition = Edition::from_entries(new_entries);
+            let ws = self.works.get_mut(&work_id).unwrap();
+            ws.work_mut().update_current_edition(new_edition);
+            ws.mark_dirty();
+        }
+        Ok(materialized)
+    }
+
+    /// Fresh text for a work (FR-37 Phase 2): like reading
+    /// current_edition().to_text(), but any StructuralTransclusion
+    /// whose cached_content is generation-stale is re-resolved from
+    /// its source FIRST — the reader never observes the staleness
+    /// window. O(1) when all caches are current.
+    pub fn work_text_fresh(&mut self, work_id: BeId) -> Result<String, ServerError> {
+        // Fast path: no stale transclusions -> no re-stamp.
+        let has_stale = {
+            let Some(ws) = self.works.get(&work_id) else {
+                return Err(ServerError::WorkNotFound(work_id));
+            };
+            ws.work()
+                .current_edition()
+                .cached_entries()
+                .iter()
+                .any(|(_, c)| {
+                    if let RangeElement::StructuralTransclusion {
+                        source_work_id,
+                        source_generation,
+                        ..
+                    } = &c.element
+                    {
+                        match self.work_generation(*source_work_id) {
+                            Some(cur) => source_generation.map_or(true, |g| g != cur),
+                            None => false,
+                        }
+                    } else {
+                        false
+                    }
+                })
+        };
+        if has_stale {
+            self.stamp_structural_transclusion_cache(work_id)?;
+        }
+        // FR-37 Phase 3: unmaterialized Virtual elements contribute
+        // zero chars; materialize (pinned-resolution, one pass per
+        // element ever) before serving text.
+        self.materialize_virtual_elements(work_id)?;
+        let ws = self
+            .works
+            .get(&work_id)
+            .ok_or(ServerError::WorkNotFound(work_id))?;
+        Ok(ws.work().current_edition().to_text())
+    }
+
     pub fn last_checkpoint_time(&self) -> u64 {
         self.last_checkpoint_time
     }
@@ -10395,17 +10762,54 @@ impl Server {
             // revision-path append (server.rs ~896) only covers author edits, so
             // without this transclusion events go unaudited (log stays at 0).
             {
+                let server_id = self.server_keypair.signing_key.verifying_key().to_bytes();
+                // FR-38 Phase 3: span-level license badge. The
+                // transcluded excerpt may cross ownership boundaries
+                // inside the origin work — a work-level lookup reports
+                // the wrong license whenever the span's owners differ
+                // from the work default. Query the origin's overlay
+                // for the excerpt's span; fall back to the work-level
+                // license when the excerpt can no longer be located
+                // (source edited since placement).
+                let src_license = {
+                    let origin_text = self
+                        .works
+                        .get(&origin_work_id)
+                        .map(|ws| ws.work.current_edition().to_text())
+                        .unwrap_or_default();
+                    let origin_lower = origin_text.to_lowercase();
+                    let excerpt_lower_owned = excerpt_lower.clone();
+                    let span = origin_lower.find(&excerpt_lower_owned).map(|byte_start| {
+                        let start_chars = origin_text[..byte_start].chars().count();
+                        let len_chars = excerpt_text.chars().count();
+                        (start_chars, start_chars + len_chars)
+                    });
+                    match span {
+                        Some((s, e)) => {
+                            let summary = self
+                                .work_span_license_classes(origin_work_id, s, e)
+                                .map(|sum| sum.total_class)
+                                .unwrap_or_default();
+                            if summary.is_empty() {
+                                self.works
+                                    .get(&origin_work_id)
+                                    .map(|ws| ws.work.license().as_str().to_string())
+                            } else {
+                                Some(summary.to_string())
+                            }
+                        }
+                        None => self
+                            .works
+                            .get(&origin_work_id)
+                            .map(|ws| ws.work.license().as_str().to_string()),
+                    }
+                };
                 let log = &mut self.attribution_log;
                 let revision = self
                     .works
                     .get(&dest_work_id)
                     .map(|ws| ws.work.revision_count())
                     .unwrap_or(0);
-                let server_id = self.server_keypair.signing_key.verifying_key().to_bytes();
-                let src_license = self
-                    .works
-                    .get(&origin_work_id)
-                    .map(|ws| ws.work.license().as_str().to_string());
                 let entry = crate::server::transport::attribution_log::AttributionEntry {
                     sequence: log.sequence(),
                     timestamp: source_prov.timestamp,
@@ -12447,6 +12851,11 @@ impl Server {
         &mut self,
         work_id: BeId,
     ) -> Result<usize, ServerError> {
+        // FR-37 Phase 2: caches carry source generations. A cache is
+        // stale when its stamped generation differs from the source's
+        // current generation — re-resolve AT STAMP TIME rather than
+        // serving stale content until a background pass runs. Legacy
+        // caches (no generation) re-resolve once, then carry stamps.
         let ws = self
             .works
             .get(&work_id)
@@ -12454,13 +12863,26 @@ impl Server {
         let edition = ws.work().current_edition().clone();
         let entries = edition.cached_entries();
         let needs_update = entries.iter().any(|(_, c)| {
-            matches!(
-                &c.element,
+            match &c.element {
                 RangeElement::StructuralTransclusion {
                     cached_content: None,
                     ..
-                }
-            )
+                } => true,
+                RangeElement::StructuralTransclusion {
+                    source_work_id,
+                    source_generation,
+                    ..
+                } => match source_generation {
+                    // Legacy cache (content present, no stamp):
+                    // re-resolve once.
+                    None => true,
+                    Some(g) => self
+                        .work_generation(*source_work_id)
+                        .map(|cur| cur != *g)
+                        .unwrap_or(false),
+                },
+                _ => false,
+            }
         });
         if !needs_update {
             return Ok(0);
@@ -12472,27 +12894,38 @@ impl Server {
 
         for (_, carrier) in entries.iter() {
             let mut new_carrier = (**carrier).clone();
+            let mut stale = false;
             if let RangeElement::StructuralTransclusion {
                 source_work_id,
                 entry_start,
                 entry_end,
-                cached_content: None,
+                source_generation,
                 ..
             } = &new_carrier.element
             {
                 let src_id = *source_work_id;
                 let c_start = *entry_start as usize;
                 let c_end = *entry_end as usize;
-                if let Some(src_ws) = self.works.get(&src_id) {
-                    let full = src_ws.work().current_edition().to_text();
-                    let chars: Vec<char> = full.chars().collect();
-                    let s = c_start.min(chars.len());
-                    let e = c_end.min(chars.len());
-                    let content: String = chars[s..e].iter().collect();
-                    new_carrier.element.set_cached_content(content);
-                    updated += 1;
+                if let Some(current_gen) = self.work_generation(src_id) {
+                    stale = match source_generation {
+                        None => true, // legacy cache: re-resolve once
+                        Some(g) => *g != current_gen,
+                    };
+                    if stale {
+                        if let Some(src_ws) = self.works.get(&src_id) {
+                            let full = src_ws.work().current_edition().to_text();
+                            let chars: Vec<char> = full.chars().collect();
+                            let s = c_start.min(chars.len());
+                            let e = c_end.min(chars.len());
+                            let content: String = chars[s..e].iter().collect();
+                            new_carrier.element.set_cached_content(content);
+                            new_carrier.element.set_source_generation(current_gen);
+                            updated += 1;
+                        }
+                    }
                 }
             }
+            let _ = stale;
             new_entries.push((pos, std::sync::Arc::new(new_carrier)));
             pos += 1;
         }
@@ -12563,6 +12996,7 @@ impl Server {
                 placed_by: p_by,
                 source_revision: stored_revision,
                 cached_content: _,
+                ..
             } = &carrier.element
             {
                 let src_id = *source_work_id;
@@ -12960,6 +13394,7 @@ impl Server {
                         placed_by,
                         source_revision,
                         cached_content: _,
+                        ..
                     } = new_carrier.element.clone()
                     {
                         if sid == source_work_id {
@@ -14954,6 +15389,7 @@ impl Server {
                     content_start_line: None,
                     content_end_line: None,
                     source_fingerprint: None,
+                    license_overlay_cache: None,
                 };
                 self.works.insert(be_id, ws);
                 imported += 1;
@@ -16675,23 +17111,29 @@ pub(crate) mod persist_snapshot {
         grabber: Option<u64>,
         last_revision_author: Option<BeId>,
         revision_authors: std::collections::HashMap<u64, BeId>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         is_source: bool,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         source_author_id: Option<BeId>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         source_edition_info: Option<String>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         content_start_line: Option<u64>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         content_end_line: Option<u64>,
         /// Soft-delete (archive) state.
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         is_archived: bool,
         /// Append-only lifecycle history.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Vec::is_empty")
+        )]
         lifecycle_history: Vec<crate::edition::work::WorkLifecycleEvent>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         history_club: Option<BeId>,
     }
 
@@ -16701,25 +17143,25 @@ pub(crate) mod persist_snapshot {
         name: Option<String>,
         signature_club: Option<BeId>,
         work: WorkSnapshot,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         default_read_club: Option<BeId>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         default_edit_club: Option<BeId>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         is_personal: bool,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         display_name: Option<String>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         credential: Option<crate::server::club::Credential>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         encrypted_signing_key: Option<crate::crypto::club_keys::EncryptedSigningKey>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         email: Option<String>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         verified: bool,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         members: Vec<BeId>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         sponsored_works: Vec<BeId>,
     }
 
@@ -16734,11 +17176,20 @@ pub(crate) mod persist_snapshot {
         link_id: BeId,
         origin: BeId,
         destination: BeId,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         origin_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         destination_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Vec::is_empty")
+        )]
         link_types: Vec<u64>,
     }
 
@@ -16767,16 +17218,16 @@ pub(crate) mod persist_snapshot {
         content_address: Option<crate::edition::ContentAddressIndex>,
         blob_metas: Vec<BlobMetaSnapshot>,
         key_history: Option<KeyHistorySnapshot>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         historical_authors: Option<crate::server::historical_author::HistoricalAuthorRegistry>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         starred_works: HashMap<BeId, HashSet<BeId>>,
         user_pins: HashMap<BeId, HashSet<String>>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         trails: Vec<TrailSnapshot>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         trail_counter: BeId,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
     }
 
@@ -16793,11 +17244,17 @@ pub(crate) mod persist_snapshot {
         trail_id: BeId,
         owner_club: BeId,
         name: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         introduction: Option<String>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Vec::is_empty")
+        )]
         categories: Vec<String>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         published: bool,
         stops: Vec<TrailStopSnapshot>,
         created_at: u64,
@@ -17180,6 +17637,7 @@ pub(crate) mod persist_snapshot {
                     } else {
                         None
                     },
+                    license_overlay_cache: None,
                 };
                 server.works.insert(*id, ws);
             }
@@ -17294,53 +17752,69 @@ pub(crate) mod persist_snapshot {
             Ok(())
         }
 
-        pub fn checkpoint_prepare(&self) -> std::io::Result<CheckpointPayload> {
-            let chunk_store = self.chunk_store_arc().ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::Other, "no chunk store configured")
-            })?;
-            let manifest_path = self.checkpoint_path.clone().ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::Other, "no checkpoint path configured")
-            })?;
-            let data_dir = self
-                .data_dir
-                .clone()
-                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "no data dir"))?;
+        pub fn checkpoint_prepare(&mut self) -> std::io::Result<CheckpointPayload> {
+            let mut partial = CheckpointPartial::default();
+            let (work_ids, club_ids, edition_ids) = self.checkpoint_id_lists();
+            self.checkpoint_visit_works(&work_ids, &mut partial);
+            self.checkpoint_visit_clubs(&club_ids, &mut partial);
+            self.checkpoint_visit_editions(&edition_ids, &mut partial);
+            self.checkpoint_finalize(partial)
+        }
 
-            let mut dirty_works = Vec::new();
-            let mut clean_work_entries = Vec::new();
-            let mut dirty_work_gens = Vec::new();
+        /// Id lists for sliced checkpoint collection. Callers acquire these
+        /// in one short lock pass, then visit in batches so edits interleave
+        /// between slices (PERF-PLAN Stage 1b).
+        pub fn checkpoint_id_lists(&self) -> (Vec<BeId>, Vec<BeId>, Vec<BeId>) {
+            (
+                self.works.keys().copied().collect(),
+                self.clubs.keys().copied().collect(),
+                self.standalone_editions.keys().copied().collect(),
+            )
+        }
 
-            for (id, ws) in &self.works {
+        /// Visit a batch of works, classifying each as clean (has a
+        /// persisted chunk ref) or dirty (snapshot clone). Idempotent per
+        /// id via `works_visited`.
+        pub fn checkpoint_visit_works(&self, ids: &[BeId], partial: &mut CheckpointPartial) {
+            for id in ids {
+                let Some(ws) = self.works.get(id) else {
+                    continue;
+                };
+                if !partial.works_visited.insert(*id) {
+                    continue;
+                }
                 let is_archived = ws.work.is_archived();
                 let lifecycle_history = ws.work.lifecycle_history().to_vec();
                 let history_club = ws.work.history_club();
                 if let Some(ref existing_ref) = ws.chunk_ref {
-                    clean_work_entries.push(crate::persist::manifest::WorkEntry {
-                        be_id: *id,
-                        work_ref: existing_ref.clone(),
-                        is_source: ws.is_source,
-                        source_author_id: ws.source_author_id,
-                        source_edition_info: ws.source_edition_info.clone(),
-                        content_start_line: ws.content_start_line,
-                        content_end_line: ws.content_end_line,
-                        source_fingerprint: ws.source_fingerprint.map(|fp| fp.to_vec()),
-                        is_archived,
-                        lifecycle_history: lifecycle_history.clone(),
-                        history_club,
-                        kind: ws.work.kind(),
-                        license: ws.work.license(),
-                        custom_title: {
-                            let auto = Server::extract_title(&ws.work.current_edition());
-                            if ws.cached_title != auto {
-                                Some(ws.cached_title.clone())
-                            } else {
-                                None
-                            }
-                        },
-                    });
+                    partial
+                        .clean_work_entries
+                        .push(crate::persist::manifest::WorkEntry {
+                            be_id: *id,
+                            work_ref: existing_ref.clone(),
+                            is_source: ws.is_source,
+                            source_author_id: ws.source_author_id,
+                            source_edition_info: ws.source_edition_info.clone(),
+                            content_start_line: ws.content_start_line,
+                            content_end_line: ws.content_end_line,
+                            source_fingerprint: ws.source_fingerprint.map(|fp| fp.to_vec()),
+                            is_archived,
+                            lifecycle_history: lifecycle_history.clone(),
+                            history_club,
+                            kind: ws.work.kind(),
+                            license: ws.work.license(),
+                            custom_title: {
+                                let auto = Server::extract_title(&ws.work.current_edition());
+                                if ws.cached_title != auto {
+                                    Some(ws.cached_title.clone())
+                                } else {
+                                    None
+                                }
+                            },
+                        });
                 } else {
-                    dirty_work_gens.push((*id, ws.dirty_gen));
-                    dirty_works.push(DirtyWorkData {
+                    partial.dirty_work_gens.push((*id, ws.dirty_gen));
+                    partial.dirty_works.push(DirtyWorkData {
                         be_id: *id,
                         work: ws.work.clone(),
                         is_source: ws.is_source,
@@ -17357,32 +17831,154 @@ pub(crate) mod persist_snapshot {
                     });
                 }
             }
+        }
 
-            let dirty_club_ids = self.dirty_clubs.clone();
-            let mut dirty_clubs = Vec::new();
-            let mut clean_club_refs = Vec::new();
-            for (id, club) in &self.clubs {
+        /// Visit a batch of clubs. Clean = not dirty AND has a persisted
+        /// ref; everything else is cloned for re-persist.
+        pub fn checkpoint_visit_clubs(&self, ids: &[BeId], partial: &mut CheckpointPartial) {
+            for id in ids {
+                let Some(club) = self.clubs.get(id) else {
+                    continue;
+                };
+                if !partial.clubs_visited.insert(*id) {
+                    continue;
+                }
                 if !self.dirty_clubs.contains(id) {
                     if let Some(existing_ref) = self.club_refs.get(id) {
-                        clean_club_refs.push(existing_ref.clone());
+                        partial.clean_club_refs.push(existing_ref.clone());
                         continue;
                     }
                 }
-                dirty_clubs.push((*id, club.clone()));
+                partial.dirty_clubs.push((*id, club.clone()));
             }
+        }
 
-            let mut dirty_editions = Vec::new();
-            let mut clean_edition_refs = Vec::new();
-            for (id, edition) in &self.standalone_editions {
+        /// Visit a batch of standalone editions.
+        pub fn checkpoint_visit_editions(&self, ids: &[BeId], partial: &mut CheckpointPartial) {
+            for id in ids {
+                let Some(edition) = self.standalone_editions.get(id) else {
+                    continue;
+                };
+                if !partial.editions_visited.insert(*id) {
+                    continue;
+                }
                 if let Some(existing_ref) = self.standalone_edition_refs.get(id) {
-                    clean_edition_refs.push(crate::persist::manifest::StandaloneEditionChunkRef {
-                        be_id: *id,
-                        edition_ref: existing_ref.clone(),
-                    });
+                    partial.clean_edition_refs.push(
+                        crate::persist::manifest::StandaloneEditionChunkRef {
+                            be_id: *id,
+                            edition_ref: existing_ref.clone(),
+                        },
+                    );
                 } else {
-                    dirty_editions.push((*id, edition.clone()));
+                    partial.dirty_editions.push((*id, edition.clone()));
                 }
             }
+        }
+
+        /// Final assembly: residual scans for works/clubs/editions that
+        /// appeared or changed after their sliced visits (completeness
+        /// guarantee — every item lands in exactly one list), plus all
+        /// non-work server state. Serialization is deferred to
+        /// checkpoint_persist (Stage 1a).
+        pub fn checkpoint_finalize(
+            &mut self,
+            mut partial: CheckpointPartial,
+        ) -> std::io::Result<CheckpointPayload> {
+            let chunk_store = self.chunk_store_arc().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::Other, "no chunk store configured")
+            })?;
+            let manifest_path = self.checkpoint_path.clone().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::Other, "no checkpoint path configured")
+            })?;
+            let data_dir = self
+                .data_dir
+                .clone()
+                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "no data dir"))?;
+
+            // Residual CRDT materialization (self-review HIGH-1, Aug
+            // 2026): the sliced orchestration snapshots
+            // pending_crdt_work_ids() once, and a delta arriving after
+            // that snapshot does NOT touch WorkState — the work stays
+            // chunk_ref-clean and would be classified clean (or was
+            // already visited clean above), committing a checkpoint
+            // WITHOUT the edit (crash before the next checkpoint =
+            // lost edit). Materialize here, then drop every partial
+            // snapshot whose work is dirty NOW (prior clean visits are
+            // stale) and re-visit those works. &mut self is safe:
+            // finalize is the last prepare-phase slice.
+            let residual_pending = self.pending_crdt_work_ids();
+            for work_id in &residual_pending {
+                let _ = self
+                    .crdt_materialize_any_session(*work_id)
+                    .unwrap_or_else(|_| self.materialize_pending_force(*work_id));
+            }
+
+            // Works whose partial snapshot is missing or stale need a
+            // fresh visit: (a) dirty now but hold a CLEAN entry (edit or
+            // materialization landed after their visit), or (b) dirty
+            // with a moved gen (edited twice since their dirty visit).
+            // Works already snapshotted dirty at the current gen are
+            // LEFT ALONE — re-visiting them duplicates entries (the
+            // manifest would carry two chunks for one work and restore
+            // could pick either).
+            let mut refresh: Vec<BeId> = Vec::new();
+            partial.clean_work_entries.retain(|e| {
+                let stale_clean = self
+                    .works
+                    .get(&e.be_id)
+                    .map_or(true, |ws| ws.chunk_ref.is_none());
+                if stale_clean {
+                    refresh.push(e.be_id);
+                }
+                !stale_clean
+            });
+            partial
+                .dirty_work_gens
+                .retain(|(id, gen)| match self.works.get(id) {
+                    Some(ws) if ws.chunk_ref.is_none() && ws.dirty_gen != *gen => {
+                        refresh.push(*id);
+                        false
+                    }
+                    _ => true,
+                });
+            // The stale DirtyWorkData must go with its gen record, or
+            // persist writes TWO chunks for the work (old + new) and
+            // restore can serve either.
+            if !refresh.is_empty() {
+                partial
+                    .dirty_works
+                    .retain(|dw| !refresh.contains(&dw.be_id));
+            }
+            refresh.sort_unstable();
+            refresh.dedup();
+            partial.works_visited.retain(|id| !refresh.contains(id));
+            self.checkpoint_visit_works(&refresh, &mut partial);
+
+            let residual_works: Vec<BeId> = self
+                .works
+                .keys()
+                .filter(|id| !partial.works_visited.contains(*id))
+                .copied()
+                .collect();
+            self.checkpoint_visit_works(&residual_works, &mut partial);
+
+            let residual_clubs: Vec<BeId> = self
+                .clubs
+                .keys()
+                .filter(|id| !partial.clubs_visited.contains(*id))
+                .copied()
+                .collect();
+            self.checkpoint_visit_clubs(&residual_clubs, &mut partial);
+
+            let residual_editions: Vec<BeId> = self
+                .standalone_editions
+                .keys()
+                .filter(|id| !partial.editions_visited.contains(*id))
+                .copied()
+                .collect();
+            self.checkpoint_visit_editions(&residual_editions, &mut partial);
+
+            let dirty_club_ids = self.dirty_clubs.clone();
 
             let links: Vec<crate::persist::manifest::LinkEntry> =
                 self.links
@@ -17484,34 +18080,24 @@ pub(crate) mod persist_snapshot {
                 .map(|(id, c)| (*id, c.clone()))
                 .collect();
 
-            let sub_content_address = tag_json(&self.content_address)?;
-            let sub_historical_authors = tag_json(&self.historical_authors)?;
-            let sub_annotations = tag_json(&annotations)?;
-            let sub_blob_metas = tag_json(&blob_metas)?;
-            let sub_fossil_snapshots = if fossil_snapshots.is_empty() {
-                None
-            } else {
-                Some(tag_json(&fossil_snapshots)?)
-            };
-
             Ok(CheckpointPayload {
                 chunk_store,
                 manifest_path,
                 data_dir,
-                sub_content_address,
-                sub_historical_authors,
-                sub_annotations,
-                sub_blob_metas,
-                sub_fossil_snapshots,
+                content_address_data: self.content_address.clone(),
+                historical_authors_data: self.historical_authors.clone(),
+                annotations_data: annotations,
+                blob_metas_data: blob_metas,
+                fossil_snapshots_data: fossil_snapshots,
                 links,
-                dirty_works,
-                dirty_work_gens,
-                dirty_clubs,
+                dirty_works: partial.dirty_works,
+                dirty_work_gens: partial.dirty_work_gens,
+                dirty_clubs: partial.dirty_clubs,
                 dirty_club_ids,
-                dirty_editions,
-                clean_work_entries,
-                clean_club_refs,
-                clean_edition_refs,
+                dirty_editions: partial.dirty_editions,
+                clean_work_entries: partial.clean_work_entries,
+                clean_club_refs: partial.clean_club_refs,
+                clean_edition_refs: partial.clean_edition_refs,
                 manifest_sequence: self.manifest_sequence,
                 manifest_slot: self.manifest_slot,
                 grand_map_id_counter: self.grand_map.id_counter(),
@@ -17529,7 +18115,7 @@ pub(crate) mod persist_snapshot {
                 trail_counter: self.trail_counter,
                 compound_editions,
                 key_history,
-                ticket_nonces_data: {
+                ticket_nonces_map: {
                     let now = crate::server::session_ticket::now_secs();
                     let tickets: std::collections::HashMap<String, u64> = self
                         .ticket_nonces
@@ -17542,7 +18128,7 @@ pub(crate) mod persist_snapshot {
                     if tickets.is_empty() {
                         None
                     } else {
-                        Some(serde_json::to_vec(&tickets).ok()).unwrap_or(None)
+                        Some(tickets)
                     }
                 },
             })
@@ -27938,6 +28524,364 @@ mod tests {
         let _ = std::fs::remove_dir_all(&data_dir_b);
     }
 
+    /// Self-review HIGH-1 (Aug 2026): a CRDT delta arriving AFTER the
+    /// sliced prepare's pending-work snapshot does not touch WorkState
+    /// — without the residual materialize in checkpoint_finalize, the
+    /// work stays chunk_ref-clean and the checkpoint commits WITHOUT
+    /// the edit (crash before next checkpoint = lost edit).
+    #[test]
+    #[cfg(feature = "server")]
+    fn sliced_checkpoint_captures_crdt_edit_after_snapshot() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_sliced_crdt_race_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            doc_id = server
+                .create_work(sid, Edition::from_text("base content"))
+                .unwrap();
+
+            // Checkpoint once so the work is chunk_ref-clean.
+            let payload = server.checkpoint_prepare().unwrap();
+            let result = super::checkpoint_persist(payload).unwrap();
+            server.checkpoint_commit(result).unwrap();
+            assert!(server.works.get(&doc_id).unwrap().chunk_ref.is_some());
+
+            // CRDT session opens on the work (with the current
+            // edition as base, as production dispatch does).
+            let base_edition = server.work_edition(doc_id).unwrap();
+            server
+                .otree_crdt
+                .open_sync_session(doc_id, sid, Some(&base_edition));
+
+            // Sliced prepare: snapshot id lists (this is where the
+            // pending-works list is implicitly frozen for the race)...
+            let (work_ids, club_ids, edition_ids) = server.checkpoint_id_lists();
+            let mut partial = super::CheckpointPartial::default();
+            server.checkpoint_visit_works(&work_ids, &mut partial);
+
+            // ...THEN a CRDT delta lands (after the snapshot; before
+            // finalize) through the real manager path, leaving a
+            // pending edition. It must NOT be lost.
+            use crate::server::otree_crdt::OtreeAuthorIdentity;
+            server
+                .otree_crdt
+                .register_author(
+                    doc_id,
+                    sid,
+                    OtreeAuthorIdentity::new([7u8; 32], "racer".to_string(), 0),
+                )
+                .unwrap();
+            let ops = vec![
+                crate::server::transport::protocol::TextDeltaOp::Retain { count: 4 },
+                crate::server::transport::protocol::TextDeltaOp::Insert {
+                    text: "INSERTED ".to_string(),
+                },
+                crate::server::transport::protocol::TextDeltaOp::Retain { count: 8 },
+            ];
+            server
+                .otree_crdt
+                .apply_text_delta(doc_id, sid, &ops)
+                .unwrap();
+
+            server.checkpoint_visit_clubs(&club_ids, &mut partial);
+            server.checkpoint_visit_editions(&edition_ids, &mut partial);
+            let payload = server.checkpoint_finalize(partial).unwrap();
+            let result = super::checkpoint_persist(payload).unwrap();
+            server.checkpoint_commit(result).unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            let text = server.work_edition(doc_id).unwrap().to_text();
+            assert_eq!(
+                text, "baseINSERTED  content",
+                "the post-snapshot CRDT edit must survive the checkpoint + restore"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    /// Stage 1 sliced checkpoint: a work created after the id list was
+    /// snapshotted (mid-checkpoint race) must still be captured by the
+    /// finalize residual scan — completeness guarantee against data loss.
+    #[test]
+    #[cfg(feature = "server")]
+    fn sliced_checkpoint_captures_work_created_mid_checkpoint() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_sliced_race_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let early_id;
+        let raced_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            early_id = server
+                .create_work(sid, Edition::from_text("early work"))
+                .unwrap();
+
+            let (work_ids, club_ids, edition_ids) = server.checkpoint_id_lists();
+            let mut partial = super::CheckpointPartial::default();
+            server.checkpoint_visit_works(&work_ids, &mut partial);
+
+            // Race: a new work appears after the id list was taken.
+            raced_id = server
+                .create_work(sid, Edition::from_text("raced work"))
+                .unwrap();
+
+            server.checkpoint_visit_clubs(&club_ids, &mut partial);
+            server.checkpoint_visit_editions(&edition_ids, &mut partial);
+            let payload = server.checkpoint_finalize(partial).unwrap();
+
+            let visited: std::collections::HashSet<BeId> = payload
+                .clean_work_entries
+                .iter()
+                .map(|w| w.be_id)
+                .chain(payload.dirty_works.iter().map(|w| w.be_id))
+                .collect();
+            assert!(visited.contains(&early_id), "early work must be in payload");
+            assert!(
+                visited.contains(&raced_id),
+                "work created mid-checkpoint must be captured by residual scan"
+            );
+
+            let result = super::checkpoint_persist(payload).unwrap();
+            server.checkpoint_commit(result).unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert_eq!(
+                server.work_edition(early_id).unwrap().to_text(),
+                "early work"
+            );
+            assert_eq!(
+                server.work_edition(raced_id).unwrap().to_text(),
+                "raced work",
+                "raced work must survive restore — no data loss"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    /// Stage 1 sliced checkpoint: a work edited after its snapshot was
+    /// taken must stay dirty (dirty_gen guard) and be re-persisted on the
+    /// next checkpoint with the newer content.
+    #[test]
+    #[cfg(feature = "server")]
+    fn sliced_checkpoint_edit_after_snapshot_stays_consistent() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_sliced_stale_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            doc_id = server
+                .create_work(sid, Edition::from_text("version one"))
+                .unwrap();
+
+            let (work_ids, club_ids, edition_ids) = server.checkpoint_id_lists();
+            let mut partial = super::CheckpointPartial::default();
+            server.checkpoint_visit_works(&work_ids, &mut partial);
+
+            // Edit after snapshot: newer content in memory, stale in payload.
+            server.work_grab(sid, doc_id).unwrap();
+            server
+                .work_revise(sid, doc_id, Edition::from_text("version two"))
+                .unwrap();
+
+            server.checkpoint_visit_clubs(&club_ids, &mut partial);
+            server.checkpoint_visit_editions(&edition_ids, &mut partial);
+            let payload = server.checkpoint_finalize(partial).unwrap();
+            let result = super::checkpoint_persist(payload).unwrap();
+            server.checkpoint_commit(result).unwrap();
+
+            let ws = server.works.get(&doc_id).unwrap();
+            // With the HIGH-1 fix, finalize re-visits post-visit edits:
+            // the edited content is captured in THIS checkpoint (a
+            // strictly stronger guarantee than the old stay-dirty-
+            // until-next-checkpoint behavior this test previously
+            // asserted).
+            assert!(
+                ws.chunk_ref.is_some(),
+                "edited-after-snapshot work must be captured by the re-visit"
+            );
+
+            // A second checkpoint is a no-op for this work.
+            let payload2 = server.checkpoint_prepare().unwrap();
+            let result2 = super::checkpoint_persist(payload2).unwrap();
+            server.checkpoint_commit(result2).unwrap();
+            assert!(server.works.get(&doc_id).unwrap().chunk_ref.is_some());
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert_eq!(
+                server.work_edition(doc_id).unwrap().to_text(),
+                "version two",
+                "latest checkpoint content must win on restore"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    /// Stage 1 sliced checkpoint: sliced orchestration must produce the
+    /// same persisted state as the one-shot path for identical operations.
+    #[test]
+    #[cfg(feature = "server")]
+    fn sliced_checkpoint_equivalent_to_one_shot() {
+        let mk_text = |n: usize| {
+            (0..n)
+                .map(|i| format!("line {i} of the sliced equivalence corpus\n"))
+                .collect::<String>()
+        };
+
+        let data_dir_sliced = std::env::temp_dir().join(format!(
+            "xudanu_sliced_eq_s_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let data_dir_oneshot = std::env::temp_dir().join(format!(
+            "xudanu_sliced_eq_o_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir_sliced);
+        let _ = std::fs::remove_dir_all(&data_dir_oneshot);
+
+        let mut ids = Vec::new();
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir_sliced, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            for i in 0..12 {
+                ids.push(
+                    server
+                        .create_work(sid, Edition::from_text(&mk_text(5 + i)))
+                        .unwrap(),
+                );
+            }
+
+            let pending = server.pending_crdt_work_ids();
+            for batch in pending.chunks(4) {
+                server.materialize_pending_ids(batch);
+            }
+
+            let (work_ids, club_ids, edition_ids) = server.checkpoint_id_lists();
+            let mut partial = super::CheckpointPartial::default();
+            for batch in work_ids.chunks(3) {
+                server.checkpoint_visit_works(batch, &mut partial);
+            }
+            for batch in club_ids.chunks(8) {
+                server.checkpoint_visit_clubs(batch, &mut partial);
+            }
+            for batch in edition_ids.chunks(8) {
+                server.checkpoint_visit_editions(batch, &mut partial);
+            }
+            let payload = server.checkpoint_finalize(partial).unwrap();
+            let result = super::checkpoint_persist(payload).unwrap();
+            server.checkpoint_commit(result).unwrap();
+
+            for id in &ids {
+                assert!(
+                    server.works.get(id).unwrap().chunk_ref.is_some(),
+                    "all works clean after sliced checkpoint"
+                );
+            }
+        }
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir_oneshot, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            for i in 0..12 {
+                server
+                    .create_work(sid, Edition::from_text(&mk_text(5 + i)))
+                    .unwrap();
+            }
+            let payload = server.checkpoint_prepare().unwrap();
+            let result = super::checkpoint_persist(payload).unwrap();
+            server.checkpoint_commit(result).unwrap();
+        }
+
+        let texts_sliced: Vec<String> = {
+            let mut server = Server::new();
+            server
+                .restore_from_data_dir(&data_dir_sliced, None)
+                .unwrap();
+            ids.iter()
+                .map(|id| server.work_edition(*id).unwrap().to_text())
+                .collect()
+        };
+        let texts_oneshot: Vec<String> = {
+            let mut server = Server::new();
+            server
+                .restore_from_data_dir(&data_dir_oneshot, None)
+                .unwrap();
+            ids.iter()
+                .map(|i| server.work_edition(*i).unwrap().to_text())
+                .collect()
+        };
+
+        assert_eq!(texts_sliced, texts_oneshot);
+        for (i, t) in texts_sliced.iter().enumerate() {
+            assert_eq!(t, &mk_text(5 + i));
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir_sliced);
+        let _ = std::fs::remove_dir_all(&data_dir_oneshot);
+    }
+
     #[test]
     #[cfg(feature = "server")]
     fn trail_crud_full_lifecycle() {
@@ -30139,6 +31083,365 @@ mod tests {
             result.text.contains("deep content"),
             "should contain C's text (2nd level — chain resolved)"
         );
+    }
+
+    /// FR-37 Phase 2: editing a source immediately changes readers'
+    /// view of its transclusions — zero stale reads. A dependent work
+    /// whose StructuralTransclusion cache was stamped at generation g
+    /// must re-resolve when the source revises (generation g+1).
+    /// FR-38 Phase 2: overlay serves span license queries and
+    /// rebuilds exactly when content generation moves.
+    #[test]
+    fn fr38_phase2_overlay_cache_invalidates_on_edit() {
+        let (mut server, sid) = setup_logged_in_server();
+
+        // Personal work for owner club: is there a helper? Build the
+        // doc with provenance-carrying entries via revise instead.
+        let source = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+        // Work-level license default = ARR.
+        let s = server.work_span_license_classes(source, 0, 11).unwrap();
+        assert!(
+            s.total_class
+                .contains(crate::edition::LicenseClass::RESTRICTED),
+            "work-level ARR falls through to RESTRICTED: {:?}",
+            s.total_class
+        );
+
+        // Edit bumps generation -> overlay rebuilds; same answer.
+        server.work_grab(sid, source).unwrap();
+        server
+            .work_revise(sid, source, Edition::from_text("hello world v2"))
+            .unwrap();
+        let s = server.work_span_license_classes(source, 0, 14).unwrap();
+        assert!(s
+            .total_class
+            .contains(crate::edition::LicenseClass::RESTRICTED));
+    }
+
+    /// FR-38 Phase 2: re-licensing changes query answers with NO
+    /// overlay rebuild (classes resolve at query time).
+    #[test]
+    fn fr38_phase2_relicense_no_rebuild() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("shared passage"))
+            .unwrap();
+
+        // Prime the overlay cache.
+        let s1 = server.work_span_license_classes(source, 0, 14).unwrap();
+        assert!(s1
+            .total_class
+            .contains(crate::edition::LicenseClass::RESTRICTED));
+
+        // Re-license the work: TCo. No content edit -> no generation
+        // bump -> no rebuild; the next query must see the new class.
+        server
+            .works
+            .get_mut(&source)
+            .unwrap()
+            .work_mut()
+            .set_license(crate::edition::License::Transcopyright);
+        let s2 = server.work_span_license_classes(source, 0, 14).unwrap();
+        assert!(
+            s2.total_class
+                .contains(crate::edition::LicenseClass::TRANSCLUSION_OK),
+            "re-license visible without rebuild: {:?}",
+            s2.total_class
+        );
+        assert!(!s2
+            .total_class
+            .contains(crate::edition::LicenseClass::RESTRICTED));
+    }
+
+    /// Self-review HIGH-3: already-materialized virtuals must NOT
+    /// retrigger the materialize pass (O(1) read path, "one pass per
+    /// element, ever").
+    #[test]
+    fn fr37_materialize_noop_when_all_virtuals_cached() {
+        let (mut server, sid) = setup_logged_in_server();
+        let origin = server
+            .create_work(sid, Edition::from_text("source text"))
+            .unwrap();
+        let dest = server.create_work(sid, Edition::from_text("A")).unwrap();
+        server
+            .place_virtual_transclusion(sid, dest, origin, 0, 11)
+            .unwrap();
+
+        // First read materializes (1 pass).
+        let n1 = server.materialize_virtual_elements(dest).unwrap();
+        assert_eq!(n1, 1);
+        // Second call: everything cached -> 0, no rebuild.
+        let n2 = server.materialize_virtual_elements(dest).unwrap();
+        assert_eq!(n2, 0);
+        let n3 = server.materialize_virtual_elements(dest).unwrap();
+        assert_eq!(n3, 0, "repeated reads stay O(1)");
+    }
+
+    /// Restored from review note 5 (Aug 2026): the manager-level
+    /// concurrent-session path (session bases + merge + relay) — the
+    /// only test covering two sessions' deltas merging through
+    /// apply_text_delta. Deleted during the S7 alignment rework;
+    /// scenario re-pinned here.
+    #[test]
+    fn test_concurrent_edits_merge_restored() {
+        use crate::server::otree_crdt::OtreeCrdtManager;
+        let make_session = |id: u64| SessionId::new(id);
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+        let s2 = make_session(2);
+
+        mgr.open_sync_session(work_id, s1, Some(&Edition::from_text("abc")));
+        mgr.open_sync_session(work_id, s2, Some(&Edition::from_text("abc")));
+
+        // s1 inserts 'X' at 1; s2 inserts 'Y' at 2 — both against the
+        // shared base; manager merges.
+        let ops1 = vec![
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 1 },
+            crate::server::transport::protocol::TextDeltaOp::Insert {
+                text: "X".to_string(),
+            },
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 2 },
+        ];
+        mgr.apply_text_delta(work_id, s1, &ops1).unwrap();
+
+        let ops2 = vec![
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 2 },
+            crate::server::transport::protocol::TextDeltaOp::Insert {
+                text: "Y".to_string(),
+            },
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 1 },
+        ];
+        mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
+
+        let text = mgr.current_text(work_id).unwrap();
+        assert!(text.contains('X'), "s1's insert survives: {}", text);
+        assert!(text.contains('Y'), "s2's insert survives: {}", text);
+        assert!(
+            text.starts_with('a') && text.ends_with('c'),
+            "ends intact: {}",
+            text
+        );
+    }
+
+    /// FR-37 Phase 3: placed virtual elements resolve to exactly the
+    /// pinned source span, and stay stable across later source edits
+    /// (pinning), and survive delta edits elsewhere in the document.
+    #[test]
+    fn fr37_phase3_virtual_placement_pins_and_resolves() {
+        let (mut server, sid) = setup_logged_in_server();
+        let origin = server
+            .create_work(sid, Edition::from_text("hello brave world"))
+            .unwrap();
+        let dest = server
+            .create_work(sid, Edition::from_text("prefix | suffix"))
+            .unwrap();
+
+        // Place a virtual reference to chars 6..11 ("brave").
+        server
+            .place_virtual_transclusion(sid, dest, origin, 6, 11)
+            .unwrap();
+
+        // Unmaterialized: zero chars — placement alone doesn't grow text.
+        let bare = server.work_edition(dest).unwrap().to_text();
+        assert_eq!(bare, "prefix | suffix");
+
+        // Fresh read materializes: "brave" appears at the end.
+        let text = server.work_text_fresh(dest).unwrap();
+        assert_eq!(
+            text, "prefix | suffixbrave",
+            "materialized virtual contributes its span"
+        );
+
+        // Source edit AFTER placement: pinned revision unchanged.
+        server.work_grab(sid, origin).unwrap();
+        server
+            .work_revise(sid, origin, Edition::from_text("hello edited world"))
+            .unwrap();
+        let text2 = server.work_text_fresh(dest).unwrap();
+        assert_eq!(
+            text2, "prefix | suffixbrave",
+            "pinned virtual is immune to later source edits"
+        );
+    }
+
+    /// FR-37 Phase 3: delta edits elsewhere in the document leave the
+    /// virtual element untouched and resolvable.
+    #[test]
+    fn fr37_phase3_virtual_survives_unrelated_edits() {
+        use crate::server::otree_crdt as otree;
+        let (mut server, sid) = setup_logged_in_server();
+        let origin = server
+            .create_work(sid, Edition::from_text("shared passage"))
+            .unwrap();
+        let dest = server.create_work(sid, Edition::from_text("A")).unwrap();
+        server
+            .place_virtual_transclusion(sid, dest, origin, 0, 15)
+            .unwrap();
+        let _ = server.work_text_fresh(dest).unwrap();
+
+        // Delta edit at the very start (far from the virtual at end).
+        let edition = server.work_edition(dest).unwrap();
+        let ops = vec![
+            crate::server::transport::protocol::TextDeltaOp::Insert {
+                text: "X".to_string(),
+            },
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 16 },
+        ];
+        let edited = otree::apply_text_delta_to_edition(&edition, &ops, None);
+        server.work_grab(sid, dest).unwrap();
+        server.work_revise(sid, dest, edited).unwrap();
+
+        let text = server.work_text_fresh(dest).unwrap();
+        assert_eq!(
+            text, "XAshared passage",
+            "virtual survived the edit: {}",
+            text
+        );
+        // Still exactly one virtual entry, still carrying its cache.
+        let entries = server.work_edition(dest).unwrap().all_entries();
+        let virtuals = entries
+            .iter()
+            .filter(|(_, c)| c.element.is_virtual())
+            .count();
+        assert_eq!(virtuals, 1);
+    }
+
+    /// FR-37 Phase 3 determinism rule: fingerprints cover the SPEC,
+    /// never the cache — replicas align without resolution.
+    #[test]
+    fn fr37_phase3_virtual_fingerprint_deterministic() {
+        use crate::edition::range_element::{RangeElement, VirtualSpec};
+        let spec = VirtualSpec {
+            source_work_id: 42,
+            char_start: 3,
+            char_end: 9,
+            revision: 7,
+            placed_at: 1000,
+            placed_by: None,
+        };
+        let mut a = RangeElement::virtual_element(spec);
+        let b = RangeElement::virtual_element(spec);
+        assert_eq!(a.content_fingerprint(), b.content_fingerprint());
+
+        // Materializing one side does NOT change its fingerprint.
+        a.set_virtual_content("resolved".to_string());
+        assert_eq!(
+            a.content_fingerprint(),
+            b.content_fingerprint(),
+            "cache state must not leak into identity"
+        );
+
+        // Different spec -> different fingerprint.
+        let c = RangeElement::virtual_element(VirtualSpec {
+            revision: 8,
+            ..spec
+        });
+        assert_ne!(a.content_fingerprint(), c.content_fingerprint());
+    }
+
+    #[test]
+    fn fr37_phase2_no_staleness_window_after_source_edit() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("version one"))
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work()
+            .current_edition()
+            .crum()
+            .unwrap();
+
+        let mut elem =
+            RangeElement::structural_transclusion(source, 0, 10, source_crum, 1000, Some(1));
+        let entries = vec![(
+            0i64,
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(elem)),
+        )];
+        let dependent = server
+            .create_work(sid, Edition::from_entries(entries))
+            .unwrap();
+
+        // Initial stamp: cache resolves and carries the generation.
+        let updated = server
+            .stamp_structural_transclusion_cache(dependent)
+            .unwrap();
+        assert_eq!(updated, 1);
+        let text = server.work_text_fresh(dependent).unwrap();
+        assert_eq!(text, "version on", "char range 0..10 of the source");
+        assert!(!server.has_stale_transclusion_cache(dependent));
+
+        // Source revises (full-edition replace — the path that used to
+        // skip dependent migration entirely).
+        server.work_grab(sid, source).unwrap();
+        server
+            .work_revise(sid, source, Edition::from_text("version two"))
+            .unwrap();
+
+        // The dependent's cache is now generation-stale...
+        assert!(
+            server.has_stale_transclusion_cache(dependent),
+            "generation bump must mark the dependent stale"
+        );
+
+        // ...and work_text_fresh re-resolves: the reader never sees
+        // "version on" after the source edit.
+        let text = server.work_text_fresh(dependent).unwrap();
+        assert_eq!(text, "version tw", "no staleness window");
+        assert!(!server.has_stale_transclusion_cache(dependent));
+
+        // Re-stamp is now a no-op (generations match).
+        let updated = server
+            .stamp_structural_transclusion_cache(dependent)
+            .unwrap();
+        assert_eq!(updated, 0);
+    }
+
+    /// FR-37 Phase 2: legacy caches (no stamped generation, e.g.
+    /// restored from older data) re-resolve once and then carry
+    /// generations.
+    #[test]
+    fn fr37_phase2_legacy_cache_re_resolves_once() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("abc def"))
+            .unwrap();
+
+        let source_crum = server
+            .works
+            .get(&source)
+            .unwrap()
+            .work()
+            .current_edition()
+            .crum()
+            .unwrap();
+
+        // Legacy element: cached content, NO generation stamp.
+        let mut elem =
+            RangeElement::structural_transclusion(source, 0, 7, source_crum, 1000, Some(1));
+        elem.set_cached_content("stale!".to_string());
+
+        let entries = vec![(
+            0i64,
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(elem)),
+        )];
+        let dependent = server
+            .create_work(sid, Edition::from_entries(entries))
+            .unwrap();
+
+        // A legacy cache counts as stale (unknown generation)...
+        assert!(server.has_stale_transclusion_cache(dependent));
+
+        // ...and fresh reading replaces the stale bytes.
+        let text = server.work_text_fresh(dependent).unwrap();
+        assert_eq!(text, "abc def", "legacy stale cache replaced");
+        assert!(!server.has_stale_transclusion_cache(dependent));
     }
 
     #[test]

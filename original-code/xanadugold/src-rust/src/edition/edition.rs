@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::sync::OnceLock;
 
+use super::backend::BeId;
 use super::bundle::{
     compute_storage_cost, element_byte_size, fingerprint_u64, retrieve_bundles, Bundle, CostMethod,
     RetrieveFlags, StorageCost,
@@ -13,14 +14,21 @@ use super::range_element::{Carrier, RangeElement};
 use super::shared_mapping::{
     content_map_shared_onto, content_map_shared_to, content_shared_region, SharedMapping,
 };
+use super::work::License;
 use super::xn_region::XnRegion;
+
+/// Lazily-built flat view of an edition: sorted entries plus the
+/// cumulative char-start of each entry (parallel arrays). Char starts
+/// enable binary-search char -> entry mapping for the tree-native
+/// delta path (PERF-PLAN Stage 5).
+pub(crate) type EntriesCache = (Vec<(i64, Arc<Carrier>)>, Vec<usize>);
 
 #[derive(Debug, Clone)]
 pub struct Edition {
     pub(crate) orgl: OrglRoot,
     pub(crate) endorsements: EndorsementSet,
     #[allow(dead_code)]
-    pub(crate) entries_cache: Arc<OnceLock<Vec<(i64, Arc<Carrier>)>>>,
+    pub(crate) entries_cache: Arc<OnceLock<EntriesCache>>,
     pub(crate) span_provenance: Vec<SpanProvenance>,
 }
 
@@ -53,6 +61,22 @@ pub struct OutlineEntry {
     pub text: String,
     pub line: u64,
     pub char_offset: u64,
+}
+
+/// Ground-truth result of a per-span license query (FR-38 Phase 1).
+/// `total_class` is the OR of every entry's license class in the span;
+/// `boundaries` lists the ownership runs crossed with their per-run
+/// classes. This structure is what the FR-38 overlay answers in
+/// O(log n + b); here it is computed by scan (O(span entries)) — the
+/// authoritative fallback and the overlay's seed/regression source.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SpanLicenseSummary {
+    pub total_class: super::work::LicenseClass,
+    pub pending_class: super::work::LicenseClass,
+    /// (char_start, char_end, owner_club, run_class) per ownership run.
+    pub boundaries: Vec<(usize, usize, Option<BeId>, super::work::LicenseClass)>,
+    pub distinct_owners: usize,
+    pub unresolved_entries: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,7 +138,56 @@ impl PartialEq for Edition {
 }
 impl Edition {
     pub fn cached_entries(&self) -> &Vec<(i64, Arc<Carrier>)> {
-        self.entries_cache.get_or_init(|| self.orgl.all_entries())
+        &self
+            .entries_cache
+            .get_or_init(|| {
+                let entries = self.orgl.all_entries();
+                let mut starts = Vec::with_capacity(entries.len());
+                let mut cum = 0usize;
+                for (_, carrier) in &entries {
+                    starts.push(cum);
+                    cum += carrier.char_len();
+                }
+                (entries, starts)
+            })
+            .0
+    }
+
+    /// Cumulative char start of each cached entry (parallel to
+    /// `cached_entries`). Built once per edition.
+    pub fn cached_char_starts(&self) -> &[usize] {
+        &self
+            .entries_cache
+            .get_or_init(|| {
+                let entries = self.orgl.all_entries();
+                let mut starts = Vec::with_capacity(entries.len());
+                let mut cum = 0usize;
+                for (_, carrier) in &entries {
+                    starts.push(cum);
+                    cum += carrier.char_len();
+                }
+                (entries, starts)
+            })
+            .1
+    }
+
+    /// Content equality ignoring entry positions: same number of
+    /// entries and same text per entry. A position-tolerant superset of
+    /// `PartialEq` — editions produced by the bulk (dense renumbering)
+    /// and tree-native (stable position) delta paths compare equal when
+    /// their content and segmentation match.
+    pub fn same_content(&self, other: &Edition) -> bool {
+        if self.orgl.count() != other.orgl.count() {
+            return false;
+        }
+        let a = self.cached_entries();
+        let b = other.cached_entries();
+        if a.len() != b.len() {
+            return false;
+        }
+        a.iter()
+            .zip(b.iter())
+            .all(|(x, y)| x.1.element.as_text() == y.1.element.as_text())
     }
 
     pub fn empty() -> Self {
@@ -243,6 +316,43 @@ impl Edition {
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
         }
+    }
+
+    /// Build an Edition that PRESERVES the given (possibly sparse)
+    /// positions (PERF-PLAN Stage 4). Entries must be strictly
+    /// increasing; they are sorted defensively and rejected otherwise.
+    ///
+    /// Unlike `from_entries` (dense 0..n) and `coalesce` (renumbers),
+    /// this is the constructor for gap-allocated layouts where an edit
+    /// never renumbers unrelated entries. Do NOT call `.coalesce()` on
+    /// the result — it would renumber.
+    pub fn from_entries_at_positions(entries: Vec<(i64, Arc<Carrier>)>) -> Result<Self, String> {
+        let mut sorted = entries;
+        sorted.sort_by_key(|(p, _)| *p);
+        for w in sorted.windows(2) {
+            if w[0].0 >= w[1].0 {
+                return Err(format!(
+                    "positions must be strictly increasing, got {} then {}",
+                    w[0].0, w[1].0
+                ));
+            }
+        }
+        let region = match (sorted.first(), sorted.last()) {
+            (Some(f), Some(l)) => XnRegion::interval(f.0, l.0 + 1),
+            _ => XnRegion::empty(),
+        };
+        Ok(Edition {
+            orgl: OrglRoot::from_bulk_entries(sorted, None, region),
+            endorsements: EndorsementSet::new(),
+            entries_cache: Arc::new(OnceLock::new()),
+            span_provenance: Vec::new(),
+        })
+    }
+
+    /// Sorted entry positions (increasing). For locating allocation
+    /// neighbors in the tree-native delta path (Stage 5).
+    pub fn positions(&self) -> Vec<i64> {
+        self.cached_entries().iter().map(|(p, _)| *p).collect()
     }
 
     pub fn from_text_elements(elements: &[RangeElement]) -> Self {
@@ -633,6 +743,102 @@ impl Edition {
             .iter()
             .map(|(_, c)| c.char_len())
             .sum()
+    }
+
+    /// License classes covering a char span, computed from ground truth
+    /// (FR-38 Phase 1): each entry in the span resolves to (provenance
+    /// owner -> owner's license). This is the authoritative per-span
+    /// query the FR-38 overlay accelerates; owner resolution is the
+    /// caller's concern (the server maps club ids to works/licenses),
+    /// passed as a resolver closure.
+    ///
+    /// Zero-char entries adopt the ongoing run's class (they don't
+    /// fragment ownership). Entries with unresolvable owners contribute
+    /// UNKNOWN — the safe default; licenses are display-only per FR-24.
+    pub fn span_license_classes<F>(
+        &self,
+        char_start: usize,
+        char_end: usize,
+        owner_license: F,
+    ) -> SpanLicenseSummary
+    where
+        F: Fn(BeId) -> Option<License>,
+    {
+        let entries = self.cached_entries();
+        let starts = self.cached_char_starts();
+        let mut summary = SpanLicenseSummary::default();
+
+        // Zero-width spans cover nothing (harmonized with the FR-38
+        // overlay; previously the entry containing the start leaked in).
+        if char_start >= char_end {
+            return summary;
+        }
+
+        let mut current_owner: Option<BeId> = None;
+        let mut run_started = false;
+        let mut run_start = char_start;
+
+        for (idx, (_, carrier)) in entries.iter().enumerate() {
+            let entry_start = starts[idx];
+            let entry_len = carrier.char_len();
+            let entry_end = entry_start + entry_len;
+
+            if entry_len == 0 {
+                continue;
+            }
+            if entry_end <= char_start {
+                continue;
+            }
+            if entry_start >= char_end {
+                break;
+            }
+
+            let overlap_start = entry_start.max(char_start);
+            let (class, owner) = match &carrier.provenance {
+                Some(p) => match owner_license(p.author_club_id) {
+                    Some(l) => (l.license_class(), Some(p.author_club_id)),
+                    None => (super::work::LicenseClass::UNKNOWN, Some(p.author_club_id)),
+                },
+                None => (super::work::LicenseClass::UNKNOWN, None),
+            };
+
+            if !run_started || owner != current_owner {
+                if run_started {
+                    summary.boundaries.push((
+                        run_start,
+                        overlap_start,
+                        current_owner,
+                        summary.pending_class,
+                    ));
+                }
+                run_start = overlap_start;
+                run_started = true;
+                current_owner = owner;
+                summary.pending_class = super::work::LicenseClass::default();
+                summary.distinct_owners += 1;
+            }
+            summary.pending_class = summary.pending_class.combine(class);
+            if class.contains(super::work::LicenseClass::UNKNOWN) {
+                summary.unresolved_entries += 1;
+            }
+            summary.total_class = summary.total_class.combine(class);
+        }
+        if run_started {
+            summary
+                .boundaries
+                .push((run_start, char_end, current_owner, summary.pending_class));
+        }
+        summary
+    }
+
+    /// Build the ownership overlay for this edition (FR-38 Phase 2).
+    /// O(n) over the cached entries; callers on the server side cache
+    /// the result keyed by content generation.
+    pub fn license_overlay(&self) -> super::license_overlay::LicenseOverlay {
+        super::license_overlay::LicenseOverlay::build(
+            self.cached_entries(),
+            self.cached_char_starts(),
+        )
     }
 
     pub fn crum(&self) -> Option<crate::edition::orgl::Crum> {
@@ -2538,6 +2744,33 @@ mod tests {
         assert!(coalesced_entries[1].1.label.is_none());
     }
 
+    /// Benchmark: single tree op (`Edition::with`) on progressively larger
+    /// editions. Documents the cost of path-clone + eager full-tree crum
+    /// recomputation in `from_loaf` — the target of the incremental-crum
+    /// stage (PERF-PLAN Stage 2). A flat curve means the tree op no longer
+    /// scales with document size.
+    #[test]
+    fn benchmark_tree_op_on_large_editions() {
+        for size in [1_000usize, 10_000, 100_000] {
+            let text: String = "ab".repeat(size / 2);
+            let ed = Edition::from_text(&text);
+            let mid = (size / 2) as i64;
+
+            let start = std::time::Instant::now();
+            let edited = ed.with(mid, RangeElement::text("X"));
+            let elapsed = start.elapsed();
+
+            assert_eq!(edited.count(), size as u64);
+            assert_eq!(
+                edited
+                    .fetch(mid)
+                    .and_then(|e| e.as_text().map(|s| s.to_string())),
+                Some("X".to_string())
+            );
+            println!("tree_op_with ({} entries): {:?}", size, elapsed);
+        }
+    }
+
     /// Benchmark: Run-length Carrier vs Per-char Element Storage
     ///
     /// Measures the performance and memory impact of `from_text_batched()` (per-line
@@ -3283,6 +3516,307 @@ mod tests {
             crate::edition::orgl::SplayResult::Outside,
             "splay should find the region"
         );
+    }
+
+    /// Stage 4: sparse positions are preserved verbatim by the
+    /// position-preserving constructor.
+    #[test]
+    fn from_entries_at_positions_preserves_sparse_layout() {
+        let entries: Vec<(i64, Arc<Carrier>)> =
+            [(0i64, "alpha"), (65536, "beta"), (131072, "gamma")]
+                .iter()
+                .map(|(p, t)| {
+                    (
+                        *p,
+                        Arc::new(Carrier::new(RangeElement::text(t.to_string()))),
+                    )
+                })
+                .collect();
+        let ed = Edition::from_entries_at_positions(entries).unwrap();
+        assert_eq!(ed.positions(), vec![0, 65536, 131072]);
+        assert_eq!(ed.domain(), XnRegion::interval(0, 131073));
+        assert_eq!(ed.to_text(), "alphabetagamma");
+    }
+
+    /// Stage 4: rejects duplicate/decreasing positions.
+    #[test]
+    fn from_entries_at_positions_rejects_non_increasing() {
+        let mk = |ps: &[i64]| -> Vec<(i64, Arc<Carrier>)> {
+            ps.iter()
+                .map(|p| (*p, Arc::new(Carrier::new(RangeElement::text("x")))))
+                .collect()
+        };
+        assert!(Edition::from_entries_at_positions(mk(&[0, 0])).is_err());
+        // Out-of-order input is sorted defensively: [5, 3] -> [3, 5].
+        assert!(Edition::from_entries_at_positions(mk(&[5, 3])).is_ok());
+        assert!(Edition::from_entries_at_positions(mk(&[0, 1, 1])).is_err());
+        assert!(Edition::from_entries_at_positions(mk(&[])).is_ok());
+        assert!(Edition::from_entries_at_positions(mk(&[7])).is_ok());
+    }
+
+    /// Stage 4 core invariant: tree ops (with/without) never move
+    /// unrelated entries; an edit lands exactly at the allocated
+    /// position (gap midpoint).
+    #[test]
+    fn tree_ops_preserve_unrelated_positions() {
+        use crate::space::position_allocator::{allocate_between, spaced_layout, DEFAULT_SPACING};
+
+        let ps = spaced_layout(6, DEFAULT_SPACING);
+        let entries: Vec<(i64, Arc<Carrier>)> = ps
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                (
+                    *p,
+                    Arc::new(Carrier::new(RangeElement::text(format!("e{}", i)))),
+                )
+            })
+            .collect();
+        let ed = Edition::from_entries_at_positions(entries).unwrap();
+
+        // Insert between entries 2 and 3 at the gap midpoint.
+        let mid = allocate_between(ps[2], ps[3]).unwrap();
+        let ed2 = ed.with(mid, RangeElement::text("INSERTED"));
+
+        let mut got = ed2.positions();
+        assert!(got.contains(&mid), "allocated position present");
+        // Every original position survives untouched.
+        for p in &ps {
+            assert!(got.contains(p), "original position {} preserved", p);
+        }
+        got.sort_unstable();
+        assert_eq!(
+            got.windows(2).filter(|w| w[0] >= w[1]).count(),
+            0,
+            "strictly increasing"
+        );
+
+        // Delete an unrelated entry; the rest keep positions.
+        let ed3 = ed2.without(ps[4]);
+        let ps3 = ed3.positions();
+        assert!(!ps3.contains(&ps[4]));
+        assert!(ps3.contains(&mid));
+        for p in &ps[0..4] {
+            assert!(ps3.contains(p));
+        }
+        assert!(ps3.contains(&ps[5]));
+    }
+
+    /// Stage 4: sparse editions survive the persistence round-trip
+    /// (EditionSnapshot stores raw positions).
+    #[test]
+    fn sparse_positions_survive_snapshot_round_trip() {
+        let entries: Vec<(i64, Arc<Carrier>)> = [(0i64, "a"), (10, "b"), (20, "c"), (3000, "d")]
+            .iter()
+            .map(|(p, t)| {
+                (
+                    *p,
+                    Arc::new(Carrier::new(RangeElement::text(t.to_string()))),
+                )
+            })
+            .collect();
+        let ed = Edition::from_entries_at_positions(entries).unwrap();
+
+        let snap = crate::edition::persistent::EditionSnapshot::from_edition(&ed);
+        let restored = snap.to_edition();
+        assert_eq!(restored.positions(), vec![0, 10, 20, 3000]);
+        assert_eq!(restored.to_text(), "abcd");
+    }
+
+    /// Stage 4: three-way diff/merge operate correctly on sparse inputs —
+    /// the audit found they are interval+fingerprint based, and this test
+    /// pins that behavior for gap-allocated layouts.
+    #[test]
+    fn three_way_merge_on_sparse_positions() {
+        let mk = |pairs: &[(i64, &str)]| -> Edition {
+            let entries: Vec<(i64, Arc<Carrier>)> = pairs
+                .iter()
+                .map(|(p, t)| {
+                    (
+                        *p,
+                        Arc::new(Carrier::new(RangeElement::text(t.to_string()))),
+                    )
+                })
+                .collect();
+            Edition::from_entries_at_positions(entries).unwrap()
+        };
+
+        let base = mk(&[(0, "hello"), (100, "world")]);
+        let a = mk(&[(0, "hello"), (50, "brave"), (100, "world")]);
+        let b = mk(&[(0, "HELLO"), (100, "world")]);
+
+        let result = crate::edition::three_way::three_way_merge(
+            &base,
+            &a,
+            &b,
+            crate::edition::three_way::MergeStrategy::LastWriterWins,
+        )
+        .unwrap();
+        let text = result.merged.to_text();
+        assert!(text.contains("HELLO"), "b's edit applied: {}", text);
+        assert!(text.contains("brave"), "a's insert applied: {}", text);
+        assert!(text.contains("world"));
+    }
+
+    /// Stage 4: DocumentArrangement names sparse positions as tumblers
+    /// (Phase D bridge works on gap-allocated layouts).
+    #[test]
+    fn sparse_positions_tumbler_bridge() {
+        let entries: Vec<(i64, Arc<Carrier>)> = [(0i64, "a"), (65536, "b"), (131072, "c")]
+            .iter()
+            .map(|(p, t)| {
+                (
+                    *p,
+                    Arc::new(Carrier::new(RangeElement::text(t.to_string()))),
+                )
+            })
+            .collect();
+        let ed = Edition::from_entries_at_positions(entries).unwrap();
+        let arr = crate::edition::tumbler::DocumentArrangement::new("alice.com", 5);
+        for p in ed.positions() {
+            let t = arr.to_tumbler(p);
+            assert_eq!(arr.from_tumbler(&t), Some(p), "round trip for {}", p);
+        }
+    }
+
+    /// Regression (Aug 2026): repeated small-region splays at moving
+    /// positions on a real edition must never lose content — the
+    /// failure mode the S3 probe exposed (half the document vanished).
+    #[test]
+    fn splayed_repeated_moving_regions_preserve_content() {
+        let text: String = (0..500)
+            .map(|i| char::from_u32(97 + i % 26).unwrap())
+            .collect();
+        let ed = Edition::from_text(&text);
+        let mut cur = ed;
+        for i in 0..40usize {
+            let positions = cur.positions();
+            let idx = (i * 7 + 3).min(positions.len() - 2);
+            let lo = positions[idx];
+            let hi = positions[idx + 1] + 1;
+            let (splayed, _) = cur.splayed(&XnRegion::interval(lo, hi));
+            assert_eq!(
+                splayed.char_len(),
+                text.chars().count(),
+                "content lost at splay {} (idx {}, [{},{}))",
+                i,
+                idx,
+                lo,
+                hi
+            );
+            cur = splayed;
+        }
+        assert_eq!(cur.to_text(), text);
+    }
+
+    /// FR-38 Phase 1: ground-truth span license query.
+    #[test]
+    fn span_license_classes_mixed_ownership() {
+        use crate::edition::provenance::ElementProvenance;
+        use crate::edition::work::{License, LicenseClass};
+
+        let alice = ElementProvenance {
+            author_public_key: [1; 32],
+            author_display_name: "Alice".to_string(),
+            author_club_id: 10,
+            timestamp: 1,
+            author_type: crate::edition::provenance::AuthorType::Human,
+            llm_model: None,
+            historical_author_id: None,
+            source_work_id: None,
+            transcluded_by: None,
+            derived_by: None,
+        };
+        let bob = ElementProvenance {
+            author_club_id: 20,
+            ..alice.clone()
+        };
+
+        // Alice (TCo) owns chars 0-5; Bob (ARR) owns 5-10.
+        let entries = vec![
+            (
+                0i64,
+                Arc::new(
+                    Carrier::new(RangeElement::text("aaaaa".to_string()))
+                        .with_provenance(alice.clone()),
+                ),
+            ),
+            (
+                1i64,
+                Arc::new(
+                    Carrier::new(RangeElement::text("bbbbb".to_string()))
+                        .with_provenance(bob.clone()),
+                ),
+            ),
+        ];
+        let ed = Edition::from_entries(entries);
+
+        let licenses = |owner: BeId| -> Option<License> {
+            match owner {
+                10 => Some(License::Transcopyright),
+                20 => Some(License::AllRightsReserved),
+                _ => None,
+            }
+        };
+
+        let s = ed.span_license_classes(0, 10, licenses);
+        assert!(s.total_class.contains(LicenseClass::TRANSCLUSION_OK));
+        assert!(s.total_class.contains(LicenseClass::RESTRICTED));
+        assert_eq!(s.distinct_owners, 2);
+        assert_eq!(s.boundaries.len(), 2);
+        assert_eq!(s.boundaries[0].0, 0);
+        assert_eq!(s.boundaries[0].1, 5);
+        assert_eq!(s.boundaries[0].2, Some(10));
+        assert!(s.boundaries[0].3.contains(LicenseClass::TRANSCLUSION_OK));
+        assert!(s.boundaries[1].3.contains(LicenseClass::RESTRICTED));
+
+        // Partial span inside one owner: single boundary, one class.
+        let s2 = ed.span_license_classes(0, 5, licenses);
+        assert!(s2.total_class.contains(LicenseClass::TRANSCLUSION_OK));
+        assert!(!s2.total_class.contains(LicenseClass::RESTRICTED));
+        assert_eq!(s2.distinct_owners, 1);
+    }
+
+    /// FR-38 Phase 1: unresolvable owners and provenance-less entries
+    /// contribute UNKNOWN (the safe default), never a wrong class.
+    #[test]
+    fn span_license_classes_unknown_fallbacks() {
+        use crate::edition::work::{License, LicenseClass};
+
+        let ed = Edition::from_text("hello world");
+        let nothing = |_: BeId| -> Option<License> { None };
+        let s = ed.span_license_classes(0, 11, nothing);
+        assert!(s.total_class.contains(LicenseClass::UNKNOWN));
+        assert_eq!(s.unresolved_entries, 11, "per-char entries all unresolved");
+        assert_eq!(s.distinct_owners, 1);
+        assert!(s.boundaries[0].2.is_none(), "no owner attributable");
+    }
+
+    /// FR-38 Phase 1: LicenseClass monoid + License derivation.
+    #[test]
+    fn license_class_bits() {
+        use crate::edition::work::{License, LicenseClass};
+
+        assert!(License::PublicDomain
+            .license_class()
+            .contains(LicenseClass::FREE));
+        assert!(License::Transcopyright
+            .license_class()
+            .contains(LicenseClass::TRANSCLUSION_OK));
+        assert!(License::CreativeCommonsBy
+            .license_class()
+            .contains(LicenseClass::ATTRIBUTION));
+        assert!(License::AllRightsReserved
+            .license_class()
+            .contains(LicenseClass::RESTRICTED));
+
+        let combined = LicenseClass::FREE.combine(LicenseClass::RESTRICTED);
+        assert!(combined.contains(LicenseClass::FREE));
+        assert!(combined.contains(LicenseClass::RESTRICTED));
+        assert!(!combined.contains(LicenseClass::ATTRIBUTION));
+        assert_eq!(LicenseClass::default().bits(), 0);
+        let s = format!("{}", combined);
+        assert!(s.contains("free") && s.contains("restricted"));
     }
 
     #[test]

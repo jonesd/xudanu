@@ -1,7 +1,9 @@
+#[cfg(feature = "serde")]
 use super::mapping::Mapping;
 use super::xn_region::XnRegion;
 use crate::space::mapping::{MappingDsp, MappingRegion, MappingSpace};
 use crate::space::{Dsp, OrderSpec, Position, Region, Space};
+#[cfg(feature = "serde")]
 use std::cmp::Ordering;
 
 // ── Position wrapper for i64 ──────────────────────────────────────────────

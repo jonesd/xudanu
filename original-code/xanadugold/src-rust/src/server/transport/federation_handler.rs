@@ -27,7 +27,7 @@ fn default_min_compat() -> u8 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FederationHello {
     pub protocol_version: u8,
-    #[serde(default = "default_min_compat")]
+    #[cfg_attr(feature = "serde", serde(default = "default_min_compat"))]
     pub min_compat_version: u8,
     pub ephemeral_public_key: Vec<u8>,
     pub server_id: String,
@@ -47,7 +47,7 @@ pub struct FederationReady {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[cfg_attr(feature = "serde", serde(tag = "type"))]
 pub enum FederationFrame {
     Hello(FederationHello),
     Signature(FederationSignature),

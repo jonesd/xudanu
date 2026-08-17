@@ -3,7 +3,11 @@ use std::sync::Arc;
 use super::range_element::{Carrier, RangeElement};
 use super::xn_region::XnRegion;
 
-const MAX_LEAF_SIZE: usize = 16384;
+/// Maximum entries per leaf. Kept small (Gold-style): leaf crum
+/// recomputation is O(leaf size) per edit, so leaf granularity bounds
+/// incremental-edit cost. 1024 entries ≈ 40KB hashed per leaf crum
+/// rebuild — sub-millisecond even in debug builds (PERF-PLAN Stage 2).
+const MAX_LEAF_SIZE: usize = 1024;
 
 pub type Crum = [u8; 32];
 
@@ -12,15 +16,31 @@ pub fn compute_leaf_crum(
     region: &XnRegion,
     default: &Option<Arc<Carrier>>,
 ) -> Crum {
+    let fingerprints: Vec<[u8; 32]> = entries
+        .iter()
+        .map(|(_, c)| c.element.content_fingerprint())
+        .collect();
+    compute_leaf_crum_parts(entries, region, default, &fingerprints)
+}
+
+/// Same hash order as `compute_leaf_crum`, but reusing cached per-entry
+/// fingerprints. Results are byte-identical — incremental crum maintenance
+/// must not change crum values (PERF-PLAN Stage 2).
+fn compute_leaf_crum_parts(
+    entries: &[(i64, Arc<Carrier>)],
+    region: &XnRegion,
+    default: &Option<Arc<Carrier>>,
+    fingerprints: &[[u8; 32]],
+) -> Crum {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"leaf:");
     for (start, end) in region.intervals() {
         hasher.update(&start.to_le_bytes());
         hasher.update(&end.to_le_bytes());
     }
-    for (pos, carrier) in entries {
+    for ((pos, _), fp) in entries.iter().zip(fingerprints.iter()) {
         hasher.update(&pos.to_le_bytes());
-        hasher.update(&carrier.element.content_fingerprint());
+        hasher.update(fp);
     }
     if let Some(d) = default {
         hasher.update(b"d:");
@@ -49,57 +69,79 @@ fn compute_dsp_crum(offset: i64, child_crum: &Crum) -> Crum {
     *hasher.finalize().as_bytes()
 }
 
+/// Enfilade tree node with per-node crum and domain caches (Gold's OCs
+/// on every node). Tree operations (`with`/`without`/`copy`) recompute
+/// caches only along the changed path — O(log n) per op instead of a
+/// full-tree rehash from the root (PERF-PLAN Stage 2).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Loaf {
     Leaf {
         region: XnRegion,
         entries: Vec<(i64, Arc<Carrier>)>,
+        /// Per-entry content fingerprints, parallel to `entries`. Avoids
+        /// re-blake3 of entry text on every leaf crum recomputation.
+        fingerprints: Vec<[u8; 32]>,
         default: Option<Arc<Carrier>>,
+        crum: Crum,
     },
     Split {
         split: XnRegion,
-        in_child: Box<Loaf>,
-        out_child: Box<Loaf>,
+        in_child: Arc<Loaf>,
+        out_child: Arc<Loaf>,
+        domain: XnRegion,
+        crum: Crum,
     },
     Dsp {
         offset: i64,
-        child: Box<Loaf>,
+        child: Arc<Loaf>,
+        domain: XnRegion,
+        crum: Crum,
     },
 }
 
 #[allow(dead_code)]
 impl Loaf {
+    /// Cached crum — O(1). Every construction path maintains this.
     pub fn compute_crum(&self) -> Crum {
         match self {
-            Loaf::Leaf {
-                entries,
-                region,
-                default,
-                ..
-            } => compute_leaf_crum(entries, region, default),
-            Loaf::Split {
-                split,
-                in_child,
-                out_child,
-                ..
-            } => compute_split_crum(split, &in_child.compute_crum(), &out_child.compute_crum()),
-            Loaf::Dsp { offset, child, .. } => compute_dsp_crum(*offset, &child.compute_crum()),
+            Loaf::Leaf { crum, .. } => *crum,
+            Loaf::Split { crum, .. } => *crum,
+            Loaf::Dsp { crum, .. } => *crum,
         }
     }
 
-    fn new_leaf(region: XnRegion, entries: Vec<(i64, Arc<Carrier>)>) -> Self {
+    /// Cached domain — O(1).
+    pub(crate) fn cached_domain(&self) -> &XnRegion {
+        match self {
+            Loaf::Leaf { region, .. } => region,
+            Loaf::Split { domain, .. } => domain,
+            Loaf::Dsp { domain, .. } => domain,
+        }
+    }
+
+    pub(crate) fn new_leaf(region: XnRegion, entries: Vec<(i64, Arc<Carrier>)>) -> Self {
+        let fingerprints = entry_fingerprints(&entries);
+        let crum = compute_leaf_crum_parts(&entries, &region, &None, &fingerprints);
         Loaf::Leaf {
             region,
             entries,
+            fingerprints,
             default: None,
+            crum,
         }
     }
 
     fn new_leaf_with_default(region: XnRegion, default: Arc<Carrier>) -> Self {
+        let entries = Vec::new();
+        let fingerprints = Vec::new();
+        let crum =
+            compute_leaf_crum_parts(&entries, &region, &Some(default.clone()), &fingerprints);
         Loaf::Leaf {
             region,
-            entries: Vec::new(),
+            entries,
+            fingerprints,
             default: Some(default),
+            crum,
         }
     }
 
@@ -112,10 +154,14 @@ impl Loaf {
             return Loaf::empty_leaf();
         }
         if sorted_entries.is_empty() {
+            let fingerprints = Vec::new();
+            let crum = compute_leaf_crum_parts(&sorted_entries, &region, &default, &fingerprints);
             return Loaf::Leaf {
                 region,
                 entries: sorted_entries,
+                fingerprints,
                 default,
+                crum,
             };
         }
         if sorted_entries.len() <= MAX_LEAF_SIZE {
@@ -127,10 +173,15 @@ impl Loaf {
             } else {
                 entry_region
             };
+            let fingerprints = entry_fingerprints(&sorted_entries);
+            let crum =
+                compute_leaf_crum_parts(&sorted_entries, &leaf_region, &default, &fingerprints);
             return Loaf::Leaf {
                 region: leaf_region,
                 entries: sorted_entries,
+                fingerprints,
                 default,
+                crum,
             };
         }
         let mid = sorted_entries.len() / 2;
@@ -140,33 +191,51 @@ impl Loaf {
         let split = XnRegion::below(split_pos);
         let in_region = region.intersect(&split);
         let out_region = region.intersect(&XnRegion::above(split_pos));
-        let in_child = Box::new(Loaf::build_bulk(in_entries, default.clone(), in_region));
-        let out_child = Box::new(Loaf::build_bulk(out_entries, default.clone(), out_region));
+        let in_child = Arc::new(Loaf::build_bulk(in_entries, default.clone(), in_region));
+        let out_child = Arc::new(Loaf::build_bulk(out_entries, default.clone(), out_region));
+        Loaf::split_from(split, in_child, out_child)
+    }
+
+    fn empty_leaf() -> Self {
+        let region = XnRegion::empty();
+        let crum = compute_leaf_crum_parts(&[], &region, &None, &[]);
+        Loaf::Leaf {
+            region,
+            entries: Vec::new(),
+            fingerprints: Vec::new(),
+            default: None,
+            crum,
+        }
+    }
+
+    /// Build a Split maintaining crum/domain caches from the children's
+    /// caches — O(intervals), no subtree walks (PERF-PLAN Stage 2).
+    pub(crate) fn split_from(split: XnRegion, in_child: Arc<Loaf>, out_child: Arc<Loaf>) -> Self {
+        let domain = in_child.cached_domain().union(out_child.cached_domain());
+        let crum = compute_split_crum(&split, &in_child.compute_crum(), &out_child.compute_crum());
         Loaf::Split {
             split,
             in_child,
             out_child,
+            domain,
+            crum,
         }
     }
 
-    fn empty_leaf() -> Self {
-        Loaf::Leaf {
-            region: XnRegion::empty(),
-            entries: Vec::new(),
-            default: None,
+    /// Build a Dsp maintaining crum/domain caches — O(intervals).
+    pub(crate) fn dsp_from(offset: i64, child: Arc<Loaf>) -> Self {
+        let domain = shift_region(child.cached_domain(), offset);
+        let crum = compute_dsp_crum(offset, &child.compute_crum());
+        Loaf::Dsp {
+            offset,
+            child,
+            domain,
+            crum,
         }
     }
 
     fn domain(&self) -> XnRegion {
-        match self {
-            Loaf::Leaf { region, .. } => region.clone(),
-            Loaf::Split {
-                in_child,
-                out_child,
-                ..
-            } => in_child.domain().union(&out_child.domain()),
-            Loaf::Dsp { offset, child } => shift_region(&child.domain(), *offset),
-        }
+        self.cached_domain().clone()
     }
 
     fn count(&self) -> u64 {
@@ -175,6 +244,7 @@ impl Loaf {
                 entries,
                 region,
                 default,
+                ..
             } => {
                 if default.is_some() {
                     return match region.count() {
@@ -222,6 +292,7 @@ impl Loaf {
                 entries,
                 region,
                 default,
+                ..
             } => default.is_none() && entries.is_empty() && region.is_empty(),
             Loaf::Split {
                 in_child,
@@ -249,6 +320,7 @@ impl Loaf {
                 entries,
                 region,
                 default,
+                ..
             } => {
                 if !region.contains(position) {
                     return None;
@@ -262,6 +334,7 @@ impl Loaf {
                 split,
                 in_child,
                 out_child,
+                ..
             } => {
                 if split.contains(position) {
                     in_child.fetch(position)
@@ -269,7 +342,7 @@ impl Loaf {
                     out_child.fetch(position)
                 }
             }
-            Loaf::Dsp { offset, child } => {
+            Loaf::Dsp { offset, child, .. } => {
                 let child_pos = position - offset;
                 child.fetch(child_pos)
             }
@@ -282,6 +355,7 @@ impl Loaf {
                 entries,
                 region,
                 default,
+                ..
             } => {
                 if !region.contains(position) {
                     return false;
@@ -295,6 +369,7 @@ impl Loaf {
                 split,
                 in_child,
                 out_child,
+                ..
             } => {
                 if split.contains(position) {
                     in_child.has_position(position)
@@ -302,7 +377,7 @@ impl Loaf {
                     out_child.has_position(position)
                 }
             }
-            Loaf::Dsp { offset, child } => child.has_position(position - offset),
+            Loaf::Dsp { offset, child, .. } => child.has_position(position - offset),
         }
     }
 
@@ -311,28 +386,48 @@ impl Loaf {
             Loaf::Leaf {
                 region,
                 entries,
+                fingerprints,
                 default,
+                ..
             } => {
                 let mut new_region = region.clone();
                 if !new_region.contains(position) {
                     new_region = new_region.with(position);
                 }
                 let mut new_entries = entries.clone();
+                let mut new_fingerprints = fingerprints.clone();
+                let fp = carrier.element.content_fingerprint();
                 match new_entries.binary_search_by_key(&position, |(p, _)| *p) {
-                    Ok(idx) => new_entries[idx].1 = carrier,
-                    Err(idx) => new_entries.insert(idx, (position, carrier)),
+                    Ok(idx) => {
+                        new_entries[idx].1 = carrier;
+                        new_fingerprints[idx] = fp;
+                    }
+                    Err(idx) => {
+                        new_entries.insert(idx, (position, carrier));
+                        new_fingerprints.insert(idx, fp);
+                    }
                 }
                 if new_entries.len() <= MAX_LEAF_SIZE {
+                    let crum = compute_leaf_crum_parts(
+                        &new_entries,
+                        &new_region,
+                        default,
+                        &new_fingerprints,
+                    );
                     Loaf::Leaf {
                         region: new_region,
                         entries: new_entries,
+                        fingerprints: new_fingerprints,
                         default: default.clone(),
+                        crum,
                     }
                 } else {
                     let loaf = Loaf::Leaf {
                         region: new_region,
                         entries: new_entries,
+                        fingerprints: new_fingerprints,
                         default: default.clone(),
+                        crum: [0u8; 32],
                     };
                     loaf.maybe_split()
                 }
@@ -341,30 +436,20 @@ impl Loaf {
                 split,
                 in_child,
                 out_child,
+                ..
             } => {
                 if split.contains(position) {
                     let new_in = in_child.with(position, carrier);
-                    Loaf::Split {
-                        split: split.clone(),
-                        in_child: Box::new(new_in),
-                        out_child: out_child.clone(),
-                    }
+                    Loaf::split_from(split.clone(), Arc::new(new_in), out_child.clone())
                 } else {
                     let new_out = out_child.with(position, carrier);
-                    Loaf::Split {
-                        split: split.clone(),
-                        in_child: in_child.clone(),
-                        out_child: Box::new(new_out),
-                    }
+                    Loaf::split_from(split.clone(), in_child.clone(), Arc::new(new_out))
                 }
             }
-            Loaf::Dsp { offset, child } => {
+            Loaf::Dsp { offset, child, .. } => {
                 let child_pos = position - offset;
                 let new_child = child.with(child_pos, carrier);
-                Loaf::Dsp {
-                    offset: *offset,
-                    child: Box::new(new_child),
-                }
+                Loaf::dsp_from(*offset, Arc::new(new_child))
             }
         }
     }
@@ -374,52 +459,59 @@ impl Loaf {
             Loaf::Leaf {
                 region,
                 entries,
+                fingerprints,
                 default,
+                ..
             } => {
                 let mut new_entries = entries.clone();
+                let mut new_fingerprints = fingerprints.clone();
                 if let Ok(idx) = new_entries.binary_search_by_key(&position, |(p, _)| *p) {
                     new_entries.remove(idx);
+                    new_fingerprints.remove(idx);
                 }
                 let new_region = region.without(position);
                 if default.is_some() && new_region.contains(position) {
                     let default_val = default.clone().unwrap();
-                    new_entries.push((position, default_val.clone()));
-                    new_entries.sort_by_key(|(p, _)| *p);
+                    let fp = default_val.element.content_fingerprint();
+                    match new_entries.binary_search_by_key(&position, |(p, _)| *p) {
+                        Ok(idx) => {
+                            new_entries[idx].1 = default_val;
+                            new_fingerprints[idx] = fp;
+                        }
+                        Err(idx) => {
+                            new_entries.insert(idx, (position, default_val));
+                            new_fingerprints.insert(idx, fp);
+                        }
+                    }
                 }
+                let crum =
+                    compute_leaf_crum_parts(&new_entries, &new_region, default, &new_fingerprints);
                 Loaf::Leaf {
                     region: new_region,
                     entries: new_entries,
+                    fingerprints: new_fingerprints,
                     default: default.clone(),
+                    crum,
                 }
             }
             Loaf::Split {
                 split,
                 in_child,
                 out_child,
+                ..
             } => {
                 if split.contains(position) {
                     let new_in = in_child.without(position);
-                    Loaf::Split {
-                        split: split.clone(),
-                        in_child: Box::new(new_in),
-                        out_child: out_child.clone(),
-                    }
+                    Loaf::split_from(split.clone(), Arc::new(new_in), out_child.clone())
                 } else {
                     let new_out = out_child.without(position);
-                    Loaf::Split {
-                        split: split.clone(),
-                        in_child: in_child.clone(),
-                        out_child: Box::new(new_out),
-                    }
+                    Loaf::split_from(split.clone(), in_child.clone(), Arc::new(new_out))
                 }
             }
-            Loaf::Dsp { offset, child } => {
+            Loaf::Dsp { offset, child, .. } => {
                 let child_pos = position - offset;
                 let new_child = child.without(child_pos);
-                Loaf::Dsp {
-                    offset: *offset,
-                    child: Box::new(new_child),
-                }
+                Loaf::dsp_from(*offset, Arc::new(new_child))
             }
         }
     }
@@ -440,24 +532,34 @@ impl Loaf {
             Loaf::Leaf {
                 region: leaf_region,
                 entries,
+                fingerprints,
                 default,
+                ..
             } => {
                 let new_region = leaf_region.intersect(region);
-                let new_entries: Vec<(i64, Arc<Carrier>)> = entries
-                    .iter()
-                    .filter(|(p, _)| region.contains(*p))
-                    .cloned()
-                    .collect();
+                let mut new_entries = Vec::new();
+                let mut new_fingerprints = Vec::new();
+                for ((pos, carrier), fp) in entries.iter().zip(fingerprints.iter()) {
+                    if region.contains(*pos) {
+                        new_entries.push((*pos, carrier.clone()));
+                        new_fingerprints.push(*fp);
+                    }
+                }
+                let crum =
+                    compute_leaf_crum_parts(&new_entries, &new_region, default, &new_fingerprints);
                 Loaf::Leaf {
                     region: new_region,
                     entries: new_entries,
+                    fingerprints: new_fingerprints,
                     default: default.clone(),
+                    crum,
                 }
             }
             Loaf::Split {
                 split,
                 in_child,
                 out_child,
+                ..
             } => {
                 let in_region = region.intersect(split);
                 let out_region = region.minus(split);
@@ -478,23 +580,16 @@ impl Loaf {
                 } else if new_out.is_empty() {
                     new_in
                 } else {
-                    Loaf::Split {
-                        split: split.clone(),
-                        in_child: Box::new(new_in),
-                        out_child: Box::new(new_out),
-                    }
+                    Loaf::split_from(split.clone(), Arc::new(new_in), Arc::new(new_out))
                 }
             }
-            Loaf::Dsp { offset, child } => {
+            Loaf::Dsp { offset, child, .. } => {
                 let child_region = shift_region_inverted(region, *offset);
                 let new_child = child.copy(&child_region);
                 if new_child.is_empty() {
                     Loaf::empty_leaf()
                 } else {
-                    Loaf::Dsp {
-                        offset: *offset,
-                        child: Box::new(new_child),
-                    }
+                    Loaf::dsp_from(*offset, Arc::new(new_child))
                 }
             }
         }
@@ -519,7 +614,9 @@ impl Loaf {
             Loaf::Leaf {
                 region: leaf_region,
                 entries,
+                fingerprints,
                 default,
+                ..
             } => {
                 let in_region = leaf_region.intersect(region);
                 let out_region = leaf_region.minus(region);
@@ -529,92 +626,122 @@ impl Loaf {
                 if in_region.is_empty() {
                     return SplayResult::Outside;
                 }
-                let in_entries: Vec<(i64, Arc<Carrier>)> = entries
-                    .iter()
-                    .filter(|(p, _)| region.contains(*p))
-                    .cloned()
-                    .collect();
-                let out_entries: Vec<(i64, Arc<Carrier>)> = entries
-                    .iter()
-                    .filter(|(p, _)| !region.contains(*p))
-                    .cloned()
-                    .collect();
+                let mut in_entries = Vec::new();
+                let mut in_fingerprints = Vec::new();
+                let mut out_entries = Vec::new();
+                let mut out_fingerprints = Vec::new();
+                for ((pos, carrier), fp) in entries.iter().zip(fingerprints.iter()) {
+                    if region.contains(*pos) {
+                        in_entries.push((*pos, carrier.clone()));
+                        in_fingerprints.push(*fp);
+                    } else {
+                        out_entries.push((*pos, carrier.clone()));
+                        out_fingerprints.push(*fp);
+                    }
+                }
+                let default = default.clone();
+                let in_crum =
+                    compute_leaf_crum_parts(&in_entries, &in_region, &default, &in_fingerprints);
+                let out_crum =
+                    compute_leaf_crum_parts(&out_entries, &out_region, &default, &out_fingerprints);
                 let in_loaf = Loaf::Leaf {
-                    region: in_region,
+                    region: in_region.clone(),
                     entries: in_entries,
+                    fingerprints: in_fingerprints,
                     default: default.clone(),
+                    crum: in_crum,
                 };
                 let out_loaf = Loaf::Leaf {
                     region: out_region,
                     entries: out_entries,
-                    default: default.clone(),
+                    fingerprints: out_fingerprints,
+                    default,
+                    crum: out_crum,
                 };
-                *self = Loaf::Split {
-                    split: region.intersect(leaf_region),
-                    in_child: Box::new(in_loaf),
-                    out_child: Box::new(out_loaf),
-                };
+                let split = region.intersect(leaf_region);
+                *self = Loaf::split_from(split, Arc::new(in_loaf), Arc::new(out_loaf));
                 SplayResult::Partial
             }
             Loaf::Split {
                 split,
                 in_child,
                 out_child,
+                crum: node_crum,
+                domain: node_domain,
             } => {
-                let mut in_res = in_child.splay(region);
-                let mut out_res = out_child.splay(&region.minus(split));
+                // Children are Arc-shared across editions (structural
+                // sharing). Take them out; unwrap_or_clone clones only
+                // when another edition still references the subtree, so
+                // in-place restructuring never mutates a shared node.
+                let mut in_owned =
+                    Arc::unwrap_or_clone(std::mem::replace(in_child, Arc::new(Loaf::empty_leaf())));
+                let mut out_owned = Arc::unwrap_or_clone(std::mem::replace(
+                    out_child,
+                    Arc::new(Loaf::empty_leaf()),
+                ));
+
+                let mut in_res = in_owned.splay(region);
+                let mut out_res = out_owned.splay(&region.minus(split));
 
                 if out_res as u8 > in_res as u8 {
                     std::mem::swap(&mut in_res, &mut out_res);
-                    std::mem::swap(in_child, out_child);
+                    std::mem::swap(&mut in_owned, &mut out_owned);
                     *split = split.complement();
                 }
 
-                match (in_res, out_res) {
+                let result = match (in_res, out_res) {
                     (SplayResult::FullyContained, SplayResult::Outside) => {
+                        // Terminal results: no restructuring — restore the
+                        // taken-out children (dropping them here loses
+                        // content; bug found by the S3 probe, Aug 2026).
+                        *in_child = Arc::new(in_owned);
+                        *out_child = Arc::new(out_owned);
                         SplayResult::FullyContained
                     }
-                    (SplayResult::Outside, SplayResult::Outside) => SplayResult::Outside,
+                    (SplayResult::Outside, SplayResult::Outside) => {
+                        *in_child = Arc::new(in_owned);
+                        *out_child = Arc::new(out_owned);
+                        SplayResult::Outside
+                    }
                     (SplayResult::FullyContained, SplayResult::FullyContained) => {
+                        *in_child = Arc::new(in_owned);
+                        *out_child = Arc::new(out_owned);
                         SplayResult::FullyContained
                     }
                     _ => {
                         match (in_res, out_res) {
                             (SplayResult::Partial, SplayResult::Outside) => {
-                                let new_in = in_child.extract_in_part();
-                                let new_out_inner = in_child.extract_out_part();
-                                let old_out =
-                                    std::mem::replace(out_child, Box::new(Loaf::empty_leaf()));
-                                *in_child = Box::new(new_in);
-                                *out_child = Box::new(Loaf::make_split(
-                                    split.clone(),
-                                    new_out_inner,
-                                    *old_out,
-                                ));
+                                let new_in = in_owned.extract_in_part();
+                                let new_out_inner = in_owned.extract_out_part();
+                                let new_out =
+                                    Loaf::make_split(split.clone(), new_out_inner, out_owned);
+                                *in_child = Arc::new(new_in);
+                                *out_child = Arc::new(new_out);
                             }
                             (SplayResult::FullyContained, SplayResult::Partial) => {
-                                let old_in =
-                                    std::mem::replace(in_child, Box::new(Loaf::empty_leaf()));
                                 let new_in_inner = Loaf::make_split(
                                     split.clone(),
-                                    *old_in,
-                                    out_child.extract_in_part(),
+                                    in_owned,
+                                    out_owned.extract_in_part(),
                                 );
-                                let new_out = out_child.extract_out_part();
-                                *in_child = Box::new(new_in_inner);
-                                *out_child = Box::new(new_out);
+                                let new_out = out_owned.extract_out_part();
+                                *in_child = Arc::new(new_in_inner);
+                                *out_child = Arc::new(new_out);
                             }
                             (SplayResult::Partial, SplayResult::Partial) => {
-                                let in_in = in_child.extract_in_part();
-                                let in_out = in_child.extract_out_part();
-                                let out_in = out_child.extract_in_part();
-                                let out_out = out_child.extract_out_part();
+                                let in_in = in_owned.extract_in_part();
+                                let in_out = in_owned.extract_out_part();
+                                let out_in = out_owned.extract_in_part();
+                                let out_out = out_owned.extract_out_part();
                                 let new_in = Loaf::make_split(split.clone(), in_in, out_in);
                                 let new_out = Loaf::make_split(split.clone(), in_out, out_out);
-                                *in_child = Box::new(new_in);
-                                *out_child = Box::new(new_out);
+                                *in_child = Arc::new(new_in);
+                                *out_child = Arc::new(new_out);
                             }
-                            _ => {}
+                            _ => {
+                                *in_child = Arc::new(in_owned);
+                                *out_child = Arc::new(out_owned);
+                            }
                         }
                         let in_dom = in_child.domain();
                         let out_dom = out_child.domain();
@@ -622,18 +749,47 @@ impl Loaf {
                         *split = new_split;
                         SplayResult::Partial
                     }
-                }
+                };
+
+                // Node caches must reflect the (possibly swapped or
+                // restructured) children — the swap path and the
+                // restructure arms previously left the pre-splay crum
+                // in place, so crum() lied after splay (self-review
+                // HIGH-2, Aug 2026: consumers like source-change
+                // detection would see spurious diffs). Recompute from
+                // the children's caches — O(1) — on EVERY exit path;
+                // for terminal restores this is a harmless identity.
+                *node_crum =
+                    compute_split_crum(split, &in_child.compute_crum(), &out_child.compute_crum());
+                *node_domain = in_child.domain().union(&out_child.domain());
+                result
             }
-            Loaf::Dsp { offset, child } => {
+            Loaf::Dsp { offset, child, .. } => {
                 let child_region = shift_region_inverted(region, *offset);
-                let result = child.splay(&child_region);
+                let mut child_owned =
+                    Arc::unwrap_or_clone(std::mem::replace(child, Arc::new(Loaf::empty_leaf())));
+                let result = child_owned.splay(&child_region);
                 if result == SplayResult::Partial {
-                    let materialized = Loaf::Split {
-                        split: shift_region(&child.domain(), *offset),
-                        in_child: Box::new(child.extract_in_part().transformed_by(*offset)),
-                        out_child: Box::new(child.extract_out_part().transformed_by(*offset)),
-                    };
+                    let offset = *offset;
+                    let materialized = Loaf::split_from(
+                        shift_region(&child_owned.cached_domain(), offset),
+                        Arc::new(child_owned.extract_in_part().transformed_by(offset)),
+                        Arc::new(child_owned.extract_out_part().transformed_by(offset)),
+                    );
                     *self = materialized;
+                } else {
+                    // Non-Partial children are content-unchanged, but
+                    // refresh the crum anyway — symmetry with the Split
+                    // arm and free (one hash of 32-byte inputs).
+                    if let Loaf::Dsp {
+                        offset,
+                        child,
+                        crum,
+                        ..
+                    } = self
+                    {
+                        *crum = compute_dsp_crum(*offset, &child.compute_crum());
+                    }
                 }
                 result
             }
@@ -643,7 +799,9 @@ impl Loaf {
     fn extract_in_part(&mut self) -> Loaf {
         match self {
             Loaf::Leaf { .. } => self.clone(),
-            Loaf::Split { in_child, .. } => std::mem::replace(&mut **in_child, Loaf::empty_leaf()),
+            Loaf::Split { in_child, .. } => {
+                Arc::unwrap_or_clone(std::mem::replace(in_child, Arc::new(Loaf::empty_leaf())))
+            }
             Loaf::Dsp { .. } => self.clone(),
         }
     }
@@ -652,7 +810,7 @@ impl Loaf {
         match self {
             Loaf::Leaf { .. } => Loaf::empty_leaf(),
             Loaf::Split { out_child, .. } => {
-                std::mem::replace(&mut **out_child, Loaf::empty_leaf())
+                Arc::unwrap_or_clone(std::mem::replace(out_child, Arc::new(Loaf::empty_leaf())))
             }
             Loaf::Dsp { .. } => Loaf::empty_leaf(),
         }
@@ -668,11 +826,7 @@ impl Loaf {
         if out_child.is_empty() {
             return in_child;
         }
-        Loaf::Split {
-            split,
-            in_child: Box::new(in_child),
-            out_child: Box::new(out_child),
-        }
+        Loaf::split_from(split, Arc::new(in_child), Arc::new(out_child))
     }
 
     fn maybe_split(self) -> Loaf {
@@ -680,30 +834,45 @@ impl Loaf {
             Loaf::Leaf {
                 entries,
                 region,
+                fingerprints,
                 default,
+                ..
             } => {
                 if entries.len() <= MAX_LEAF_SIZE {
                     return self;
                 }
                 let mid = entries.len() / 2;
                 let split_pos = entries[mid].0;
-                let in_entries = entries[..mid].to_vec();
+                let mut in_entries = entries[..mid].to_vec();
+                let mut in_fingerprints = fingerprints[..mid].to_vec();
                 let out_entries = entries[mid..].to_vec();
+                let out_fingerprints = fingerprints[mid..].to_vec();
                 let in_region = region.intersect(&XnRegion::below(split_pos));
                 let out_region = region.intersect(&XnRegion::above(split_pos));
-                Loaf::Split {
-                    split: XnRegion::below(split_pos),
-                    in_child: Box::new(Loaf::Leaf {
+                let default = default.clone();
+                let in_crum =
+                    compute_leaf_crum_parts(&in_entries, &in_region, &default, &in_fingerprints);
+                let out_crum =
+                    compute_leaf_crum_parts(&out_entries, &out_region, &default, &out_fingerprints);
+                in_entries.shrink_to_fit();
+                in_fingerprints.shrink_to_fit();
+                Loaf::split_from(
+                    XnRegion::below(split_pos),
+                    Arc::new(Loaf::Leaf {
                         region: in_region,
                         entries: in_entries,
+                        fingerprints: in_fingerprints,
                         default: default.clone(),
+                        crum: in_crum,
                     }),
-                    out_child: Box::new(Loaf::Leaf {
+                    Arc::new(Loaf::Leaf {
                         region: out_region,
                         entries: out_entries,
-                        default: default.clone(),
+                        fingerprints: out_fingerprints,
+                        default,
+                        crum: out_crum,
                     }),
-                }
+                )
             }
             Loaf::Split { .. } | Loaf::Dsp { .. } => self,
         }
@@ -722,7 +891,7 @@ impl Loaf {
                 result.sort_by_key(|(p, _)| *p);
                 result
             }
-            Loaf::Dsp { offset, child } => child
+            Loaf::Dsp { offset, child, .. } => child
                 .all_entries()
                 .into_iter()
                 .map(|(p, c)| (p + offset, c))
@@ -759,10 +928,7 @@ impl Loaf {
         if offset == 0 {
             return self.clone();
         }
-        Loaf::Dsp {
-            offset,
-            child: Box::new(self.clone()),
-        }
+        Loaf::dsp_from(offset, Arc::new(self.clone()))
     }
 
     fn transform_materialized(&self, offset: i64) -> Loaf {
@@ -770,34 +936,43 @@ impl Loaf {
             Loaf::Leaf {
                 region,
                 entries,
+                fingerprints,
                 default,
+                ..
             } => {
                 let new_region = shift_region(region, offset);
                 let new_entries: Vec<(i64, Arc<Carrier>)> = entries
                     .iter()
                     .map(|(p, c)| (p + offset, c.clone()))
                     .collect();
+                let new_fingerprints = fingerprints.clone();
+                let crum =
+                    compute_leaf_crum_parts(&new_entries, &new_region, default, &new_fingerprints);
                 Loaf::Leaf {
                     region: new_region,
                     entries: new_entries,
+                    fingerprints: new_fingerprints,
                     default: default.clone(),
+                    crum,
                 }
             }
             Loaf::Split {
                 split,
                 in_child,
                 out_child,
+                ..
             } => {
                 let new_split = shift_region(split, offset);
-                Loaf::Split {
-                    split: new_split,
-                    in_child: Box::new(in_child.transform_materialized(offset)),
-                    out_child: Box::new(out_child.transform_materialized(offset)),
-                }
+                Loaf::split_from(
+                    new_split,
+                    Arc::new(in_child.transform_materialized(offset)),
+                    Arc::new(out_child.transform_materialized(offset)),
+                )
             }
             Loaf::Dsp {
                 offset: existing,
                 child,
+                ..
             } => child.transform_materialized(*existing + offset),
         }
     }
@@ -827,11 +1002,7 @@ impl Loaf {
             return self_copy;
         }
         let split = self_copy.domain();
-        Loaf::Split {
-            split,
-            in_child: Box::new(self_copy),
-            out_child: Box::new(other_copy),
-        }
+        Loaf::split_from(split, Arc::new(self_copy), Arc::new(other_copy))
     }
 }
 
@@ -846,6 +1017,39 @@ fn shift_region(region: &XnRegion, offset: i64) -> XnRegion {
         }
     }
     result
+}
+
+fn entry_fingerprints(entries: &[(i64, Arc<Carrier>)]) -> Vec<[u8; 32]> {
+    entries
+        .iter()
+        .map(|(_, c)| c.element.content_fingerprint())
+        .collect()
+}
+
+/// Eager full-tree crum recomputation — reference implementation used by
+/// tests to verify incremental per-node cache maintenance (Stage 2b).
+/// Must stay byte-identical to the cached values.
+#[cfg(test)]
+fn compute_crum_eager(loaf: &Loaf) -> Crum {
+    match loaf {
+        Loaf::Leaf {
+            entries,
+            region,
+            default,
+            ..
+        } => compute_leaf_crum(entries, region, default),
+        Loaf::Split {
+            split,
+            in_child,
+            out_child,
+            ..
+        } => compute_split_crum(
+            split,
+            &compute_crum_eager(in_child),
+            &compute_crum_eager(out_child),
+        ),
+        Loaf::Dsp { offset, child, .. } => compute_dsp_crum(*offset, &compute_crum_eager(child)),
+    }
 }
 
 fn shift_region_inverted(region: &XnRegion, offset: i64) -> XnRegion {
@@ -882,13 +1086,14 @@ impl OrglRoot {
     }
 
     pub(crate) fn from_loaf(loaf: Loaf) -> Self {
+        // O(1): crum and domain are maintained per-node by every
+        // construction path (PERF-PLAN Stage 2).
         let domain = loaf.domain();
-        let crum = loaf.compute_crum();
         OrglRoot {
             inner: OrglInner::Actual {
                 loaf,
                 simple_domain: domain,
-                cached_crum: Some(crum),
+                cached_crum: None,
             },
         }
     }
@@ -1023,11 +1228,11 @@ impl OrglRoot {
                 (other, self)
             };
             let split = in_root.domain();
-            let loaf = Loaf::Split {
+            let loaf = Loaf::split_from(
                 split,
-                in_child: Box::new(in_root.loaf().clone()),
-                out_child: Box::new(out_root.loaf().clone()),
-            };
+                Arc::new(in_root.loaf().clone()),
+                Arc::new(out_root.loaf().clone()),
+            );
             return Ok(OrglRoot::from_loaf(loaf));
         }
         Err("combine: overlapping domains not yet supported".into())
@@ -1047,11 +1252,11 @@ impl OrglRoot {
         if overlap.is_empty() {
             return self.combine(other).unwrap_or_else(|_| {
                 let split = self.domain();
-                let loaf = Loaf::Split {
+                let loaf = Loaf::split_from(
                     split,
-                    in_child: Box::new(self.loaf().clone()),
-                    out_child: Box::new(other.loaf().clone()),
-                };
+                    Arc::new(self.loaf().clone()),
+                    Arc::new(other.loaf().clone()),
+                );
                 OrglRoot::from_loaf(loaf)
             });
         }
@@ -1069,11 +1274,11 @@ impl OrglRoot {
         }
         if other.domain().intersect(&kept.domain()).is_empty() {
             kept.combine(other).unwrap_or_else(|_| {
-                let loaf = Loaf::Split {
-                    split: kept.domain(),
-                    in_child: Box::new(kept.loaf().clone()),
-                    out_child: Box::new(other.loaf().clone()),
-                };
+                let loaf = Loaf::split_from(
+                    kept.domain(),
+                    Arc::new(kept.loaf().clone()),
+                    Arc::new(other.loaf().clone()),
+                );
                 OrglRoot::from_loaf(loaf)
             })
         } else {
@@ -1120,18 +1325,7 @@ impl OrglRoot {
     pub fn crum(&self) -> Option<Crum> {
         match &self.inner {
             OrglInner::Empty => None,
-            OrglInner::Actual {
-                cached_crum: Some(c),
-                ..
-            } => Some(*c),
-            OrglInner::Actual {
-                loaf,
-                cached_crum: None,
-                ..
-            } => {
-                let c = loaf.compute_crum();
-                Some(c)
-            }
+            OrglInner::Actual { loaf, .. } => Some(loaf.compute_crum()),
         }
     }
 
@@ -1152,10 +1346,10 @@ impl OrglRoot {
                 loaf,
                 cached_crum,
                 simple_domain,
-                ..
             } => {
                 let result = loaf.splay(region);
-                // Splay restructured the loaf: cached crum and domain are stale.
+                // Node-level caches are maintained by actual_splay; refresh
+                // the root-level views from them (O(1)).
                 *cached_crum = None;
                 *simple_domain = loaf.domain();
                 result
@@ -1197,11 +1391,7 @@ mod tests {
         } else {
             XnRegion::interval(0, entries.len() as i64)
         };
-        Loaf::Leaf {
-            region,
-            entries,
-            default: None,
-        }
+        Loaf::new_leaf(region, entries)
     }
 
     #[test]
@@ -1274,13 +1464,110 @@ mod tests {
         assert_eq!(result, SplayResult::Outside);
     }
 
+    /// Regression (Aug 2026): splaying a small region fully inside one
+    /// child of a Split hit the terminal (FullyContained, Outside) arm,
+    /// which dropped the taken-out children — total content loss.
+    /// Found by the S3 probe (repeated edit+splay loop emptied the doc).
+    #[test]
+    fn loaf_splay_region_inside_one_child_preserves_content() {
+        // Build a proper split: out child shifted to positions 3..6.
+        let mut loaf = Loaf::split_from(
+            XnRegion::below(3),
+            Arc::new(make_text_loaf("ab")),
+            Arc::new(Loaf::dsp_from(3, Arc::new(make_text_loaf("cde")))),
+        );
+        let before = loaf.all_entries();
+        assert_eq!(before.len(), 5);
+        // Region fully inside the OUT child.
+        let r = loaf.splay(&XnRegion::interval(3, 4));
+        let after = loaf.all_entries();
+        assert_eq!(after.len(), 5, "content must survive splay");
+        assert_eq!(before, after, "content must survive splay");
+
+        // Region fully inside the IN child.
+        let mut loaf2 = Loaf::split_from(
+            XnRegion::below(3),
+            Arc::new(make_text_loaf("ab")),
+            Arc::new(Loaf::dsp_from(3, Arc::new(make_text_loaf("cde")))),
+        );
+        let before2 = loaf2.all_entries();
+        let r2 = loaf2.splay(&XnRegion::interval(1, 2));
+        assert_eq!(r2, SplayResult::Partial);
+        assert_eq!(before2, loaf2.all_entries());
+    }
+
+    /// Repeated small-region splays at moving positions must never lose
+    /// content (the failure mode the S3 probe exposed).
+    #[test]
+    fn loaf_splay_repeated_moving_regions_preserve_content() {
+        let entries: Vec<(i64, Arc<Carrier>)> = (0..200)
+            .map(|i| {
+                (
+                    i,
+                    Arc::new(Carrier::new(RangeElement::text(format!("{:03}", i)))),
+                )
+            })
+            .collect();
+        let mut loaf = Loaf::new_leaf(XnRegion::interval(0, 200), entries);
+        let expected: String = (0..200).map(|i| format!("{:03}", i)).collect();
+        for start in [0i64, 1, 5, 50, 51, 100, 150, 198] {
+            let _ = loaf.splay(&XnRegion::interval(start, start + 2));
+            let text: String = loaf
+                .all_entries()
+                .iter()
+                .map(|(_, c)| c.element.as_text().unwrap_or("").to_string())
+                .collect();
+            assert_eq!(text, expected, "content lost after splay at {}", start);
+        }
+    }
+
+    /// Self-review HIGH-2 (Aug 2026): splaying a MULTI-LEVEL tree
+    /// previously left pre-splay crums on restructured/swap-modified
+    /// interior nodes, so crum() lied after splay. The existing
+    /// splayed_crum tests use single-leaf documents (MAX_LEAF_SIZE
+    /// 1024) and could not catch it. This tree forces splits.
+    #[test]
+    fn splay_multi_level_crum_stays_consistent() {
+        let n = 5000i64;
+        let entries: Vec<(i64, Arc<Carrier>)> = (0..n)
+            .map(|i| {
+                (
+                    i,
+                    Arc::new(Carrier::new(RangeElement::text(format!("e{}.", i)))),
+                )
+            })
+            .collect();
+        let region = XnRegion::interval(0, n);
+        let mut loaf = Loaf::build_bulk(entries, None, region);
+        assert!(
+            matches!(loaf, Loaf::Split { .. }),
+            "precondition: multi-level tree"
+        );
+
+        // Splay several regions across the tree.
+        for start in [0i64, 100, 1500, 3000, 4998] {
+            let r = loaf.splay(&XnRegion::interval(start, start + 2));
+            assert_ne!(r, SplayResult::Outside);
+            assert_eq!(
+                loaf.compute_crum(),
+                compute_crum_eager(&loaf),
+                "cached crum must equal eager recomputation after splay at {}",
+                start
+            );
+            let eager = eager_domain(&loaf);
+            assert_eq!(loaf.cached_domain().clone(), eager, "domain at {}", start);
+            // Content survives every step.
+            assert_eq!(loaf.count(), n as u64);
+        }
+    }
+
     #[test]
     fn loaf_splay_split_rotates() {
-        let mut loaf = Loaf::Split {
-            split: XnRegion::below(3),
-            in_child: Box::new(make_text_loaf("ab")),
-            out_child: Box::new(make_text_loaf("cde")),
-        };
+        let mut loaf = Loaf::split_from(
+            XnRegion::below(3),
+            Arc::new(make_text_loaf("ab")),
+            Arc::new(make_text_loaf("cde")),
+        );
         let result = loaf.splay(&XnRegion::interval(1, 4));
         assert_eq!(result, SplayResult::Partial);
     }
@@ -1386,11 +1673,7 @@ mod tests {
             })
             .collect();
         let region = XnRegion::interval(0, (MAX_LEAF_SIZE + 1) as i64);
-        let loaf = Loaf::Leaf {
-            region,
-            entries: entries.clone(),
-            default: None,
-        };
+        let loaf = Loaf::new_leaf(region, entries.clone());
         let with_overflow = loaf.with(
             MAX_LEAF_SIZE as i64 + 10,
             Arc::new(Carrier::new(RangeElement::text("extra"))),
@@ -1400,15 +1683,14 @@ mod tests {
 
     #[test]
     fn orgl_positions_of() {
-        let loaf = Loaf::Leaf {
-            region: XnRegion::interval(0, 3),
-            entries: vec![
+        let loaf = Loaf::new_leaf(
+            XnRegion::interval(0, 3),
+            vec![
                 (0, Arc::new(Carrier::new(RangeElement::text("x")))),
                 (1, Arc::new(Carrier::new(RangeElement::text("y")))),
                 (2, Arc::new(Carrier::new(RangeElement::text("x")))),
             ],
-            default: None,
-        };
+        );
         let orgl = OrglRoot::from_loaf(loaf);
         let pos = orgl.positions_of(&Carrier::new(RangeElement::text("x")));
         assert!(pos.contains(0));
@@ -1428,11 +1710,7 @@ mod tests {
             })
             .collect();
         let region = XnRegion::interval(0, n as i64);
-        let mut loaf = Loaf::Leaf {
-            region,
-            entries,
-            default: None,
-        };
+        let mut loaf = Loaf::new_leaf(region, entries);
         assert_eq!(loaf.count(), n as u64);
         assert_eq!(loaf.fetch(2500).unwrap().element.as_text(), Some("2500"));
         let result = loaf.splay(&XnRegion::interval(1000, 2000));
@@ -1445,10 +1723,7 @@ mod tests {
     #[test]
     fn dsp_loaf_fetch() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::Dsp {
-            offset: 10,
-            child: Box::new(inner),
-        };
+        let dsp = Loaf::dsp_from(10, Arc::new(inner));
         assert_eq!(dsp.fetch(10).unwrap().element.as_text(), Some("a"));
         assert_eq!(dsp.fetch(12).unwrap().element.as_text(), Some("c"));
         assert!(dsp.fetch(0).is_none());
@@ -1457,20 +1732,14 @@ mod tests {
     #[test]
     fn dsp_loaf_domain() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::Dsp {
-            offset: 5,
-            child: Box::new(inner),
-        };
+        let dsp = Loaf::dsp_from(5, Arc::new(inner));
         assert_eq!(dsp.domain(), XnRegion::interval(5, 8));
     }
 
     #[test]
     fn dsp_loaf_has_position() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::Dsp {
-            offset: 100,
-            child: Box::new(inner),
-        };
+        let dsp = Loaf::dsp_from(100, Arc::new(inner));
         assert!(dsp.has_position(100));
         assert!(dsp.has_position(102));
         assert!(!dsp.has_position(0));
@@ -1480,10 +1749,7 @@ mod tests {
     #[test]
     fn dsp_loaf_with() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::Dsp {
-            offset: 10,
-            child: Box::new(inner),
-        };
+        let dsp = Loaf::dsp_from(10, Arc::new(inner));
         let new_dsp = dsp.with(13, Arc::new(Carrier::new(RangeElement::text("X"))));
         assert_eq!(new_dsp.fetch(13).unwrap().element.as_text(), Some("X"));
         assert_eq!(new_dsp.fetch(10).unwrap().element.as_text(), Some("a"));
@@ -1492,10 +1758,7 @@ mod tests {
     #[test]
     fn dsp_loaf_without() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::Dsp {
-            offset: 10,
-            child: Box::new(inner),
-        };
+        let dsp = Loaf::dsp_from(10, Arc::new(inner));
         let new_dsp = dsp.without(11);
         assert!(!new_dsp.has_position(11));
         assert!(new_dsp.has_position(10));
@@ -1504,10 +1767,7 @@ mod tests {
     #[test]
     fn dsp_loaf_all_entries() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::Dsp {
-            offset: 5,
-            child: Box::new(inner),
-        };
+        let dsp = Loaf::dsp_from(5, Arc::new(inner));
         let entries = dsp.all_entries();
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].0, 5);
@@ -1517,14 +1777,8 @@ mod tests {
     #[test]
     fn dsp_loaf_chained() {
         let inner = make_text_loaf("abc");
-        let dsp1 = Loaf::Dsp {
-            offset: 10,
-            child: Box::new(inner),
-        };
-        let dsp2 = Loaf::Dsp {
-            offset: 5,
-            child: Box::new(dsp1),
-        };
+        let dsp1 = Loaf::dsp_from(10, Arc::new(inner));
+        let dsp2 = Loaf::dsp_from(5, Arc::new(dsp1));
         assert_eq!(dsp2.domain(), XnRegion::interval(15, 18));
         assert_eq!(dsp2.fetch(15).unwrap().element.as_text(), Some("a"));
     }
@@ -1532,10 +1786,7 @@ mod tests {
     #[test]
     fn dsp_loaf_copy() {
         let inner = make_text_loaf("abcde");
-        let dsp = Loaf::Dsp {
-            offset: 10,
-            child: Box::new(inner),
-        };
+        let dsp = Loaf::dsp_from(10, Arc::new(inner));
         let copied = dsp.copy(&XnRegion::interval(11, 14));
         assert!(copied.has_position(11));
         assert!(copied.has_position(13));
@@ -1656,10 +1907,7 @@ mod tests {
             XnRegion::above(0),
             Arc::new(Carrier::new(RangeElement::text("."))),
         );
-        let dsp = Loaf::Dsp {
-            offset: 100,
-            child: Box::new(inner),
-        };
+        let dsp = Loaf::dsp_from(100, Arc::new(inner));
         assert!(dsp.is_infinite());
         assert_eq!(dsp.fetch(150).unwrap().element.as_text(), Some("."));
     }
@@ -1932,7 +2180,55 @@ mod tests {
         );
     }
 
+    /// Eager from-scratch domain build — reference for cache verification.
+    #[cfg(test)]
+    fn eager_domain(loaf: &Loaf) -> XnRegion {
+        match loaf {
+            Loaf::Leaf { region, .. } => region.clone(),
+            Loaf::Split {
+                in_child,
+                out_child,
+                ..
+            } => eager_domain(in_child).union(&eager_domain(out_child)),
+            Loaf::Dsp { offset, child, .. } => shift_region(&eager_domain(child), *offset),
+        }
+    }
+
     proptest! {
+        /// Stage 2b: per-node cache maintenance must produce byte-identical
+        /// crums and domains to eager full-tree recomputation, for arbitrary
+        /// op sequences (with/without/copy/transformed_by).
+        #[test]
+        fn prop_incremental_crum_matches_eager(
+            initial in "[a-z]{0,60}",
+            ops in proptest::collection::vec(
+                (0u32..120, 0u32..4),
+                0..40
+            ),
+        ) {
+            let entries: Vec<(i64, Arc<Carrier>)> = initial.chars().enumerate()
+                .map(|(i, c)| (i as i64, Arc::new(Carrier::new(RangeElement::text(c.to_string())))))
+                .collect();
+            let region = if entries.is_empty() {
+                XnRegion::empty()
+            } else {
+                XnRegion::interval(0, entries.len() as i64)
+            };
+            let mut loaf = Loaf::new_leaf(region, entries);
+
+            for (pos, op_kind) in ops {
+                let pos = pos as i64;
+                loaf = match op_kind {
+                    0 => loaf.with(pos, Arc::new(Carrier::new(RangeElement::text("X")))),
+                    1 => loaf.without(pos),
+                    2 => loaf.copy(&XnRegion::interval(pos.saturating_mul(-1), pos + 3)),
+                    _ => loaf.transformed_by(pos),
+                };
+                prop_assert_eq!(loaf.compute_crum(), compute_crum_eager(&loaf));
+                prop_assert_eq!(loaf.cached_domain().clone(), eager_domain(&loaf));
+            }
+        }
+
         #[test]
         fn prop_crum_deterministic(text in "[a-z]{0,100}") {
             let e1 = Edition::from_text(&text);

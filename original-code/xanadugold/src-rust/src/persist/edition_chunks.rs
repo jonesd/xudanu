@@ -27,7 +27,7 @@ pub struct WorkChunkRef {
     pub read_club: Option<BeId>,
     pub edit_club: Option<BeId>,
     pub sponsors: Vec<BeId>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub endorsements: Vec<(u64, u64)>,
 }
 
@@ -35,7 +35,7 @@ pub struct WorkChunkRef {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct EntryChunk {
     entries: Vec<(i64, crate::edition::range_element::RangeElement)>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     provenances: Vec<Option<crate::edition::provenance::ElementProvenance>>,
 }
 
@@ -53,7 +53,7 @@ struct EditionRootChunk {
     domain_infinite_above: bool,
     entry_count: u32,
     entry_chunk_hashes: Vec<[u8; 32]>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     provenance_hash: Option<[u8; 32]>,
 }
 

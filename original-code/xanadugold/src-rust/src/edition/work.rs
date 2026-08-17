@@ -94,6 +94,78 @@ impl License {
             _ => License::AllRightsReserved,
         }
     }
+
+    /// License class bits for the FR-38 summary overlay. Derived, never
+    /// independently stored — a pure function of License, so old data
+    /// needs no migration. Classes are the common query granularity;
+    /// per-owner questions go through span_owner_license (ground truth).
+    pub fn license_class(&self) -> LicenseClass {
+        match self {
+            License::AllRightsReserved => LicenseClass::RESTRICTED,
+            License::Transcopyright => LicenseClass::TRANSCLUSION_OK,
+            License::CreativeCommonsBy => LicenseClass::ATTRIBUTION,
+            License::CreativeCommonsBySa => LicenseClass::ATTRIBUTION,
+            License::PublicDomain => LicenseClass::FREE,
+        }
+    }
+}
+
+/// OR-monoid license class bits (FR-38). One byte. Gold lineage:
+/// CanopyCrum endorsement flags "widded by ORing up the canopy"
+/// (canopyx.hxx) — a fixed summary that lets region queries prune
+/// subtrees; criteria without a bit fall back to ground-truth search.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LicenseClass(u8);
+
+impl LicenseClass {
+    pub const FREE: LicenseClass = LicenseClass(1 << 0);
+    pub const ATTRIBUTION: LicenseClass = LicenseClass(1 << 1);
+    pub const TRANSCLUSION_OK: LicenseClass = LicenseClass(1 << 2);
+    pub const RESTRICTED: LicenseClass = LicenseClass(1 << 3);
+    pub const UNKNOWN: LicenseClass = LicenseClass(1 << 4);
+
+    /// Union (the widd operation). A span's class is the OR of the
+    /// classes of everything it covers.
+    pub fn combine(self, other: LicenseClass) -> LicenseClass {
+        LicenseClass(self.0 | other.0)
+    }
+
+    pub fn contains(self, other: LicenseClass) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    pub fn bits(self) -> u8 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for LicenseClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.0 == 0 {
+            return write!(f, "empty");
+        }
+        let mut parts = Vec::new();
+        if self.contains(LicenseClass::FREE) {
+            parts.push("free");
+        }
+        if self.contains(LicenseClass::ATTRIBUTION) {
+            parts.push("attribution");
+        }
+        if self.contains(LicenseClass::TRANSCLUSION_OK) {
+            parts.push("transclusion-ok");
+        }
+        if self.contains(LicenseClass::RESTRICTED) {
+            parts.push("restricted");
+        }
+        if self.contains(LicenseClass::UNKNOWN) {
+            parts.push("unknown");
+        }
+        write!(f, "{}", parts.join("|"))
+    }
 }
 
 /// A lifecycle transition recorded on a Work (append-only history).

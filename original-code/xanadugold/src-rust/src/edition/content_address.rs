@@ -10,12 +10,14 @@ pub struct ContentAddressIndex {
     next_be_id: BeId,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg(feature = "serde")]
 struct ContentAddressFile {
     entries: Vec<(String, BeId)>,
     next_be_id: BeId,
 }
 
+#[cfg(feature = "serde")]
 impl serde::Serialize for ContentAddressIndex {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let mut entries: Vec<(String, BeId)> = self
@@ -37,6 +39,7 @@ impl serde::Serialize for ContentAddressIndex {
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for ContentAddressIndex {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let file = ContentAddressFile::deserialize(d)?;

@@ -1,4 +1,5 @@
 use super::xn_region::XnRegion;
+#[cfg(feature = "serde")]
 use std::collections::BTreeMap;
 
 /// A region-aware index for querying spans (links, transclusions, annotations)

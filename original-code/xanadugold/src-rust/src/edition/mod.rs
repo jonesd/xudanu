@@ -8,15 +8,20 @@ pub mod canopy;
 pub mod compound;
 pub mod content_address;
 pub mod edition;
+pub use edition::SpanLicenseSummary;
 pub mod endorsement;
 pub mod fetext;
 pub mod grandmap;
 pub mod hoist;
 pub mod label;
+pub mod license_overlay;
 pub mod links;
 pub mod mapping;
 pub mod orgl;
 #[cfg(feature = "serde")]
+// Depends on crate::persist (server feature): edition snapshots are
+// serialized only by the server, never by the wasm/default builds.
+#[cfg(feature = "server")]
 pub mod persistent;
 pub mod pool;
 pub mod props;
@@ -76,9 +81,7 @@ pub use props::{
     IS_PARTIAL_FLAG, IS_SENSOR_WAITING_FLAG, OTHER_CLUBS_FLAG, OTHER_ENDORSEMENTS_FLAG,
     PUBLIC_CLUB_FLAG,
 };
-pub use provenance::{
-    sign_element, sign_span, verify_span_provenance, ElementProvenance, Provenance, SpanProvenance,
-};
+pub use provenance::{ElementProvenance, Provenance, SpanProvenance};
 pub use range_element::{Carrier, RangeElement};
 pub use range_transclusion::{
     collect_unique_elements, count_transclusion_depth, find_deeply_transcluded, range_transcluders,
@@ -104,6 +107,7 @@ pub use transclusion::{
     TrailBlazer, TransclusionIndex, TransclusionQuery, TransclusionResult, WorkQuery,
 };
 pub use work::License;
+pub use work::LicenseClass;
 pub use work::Work;
 pub use work::WorkKind;
 pub use wrapper::{
@@ -113,3 +117,6 @@ pub use wrapper::{
     TEXT_TOKEN, WRAPPER_CLUB_ID,
 };
 pub use xn_region::XnRegion;
+
+#[cfg(feature = "server")]
+pub use provenance::{sign_element, sign_span, verify_span_provenance};

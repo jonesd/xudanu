@@ -33,6 +33,18 @@ impl Mapping {
         Mapping::Simple { offset, region }
     }
 
+    /// Build a canonical Mapping from parts in O(p log p): flatten all
+    /// parts once, canonicalize once. Semantically identical to folding
+    /// `combine` over the parts, but without the quadratic
+    /// re-canonicalization per fold step (PERF-PLAN Stage 6).
+    pub fn from_parts(parts: Vec<Mapping>) -> Mapping {
+        let mut flat: Vec<(i64, XnRegion)> = Vec::with_capacity(parts.len());
+        for p in &parts {
+            flatten_into(p, &mut flat);
+        }
+        canonicalize(&mut flat)
+    }
+
     pub fn of(&self, pos: i64) -> Option<i64> {
         match self {
             Mapping::Empty => None,
@@ -56,6 +68,7 @@ impl Mapping {
 
     /// Build a displacement Mapping from compound DeltaOps (usize-based).
     /// Parallel to from_delta_ops but for the edition::compound::DeltaOp type.
+    #[cfg(feature = "serde")]
     pub fn from_compound_delta_ops(ops: &[crate::edition::compound::DeltaOp]) -> Mapping {
         let mut pos: i64 = 0;
         let mut displacement: i64 = 0;
@@ -85,16 +98,10 @@ impl Mapping {
             .map(|(start, end, off)| Mapping::restricted(*off, XnRegion::interval(*start, *end)))
             .collect();
 
-        match mappings.len() {
-            0 => Mapping::identity(),
-            1 => mappings.into_iter().next().unwrap(),
-            _ => {
-                let mut result = Mapping::Empty;
-                for m in mappings {
-                    result = result.combine(&m);
-                }
-                result
-            }
+        if mappings.is_empty() {
+            Mapping::identity()
+        } else {
+            Mapping::from_parts(mappings)
         }
     }
 
@@ -373,6 +380,7 @@ impl Mapping {
     ///
     /// The result is a piecewise-constant Mapping that maps positions
     /// in the OLD text to corresponding positions in the NEW text.
+    #[cfg(feature = "server")]
     pub fn from_delta_ops(ops: &[crate::server::transport::protocol::TextDeltaOp]) -> Mapping {
         let mut pos: i64 = 0;
         let mut displacement: i64 = 0;
@@ -406,16 +414,10 @@ impl Mapping {
             .map(|(start, end, off)| Mapping::restricted(*off, XnRegion::interval(*start, *end)))
             .collect();
 
-        match mappings.len() {
-            0 => Mapping::identity(),
-            1 => mappings.into_iter().next().unwrap(),
-            _ => {
-                let mut result = Mapping::Empty;
-                for m in mappings {
-                    result = result.combine(&m);
-                }
-                result
-            }
+        if mappings.is_empty() {
+            Mapping::identity()
+        } else {
+            Mapping::from_parts(mappings)
         }
     }
 }
@@ -499,6 +501,52 @@ fn canonicalize(parts: &mut Vec<(i64, XnRegion)>) -> Mapping {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Stage 6: from_parts must equal the historical fold-combine for
+    /// arbitrary singleton lists — it replaces the quadratic path.
+    #[test]
+    fn from_parts_equals_fold_combine() {
+        let cases: Vec<Vec<(i64, i64, i64)>> = vec![
+            vec![],
+            vec![(0, 1, 0)],
+            vec![(0, 1, 5), (2, 3, -1)],
+            vec![(0, 5, 1), (3, 8, 2), (10, 12, 0)],
+            vec![(0, 3, 1), (3, 6, 1), (6, 9, -2)],
+            vec![(5, 6, 0), (0, 2, 3), (7, 9, -7)],
+        ];
+        for parts in cases {
+            let mappings: Vec<Mapping> = parts
+                .iter()
+                .map(|(s, e, o)| Mapping::restricted(*o, XnRegion::interval(*s, *e)))
+                .collect();
+            let folded = mappings
+                .clone()
+                .into_iter()
+                .fold(Mapping::empty(), |acc, m| acc.combine(&m));
+            let built = Mapping::from_parts(mappings);
+            assert_eq!(folded, built, "from_parts must equal fold for {:?}", parts);
+        }
+    }
+
+    /// Stage 6 benchmark: 9k singleton parts must canonicalize in
+    /// milliseconds, not the ~6.4s the quadratic fold took.
+    #[test]
+    fn from_parts_scale() {
+        let parts: Vec<Mapping> = (0..9_000i64)
+            .map(|i| Mapping::restricted(i % 7, XnRegion::interval(i * 2, i * 2 + 1)))
+            .collect();
+        let start = std::time::Instant::now();
+        let m = Mapping::from_parts(parts);
+        let elapsed = start.elapsed();
+        assert_eq!(m.of(0), Some(0));
+        assert_eq!(m.of(4), Some(6), "position 4 -> i=2, offset 2");
+        println!("from_parts (9000 parts): {:?}", elapsed);
+        assert!(
+            elapsed < std::time::Duration::from_secs(2),
+            "from_parts should be near-linear, took {:?}",
+            elapsed
+        );
+    }
 
     #[test]
     fn empty_mapping_maps_nothing() {

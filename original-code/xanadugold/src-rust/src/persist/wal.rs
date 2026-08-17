@@ -11,7 +11,7 @@ pub struct WalEntry {
     pub seq: u64,
     pub op: String,
     pub args: serde_json::Value,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub ts: u64,
 }
 

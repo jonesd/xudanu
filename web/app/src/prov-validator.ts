@@ -7,7 +7,6 @@ export function buildProvValidatorHtml(provJson: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PROV-JSON Validator</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Inter',system-ui,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.6}
 a{color:#58a6ff;text-decoration:none}a:hover{text-decoration:underline}

@@ -79,38 +79,38 @@ impl From<ChunkError> for RootChunkError {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WorkStateChunk {
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub format_version: u32,
     pub be_id: BeId,
     pub owner: Option<BeId>,
     pub read_club: Option<BeId>,
     pub edit_club: Option<BeId>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub sponsors: Vec<BeId>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub endorsements: Vec<(u64, u64)>,
     pub current_edition_hash: [u8; 32],
     pub revision_count: u64,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub history: Vec<(u64, [u8; 32])>,
     pub source_author_id: Option<BeId>,
     pub source_fingerprint: Option<Vec<u64>>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub lifecycle_history: Vec<crate::edition::work::WorkLifecycleEvent>,
     pub history_club: Option<BeId>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub kind: WorkKind,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub license: License,
     pub custom_title: Option<String>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub is_source: bool,
     pub source_edition_info: Option<String>,
     pub content_start_line: Option<u64>,
     pub content_end_line: Option<u64>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub is_archived: bool,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub revisions: Vec<RevisionMeta>,
 }
 
@@ -118,7 +118,7 @@ pub struct WorkStateChunk {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WorkIndexEntry {
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub format_version: u32,
     pub be_id: BeId,
     pub work_state_hash: [u8; 32],
@@ -128,7 +128,7 @@ pub struct WorkIndexEntry {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WorksIndexChunk {
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub format_version: u32,
     pub entries: Vec<WorkIndexEntry>,
 }
@@ -138,14 +138,14 @@ pub struct WorksIndexChunk {
 // Club state chunks
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ClubIndexChunk {
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub format_version: u32,
     pub entries: Vec<ClubIndexEntry>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ClubIndexEntry {
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub format_version: u32,
     pub be_id: BeId,
     pub club_state_hash: [u8; 32],
@@ -153,7 +153,7 @@ pub struct ClubIndexEntry {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ClubStateChunk {
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub format_version: u32,
     pub be_id: BeId,
     pub name: Option<String>,
@@ -173,14 +173,14 @@ pub struct ClubStateChunk {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StandaloneEditionsChunk {
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub format_version: u32,
     pub entries: Vec<StandaloneEditionEntry>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StandaloneEditionEntry {
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub format_version: u32,
     pub be_id: BeId,
     pub edition_ref_hash: [u8; 32],
@@ -188,7 +188,7 @@ pub struct StandaloneEditionEntry {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AdminChunk {
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub format_version: u32,
     pub admin: crate::persist::manifest::AdminEntry,
     pub accepting_connections: bool,
@@ -202,7 +202,7 @@ pub struct AdminChunk {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SystemClubsChunk {
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub format_version: u32,
     pub system_clubs: crate::server::SystemClubs,
 }
@@ -218,35 +218,35 @@ pub struct ServerRootChunk {
     pub operation_counter: u64,
     pub link_counter: BeId,
 
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub works_index_hash: Option<[u8; 32]>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub clubs_index_hash: Option<[u8; 32]>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub standalone_editions_hash: Option<[u8; 32]>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub links_hash: Option<[u8; 32]>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub social_hash: Option<[u8; 32]>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub federation_hash: Option<[u8; 32]>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub annotations_hash: Option<[u8; 32]>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub blob_metas_hash: Option<[u8; 32]>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub content_address_hash: Option<[u8; 32]>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub historical_authors_hash: Option<[u8; 32]>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub fossil_snapshots_hash: Option<[u8; 32]>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub admin_hash: Option<[u8; 32]>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub key_history_hash: Option<[u8; 32]>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub system_clubs_hash: Option<[u8; 32]>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub reconcile_store_hash: Option<[u8; 32]>,
 }
 
@@ -255,7 +255,10 @@ pub struct ServerRootChunk {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RootManifest {
     pub current_root_hash: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub previous_root_hash: Option<String>,
     pub format_version: u32,
 }
@@ -1044,6 +1047,7 @@ fn hex_to_hash(hex: &str) -> Result<[u8; 32], RootChunkError> {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use std::path::PathBuf;
 

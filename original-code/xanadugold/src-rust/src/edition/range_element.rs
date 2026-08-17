@@ -55,9 +55,15 @@ pub enum RangeElement {
         char_end: usize,
         placed_at: u64,
         placed_by: Option<u64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         content_hash: Option<[u8; 32]>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         source_revision: Option<u64>,
     },
     StructuralTransclusion {
@@ -67,11 +73,59 @@ pub enum RangeElement {
         source_crum: [u8; 32],
         placed_at: u64,
         placed_by: Option<u64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         source_revision: Option<u64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        cached_content: Option<String>,
+        /// Generation of the source work at cache time (FR-37 Phase 2).
+        /// Monotonic per source, bumped on every revise; the cheap
+        /// in-memory staleness check. Mismatch -> re-resolve at read
+        /// time. `source_crum` remains the cross-restart authority.
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        source_generation: Option<u64>,
+    },
+    /// Content computed on demand from another work (FR-37 Phase 3) —
+    /// the Rust analogue of Gold's virtual range elements
+    /// (loavesx.hxx: fetch "makes a virtual range element using the
+    /// edition and globalKey"). The spec PINS the source revision at
+    /// placement time (edit-time pinning), so resolution is a pure
+    /// function of the spec — replicas converge without communicating,
+    /// and the cache never goes stale (pinned revisions are
+    /// immutable). Unmaterialized, the element contributes zero chars
+    /// (same reader semantics as an unstamped StructuralTransclusion).
+    Virtual {
+        spec: VirtualSpec,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         cached_content: Option<String>,
     },
+}
+
+/// Deterministic identity of a virtual element (FR-37 Phase 3): what
+/// to resolve, pinned to an immutable revision. Two replicas holding
+/// the same spec hold the same content by construction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct VirtualSpec {
+    pub source_work_id: u64,
+    pub char_start: usize,
+    pub char_end: usize,
+    /// Source revision at placement. Always pinned; resolution goes
+    /// through revision history, never "latest".
+    pub revision: u64,
+    pub placed_at: u64,
+    pub placed_by: Option<u64>,
 }
 
 impl RangeElement {
@@ -221,6 +275,7 @@ impl RangeElement {
             placed_by,
             source_revision: None,
             cached_content: None,
+            source_generation: None,
         }
     }
 
@@ -241,6 +296,77 @@ impl RangeElement {
         } = self
         {
             *cc = Some(content);
+        }
+    }
+
+    /// Stamp the generation the cache was built against (FR-37 Phase 2).
+    pub fn set_source_generation(&mut self, generation: u64) {
+        if let RangeElement::StructuralTransclusion {
+            source_generation: ref mut g,
+            ..
+        } = self
+        {
+            *g = Some(generation);
+        }
+    }
+
+    /// Virtual element constructor (FR-37 Phase 3). The spec must
+    /// carry a pinned revision — placement call sites stamp the
+    /// source's current revision at creation time.
+    pub fn virtual_element(spec: VirtualSpec) -> Self {
+        RangeElement::Virtual {
+            spec,
+            cached_content: None,
+        }
+    }
+
+    pub fn virtual_spec(&self) -> Option<&VirtualSpec> {
+        if let RangeElement::Virtual { spec, .. } = self {
+            Some(spec)
+        } else {
+            None
+        }
+    }
+
+    pub fn set_virtual_content(&mut self, content: String) {
+        if let RangeElement::Virtual {
+            cached_content: ref mut cc,
+            ..
+        } = self
+        {
+            *cc = Some(content);
+        }
+    }
+
+    pub fn is_virtual(&self) -> bool {
+        matches!(self, RangeElement::Virtual { .. })
+    }
+
+    pub fn source_generation(&self) -> Option<u64> {
+        if let RangeElement::StructuralTransclusion {
+            source_generation: g,
+            ..
+        } = self
+        {
+            *g
+        } else {
+            None
+        }
+    }
+
+    /// Is the cached content usable without re-resolution? (FR-37
+    /// Phase 2.) True when a generation was stamped and the source's
+    /// current generation matches it. No stamped generation -> false
+    /// (legacy caches re-resolve once, then carry generations).
+    pub fn cache_is_current(&self, current_generation: u64) -> bool {
+        if let RangeElement::StructuralTransclusion {
+            source_generation: Some(g),
+            ..
+        } = self
+        {
+            *g == current_generation
+        } else {
+            false
         }
     }
 
@@ -292,6 +418,10 @@ impl RangeElement {
         match self {
             RangeElement::Text { text } => Some(text),
             RangeElement::StructuralTransclusion {
+                cached_content: Some(cc),
+                ..
+            } => Some(cc),
+            RangeElement::Virtual {
                 cached_content: Some(cc),
                 ..
             } => Some(cc),
@@ -436,6 +566,20 @@ impl RangeElement {
                 hasher.update(text.as_bytes());
                 *hasher.finalize().as_bytes()
             }
+            // FR-37 Phase 3 determinism rule: the fingerprint covers
+            // the SPEC, never the cache — two replicas holding the
+            // same VirtualSpec hash identically without resolution,
+            // so CRDT alignment/diff never needs to materialize
+            // untouched virtual content.
+            RangeElement::Virtual { spec, .. } => {
+                let mut hasher = blake3::Hasher::new();
+                hasher.update(b"virtual:");
+                hasher.update(&spec.source_work_id.to_le_bytes());
+                hasher.update(&spec.char_start.to_le_bytes());
+                hasher.update(&spec.char_end.to_le_bytes());
+                hasher.update(&spec.revision.to_le_bytes());
+                *hasher.finalize().as_bytes()
+            }
             RangeElement::Data { bytes } => {
                 let mut hasher = blake3::Hasher::new();
                 hasher.update(b"data:");
@@ -522,6 +666,12 @@ impl RangeElement {
         match self {
             RangeElement::Text { text } => text.chars().count(),
             RangeElement::StructuralTransclusion {
+                cached_content: Some(cc),
+                ..
+            } => cc.chars().count(),
+            // Unmaterialized Virtual: zero chars (readers see it the
+            // moment resolution runs — FR-37 Phase 3 reader contract).
+            RangeElement::Virtual {
                 cached_content: Some(cc),
                 ..
             } => cc.chars().count(),

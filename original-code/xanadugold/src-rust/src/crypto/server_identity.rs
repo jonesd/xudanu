@@ -64,7 +64,7 @@ impl ServerIdentity {
 pub struct TrustedServerRegistry {
     pub servers: HashMap<String, ServerIdentity>,
     pub last_updated: u64,
-    #[serde(with = "signature_serde")]
+    #[cfg_attr(feature = "serde", serde(with = "signature_serde"))]
     pub signature: Signature,
     pub authority_key: [u8; 32],
 }
@@ -259,7 +259,7 @@ impl TrustedServerRegistry {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerRegistryFile {
-    #[serde(flatten)]
+    #[cfg_attr(feature = "serde", serde(flatten))]
     pub registry: TrustedServerRegistry,
     pub version: u8,
 }

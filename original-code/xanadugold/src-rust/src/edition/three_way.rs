@@ -321,52 +321,104 @@ fn compute_alignment(
         }
     }
 
+    // Patience-style alignment (PERF-PLAN S7), O(n):
+    // 1. Anchor on entries whose fingerprint is unique in BOTH source
+    //    and target (greedy-monotone). On typical prose this pins the
+    //    long common runs exactly where the historical quadratic
+    //    seed/extend search found them.
+    // 2. Extend each anchor forward and backward over matching
+    //    fingerprints (the run-growth the old seeds did n^2 work to
+    //    rediscover).
+    // 3. Cursor-fill remaining gaps greedily in list order (the S6
+    //    rule), which handles duplicate-heavy spans the anchors skip.
+    // Monotone by construction in phases 1-2; phase 3 is monotone per
+    // gap. Replaces the O(n^2)-on-duplicates seed loop.
     let source_fps: Vec<[u8; 32]> = source.iter().map(|e| fp(e)).collect();
     let target_fps: Vec<[u8; 32]> = target.iter().map(|e| fp(e)).collect();
 
     let mut target_by_fp: std::collections::HashMap<[u8; 32], Vec<usize>> =
         std::collections::HashMap::new();
-    for (j, fp_val) in target_fps.iter().enumerate() {
-        target_by_fp.entry(*fp_val).or_default().push(j);
+    for (j, f) in target_fps.iter().enumerate() {
+        target_by_fp.entry(*f).or_default().push(j);
+    }
+    let mut source_fp_count: std::collections::HashMap<[u8; 32], usize> =
+        std::collections::HashMap::new();
+    for f in &source_fps {
+        *source_fp_count.entry(*f).or_insert(0) += 1;
     }
 
-    let mut seeds: Vec<(usize, usize, usize)> = Vec::new();
-    for i in 0..source_fps.len() {
-        if let Some(targets) = target_by_fp.get(&source_fps[i]) {
-            for &j in targets {
-                let mut len = 1usize;
-                while i + len < source_fps.len()
-                    && j + len < target_fps.len()
-                    && source_fps[i + len] == target_fps[j + len]
-                {
-                    len += 1;
-                }
-                seeds.push((i, j, len));
-            }
-        }
-    }
-
-    seeds.sort_by(|a, b| b.2.cmp(&a.2).then_with(|| a.0.cmp(&b.0)));
-
-    let mut source_matched = vec![false; source.len()];
-    let mut target_matched = vec![false; target.len()];
     let mut alignment: Vec<Option<usize>> = vec![None; source.len()];
+    let mut target_used = vec![false; target.len()];
 
-    for (si, ti, len) in &seeds {
-        let mut ok = true;
-        for k in 0..*len {
-            if source_matched[si + k] || target_matched[ti + k] {
-                ok = false;
-                break;
+    // Phase 1: unique anchors, kept monotone (greedy LIS).
+    let mut anchors: Vec<(usize, usize)> = Vec::new();
+    let mut last_t: i64 = -1;
+    for (i, f) in source_fps.iter().enumerate() {
+        if source_fp_count.get(f) == Some(&1) && target_by_fp.get(f).map(|v| v.len()) == Some(1) {
+            let j = target_by_fp[f][0];
+            if j as i64 > last_t {
+                anchors.push((i, j));
+                last_t = j as i64;
             }
         }
-        if !ok {
+    }
+
+    // Phase 2: extend runs around anchors (anchors ascending).
+    for &(i0, j0) in &anchors {
+        if alignment[i0].is_none() && !target_used[j0] {
+            alignment[i0] = Some(j0);
+            target_used[j0] = true;
+        }
+        let mut i = i0 + 1;
+        let mut j = j0 + 1;
+        while i < source.len()
+            && j < target.len()
+            && source_fps[i] == target_fps[j]
+            && alignment[i].is_none()
+            && !target_used[j]
+        {
+            alignment[i] = Some(j);
+            target_used[j] = true;
+            i += 1;
+            j += 1;
+        }
+        let mut i = i0 as i64 - 1;
+        let mut j = j0 as i64 - 1;
+        while i >= 0
+            && j >= 0
+            && source_fps[i as usize] == target_fps[j as usize]
+            && alignment[i as usize].is_none()
+            && !target_used[j as usize]
+        {
+            alignment[i as usize] = Some(j as usize);
+            target_used[j as usize] = true;
+            i -= 1;
+            j -= 1;
+        }
+    }
+
+    // Phase 3: monotone cursor fill of the gaps.
+    let mut cursors: std::collections::HashMap<[u8; 32], usize> = std::collections::HashMap::new();
+    let mut last_j: i64 = -1;
+    for (i, f) in source_fps.iter().enumerate() {
+        if alignment[i].is_some() {
+            last_j = alignment[i].unwrap() as i64;
             continue;
         }
-        for k in 0..*len {
-            source_matched[si + k] = true;
-            target_matched[ti + k] = true;
-            alignment[si + k] = Some(ti + k);
+        if let Some(positions) = target_by_fp.get(f) {
+            let cur = cursors.entry(*f).or_insert(0);
+            while *cur < positions.len()
+                && ((positions[*cur] as i64) < last_j || target_used[positions[*cur]])
+            {
+                *cur += 1;
+            }
+            if *cur < positions.len() {
+                let j = positions[*cur];
+                *cur += 1;
+                alignment[i] = Some(j);
+                target_used[j] = true;
+                last_j = j as i64;
+            }
         }
     }
 
@@ -387,10 +439,14 @@ fn mark_claimed_indices(
         end: i64,
         matched: &mut std::collections::HashSet<usize>,
     ) {
-        for (idx, (pos, _)) in entries.iter().enumerate() {
-            if *pos >= start && *pos < end {
-                matched.insert(idx);
-            }
+        // Bounded: entries are position-sorted.
+        let from = entries.partition_point(|(p, _)| *p < start);
+        let mut to = from;
+        while to < entries.len() && entries[to].0 < end {
+            to += 1;
+        }
+        for idx in from..to {
+            matched.insert(idx);
         }
     }
 
@@ -401,13 +457,18 @@ fn mark_claimed_indices(
                 b_positions,
                 ..
             } => {
+                // Set membership: the run is O(n) long, so the
+                // historical per-entry Vec::contains made this
+                // O(n x run) — quadratic on large unchanged regions.
+                let a_set: std::collections::HashSet<&i64> = a_positions.iter().collect();
                 for (idx, (pos, _)) in a_e.iter().enumerate() {
-                    if a_positions.contains(pos) {
+                    if a_set.contains(pos) {
                         a_matched.insert(idx);
                     }
                 }
+                let b_set: std::collections::HashSet<&i64> = b_positions.iter().collect();
                 for (idx, (pos, _)) in b_e.iter().enumerate() {
-                    if b_positions.contains(pos) {
+                    if b_set.contains(pos) {
                         b_matched.insert(idx);
                     }
                 }
@@ -462,6 +523,8 @@ fn build_segments(
             let mut base_positions = vec![base_e[i].0];
             let mut a_positions = vec![a_e[a_match.unwrap()].0];
             let mut b_positions = vec![b_e[b_match.unwrap()].0];
+            let mut a_indices = vec![a_match.unwrap()];
+            let mut b_indices = vec![b_match.unwrap()];
             let mut j = i + 1;
             while j < n {
                 let aj = base_to_a.get(j).copied().flatten();
@@ -470,16 +533,26 @@ fn build_segments(
                     base_positions.push(base_e[j].0);
                     a_positions.push(a_e[aj.unwrap()].0);
                     b_positions.push(b_e[bj.unwrap()].0);
+                    a_indices.push(aj.unwrap());
+                    b_indices.push(bj.unwrap());
                     j += 1;
                 } else {
                     break;
                 }
             }
 
+            // Gap detection by INDEX adjacency: a real insertion exists
+            // iff consecutive aligned entries are not adjacent in the
+            // edition's entry list. Value-based (+1) checks over-split
+            // gap-allocated (sparse) layouts where consecutive positions
+            // legitimately differ by more than 1 (PERF-PLAN S7).
+            // saturating_sub: seed alignments are not guaranteed
+            // monotone; a decrease means "no gap" (matches the
+            // historical value-check behavior on negative deltas).
             let mut start = 0;
             for k in 1..base_positions.len() {
-                let a_gap = a_positions[k] - a_positions[k - 1] > 1;
-                let b_gap = b_positions[k] - b_positions[k - 1] > 1;
+                let a_gap = a_indices[k].saturating_sub(a_indices[k - 1]) > 1;
+                let b_gap = b_indices[k].saturating_sub(b_indices[k - 1]) > 1;
                 if a_gap || b_gap {
                     segments.push(Segment::Unchanged {
                         base_positions: base_positions[start..k].to_vec(),
@@ -489,10 +562,8 @@ fn build_segments(
                     if a_gap {
                         let gap_start = a_positions[k - 1] + 1;
                         let gap_end = a_positions[k];
-                        for (idx, (pos, _)) in a_e.iter().enumerate() {
-                            if *pos >= gap_start && *pos < gap_end {
-                                a_matched.insert(idx);
-                            }
+                        for idx in a_indices[k - 1] + 1..a_indices[k] {
+                            a_matched.insert(idx);
                         }
                         segments.push(Segment::InsertA {
                             after_base_pos: base_positions[k - 1],
@@ -503,10 +574,8 @@ fn build_segments(
                     if b_gap {
                         let gap_start = b_positions[k - 1] + 1;
                         let gap_end = b_positions[k];
-                        for (idx, (pos, _)) in b_e.iter().enumerate() {
-                            if *pos >= gap_start && *pos < gap_end {
-                                b_matched.insert(idx);
-                            }
+                        for idx in b_indices[k - 1] + 1..b_indices[k] {
+                            b_matched.insert(idx);
                         }
                         segments.push(Segment::InsertB {
                             after_base_pos: base_positions[k - 1],
@@ -681,11 +750,19 @@ fn handle_trailing_a(
             i += 1;
         }
         let after_base = if start > 0 {
-            if let Some(pos) = find_base_pos_for_a(segments, a_e[start - 1].0) {
-                pos + 1
-            } else {
-                0
+            // Anchor to the nearest preceding entry found in an
+            // Unchanged run. The immediate predecessor may be missing
+            // from Unchanged (matched in only one side); the historical
+            // fallback of 0 misplaced such inserts (visible with
+            // non-dense position layouts).
+            let mut found = None;
+            for k in (0..start).rev() {
+                if let Some(pos) = find_base_pos_for_a(segments, a_e[k].0) {
+                    found = Some(pos + 1);
+                    break;
+                }
             }
+            found.unwrap_or(0)
         } else {
             -1
         };
@@ -714,11 +791,14 @@ fn handle_trailing_b(
             i += 1;
         }
         let after_base = if start > 0 {
-            if let Some(pos) = find_base_pos_for_b(segments, b_e[start - 1].0) {
-                pos + 1
-            } else {
-                0
+            let mut found = None;
+            for k in (0..start).rev() {
+                if let Some(pos) = find_base_pos_for_b(segments, b_e[k].0) {
+                    found = Some(pos + 1);
+                    break;
+                }
             }
+            found.unwrap_or(0)
         } else {
             -1
         };
@@ -933,15 +1013,61 @@ fn assemble_merge_lww(
             } => {
                 let a_entries = a.cached_entries();
                 let b_entries = b.cached_entries();
+                // Fast path: lockstep cursor walk when the run is
+                // position-sorted (the overwhelmingly common case) —
+                // O(run + skipped) instead of O(run log n).
+                // Rotation-style seed alignments produce non-monotone
+                // runs; those fall back to per-entry binary search,
+                // which handles any order.
+                let a_sorted = a_positions.windows(2).all(|w| w[0] < w[1]);
+                let b_sorted = b_positions.windows(2).all(|w| w[0] < w[1]);
+                let mut ai = if a_sorted {
+                    a_entries.partition_point(|(p, _)| *p < a_positions[0])
+                } else {
+                    usize::MAX
+                };
+                let mut bi = if b_sorted {
+                    b_entries.partition_point(|(p, _)| *p < b_positions[0])
+                } else {
+                    usize::MAX
+                };
                 for (a_pos, b_pos) in a_positions.iter().zip(b_positions.iter()) {
-                    let a_carrier = a_entries
-                        .binary_search_by_key(a_pos, |(p, _)| *p)
-                        .ok()
-                        .map(|idx| a_entries[idx].1.clone());
-                    let b_carrier = b_entries
-                        .binary_search_by_key(b_pos, |(p, _)| *p)
-                        .ok()
-                        .map(|idx| b_entries[idx].1.clone());
+                    let a_carrier = if a_sorted {
+                        while ai < a_entries.len() && a_entries[ai].0 < *a_pos {
+                            ai += 1;
+                        }
+                        let c = a_entries
+                            .get(ai)
+                            .filter(|(p, _)| p == a_pos)
+                            .map(|(_, c)| c.clone());
+                        if a_entries.get(ai).map(|(p, _)| p) == Some(a_pos) {
+                            ai += 1;
+                        }
+                        c
+                    } else {
+                        a_entries
+                            .binary_search_by_key(a_pos, |(p, _)| *p)
+                            .ok()
+                            .map(|idx| a_entries[idx].1.clone())
+                    };
+                    let b_carrier = if b_sorted {
+                        while bi < b_entries.len() && b_entries[bi].0 < *b_pos {
+                            bi += 1;
+                        }
+                        let c = b_entries
+                            .get(bi)
+                            .filter(|(p, _)| p == b_pos)
+                            .map(|(_, c)| c.clone());
+                        if b_entries.get(bi).map(|(p, _)| p) == Some(b_pos) {
+                            bi += 1;
+                        }
+                        c
+                    } else {
+                        b_entries
+                            .binary_search_by_key(b_pos, |(p, _)| *p)
+                            .ok()
+                            .map(|idx| b_entries[idx].1.clone())
+                    };
                     let carrier = match (a_carrier.as_ref(), b_carrier.as_ref()) {
                         // Prefer the carrier that has provenance — preserves correct attribution
                         (Some(a), Some(b)) => {
@@ -1004,7 +1130,12 @@ fn assemble_merge_lww(
             AssemblyPiece::Conflict { a_span, b_span, .. } => {
                 let a_entries = collect_range(a.cached_entries(), a_span.0, a_span.1);
                 let b_entries = collect_range(b.cached_entries(), b_span.0, b_span.1);
-                // Prefer the side that has more entries with provenance — preserves attribution
+                // Both sides of a conflict survive: emit the side with
+                // more provenance first (attribution preference), then
+                // the other. Pick-one silently dropped concurrent edits
+                // whenever alignment granularity improved (Stage 5 made
+                // this visible: per-entry conflicts instead of the
+                // degenerate whole-document OnlyA/OnlyB concatenation).
                 let a_prov_count = a_entries
                     .iter()
                     .filter(|(_, c)| c.provenance.is_some())
@@ -1013,67 +1144,68 @@ fn assemble_merge_lww(
                     .iter()
                     .filter(|(_, c)| c.provenance.is_some())
                     .count();
-                let (source, from_a) = if a_prov_count >= b_prov_count {
-                    (a_entries, true)
+                let (first, second) = if a_prov_count >= b_prov_count {
+                    (a_entries.clone(), b_entries.clone())
                 } else {
-                    (b_entries, false)
+                    (b_entries.clone(), a_entries.clone())
                 };
-                let merged_start = next_pos;
-                for (src_pos, carrier) in &source {
-                    let m_pos = next_pos;
-                    merged_entries.push((m_pos, carrier.clone()));
-                    next_pos += 1;
-                    if from_a {
-                        a_sub.push(Mapping::restricted(
-                            m_pos - src_pos,
-                            XnRegion::singleton(*src_pos),
-                        ));
-                    } else {
-                        b_sub.push(Mapping::restricted(
-                            m_pos - src_pos,
-                            XnRegion::singleton(*src_pos),
-                        ));
-                    }
-                }
-                let other = if from_a {
-                    collect_range(b.cached_entries(), b_span.0, b_span.1)
-                } else {
-                    collect_range(a.cached_entries(), a_span.0, a_span.1)
-                };
-                let mut m_pos = merged_start;
-                for (src_pos, _) in &other {
-                    if from_a {
-                        b_sub.push(Mapping::restricted(
-                            m_pos - src_pos,
-                            XnRegion::singleton(*src_pos),
-                        ));
-                    } else {
-                        a_sub.push(Mapping::restricted(
-                            m_pos - src_pos,
-                            XnRegion::singleton(*src_pos),
-                        ));
-                    }
-                    m_pos += 1;
-                }
 
-                let source_fps: std::collections::HashSet<[u8; 32]> = source
-                    .iter()
-                    .map(|(_, c)| c.element.content_fingerprint())
-                    .collect();
-                for (src_pos, carrier) in &other {
-                    if !matches!(carrier.element, RangeElement::Text { .. }) {
-                        let fp = carrier.element.content_fingerprint();
-                        if !source_fps.contains(&fp) {
+                let identical = a_entries.len() == b_entries.len()
+                    && a_entries.iter().zip(b_entries.iter()).all(|(x, y)| {
+                        x.1.element.content_fingerprint() == y.1.element.content_fingerprint()
+                    });
+
+                if identical {
+                    // Both sides made the same change: emit once, map
+                    // both sides to the same merged positions.
+                    let (first_from_a, ref_iter): (bool, _) = if a_prov_count >= b_prov_count {
+                        (true, &a_entries)
+                    } else {
+                        (false, &b_entries)
+                    };
+                    let other = if first_from_a { &b_entries } else { &a_entries };
+                    for ((src_pos, carrier), (other_pos, _)) in ref_iter.iter().zip(other.iter()) {
+                        let m_pos = next_pos;
+                        merged_entries.push((m_pos, carrier.clone()));
+                        next_pos += 1;
+                        if first_from_a {
+                            a_sub.push(Mapping::restricted(
+                                m_pos - src_pos,
+                                XnRegion::singleton(*src_pos),
+                            ));
+                            b_sub.push(Mapping::restricted(
+                                m_pos - other_pos,
+                                XnRegion::singleton(*other_pos),
+                            ));
+                        } else {
+                            b_sub.push(Mapping::restricted(
+                                m_pos - src_pos,
+                                XnRegion::singleton(*src_pos),
+                            ));
+                            a_sub.push(Mapping::restricted(
+                                m_pos - other_pos,
+                                XnRegion::singleton(*other_pos),
+                            ));
+                        }
+                    }
+                } else {
+                    for (is_first_side, entries) in [(true, &first), (false, &second)] {
+                        let from_a = if a_prov_count >= b_prov_count {
+                            is_first_side
+                        } else {
+                            !is_first_side
+                        };
+                        for (src_pos, carrier) in entries {
                             let m_pos = next_pos;
                             merged_entries.push((m_pos, carrier.clone()));
                             next_pos += 1;
                             if from_a {
-                                b_sub.push(Mapping::restricted(
+                                a_sub.push(Mapping::restricted(
                                     m_pos - src_pos,
                                     XnRegion::singleton(*src_pos),
                                 ));
                             } else {
-                                a_sub.push(Mapping::restricted(
+                                b_sub.push(Mapping::restricted(
                                     m_pos - src_pos,
                                     XnRegion::singleton(*src_pos),
                                 ));
@@ -1085,12 +1217,8 @@ fn assemble_merge_lww(
         }
     }
 
-    let a_to_merged = a_sub
-        .into_iter()
-        .fold(Mapping::empty(), |acc, m| acc.combine(&m));
-    let b_to_merged = b_sub
-        .into_iter()
-        .fold(Mapping::empty(), |acc, m| acc.combine(&m));
+    let a_to_merged = Mapping::from_parts(a_sub);
+    let b_to_merged = Mapping::from_parts(b_sub);
 
     if merged_entries.is_empty() {
         return (Edition::empty(), a_to_merged, b_to_merged);
@@ -1112,14 +1240,18 @@ fn collect_range(
     start: i64,
     end: i64,
 ) -> Vec<(i64, Arc<Carrier>)> {
-    entries
-        .iter()
-        .filter(|(pos, _)| *pos >= start && *pos < end)
-        .cloned()
-        .collect()
+    // Bounded slice: binary-search the start, take while inside the
+    // span (entries are position-sorted).
+    let from = entries.partition_point(|(p, _)| *p < start);
+    let mut to = from;
+    while to < entries.len() && entries[to].0 < end {
+        to += 1;
+    }
+    entries[from..to].to_vec()
 }
 
 pub fn build_merge_mapping(source: &Edition, merged: &Edition) -> Mapping {
+    let started = std::time::Instant::now();
     let source_entries = source.cached_entries();
     let merged_entries = merged.cached_entries();
 
@@ -1132,29 +1264,46 @@ pub fn build_merge_mapping(source: &Edition, merged: &Edition) -> Mapping {
         source_by_fp.entry(key).or_default().push(*pos);
     }
 
+    // Positions are matched greedily in list order: the k-th merged entry
+    // with a given fingerprint consumes the k-th source position with that
+    // fingerprint. A per-key cursor reproduces the historical
+    // first-unused-position scan without the O(n^2) rescan over duplicate
+    // fingerprints (PERF-PLAN Stage 6).
     let mut sub_mappings = Vec::new();
-    let mut used_sources: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    let mut cursors: std::collections::HashMap<[u8; 8], usize> = std::collections::HashMap::new();
 
     for (merged_pos, carrier) in merged_entries {
         let fp_val = carrier.element.content_fingerprint();
         let mut key = [0u8; 8];
         key.copy_from_slice(&fp_val[..8]);
         if let Some(source_positions) = source_by_fp.get(&key) {
-            for &src_pos in source_positions {
-                if used_sources.insert(src_pos) {
-                    sub_mappings.push(Mapping::restricted(
-                        merged_pos - src_pos,
-                        XnRegion::singleton(src_pos),
-                    ));
-                    break;
-                }
+            let cursor = cursors.entry(key).or_insert(0);
+            if *cursor < source_positions.len() {
+                let src_pos = source_positions[*cursor];
+                *cursor += 1;
+                sub_mappings.push(Mapping::restricted(
+                    merged_pos - src_pos,
+                    XnRegion::singleton(src_pos),
+                ));
             }
         }
     }
 
-    sub_mappings
-        .into_iter()
-        .fold(Mapping::empty(), |acc, m| acc.combine(&m))
+    let mapping = Mapping::from_parts(sub_mappings);
+
+    let elapsed = started.elapsed();
+    if elapsed.as_millis() >= 1 {
+        #[cfg(feature = "server")]
+        {
+            tracing::debug!(
+                "[merge_mapping] {} source entries -> mapping in {:.2}ms",
+                source_entries.len(),
+                elapsed.as_secs_f64() * 1000.0,
+            );
+        }
+    }
+
+    mapping
 }
 
 fn group_consecutive(positions: &[i64]) -> Vec<(i64, i64)> {
@@ -1498,6 +1647,75 @@ mod tests {
     fn group_consecutive_gap() {
         let groups = group_consecutive(&[1, 2, 5, 6]);
         assert_eq!(groups, vec![(1, 3), (5, 7)]);
+    }
+
+    /// Stage 6: cursor-based matching must reproduce the historical
+    /// first-unused-position scan exactly, including duplicate-heavy text.
+    #[test]
+    fn build_merge_mapping_cursor_equivalence() {
+        // Reference: the original O(n^2) rescan implementation.
+        fn reference(source: &Edition, merged: &Edition) -> Vec<(i64, i64)> {
+            let source_entries = source.cached_entries();
+            let mut source_by_fp: std::collections::HashMap<[u8; 8], Vec<i64>> =
+                std::collections::HashMap::new();
+            for (pos, carrier) in source_entries {
+                let fp_val = carrier.element.content_fingerprint();
+                let mut key = [0u8; 8];
+                key.copy_from_slice(&fp_val[..8]);
+                source_by_fp.entry(key).or_default().push(*pos);
+            }
+            let mut used = std::collections::HashSet::new();
+            let mut pairs = Vec::new();
+            for (merged_pos, carrier) in merged.cached_entries() {
+                let fp_val = carrier.element.content_fingerprint();
+                let mut key = [0u8; 8];
+                key.copy_from_slice(&fp_val[..8]);
+                if let Some(positions) = source_by_fp.get(&key) {
+                    for &src_pos in positions {
+                        if used.insert(src_pos) {
+                            pairs.push((*merged_pos, src_pos));
+                            break;
+                        }
+                    }
+                }
+            }
+            pairs
+        }
+
+        fn actual_pairs(source: &Edition, merged: &Edition) -> Vec<(i64, i64)> {
+            let mapping = build_merge_mapping(source, merged);
+            let mut pairs = Vec::new();
+            for (pos, _) in source.cached_entries() {
+                if let Some(new_pos) = mapping.of(*pos) {
+                    pairs.push((new_pos, *pos));
+                }
+            }
+            pairs.sort();
+            pairs
+        }
+
+        let cases = [
+            ("aaaa", "aa"),
+            ("ab", "ba"),
+            ("aabbcc", "abcabc"),
+            ("hello world", "hello brave world"),
+            ("xyz", ""),
+            ("", "xyz"),
+            ("mississippi", "mississippi"),
+        ];
+        for (src, mrg) in cases {
+            let source = text_edition(src);
+            let merged = text_edition(mrg);
+            let mut expected = reference(&source, &merged);
+            expected.sort();
+            assert_eq!(
+                actual_pairs(&source, &merged),
+                expected,
+                "cursor matching diverged for {:?} -> {:?}",
+                src,
+                mrg
+            );
+        }
     }
 
     #[test]
@@ -2947,6 +3165,59 @@ mod tests {
         });
         assert!(has_alice, "Alice attributable after 2 merge rounds");
         assert!(has_bob, "Bob attributable after 2 merge rounds");
+    }
+
+    /// Benchmark: build_merge_mapping at increasing scale. Documents the
+    /// O(n) fingerprint-map build run on every edit (twice in the no-merge
+    /// path) — the target of incremental merge mapping (PERF-PLAN Stage 6).
+    ///
+    /// NOTE: sizes are capped small because Mapping::combine canonicalizes
+    /// the full parts list on every fold step, making the total fold
+    /// quadratic — this is itself a measured cost of the current design.
+    #[test]
+    fn benchmark_build_merge_mapping_scale() {
+        for size in [1_000usize, 3_000, 9_000] {
+            let text: String = "ab".repeat(size / 2);
+            let base = text_edition(&text);
+            let mid = size / 2;
+            let edited = text_edition(&format!("{}X{}", &text[..mid], &text[mid..]));
+
+            let start = std::time::Instant::now();
+            let mapping = build_merge_mapping(&base, &edited);
+            let elapsed = start.elapsed();
+
+            let mapped = mapping
+                .of_region(&crate::edition::XnRegion::interval(0, 1))
+                .intervals()
+                .len();
+            assert_eq!(mapped, 1);
+            println!("build_merge_mapping ({} entries): {:?}", size, elapsed);
+        }
+    }
+
+    /// S7: merge scaling at 10k/100k — both-sides-changed with a small
+    /// localized edit each (the common collaborative case after
+    /// Stage 5: edits arrive as sparse-layout editions).
+    #[test]
+    fn benchmark_merge_both_sides_scale() {
+        for size in [10_000usize, 100_000] {
+            let text: String = "ab".repeat(size / 2);
+            let mid = size / 2;
+            let base = text_edition(&text);
+            let a = text_edition(&format!("{}X{}", &text[..mid], &text[mid..]));
+            let b = text_edition(&format!("{}{}Y", &text[..mid + 10], &text[mid + 10..]));
+
+            let start = std::time::Instant::now();
+            let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+            let elapsed = start.elapsed();
+
+            let t = mr.merged.to_text();
+            assert!(t.contains('X') && t.contains('Y'));
+            println!(
+                "merge_both_sides localized ({} entries): {:?}",
+                size, elapsed
+            );
+        }
     }
 
     #[test]

@@ -5,6 +5,7 @@ mod filter;
 pub mod integer;
 pub mod mapping;
 mod order;
+pub mod position_allocator;
 mod real;
 mod sequence;
 pub mod traits;
