@@ -298,7 +298,7 @@ impl CompoundSpan {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(tag = "type", rename_all = "snake_case"))]
 pub enum CompoundElement {
     Text { content: String },
     Span { span: CompoundSpan },
@@ -509,16 +509,16 @@ pub struct SpanRange {
     pub content_len: usize,
     pub otree_position: usize,
     pub resolved_content: String,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub placed_at: u64,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub placed_by: Option<u64>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub source_changed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(tag = "type", rename_all = "snake_case"))]
 pub enum ResolvedElement {
     Text {
         content: String,

@@ -596,9 +596,9 @@ impl JsonCodec {
             OperationCode::WorkList | OperationCode::ClubNames => {
                 #[derive(Deserialize)]
                 struct Pagination {
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     offset: Option<u32>,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     limit: Option<u32>,
                 }
                 let (offset, limit) = match payload {
@@ -1487,9 +1487,9 @@ impl JsonCodec {
             OperationCode::WorkList => {
                 #[derive(Deserialize)]
                 struct Args {
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     offset: Option<u32>,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     limit: Option<u32>,
                 }
                 let args: Args = serde_json::from_value(p)
@@ -1502,9 +1502,9 @@ impl JsonCodec {
             OperationCode::ClubNames => {
                 #[derive(Deserialize)]
                 struct Args {
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     offset: Option<u32>,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     limit: Option<u32>,
                 }
                 let args: Args = serde_json::from_value(p)
@@ -1518,9 +1518,9 @@ impl JsonCodec {
                 #[derive(Deserialize)]
                 struct Args {
                     owner: BeId,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     offset: Option<u32>,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     limit: Option<u32>,
                 }
                 let args: Args = serde_json::from_value(p)
@@ -1538,7 +1538,7 @@ impl JsonCodec {
                     destination: BeId,
                     origin_ref: Option<HyperRefPayload>,
                     destination_ref: Option<HyperRefPayload>,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     link_types: Vec<u64>,
                 }
                 let args: Args = serde_json::from_value(p)
@@ -1592,9 +1592,9 @@ impl JsonCodec {
                 #[derive(Deserialize)]
                 struct Args {
                     work_id: BeId,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     offset: Option<u32>,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     limit: Option<u32>,
                 }
                 let args: Args = serde_json::from_value(p)
@@ -1637,7 +1637,7 @@ impl JsonCodec {
                 #[derive(Deserialize)]
                 struct Args {
                     link_id: BeId,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     link_types: Vec<u64>,
                 }
                 let args: Args = serde_json::from_value(p)
@@ -2024,11 +2024,11 @@ impl JsonCodec {
                     annotation_id: u64,
                     kind: String,
                     payload: String,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     char_start: usize,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     char_end: usize,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     is_private: bool,
                 }
                 let args: Args = serde_json::from_value(p)
@@ -2456,7 +2456,7 @@ impl JsonCodec {
                 #[derive(Deserialize)]
                 struct Args {
                     content_fingerprint_hex: String,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     direct_only: bool,
                 }
                 let args: Args = serde_json::from_value(p)
@@ -2532,7 +2532,7 @@ impl JsonCodec {
             OperationCode::StateSync => {
                 #[derive(Deserialize)]
                 struct Args {
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     work_fingerprints: Vec<String>,
                 }
                 let args: Args = serde_json::from_value(p)
@@ -2702,7 +2702,7 @@ impl JsonCodec {
                 #[derive(Deserialize)]
                 struct Args {
                     work_id: BeId,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     state: Option<crate::server::crdt_manager::AwarenessState>,
                     awareness: Option<crate::server::crdt_manager::AwarenessState>,
                 }
@@ -2837,13 +2837,13 @@ impl JsonCodec {
                 #[derive(Deserialize)]
                 struct Args {
                     epub_data: Vec<u8>,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     title: Option<String>,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     author: Option<String>,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     skip_prefix_lines: u64,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     skip_suffix_lines: u64,
                 }
                 let args: Args = serde_json::from_value(p)
@@ -2946,7 +2946,7 @@ impl JsonCodec {
                 struct Args {
                     work_id: u64,
                     query: String,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     max_results: Option<u64>,
                 }
                 let args: Args = serde_json::from_value(p)
@@ -2961,11 +2961,11 @@ impl JsonCodec {
                 #[derive(Deserialize)]
                 struct Args {
                     work_id: u64,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     line: Option<u64>,
-                    #[serde(default, alias = "target_line")]
+                    #[cfg_attr(feature = "serde", serde(default, alias = "target_line"))]
                     char: Option<u64>,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     context_lines: Option<u64>,
                 }
                 let args: Args = serde_json::from_value(p)
@@ -3018,7 +3018,7 @@ impl JsonCodec {
                 #[derive(Deserialize)]
                 struct Args {
                     query: String,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     max_results: Option<u64>,
                 }
                 let args: Args = serde_json::from_value(p)
@@ -3106,9 +3106,9 @@ impl JsonCodec {
                 #[derive(Deserialize)]
                 struct Args {
                     name: String,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     introduction: Option<String>,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     categories: Vec<String>,
                 }
                 let args: Args = serde_json::from_value(p)
@@ -3148,13 +3148,13 @@ impl JsonCodec {
                 struct Args {
                     trail_id: BeId,
                     work_id: BeId,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     char_start: Option<u64>,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     char_end: Option<u64>,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     note: Option<String>,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     server_domain: Option<String>,
                 }
                 let args: Args = serde_json::from_value(p)
@@ -3257,7 +3257,7 @@ impl JsonCodec {
             OperationCode::ProvJsonExport => {
                 #[derive(Deserialize)]
                 struct Args {
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     work_id: Option<u64>,
                     include_federation: bool,
                 }
@@ -3275,7 +3275,7 @@ impl JsonCodec {
                 #[derive(Deserialize)]
                 struct Args {
                     address: String,
-                    #[serde(default)]
+                    #[cfg_attr(feature = "serde", serde(default))]
                     port: Option<u16>,
                 }
                 let args: Args = serde_json::from_value(p)

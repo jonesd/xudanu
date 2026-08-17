@@ -1293,11 +1293,14 @@ pub fn build_merge_mapping(source: &Edition, merged: &Edition) -> Mapping {
 
     let elapsed = started.elapsed();
     if elapsed.as_millis() >= 1 {
-        tracing::debug!(
-            "[merge_mapping] {} source entries -> mapping in {:.2}ms",
-            source_entries.len(),
-            elapsed.as_secs_f64() * 1000.0,
-        );
+        #[cfg(feature = "server")]
+        {
+            tracing::debug!(
+                "[merge_mapping] {} source entries -> mapping in {:.2}ms",
+                source_entries.len(),
+                elapsed.as_secs_f64() * 1000.0,
+            );
+        }
     }
 
     mapping

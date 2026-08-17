@@ -25,9 +25,15 @@ impl OtreeSyncSessionId {
 pub struct OtreeAwarenessState {
     pub session_id: u64,
     pub user_name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub club_id: Option<BeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub author_public_key: Option<Vec<u8>>,
     pub cursor: Option<OtreeCursorPosition>,
     pub selection: Option<OtreeSelectionRange>,
@@ -58,7 +64,7 @@ pub struct OtreeAwarenessRelayResult {
 pub struct OtreeAuthorIdentity {
     pub public_key: [u8; 32],
     pub display_name: String,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub club_be_id: BeId,
 }
 
@@ -135,9 +141,9 @@ pub struct OtreeAnnotation {
     pub char_start: usize,
     pub char_end: usize,
     pub created_by: Option<BeId>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub created_at: u64,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub is_private: bool,
 }
 

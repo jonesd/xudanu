@@ -11,25 +11,25 @@ pub struct ClubChunkRef {
     pub name: Option<String>,
     pub signature_club: Option<BeId>,
     pub work_root: WorkChunkRef,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub default_read_club: Option<BeId>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub default_edit_club: Option<BeId>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub is_personal: bool,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub display_name: Option<String>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub credential: Option<crate::server::club::Credential>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub encrypted_signing_key: Option<crate::crypto::club_keys::EncryptedSigningKey>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub email: Option<String>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub verified: bool,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub members: Vec<BeId>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub sponsored_works: Vec<BeId>,
 }
 
@@ -44,11 +44,20 @@ pub struct LinkEntry {
     pub link_id: BeId,
     pub origin: BeId,
     pub destination: BeId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub origin_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub destination_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
     pub link_types: Vec<u64>,
 }
 
@@ -73,39 +82,60 @@ pub struct LinkEntry {
 pub struct WorkEntry {
     pub be_id: BeId,
     pub work_ref: WorkChunkRef,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub is_source: bool,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub source_author_id: Option<BeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub source_edition_info: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub content_start_line: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub content_end_line: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub source_fingerprint: Option<Vec<u64>>,
     /// Soft-delete (archive) state — archived works are hidden from the default
     /// work list but never destroyed.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub is_archived: bool,
     /// Append-only lifecycle history (archive/unarchive transitions).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
     pub lifecycle_history: Vec<crate::edition::work::WorkLifecycleEvent>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub history_club: Option<BeId>,
     /// Work type (Document / Fragment / Person / Concept / Collection / Commentary).
     /// See docs/dev/FR-22-concepts-and-categorization.md. Defaults to Document
     /// for backward compatibility with pre-FR-22 manifests.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub kind: crate::edition::WorkKind,
     /// License under which the work is published.
     /// See docs/dev/FR-24-transcopyright.md. Defaults to AllRightsReserved
     /// for backward compatibility with pre-FR-24 manifests.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub license: crate::edition::License,
     /// User-set title (overrides auto-extracted title from first line).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub custom_title: Option<String>,
 }
 
@@ -126,31 +156,31 @@ pub struct RevisionMeta {
     pub revision_id: u64,
 
     /// Parent revision (None for the first revision)
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub parent: Option<u64>,
 
     /// Unix timestamp (seconds) when this revision was created
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub created_at: u64,
 
     /// Identity (club ID) that created this revision
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub created_by: Option<BeId>,
 
     /// Author-supplied description ("Refined wording, added section on...")
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub description: Option<String>,
 
     /// Author-marked or auto-detected as notable (publishing event, major revision)
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub is_notable: bool,
 
     /// Character count of the edition (quick stat without loading full edition)
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub char_count: u64,
 
     /// Auto-detected change summary vs. parent ("+123 chars, 15% changed")
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub change_summary: String,
 }
 
@@ -164,13 +194,25 @@ pub struct AdminEntry {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TrailStopManifestEntry {
     pub work_id: BeId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub char_start: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub char_end: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub note: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub server_domain: Option<String>,
 }
 
@@ -179,11 +221,17 @@ pub struct TrailManifestEntry {
     pub trail_id: BeId,
     pub owner_club: BeId,
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub introduction: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
     pub categories: Vec<String>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub published: bool,
     pub stops: Vec<TrailStopManifestEntry>,
     pub created_at: u64,
@@ -276,9 +324,12 @@ pub struct Manifest {
     pub created_at: String,
     pub server_version: String,
     pub checksum: String,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub sequence: u64,
-    #[serde(default, skip_serializing_if = "is_null_char")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "is_null_char")
+    )]
     pub manifest_slot: char,
 
     // ── v1 (baseline): core identity and content ──
@@ -296,66 +347,135 @@ pub struct Manifest {
     // Migrated to chunk storage. links_chunk_hash points to a chunk containing
     // the serialized Vec<LinkEntry>. The inline `links` field is kept for
     // backward compat reading of old manifests but is empty on new writes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub links_hash: Option<[u8; 32]>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
     pub links: Vec<LinkEntry>,
     pub link_counter: BeId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub links_chunk_hash: Option<[u8; 32]>,
 
     // ── v3: federation ──
     // Migrated to chunk storage.
-    #[serde(default, skip_serializing_if = "reconcile_store_is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "reconcile_store_is_empty")
+    )]
     pub reconcile_store: crate::server::federation::ReconcileStore,
     pub reconcile_counter: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub federation: Option<crate::server::federation::FederationSnapshot>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub federation_chunk_hash: Option<[u8; 32]>,
 
     // ── v4: metadata chunk references ──
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub content_address_hash: Option<[u8; 32]>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub content_address: Option<crate::edition::ContentAddressIndex>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub content_address_chunk_hash: Option<[u8; 32]>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub blob_metas_hash: Option<[u8; 32]>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
     pub blob_metas: Vec<BlobMetaEntry>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub blob_metas_chunk_hash: Option<[u8; 32]>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub historical_authors_hash: Option<[u8; 32]>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub historical_authors: Option<crate::server::historical_author::HistoricalAuthorRegistry>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub historical_authors_chunk_hash: Option<[u8; 32]>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub annotations_hash: Option<[u8; 32]>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub fossil_snapshots_hash: Option<[u8; 32]>,
 
     // ── v4: social ──
     // Migrated to chunk storage.
-    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")
+    )]
     pub starred_works: std::collections::HashMap<BeId, std::collections::HashSet<BeId>>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
     pub trails: Vec<TrailManifestEntry>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub trail_counter: BeId,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
     pub compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub social_chunk_hash: Option<[u8; 32]>,
-    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")
+    )]
     pub ticket_nonces: std::collections::HashMap<String, u64>,
     // ── v5+ (future additions go here with version annotation) ──
 
     // ── FR-23: revision metadata ──
-    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")
+    )]
     pub revisions: std::collections::HashMap<BeId, Vec<RevisionMeta>>,
 }
 
@@ -1172,9 +1292,9 @@ pub struct SocialSection {
     pub trails: Vec<TrailManifestEntry>,
     pub trail_counter: BeId,
     pub compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub cross_server_backlinks: Vec<CrossServerBacklinkEntry>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub cross_server_links: Vec<CrossServerLinkEntry>,
 }
 

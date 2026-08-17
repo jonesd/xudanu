@@ -31,9 +31,15 @@ impl SyncSessionId {
 pub struct AwarenessState {
     pub session_id: u64,
     pub user_name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub club_id: Option<BeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub author_public_key: Option<Vec<u8>>,
     pub cursor: Option<CursorPosition>,
     pub selection: Option<SelectionRange>,
@@ -59,7 +65,7 @@ pub struct AwarenessRelayResult {
 pub struct AuthorIdentity {
     pub public_key: [u8; 32],
     pub display_name: String,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub club_be_id: BeId,
 }
 

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum LlmFeature {
     Narration,
     AutoTitle,
@@ -191,15 +191,15 @@ struct OllamaResponse {
     response: String,
     #[allow(dead_code)]
     done: bool,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     model: Option<String>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     created_at: Option<String>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     eval_count: Option<u64>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     prompt_eval_count: Option<u64>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     total_duration: Option<u64>,
 }
 

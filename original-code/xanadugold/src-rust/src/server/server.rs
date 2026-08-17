@@ -17106,23 +17106,29 @@ pub(crate) mod persist_snapshot {
         grabber: Option<u64>,
         last_revision_author: Option<BeId>,
         revision_authors: std::collections::HashMap<u64, BeId>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         is_source: bool,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         source_author_id: Option<BeId>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         source_edition_info: Option<String>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         content_start_line: Option<u64>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         content_end_line: Option<u64>,
         /// Soft-delete (archive) state.
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         is_archived: bool,
         /// Append-only lifecycle history.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Vec::is_empty")
+        )]
         lifecycle_history: Vec<crate::edition::work::WorkLifecycleEvent>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         history_club: Option<BeId>,
     }
 
@@ -17132,25 +17138,25 @@ pub(crate) mod persist_snapshot {
         name: Option<String>,
         signature_club: Option<BeId>,
         work: WorkSnapshot,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         default_read_club: Option<BeId>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         default_edit_club: Option<BeId>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         is_personal: bool,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         display_name: Option<String>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         credential: Option<crate::server::club::Credential>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         encrypted_signing_key: Option<crate::crypto::club_keys::EncryptedSigningKey>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         email: Option<String>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         verified: bool,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         members: Vec<BeId>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         sponsored_works: Vec<BeId>,
     }
 
@@ -17165,11 +17171,20 @@ pub(crate) mod persist_snapshot {
         link_id: BeId,
         origin: BeId,
         destination: BeId,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         origin_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         destination_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Vec::is_empty")
+        )]
         link_types: Vec<u64>,
     }
 
@@ -17198,16 +17213,16 @@ pub(crate) mod persist_snapshot {
         content_address: Option<crate::edition::ContentAddressIndex>,
         blob_metas: Vec<BlobMetaSnapshot>,
         key_history: Option<KeyHistorySnapshot>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         historical_authors: Option<crate::server::historical_author::HistoricalAuthorRegistry>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         starred_works: HashMap<BeId, HashSet<BeId>>,
         user_pins: HashMap<BeId, HashSet<String>>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         trails: Vec<TrailSnapshot>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         trail_counter: BeId,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
     }
 
@@ -17224,11 +17239,17 @@ pub(crate) mod persist_snapshot {
         trail_id: BeId,
         owner_club: BeId,
         name: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         introduction: Option<String>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Vec::is_empty")
+        )]
         categories: Vec<String>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         published: bool,
         stops: Vec<TrailStopSnapshot>,
         created_at: u64,

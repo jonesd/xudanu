@@ -68,6 +68,7 @@ impl Mapping {
 
     /// Build a displacement Mapping from compound DeltaOps (usize-based).
     /// Parallel to from_delta_ops but for the edition::compound::DeltaOp type.
+    #[cfg(feature = "serde")]
     pub fn from_compound_delta_ops(ops: &[crate::edition::compound::DeltaOp]) -> Mapping {
         let mut pos: i64 = 0;
         let mut displacement: i64 = 0;
@@ -379,6 +380,7 @@ impl Mapping {
     ///
     /// The result is a piecewise-constant Mapping that maps positions
     /// in the OLD text to corresponding positions in the NEW text.
+    #[cfg(feature = "server")]
     pub fn from_delta_ops(ops: &[crate::server::transport::protocol::TextDeltaOp]) -> Mapping {
         let mut pos: i64 = 0;
         let mut displacement: i64 = 0;

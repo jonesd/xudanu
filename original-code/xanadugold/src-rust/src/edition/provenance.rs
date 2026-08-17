@@ -7,6 +7,7 @@
 // membership, governance) to PROV entities, activities, and agents.
 
 use blake3::Hasher;
+#[cfg(feature = "server")]
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 
 use super::backend::BeId;
@@ -16,9 +17,10 @@ const ELEMENT_PROVENANCE_DOMAIN: &[u8] = b"xudanu/v1/element-provenance";
 const HISTORICAL_ATTESTATION_DOMAIN: &[u8] = b"xudanu/v1/historical-attestation";
 const FEDERATION_PROVENANCE_DOMAIN: &[u8] = b"xudanu/v1/federation-provenance";
 
-// Helper function for hex encoding
+// Helper function for hex encoding (std-only: keeps this module
+// buildable without the server feature; mirrors crypto::keys)
 fn hex_encode(data: &[u8]) -> String {
-    crate::crypto::keys::hex_encode(data)
+    data.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,10 +186,8 @@ impl FederationServerAgent {
 
     #[cfg(feature = "serde")]
     pub fn to_prov_agent(&self) -> (String, ProvAgent) {
-        let agent_id = generate_prov_id(
-            "xudanu:server",
-            &crate::crypto::keys::hex_encode(self.server_id.as_bytes())[..8],
-        );
+        let agent_id =
+            generate_prov_id("xudanu:server", &hex_encode(self.server_id.as_bytes())[..8]);
         let mut attributes = std::collections::HashMap::new();
 
         attributes.insert(
@@ -272,10 +272,7 @@ impl FederationAttestation {
         );
         attributes.insert(
             "xudanu:signature".to_string(),
-            ProvValue::typed(
-                &crate::crypto::keys::hex_encode(&self.signature),
-                "xsd:hexBinary",
-            ),
+            ProvValue::typed(&hex_encode(&self.signature), "xsd:hexBinary"),
         );
 
         for (key, value) in &self.metadata {
@@ -312,7 +309,7 @@ impl FederationAttestation {
         );
         let agent_id = generate_prov_id(
             "xudanu:server",
-            &crate::crypto::keys::hex_encode(self.attester_server_id.as_bytes())[..8],
+            &hex_encode(self.attester_server_id.as_bytes())[..8],
         );
 
         let mut attributes = std::collections::HashMap::new();
@@ -392,10 +389,8 @@ impl ClusterVerificationActivity {
 
         for (idx, server_id) in self.verifying_servers.iter().enumerate() {
             let assoc_id = format!("{}:assoc:{}", self.activity_id, idx);
-            let agent_id = generate_prov_id(
-                "xudanu:server",
-                &crate::crypto::keys::hex_encode(server_id.as_bytes())[..8],
-            );
+            let agent_id =
+                generate_prov_id("xudanu:server", &hex_encode(server_id.as_bytes())[..8]);
 
             let mut attributes = std::collections::HashMap::new();
             attributes.insert("xudanu:role".to_string(), ProvValue::string("verifier"));
@@ -474,14 +469,11 @@ impl FederationProvenanceBundle {
             );
             attributes.insert(
                 "xudanu:serverId".to_string(),
-                ProvValue::string(&crate::crypto::keys::hex_encode(&sig.server_id)),
+                ProvValue::string(&hex_encode(&sig.server_id)),
             );
             attributes.insert(
                 "xudanu:signature".to_string(),
-                ProvValue::typed(
-                    &crate::crypto::keys::hex_encode(&sig.signature),
-                    "xsd:hexBinary",
-                ),
+                ProvValue::typed(&hex_encode(&sig.signature), "xsd:hexBinary"),
             );
             attributes.insert(
                 "xudanu:timestamp".to_string(),
@@ -553,7 +545,7 @@ impl FederationProvenanceBundle {
 impl CrossServerSignature {
     #[cfg(feature = "serde")]
     pub fn to_prov_entity(&self) -> (String, ProvEntity) {
-        let server_id_hex = crate::crypto::keys::hex_encode(&self.server_id);
+        let server_id_hex = hex_encode(&self.server_id);
         let entity_id = generate_prov_id(
             "xudanu:crosssig",
             &format!(
@@ -570,14 +562,11 @@ impl CrossServerSignature {
         );
         attributes.insert(
             "xudanu:serverId".to_string(),
-            ProvValue::string(&crate::crypto::keys::hex_encode(&self.server_id)),
+            ProvValue::string(&hex_encode(&self.server_id)),
         );
         attributes.insert(
             "xudanu:signature".to_string(),
-            ProvValue::typed(
-                &crate::crypto::keys::hex_encode(&self.signature),
-                "xsd:hexBinary",
-            ),
+            ProvValue::typed(&hex_encode(&self.signature), "xsd:hexBinary"),
         );
         attributes.insert(
             "xudanu:timestamp".to_string(),
@@ -593,7 +582,7 @@ impl CrossServerSignature {
 
     #[cfg(feature = "serde")]
     pub fn to_prov_association(&self, activity_id: &str) -> (String, ProvAssociation) {
-        let server_id_hex = crate::crypto::keys::hex_encode(&self.server_id);
+        let server_id_hex = hex_encode(&self.server_id);
         let assoc_id = format!(
             "{}:assoc:{}",
             activity_id,
@@ -607,10 +596,7 @@ impl CrossServerSignature {
         let mut attributes = std::collections::HashMap::new();
         attributes.insert(
             "xudanu:signature".to_string(),
-            ProvValue::typed(
-                &crate::crypto::keys::hex_encode(&self.signature),
-                "xsd:hexBinary",
-            ),
+            ProvValue::typed(&hex_encode(&self.signature), "xsd:hexBinary"),
         );
 
         (
@@ -701,7 +687,7 @@ impl ClusterConsensus {
         // Add server associations for verifications
         for verification in &self.verifications {
             if verification.verified {
-                let server_id_hex = crate::crypto::keys::hex_encode(&verification.server_id);
+                let server_id_hex = hex_encode(&verification.server_id);
                 let server_agent_id = generate_prov_id(
                     "xudanu:server",
                     &server_id_hex[..8.min(server_id_hex.len())],
@@ -793,7 +779,7 @@ impl FederatedProvenance {
             bundle_id.clone(),
             self.base_provenance.timestamp,
             FederationMetadata::new(
-                crate::crypto::keys::hex_encode(&self.base_provenance.server_id),
+                hex_encode(&self.base_provenance.server_id),
                 "xudanu-federation".to_string(),
                 self.consensus.total_servers,
                 match self.consensus.consensus_type {
@@ -809,10 +795,10 @@ impl FederatedProvenance {
         // Add server agents from verifications
         for verification in &self.consensus.verifications {
             if verification.verified {
-                let server_id_hex = crate::crypto::keys::hex_encode(&verification.server_id);
+                let server_id_hex = hex_encode(&verification.server_id);
                 bundle.add_server_agent(FederationServerAgent::new(
                     server_id_hex.clone(),
-                    crate::crypto::keys::hex_encode(&verification.server_id),
+                    hex_encode(&verification.server_id),
                     "".to_string(),
                     "active".to_string(),
                     0,
@@ -836,7 +822,7 @@ impl FederatedProvenance {
                 .verifications
                 .iter()
                 .filter(|v| v.verified)
-                .map(|v| crate::crypto::keys::hex_encode(&v.server_id))
+                .map(|v| hex_encode(&v.server_id))
                 .collect(),
             match self.consensus.consensus_type {
                 ConsensusType::Unanimous => "unanimous".to_string(),
@@ -927,11 +913,11 @@ mod element_serde_impl {
         author_type: Option<String>,
         llm_model: Option<String>,
         historical_author_id: Option<u64>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         source_work_id: Option<u64>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         transcluded_by: Option<TransclusionInfoData>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         derived_by: Option<DerivationInfoData>,
     }
 
@@ -1046,6 +1032,7 @@ mod element_serde_impl {
     }
 }
 
+#[cfg(feature = "server")]
 pub fn sign_element(
     signing_key: &SigningKey,
     element_fingerprint: &[u8; 32],
@@ -1473,6 +1460,7 @@ fn compute_signing_payload(
     hasher.finalize().into()
 }
 
+#[cfg(feature = "server")]
 pub fn sign_span(
     signing_key: &SigningKey,
     element_fingerprints: &[[u8; 32]],
@@ -1498,11 +1486,13 @@ pub fn sign_span(
     }
 }
 
+#[cfg(feature = "server")]
 pub fn verify_span_provenance(provenance: &Provenance, element_fingerprints: &[[u8; 32]]) -> bool {
     let span_fp = compute_span_fingerprint(element_fingerprints);
     verify_span_provenance_with_span_fp(provenance, &span_fp)
 }
 
+#[cfg(feature = "server")]
 pub fn verify_span_provenance_with_span_fp(
     provenance: &Provenance,
     span_fingerprint: &[u8; 32],
@@ -1521,6 +1511,7 @@ pub fn verify_span_provenance_with_span_fp(
     crate::crypto::sign::verify_signature(&verifying_key, &payload, &signature).is_ok()
 }
 
+#[cfg(feature = "server")]
 pub fn sign_historical_attestation(
     server_signing_key: &SigningKey,
     element_fingerprints: &[[u8; 32]],
@@ -1546,6 +1537,7 @@ pub fn sign_historical_attestation(
     }
 }
 
+#[cfg(feature = "server")]
 pub fn verify_historical_attestation(
     provenance: &Provenance,
     element_fingerprints: &[[u8; 32]],
@@ -1596,6 +1588,7 @@ pub(crate) fn unix_to_iso8601(timestamp: u64) -> Option<String> {
         })
 }
 
+#[cfg(feature = "server")]
 pub fn sign_cross_server(
     signing_key: &SigningKey,
     base_provenance: &Provenance,
@@ -1613,6 +1606,7 @@ pub fn sign_cross_server(
     }
 }
 
+#[cfg(feature = "server")]
 pub fn verify_federation_provenance(
     federated: &FederatedProvenance,
     element_fingerprints: &[[u8; 32]],
@@ -2635,10 +2629,10 @@ pub struct ProvValue {
         feature = "serde",
         serde(rename = "type", skip_serializing_if = "Option::is_none")
     )]
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub type_: Option<String>,
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub lang: Option<String>,
 }
 
@@ -2680,7 +2674,7 @@ impl ProvValue {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProvEntity {
-    #[serde(flatten)]
+    #[cfg_attr(feature = "serde", serde(flatten))]
     pub attributes: std::collections::HashMap<String, ProvValue>,
 }
 
@@ -2688,13 +2682,13 @@ pub struct ProvEntity {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProvActivity {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "prov:startTime")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:startTime"))]
     pub start_time: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "prov:endTime")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:endTime"))]
     pub end_time: Option<String>,
-    #[serde(flatten)]
+    #[cfg_attr(feature = "serde", serde(flatten))]
     pub attributes: std::collections::HashMap<String, ProvValue>,
 }
 
@@ -2702,7 +2696,7 @@ pub struct ProvActivity {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProvAgent {
-    #[serde(flatten)]
+    #[cfg_attr(feature = "serde", serde(flatten))]
     pub attributes: std::collections::HashMap<String, ProvValue>,
 }
 
@@ -2710,14 +2704,14 @@ pub struct ProvAgent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProvAttribution {
-    #[serde(rename = "prov:entity")]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:entity"))]
     pub entity: String,
-    #[serde(rename = "prov:agent")]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:agent"))]
     pub agent: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "prov:time")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:time"))]
     pub time: Option<String>,
-    #[serde(flatten)]
+    #[cfg_attr(feature = "serde", serde(flatten))]
     pub attributes: std::collections::HashMap<String, ProvValue>,
 }
 
@@ -2725,20 +2719,20 @@ pub struct ProvAttribution {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProvDerivation {
-    #[serde(rename = "prov:generatedEntity")]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:generatedEntity"))]
     pub generated_entity: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "prov:activity")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:activity"))]
     pub activity: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "prov:usage")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:usage"))]
     pub usage: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "prov:generation")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:generation"))]
     pub generation: Option<String>,
-    #[serde(rename = "prov:usedEntity")]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:usedEntity"))]
     pub used_entity: String,
-    #[serde(flatten)]
+    #[cfg_attr(feature = "serde", serde(flatten))]
     pub attributes: std::collections::HashMap<String, ProvValue>,
 }
 
@@ -2746,20 +2740,20 @@ pub struct ProvDerivation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProvAssociation {
-    #[serde(rename = "prov:activity")]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:activity"))]
     pub activity: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "prov:agent")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:agent"))]
     pub agent: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "prov:plan")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:plan"))]
     pub plan: Option<String>,
     #[cfg_attr(
         feature = "serde",
         serde(skip_serializing_if = "Option::is_none", rename = "prov:role")
     )]
     pub role: Option<ProvValue>,
-    #[serde(flatten)]
+    #[cfg_attr(feature = "serde", serde(flatten))]
     pub attributes: std::collections::HashMap<String, ProvValue>,
 }
 
@@ -2767,15 +2761,15 @@ pub struct ProvAssociation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProvGeneration {
-    #[serde(rename = "prov:entity")]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:entity"))]
     pub entity: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "prov:activity")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:activity"))]
     pub activity: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "prov:time")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:time"))]
     pub time: Option<String>,
-    #[serde(flatten)]
+    #[cfg_attr(feature = "serde", serde(flatten))]
     pub attributes: std::collections::HashMap<String, ProvValue>,
 }
 
@@ -2783,7 +2777,7 @@ pub struct ProvGeneration {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProvBundle {
-    #[serde(flatten)]
+    #[cfg_attr(feature = "serde", serde(flatten))]
     pub content: ProvJsonDocument,
 }
 
@@ -2791,23 +2785,26 @@ pub struct ProvBundle {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProvJsonDocument {
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub prefix: std::collections::HashMap<String, String>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub entity: std::collections::HashMap<String, ProvEntity>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub activity: std::collections::HashMap<String, ProvActivity>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub agent: std::collections::HashMap<String, ProvAgent>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub wasAttributedTo: std::collections::HashMap<String, ProvAttribution>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub wasDerivedFrom: std::collections::HashMap<String, ProvDerivation>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub wasAssociatedWith: std::collections::HashMap<String, ProvAssociation>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub wasGeneratedBy: std::collections::HashMap<String, ProvGeneration>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub bundle: Option<std::collections::HashMap<String, ProvBundle>>,
 }
 
@@ -2859,7 +2856,7 @@ pub fn generate_span_prov_id(work_id: BeId, span_start: i64, span_end: i64) -> S
 
 /// Generate agent ID for author
 pub fn generate_author_prov_id(author_public_key: &[u8; 32]) -> String {
-    let key_hex = crate::crypto::keys::hex_encode(author_public_key);
+    let key_hex = hex_encode(author_public_key);
     generate_prov_id("xudanu:agent", &key_hex[..16]) // Use first 16 chars for brevity
 }
 /// Generate activity ID for edit operation
@@ -2889,7 +2886,7 @@ impl FederatedProvenance {
         entity_attrs.insert(
             "xudanu:serverId".to_string(),
             ProvValue::typed(
-                &crate::crypto::keys::hex_encode(&self.base_provenance.server_id),
+                &hex_encode(&self.base_provenance.server_id),
                 "xsd:hexBinary",
             ),
         );
@@ -2908,14 +2905,14 @@ impl FederatedProvenance {
         agent_attrs.insert(
             "xudanu:publicKey".to_string(),
             ProvValue::typed(
-                &crate::crypto::keys::hex_encode(&self.base_provenance.author_public_key),
+                &hex_encode(&self.base_provenance.author_public_key),
                 "xsd:hexBinary",
             ),
         );
         agent_attrs.insert(
             "xudanu:signature".to_string(),
             ProvValue::typed(
-                &crate::crypto::keys::hex_encode(&self.base_provenance.signature),
+                &hex_encode(&self.base_provenance.signature),
                 "xsd:hexBinary",
             ),
         );
@@ -2953,24 +2950,15 @@ impl FederatedProvenance {
             );
             activity_attrs.insert(
                 "xudanu:serverId".to_string(),
-                ProvValue::typed(
-                    &crate::crypto::keys::hex_encode(&sig.server_id),
-                    "xsd:hexBinary",
-                ),
+                ProvValue::typed(&hex_encode(&sig.server_id), "xsd:hexBinary"),
             );
             activity_attrs.insert(
                 "xudanu:verifyingKey".to_string(),
-                ProvValue::typed(
-                    &crate::crypto::keys::hex_encode(&sig.verifying_key),
-                    "xsd:hexBinary",
-                ),
+                ProvValue::typed(&hex_encode(&sig.verifying_key), "xsd:hexBinary"),
             );
             activity_attrs.insert(
                 "xudanu:signature".to_string(),
-                ProvValue::typed(
-                    &crate::crypto::keys::hex_encode(&sig.signature),
-                    "xsd:hexBinary",
-                ),
+                ProvValue::typed(&hex_encode(&sig.signature), "xsd:hexBinary"),
             );
 
             doc.activity.insert(
@@ -2983,18 +2971,13 @@ impl FederatedProvenance {
             );
 
             // Associate server agent with activity
-            let server_agent_id = generate_prov_id(
-                "xudanu:server",
-                &crate::crypto::keys::hex_encode(&sig.server_id)[..8],
-            );
+            let server_agent_id =
+                generate_prov_id("xudanu:server", &hex_encode(&sig.server_id)[..8]);
             let mut server_attrs = std::collections::HashMap::new();
             server_attrs.insert("prov:type".to_string(), ProvValue::qname("xudanu:Server"));
             server_attrs.insert(
                 "xudanu:serverId".to_string(),
-                ProvValue::typed(
-                    &crate::crypto::keys::hex_encode(&sig.server_id),
-                    "xsd:hexBinary",
-                ),
+                ProvValue::typed(&hex_encode(&sig.server_id), "xsd:hexBinary"),
             );
 
             doc.agent.insert(

@@ -737,9 +737,12 @@ impl BackfollowEngine {
         fossil_id: RecorderId,
         content: &[RangeElement],
     ) {
-        tracing::debug!(target: "xudanu::content_watch",
+        #[cfg(feature = "server")]
+        {
+            tracing::debug!(target: "xudanu::content_watch",
             edition_id, fossil_id, content_count = content.len(),
             "plant_recorder: installing fossil");
+        }
         if let Some(meta) = self.edition_metas.get(&edition_id) {
             let scrum = meta.sensor_crum();
             scrum
@@ -748,9 +751,12 @@ impl BackfollowEngine {
                 .install_recorders(&[fossil_id]);
             propagate_flags(scrum);
         } else {
-            tracing::debug!(target: "xudanu::content_watch",
+            #[cfg(feature = "server")]
+            {
+                tracing::debug!(target: "xudanu::content_watch",
                 edition_id, fossil_id,
                 "plant_recorder: no edition_meta found for edition_id");
+            }
         }
         for elem in content {
             let fp = elem.content_fingerprint();
@@ -759,9 +765,12 @@ impl BackfollowEngine {
                 .or_default()
                 .insert(fossil_id);
         }
-        tracing::debug!(target: "xudanu::content_watch",
+        #[cfg(feature = "server")]
+        {
+            tracing::debug!(target: "xudanu::content_watch",
             fossil_id, total_fp_entries = self.fossil_by_fingerprint.len(),
             "plant_recorder: fossil_by_fingerprint updated");
+        }
     }
 
     pub fn plant_recorder_with_hoist(
@@ -935,10 +944,13 @@ impl BackfollowEngine {
                 }
             }
         }
-        tracing::debug!(target: "xudanu::content_watch",
+        #[cfg(feature = "server")]
+        {
+            tracing::debug!(target: "xudanu::content_watch",
             input_fp_count = fingerprints.len(), matched_fps, triggered_fossils = results.len(),
             total_fp_entries = self.fossil_by_fingerprint.len(),
             "check_recorders_by_content: lookup results");
+        }
         results
     }
 

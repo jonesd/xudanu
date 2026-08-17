@@ -55,9 +55,15 @@ pub enum RangeElement {
         char_end: usize,
         placed_at: u64,
         placed_by: Option<u64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         content_hash: Option<[u8; 32]>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         source_revision: Option<u64>,
     },
     StructuralTransclusion {
@@ -67,15 +73,24 @@ pub enum RangeElement {
         source_crum: [u8; 32],
         placed_at: u64,
         placed_by: Option<u64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         source_revision: Option<u64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         cached_content: Option<String>,
         /// Generation of the source work at cache time (FR-37 Phase 2).
         /// Monotonic per source, bumped on every revise; the cheap
         /// in-memory staleness check. Mismatch -> re-resolve at read
         /// time. `source_crum` remains the cross-restart authority.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         source_generation: Option<u64>,
     },
     /// Content computed on demand from another work (FR-37 Phase 3) —
@@ -89,7 +104,10 @@ pub enum RangeElement {
     /// (same reader semantics as an unstamped StructuralTransclusion).
     Virtual {
         spec: VirtualSpec,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         cached_content: Option<String>,
     },
 }

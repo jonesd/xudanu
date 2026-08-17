@@ -15,7 +15,7 @@ where
 {
     use serde::de::Error;
     #[derive(Deserialize)]
-    #[serde(untagged)]
+    #[cfg_attr(feature = "serde", serde(untagged))]
     enum NumOrStr {
         Num(u64),
         Str(String),
@@ -130,7 +130,7 @@ impl HandshakeResponse {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum OperationCode {
     SessionConnect,
     SessionDisconnect,
@@ -1134,7 +1134,7 @@ impl OperationCode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(tag = "type", rename_all = "snake_case"))]
 pub enum TextDeltaOp {
     Retain { count: u64 },
     Insert { text: String },
@@ -1171,7 +1171,7 @@ pub fn apply_text_delta(text: &str, ops: &[TextDeltaOp]) -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum WireRequest {
     SessionConnect,
     SessionDisconnect,
@@ -1217,9 +1217,9 @@ pub enum WireRequest {
         club_id: BeId,
     },
     ClubNames {
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         offset: Option<u32>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         limit: Option<u32>,
     },
 
@@ -1287,9 +1287,9 @@ pub enum WireRequest {
         work_id: BeId,
     },
     WorkGraph {
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         center_work_id: Option<BeId>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         max_nodes: u64,
     },
 
@@ -1346,9 +1346,15 @@ pub enum WireRequest {
 
     TrailCreate {
         name: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         introduction: Option<String>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Vec::is_empty")
+        )]
         categories: Vec<String>,
     },
     TrailDelete {
@@ -1364,7 +1370,10 @@ pub enum WireRequest {
         char_start: Option<u64>,
         char_end: Option<u64>,
         note: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         server_domain: Option<String>,
     },
     TrailRemoveStop {
@@ -1391,7 +1400,10 @@ pub enum WireRequest {
         trail_id: BeId,
     },
     TrailListPublished {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         category: Option<String>,
     },
     TrailListCategories,
@@ -1538,16 +1550,16 @@ pub enum WireRequest {
     AdminServerInfo,
 
     WorkList {
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         offset: Option<u32>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         limit: Option<u32>,
     },
     WorkListByOwner {
         owner: BeId,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         offset: Option<u32>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         limit: Option<u32>,
     },
 
@@ -1584,7 +1596,7 @@ pub enum WireRequest {
         destination: BeId,
         origin_ref: Option<HyperRefPayload>,
         destination_ref: Option<HyperRefPayload>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         link_types: Vec<u64>,
     },
     LinkGet {
@@ -1600,9 +1612,9 @@ pub enum WireRequest {
     },
     LinkListForWork {
         work_id: BeId,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         offset: Option<u32>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         limit: Option<u32>,
     },
     LinkAddEnd {
@@ -1741,11 +1753,11 @@ pub enum WireRequest {
         annotation_id: u64,
         kind: String,
         payload: String,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         char_start: usize,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         char_end: usize,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         is_private: bool,
     },
     AnnotationDelete {
@@ -1991,9 +2003,9 @@ pub enum WireRequest {
 
     CrdtRegisterAuthor {
         work_id: BeId,
-        #[serde(skip)]
+        #[cfg_attr(feature = "serde", serde(skip))]
         public_key: [u8; 32],
-        #[serde(skip)]
+        #[cfg_attr(feature = "serde", serde(skip))]
         display_name: String,
     },
 
@@ -2064,13 +2076,13 @@ pub enum WireRequest {
     /// FR-EPUB: Import an EPUB file. Extracts text + metadata server-side.
     ImportEpub {
         epub_data: Vec<u8>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         title: Option<String>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         author: Option<String>,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         skip_prefix_lines: u64,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         skip_suffix_lines: u64,
     },
 
@@ -2121,7 +2133,7 @@ pub enum WireRequest {
     },
     GlobalTextSearch {
         query: String,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         max_results: Option<u64>,
     },
     SeedDemoAttribution {
@@ -2130,7 +2142,7 @@ pub enum WireRequest {
 
     #[cfg(feature = "serde")]
     ProvJsonExport {
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         work_id: Option<u64>,
         include_federation: bool,
     },
@@ -2139,7 +2151,7 @@ pub enum WireRequest {
     #[cfg(feature = "serde")]
     ServerDirectoryAdd {
         address: String,
-        #[serde(default)]
+        #[cfg_attr(feature = "serde", serde(default))]
         port: Option<u16>,
     },
     #[cfg(feature = "serde")]
@@ -2322,7 +2334,7 @@ impl WireRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum EditionPayload {
     Text(String),
     Entries(Vec<(i64, RangeElement)>),
@@ -2384,7 +2396,10 @@ impl EditionPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", content = "value", rename_all = "snake_case")]
+#[cfg_attr(
+    feature = "serde",
+    serde(tag = "type", content = "value", rename_all = "snake_case")
+)]
 pub enum ResponseValue {
     Void,
     Id(BeId),
@@ -2712,7 +2727,10 @@ pub enum ResponseValue {
 
     ClubWhoAmIResult {
         clubs: Vec<(BeId, String)>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
         verifying_key: Option<String>,
     },
 
@@ -2994,13 +3012,25 @@ pub struct AttributionSpanPayload {
     pub author_type: Option<String>,
     pub llm_model: Option<String>,
     pub historical_author_id: Option<BeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub source_work_id: Option<BeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub transcluded_by_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub transcluded_by_club_id: Option<BeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub provenance_chain: Option<Vec<ProvenanceHopPayload>>,
 }
 
@@ -3029,11 +3059,17 @@ pub struct SearchMatchPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalSearchResultPayload {
     pub work_id: BeId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub owner: Option<BeId>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub revision_count: u64,
     pub matches: Vec<SearchMatchPayload>,
 }
@@ -3053,7 +3089,7 @@ pub struct RetrieveFlagsPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(tag = "type", rename_all = "snake_case"))]
 pub enum BundlePayload {
     Element {
         region: XnRegion,
@@ -3092,25 +3128,46 @@ pub struct WorkListEntry {
     pub owner: Option<BeId>,
     pub revision_count: u64,
     pub is_grabbed: bool,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "String::is_empty")
+    )]
     pub title: String,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub read_club: Option<BeId>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub is_source: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub content_start_line: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub content_end_line: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub source_author_id: Option<BeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub source_edition_info: Option<String>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub is_starred: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub updated_at: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub content_crum: Option<String>,
 }
 
@@ -3123,23 +3180,41 @@ pub struct LinkPayload {
     pub destination_ref: Option<HyperRefPayload>,
     /// Ghost metadata for the origin endpoint (archived state + title + owner),
     /// so clients can render references into archived works distinctly.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub origin_archived: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub origin_title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub origin_owner: Option<BeId>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub destination_archived: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub destination_title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub destination_owner: Option<BeId>,
     /// All named ends on the link (including LeftEnd/RightEnd + any custom ends).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
     pub named_ends: Vec<(String, HyperRefPayload)>,
     /// Link type IDs (e.g., citation=1, response=2, commentary=3).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
     pub link_types: Vec<u64>,
 }
 
@@ -3166,27 +3241,39 @@ pub struct BacklinkEntryPayload {
     pub source_work_id: BeId,
     pub link_id: BeId,
     pub link_type: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub excerpt: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphNodePayload {
     pub work_id: BeId,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "String::is_empty")
+    )]
     pub title: String,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub is_starred: bool,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub is_source: bool,
     pub revision_count: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub author_type: Option<String>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub kind: crate::edition::WorkKind,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub license: crate::edition::License,
 }
 
@@ -3195,7 +3282,7 @@ pub struct GraphEdgePayload {
     pub source: BeId,
     pub target: BeId,
     pub edge_type: String,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub weight: u64,
 }
 
@@ -3208,15 +3295,30 @@ pub struct GraphPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrailStopPayload {
     pub work_id: BeId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub char_start: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub char_end: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub note: Option<String>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "String::is_empty")
+    )]
     pub title: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub server_domain: Option<String>,
 }
 
@@ -3224,13 +3326,19 @@ pub struct TrailStopPayload {
 pub struct TrailPayload {
     pub trail_id: BeId,
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub introduction: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
     pub categories: Vec<String>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub published: bool,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub owner_club: BeId,
     pub stops: Vec<TrailStopPayload>,
     pub created_at: u64,
@@ -3242,17 +3350,23 @@ pub struct AnnotationPayload {
     pub annotation_id: u64,
     pub kind: String,
     pub payload: String,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub char_start: usize,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub char_end: usize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub created_by: Option<BeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub created_by_name: Option<String>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub created_at: u64,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub is_private: bool,
 }
 
@@ -3261,40 +3375,61 @@ pub struct HyperRefPayload {
     pub kind: String,
     pub work_context: Option<BeId>,
     pub original_context: Option<BeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub path_context: Option<Vec<RangeElementPayload>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub excerpt: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
     pub provenance_chain: Vec<ProvenanceHopPayload>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub start_position: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub end_position: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub cross_server_ref: Option<CrossServerRefPayload>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrossServerRefPayload {
     pub tumbler: String,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub origin_server_id: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub origin_server_address: Option<String>,
     pub content_hash: String,
-    #[serde(default = "default_mime_type")]
+    #[cfg_attr(feature = "serde", serde(default = "default_mime_type"))]
     pub mime_type: String,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub byte_size: u64,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub origin_author: String,
     pub origin_author_key: String,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub origin_server_sig: String,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub fetched_at: u64,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub excerpt: String,
 }
 
@@ -3360,14 +3495,20 @@ impl CrossServerRefPayload {
 pub struct ProvenanceHopPayload {
     pub source_work_id: BeId,
     pub link_id: BeId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub source_work_title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub source_author_name: Option<String>,
     /// The work this hop's content was transcluded *into* (the link's
     /// destination). Lets clients reconstruct the ancestry DAG instead of
     /// reading a flat link-id-sorted list as a linear chain.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub dest_work_id: BeId,
 }
 
@@ -3393,11 +3534,20 @@ pub struct WorkLifecycleEventPayload {
 pub struct WorkGhostInfoPayload {
     pub work_id: BeId,
     pub title: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub owner: Option<BeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub archived_by: Option<BeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub archived_at: Option<u64>,
     pub lifecycle_history: Vec<WorkLifecycleEventPayload>,
 }
@@ -3410,15 +3560,15 @@ pub struct SpanRangePayload {
     pub flat_start: usize,
     pub flat_end: usize,
     pub content_len: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub otree_position: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub resolved_content: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub placed_at: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub placed_by: Option<Option<u64>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub source_changed: Option<bool>,
 }
 
@@ -3442,17 +3592,32 @@ impl SpanRangePayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RangeElementPayload {
-    #[serde(rename = "type")]
+    #[cfg_attr(feature = "serde", serde(rename = "type"))]
     pub elem_type: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub text: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub label_id: Option<BeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub work_id: Option<BeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub edition_id: Option<BeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub id_holder: Option<u64>,
     #[serde(
         default,
@@ -3460,27 +3625,57 @@ pub struct RangeElementPayload {
         alias = "content_hash"
     )]
     pub blob_hash: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "mime_type")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none", alias = "mime_type")
+    )]
     pub blob_mime: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "byte_size")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none", alias = "byte_size")
+    )]
     pub blob_size: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "width")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none", alias = "width")
+    )]
     pub blob_width: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "height")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none", alias = "height")
+    )]
     pub blob_height: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "caption")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none", alias = "caption")
+    )]
     pub blob_caption: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub transclusion_source: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub transclusion_start: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub transclusion_end: Option<usize>,
     // Virtual elements (FR-37 Phase 3): spec fields. `virtual_revision`
     // is REQUIRED — unpinned virtuals are invalid on the wire.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub virtual_source: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub virtual_revision: Option<u64>,
 }
 
@@ -3874,11 +4069,17 @@ pub struct TracePositionPayload {
 pub struct RenderedElementPayload {
     pub position: i64,
     pub text: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub source_work_id: Option<BeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub source_author_name: Option<String>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub is_transcluded: bool,
     pub transclusion_sources: Vec<TransclusionSourcePayload>,
 }
@@ -3886,11 +4087,17 @@ pub struct RenderedElementPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransclusionSourcePayload {
     pub work_id: BeId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub author_name: Option<String>,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub is_direct: bool,
 }
 
@@ -4007,7 +4214,7 @@ pub struct RecorderInfoPayload {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum ErrorCode {
     NotAuthorized,
     NotFound,
@@ -4089,7 +4296,7 @@ impl ErrorCode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum DetectorType {
     Status,
     Revision,
@@ -4099,7 +4306,7 @@ pub enum DetectorType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub struct SubscribeRequest {
     pub detector_type: DetectorType,
     pub target_id: BeId,
@@ -4133,14 +4340,17 @@ impl EventCode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub struct WireEvent {
     pub subscription_id: u16,
     pub event: EventPayload,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+#[cfg_attr(
+    feature = "serde",
+    serde(tag = "type", content = "payload", rename_all = "snake_case")
+)]
 pub enum EventPayload {
     WorkGrabbed {
         work_be_id: BeId,
@@ -4240,20 +4450,20 @@ impl EventPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WireFrame {
     pub v: u8,
-    #[serde(rename = "type")]
+    #[cfg_attr(feature = "serde", serde(rename = "type"))]
     pub msg_type: String,
     pub id: u16,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub op: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub payload: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub value: Option<ResponseValue>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub code: Option<ErrorCode>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub message: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub event: Option<EventPayload>,
 }
 
@@ -4263,7 +4473,7 @@ pub struct AuthorContributionEntry {
     pub display_name: String,
     pub char_count: u64,
     pub percentage: f64,
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub author_type: Option<String>,
 }
 
@@ -4274,9 +4484,15 @@ pub struct RevisionMetaEntry {
     pub author_club_id: Option<BeId>,
     pub author_display_name: Option<String>,
     pub author_type: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub timestamp: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub content_crum: Option<String>,
 }
 
