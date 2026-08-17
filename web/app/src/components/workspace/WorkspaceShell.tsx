@@ -1156,6 +1156,22 @@ export function WorkspaceShell() {
     [workBeId, text, compound, transclusion, showToast]
   );
 
+  const handlePlacePinnedTransclusion = useCallback(
+    async (position: number) => {
+      if (workBeId === null) return;
+      const pending = transclusion.pending;
+      if (!pending) return;
+      const insertPos = Math.max(0, Math.min(position, text.length));
+      await compound.addPinnedSpan(insertPos, pending.sourceWorkId, pending.start, pending.end);
+      await compound.reload();
+      setTimeout(() => compound.reload(), 2000);
+      transclusion.clearPending();
+      setShowUndoToast(true);
+      setTimeout(() => setShowUndoToast(false), 6000);
+    },
+    [workBeId, text, compound, transclusion, showToast]
+  );
+
   const handlePlaceImage = useCallback(
     async (position: number) => {
       if (workBeId === null || !pendingImage || !clientRef.current) return;
@@ -2825,6 +2841,7 @@ export function WorkspaceShell() {
                     pending={transclusion.pending}
                     cursorPosition={selectionRange?.start ?? null}
                     onPlace={handlePlaceTransclusion}
+                    onPlacePinned={handlePlacePinnedTransclusion}
                     onCancel={transclusion.clearPending}
                   />
                 )}
@@ -2979,6 +2996,7 @@ export function WorkspaceShell() {
                   transclusionMarkers={transclusion.markers}
                   pendingTransclusion={transclusion.pending}
                   onPlaceTransclusion={handlePlaceTransclusion}
+                  onPlacePinnedTransclusion={handlePlacePinnedTransclusion}
                   selectionRange={selectionRange}
                   highlightRange={highlightRange}
                   onNavigateToWork={selectWork}

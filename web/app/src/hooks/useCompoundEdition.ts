@@ -98,6 +98,57 @@ export function useCompoundEdition(
     [client, workBeId, loadCompound],
   );
 
+  /**
+   * FR-37: place a PINNED virtual quotation (Phase 3/4 UX). Pins the
+   * source's CURRENT revision at placement time — the quotation is
+   * immune to later source edits until deliberately re-placed. Falls
+   * back to the legacy live transclusion when revision lookup fails.
+   */
+  const addPinnedSpan = useCallback(
+    async (
+      position: number,
+      sourceWorkId: number,
+      charStart: number,
+      charEnd: number,
+    ) => {
+      if (!client || workBeId === null) return false;
+      try {
+        let revision = 0;
+        try {
+          revision = await client.revisionCount(sourceWorkId);
+        } catch {
+          // revision unknown — server will reject an unpinned virtual;
+          // fall back to the legacy live transclusion.
+          await client.elementInsert(workBeId, position, {
+            type: "transclusion",
+            transclusion_source: sourceWorkId,
+            transclusion_start: charStart,
+            transclusion_end: charEnd,
+          });
+          lastInsertedRef.current = { sourceWorkId, charStart, charEnd };
+          await loadCompound();
+          return true;
+        }
+        await client.elementInsert(workBeId, position, {
+          type: "virtual",
+          virtual_source: sourceWorkId,
+          virtual_revision: revision,
+          transclusion_start: charStart,
+          transclusion_end: charEnd,
+        });
+        lastInsertedRef.current = { sourceWorkId, charStart, charEnd };
+        await loadCompound();
+        return true;
+      } catch (e) {
+        console.error("useCompoundEdition: addPinnedSpan failed", e);
+        const msg = e instanceof Error ? e.message : String(e);
+        alert(`Could not place quotation: ${msg}`);
+        return false;
+      }
+    },
+    [client, workBeId, loadCompound],
+  );
+
   const undoLastInsert = useCallback(async (): Promise<boolean> => {
     if (!client || workBeId === null || !lastInsertedRef.current) return false;
     const { sourceWorkId, charStart, charEnd } = lastInsertedRef.current;
@@ -159,6 +210,7 @@ export function useCompoundEdition(
     sourceTitles,
     resolvedText,
     addSpan,
+    addPinnedSpan,
     undoLastInsert,
     removeTransclusion,
     reload: loadCompound,

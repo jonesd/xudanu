@@ -3,11 +3,12 @@ import type { PendingTransclusion } from "../hooks/useTransclusion";
 interface TransclusionBadgeProps {
   pending: PendingTransclusion;
   cursorPosition: number | null;
-  onPlace: (position: number) => void;
+  onPlace: (position: number, padding?: string) => void;
+  onPlacePinned: (position: number) => void;
   onCancel: () => void;
 }
 
-export function TransclusionBadge({ pending, cursorPosition, onPlace, onCancel }: TransclusionBadgeProps) {
+export function TransclusionBadge({ pending, cursorPosition, onPlace, onPlacePinned, onCancel }: TransclusionBadgeProps) {
   const preview =
     pending.text.length > 80
       ? pending.text.slice(0, 80) + "\u2026"
@@ -24,13 +25,22 @@ export function TransclusionBadge({ pending, cursorPosition, onPlace, onCancel }
       </div>
       <div className="transclusion-badge-actions">
         {cursorPosition !== null && (
-          <button
-            className="transclusion-badge-place"
-            onClick={() => onPlace(cursorPosition)}
-            title="Insert transclusion at the cursor position"
-          >
-            Place at cursor
-          </button>
+          <>
+            <button
+              className="transclusion-badge-place"
+              onClick={() => onPlace(cursorPosition)}
+              title="Live link: keeps following the source document (updates when the source is edited)"
+            >
+              Live link
+            </button>
+            <button
+              className="transclusion-badge-place transclusion-badge-place-pinned"
+              onClick={() => onPlacePinned(cursorPosition)}
+              title="Pinned quotation: freezes this passage at its current revision (immune to later source edits)"
+            >
+              Pinned quote
+            </button>
+          </>
         )}
         <span className="transclusion-badge-hint">
           or click in editor &middot; Esc to cancel

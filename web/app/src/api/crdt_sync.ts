@@ -172,6 +172,7 @@ export interface SpanRangePayload {
 export type RangeElementPayload =
   | { type: "text"; text: string }
   | { type: "transclusion"; transclusion_source: number; transclusion_start: number; transclusion_end: number }
+  | { type: "virtual"; virtual_source: number; virtual_revision: number; transclusion_start: number; transclusion_end: number }
   | { type: "blob"; blob_hash: string; blob_mime: string; blob_size: number; blob_width?: number; blob_height?: number; blob_caption?: string };
 
 export interface AuthorContribution {
@@ -1214,6 +1215,17 @@ export class CrdtSyncClient {
     const val = extractValue(resp);
     if (Array.isArray(val)) return val as AgainHop[];
     return [];
+  }
+
+    async trailDerivedWork(trailId: number): Promise<number | null> {
+    try {
+      const resp = await this.sendRequest("trail_derived_work", { trail_id: trailId });
+      const val = extractValue(resp);
+      if (typeof val === "number") return val;
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   async migrateCompoundToInline(workId: number): Promise<number | null> {

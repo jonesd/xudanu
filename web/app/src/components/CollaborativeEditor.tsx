@@ -56,6 +56,8 @@ interface CollaborativeEditorProps {
   transclusionMarkers?: TransclusionMarker[];
   pendingTransclusion?: PendingTransclusion | null;
   onPlaceTransclusion?: (position: number, padding?: string) => void;
+  /** FR-37: place as a pinned (revision-frozen) quotation. */
+  onPlacePinnedTransclusion?: (position: number) => void;
   selectionRange?: { start: number; end: number } | null;
   highlightRange?: { start: number; end: number } | null;
   onNavigateToWork?: (workId: number) => void;
