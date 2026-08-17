@@ -84,7 +84,7 @@ jobs:
             command: cargo check --features wasm --target wasm32-unknown-unknown
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@5b842231ba77f5c045dba54ac5c045dba54ac5560fed2db780e2 # stable
+      - uses: dtolnay/rust-toolchain@5b842231ba77f5c045dba54ac5560fed2db780e2 # stable
         if: false # placeholder, replaced below
       - uses: dtolnay/rust-toolchain@5b842231ba77f5c045dba54ac5560fed2db780e2 # stable
         with:
