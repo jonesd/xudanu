@@ -15,6 +15,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::backend::BeId;
+use super::edition::Edition;
 use super::range_element::VirtualSpec;
 
 /// What kind of derived document this spec describes. The kind does
@@ -136,6 +137,35 @@ pub fn derived_stop_positions(stop_count: usize) -> Vec<i64> {
     (0..stop_count as i64)
         .map(|i| i * DERIVED_STOP_SPACING)
         .collect()
+}
+
+/// Build the derived edition from a spec (4b). PURE FUNCTION of the
+/// spec: one unmaterialized Virtual element per stop, at the spaced
+/// positions from derived_stop_positions. Zero-char until the Phase 3
+/// read path materializes (Server::work_text_fresh /
+/// materialize_virtual_elements) — exactly like placed virtual
+/// transclusions. Determinism: same spec -> same entry sequence ->
+/// same edition crums, on any replica, without touching the sources.
+pub fn build_derived_edition(spec: &DerivedSpec) -> Result<Edition, String> {
+    spec.validate()?;
+    let positions = derived_stop_positions(spec.stops.len());
+    let entries: Vec<(i64, std::sync::Arc<crate::edition::Carrier>)> = spec
+        .stops
+        .iter()
+        .zip(positions)
+        .map(|(stop, pos)| {
+            (
+                pos,
+                std::sync::Arc::new(crate::edition::Carrier::new(
+                    crate::edition::range_element::RangeElement::virtual_element(*stop),
+                )),
+            )
+        })
+        .collect();
+    if entries.is_empty() {
+        return Ok(Edition::empty());
+    }
+    Edition::from_entries_at_positions(entries)
 }
 
 /// The work id a derived document reports as its source-of-truth
@@ -260,6 +290,128 @@ mod tests {
         );
         assert!(ps.windows(2).all(|w| w[0] < w[1]));
         assert!(derived_stop_positions(0).is_empty());
+    }
+
+    /// 4b: builder determinism — same spec builds byte-identical
+    /// editions (same positions, same entries, same crums).
+    #[test]
+    fn build_deterministic_editions() {
+        let mut spec = DerivedSpec::new(DerivedKind::Trail, "t");
+        spec.add_stop(stop(1, 0, 5, 1));
+        spec.add_stop(stop(2, 10, 20, 4));
+
+        let a = build_derived_edition(&spec).unwrap();
+        let b = build_derived_edition(&spec).unwrap();
+        assert_eq!(a.positions(), b.positions());
+        assert_eq!(a.crum(), b.crum());
+        assert_eq!(a.count(), 2);
+        // Unmaterialized: zero chars until the read path resolves.
+        assert_eq!(a.char_len(), 0);
+    }
+
+    /// 4b: the builder is a pure function — building the SAME spec
+    /// after an edition built from it was edited produces the same
+    /// fresh edition (no hidden state).
+    #[test]
+    fn build_is_pure_across_calls() {
+        let mut spec = DerivedSpec::new(DerivedKind::Trail, "t");
+        spec.add_stop(stop(7, 3, 9, 2));
+        let a = build_derived_edition(&spec).unwrap();
+        let fingerprint = spec.fingerprint();
+        // Simulate independent rebuild on "another replica".
+        let spec2: DerivedSpec =
+            serde_json::from_str(&serde_json::to_string(&spec).unwrap()).unwrap();
+        let b = build_derived_edition(&spec2).unwrap();
+        assert_eq!(a.crum(), b.crum());
+        assert_eq!(fingerprint, spec2.fingerprint());
+    }
+
+    /// 4b: empty spec -> empty edition; validation errors propagate.
+    #[test]
+    fn build_edge_cases() {
+        let empty = DerivedSpec::new(DerivedKind::Trail, "empty");
+        assert!(build_derived_edition(&empty).unwrap().is_empty());
+
+        let mut bad = DerivedSpec::new(DerivedKind::Trail, "bad");
+        bad.add_stop(stop(1, 9, 5, 1));
+        assert!(build_derived_edition(&bad).is_err());
+    }
+
+    /// 4b acceptance gate (equivalence): a derived edition built from
+    /// a trail-like spec, materialized through the Phase 3 read path,
+    /// yields EXACTLY the concatenation of each stop's pinned source
+    /// span. Legacy trails never rendered text server-side (payloads
+    /// are metadata; resolution was client-side), so the gate pins the
+    /// NEW pinned-span semantics against direct span extraction —
+    /// the invariant 4c's server integration and any client renderer
+    /// can rely on.
+    #[test]
+    fn derived_trail_materializes_to_pinned_spans() {
+        use crate::edition::range_element::RangeElement;
+        use std::sync::Arc;
+
+        // Two source works with distinct texts and multiple revisions.
+        let src1_text = "first source document";
+        let src2_text = "second source, different shape";
+
+        let mut spec = DerivedSpec::new(DerivedKind::Trail, "my trail");
+        // Stop 1: chars 6..12 of source 1 ("source").
+        spec.add_stop(VirtualSpec {
+            source_work_id: 1,
+            char_start: 6,
+            char_end: 12,
+            revision: 1,
+            placed_at: 0,
+            placed_by: None,
+        });
+        // Stop 2: chars 0..6 of source 2 ("second").
+        spec.add_stop(VirtualSpec {
+            source_work_id: 2,
+            char_start: 0,
+            char_end: 6,
+            revision: 3,
+            placed_at: 0,
+            placed_by: None,
+        });
+
+        let derived = build_derived_edition(&spec).unwrap();
+        assert_eq!(derived.char_len(), 0, "unmaterialized");
+
+        // Materialize exactly as Server::materialize_virtual_elements
+        // does: resolve each spec against its pinned revision.
+        let resolve = |text: &str, s: usize, e: usize| -> String {
+            let chars: Vec<char> = text.chars().collect();
+            chars[s.min(chars.len())..e.min(chars.len())]
+                .iter()
+                .collect()
+        };
+        let mut entries = derived.cached_entries().clone();
+        for (_, carrier) in entries.iter_mut() {
+            if let Some(vs) = carrier.element.virtual_spec() {
+                let text = match vs.source_work_id {
+                    1 => src1_text,
+                    _ => src2_text,
+                };
+                let mut elem = carrier.element.clone();
+                elem.set_virtual_content(resolve(text, vs.char_start, vs.char_end));
+                *carrier = std::sync::Arc::new(crate::edition::Carrier::new(elem));
+            }
+        }
+        let materialized = Edition::from_entries_at_positions(entries).unwrap();
+
+        // THE GATE: derived text == concatenation of pinned spans.
+        assert_eq!(
+            materialized.to_text(),
+            format!("{}{}", resolve(src1_text, 6, 12), resolve(src2_text, 0, 6)),
+            "materialized trail text must equal pinned-span concatenation"
+        );
+        assert_eq!(materialized.to_text(), "sourcesecond");
+        // One entry per stop, spec identity intact through the round trip.
+        assert_eq!(materialized.count(), 2);
+        assert!(materialized
+            .cached_entries()
+            .iter()
+            .all(|(_, c)| c.element.virtual_spec().is_some()));
     }
 
     /// 4a acceptance gate: same spec -> same fingerprint, ALWAYS, for
