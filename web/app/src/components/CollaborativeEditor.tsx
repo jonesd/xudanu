@@ -330,6 +330,7 @@ function drawOverlay(
     const rangeRects = range.getClientRects();
     const isHistorical = style.authorType === "historical";
     const isUnsigned = !span.signature_valid;
+    const visibleRects: DOMRect[] = [];
     for (const r of rangeRects) {
       const y = r.top - rect.top;
       if (y + r.height < viewportTop || y > viewportBottom) continue;
@@ -363,21 +364,29 @@ function drawOverlay(
         ctx.lineTo(x + r.width, underlineY);
         ctx.stroke();
         ctx.restore();
-        if (r === rangeRects[0]) {
-          const last = rangeRects[rangeRects.length - 1];
-          const label = isHistorical
-            ? `${style.name} (historical author — imported)`
-            : `${style.name}${style.authorType === "llm" ? " (LLM-assisted)" : ""} — verified Ed25519`;
-          authorBarZones.push({
-            x: x - 3,
-            y,
-            width: r.width + 6,
-            height: (last.bottom - rect.top) - y + 4,
-            label,
-            color: style.color,
-          });
-        }
+        visibleRects.push(r);
       }
+    }
+    // Hover zone from ALL visible rects of the span — the span's first
+    // line can be short (a title) or scrolled out of view, and zones
+    // keyed to rangeRects[0] missed the cursor both horizontally
+    // (narrow first line) and entirely (first line culled).
+    if (!isUnsigned && visibleRects.length > 0) {
+      const first = visibleRects[0];
+      const last = visibleRects[visibleRects.length - 1];
+      const zoneLeft = Math.min(...visibleRects.map((r) => r.left)) - rect.left;
+      const zoneRight = Math.max(...visibleRects.map((r) => r.right)) - rect.left;
+      const label = isHistorical
+        ? `${style.name} (historical author — imported)`
+        : `${style.name}${style.authorType === "llm" ? " (LLM-assisted)" : ""} — verified Ed25519`;
+      authorBarZones.push({
+        x: zoneLeft - 3,
+        y: first.top - rect.top,
+        width: zoneRight - zoneLeft + 6,
+        height: last.bottom - first.top + 4,
+        label,
+        color: style.color,
+      });
     }
   }
 
