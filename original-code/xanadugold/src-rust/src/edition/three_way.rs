@@ -1326,32 +1326,44 @@ fn group_consecutive(positions: &[i64]) -> Vec<(i64, i64)> {
     groups
 }
 
-fn try_migrate_span(span: &SpanProvenance, mapping: &Mapping) -> Option<SpanProvenance> {
+/// Split semantics: an edit inside a span divides the author's text
+/// into surviving fragments. Each fragment keeps the author's
+/// identity and original signature (which attests the pre-split
+/// content recorded in the append-only attribution log); the fragment
+/// covers ONLY its surviving characters — the editor's inserted text
+/// is not attributed to the original author.
+fn try_migrate_span_multi(span: &SpanProvenance, mapping: &Mapping) -> Vec<SpanProvenance> {
     let region = XnRegion::interval(span.start, span.end);
     let mapped = mapping.of_region(&region);
     let intervals = mapped.simple_regions();
 
     if intervals.len() == 1 {
         let (new_start, new_end) = intervals[0];
-        Some(SpanProvenance {
+        vec![SpanProvenance {
             start: new_start,
             end: new_end,
             provenance: span.provenance.clone(),
-        })
-    } else if intervals.is_empty() {
-        // The H1 incident: build_merge_mapping matches entries by
-        // content fingerprint, so an edit INSIDE a span's entry (e.g.
-        // prefixing "# " to an author's coalesced region) leaves the
-        // whole region unmapped and this span fell to zero intervals
-        // — silently dropping the author's entire attribution even
-        // though most of their text survived.
-        //
-        // Minimal fix: collapse to the mapping's envelope over the
-        // span's neighbourhood rather than dropping. The mapping is
-        // entry-granular; positions just before/after the span map
-        // reliably (their entries were untouched), so the span keeps
-        // covering its surviving text and the attribution signature
-        // question is deferred to the fuller span-splitting design.
+        }]
+    } else if intervals.len() > 1 {
+        // Split: one fragment per mapped interval of the AUTHOR'S OWN
+        // text. Gaps between intervals are the editor's insertions —
+        // they get no fragment here.
+        intervals
+            .into_iter()
+            .map(|(s, e)| SpanProvenance {
+                start: s,
+                end: e.max(s + 1),
+                provenance: span.provenance.clone(),
+            })
+            .collect()
+    } else {
+        // The H1 incident shape: build_merge_mapping matches entries
+        // by content fingerprint, so an edit INSIDE a span's entry
+        // (prefixing "# " to a coalesced author region) leaves the
+        // whole region unmapped. Entry-granular fallback: the span
+        // keeps covering its surviving text via the neighbourhood
+        // envelope (positions just before/after map reliably — their
+        // entries were untouched).
         let lo_env = mapping.of_region(&XnRegion::interval(span.start - 1, span.start));
         let hi_env = mapping.of_region(&XnRegion::interval(span.end, span.end + 1));
         let lo = lo_env.simple_regions();
@@ -1360,38 +1372,28 @@ fn try_migrate_span(span: &SpanProvenance, mapping: &Mapping) -> Option<SpanProv
             let new_start = *lo_s;
             let new_end = (*hi_e).max(new_start + 1);
             if new_end > new_start {
-                return Some(SpanProvenance {
+                return vec![SpanProvenance {
                     start: new_start,
                     end: new_end,
                     provenance: span.provenance.clone(),
-                });
+                }];
             }
         }
-        // Degenerate: span at the very document edge with no mapped
-        // neighbours — anchor to the mapped positions closest to it.
+        // Degenerate: span at the document edge with no mapped
+        // neighbours — anchor to the closest mapped positions.
         let all = mapping
             .of_region(&XnRegion::interval(i64::MIN / 2, i64::MAX / 2))
             .simple_regions();
         if let (Some(first), Some(last)) = (all.first(), all.last()) {
             let new_start = if span.start == 0 { first.0 } else { last.0 };
             let new_end = last.1.max(new_start + 1);
-            return Some(SpanProvenance {
+            return vec![SpanProvenance {
                 start: new_start,
                 end: new_end,
                 provenance: span.provenance.clone(),
-            });
+            }];
         }
-        None
-    } else {
-        // Multiple intervals: split spans are the fuller solution;
-        // for now take the envelope to preserve attribution.
-        let (new_start, _) = intervals[0];
-        let (_, new_end) = *intervals.last().unwrap();
-        Some(SpanProvenance {
-            start: new_start,
-            end: new_end.max(new_start + 1),
-            provenance: span.provenance.clone(),
-        })
+        Vec::new()
     }
 }
 
@@ -1401,7 +1403,7 @@ pub fn migrate_span_provenance_single(
 ) -> Vec<SpanProvenance> {
     spans
         .iter()
-        .filter_map(|span| try_migrate_span(span, mapping))
+        .flat_map(|span| try_migrate_span_multi(span, mapping))
         .collect()
 }
 
@@ -1414,12 +1416,10 @@ fn migrate_span_provenance(
     let mut result = Vec::new();
 
     for span in a_spans {
-        if let Some(migrated) = try_migrate_span(span, a_to_merged) {
-            result.push(migrated);
-        }
+        result.extend(try_migrate_span_multi(span, a_to_merged));
     }
     for span in b_spans {
-        if let Some(migrated) = try_migrate_span(span, b_to_merged) {
+        for migrated in try_migrate_span_multi(span, b_to_merged) {
             let is_dup = result.iter().any(|existing| {
                 existing.start == migrated.start
                     && existing.end == migrated.end
@@ -2681,12 +2681,18 @@ mod tests {
 
         assert_eq!(mr.merged.to_text(), "abXYZWc");
         let sp = mr.merged.span_provenance();
-        // Updated contract (H1 incident): non-contiguous mapping keeps
-        // the span's envelope instead of dropping the author.
-        assert_eq!(
-            sp.len(),
-            1,
-            "span mapping to non-contiguous positions keeps its envelope — never drops"
+        // Split contract: the author's text survives as fragments
+        // around the other editor's XYZW insert; the inserted chars
+        // are not theirs. Never dropped.
+        assert!(
+            !sp.is_empty(),
+            "author attribution must survive a non-contiguous merge"
+        );
+        assert!(
+            sp.iter()
+                .all(|s| s.end <= 2 || s.start >= 6 || (s.end - s.start) <= 3),
+            "fragments cover only the author's characters, got {:?}",
+            sp.iter().map(|s| (s.start, s.end)).collect::<Vec<_>>()
         );
     }
 
@@ -2795,17 +2801,26 @@ mod tests {
         };
 
         let migrated = migrate_span_provenance_single(&[span], &mapping);
-        // Updated contract (H1 incident): an edit inside a span must
-        // not erase the author's attribution. The span survives with
-        // its envelope (splitting is the fuller follow-up); dropping
-        // was silent data loss.
-        assert_eq!(
-            migrated.len(),
-            1,
-            "mid-span insertion must keep the span (envelope) — dropping erased authors"
+        // Split contract: the author keeps fragments covering exactly
+        // their surviving text; the editor's inserted 'X' is NOT
+        // attributed to them. 'a' -> [0,1), 'bc' -> [2,4).
+        assert!(
+            migrated.len() >= 1,
+            "mid-span insertion must never erase the author's attribution"
         );
-        assert_eq!(migrated[0].start, 0);
-        assert!(migrated[0].end >= 4);
+        let covered: Vec<(i64, i64)> = migrated.iter().map(|s| (s.start, s.end)).collect();
+        assert!(
+            covered.contains(&(0, 1)) && covered.contains(&(2, 4)),
+            "expected fragments [0,1) and [2,4) around the inserted 'X', got {:?}",
+            covered
+        );
+        for f in &migrated {
+            assert!(
+                !(f.start <= 1 && f.end > 1),
+                "no fragment may cover the editor's inserted character at 1, got {:?}",
+                covered
+            );
+        }
     }
 
     #[test]
