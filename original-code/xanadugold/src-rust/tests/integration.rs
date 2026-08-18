@@ -11846,7 +11846,7 @@ fn seed_demo_attribution_five_authors() {
         .create_work(sid, xudanu::edition::Edition::from_text(text))
         .unwrap();
 
-    srv.seed_demo_attribution(wid, Some(5)).unwrap();
+    srv.seed_demo_attribution(sid, wid, Some(5)).unwrap();
 
     let spans = srv.attribution_query(wid, None, None).unwrap();
     assert!(spans.len() >= 5, "expected >= 5 spans, got {}", spans.len());
@@ -11875,7 +11875,7 @@ fn seed_demo_attribution_rejects_more_authors_than_text() {
     let wid = srv
         .create_work(sid, xudanu::edition::Edition::from_text("short"))
         .unwrap();
-    assert!(srv.seed_demo_attribution(wid, Some(8)).is_err());
+    assert!(srv.seed_demo_attribution(sid, wid, Some(8)).is_err());
 }
 
 #[test]

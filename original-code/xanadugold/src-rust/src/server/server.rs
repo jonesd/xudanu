@@ -3214,6 +3214,7 @@ impl Server {
     /// generated demo identity with its own Ed25519 signing key.
     pub fn seed_demo_attribution(
         &mut self,
+        session_id: SessionId,
         work_id: BeId,
         author_count: Option<u32>,
     ) -> Result<(), ServerError> {
@@ -3341,6 +3342,16 @@ impl Server {
         self.otree_crdt
             .initialize_from_edition(work_id, &edition_ref);
         self.otree_crdt.replace_edition(work_id, new_edition);
+
+        // Sync the multi-author edition into the work itself (same
+        // materialize -> revise path the CRDT flush uses), so
+        // attribution_query — which reads the work's current edition —
+        // sees the N seeded spans.
+        let materialized = self
+            .otree_crdt
+            .materialize_edition(work_id)
+            .map_err(|e| ServerError::Internal(e.to_string()))?;
+        self.revise_work(work_id, session_id, materialized, None)?;
         if let Some(ws) = self.works.get_mut(&work_id) {
             ws.dirty_gen = ws.dirty_gen.wrapping_add(1);
         }
