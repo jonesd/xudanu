@@ -1338,8 +1338,60 @@ fn try_migrate_span(span: &SpanProvenance, mapping: &Mapping) -> Option<SpanProv
             end: new_end,
             provenance: span.provenance.clone(),
         })
-    } else {
+    } else if intervals.is_empty() {
+        // The H1 incident: build_merge_mapping matches entries by
+        // content fingerprint, so an edit INSIDE a span's entry (e.g.
+        // prefixing "# " to an author's coalesced region) leaves the
+        // whole region unmapped and this span fell to zero intervals
+        // — silently dropping the author's entire attribution even
+        // though most of their text survived.
+        //
+        // Minimal fix: collapse to the mapping's envelope over the
+        // span's neighbourhood rather than dropping. The mapping is
+        // entry-granular; positions just before/after the span map
+        // reliably (their entries were untouched), so the span keeps
+        // covering its surviving text and the attribution signature
+        // question is deferred to the fuller span-splitting design.
+        let lo_env = mapping.of_region(&XnRegion::interval(span.start - 1, span.start));
+        let hi_env = mapping.of_region(&XnRegion::interval(span.end, span.end + 1));
+        let lo = lo_env.simple_regions();
+        let hi = hi_env.simple_regions();
+        if let (Some((lo_s, _)), Some((_, hi_e))) = (lo.first(), hi.last()) {
+            let new_start = *lo_s;
+            let new_end = (*hi_e).max(new_start + 1);
+            if new_end > new_start {
+                return Some(SpanProvenance {
+                    start: new_start,
+                    end: new_end,
+                    provenance: span.provenance.clone(),
+                });
+            }
+        }
+        // Degenerate: span at the very document edge with no mapped
+        // neighbours — anchor to the mapped positions closest to it.
+        let all = mapping
+            .of_region(&XnRegion::interval(i64::MIN / 2, i64::MAX / 2))
+            .simple_regions();
+        if let (Some(first), Some(last)) = (all.first(), all.last()) {
+            let new_start = if span.start == 0 { first.0 } else { last.0 };
+            let new_end = last.1.max(new_start + 1);
+            return Some(SpanProvenance {
+                start: new_start,
+                end: new_end,
+                provenance: span.provenance.clone(),
+            });
+        }
         None
+    } else {
+        // Multiple intervals: split spans are the fuller solution;
+        // for now take the envelope to preserve attribution.
+        let (new_start, _) = intervals[0];
+        let (_, new_end) = *intervals.last().unwrap();
+        Some(SpanProvenance {
+            start: new_start,
+            end: new_end.max(new_start + 1),
+            provenance: span.provenance.clone(),
+        })
     }
 }
 
@@ -1392,6 +1444,89 @@ mod tests {
 
     fn text_edition(s: &str) -> Edition {
         Edition::from_text(s)
+    }
+
+    /// Regression: the H1 incident. A coalesced multi-author edition
+    /// (one big entry per author region) whose span-containing entry
+    /// is edited (prefix insert of "# ") must NOT lose that author's
+    /// span. build_merge_mapping matches entries by fingerprint; the
+    /// edited entry's fingerprint changes, the region maps to nothing,
+    /// and try_migrate_span dropped the span wholesale.
+    #[test]
+    fn span_survives_edit_inside_author_region() {
+        use ed25519_dalek::SigningKey;
+        let author_a = SigningKey::generate(&mut rand::rngs::OsRng);
+        let author_b = SigningKey::generate(&mut rand::rngs::OsRng);
+        let text_a = "AAAA".repeat(30);
+        let text_b = "BBBB".repeat(30);
+
+        let mk_prov = |key: &SigningKey, name: &str| ElementProvenance {
+            author_public_key: key.verifying_key().to_bytes(),
+            author_display_name: name.to_string(),
+            author_club_id: 1,
+            timestamp: 1000,
+            author_type: AuthorType::Human,
+            llm_model: None,
+            historical_author_id: None,
+            source_work_id: None,
+            transcluded_by: None,
+            derived_by: None,
+        };
+
+        // Build the two-entry coalesced edition the seeder produces.
+        let mut carrier_a =
+            crate::edition::range_element::Carrier::new(RangeElement::text(text_a.clone()));
+        carrier_a.provenance = Some(mk_prov(&author_a, "Author A"));
+        let mut carrier_b =
+            crate::edition::range_element::Carrier::new(RangeElement::text(text_b.clone()));
+        carrier_b.provenance = Some(mk_prov(&author_b, "Author B"));
+        let base = Edition::from_entries(vec![(0, Arc::new(carrier_a)), (1, Arc::new(carrier_b))]);
+
+        // Span provenance over the two entries (positions 0..1, 1..2).
+        let spans = vec![
+            SpanProvenance {
+                start: 0,
+                end: 1,
+                provenance: crate::edition::provenance::sign_span(
+                    &author_a,
+                    &[RangeElement::text(text_a.clone()).content_fingerprint()],
+                    1000,
+                    &[0u8; 32],
+                ),
+            },
+            SpanProvenance {
+                start: 1,
+                end: 2,
+                provenance: crate::edition::provenance::sign_span(
+                    &author_b,
+                    &[RangeElement::text(text_b.clone()).content_fingerprint()],
+                    1000,
+                    &[0u8; 32],
+                ),
+            },
+        ];
+        let base = base.with_span_provenance(spans);
+
+        // Simulate the user edit: insert "# " at the start of Author
+        // A's text. Rebuild the edition the way the edit path would
+        // (Author A's entry changes, Author B's is untouched).
+        let mut edited_a = crate::edition::range_element::Carrier::new(RangeElement::text(
+            format!("# {}", text_a),
+        ));
+        edited_a.provenance = Some(mk_prov(&author_a, "Author A"));
+        let edited = Edition::from_entries(vec![
+            (0, Arc::new(edited_a)),
+            (1, base.cached_entries()[1].1.clone()),
+        ]);
+
+        let mapping = build_merge_mapping(&base, &edited);
+        let migrated = migrate_span_provenance_single(base.span_provenance(), &mapping);
+
+        assert_eq!(
+            migrated.len(),
+            2,
+            "both author spans must survive an edit inside one region — the H1 regression"
+        );
     }
 
     #[test]
@@ -2546,10 +2681,12 @@ mod tests {
 
         assert_eq!(mr.merged.to_text(), "abXYZWc");
         let sp = mr.merged.span_provenance();
+        // Updated contract (H1 incident): non-contiguous mapping keeps
+        // the span's envelope instead of dropping the author.
         assert_eq!(
             sp.len(),
-            0,
-            "span mapping to non-contiguous positions should be dropped"
+            1,
+            "span mapping to non-contiguous positions keeps its envelope — never drops"
         );
     }
 
@@ -2658,11 +2795,17 @@ mod tests {
         };
 
         let migrated = migrate_span_provenance_single(&[span], &mapping);
+        // Updated contract (H1 incident): an edit inside a span must
+        // not erase the author's attribution. The span survives with
+        // its envelope (splitting is the fuller follow-up); dropping
+        // was silent data loss.
         assert_eq!(
             migrated.len(),
-            0,
-            "insertion in middle of span creates non-contiguous mapping"
+            1,
+            "mid-span insertion must keep the span (envelope) — dropping erased authors"
         );
+        assert_eq!(migrated[0].start, 0);
+        assert!(migrated[0].end >= 4);
     }
 
     #[test]
