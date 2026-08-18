@@ -3,18 +3,46 @@
 // production server: markdown headings (H1/H2), bold annotations, five typed
 // links with span anchors + tooltip descriptions, and a hero image blob.
 //
-// Usage: node scripts/seed-production.mjs https://xudanu.com
+// Usage: node scripts/seed-production.mjs https://xudanu.com [--fresh]
 //
 // Auth: seeded personal identity ("Xudanu Demo") — the same path the web
-// UI uses. (The admin club has a WallLock: no credential, no entry.)
+// UI uses. NO CREDENTIALS LIVE IN THIS REPO. Resolution order:
+//   1. XUDANU_DEMO_PASSWORD env var
+//   2. scripts/.seed-credentials (gitignored, 0600) — created on first
+//      run with a generated password if absent
+// If the identity exists and the password no longer matches, the script
+// fails: rotate it out-of-band (sign in with the current password, use
+// club_set_password), then update the credentials file.
 // Idempotent: reuses source works by title; recreates the Welcome doc only
 // with --fresh.
+
+import { randomBytes } from "node:crypto";
+import { existsSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const BASE = process.argv[2] || "https://xudanu.com";
 const FRESH = process.argv.includes("--fresh");
 
 const DEMO_IDENTITY = "Xudanu Demo";
-const DEMO_PASSWORD = "xudanu-demo-seed-2026";
+
+function resolveDemoPassword() {
+  if (process.env.XUDANU_DEMO_PASSWORD) {
+    return process.env.XUDANU_DEMO_PASSWORD;
+  }
+  const credFile = join(dirname(fileURLToPath(import.meta.url)), ".seed-credentials");
+  if (existsSync(credFile)) {
+    const pw = readFileSync(credFile, "utf8").trim();
+    if (pw) return pw;
+  }
+  const generated = randomBytes(24).toString("base64url");
+  writeFileSync(credFile, generated + "\n", { mode: 0o600 });
+  try { chmodSync(credFile, 0o600); } catch { /* fs perm best-effort */ }
+  console.log(`first run: generated demo credential -> ${credFile} (gitignored, 0600)`);
+  return generated;
+}
+
+const DEMO_PASSWORD = resolveDemoPassword();
 
 const WELCOME_TITLE = "Welcome to Xudanu";
 
@@ -144,9 +172,18 @@ async function main() {
     console.log(`identity "${DEMO_IDENTITY}" already exists`);
   }
   await client.send("session_login_by_name", { club_name: DEMO_IDENTITY });
-  await client.send("session_authenticate", {
-    credential: { password: Array.from(new TextEncoder().encode(DEMO_PASSWORD)) },
-  });
+  try {
+    await client.send("session_authenticate", {
+      credential: { password: Array.from(new TextEncoder().encode(DEMO_PASSWORD)) },
+    });
+  } catch {
+    console.error(
+      `authentication failed for "${DEMO_IDENTITY}". The stored credential no longer matches.\n` +
+      `Rotate out-of-band (sign in with the current password, call club_set_password),\n` +
+      `then update scripts/.seed-credentials or export XUDANU_DEMO_PASSWORD.`
+    );
+    process.exit(1);
+  }
   console.log("demo identity authenticated");
 
   const listVal = await client.val("work_list", {});

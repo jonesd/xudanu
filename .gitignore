@@ -54,5 +54,8 @@ docs/roger-email.md
 # Debug scripts
 scripts/debug-*
 
+# Operator credentials — generated locally, never committed
+scripts/.seed-credentials
+
 # Security scan output
 security-scan/

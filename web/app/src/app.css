@@ -5303,6 +5303,16 @@ canvas._bridge {
 .related-note-text {
   flex: 1;
   word-break: break-word;
+  /* Collapsed note rows show one line; the expanded row (click)
+   * unfolds the full paragraph. */
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.related-note-row.expanded .related-note-text {
+  -webkit-line-clamp: unset;
+  overflow: visible;
 }
 .related-note-meta {
   flex-shrink: 0;
@@ -5368,13 +5378,23 @@ canvas._bridge {
 }
 
 .related-footer-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  /* Single-row swipe strip: cards never stack vertically, so the
+   * footer keeps a fixed height however many related pages exist.
+   * overflow-x gives native trackpad/touch swipe; snap keeps cards
+   * aligned after a flick. */
+  display: flex;
+  flex-wrap: nowrap;
   gap: 8px;
   padding-bottom: 12px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
 }
 
 .related-card {
+  flex: 0 0 220px;
+  scroll-snap-align: start;
   display: flex;
   flex-direction: column;
   gap: 4px;

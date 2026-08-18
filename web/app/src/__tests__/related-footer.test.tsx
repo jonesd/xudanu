@@ -135,8 +135,8 @@ describe("RelatedFooter", () => {
     expect(cards).toHaveLength(1);
   });
 
-  it("limits to max 8 items", () => {
-    const backlinks = Array.from({ length: 12 }, (_, i) =>
+  it("limits rendered cards (single-row strip scrolls for overflow)", () => {
+    const backlinks = Array.from({ length: 16 }, (_, i) =>
       mkBacklink({
         link_id: 300 + i,
         source_work_id: 0x50 + i,
@@ -145,7 +145,7 @@ describe("RelatedFooter", () => {
     );
     renderFooter({ backlinks });
     const cards = screen.getAllByRole("button").filter((b) => b.className.includes("related-card"));
-    expect(cards).toHaveLength(8);
+    expect(cards).toHaveLength(12);
   });
 
   it("shows count badge with total connections", () => {

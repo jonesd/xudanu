@@ -1232,7 +1232,7 @@ export function CollaborativeEditor({
     const container = el.parentElement;
     if (!container) return;
 
-    const draw = () => {
+    const draw = (alpha: number) => {
       if (!highlightRange) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
@@ -1262,31 +1262,51 @@ export function CollaborativeEditor({
         range.setEnd(en.node, en.offset + 1);
         const rangeRects = range.getClientRects();
         clear();
-        for (const r of rangeRects) {
-          const x = r.left - rect.left;
-          const y = r.top - rect.top;
-          // Pale highlighter: calm background keeps the text readable;
-          // the thin amber outline marks the span without strobing.
-          ctx.fillStyle = "rgba(255, 223, 0, 0.25)";
-          ctx.fillRect(x, y, r.width, r.height);
-          ctx.strokeStyle = "rgba(255, 180, 0, 0.45)";
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x + 0.5, y + 0.5, r.width - 1, r.height - 1);
+        // Gentle breathing highlight: a pale wash that fades out on
+        // its own — noticeable enough to locate the passage, never
+        // loud enough to fight the text.
+        const a = Math.max(0, alpha);
+        if (a > 0.005) {
+          for (const r of rangeRects) {
+            const x = r.left - rect.left;
+            const y = r.top - rect.top;
+            ctx.fillStyle = `rgba(255, 223, 0, ${(0.16 * a).toFixed(3)})`;
+            ctx.fillRect(x, y, r.width, r.height);
+            ctx.strokeStyle = `rgba(255, 180, 0, ${(0.22 * a).toFixed(3)})`;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x + 0.5, y + 0.5, r.width - 1, r.height - 1);
+          }
         }
       } catch { /* range error — ignore */ }
       ctx.restore();
     };
 
     if (highlightRange) {
-      requestAnimationFrame(draw);
+      // Fade the highlight in briefly, then let it decay to nothing —
+      // a single calm gesture rather than a persistent painted block.
+      const FADE_MS = 3000;
+      const t0 = performance.now();
+      let raf = 0;
+      const anim = () => {
+        const elapsed = performance.now() - t0;
+        const rampIn = Math.min(1, elapsed / 200);
+        const decay = Math.max(0, 1 - Math.max(0, elapsed - 400) / FADE_MS);
+        const alpha = rampIn * decay;
+        draw(alpha);
+        if (alpha > 0.005) {
+          raf = requestAnimationFrame(anim);
+        } else {
+          draw(0);
+        }
+      };
+      raf = requestAnimationFrame(anim);
       // Scroll the highlighted span into view (same math as
       // jumpToCharOffset) — highlight-without-scroll leaves long
       // documents looking like nothing happened.
       const line = buffer.getLineForChar(Math.max(0, Math.min(highlightRange.start, (el.textContent?.length ?? 1) - 1)));
       const targetScroll = line * parseFloat(getComputedStyle(el).lineHeight || "20");
       container.scrollTo({ top: Math.max(0, targetScroll - container.clientHeight / 3), behavior: "smooth" });
-      const interval = setInterval(draw, 100);
-      return () => clearInterval(interval);
+      return () => cancelAnimationFrame(raf);
     }
   }, [highlightRange, buffer]);
 

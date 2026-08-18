@@ -41,7 +41,7 @@ interface RelatedFooterProps {
   onNavigateToWork: (workId: number) => void;
 }
 
-const MAX_ITEMS = 8;
+const MAX_ITEMS = 12;
 
 export function RelatedFooter({
   annotations,
@@ -170,6 +170,10 @@ export function RelatedFooter({
     [annotations],
   );
   const [notesCollapsed, setNotesCollapsed] = useState(false);
+  // Expanded note row: clicking a note both jumps to its passage and
+  // unfolds the full text — notes can be paragraph-length, and the
+  // one-line row truncates.
+  const [expandedNote, setExpandedNote] = useState<number | null>(null);
 
   if (totalCount === 0 && notes.length === 0) return null;
 
@@ -188,35 +192,41 @@ export function RelatedFooter({
           </button>
           {!notesCollapsed && (
             <div className="related-notes-list">
-              {notes.map((a) => (
-                <div
-                  key={a.annotation_id}
-                  className="related-note-row"
-                  title={onJumpToSpan ? "Click to highlight this passage in the document" : undefined}
-                  onClick={() => onJumpToSpan?.(a.char_start, a.char_end)}
-                >
-                  <span className="related-note-kind">
-                    {a.is_private ? "\u{1F512}" : "\u{1F4AC}"} {a.is_private ? "private" : "public"}
-                  </span>
-                  <span className="related-note-text">{a.payload}</span>
-                  <span className="related-note-meta">
-                    {a.created_by_name || ""}
-                    {onDeleteAnnotation && (
-                      <button
-                        type="button"
-                        className="related-note-del"
-                        title="Delete this note"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteAnnotation(a.annotation_id);
-                        }}
-                      >
-                        {"\u00D7"}
-                      </button>
-                    )}
-                  </span>
-                </div>
-              ))}
+              {notes.map((a) => {
+                const expanded = expandedNote === a.annotation_id;
+                return (
+                  <div
+                    key={a.annotation_id}
+                    className={`related-note-row ${expanded ? "expanded" : ""}`}
+                    title={onJumpToSpan ? "Click to highlight this passage and read the full note" : undefined}
+                    onClick={() => {
+                      setExpandedNote(expanded ? null : a.annotation_id);
+                      onJumpToSpan?.(a.char_start, a.char_end);
+                    }}
+                  >
+                    <span className="related-note-kind">
+                      {a.is_private ? "\u{1F512}" : "\u{1F4AC}"} {a.is_private ? "private" : "public"}
+                    </span>
+                    <span className="related-note-text">{a.payload}</span>
+                    <span className="related-note-meta">
+                      {a.created_by_name || ""}
+                      {onDeleteAnnotation && (
+                        <button
+                          type="button"
+                          className="related-note-del"
+                          title="Delete this note"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteAnnotation(a.annotation_id);
+                          }}
+                        >
+                          {"\u00D7"}
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
