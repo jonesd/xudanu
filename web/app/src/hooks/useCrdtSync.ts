@@ -86,6 +86,8 @@ export function useCrdtSync(
   const [connectionEpoch, setConnectionEpoch] = useState(0);
   const epochRef = useRef(0);
   const [canEdit, setCanEdit] = useState(false);
+  const identityEpochRef = useRef(0);
+  const [identityEpoch, setIdentityEpoch] = useState(0);
   const [recentChanges, setRecentChanges] = useState<ChangeHighlight[]>([]);
   const authInitiatedRef = useRef(false);
   const attributionEpochRef = useRef(0);
@@ -143,6 +145,11 @@ export function useCrdtSync(
       if (id) setAuthenticated(true);
       try { localStorage.setItem("xudanu_identity_cache", JSON.stringify(id)); } catch { /* no-op */ }
       setIsAdmin(client!.getIsAdmin());
+      // Permissions are identity-scoped: signing in/out must re-check
+      // canEdit for the currently open work, or the UI keeps stale
+      // greyed-out controls until the user reloads.
+      identityEpochRef.current += 1;
+      setIdentityEpoch(identityEpochRef.current);
     });
     const unsubChanges = client.onChangeHighlights(setRecentChanges);
 
@@ -301,7 +308,9 @@ export function useCrdtSync(
     let cancelled = false;
     client.canEdit(workBeId).then((ok) => { if (!cancelled) setCanEdit(ok); }).catch(() => {});
     return () => { cancelled = true; };
-  }, [connected, workBeId, authenticated]);
+    // identityEpoch: re-check when the session's identity changes (sign
+    // in/out) — permissions are per-identity.
+  }, [connected, workBeId, authenticated, identityEpoch]);
 
   const setText = useCallback((newText: string) => {
     clientRef.current?.setText(newText);
@@ -565,6 +574,7 @@ export function useCrdtSync(
   const logout = useCallback(() => {
     setAuthenticated(false);
     setIdentity(null);
+    setCanEdit(false);
     try {
       localStorage.removeItem("xudanu_session_ticket");
       localStorage.removeItem("xudanu_identity_cache");
