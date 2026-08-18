@@ -3269,8 +3269,6 @@ impl Server {
         let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> =
             Vec::with_capacity(total);
 
-        let mut span_provenances: Vec<crate::edition::SpanProvenance> = Vec::new();
-
         for (region_idx, &(start, end)) in region_bounds.iter().enumerate() {
             let (display_name, signing_key) = &demo_authors[region_idx];
             let verifying_key = signing_key.verifying_key();
@@ -3298,25 +3296,6 @@ impl Server {
                 continue;
             }
 
-            let fingerprints: Vec<[u8; 32]> = region_entries
-                .iter()
-                .map(|(_, c)| c.element.content_fingerprint())
-                .collect();
-            let first_pos = region_entries.first().unwrap().0;
-            let last_pos = region_entries.last().unwrap().0;
-
-            let provenance = crate::edition::provenance::sign_span(
-                signing_key,
-                &fingerprints,
-                timestamp,
-                &server_id_bytes,
-            );
-            span_provenances.push(crate::edition::SpanProvenance {
-                start: first_pos,
-                end: last_pos + 1,
-                provenance,
-            });
-
             for (pos, carrier) in region_entries {
                 let mut new_carrier = (**carrier).clone();
                 new_carrier.provenance = Some(crate::edition::provenance::ElementProvenance {
@@ -3335,7 +3314,57 @@ impl Server {
             }
         }
 
+        // Coalesce FIRST (adjacent same-author text merges; provenance
+        // differences keep author boundaries), then sign span
+        // provenance over the FINAL entry fingerprints and positions —
+        // verification recomputes fingerprints from the stored edition,
+        // so signing pre-coalesce per-char entries always fails.
         let mut new_edition = crate::edition::Edition::from_entries(new_entries).coalesce();
+        let final_entries = new_edition.all_entries();
+        let mut span_provenances: Vec<crate::edition::SpanProvenance> = Vec::new();
+        let mut i = 0usize;
+        while i < final_entries.len() {
+            let (_, first_carrier) = &final_entries[i];
+            let author_key = first_carrier
+                .provenance
+                .as_ref()
+                .map(|p| p.author_public_key);
+            let signing_key = author_key.and_then(|k| {
+                demo_authors
+                    .iter()
+                    .find(|(_, sk)| sk.verifying_key().to_bytes() == k)
+                    .map(|(_, sk)| sk)
+            });
+            let mut j = i;
+            while j < final_entries.len() {
+                let (_, c) = &final_entries[j];
+                let c_key = c.provenance.as_ref().map(|p| p.author_public_key);
+                if c_key != author_key {
+                    break;
+                }
+                j += 1;
+            }
+            if let (Some(sk), true) = (signing_key, j > i) {
+                let fingerprints: Vec<[u8; 32]> = final_entries[i..j]
+                    .iter()
+                    .map(|(_, c)| c.element.content_fingerprint())
+                    .collect();
+                let first_pos = final_entries[i].0;
+                let last_pos = final_entries[j - 1].0;
+                let provenance = crate::edition::provenance::sign_span(
+                    sk,
+                    &fingerprints,
+                    timestamp,
+                    &server_id_bytes,
+                );
+                span_provenances.push(crate::edition::SpanProvenance {
+                    start: first_pos,
+                    end: last_pos + 1,
+                    provenance,
+                });
+            }
+            i = j;
+        }
         new_edition.span_provenance = span_provenances;
 
         let edition_ref = ws.work.current_edition().clone();

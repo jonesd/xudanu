@@ -11866,6 +11866,10 @@ fn seed_demo_attribution_five_authors() {
         })
         .collect();
     assert_eq!(keys.len(), 5, "each author has a unique key");
+    assert!(
+        spans.iter().all(|s| s.signature_valid),
+        "all seeded span signatures must verify against the stored edition"
+    );
 }
 
 #[test]
