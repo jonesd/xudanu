@@ -433,6 +433,10 @@ async fn main() {
                 .ok()
                 .and_then(|s| s.parse().ok());
             let mut public_address: Option<String> = std::env::var("XUDANU_PUBLIC_ADDRESS").ok();
+            let mut edit_policy: Option<xudanu::server::EditPolicy> =
+                std::env::var("XUDANU_EDIT_POLICY")
+                    .ok()
+                    .and_then(|s| xudanu::server::EditPolicy::parse(&s));
             let mut allow_loopback = false;
             let mut i = 2;
             while i < args.len() {
@@ -584,6 +588,23 @@ async fn main() {
                                 std::process::exit(1);
                             }));
                     }
+                    "--edit-policy" => {
+                        i += 1;
+                        let raw = args.get(i).map(|s| s.clone()).unwrap_or_else(|| {
+                            eprintln!("Error: --edit-policy requires a value");
+                            std::process::exit(1);
+                        });
+                        match xudanu::server::EditPolicy::parse(&raw) {
+                            Some(p) => edit_policy = Some(p),
+                            None => {
+                                eprintln!(
+                                    "Error: invalid --edit-policy '{}' (expected owner-only or public-sandbox)",
+                                    raw
+                                );
+                                std::process::exit(1);
+                            }
+                        }
+                    }
                     "--allow-loopback" => {
                         allow_loopback = true;
                     }
@@ -683,6 +704,21 @@ async fn main() {
             if let Some(ref addr) = public_address {
                 server.set_public_address(Some(addr.clone()));
                 tracing::info!("Public address: {} (tumbler prefix: \"{}\")", addr, addr);
+            }
+            match edit_policy {
+                Some(policy) => {
+                    server.set_edit_policy(policy);
+                    tracing::info!("Edit policy: {} (operator-set)", policy.as_str());
+                }
+                None => {
+                    // Production servers are strict by default: only
+                    // signed-in identities can create/edit works.
+                    server.set_edit_policy(xudanu::server::EditPolicy::OwnerOnly);
+                    tracing::info!(
+                        "Edit policy: owner-only (default; anonymous sessions cannot create or edit works. \
+                         Pass --edit-policy public-sandbox for a wiki-style server.)"
+                    );
+                }
             }
             if allow_loopback {
                 server.allow_loopback_cross_server = true;

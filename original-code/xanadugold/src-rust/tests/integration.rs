@@ -7759,6 +7759,106 @@ fn published_work_visible_to_public() {
 }
 
 #[test]
+fn strict_edit_policy_blocks_anonymous_work_creation() {
+    // Under OwnerOnly (the server binary's default), anonymous
+    // sessions must not create works — the anti-spam/anti-takeover
+    // floor. The library default is PublicSandbox (browser/test
+    // contexts); `xudanu-server run` pins OwnerOnly unless the
+    // operator opts out.
+    let mut srv = xudanu::server::Server::new();
+    srv.set_edit_policy(xudanu::server::EditPolicy::OwnerOnly);
+
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+    let err = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("spam"))
+        .unwrap_err();
+    assert!(
+        matches!(err, xudanu::server::ServerError::NotAuthorized),
+        "anonymous create_work must fail under OwnerOnly, got {:?}",
+        err
+    );
+}
+
+#[test]
+fn strict_edit_policy_allows_owned_work_lifecycle() {
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+    let wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("mine"))
+        .unwrap();
+    srv.work_grab(sid, wid)
+        .expect("owner must be able to grab own work under OwnerOnly");
+    srv.work_revise(sid, wid, xudanu::edition::Edition::from_text("revised"))
+        .expect("owner must be able to revise own work under OwnerOnly");
+}
+
+#[test]
+fn strict_edit_policy_locks_down_legacy_public_works() {
+    // Works created under the sandbox policy (or legacy default) with
+    // edit_club = public must become read-only when policy is
+    // tightened, and anonymous sessions must not be able to
+    // re-permission them (the takeover vector).
+    let mut srv = xudanu::server::Server::new();
+    srv.set_edit_policy(xudanu::server::EditPolicy::PublicSandbox);
+    let sid1 = srv.connect();
+    srv.login_public(sid1).unwrap();
+    let wid = srv
+        .create_work(sid1, xudanu::edition::Edition::from_text("legacy"))
+        .unwrap();
+
+    srv.set_edit_policy(xudanu::server::EditPolicy::OwnerOnly);
+
+    let sid2 = srv.connect();
+    srv.login_public(sid2).unwrap();
+    assert!(
+        srv.work_grab(sid2, wid).is_err(),
+        "anonymous edit of public-owned work must fail under OwnerOnly"
+    );
+    assert!(
+        srv.work_set_edit_club(sid2, wid, Some(srv.system_clubs().public_club))
+            .is_err(),
+        "anonymous re-permissioning (takeover) must fail under OwnerOnly"
+    );
+    assert!(
+        srv.work_is_readable(sid2, srv.work(wid).unwrap()),
+        "read access must be unaffected by edit policy"
+    );
+}
+
+#[test]
+fn sandbox_edit_policy_preserves_anonymous_wiki_behaviour() {
+    let mut srv = xudanu::server::Server::new();
+    srv.set_edit_policy(xudanu::server::EditPolicy::PublicSandbox);
+
+    let sid1 = srv.connect();
+    srv.login_public(sid1).unwrap();
+    let wid = srv
+        .create_work(sid1, xudanu::edition::Edition::from_text("sandbox doc"))
+        .unwrap();
+
+    let sid2 = srv.connect();
+    srv.login_public(sid2).unwrap();
+    assert!(
+        srv.work_grab(sid2, wid).is_ok(),
+        "sandbox mode keeps anonymous works world-editable"
+    );
+}
+
+#[test]
+fn edit_policy_parse_accepts_aliases() {
+    use xudanu::server::EditPolicy;
+    assert_eq!(EditPolicy::parse("owner-only"), Some(EditPolicy::OwnerOnly));
+    assert_eq!(EditPolicy::parse("STRICT"), Some(EditPolicy::OwnerOnly));
+    assert_eq!(
+        EditPolicy::parse("public-sandbox"),
+        Some(EditPolicy::PublicSandbox)
+    );
+    assert_eq!(EditPolicy::parse("lax"), Some(EditPolicy::PublicSandbox));
+    assert_eq!(EditPolicy::parse("nonsense"), None);
+}
+
+#[test]
 fn work_list_filters_by_read_permission() {
     let mut srv = xudanu::server::Server::new();
 
@@ -8902,6 +9002,53 @@ fn robots_txt_served_from_embedded_app() {
         let text = resp.text().await.unwrap();
         assert!(text.starts_with("User-agent: *"), "got: {}", text);
         assert!(text.contains("Disallow: /api/"));
+    });
+}
+
+#[test]
+fn spa_deep_links_serve_index_html() {
+    // SPA routes like /explore have no physical file: the fallback
+    // must serve the shell (200 + HTML), not 404, so deep links and
+    // crawlers work. Extensionless misses on real assets stay 404.
+    let server = xudanu::server::Server::new();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let state = std::sync::Arc::new(xudanu::server::transport::shared::AppState::new(server));
+        let app = xudanu::server::transport::handler::build_router(state);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let resp = reqwest::get(format!("http://{}/explore", addr))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200, "deep link must serve the SPA shell");
+        assert!(
+            resp.headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .starts_with("text/html"),
+            "deep link must be HTML"
+        );
+        let text = resp.text().await.unwrap();
+        assert!(text.contains("<title>"), "got: {}", text);
+
+        let resp = reqwest::get(format!("http://{}/doc/123", addr))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200, "nested deep link serves the shell");
+
+        let resp = reqwest::get(format!("http://{}/missing.js", addr))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            404,
+            "asset misses must stay 404 for diagnosability"
+        );
     });
 }
 

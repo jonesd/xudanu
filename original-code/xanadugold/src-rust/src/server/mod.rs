@@ -71,7 +71,7 @@ pub use lock::{
     MatchLockSmith, MultiLock, WallLock, WallLockSmith,
 };
 #[cfg(feature = "server")]
-pub use server::{CrossServerBacklink, Server, SystemClubs};
+pub use server::{CrossServerBacklink, EditPolicy, Server, SystemClubs};
 #[cfg(feature = "server")]
 pub use session::SessionId;
 #[cfg(feature = "server")]

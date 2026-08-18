@@ -532,6 +532,51 @@ pub struct WorkGhostInfo {
     pub lifecycle_history: Vec<WorkLifecycleEventInfo>,
 }
 
+/// Default edit policy for works on this server.
+///
+/// `OwnerOnly`: anonymous sessions cannot create works, and no work is
+/// editable by virtue of the public club — each work's edit club must
+/// be an identity the writer actually controls. Works whose edit club
+/// is the public club (e.g. created on a sandbox server, or explicitly
+/// shared) become read-only. `xudanu-server run` applies this by
+/// default; pass `--edit-policy public-sandbox` (or
+/// `XUDANU_EDIT_POLICY`) for the wiki-style demo behaviour.
+///
+/// `PublicSandbox`: the wiki-style legacy behaviour — anonymous
+/// sessions create world-readable, world-editable works. This is the
+/// library default (in-browser/wasm and test contexts); production
+/// servers should pin it explicitly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditPolicy {
+    OwnerOnly,
+    PublicSandbox,
+}
+
+impl Default for EditPolicy {
+    fn default() -> Self {
+        EditPolicy::PublicSandbox
+    }
+}
+
+impl EditPolicy {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "owner-only" | "owner_only" | "owneronly" | "strict" => Some(EditPolicy::OwnerOnly),
+            "public" | "public-sandbox" | "public_sandbox" | "sandbox" | "lax" => {
+                Some(EditPolicy::PublicSandbox)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EditPolicy::OwnerOnly => "owner-only",
+            EditPolicy::PublicSandbox => "public-sandbox",
+        }
+    }
+}
+
 pub struct Server {
     pub(crate) grand_map: GrandMap,
     pub(crate) sessions: HashMap<SessionId, Session>,
@@ -557,6 +602,7 @@ pub struct Server {
     content_address: ContentAddressIndex,
     blob_store: BlobStore,
     pub allow_loopback_cross_server: bool,
+    edit_policy: EditPolicy,
     checkpoint_path: Option<std::path::PathBuf>,
     data_dir: Option<std::path::PathBuf>,
     chunk_store: Option<Arc<crate::persist::chunk_store::ChunkStore>>,
@@ -1125,6 +1171,7 @@ impl Server {
             content_address: ContentAddressIndex::new(1_000_000),
             blob_store: BlobStore::in_memory(),
             allow_loopback_cross_server: false,
+            edit_policy: EditPolicy::default(),
             checkpoint_path: None,
             data_dir: None,
             chunk_store: None,
@@ -1305,6 +1352,19 @@ impl Server {
 
     pub fn set_server_name(&mut self, name: String) {
         self.server_name = name;
+    }
+
+    pub fn edit_policy(&self) -> EditPolicy {
+        self.edit_policy
+    }
+
+    pub fn set_edit_policy(&mut self, policy: EditPolicy) {
+        tracing::info!(
+            policy = policy.as_str(),
+            event = "SECURITY:edit_policy_set",
+            "edit policy set"
+        );
+        self.edit_policy = policy;
     }
 
     pub fn server_description(&self) -> &str {
@@ -3357,6 +3417,9 @@ impl Server {
 
         let is_public_session = owner == Some(self.system_clubs.public_club);
         if is_public_session {
+            if self.edit_policy == EditPolicy::OwnerOnly {
+                return Err(ServerError::NotAuthorized);
+            }
             work.set_read_club(Some(self.system_clubs.public_club));
             work.set_edit_club(Some(self.system_clubs.public_club));
         } else if let Some(owner_id) = owner {
@@ -14428,6 +14491,16 @@ impl Server {
         let owner = ws.work.owner();
         match owner {
             Some(owner_id) => {
+                // Every anonymous session holds public-club authority,
+                // so a public-owned work would be "owned" by everyone.
+                // Under OwnerOnly only the admin may act as its owner
+                // (e.g. to re-permission legacy sandbox content).
+                if self.edit_policy == EditPolicy::OwnerOnly
+                    && owner_id == self.system_clubs.public_club
+                    && self.ensure_admin(session_id).is_err()
+                {
+                    return Err(ServerError::NotOwner(work_be_id));
+                }
                 if self
                     .sessions
                     .get(&session_id)
@@ -14530,7 +14603,11 @@ impl Server {
         match work.edit_club() {
             Some(club_id) => {
                 if club_id == self.system_clubs.public_club {
-                    return true;
+                    // Under OwnerOnly the public club never grants edit
+                    // authority: works left world-editable by the
+                    // sandbox policy (or legacy default) become
+                    // read-only when the policy is tightened.
+                    return self.edit_policy == EditPolicy::PublicSandbox;
                 }
                 self.sessions
                     .get(&session_id)
@@ -17672,6 +17749,7 @@ pub(crate) mod persist_snapshot {
                 content_address,
                 blob_store: BlobStore::in_memory(),
                 allow_loopback_cross_server: false,
+                edit_policy: EditPolicy::default(),
                 checkpoint_path: None,
                 data_dir: None,
                 chunk_store: None,
