@@ -118,6 +118,15 @@ interface MarkerHitZone {
   densityCount?: number;
 }
 
+interface AuthorBarZone {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: string;
+  color: string;
+}
+
 const LINK_TYPE_STYLES: Record<number, { color: string; dash: number[] }> = {
   1: { color: "#58a6ff", dash: [4, 3] },      // Comment — short dashes
   2: { color: "#3fb950", dash: [] },            // Reference — solid
@@ -197,6 +206,10 @@ const HATCH_COLORS: [string, string][] = [
 
 const hatchCache = new Map<number, CanvasPattern | null>();
 
+// Left-margin authorship bars drawn by the last drawOverlay pass;
+// consumed by the hover handler for tooltips.
+const authorBarZones: AuthorBarZone[] = [];
+
 function getHatchPattern(ctx: CanvasRenderingContext2D, workId: number): CanvasPattern | null {
   const cached = hatchCache.get(workId);
   if (cached !== undefined) return cached;
@@ -246,6 +259,7 @@ function drawOverlay(
   linkDescMap: Map<number, { text: string; resolved: boolean }> = new Map(),
 ): MarkerHitZone[] {
   const hitZones: MarkerHitZone[] = [];
+  authorBarZones.length = 0;
   if (!editor || !canvas) return hitZones;
   if (spans.length === 0 && markers.length === 0 && annotations.length === 0 && compoundSpans.length === 0 && recentChanges.length === 0) {
     // Still need to clear the canvas of any previous content
@@ -316,6 +330,8 @@ function drawOverlay(
       if (y + r.height < viewportTop || y > viewportBottom) continue;
       const x = r.left - rect.left;
       if (isUnsigned) {
+        // Signature failures stay in-text: red wash + dashed underline
+        // is a security signal, not cosmetic authorship.
         ctx.fillStyle = "#f8514922";
         ctx.fillRect(x, y, r.width, r.height);
         ctx.save();
@@ -328,21 +344,33 @@ function drawOverlay(
         ctx.stroke();
         ctx.restore();
       } else {
-        ctx.fillStyle = style.color + (isHistorical ? "18" : "25");
-        ctx.fillRect(x, y, r.width, r.height);
-        if (isHistorical) {
-          ctx.save();
-          ctx.setLineDash([4, 3]);
-          ctx.strokeStyle = style.color + "90";
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.moveTo(x, y + r.height - 1);
-          ctx.lineTo(x + r.width, y + r.height - 1);
-          ctx.stroke();
-          ctx.restore();
-        } else {
-          ctx.fillStyle = style.color + "60";
-          ctx.fillRect(x, y + r.height - 2, r.width, 2);
+        // Floating underline: a light authorship-colour strip offset
+        // a few pixels below the text — it never touches the glyphs
+        // and there is no background wash, so the text stays clean.
+        // Historical (imported) authors get the dashed variant.
+        const underlineY = Math.round(y + r.height + 2) + 0.5;
+        ctx.save();
+        if (isHistorical) ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = style.color + (isHistorical ? "80" : "50");
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, underlineY);
+        ctx.lineTo(x + r.width, underlineY);
+        ctx.stroke();
+        ctx.restore();
+        if (r === rangeRects[0]) {
+          const last = rangeRects[rangeRects.length - 1];
+          const label = isHistorical
+            ? `${style.name} (historical author — imported)`
+            : `${style.name}${style.authorType === "llm" ? " (LLM-assisted)" : ""} — verified Ed25519`;
+          authorBarZones.push({
+            x: x - 3,
+            y,
+            width: r.width + 6,
+            height: (last.bottom - rect.top) - y + 4,
+            label,
+            color: style.color,
+          });
         }
       }
     }
@@ -873,7 +901,10 @@ export function CollaborativeEditor({
   remoteCursors = [],
   compoundSourceTitles: compoundSourceTitles = {},
   recentChanges = [],
-  showAttributionColors = true,
+  // Opt-in: single-author documents paint one attribution span across
+  // the whole page, which reads as a distracting colour wash. The Prov
+  // toolbar toggle enables it on demand.
+  showAttributionColors = false,
   inlineResolvedText,
   onUndoLastTransclusion,
   showLinkDescriptions = false,
@@ -907,6 +938,7 @@ export function CollaborativeEditor({
   const [resolving, setResolving] = useState(false);
   const [provenanceChain, setProvenanceChain] = useState<AgainHop[] | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  const [authorTooltip, setAuthorTooltip] = useState<AuthorBarZone | null>(null);
   const [linkTypeFilter, setLinkTypeFilterState] = useState<Set<number> | null>(() => {
     try {
       const saved = localStorage.getItem("xudanu_linkTypeFilter");
@@ -1192,26 +1224,39 @@ export function CollaborativeEditor({
       if (!ctx) return;
       const rect = container.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
+      const clear = () => {
+        // Canvas is shared with other overlays and is NOT auto-cleared:
+        // repainting without clearing accumulates alpha toward solid
+        // yellow, drowning the text. Always wipe first (raw pixel
+        // space, before the dpr scale).
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+      };
       ctx.save();
       ctx.scale(dpr, dpr);
       const drawStart = Math.max(highlightRange.start, 0);
       const drawEnd = Math.min(highlightRange.end, el.textContent?.length ?? 0);
-      if (drawStart >= drawEnd) { ctx.restore(); return; }
+      if (drawStart >= drawEnd) { clear(); ctx.restore(); return; }
       try {
         const sn = findTextNodeAt(el, drawStart, false);
         const en = findTextNodeAt(el, drawEnd - 1, false);
-        if (!sn || !en) { ctx.restore(); return; }
+        if (!sn || !en) { clear(); ctx.restore(); return; }
         const range = document.createRange();
         range.setStart(sn.node, sn.offset);
         range.setEnd(en.node, en.offset + 1);
         const rangeRects = range.getClientRects();
+        clear();
         for (const r of rangeRects) {
           const x = r.left - rect.left;
           const y = r.top - rect.top;
-          ctx.fillStyle = "rgba(255, 224, 0, 0.12)";
+          // Pale highlighter: calm background keeps the text readable;
+          // the thin amber outline marks the span without strobing.
+          ctx.fillStyle = "rgba(255, 223, 0, 0.25)";
           ctx.fillRect(x, y, r.width, r.height);
-          ctx.strokeStyle = "rgba(255, 180, 0, 0.8)";
-          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = "rgba(255, 180, 0, 0.45)";
+          ctx.lineWidth = 1;
           ctx.strokeRect(x + 0.5, y + 0.5, r.width - 1, r.height - 1);
         }
       } catch { /* range error — ignore */ }
@@ -1302,6 +1347,7 @@ export function CollaborativeEditor({
   const scheduleHideTooltip = useCallback(() => {
     hideTooltipTimer.current = setTimeout(() => {
       setHoveredMarker(null);
+      setAuthorTooltip(null);
       setTooltipPos(null);
       hideTooltipTimer.current = null;
     }, 2000);
@@ -1352,9 +1398,19 @@ export function CollaborativeEditor({
       setTooltipPos({ x: e.clientX, y: e.clientY });
       e.currentTarget.style.cursor = "pointer";
     } else {
-      e.currentTarget.style.cursor = pendingTransclusion ? "crosshair" : "";
-      if (hoveredMarker) {
-        scheduleHideTooltip();
+      const bar = authorBarZones.find((bz) =>
+        x >= bz.x && x <= bz.x + bz.width && y >= bz.y && y <= bz.y + bz.height
+      );
+      if (bar) {
+        setTooltipPos({ x: e.clientX, y: e.clientY });
+        setAuthorTooltip(bar);
+        e.currentTarget.style.cursor = "help";
+      } else {
+        setAuthorTooltip(null);
+        e.currentTarget.style.cursor = pendingTransclusion ? "crosshair" : "";
+        if (hoveredMarker) {
+          scheduleHideTooltip();
+        }
       }
     }
   }, [hoveredMarker, hoveredAnnotation, scheduleHideTooltip, pendingTransclusion]);
@@ -2007,6 +2063,23 @@ export function CollaborativeEditor({
             ref={overlayRef}
             className="attribution-overlay"
           />
+          {authorTooltip && tooltipPos && (
+            <div
+              className="marker-tooltip"
+              style={{
+                position: "fixed",
+                ...(tooltipPos.x > window.innerWidth - 320
+                  ? { right: window.innerWidth - tooltipPos.x + 10 }
+                  : { left: tooltipPos.x + 10 }),
+                top: Math.min(tooltipPos.y + 16, window.innerHeight - 100),
+                zIndex: 100,
+              }}
+            >
+              <div className="marker-tooltip-title" style={{ color: authorTooltip.color }}>
+                {authorTooltip.label}
+              </div>
+            </div>
+          )}
           {hoveredMarker && tooltipPos && (
             <div
               className="marker-tooltip"

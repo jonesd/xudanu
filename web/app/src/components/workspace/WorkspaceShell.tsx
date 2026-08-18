@@ -205,6 +205,9 @@ export function WorkspaceShell() {
   const [provenanceLoading, setProvenanceLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeLinkTypes, setActiveLinkTypes] = useState<Set<number>>(new Set());
+  const [showProv, setShowProv] = useState(() => {
+    try { return localStorage.getItem("xudanu_showProv") === "true"; } catch { return false; }
+  });
   const [showLinkDesc, setShowLinkDesc] = useState(() => {
     try { return localStorage.getItem("xudanu_showLinkDesc") !== "false"; }
     catch { return true; }
@@ -588,10 +591,21 @@ export function WorkspaceShell() {
     [selectionRange, workBeId, text, clientRef, transclusion, linkDescription],
   );
 
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    if (msg.toLowerCase().includes("fail") || msg.toLowerCase().includes("error")) {
+      console.error("[TOAST ERROR]", msg);
+    }
+    setTimeout(() => setToast(null), 5000);
+  }, []);
+
   const handleCreateAnnotation = useCallback(() => {
-    if (!selectionRange) return;
+    if (!selectionRange) {
+      showToast("Select some text first — notes attach to a passage");
+      return;
+    }
     setAnnotationTarget({ start: selectionRange.start, end: selectionRange.end });
-  }, [selectionRange]);
+  }, [selectionRange, showToast]);
 
   const handleToggleStyle = useCallback(
     async (kind: string, start: number, end: number) => {
@@ -724,14 +738,6 @@ export function WorkspaceShell() {
     if (line.startsWith("```")) return "```";
     return "";
   }
-
-  const showToast = useCallback((msg: string) => {
-    setToast(msg);
-    if (msg.toLowerCase().includes("fail") || msg.toLowerCase().includes("error")) {
-      console.error("[TOAST ERROR]", msg);
-    }
-    setTimeout(() => setToast(null), 5000);
-  }, []);
 
   useEffect(() => {
     if (saveState === "error" && prevSaveState.current !== "error") {
@@ -2226,6 +2232,20 @@ export function WorkspaceShell() {
                       {editorMode === "authoring" ? "📖" : "✏️"}
                     </button>
                   )}
+                  <button
+                    className={`ws-action-btn ${showProv ? "active" : ""}`}
+                    onClick={() => {
+                      const next = !showProv;
+                      setShowProv(next);
+                      try { localStorage.setItem("xudanu_showProv", String(next)); } catch { /* no-op */ }
+                    }}
+                    title={showProv
+                      ? "Provenance underlines ON — light colour strip under each passage shows its author. Click to hide."
+                      : "Show provenance — light authorship underline beneath each passage (colour-coded, verified signatures)"}
+                    style={showProv ? { background: "rgba(255, 196, 0, 0.15)", borderColor: "rgba(255, 196, 0, 0.4)" } : {}}
+                  >
+                    Prov
+                  </button>
                   {canEdit && (
                     <button
                       className={`ws-action-btn ${isPublished ? "active" : ""}`}
@@ -2557,7 +2577,10 @@ export function WorkspaceShell() {
                       <button
                         type="button"
                         onClick={handleCreateAnnotation}
-                        title="Add a note to this passage — public (shared with readers) or private (only visible to you)"
+                        disabled={!canEdit}
+                        title={canEdit
+                          ? "Add a note to this passage — select text first. Public (shared with readers) or private (only visible to you)"
+                          : "Sign in to add notes"}
                       >
                         Note
                     </button>
@@ -3013,6 +3036,7 @@ export function WorkspaceShell() {
                   }}
                   connected={connected}
                   attributionSpans={resolvedAttributionSpans}
+                  showAttributionColors={showProv}
                   editable={canEdit}
                   readingMode={editorMode === "reading"}
                   fontSize={14}
