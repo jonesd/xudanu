@@ -1269,6 +1269,10 @@ export class CrdtSyncClient {
     return (rec.work_list as WorkListEntry[]) || [];
   }
 
+  async workSetSource(workId: number, isSource: boolean): Promise<void> {
+    await this.sendRequest("work_set_source", { work_id: workId, is_source: isSource });
+  }
+
   async workStar(workId: number): Promise<void> {
     await this.sendRequest("work_star", { work_id: workId });
   }
@@ -1645,6 +1649,13 @@ export class CrdtSyncClient {
       throw e;
     }
     return identity;
+  }
+
+  async clubSetPassword(clubId: number, password: string): Promise<void> {
+    await this.sendRequest("club_set_password", {
+      club_id: clubId,
+      password: Array.from(new TextEncoder().encode(password)),
+    });
   }
 
   async loginByName(clubName: string, password: string): Promise<void> {

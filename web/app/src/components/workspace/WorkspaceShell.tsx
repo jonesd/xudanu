@@ -198,6 +198,7 @@ export function WorkspaceShell() {
   const [showImport, setShowImport] = useState(false);
   const [demoTrigger, setDemoTrigger] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
+  const [isFrozen, setIsFrozen] = useState(false);
   const [crossServerBacklinks, setCrossServerBacklinks] = useState<CrossServerBacklinkPayload[]>([]);
   const [whereUsed, setWhereUsed] = useState<{ edition_ids: number[]; work_ids: number[] } | null>(null);
   const [whereUsedLoading, setWhereUsedLoading] = useState(false);
@@ -277,6 +278,7 @@ export function WorkspaceShell() {
     awareness,
     login,
     createIdentity,
+    changePassword,
     logout,
     reconnectAttempt,
     switchingWork,
@@ -438,6 +440,7 @@ export function WorkspaceShell() {
           try { localStorage.setItem(`xudanu_meta_${workBeId}`, JSON.stringify(meta)); } catch { /* no-op */ }
           setFollowState((prev) => ({ ...prev, following: !!match.is_starred }));
           setIsPublished(!!match.read_club && match.read_club === publicClubId);
+          setIsFrozen(!!match.is_source);
         } else {
           // Work not in the list — still try to open it (it may be readable)
           setWorkMeta({
@@ -2277,6 +2280,31 @@ export function WorkspaceShell() {
                       {isPublished ? "🌍 Public" : "🔒 Private"}
                     </button>
                   )}
+                  {canEdit && workBeId !== null && (
+                    <button
+                      className={`ws-action-btn ${isFrozen ? "active" : ""}`}
+                      style={isFrozen ? { background: "rgba(88, 166, 255, 0.15)", borderColor: "rgba(88, 166, 255, 0.4)", color: "#58a6ff" } : {}}
+                      title={isFrozen
+                        ? "Frozen — content is immutable (links and notes still welcome). Click to unfreeze."
+                        : "Freeze content — the document becomes immutable for everyone, including you. Links, notes and annotations remain open. Showcase documents use this."}
+                      onClick={async () => {
+                        if (!clientRef.current) return;
+                        const next = !isFrozen;
+                        if (next && !confirm("Freeze this document?\n\nContent becomes immutable — no one (including you) can edit the text. Links, notes and annotations stay open. You can unfreeze later.")) return;
+                        if (!next && !confirm("Unfreeze this document? Editing becomes possible again.")) return;
+                        try {
+                          await clientRef.current.workSetSource(workBeId, next);
+                          setIsFrozen(next);
+                          setWorks((prev) => prev.map((w) => w.work_id === workBeId ? { ...w, is_source: next } : w));
+                          showToast(next ? "Document frozen — content immutable" : "Document unfrozen");
+                        } catch (e) {
+                          showToast(`Freeze failed: ${e instanceof Error ? e.message : "not owner"}`);
+                        }
+                      }}
+                    >
+                      {isFrozen ? "❄ Frozen" : "❄ Freeze"}
+                    </button>
+                  )}
                   {canEdit && (
                     <label className="ws-action-btn ws-image-upload-btn" title="Insert image">
                       📷
@@ -3969,6 +3997,7 @@ export function WorkspaceShell() {
               connected={connected}
               onLogin={login}
               onCreateIdentity={createIdentity}
+              onChangePassword={changePassword}
               onLogout={logout}
               llmEnabled={crdt.llmEnabled}
               llmUsage={crdt.llmUsage}
