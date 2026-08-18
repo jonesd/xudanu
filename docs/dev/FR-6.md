@@ -747,7 +747,7 @@ If both need to host independently, they can:
 - `docs/dev/FR-3.md` — federation activation (cluster model)
 - `docs/dev/FR-4.md` — typed bidirectional content links
 - `docs/dev/FR-5.md` — attestation reports & provenance
-- `docs/space-algebra.html` — tumbler addressing deep dive
+- `docs/document-space.html` — tumbler addressing deep dive
 - `docs/provenance-and-attribution.html` — per-server provenance
 - `space/sequence.rs` — tumbler implementation
 - `crypto/server_identity.rs` — TrustedServerRegistry
