@@ -437,6 +437,8 @@ async fn main() {
                 std::env::var("XUDANU_EDIT_POLICY")
                     .ok()
                     .and_then(|s| xudanu::server::EditPolicy::parse(&s));
+            let mut admin_passphrase: Option<String> =
+                std::env::var("XUDANU_ADMIN_PASSPHRASE").ok();
             let mut allow_loopback = false;
             let mut i = 2;
             while i < args.len() {
@@ -604,6 +606,14 @@ async fn main() {
                                 std::process::exit(1);
                             }
                         }
+                    }
+                    "--admin-passphrase" => {
+                        i += 1;
+                        admin_passphrase =
+                            Some(args.get(i).map(|s| s.clone()).unwrap_or_else(|| {
+                                eprintln!("Error: --admin-passphrase requires a value");
+                                std::process::exit(1);
+                            }));
                     }
                     "--allow-loopback" => {
                         allow_loopback = true;

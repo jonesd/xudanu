@@ -9136,6 +9136,62 @@ fn spa_deep_links_serve_index_html() {
 }
 
 #[test]
+fn spa_fallback_serves_real_assets_with_mime() {
+    // Regression: the fallback once 404'd every extension path BEFORE
+    // checking the filesystem, killing all real assets (/assets/*.js)
+    // — white screen in production. Existing files must be served with
+    // a correct MIME type whatever their extension.
+    let dir = std::env::temp_dir().join(format!("xudanu-spa-test-{}", std::process::id()));
+    let assets = dir.join("assets");
+    std::fs::create_dir_all(&assets).unwrap();
+    std::fs::write(assets.join("index-abc123.js"), b"console.log('ok');").unwrap();
+    std::fs::write(dir.join("index.html"), b"<html><body>shell</body></html>").unwrap();
+
+    let server = xudanu::server::Server::new();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let state = std::sync::Arc::new(
+            xudanu::server::transport::shared::AppState::new(server).with_static_dir(dir.clone()),
+        );
+        let app = xudanu::server::transport::handler::build_router(state);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let resp = reqwest::get(format!("http://{}/assets/index-abc123.js", addr))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200, "existing asset must be served");
+        let ct = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        assert!(
+            ct.contains("javascript"),
+            "asset must have JS MIME type, got '{}'",
+            ct
+        );
+
+        let resp = reqwest::get(format!("http://{}/missing.js", addr))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 404, "missing asset stays 404");
+
+        let resp = reqwest::get(format!("http://{}/explore", addr))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200, "deep link still serves the shell");
+        assert!(resp.text().await.unwrap().contains("shell"));
+    });
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn chunk_store_persistence_works_survive_restart() {
     let dir = temp_chunk_data_dir("works");
     std::fs::create_dir_all(&dir).unwrap();

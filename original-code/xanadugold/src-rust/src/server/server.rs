@@ -1367,6 +1367,33 @@ impl Server {
         self.edit_policy = policy;
     }
 
+    /// Operator break-glass: set (or replace) the admin club's password
+    /// credential. Without this the admin club has a WallLock — nobody
+    /// can ever act as admin on a running server, so orphaned works
+    /// (e.g. owned by deleted/credential-less identities) cannot be
+    /// archived or re-permissioned.
+    pub fn set_admin_passphrase(&mut self, passphrase: &[u8]) -> Result<(), ServerError> {
+        if passphrase.len() < 8 {
+            return Err(ServerError::InvalidArgument(
+                "admin passphrase must be at least 8 bytes".into(),
+            ));
+        }
+        let phc = crate::crypto::password::hash_password(passphrase)
+            .map_err(|e| ServerError::Internal(format!("admin passphrase hash failed: {}", e)))?;
+        let admin_club = self.system_clubs.admin_club;
+        if let Some(club) = self.clubs.get_mut(&admin_club) {
+            club.set_credential(Some(crate::server::club::Credential::Password {
+                phc_hash: phc,
+            }));
+            self.dirty_clubs.insert(admin_club);
+        }
+        tracing::info!(
+            event = "SECURITY:admin_passphrase_set",
+            "admin passphrase credential installed"
+        );
+        Ok(())
+    }
+
     pub fn server_description(&self) -> &str {
         &self.server_description
     }

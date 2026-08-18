@@ -911,18 +911,23 @@ async fn static_fallback_handler(
 ) -> impl IntoResponse {
     // Client-side routes (e.g. /explore, /doc/123) have no physical file
     // behind them: serve the SPA shell so deep links and crawlers get a
-    // 200 + HTML instead of a 404. Asset-like paths (with an extension)
-    // always 404 on miss so broken references stay diagnosable.
+    // 200 + HTML instead of a 404. Extension misses (e.g. /missing.js)
+    // stay 404 so broken asset references remain diagnosable — but only
+    // on MISS: real files must be served whatever their extension.
     let path = uri.path().trim_start_matches('/');
     if path.is_empty() {
         return serve_index_html(&state).await;
     }
-    if std::path::Path::new(path).extension().is_some() {
-        return axum::http::StatusCode::NOT_FOUND.into_response();
-    }
     let dir = match &state.static_dir {
         Some(d) => d,
-        None => return serve_index_html(&state).await,
+        None => {
+            // No static dir (embedded-app deployments): nothing to serve
+            // but the shell. Asset-like paths still 404.
+            if std::path::Path::new(path).extension().is_some() {
+                return axum::http::StatusCode::NOT_FOUND.into_response();
+            }
+            return serve_index_html(&state).await;
+        }
     };
     let file_path = dir.join(path);
     if !file_path.starts_with(dir) {
@@ -937,8 +942,15 @@ async fn static_fallback_handler(
             )
                 .into_response()
         }
-        // No physical file: extensionless paths are SPA deep links.
-        Err(_) => serve_index_html(&state).await,
+        // No physical file: extensionless paths are SPA deep links;
+        // asset-like misses 404.
+        Err(_) => {
+            if std::path::Path::new(path).extension().is_some() {
+                axum::http::StatusCode::NOT_FOUND.into_response()
+            } else {
+                serve_index_html(&state).await
+            }
+        }
     }
 }
 
