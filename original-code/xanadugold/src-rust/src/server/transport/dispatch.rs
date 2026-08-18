@@ -843,6 +843,10 @@ fn dispatch_inner(
             srv.work_star(session_id, work_id)?;
             Ok(ResponseValue::Void)
         }
+        WireRequest::WorkSetSource { work_id, is_source } => {
+            srv.work_set_source(session_id, work_id, is_source)?;
+            Ok(ResponseValue::Void)
+        }
         WireRequest::WorkSetTitle { work_id, title } => {
             srv.ensure_can_edit(session_id, work_id)?;
             srv.set_work_title(work_id, title);

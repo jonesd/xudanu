@@ -3053,6 +3053,19 @@ impl JsonCodec {
                     work_id: args.work_id,
                 })
             }
+            OperationCode::WorkSetSource => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    is_source: bool,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkSetSource {
+                    work_id: args.work_id,
+                    is_source: args.is_source,
+                })
+            }
             OperationCode::WorkUnstar => {
                 #[derive(Deserialize)]
                 struct Args {

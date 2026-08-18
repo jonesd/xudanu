@@ -179,6 +179,7 @@ pub enum OperationCode {
     WorkUnsponsor,
     WorkSponsors,
     WorkStar,
+    WorkSetSource,
     WorkUnstar,
     WorkIsStarred,
     ConnectionPinSet,
@@ -536,6 +537,7 @@ impl OperationCode {
             0x0315 => Some(OperationCode::WorkListByOwner),
             0x0316 => Some(OperationCode::WorkReviseDelta),
             0x0335 => Some(OperationCode::WorkStar),
+            0x0351 => Some(OperationCode::WorkSetSource),
             0x0336 => Some(OperationCode::WorkUnstar),
             0x0337 => Some(OperationCode::WorkIsStarred),
             0x0338 => Some(OperationCode::WorkGraph),
@@ -849,6 +851,7 @@ impl OperationCode {
             OperationCode::WorkUnsponsor => 0x0311,
             OperationCode::WorkSponsors => 0x0312,
             OperationCode::WorkStar => 0x0335,
+            OperationCode::WorkSetSource => 0x0351,
             OperationCode::WorkUnstar => 0x0336,
             OperationCode::WorkIsStarred => 0x0337,
             OperationCode::WorkGraph => 0x0338,
@@ -1272,6 +1275,10 @@ pub enum WireRequest {
     },
     WorkStar {
         work_id: BeId,
+    },
+    WorkSetSource {
+        work_id: BeId,
+        is_source: bool,
     },
     WorkUnstar {
         work_id: BeId,

@@ -11831,6 +11831,39 @@ fn blob_payload_old_field_names_work_via_alias() {
 }
 
 #[test]
+fn work_set_source_freezes_content_but_allows_links() {
+    // Showcase contract: freezing a work blocks content edits from
+    // everyone (including the owner) while links and annotations
+    // remain open, and only the owner (or admin) can toggle the flag.
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+    let wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("showcase doc"))
+        .unwrap();
+
+    srv.work_set_source(sid, wid, true).unwrap();
+    assert!(
+        srv.work_grab(sid, wid).is_err(),
+        "owner cannot edit a frozen work"
+    );
+
+    // Annotations still allowed on source works (marginalia, not edits)
+    srv.annotation_create(sid, wid, 1, "note".into(), "hi".into(), 0, 2, false)
+        .unwrap();
+
+    // A different identity cannot toggle the flag
+    let (sid2, _) = owned_session(&mut srv);
+    assert!(
+        srv.work_set_source(sid2, wid, false).is_err(),
+        "non-owner cannot unfreeze a showcase work"
+    );
+
+    // Owner can unfreeze again
+    srv.work_set_source(sid, wid, false).unwrap();
+    assert!(srv.work_grab(sid, wid).is_ok());
+}
+
+#[test]
 fn seed_demo_attribution_five_authors() {
     // N-author demo seeding: 5 distinct authors must produce 5
     // attribution spans, each covering a distinct region, with

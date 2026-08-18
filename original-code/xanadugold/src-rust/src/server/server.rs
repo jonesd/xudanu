@@ -7155,6 +7155,33 @@ impl Server {
             .collect()
     }
 
+    /// Freeze (or unfreeze) a work's content: source works reject
+    /// grab/revise/CRDT edits while still allowing links, annotations,
+    /// and transclusion from them — the showcase contract. Owner or
+    /// admin only.
+    pub fn work_set_source(
+        &mut self,
+        session_id: SessionId,
+        work_id: BeId,
+        is_source: bool,
+    ) -> Result<(), ServerError> {
+        self.ensure_session(session_id)?;
+        self.ensure_owner(session_id, work_id)?;
+        let ws = self
+            .works
+            .get_mut(&work_id)
+            .ok_or(ServerError::WorkNotFound(work_id))?;
+        ws.is_source = is_source;
+        ws.mark_dirty();
+        tracing::info!(
+            work_id = work_id,
+            is_source,
+            event = "work_source_flag_set",
+            "work source flag set"
+        );
+        Ok(())
+    }
+
     pub fn work_star(&mut self, session_id: SessionId, work_id: BeId) -> Result<(), ServerError> {
         self.ensure_authenticated(session_id)?;
         let club_id = self
