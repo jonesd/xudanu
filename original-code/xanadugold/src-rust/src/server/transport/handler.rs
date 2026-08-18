@@ -890,18 +890,40 @@ fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+async fn serve_index_html(state: &SharedState) -> axum::response::Response {
+    let html = match &state.static_dir {
+        Some(dir) => match tokio::fs::read_to_string(dir.join("index.html")).await {
+            Ok(content) => content,
+            Err(_) => EMBEDDED_INDEX_HTML.to_owned(),
+        },
+        None => EMBEDDED_INDEX_HTML.to_owned(),
+    };
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        html,
+    )
+        .into_response()
+}
+
 async fn static_fallback_handler(
     axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
     State(state): State<SharedState>,
 ) -> impl IntoResponse {
-    let dir = match &state.static_dir {
-        Some(d) => d,
-        None => return axum::http::StatusCode::NOT_FOUND.into_response(),
-    };
+    // Client-side routes (e.g. /explore, /doc/123) have no physical file
+    // behind them: serve the SPA shell so deep links and crawlers get a
+    // 200 + HTML instead of a 404. Asset-like paths (with an extension)
+    // always 404 on miss so broken references stay diagnosable.
     let path = uri.path().trim_start_matches('/');
     if path.is_empty() {
+        return serve_index_html(&state).await;
+    }
+    if std::path::Path::new(path).extension().is_some() {
         return axum::http::StatusCode::NOT_FOUND.into_response();
     }
+    let dir = match &state.static_dir {
+        Some(d) => d,
+        None => return serve_index_html(&state).await,
+    };
     let file_path = dir.join(path);
     if !file_path.starts_with(dir) {
         return axum::http::StatusCode::FORBIDDEN.into_response();
@@ -915,7 +937,8 @@ async fn static_fallback_handler(
             )
                 .into_response()
         }
-        Err(_) => axum::http::StatusCode::NOT_FOUND.into_response(),
+        // No physical file: extensionless paths are SPA deep links.
+        Err(_) => serve_index_html(&state).await,
     }
 }
 
