@@ -378,7 +378,7 @@ function drawOverlay(
       const zoneRight = Math.max(...visibleRects.map((r) => r.right)) - rect.left;
       const label = isHistorical
         ? `${style.name} (historical author — imported)`
-        : `${style.name}${style.authorType === "llm" ? " (LLM-assisted)" : ""} — verified Ed25519`;
+        : `${style.name}${style.authorType === "llm" ? " (LLM-assisted)" : ""} ✓`;
       authorBarZones.push({
         x: zoneLeft - 3,
         y: first.top - rect.top,
