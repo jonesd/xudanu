@@ -10528,15 +10528,16 @@ impl Server {
 
         let chain = self.compute_provenance_chain(origin);
 
-        let link = if let (Some(o_ref), Some(d_ref)) = (origin_ref, destination_ref) {
-            let o_with_chain = o_ref.with_provenance_chain(chain);
-            HyperLink::make(vec![], o_with_chain, d_ref)
-        } else {
-            let o_ref =
-                HyperRef::single(None, Some(origin), None, None).with_provenance_chain(chain);
-            let d_ref = HyperRef::single(None, Some(destination), None, None);
-            HyperLink::make(vec![], o_ref, d_ref)
-        };
+        // Preserve span anchors on whichever ends provided them. The
+        // old all-or-nothing branch silently dropped origin spans when
+        // the caller sent only origin_ref (CLI seeding path), which
+        // left links that render without underlines/panel anchors.
+        let o_final = origin_ref.unwrap_or_else(|| {
+            HyperRef::single(None, Some(origin), None, None).with_provenance_chain(chain)
+        });
+        let d_final = destination_ref
+            .unwrap_or_else(|| HyperRef::single(None, Some(destination), None, None));
+        let link = HyperLink::make(vec![], o_final, d_final);
 
         let ls = LinkState {
             link,

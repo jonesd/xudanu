@@ -2451,6 +2451,89 @@ async fn link_create_get_delete() {
 }
 
 #[tokio::test]
+async fn link_create_origin_only_span_is_preserved() {
+    // Regression: link_create with only origin_ref (the CLI seeding
+    // path) must keep the span anchor. The old all-or-nothing branch
+    // built fresh span-less refs, so links rendered without underlines
+    // or right-panel anchors — the degraded Welcome-page symptom.
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_a = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "Line 1 has a Comment link here"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    let work_b = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "target"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    let link_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "link_create",
+            Some(serde_json::json!({
+                "origin": work_a,
+                "destination": work_b,
+                "origin_ref": {
+                    "kind": "single",
+                    "work_context": work_a,
+                    "excerpt": "Line 1 has a Comment link",
+                    "start_position": 0,
+                    "end_position": 25
+                }
+            })),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    assert!(link_id > 0);
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            21,
+            "link_get",
+            Some(serde_json::json!({"link_id": link_id})),
+        ),
+    )
+    .await;
+    let o_ref = &resp["value"]["value"]["origin_ref"];
+    assert_eq!(
+        o_ref["start_position"], 0,
+        "origin span start must survive origin-only link_create"
+    );
+    assert_eq!(
+        o_ref["end_position"], 25,
+        "origin span end must survive origin-only link_create"
+    );
+    assert_eq!(
+        o_ref["excerpt"], "Line 1 has a Comment link",
+        "origin excerpt must survive origin-only link_create"
+    );
+}
+
+#[tokio::test]
 async fn link_list_for_work() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
