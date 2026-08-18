@@ -2146,6 +2146,8 @@ pub enum WireRequest {
     },
     SeedDemoAttribution {
         work_id: BeId,
+        #[cfg_attr(feature = "serde", serde(default))]
+        author_count: Option<u32>,
     },
 
     #[cfg(feature = "serde")]

@@ -11831,6 +11831,97 @@ fn blob_payload_old_field_names_work_via_alias() {
 }
 
 #[test]
+fn seed_demo_attribution_five_authors() {
+    // N-author demo seeding: 5 distinct authors must produce 5
+    // attribution spans, each covering a distinct region, with
+    // unique keys and display names.
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+    let text = "First author opens the document with an introduction. \
+                Second author continues the argument in their own voice. \
+                Third author adds supporting evidence and citations here. \
+                Fourth author offers a counterpoint for balance. \
+                Fifth author closes with conclusions and future work.";
+    let wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text(text))
+        .unwrap();
+
+    srv.seed_demo_attribution(wid, Some(5)).unwrap();
+
+    let spans = srv.attribution_query(wid, None, None).unwrap();
+    assert!(spans.len() >= 5, "expected >= 5 spans, got {}", spans.len());
+    let names: Vec<&str> = spans
+        .iter()
+        .map(|s| s.author_display_name.as_deref().unwrap_or(""))
+        .collect();
+    let unique: std::collections::HashSet<&str> = names.iter().copied().collect();
+    assert_eq!(unique.len(), 5, "5 distinct authors, got {:?}", names);
+    let keys: std::collections::HashSet<String> = spans
+        .iter()
+        .map(|s| {
+            s.author_public_key
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect()
+        })
+        .collect();
+    assert_eq!(keys.len(), 5, "each author has a unique key");
+}
+
+#[test]
+fn seed_demo_attribution_rejects_more_authors_than_text() {
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+    let wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("short"))
+        .unwrap();
+    assert!(srv.seed_demo_attribution(wid, Some(8)).is_err());
+}
+
+#[test]
+fn blob_list_content_hash_serializes_as_string() {
+    // Regression: BlobEntry.content_hash (u64) serialized as a JSON
+    // number. u64 hashes exceed JavaScript's 2^53 safe-integer range,
+    // so browsers rounded them (wrong hash -> image never loaded) or
+    // rejected follow-up frames (protocol error killing the response
+    // stream — links/annotations stopped rendering). The wire format
+    // must be a string; deserialization accepts both for
+    // back-compat with older clients.
+    let entry = xudanu::edition::edition::BlobEntry {
+        char_position: 20,
+        content_hash: 6000286860484429196u64,
+        mime_type: "image/png".to_string(),
+        byte_size: 1138,
+        width: Some(900),
+        height: Some(260),
+        caption: None,
+    };
+    let json = serde_json::to_value(&entry).unwrap();
+    assert!(
+        json["content_hash"].is_string(),
+        "content_hash must serialize as string, got: {}",
+        json["content_hash"]
+    );
+    assert_eq!(json["content_hash"], "6000286860484429196");
+
+    // Round-trip: string form (new servers) and integer form (old
+    // snapshots/peers) both deserialize.
+    let rt: xudanu::edition::edition::BlobEntry = serde_json::from_value(json).unwrap();
+    assert_eq!(rt.content_hash, 6000286860484429196u64);
+    let legacy = serde_json::json!({
+        "char_position": 20,
+        "content_hash": 6000286860484429196u64,
+        "mime_type": "image/png",
+        "byte_size": 1138,
+        "width": 900,
+        "height": 260,
+        "caption": null
+    });
+    let old: xudanu::edition::edition::BlobEntry = serde_json::from_value(legacy).unwrap();
+    assert_eq!(old.content_hash, 6000286860484429196u64);
+}
+
+#[test]
 fn image_insert_end_to_end() {
     let mut server = Server::new();
     let sid = server.connect();

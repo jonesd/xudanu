@@ -100,6 +100,11 @@ pub enum EditionEdit {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BlobEntry {
     pub char_position: usize,
+    /// Serialized as a string: u64 hashes exceed JavaScript's safe
+    /// integer range, and browsers silently round them (wrong hash) or
+    /// reject the frame (protocol error killing the response stream).
+    #[cfg_attr(feature = "serde", serde(serialize_with = "ser_u64_string"))]
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "de_u64_string_or_int"))]
     pub content_hash: u64,
     pub mime_type: String,
     pub byte_size: u64,
@@ -1727,6 +1732,33 @@ impl std::fmt::Display for CombineConflict {
 }
 
 impl std::error::Error for CombineConflict {}
+
+#[cfg(feature = "serde")]
+mod serde_u64_helpers {
+    pub fn ser_u64_string<S: serde::Serializer>(v: &u64, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&v.to_string())
+    }
+
+    pub fn de_u64_string_or_int<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
+        struct V;
+        impl serde::de::Visitor<'_> for V {
+            type Value = u64;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("u64 as string or integer")
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<u64, E> {
+                v.parse().map_err(E::custom)
+            }
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<u64, E> {
+                Ok(v)
+            }
+        }
+        d.deserialize_any(V)
+    }
+}
+
+#[cfg(feature = "serde")]
+use serde_u64_helpers::{de_u64_string_or_int, ser_u64_string};
 
 #[cfg(test)]
 mod tests {

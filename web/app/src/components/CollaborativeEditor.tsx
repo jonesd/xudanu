@@ -279,15 +279,20 @@ function drawOverlay(
   if (rect.width === 0 || rect.height === 0) return hitZones;
 
   const dpr = window.devicePixelRatio || 1;
+  // Pad the canvas beyond the visible viewport so decorations that
+  // extend past the last text line (e.g. the floating provenance
+  // underline at line-bottom + 2px) are not clipped at the document
+  // end.
+  const CANVAS_PAD = 8;
   canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
+  canvas.height = (rect.height + CANVAS_PAD) * dpr;
   canvas.style.width = rect.width + "px";
-  canvas.style.height = rect.height + "px";
+  canvas.style.height = rect.height + CANVAS_PAD + "px";
 
   const ctx = canvas.getContext("2d");
   if (!ctx) return hitZones;
   ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, rect.width, rect.height);
+  ctx.clearRect(0, 0, rect.width, rect.height + CANVAS_PAD);
 
   const textLen = editor.textContent?.length ?? 0;
   if (textLen === 0) return hitZones;
@@ -295,7 +300,7 @@ function drawOverlay(
   const singleNode = textNode && textNode.nodeType === Node.TEXT_NODE && textNode === editor.lastChild;
 
   const viewportTop = container.scrollTop - 50;
-  const viewportBottom = container.scrollTop + rect.height + 50;
+  const viewportBottom = container.scrollTop + rect.height + 50 + CANVAS_PAD;
 
   for (const span of showAttribution ? spans : []) {
     const key = bytesToHex(span.author_public_key);
@@ -1380,7 +1385,6 @@ export function CollaborativeEditor({
       setHoveredAnnotation({ text: annHit.text, x: e.clientX, y: e.clientY, id: annHit.id });
       setHoveredMarker(null);
       setTooltipPos(null);
-      e.currentTarget.style.cursor = "help";
       return;
     }
     if (hoveredAnnotation) {
@@ -1396,7 +1400,6 @@ export function CollaborativeEditor({
         : hit.marker;
       setHoveredMarker(m);
       setTooltipPos({ x: e.clientX, y: e.clientY });
-      e.currentTarget.style.cursor = "pointer";
     } else {
       const bar = authorBarZones.find((bz) =>
         x >= bz.x && x <= bz.x + bz.width && y >= bz.y && y <= bz.y + bz.height
@@ -1404,10 +1407,8 @@ export function CollaborativeEditor({
       if (bar) {
         setTooltipPos({ x: e.clientX, y: e.clientY });
         setAuthorTooltip(bar);
-        e.currentTarget.style.cursor = "help";
       } else {
         setAuthorTooltip(null);
-        e.currentTarget.style.cursor = pendingTransclusion ? "crosshair" : "";
         if (hoveredMarker) {
           scheduleHideTooltip();
         }

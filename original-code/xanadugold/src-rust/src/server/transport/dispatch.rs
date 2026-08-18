@@ -3655,9 +3655,12 @@ fn dispatch_inner(
                 total_works_matched,
             })
         }
-        WireRequest::SeedDemoAttribution { work_id } => {
+        WireRequest::SeedDemoAttribution {
+            work_id,
+            author_count,
+        } => {
             srv.ensure_authenticated(session_id)?;
-            srv.seed_demo_attribution(work_id)?;
+            srv.seed_demo_attribution(work_id, author_count)?;
             Ok(ResponseValue::Boolean(true))
         }
         #[cfg(feature = "serde")]

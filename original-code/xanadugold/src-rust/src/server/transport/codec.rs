@@ -3032,11 +3032,14 @@ impl JsonCodec {
                 #[derive(Deserialize)]
                 struct Args {
                     work_id: BeId,
+                    #[serde(default)]
+                    author_count: Option<u32>,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::SeedDemoAttribution {
                     work_id: args.work_id,
+                    author_count: args.author_count,
                 })
             }
             OperationCode::WorkStar => {

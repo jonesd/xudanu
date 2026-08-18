@@ -3208,8 +3208,31 @@ impl Server {
         }])
     }
 
-    pub fn seed_demo_attribution(&mut self, work_id: BeId) -> Result<(), ServerError> {
-        tracing::info!("[seed_demo_attribution] called for work {:04x}", work_id);
+    /// Seed synthetic multi-author provenance on a work for demo
+    /// purposes. Splits the edition into `author_count` contiguous
+    /// regions (2..=8, default 3), each attributed to a freshly
+    /// generated demo identity with its own Ed25519 signing key.
+    pub fn seed_demo_attribution(
+        &mut self,
+        work_id: BeId,
+        author_count: Option<u32>,
+    ) -> Result<(), ServerError> {
+        tracing::info!(
+            "[seed_demo_attribution] called for work {:04x} authors={:?}",
+            work_id,
+            author_count
+        );
+        const DEMO_AUTHOR_POOL: [&str; 8] = [
+            "Alex Chen",
+            "Jordan Lee",
+            "Sam Rivera",
+            "Riley Patel",
+            "Morgan Quinn",
+            "Casey Kim",
+            "Avery Brooks",
+            "Jamie Fox",
+        ];
+        let n_authors = author_count.unwrap_or(3).clamp(2, 8) as usize;
         let ws = self
             .works
             .get(&work_id)
@@ -3221,25 +3244,31 @@ impl Server {
         }
 
         let total = entries.len();
-        let r1_end = total / 3;
-        let r2_end = total * 2 / 3;
+        if n_authors > total {
+            return Err(ServerError::InvalidArgument(format!(
+                "work too short for {} authors ({} entries)",
+                n_authors, total
+            )));
+        }
 
         let timestamp = Self::current_timestamp_secs();
         let server_id_bytes = self.federation_server_id_bytes();
         let mut rng = rand::rngs::OsRng;
 
-        let demo_authors: [(&str, ed25519_dalek::SigningKey); 3] = [
-            ("Alex Chen", ed25519_dalek::SigningKey::generate(&mut rng)),
-            ("Jordan Lee", ed25519_dalek::SigningKey::generate(&mut rng)),
-            ("Sam Rivera", ed25519_dalek::SigningKey::generate(&mut rng)),
-        ];
+        let demo_authors: Vec<(&str, ed25519_dalek::SigningKey)> = DEMO_AUTHOR_POOL
+            .iter()
+            .take(n_authors)
+            .map(|&name| (name, ed25519_dalek::SigningKey::generate(&mut rng)))
+            .collect();
+
+        let region_bounds: Vec<(usize, usize)> = (0..n_authors)
+            .map(|i| (total * i / n_authors, total * (i + 1) / n_authors))
+            .collect();
 
         let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> =
             Vec::with_capacity(total);
 
         let mut span_provenances: Vec<crate::edition::SpanProvenance> = Vec::new();
-
-        let region_bounds = [(0usize, r1_end), (r1_end, r2_end), (r2_end, total)];
 
         for (region_idx, &(start, end)) in region_bounds.iter().enumerate() {
             let (display_name, signing_key) = &demo_authors[region_idx];
