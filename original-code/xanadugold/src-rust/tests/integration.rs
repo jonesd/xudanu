@@ -11870,6 +11870,29 @@ fn seed_demo_attribution_five_authors() {
         spans.iter().all(|s| s.signature_valid),
         "all seeded span signatures must verify against the stored edition"
     );
+
+    // Regions must tile the document contiguously, start at 0, reach
+    // the end, and vary in length (irregular weights — equal splits
+    // read as synthetic).
+    let mut sorted = spans.clone();
+    sorted.sort_by_key(|s| s.start);
+    assert_eq!(sorted[0].start, 0, "first region starts at the beginning");
+    for w in sorted.windows(2) {
+        assert_eq!(w[0].end, w[1].start, "regions must be contiguous");
+    }
+    let text_len = text.chars().count() as i64;
+    assert_eq!(
+        sorted.last().unwrap().end,
+        text_len,
+        "last region reaches the end of the text"
+    );
+    let lengths: Vec<i64> = sorted.iter().map(|s| s.end - s.start).collect();
+    let all_equal = lengths.windows(2).all(|w| w[0] == w[1]);
+    assert!(
+        !all_equal,
+        "region lengths should vary per author, got {:?}",
+        lengths
+    );
 }
 
 #[test]

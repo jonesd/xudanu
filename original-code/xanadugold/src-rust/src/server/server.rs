@@ -3262,9 +3262,25 @@ impl Server {
             .map(|&name| (name, ed25519_dalek::SigningKey::generate(&mut rng)))
             .collect();
 
-        let region_bounds: Vec<(usize, usize)> = (0..n_authors)
-            .map(|i| (total * i / n_authors, total * (i + 1) / n_authors))
-            .collect();
+        // Irregular region weights so demo attribution looks like real
+        // writing (varying contribution per author) instead of equal
+        // mechanical splits. Each author gets at least one entry.
+        const DEMO_WEIGHTS: [usize; 8] = [5, 2, 7, 3, 6, 4, 8, 3];
+        let weight_sum: usize = DEMO_WEIGHTS[..n_authors].iter().sum();
+        let mut region_bounds: Vec<(usize, usize)> = Vec::with_capacity(n_authors);
+        let mut prev_bound = 0usize;
+        for i in 0..n_authors {
+            let prefix: usize = DEMO_WEIGHTS[..=i].iter().sum();
+            let start = prev_bound;
+            let end = if i + 1 == n_authors {
+                total
+            } else {
+                (total * prefix / weight_sum).max(start + 1)
+            };
+            let end = end.min(total).max(start + 1).min(total);
+            region_bounds.push((start, end));
+            prev_bound = end;
+        }
 
         let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> =
             Vec::with_capacity(total);
