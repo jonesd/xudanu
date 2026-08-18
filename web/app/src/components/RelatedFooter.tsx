@@ -98,7 +98,7 @@ export function RelatedFooter({
           reason: "Web Link",
           excerpt: url.slice(0, 120),
           workId: null,
-          remoteUrl: url.startsWith("http") ? url : null,
+          remoteUrl: /^https?:\/\//i.test(url) ? url : null,
         });
         continue;
       }

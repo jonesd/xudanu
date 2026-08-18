@@ -195,8 +195,11 @@ export function ConnectionsSection({
             borderLeft: `3px solid ${borderColor}`,
           }}
           onClick={() => {
-            if (item.linkTypeId === 6 && item.title) {
-              window.open(item.title, "_blank", "noopener,noreferrer");
+            // Web links open externally — but only well-formed http(s)
+            // URLs. A malformed excerpt must never reach window.open
+            // (no javascript:, no relative paths hijacking the tab).
+            if (item.linkTypeId === 6 && item.title && /^https?:\/\//i.test(item.title.trim())) {
+              window.open(item.title.trim(), "_blank", "noopener,noreferrer");
             } else {
               onNavigateToWork(item.workId);
             }
