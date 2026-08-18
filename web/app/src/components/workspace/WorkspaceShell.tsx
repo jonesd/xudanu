@@ -205,8 +205,12 @@ export function WorkspaceShell() {
   const [provenanceLoading, setProvenanceLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeLinkTypes, setActiveLinkTypes] = useState<Set<number>>(new Set());
+  // Provenance underlines are ON by default: the light floating
+  // underline is subtle enough for reading, and authorship visibility
+  // is the signature capability. localStorage still overrides for
+  // users who prefer clean text.
   const [showProv, setShowProv] = useState(() => {
-    try { return localStorage.getItem("xudanu_showProv") === "true"; } catch { return false; }
+    try { return localStorage.getItem("xudanu_showProv") !== "false"; } catch { return true; }
   });
   const [showLinkDesc, setShowLinkDesc] = useState(() => {
     try { return localStorage.getItem("xudanu_showLinkDesc") !== "false"; }
@@ -3438,7 +3442,7 @@ export function WorkspaceShell() {
         <aside className={`ws-right-panel ${rightPanelHidden ? "hidden" : ""}`}>
           <div className="ws-tabs">
             {([
-              ["provenance", "Prov"],
+              ["provenance", "Attribution"],
               ["connections", "Links"],
               ["trails", "Trails"],
               ["timeline", "History"],
