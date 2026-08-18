@@ -180,6 +180,7 @@ pub enum OperationCode {
     WorkSponsors,
     WorkStar,
     WorkSetSource,
+    WebFetchSanitize,
     WorkUnstar,
     WorkIsStarred,
     ConnectionPinSet,
@@ -538,6 +539,7 @@ impl OperationCode {
             0x0316 => Some(OperationCode::WorkReviseDelta),
             0x0335 => Some(OperationCode::WorkStar),
             0x0351 => Some(OperationCode::WorkSetSource),
+            0x0352 => Some(OperationCode::WebFetchSanitize),
             0x0336 => Some(OperationCode::WorkUnstar),
             0x0337 => Some(OperationCode::WorkIsStarred),
             0x0338 => Some(OperationCode::WorkGraph),
@@ -852,6 +854,7 @@ impl OperationCode {
             OperationCode::WorkSponsors => 0x0312,
             OperationCode::WorkStar => 0x0335,
             OperationCode::WorkSetSource => 0x0351,
+            OperationCode::WebFetchSanitize => 0x0352,
             OperationCode::WorkUnstar => 0x0336,
             OperationCode::WorkIsStarred => 0x0337,
             OperationCode::WorkGraph => 0x0338,
@@ -1279,6 +1282,27 @@ pub enum WireRequest {
     WorkSetSource {
         work_id: BeId,
         is_source: bool,
+    },
+    /// Fetch a web page server-side, sanitize it with ammonia, and
+    /// return clean text (+ sanitized excerpt). Optionally import as a
+    /// frozen source work so the quotation keeps its provenance.
+    WebFetchSanitize {
+        url: String,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        max_chars: Option<u64>,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        import_as_source: Option<bool>,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        title: Option<String>,
     },
     WorkUnstar {
         work_id: BeId,
@@ -2839,6 +2863,8 @@ pub enum ResponseValue {
         text_length: u64,
     },
 
+    WebFetchSanitizeResult(WebFetchSanitizePayload),
+
     SourceDetectResult {
         source_type: String,
         detected: bool,
@@ -4217,6 +4243,22 @@ pub struct ServerInfoPayload {
     pub public_club_id: BeId,
     pub llm_enabled: bool,
     pub llm_usage: crate::server::ollama::LlmUsageSummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebFetchSanitizePayload {
+    /// Ammonia-cleaned HTML fragment (whitelisted tags only).
+    pub sanitized_html: String,
+    /// Plain-text extraction (readability-lite).
+    pub text: String,
+    pub final_url: String,
+    pub content_type: String,
+    /// Set when import_as_source created a frozen work.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub imported_work_id: Option<BeId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

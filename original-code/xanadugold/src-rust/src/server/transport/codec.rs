@@ -3066,6 +3066,26 @@ impl JsonCodec {
                     is_source: args.is_source,
                 })
             }
+            OperationCode::WebFetchSanitize => {
+                #[derive(Deserialize)]
+                struct Args {
+                    url: String,
+                    #[serde(default)]
+                    max_chars: Option<u64>,
+                    #[serde(default)]
+                    import_as_source: Option<bool>,
+                    #[serde(default)]
+                    title: Option<String>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WebFetchSanitize {
+                    url: args.url,
+                    max_chars: args.max_chars,
+                    import_as_source: args.import_as_source,
+                    title: args.title,
+                })
+            }
             OperationCode::WorkUnstar => {
                 #[derive(Deserialize)]
                 struct Args {

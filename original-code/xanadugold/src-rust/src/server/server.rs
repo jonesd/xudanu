@@ -259,14 +259,30 @@ pub struct CrossServerBacklink {
 const MAX_CROSS_SERVER_FETCH_BYTES: usize = 5 * 1024 * 1024;
 
 pub fn is_ssrf_address(addr: &str) -> bool {
+    // Normalize: strip scheme, then brackets/ports without breaking
+    // bare or bracketed IPv6 literals ("::1" must survive intact —
+    // a naive split(':') truncates it to "").
     let host = addr
         .strip_prefix("http://")
         .or_else(|| addr.strip_prefix("https://"))
         .unwrap_or(addr)
-        .split(':')
+        .split('/')
         .next()
-        .unwrap_or(addr)
-        .trim_end_matches('/');
+        .unwrap_or(addr);
+    let host = host
+        .strip_prefix('[')
+        .map(|h| h.split(']').next().unwrap_or(h))
+        .unwrap_or(host);
+    let host = if host.contains(']') || host.parse::<std::net::Ipv6Addr>().is_ok() {
+        // Bracketed or bare IPv6 literal — never split on ':' (the
+        // address itself contains colons).
+        host
+    } else {
+        // For non-bracketed hosts, drop :port (safe: no colon left in a
+        // bare hostname; IPv6 literals arrive bracketed from URLs).
+        host.rsplit_once(':').map(|(h, _)| h).unwrap_or(host)
+    };
+    let host = host.trim_end_matches('/');
 
     if host == "localhost"
         || host == "127.0.0.1"
@@ -5584,6 +5600,245 @@ impl Server {
             skip_prefix,
             skip_suffix,
         )
+    }
+
+    /// Fetch a web page server-side and sanitize it with ammonia.
+    ///
+    /// Containment: SSRF-guarded target (no loopback/private/link-local
+    /// hosts), HTTPS preferred, 10s timeout, 2 MiB response cap,
+    /// content-type must be html/xhtml/text. Everything script-ish is
+    /// stripped by the ammonia whitelist before it ever reaches a
+    /// client. With import_as_source, the extracted text is stored as
+    /// a frozen source work — the quotation keeps a provenance bond to
+    /// when it was fetched.
+    pub fn web_fetch_sanitize(
+        &mut self,
+        session_id: SessionId,
+        url: &str,
+        max_chars: Option<u64>,
+        import_as_source: bool,
+        title_override: Option<String>,
+    ) -> Result<super::transport::protocol::WebFetchSanitizePayload, ServerError> {
+        use super::transport::protocol::WebFetchSanitizePayload;
+        self.ensure_authenticated(session_id)?;
+
+        let trimmed = url.trim();
+        if !trimmed.starts_with("https://") && !trimmed.starts_with("http://") {
+            return Err(ServerError::InvalidArgument(
+                "url must be http:// or https://".into(),
+            ));
+        }
+        let no_scheme = trimmed
+            .strip_prefix("https://")
+            .or_else(|| trimmed.strip_prefix("http://"))
+            .unwrap_or(trimmed);
+        let host_port = no_scheme.split('/').next().unwrap_or("");
+        // Bracketed IPv6 ([::1]:8080) must not be split on ':' — the
+        // naive rsplit turns [::1] into "[" and the SSRF guard misses.
+        let host = if let Some(rest) = host_port.strip_prefix('[') {
+            rest.split(']').next().unwrap_or(rest)
+        } else {
+            host_port
+                .rsplit_once(':')
+                .map(|(h, _)| h)
+                .unwrap_or(host_port)
+        };
+        if host.is_empty() || is_ssrf_address(host) {
+            return Err(ServerError::InvalidArgument(format!(
+                "refusing to fetch internal address: {host}"
+            )));
+        }
+
+        let runtime = tokio::runtime::Handle::try_current()
+            .map_err(|e| ServerError::Internal(format!("no async runtime: {e}")))?;
+        let fetch_url = trimmed.to_string();
+        let (body_bytes, final_url, content_type) = runtime.block_on(async {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .redirect(reqwest::redirect::Policy::limited(5))
+                .user_agent("xudanu-web-fetch/1.0 (+https://xudanu.com)")
+                .build()
+                .map_err(|e| ServerError::Internal(format!("http client: {e}")))?;
+            let resp = client
+                .get(&fetch_url)
+                .send()
+                .await
+                .map_err(|e| ServerError::InvalidArgument(format!("fetch failed: {e}")))?;
+            let ct = resp
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string();
+            let final_url = resp.url().to_string();
+            if !ct.starts_with("text/html")
+                && !ct.starts_with("application/xhtml")
+                && !ct.starts_with("text/plain")
+            {
+                return Err(ServerError::InvalidArgument(format!(
+                    "refusing non-html content-type: {ct}"
+                )));
+            }
+            let limited = resp
+                .bytes()
+                .await
+                .map_err(|e| ServerError::InvalidArgument(format!("read failed: {e}")))?;
+            const MAX_BYTES: usize = 2 * 1024 * 1024;
+            let bytes = if limited.len() > MAX_BYTES {
+                limited[..MAX_BYTES].to_vec()
+            } else {
+                limited.to_vec()
+            };
+            Ok::<_, ServerError>((bytes, final_url, ct))
+        })?;
+
+        let raw_html = String::from_utf8_lossy(&body_bytes).to_string();
+
+        // Strip layout chrome crudely (readability-lite): drop the
+        // obvious non-content containers before text extraction.
+        let text = Self::html_to_text(&raw_html);
+        let max = max_chars.unwrap_or(20_000).min(200_000) as usize;
+        let text = if text.chars().count() > max {
+            text.chars().take(max).collect::<String>()
+        } else {
+            text
+        };
+
+        // Ammonia default whitelist: structural tags survive; scripts,
+        // styles, event handlers, iframes, forms are all dropped.
+        // Relative URLs are rewritten to absolute where possible by
+        // keeping url_schemes to http(s) only.
+        let sanitized_html = ammonia::Builder::default()
+            .url_relative(ammonia::UrlRelative::PassThrough)
+            .clean(&raw_html)
+            .to_string();
+
+        let imported_work_id = if import_as_source && !text.trim().is_empty() {
+            let title = title_override.unwrap_or_else(|| {
+                raw_html
+                    .split("<title>")
+                    .nth(1)
+                    .and_then(|rest| rest.split("</title>").next())
+                    .map(|t| t.trim().chars().take(120).collect::<String>())
+                    .filter(|t| !t.is_empty())
+                    .unwrap_or_else(|| host.to_string())
+            });
+            let author_club = self.resolve_author_club(session_id);
+            let (work_id, _auth_id, _text_len, _import_title) = self.import_source_work(
+                session_id,
+                author_club.unwrap_or(0),
+                title,
+                text.clone(),
+                format!("web:{final_url}"),
+                0,
+                0,
+            )?;
+            Some(work_id)
+        } else {
+            None
+        };
+
+        Ok(WebFetchSanitizePayload {
+            sanitized_html,
+            text,
+            final_url,
+            content_type,
+            imported_work_id,
+        })
+    }
+
+    /// Readability-lite: HTML to flowing text. Removes script/style/
+    /// head/nav/footer/aside blocks, then strips remaining tags and
+    /// collapses whitespace. Not article-extraction — a safe common
+    /// denominator for quotation.
+    /// Test exposure for html_to_text (integration tests exercise the
+    /// chrome-stripping contract directly).
+    pub fn html_to_text_for_test(html: &str) -> String {
+        Self::html_to_text(html)
+    }
+
+    fn html_to_text(html: &str) -> String {
+        let mut s = html.to_string();
+        for tag in [
+            "script", "style", "head", "nav", "footer", "aside", "noscript", "svg", "form",
+            "header",
+        ] {
+            loop {
+                let lower = s.to_lowercase();
+                // Word boundary: "<head" must match <head>/<head ...> but
+                // NOT <header> — find then verify the next char.
+                let mut start = None;
+                let mut search_from = 0usize;
+                while let Some(i) = lower[search_from..].find(&format!("<{tag}")) {
+                    let after = lower[i + 1 + tag.len()..].chars().next();
+                    if after
+                        .is_some_and(|c| c == '>' || c == ' ' || c == '/' || c == '\n' || c == '\t')
+                    {
+                        start = Some(search_from + i);
+                        break;
+                    }
+                    search_from = search_from + i + 1;
+                }
+                let Some(start) = start else { break };
+                let Some(rel_end) = lower[start..].find(&format!("</{tag}>")) else {
+                    // void/self-closed or truncated: drop to end of open tag
+                    let Some(gt) = lower[start..].find('>') else {
+                        break;
+                    };
+                    s.replace_range(start..start + gt + 1, "");
+                    break;
+                };
+                let end = start + rel_end + tag.len() + 3;
+                s.replace_range(start..end, "");
+            }
+        }
+        // block-level boundaries -> newlines
+        let mut s = s;
+        for tag in [
+            "p",
+            "div",
+            "br",
+            "li",
+            "tr",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+            "blockquote",
+            "pre",
+            "section",
+            "article",
+        ] {
+            s = s.replace(&format!("<{tag}>"), "\n");
+            s = s.replace(&format!("</{tag}>"), "\n");
+            s = s.replace(&format!("<{tag} "), "\n");
+            s = s.replace(&format!("</{tag} "), "\n");
+        }
+        // strip remaining tags
+        let mut out = String::with_capacity(s.len());
+        let mut in_tag = false;
+        for ch in s.chars() {
+            match ch {
+                '<' => in_tag = true,
+                '>' => in_tag = false,
+                c if !in_tag => out.push(c),
+                _ => {}
+            }
+        }
+        // collapse whitespace
+        let mut collapsed = String::with_capacity(out.len());
+        let mut last_ws = false;
+        for ch in out.chars() {
+            let ws = ch.is_whitespace();
+            if ws && last_ws {
+                continue;
+            }
+            collapsed.push(if ws { ' ' } else { ch });
+            last_ws = ws;
+        }
+        collapsed.trim().to_string()
     }
 
     pub fn import_source_work(

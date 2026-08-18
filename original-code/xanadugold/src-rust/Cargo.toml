@@ -77,6 +77,7 @@ cli-epub-to-text = { version = "0.1", optional = true }
 image = { version = "0.25", optional = true, features = ["webp", "png", "jpeg", "gif", "bmp"] }
 oxipng = { version = "9", optional = true, default-features = false }
 libheif-rs = { version = "2", optional = true, features = ["image"] }
+ammonia = "4.1.4"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

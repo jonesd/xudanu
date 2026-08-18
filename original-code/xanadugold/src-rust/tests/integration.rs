@@ -11864,6 +11864,78 @@ fn work_set_source_freezes_content_but_allows_links() {
 }
 
 #[test]
+fn web_fetch_sanitize_rejects_internal_addresses() {
+    // SSRF guard: loopback/private targets must never be fetched.
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+    for url in [
+        "http://127.0.0.1:8080/x",
+        "http://localhost/admin",
+        "http://192.168.1.1/router",
+        "http://[::1]/v6",
+    ] {
+        let err = srv
+            .web_fetch_sanitize(sid, url, None, false, None)
+            .unwrap_err();
+        assert!(
+            matches!(err, xudanu::server::ServerError::InvalidArgument(_)),
+            "{url} must be refused, got {:?}",
+            err
+        );
+    }
+    // Non-http schemes refused outright
+    let err = srv
+        .web_fetch_sanitize(sid, "javascript:alert(1)", None, false, None)
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        xudanu::server::ServerError::InvalidArgument(_)
+    ));
+}
+
+#[test]
+fn web_fetch_sanitize_requires_authentication() {
+    let mut srv = xudanu::server::Server::new();
+    let sid = srv.connect(); // connected but not authenticated
+    let err = srv
+        .web_fetch_sanitize(sid, "https://example.com/", None, false, None)
+        .unwrap_err();
+    assert!(matches!(err, xudanu::server::ServerError::NotAuthorized));
+}
+
+#[test]
+fn html_to_text_strips_chrome_and_scripts() {
+    let html = r#"<html><head><title>T</title><style>.x{}</style><script>alert(1)</script></head>
+        <body><nav>menu menu</nav><header>site header</header>
+        <main><p>First paragraph.</p><p>Second <b>bold</b> paragraph.</p></main>
+        <footer>foot</footer><aside>ad</aside></body></html>"#;
+    let text = xudanu::server::server::Server::html_to_text_for_test(html);
+    assert!(text.contains("First paragraph."), "got: {text}");
+    assert!(text.contains("Second bold paragraph."), "got: {text}");
+    for absent in ["alert", "menu", "site header", "foot", "ad", "<", ">"] {
+        assert!(!text.contains(absent), "{absent} leaked into: {text}");
+    }
+}
+
+#[test]
+fn ammonia_output_drops_active_content() {
+    // The sanitizer itself: scripts, event handlers, and javascript:
+    // URLs never survive the ammonia whitelist.
+    let dirty = r#"<p onclick="evil()">hi</p><script>evil()</script>
+        <a href="javascript:evil()">x</a><iframe src="https://evil"></iframe>
+        <img src="https://ok/img.png" onerror="evil()">"#;
+    let clean = ammonia::Builder::default()
+        .url_relative(ammonia::UrlRelative::PassThrough)
+        .clean(dirty)
+        .to_string();
+    for absent in ["onclick", "onerror", "javascript:", "<script", "<iframe"] {
+        assert!(!clean.contains(absent), "{absent} survived: {clean}");
+    }
+    assert!(clean.contains("hi"));
+    assert!(clean.contains("https://ok/img.png"));
+}
+
+#[test]
 fn seed_demo_attribution_five_authors() {
     // N-author demo seeding: 5 distinct authors must produce 5
     // attribution spans, each covering a distinct region, with

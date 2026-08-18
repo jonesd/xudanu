@@ -847,6 +847,21 @@ fn dispatch_inner(
             srv.work_set_source(session_id, work_id, is_source)?;
             Ok(ResponseValue::Void)
         }
+        WireRequest::WebFetchSanitize {
+            url,
+            max_chars,
+            import_as_source,
+            title,
+        } => {
+            let result = srv.web_fetch_sanitize(
+                session_id,
+                &url,
+                max_chars,
+                import_as_source.unwrap_or(false),
+                title,
+            )?;
+            Ok(ResponseValue::WebFetchSanitizeResult(result))
+        }
         WireRequest::WorkSetTitle { work_id, title } => {
             srv.ensure_can_edit(session_id, work_id)?;
             srv.set_work_title(work_id, title);
