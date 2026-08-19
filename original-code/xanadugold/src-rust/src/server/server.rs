@@ -15147,13 +15147,17 @@ impl Server {
         let owner = ws.work.owner();
         match owner {
             Some(owner_id) => {
-                // Every anonymous session holds public-club authority,
-                // so a public-owned work would be "owned" by everyone.
-                // Under OwnerOnly only the admin may act as its owner
-                // (e.g. to re-permission legacy sandbox content).
+                // Break-glass: admin may act as owner of ANY work (not
+                // just public-owned ones) — orphaned works with dead or
+                // credential-less owner identities are exactly the
+                // operator case. Every other anonymous session holds
+                // public-club authority, so public-owned works would
+                // otherwise be "owned" by everyone.
+                if self.ensure_admin(session_id).is_ok() {
+                    return Ok(());
+                }
                 if self.edit_policy == EditPolicy::OwnerOnly
                     && owner_id == self.system_clubs.public_club
-                    && self.ensure_admin(session_id).is_err()
                 {
                     return Err(ServerError::NotOwner(work_be_id));
                 }
