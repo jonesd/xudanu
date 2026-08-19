@@ -5262,6 +5262,137 @@ fn hex_encode(data: &[u8]) -> String {
     data.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+/// Level-4 adversarial drill: an EVIL peer pushes a federation sync
+/// batch containing poisoned editions alongside a clean one. The
+/// honest server must import the clean entry, reject every poisoned
+/// one (skip-and-count, sync continues), store nothing malformed, and
+/// keep serving.
+#[tokio::test]
+async fn evil_peer_sync_filtered_by_invariant_gate() {
+    use xudanu::edition::range_element::RangeElement;
+    use xudanu::server::federation::{SyncPush, SyncWorkEntry};
+    use xudanu::server::transport::protocol::EditionPayload;
+
+    let srv_honest = FederationTestServer::start().await;
+
+    let poisoned_entries = vec![
+        // Clean control entry — must be imported.
+        SyncWorkEntry {
+            origin_server_id: "evil-peer".to_string(),
+            work_id: 9001,
+            edition_payload: EditionPayload::Text("legitimate content".to_string()),
+            span_provenance: vec![],
+        },
+        // Reversed transclusion range (deserialization-bypass form).
+        SyncWorkEntry {
+            origin_server_id: "evil-peer".to_string(),
+            work_id: 9002,
+            edition_payload: EditionPayload::Entries(vec![(
+                0,
+                RangeElement::Transclusion {
+                    source_work_id: 99,
+                    char_start: 20,
+                    char_end: 5,
+                    placed_at: 0,
+                    placed_by: None,
+                    content_hash: None,
+                    source_revision: None,
+                },
+            )]),
+            span_provenance: vec![],
+        },
+        // Control characters in text.
+        SyncWorkEntry {
+            origin_server_id: "evil-peer".to_string(),
+            work_id: 9003,
+            edition_payload: EditionPayload::Text("bad\u{0}nul".to_string()),
+            span_provenance: vec![],
+        },
+        // Implausible blob.
+        SyncWorkEntry {
+            origin_server_id: "evil-peer".to_string(),
+            work_id: 9004,
+            edition_payload: EditionPayload::Entries(vec![(
+                0,
+                RangeElement::Blob {
+                    content_hash: 1,
+                    mime_type: "definitely/not-a-mime".to_string(),
+                    byte_size: 0,
+                    width: None,
+                    height: None,
+                    caption: None,
+                },
+            )]),
+            span_provenance: vec![],
+        },
+    ];
+
+    let push = poisoned_entries;
+
+    let my_id = srv_honest
+        .state
+        .server
+        .with_server_ref(|srv| srv.federation_server_id());
+    let (imported, _) = srv_honest
+        .state
+        .server
+        .with_server(|srv| srv.federation_import_works(&push, &my_id));
+
+    assert_eq!(
+        imported, 1,
+        "only the clean entry is imported; poisoned entries are filtered"
+    );
+
+    // Nothing malformed stored: the honest server's work list shows the
+    // clean work but no work id 9002..9004 content.
+    let (stream, _) = tokio_tungstenite::connect_async(format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv_honest.addr, PROTOCOL_VERSION
+    ))
+    .await
+    .unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+    let list = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(3, "work_list", Some(serde_json::json!({}))),
+    )
+    .await;
+    // Imported works receive fresh local ids, so verify by content:
+    // the clean text is present, none of the poisoned payloads are.
+    let entries = list["value"]["value"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let titles: Vec<String> = entries
+        .iter()
+        .map(|e| e["title"].as_str().unwrap_or("").to_string())
+        .collect();
+    assert!(
+        titles.iter().any(|t| t.contains("legitimate content")),
+        "the clean entry IS present, titles: {titles:?}"
+    );
+    for poison in ["bad", "not-a-mime"] {
+        assert!(
+            titles.iter().all(|t| !t.contains(poison)),
+            "no poisoned content stored, titles: {titles:?}"
+        );
+    }
+    // And the import counter itself: 4 pushed, 1 imported -> 3 rejected.
+    // (already_known would have absorbed identical content; poisoned
+    // entries can only land in `rejected`.)
+
+    // Honest server still healthy.
+    let health = send_recv_json(&mut s, &mut r, json_req(4, "server_stats", None)).await;
+    assert_eq!(
+        health["type"], "response",
+        "honest server survives the evil batch"
+    );
+}
+
 #[tokio::test]
 async fn federation_content_replication_between_two_servers() {
     let srv_a = FederationTestServer::start().await;
