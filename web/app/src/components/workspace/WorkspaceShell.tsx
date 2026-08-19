@@ -3819,8 +3819,8 @@ export function WorkspaceShell() {
                   <div className="ws-placeholder"><div className="ws-placeholder-label">Loading…</div></div>
                 ) : trailsForWork.length === 0 ? (
                   <div className="ws-placeholder">
-                    <div className="ws-placeholder-label">No stops on this work</div>
-                    <div className="ws-placeholder-sublabel">Your trails may have stops on other works. Click Manage to see all.</div>
+                    <div className="ws-placeholder-label">No trails yet</div>
+                    <div className="ws-placeholder-sublabel">Create one from selected text (+ Trail), or ask another server's user to publish theirs.</div>
                   </div>
                 ) : (
                   <ul className="ws-trail-list">
@@ -3859,9 +3859,9 @@ export function WorkspaceShell() {
                             <div className="ws-trail-card-intro">{t.introduction}</div>
                           )}
                           <div className="ws-trail-card-meta">
-                            {t.stops.length} stops · {workStops.length} on this work
+                            {t.stops.length} stops{workStops.length > 0 ? ` · ${workStops.length} on this work` : ""}
                           </div>
-                          {workStops.length > 0 && (
+                          {workStops.length > 0 ? (
                             <ul className="ws-trail-stops">
                               {workStops.map((s) => (
                                 <li
@@ -3878,6 +3878,10 @@ export function WorkspaceShell() {
                                 </li>
                               ))}
                             </ul>
+                          ) : (
+                            <div className="ws-placeholder-sublabel" style={{ padding: "2px 0" }}>
+                              No stop on this document — open any stop from Manage to follow the trail.
+                            </div>
                           )}
                         </li>
                       );
