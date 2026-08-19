@@ -1054,6 +1054,18 @@ export function CollaborativeEditor({
   const hasInlineTransclusions = !!inlineResolvedText && compoundSpanRanges.length > 0;
   const hasInlineBlobs = blobEntries.length > 0;
 
+  // New document => start at the top. Without this, scroll position
+  // leaks between documents (trail Next stops mid-scroll, library
+  // jumps land wherever the previous doc was). Trail stops and manual
+  // navigation both mean "arrival", never "resumption".
+  const lastDocRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (workId == null || workId === lastDocRef.current) return;
+    lastDocRef.current = workId;
+    const container = editorRef.current?.parentElement;
+    if (container) container.scrollTop = 0;
+  }, [workId]);
+
   useEffect(() => {
     const el = editorRef.current;
     if (!el || hasInlineTransclusions || !displayText) return;
