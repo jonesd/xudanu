@@ -2,6 +2,7 @@ use super::protocol::*;
 use super::shared::SharedState;
 use crate::edition::{BeId, Edition};
 use crate::server::Server;
+use crate::server::ServerError;
 use std::collections::HashMap;
 
 const LLM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
@@ -665,7 +666,9 @@ fn dispatch_inner(
 
         WireRequest::WorkCreate { edition } => {
             srv.ensure_authenticated(session_id)?;
-            let ed = edition.to_edition();
+            let ed = edition
+                .to_edition_checked(0)
+                .map_err(ServerError::InvalidArgument)?;
             let id = srv.create_work(session_id, ed)?;
             Ok(ResponseValue::Id(id))
         }
@@ -679,7 +682,9 @@ fn dispatch_inner(
         }
         WireRequest::WorkRevise { work_id, edition } => {
             srv.ensure_authenticated(session_id)?;
-            let ed = edition.to_edition();
+            let ed = edition
+                .to_edition_checked(work_id)
+                .map_err(ServerError::InvalidArgument)?;
             let rev = srv.work_revise(session_id, work_id, ed)?;
             // FR-37 Phase 2: a full-edition revise changes source
             // content exactly like a delta — dependents' caches must be
@@ -791,7 +796,9 @@ fn dispatch_inner(
         }
         WireRequest::WorkSaveAndRelease { work_id, edition } => {
             srv.ensure_authenticated(session_id)?;
-            let ed = edition.to_edition();
+            let ed = edition
+                .to_edition_checked(work_id)
+                .map_err(ServerError::InvalidArgument)?;
             srv.work_save_and_release(session_id, work_id, ed)?;
             Ok(ResponseValue::Void)
         }
@@ -1396,7 +1403,9 @@ fn dispatch_inner(
 
         WireRequest::EditionStore { edition } => {
             srv.ensure_authenticated(session_id)?;
-            let ed = edition.to_edition();
+            let ed = edition
+                .to_edition_checked(0)
+                .map_err(ServerError::InvalidArgument)?;
             let id = srv.store_edition(session_id, ed)?;
             Ok(ResponseValue::Id(id))
         }
@@ -2189,7 +2198,9 @@ fn dispatch_inner(
             new_edition,
         } => {
             srv.ensure_authenticated(session_id)?;
-            let ed = new_edition.to_edition();
+            let ed = new_edition
+                .to_edition_checked(work_id)
+                .map_err(ServerError::InvalidArgument)?;
             let updated = srv.edition_rebind(session_id, work_id, position, ed)?;
             Ok(ResponseValue::Edition(EditionPayload::from_edition(
                 &updated,

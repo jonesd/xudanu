@@ -371,10 +371,33 @@ async fn public_identity_handler(
     });
     match result {
         Some(identity) => {
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
             let body = serde_json::json!({
                 "api_version": 1,
                 "implementation": "xudanu",
                 "identity": identity,
+                "signed": {
+                    "timestamp": timestamp,
+                },
+            });
+            // Sign the canonical body (without the signature field) so
+            // peers on plain-HTTP links can verify authenticity against
+            // the server key registered in their directory.
+            let payload = body.to_string();
+            let signature = state
+                .server
+                .with_server_ref(|srv| srv.sign_server_payload(payload.as_bytes()));
+            let signed_body = serde_json::json!({
+                "api_version": 1,
+                "implementation": "xudanu",
+                "identity": identity,
+                "signed": {
+                    "timestamp": timestamp,
+                    "sig": signature.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+                },
             });
             (
                 [
@@ -384,7 +407,7 @@ async fn public_identity_handler(
                     ),
                     (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
                 ],
-                body.to_string(),
+                signed_body.to_string(),
             )
                 .into_response()
         }

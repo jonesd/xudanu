@@ -1711,6 +1711,12 @@ impl Server {
         &self.server_directory
     }
 
+    pub fn server_directory_mut(
+        &mut self,
+    ) -> &mut crate::server::server_directory::ServerDirectory {
+        &mut self.server_directory
+    }
+
     pub fn receive_cross_server_backlink(&mut self, entry: CrossServerBacklink) {
         let exists = self.cross_server_backlinks.iter().any(|b| {
             b.target_work_id == entry.target_work_id
@@ -2830,19 +2836,123 @@ impl Server {
         let body: serde_json::Value = serde_json::from_str(&response_text)
             .map_err(|e| ServerError::Internal(format!("Invalid JSON: {}", e)))?;
 
-        let name = body["display_name"]
+        // The signed envelope puts identity fields under "identity" and
+        // carries an Ed25519 signature over the canonical body. Older
+        // peers serve the flat unsigned shape; accept it ONLY when the
+        // directory entry carries no verifying key to check against.
+        let (id_obj, signed) = if let Some(id) = body.get("identity") {
+            (id.clone(), body.get("signed").cloned())
+        } else {
+            (body.clone(), None)
+        };
+
+        // C2: verify the response signature against the server key
+        // registered in OUR directory — plain-HTTP tampering yields an
+        // unverifiable payload, which is rejected before any field is
+        // trusted.
+        if let Some(sig_obj) = &signed {
+            // Freshness: the signed timestamp bounds replay — a
+            // captured response is worthless after the window (clock
+            // skew tolerated). Missing/absurd timestamps reject.
+            const MAX_SKEW_SECS: u64 = 300;
+            const MAX_AGE_SECS: u64 = 600;
+            let ts = sig_obj["timestamp"].as_u64().ok_or_else(|| {
+                ServerError::InvalidArgument("identity response: signed timestamp missing".into())
+            })?;
+            let now = Self::current_timestamp_secs();
+            if now.abs_diff(ts) > MAX_SKEW_SECS.max(MAX_AGE_SECS) {
+                return Err(ServerError::InvalidArgument(
+                    "identity response timestamp outside freshness window".into(),
+                ));
+            }
+            let sig_hex = sig_obj["sig"].as_str().unwrap_or("");
+            let sig_bytes = hex::decode(sig_hex).map_err(|_| {
+                ServerError::InvalidArgument("identity response: bad signature encoding".into())
+            })?;
+            if sig_bytes.len() != 64 {
+                return Err(ServerError::InvalidArgument(
+                    "identity response: signature must be 64 bytes".into(),
+                ));
+            }
+            // Reconstruct the exact signed payload (body without sig).
+            let signed_payload = serde_json::json!({
+                "api_version": 1,
+                "implementation": "xudanu",
+                "identity": id_obj,
+                "signed": { "timestamp": sig_obj["timestamp"] },
+            });
+            let mut signature = [0u8; 64];
+            signature.copy_from_slice(&sig_bytes);
+            let entry_key = hex::decode(&entry.verifying_key).unwrap_or_default();
+            if entry_key.len() != 32 {
+                return Err(ServerError::InvalidArgument(format!(
+                    "directory entry for server {} has malformed verifying key",
+                    entry.name
+                )));
+            }
+            let mut vk_bytes = [0u8; 32];
+            vk_bytes.copy_from_slice(&entry_key);
+            let vk = ed25519_dalek::VerifyingKey::from_bytes(&vk_bytes)
+                .map_err(|_| ServerError::InvalidArgument("directory key invalid".into()))?;
+            let sig = ed25519_dalek::Signature::from_bytes(&signature);
+            if crate::crypto::sign::verify_signature(
+                &vk,
+                signed_payload.to_string().as_bytes(),
+                &sig,
+            )
+            .is_err()
+            {
+                tracing::warn!(
+                    server = %entry.name,
+                    event = "SECURITY:identity_sig_rejected",
+                    "remote identity signature verification FAILED"
+                );
+                return Err(ServerError::InvalidArgument(
+                    "identity response signature verification failed".into(),
+                ));
+            }
+        } else if hex::decode(&entry.verifying_key)
+            .map(|k| k.len() == 32)
+            .unwrap_or(false)
+        {
+            // Peer has a registered key but did not sign: distrust.
+            return Err(ServerError::InvalidArgument(format!(
+                "server {} serves unsigned identity responses but has a registered key",
+                entry.name
+            )));
+        }
+
+        let name = id_obj["display_name"]
             .as_str()
-            .or_else(|| body["name"].as_str())
+            .or_else(|| id_obj["name"].as_str())
             .unwrap_or(club_name)
-            .to_string();
-        let verifying_key = body["verifying_key"]
+            .chars()
+            .take(120)
+            .collect::<String>();
+        let verifying_key_raw = id_obj["verifying_key"]
             .as_str()
-            .ok_or_else(|| ServerError::Internal("identity missing verifying_key".into()))?
-            .to_string();
-        let club_id = body["club_id"]
+            .ok_or_else(|| ServerError::Internal("identity missing verifying_key".into()))?;
+        // C1: a peer-served key must decode as 32 bytes of hex —
+        // arbitrary strings must never enter the attestation table.
+        if verifying_key_raw.len() != 64 || hex::decode(verifying_key_raw).is_err() {
+            return Err(ServerError::InvalidArgument(format!(
+                "malformed verifying_key from {} (len {})",
+                entry.name,
+                verifying_key_raw.len()
+            )));
+        }
+        let verifying_key = verifying_key_raw.to_string();
+        // C4: a missing/invalid club id is a malformed response, not a
+        // silent zero.
+        let club_id = id_obj["club_id"]
             .as_u64()
-            .or_else(|| body["be_id"].as_u64())
-            .unwrap_or(0);
+            .or_else(|| id_obj["be_id"].as_u64())
+            .ok_or_else(|| ServerError::InvalidArgument("identity missing club_id".into()))?;
+        if club_id == 0 {
+            return Err(ServerError::InvalidArgument(
+                "identity club_id must be nonzero".into(),
+            ));
+        }
 
         let attestation = IdentityAttestation {
             display_name: name,
@@ -2854,6 +2964,25 @@ impl Server {
             verified_at: Self::current_timestamp_secs(),
         };
 
+        // Anti-overwrite: a different server claiming a verifying_key
+        // already bound to another home server is an identity-confusion
+        // attempt (the signature only proves the RESPONDING server
+        // signed; nothing binds the claimed club key to it). Refuse
+        // silent rebinding — same server refreshing is fine.
+        if let Some(existing) = self.identity_attestations.get(&verifying_key) {
+            if existing.home_server_id != server_id {
+                tracing::warn!(
+                    key = %verifying_key,
+                    existing_server = existing.home_server_id,
+                    claiming_server = server_id,
+                    event = "SECURITY:attestation_conflict",
+                    "identity key already bound to a different home server"
+                );
+                return Err(ServerError::InvalidArgument(
+                    "verifying_key already attested by a different server".into(),
+                ));
+            }
+        }
         self.identity_attestations
             .insert(verifying_key, attestation.clone());
 
@@ -6114,6 +6243,100 @@ impl Server {
         ws.work.archive(actor, ts);
         self.auto_checkpoint();
         Ok(())
+    }
+
+    /// Draft GC: archive works that were created empty, never gained
+    /// content, revisions, links, annotations, pins, or trail stops,
+    /// and have been idle past the grace window. Archive (reversible)
+    /// rather than delete — full history of anything that ever had
+    /// content is untouchable by this sweep, and even swept empties
+    /// remain restorable by an admin from the archive.
+    ///
+    /// Returns the ids archived. Never touches published, frozen, or
+    /// revision-bearing works.
+    pub fn gc_idle_empty_drafts(&mut self, idle_secs: u64) -> Vec<BeId> {
+        let now = Self::current_timestamp_secs();
+        let mut candidates = Vec::new();
+
+        for (id, ws) in &self.works {
+            if ws.work.is_archived() {
+                continue;
+            }
+            // Published or frozen works are never draft-GC material.
+            if ws.work.read_club() == Some(self.system_clubs.public_club) || ws.is_source() {
+                continue;
+            }
+            // Any revision history: someone wrote something once
+            // (revision_count starts at 0; a single revise makes it 1
+            // and populates revision_history).
+            if ws.work.revision_count() > 0 || !ws.work.revision_history().is_empty() {
+                continue;
+            }
+            // Current edition must be truly empty (no text, no blobs,
+            // no transclusions).
+            let ed = ws.work.current_edition();
+            let has_content = !ed.to_text().trim().is_empty()
+                || ed.all_entries().iter().any(|(_, c)| {
+                    matches!(
+                        c.element,
+                        crate::edition::RangeElement::Transclusion { .. }
+                            | crate::edition::RangeElement::Blob { .. }
+                    )
+                });
+            if has_content {
+                continue;
+            }
+            // Dependents: links in either direction disqualify.
+            if self.work_to_links.contains_key(id) {
+                continue;
+            }
+            // Annotations (including notes) live in the otree per-work.
+            if self
+                .otree_crdt
+                .all_annotations()
+                .iter()
+                .any(|(wid, anns)| *wid == *id && !anns.is_empty())
+            {
+                continue;
+            }
+            // Idleness: last revision timestamp, falling back to
+            // grabbed time. No signal at all means the work predates
+            // timestamp tracking — treat it as maximally idle (old
+            // data is precisely what this sweep targets).
+            let last_active = ws
+                .latest_revision_timestamp()
+                .or(ws.grabbed_at)
+                .unwrap_or(0);
+            if now.saturating_sub(last_active) < idle_secs {
+                continue;
+            }
+            candidates.push(*id);
+        }
+
+        // Trail stops pointing at a candidate disqualify it (checked
+        // after the first pass to keep the borrow simple).
+        let trail_linked: std::collections::HashSet<BeId> = self
+            .trails
+            .values()
+            .flat_map(|t| t.stops.iter().map(|s| s.work_id))
+            .collect();
+        candidates.retain(|id| !trail_linked.contains(id));
+
+        let ts = now;
+        for id in &candidates {
+            if let Some(ws) = self.works.get_mut(id) {
+                ws.work.archive(0, ts);
+            }
+        }
+        if !candidates.is_empty() {
+            tracing::info!(
+                count = candidates.len(),
+                event = "gc_idle_drafts",
+                "draft GC archived idle empty works"
+            );
+            self.auto_checkpoint();
+        }
+        candidates
     }
 
     /// Unarchive (restore) a work. Recorded in the lifecycle history.
@@ -15974,6 +16197,7 @@ impl Server {
         );
         let mut imported = 0;
         let mut already_known = 0;
+        let mut rejected = 0;
         let existing_fingerprints: Vec<[u8; 32]> = self
             .works
             .iter()
@@ -15997,7 +16221,24 @@ impl Server {
                 already_known += 1;
                 continue;
             }
-            let mut edition = entry.edition_payload.to_edition();
+            // Federation is an untrusted boundary: the invariant gate
+            // applies here exactly as on the client wire (a compromised
+            // peer must not smuggle malformed structure past the
+            // client-side checks we added). Poisoned entries are
+            // rejected individually; the sync continues.
+            let mut edition = match entry.edition_payload.to_edition_checked(0) {
+                Ok(ed) => ed,
+                Err(reason) => {
+                    tracing::warn!(
+                        origin = %entry.origin_server_id,
+                        reason = %reason,
+                        event = "SECURITY:federation_import_rejected",
+                        "peer edition rejected by invariant gate"
+                    );
+                    rejected += 1;
+                    continue;
+                }
+            };
             if !entry.span_provenance.is_empty() && edition.span_provenance.is_empty() {
                 let verified =
                     self.verify_span_provenance_against_edition(&edition, &entry.span_provenance);
@@ -16146,6 +16387,16 @@ impl Server {
 
     pub fn federation_server_id(&self) -> String {
         self.server_keypair.identity_id()
+    }
+
+    /// Sign an arbitrary payload with the server's Ed25519 key — the
+    /// key whose verifying half is registered in peers' directories.
+    /// Used to authenticate public API responses so plain-HTTP
+    /// federation links cannot be tampered in transit (integrity and
+    /// authenticity without TLS; confidentiality is irrelevant for
+    /// public docuverse data).
+    pub fn sign_server_payload(&self, payload: &[u8]) -> [u8; 64] {
+        crate::crypto::sign::sign_bytes(&self.server_keypair.signing_key, payload).to_bytes()
     }
 
     pub fn federation_server_id_bytes(&self) -> [u8; 32] {

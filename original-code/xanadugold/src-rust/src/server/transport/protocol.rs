@@ -2413,6 +2413,29 @@ impl EditionPayload {
         }
     }
 
+    /// Trust-boundary conversion: deserialize the payload AND validate
+    /// structural invariants before the edition may touch server
+    /// state. Deserialization bypasses constructors (a reversed
+    /// transclusion range survives the wire in raw form), so this —
+    /// not construction — is the gate for untrusted input.
+    pub fn to_edition_checked(&self, self_work_id: u64) -> Result<crate::edition::Edition, String> {
+        let edition = self.to_edition();
+        let report = crate::edition::document_invariants::validate_edition(&edition, self_work_id);
+        if report.is_valid() {
+            Ok(edition)
+        } else {
+            Err(format!(
+                "malformed edition: {}",
+                report
+                    .violations
+                    .iter()
+                    .map(|v| v.code.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
+        }
+    }
+
     pub fn from_edition(edition: &Edition) -> Self {
         let entries: Vec<(i64, RangeElement)> = edition
             .all_entries()

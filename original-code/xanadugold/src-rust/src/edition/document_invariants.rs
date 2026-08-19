@@ -134,7 +134,9 @@ pub fn validate_edition(edition: &Edition, self_work_id: u64) -> ValidationRepor
 
 fn validate_entries(entries: &[(i64, std::sync::Arc<Carrier>)], report: &mut ValidationReport) {
     if entries.is_empty() {
-        report.add(ViolationCode::EmptyEdition, "edition has no entries");
+        // Empty is a VALID lifecycle state: the UI's Create button
+        // makes empty works that are filled in afterwards. Nothing can
+        // hide in an empty edition — not an attack shape.
         return;
     }
     if entries.len() > MAX_ENTRIES {
@@ -350,13 +352,12 @@ mod tests {
     }
 
     #[test]
-    fn empty_edition_flagged() {
+    fn empty_edition_is_valid_lifecycle_state() {
+        // The UI's Create button makes empty works filled in later;
+        // an empty edition hides nothing and must pass the gate.
         let ed = Edition::empty();
         let report = validate_edition(&ed, 42);
-        assert!(report
-            .violations
-            .iter()
-            .any(|v| v.code == ViolationCode::EmptyEdition));
+        assert!(report.is_valid());
     }
 
     // ── Property: valid documents always pass ─────────────────────
