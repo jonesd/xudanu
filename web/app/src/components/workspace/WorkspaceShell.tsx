@@ -2280,30 +2280,14 @@ export function WorkspaceShell() {
                       {isPublished ? "🌍 Public" : "🔒 Private"}
                     </button>
                   )}
-                  {canEdit && workBeId !== null && (
-                    <button
-                      className={`ws-action-btn ${isFrozen ? "active" : ""}`}
-                      style={isFrozen ? { background: "rgba(88, 166, 255, 0.15)", borderColor: "rgba(88, 166, 255, 0.4)", color: "#58a6ff" } : {}}
-                      title={isFrozen
-                        ? "Frozen — content is immutable (links and notes still welcome). Click to unfreeze."
-                        : "Freeze content — the document becomes immutable for everyone, including you. Links, notes and annotations remain open. Showcase documents use this."}
-                      onClick={async () => {
-                        if (!clientRef.current) return;
-                        const next = !isFrozen;
-                        if (next && !confirm("Freeze this document?\n\nContent becomes immutable — no one (including you) can edit the text. Links, notes and annotations stay open. You can unfreeze later.")) return;
-                        if (!next && !confirm("Unfreeze this document? Editing becomes possible again.")) return;
-                        try {
-                          await clientRef.current.workSetSource(workBeId, next);
-                          setIsFrozen(next);
-                          setWorks((prev) => prev.map((w) => w.work_id === workBeId ? { ...w, is_source: next } : w));
-                          showToast(next ? "Document frozen — content immutable" : "Document unfrozen");
-                        } catch (e) {
-                          showToast(`Freeze failed: ${e instanceof Error ? e.message : "not owner"}`);
-                        }
-                      }}
+                  {isFrozen && (
+                    <span
+                      className="ws-action-btn"
+                      style={{ color: "#58a6ff", cursor: "default", background: "rgba(88, 166, 255, 0.15)", borderColor: "rgba(88, 166, 255, 0.4)" }}
+                      title="Frozen — content is immutable (links and notes still welcome). Unfreeze from the ⋯ menu."
                     >
-                      {isFrozen ? "❄ Frozen" : "❄ Freeze"}
-                    </button>
+                      ❄
+                    </span>
                   )}
                   {canEdit && (
                     <label className="ws-action-btn ws-image-upload-btn" title="Insert image">
@@ -2330,6 +2314,28 @@ export function WorkspaceShell() {
                     </button>
                     {moreMenuOpen && (
                       <div className="ws-more-menu" role="menu">
+                        {canEdit && workBeId !== null && (
+                          <button
+                            className="ws-more-item"
+                            onClick={async () => {
+                              setMoreMenuOpen(false);
+                              if (!clientRef.current) return;
+                              const next = !isFrozen;
+                              if (next && !confirm("Freeze this document?\n\nContent becomes immutable — no one (including you) can edit the text. Links, notes and annotations stay open. You can unfreeze later.")) return;
+                              if (!next && !confirm("Unfreeze this document? Editing becomes possible again.")) return;
+                              try {
+                                await clientRef.current.workSetSource(workBeId, next);
+                                setIsFrozen(next);
+                                setWorks((prev) => prev.map((w) => w.work_id === workBeId ? { ...w, is_source: next } : w));
+                                showToast(next ? "Document frozen — content immutable" : "Document unfrozen");
+                              } catch (e) {
+                                showToast(`Freeze failed: ${e instanceof Error ? e.message : "not owner"}`);
+                              }
+                            }}
+                          >
+                            {isFrozen ? "❄ Unfreeze document" : "❄ Freeze document"}
+                          </button>
+                        )}
                         <button
                           className="ws-more-item"
                           onClick={() => { handleCite(); setMoreMenuOpen(false); }}
