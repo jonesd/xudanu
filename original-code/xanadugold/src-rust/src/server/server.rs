@@ -1931,6 +1931,38 @@ impl Server {
                     server_id
                 );
             }
+            // Auto-degradation: a peer that repeatedly fails signature
+            // verification is not just quarantined locally — propose
+            // its expulsion from the federation through PBFT governance
+            // so every honest member drops it. (Proposal only: the
+            // quorum decides.)
+            if self.federation_is_enabled() {
+                let member_ids: Vec<String> = self
+                    .federation
+                    .membership()
+                    .active_members()
+                    .iter()
+                    .map(|m| m.server_id.clone())
+                    .collect();
+                let target_id = server_id.to_string();
+                if member_ids.contains(&target_id) {
+                    let _ = self.governance_propose(vec![
+                        crate::server::federation::GovernanceTx::Expel {
+                            server_id: target_id,
+                            reason: format!(
+                                "auto-degradation: {} consecutive signature verification failures",
+                                count
+                            ),
+                        },
+                    ]);
+                    tracing::warn!(
+                        target: "xudanu::security",
+                        server_id,
+                        event = "SECURITY:expel_proposed",
+                        "governance Expel proposed for repeatedly-failing peer"
+                    );
+                }
+            }
             self.security_tracker.record_sig_success(server_id);
         }
     }
