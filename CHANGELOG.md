@@ -6,6 +6,33 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.6.0] — 2026-08-19
+
+### Adversarial Resilience (security hardening)
+- **feat(sec):** Document structure invariants — a total (never-panics) validator over entries, spans, transclusions, and provenance; 18 violation codes, size caps against resource exhaustion, all violations reported together (no probe-order oracle). Wired into every untrusted boundary: client wire (`work_create`/`work_revise`/`work_save_and_release`/`edition_store`/`edition_rebind`) and federation import. See `docs/adversarial-resilience.md` for the method and findings.
+- **feat(sec):** Mutation-corpus tests — every corruption class (reversed ranges, NUL bytes, self-cycles, absurd ranges, forged keys) caught over the live wire, with nothing stored and no panic. Property tests guarantee no false positives.
+- **feat(sec):** Signed identity exchange — `/api/public/identity` responses signed with the server Ed25519 key; fetchers verify against the directory key (plain-HTTP tampering yields unverifiable payloads), enforce a freshness window, validate peer-served keys, cap names, and refuse cross-server attestation overwrites. Club/identity adversarial review: `docs/club-identity-adversarial-review.md`.
+- **feat(sec):** `web_fetch_sanitize` op — SSRF-guarded (IPv6-hardened) fetch + ammonia HTML cleaning + readability-lite extraction; optional import as frozen source work.
+- **fix(sec):** Web links open externally only for well-formed `http(s)` URLs; `--admin-passphrase` operator break-glass; seed credentials scrubbed from the repo (generated locally, gitignored).
+
+### Provenance (attribution integrity)
+- **feat(prov):** Span splitting — an edit inside an author's passage splits the span into fragments covering exactly their surviving text; the editor's insertion is not misattributed. The H1 incident (silent authorship loss on within-passage edits) is fixed and regression-locked.
+- **feat(web):** Provenance underlines on by default — light authorship strip floating below each passage, hover shows author + verification. Renamed panel tab to Attribution; authors summary (proportional coverage bar) atop the History tab.
+- **feat(server):** `seed_demo_attribution` generalized to N authors with natural (weighted) region sizes; signatures now verify against the stored edition.
+
+### Server & federation
+- **feat(server):** `work_set_source` — freeze/unfreeze any work by owner or admin (immutable content; links/notes stay open). Owner-facing ❄ button in the UI.
+- **feat(server):** `gc_idle_empty_drafts` — reversible archival of empty, revision-free, dependent-free, idle drafts (revision history and links always protect).
+- **feat(demo):** "Start Here" trail + frozen showcase documents seeded on xudanu.com.
+
+### Web UI
+- **feat(web):** Change-password in the Identity panel (re-verifies current password, strength meter).
+- **feat(web):** Related pages as a swipeable single-row strip (scroll-snap; no more multi-row footer).
+- **fix(web):** Note click highlight is a gentle fade gesture; note rows expand to full text. Native cursor everywhere (no more question-mark cursor). Compact author tooltip (`Name ✓`). Author hover zones built from all visible line rects.
+- **fix(web):** SPA deep links serve the shell (crawlers get 200+HTML; real assets unaffected); real title/meta/robots.txt on xudanu.com.
+
+---
+
 ## [v1.0.1] — 2026-07-25
 
 ### Block Formatting (Headings, Lists, Blockquotes, Code Blocks)
