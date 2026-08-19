@@ -8,6 +8,7 @@ interface Props {
   works: WorkListEntry[];
   onSelectWork: (workId: number) => void;
   onClose: () => void;
+  onStartTrail?: (name: string, stops: Array<{ work_id: number; note?: string | null }>) => void;
 }
 
 function hexId(id: number): string {
@@ -26,7 +27,7 @@ function patchTrail(trails: TrailPayload[], trailId: number, fn: (t: TrailPayloa
   return trails.map((t) => (t.trail_id === trailId ? fn(t) : t));
 }
 
-export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClose }: Props) {
+export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClose, onStartTrail }: Props) {
   const { drag, onMouseDown, dialogRef } = useDraggable();
   const [tab, setTab] = useState<Tab>("mine");
   const [trails, setTrails] = useState<TrailPayload[]>([]);
@@ -254,6 +255,17 @@ export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClos
           <span className="trail-card-name">{trail.name}</span>
           {trail.published && <span className="trail-badge trail-badge-published">Published</span>}
           <span className="trail-card-count">{trail.stops.length} stop{trail.stops.length !== 1 ? "s" : ""}</span>
+          {onStartTrail && trail.stops.length > 0 && (
+            <button
+              type="button"
+              className="trail-start-btn"
+              title={`Follow this trail from stop 1 (${trail.stops.length} stops)`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onStartTrail(trail.name, trail.stops.map((s) => ({ work_id: s.work_id, note: s.note ?? null })));
+              }}
+            >{"\u25b6"} Start</button>
+          )}
           {interactive && currentWorkId && (
             <button
               type="button"

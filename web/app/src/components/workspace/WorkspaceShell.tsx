@@ -166,6 +166,7 @@ export function WorkspaceShell() {
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [showTrailsPanel, setShowTrailsPanel] = useState(false);
+
   const [trailsForWork, setTrailsForWork] = useState<TrailPayload[]>([]);
   const [trailsLoading, setTrailsLoading] = useState(false);
   const [addToSelector, setAddToSelector] = useState<{ trailId: number; trailName: string } | null>(null);
@@ -401,6 +402,53 @@ export function WorkspaceShell() {
     url.searchParams.set("work", `0x${id.toString(16)}`);
     window.history.replaceState({}, "", url.toString());
   }, [navTab]);
+
+  // Trail following: the trail being followed and current stop index.
+  // Persisted so a refresh mid-tour resumes where the reader left off.
+  const [followTrail, setFollowTrail] = useState<{ name: string; stops: Array<{ work_id: number; note?: string | null }> } | null>(() => {
+    try {
+      const raw = localStorage.getItem("xudanu_follow_trail");
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  });
+  const [followIndex, setFollowIndex] = useState<number>(() => {
+    try { return Number(localStorage.getItem("xudanu_follow_index") || 0); } catch { return 0; }
+  });
+  useEffect(() => {
+    try {
+      if (followTrail) {
+        localStorage.setItem("xudanu_follow_trail", JSON.stringify(followTrail));
+        localStorage.setItem("xudanu_follow_index", String(followIndex));
+      } else {
+        localStorage.removeItem("xudanu_follow_trail");
+        localStorage.removeItem("xudanu_follow_index");
+      }
+    } catch { /* no-op */ }
+  }, [followTrail, followIndex]);
+  const startTrail = useCallback((name: string, stops: Array<{ work_id: number; note?: string | null }>) => {
+    if (stops.length === 0) return;
+    setFollowTrail({ name, stops });
+    setFollowIndex(0);
+    setShowTrailsPanel(false);
+    selectWork(stops[0].work_id);
+  }, [selectWork]);
+  const followNext = useCallback(() => {
+    if (!followTrail) return;
+    const next = followIndex + 1;
+    if (next >= followTrail.stops.length) {
+      setFollowTrail(null); // tour complete
+      return;
+    }
+    setFollowIndex(next);
+    selectWork(followTrail.stops[next].work_id);
+  }, [followTrail, followIndex, selectWork]);
+  const followPrev = useCallback(() => {
+    if (!followTrail || followIndex === 0) return;
+    const prev = followIndex - 1;
+    setFollowIndex(prev);
+    selectWork(followTrail.stops[prev].work_id);
+  }, [followTrail, followIndex, selectWork]);
+  const stopFollowing = useCallback(() => setFollowTrail(null), []);
 
   // Single effect: fetch works list when connected; set work metadata if available
   useEffect(() => {
@@ -4176,11 +4224,61 @@ export function WorkspaceShell() {
           currentWorkId={workBeId}
           works={works}
           onSelectWork={selectWork}
+          onStartTrail={startTrail}
           onClose={() => {
             setShowTrailsPanel(false);
             if (rightPanelTab === "trails") void loadTrailsForWork();
           }}
         />
+      )}
+
+      {/* Trail follow bar: persistent Next/Prev while following a trail */}
+      {followTrail && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 16,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 300,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            background: "var(--bg-elevated, #21262d)",
+            border: "1px solid var(--accent-blue, #58a6ff)",
+            borderRadius: 8,
+            padding: "8px 14px",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+            maxWidth: "90vw",
+          }}
+        >
+          <span style={{ fontWeight: 600, fontSize: 13 }}>
+            {followTrail.name}
+          </span>
+          <span style={{ fontSize: 11, opacity: 0.75 }}>
+            stop {followIndex + 1} / {followTrail.stops.length}
+          </span>
+          {followTrail.stops[followIndex]?.note && (
+            <span style={{ fontSize: 11, opacity: 0.9, maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={followTrail.stops[followIndex].note ?? undefined}>
+              {followTrail.stops[followIndex].note}
+            </span>
+          )}
+          <button type="button" className="ws-action-btn" onClick={followPrev} disabled={followIndex === 0} title="Previous stop">
+            ‹ Prev
+          </button>
+          <button
+            type="button"
+            className="ws-action-btn"
+            style={{ borderColor: "var(--accent-blue, #58a6ff)", color: "var(--accent-blue, #58a6ff)" }}
+            onClick={followNext}
+            title={followIndex + 1 >= followTrail.stops.length ? "Finish trail" : "Next stop"}
+          >
+            {followIndex + 1 >= followTrail.stops.length ? "Finish ✓" : "Next ›"}
+          </button>
+          <button type="button" className="ws-action-btn" onClick={stopFollowing} title="Stop following this trail">
+            ×
+          </button>
+        </div>
       )}
 
       {licenseHelpOpen && (
