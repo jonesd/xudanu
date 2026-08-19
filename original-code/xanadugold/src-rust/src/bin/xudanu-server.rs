@@ -730,6 +730,17 @@ async fn main() {
                     );
                 }
             }
+            if let Some(pw) = &admin_passphrase {
+                match server.set_admin_passphrase(pw.as_bytes()) {
+                    Ok(()) => tracing::info!(
+                        "Admin passphrase installed — break-glass admin sign-in enabled (name: admin)"
+                    ),
+                    Err(e) => {
+                        eprintln!("Error: admin passphrase rejected: {e:?}");
+                        std::process::exit(1);
+                    }
+                }
+            }
             if allow_loopback {
                 server.allow_loopback_cross_server = true;
                 xudanu::server::server::set_allow_loopback(true);
