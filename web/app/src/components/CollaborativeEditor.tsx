@@ -1430,9 +1430,15 @@ export function CollaborativeEditor({
       setHoveredMarker(m);
       setTooltipPos({ x: e.clientX, y: e.clientY });
     } else {
-      const bar = authorBarZones.find((bz) =>
-        x >= bz.x && x <= bz.x + bz.width && y >= bz.y && y <= bz.y + bz.height
-      );
+      // Single-author documents: the hover would only restate the
+      // obvious ("you wrote everything") — suppress it. Tooltips earn
+      // their interruption cost when authorship actually varies.
+      const singleAuthor = authorColorMap.size <= 1;
+      const bar = singleAuthor
+        ? undefined
+        : authorBarZones.find((bz) =>
+            x >= bz.x && x <= bz.x + bz.width && y >= bz.y && y <= bz.y + bz.height
+          );
       if (bar) {
         setTooltipPos({ x: e.clientX, y: e.clientY });
         setAuthorTooltip(bar);
@@ -1443,7 +1449,7 @@ export function CollaborativeEditor({
         }
       }
     }
-  }, [hoveredMarker, hoveredAnnotation, scheduleHideTooltip, pendingTransclusion]);
+  }, [hoveredMarker, hoveredAnnotation, scheduleHideTooltip, pendingTransclusion, authorColorMap]);
 
   const handleOverlayMouseLeave = useCallback(() => {
     scheduleHideTooltip();
