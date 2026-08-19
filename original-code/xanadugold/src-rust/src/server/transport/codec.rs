@@ -649,6 +649,7 @@ impl JsonCodec {
             OperationCode::SourcePatternList,
             OperationCode::WorkGraph,
             OperationCode::TrailList,
+            OperationCode::TrailListCategories,
             OperationCode::WorkListArchived,
             OperationCode::ConnectionPinsGet,
             #[cfg(feature = "serde")]

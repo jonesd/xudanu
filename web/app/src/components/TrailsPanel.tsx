@@ -59,14 +59,14 @@ export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClos
 
   const refreshDiscover = useCallback(async () => {
     if (!client) return;
-    try {
-      const [cats, list] = await Promise.all([
-        client.trailListCategories(),
-        client.trailListPublished(selectedCategory ?? undefined),
-      ]);
-      setCategories(cats);
-      setPublishedTrails(list);
-    } catch { /* network error — will retry */ }
+    // Independent: a categories failure must not blank the trail list
+    // (and vice versa) — they answer different questions.
+    const [catsR, listR] = await Promise.allSettled([
+      client.trailListCategories(),
+      client.trailListPublished(selectedCategory ?? undefined),
+    ]);
+    if (catsR.status === "fulfilled") setCategories(catsR.value);
+    if (listR.status === "fulfilled") setPublishedTrails(listR.value);
     setLoading(false);
   }, [client, selectedCategory]);
 
