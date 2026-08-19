@@ -1321,15 +1321,20 @@ export function WorkspaceShell() {
     }
     setTrailsLoading(true);
     try {
-      const all = await clientRef.current.trailList();
-      setTrailsForWork(all);
+      // Merge: your own trails first, then everyone's published trails.
+      // trail_list alone is owner-scoped — a fresh user would see an
+      // empty panel and never discover the onboarding tour.
+      const [mine, publishedResp] = await Promise.allSettled([
+        clientRef.current.trailList(),
+        clientRef.current.trailListPublished(),
+      ]);
+      const mineList = mine.status === "fulfilled" ? mine.value : [];
+      const published = publishedResp.status === "fulfilled" ? publishedResp.value : [];
+      const mineIds = new Set(mineList.map((t) => t.trail_id));
+      const merged = [...mineList, ...published.filter((t) => !mineIds.has(t.trail_id))];
+      setTrailsForWork(merged);
     } catch {
-      try {
-        const published = await clientRef.current.trailListPublished();
-        setTrailsForWork(published);
-      } catch {
-        setTrailsForWork([]);
-      }
+      setTrailsForWork([]);
     } finally {
       setTrailsLoading(false);
     }

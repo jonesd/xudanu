@@ -8487,7 +8487,10 @@ impl Server {
             .trails
             .get(&trail_id)
             .ok_or_else(|| ServerError::InvalidArgument("trail not found".into()))?;
-        if t.owner_club != owner {
+        // Break-glass: admin may remove any trail (orphaned-owner
+        // cleanup, same policy as works).
+        let is_admin = self.ensure_admin(session_id).is_ok();
+        if t.owner_club != owner && !is_admin {
             return Err(ServerError::InvalidArgument("not your trail".into()));
         }
         self.trails.remove(&trail_id);
@@ -8761,13 +8764,16 @@ impl Server {
         trail_id: BeId,
     ) -> Result<(), ServerError> {
         let owner = self.trail_owner_club(session_id)?;
-        let t = self
+        let trail_owner = self
             .trails
-            .get_mut(&trail_id)
+            .get(&trail_id)
+            .map(|t| t.owner_club)
             .ok_or_else(|| ServerError::InvalidArgument("trail not found".into()))?;
-        if t.owner_club != owner {
+        let is_admin = self.ensure_admin(session_id).is_ok();
+        if trail_owner != owner && !is_admin {
             return Err(ServerError::InvalidArgument("not your trail".into()));
         }
+        let t = self.trails.get_mut(&trail_id).unwrap();
         t.published = false;
         t.updated_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
