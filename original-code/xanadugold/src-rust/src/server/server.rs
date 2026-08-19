@@ -6265,7 +6265,13 @@ impl Server {
             self.consequence_tracker.clone(),
             self.consequence_tracker.begin_operation(),
         );
-        self.ensure_can_edit(session_id, work_be_id)?;
+        // Owner, editor, or admin (break-glass: archiving orphaned works
+        // is exactly the operator case — see ensure_owner's admin path).
+        let allowed = self.ensure_can_edit(session_id, work_be_id).is_ok()
+            || self.ensure_owner(session_id, work_be_id).is_ok();
+        if !allowed {
+            return Err(ServerError::NotAuthorized);
+        }
         let actor = self.resolve_author_club(session_id).unwrap_or(0);
         let ts = Self::current_timestamp_secs();
         let ws = self
