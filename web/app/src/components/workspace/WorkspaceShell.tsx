@@ -3880,6 +3880,17 @@ export function WorkspaceShell() {
                         <li key={t.trail_id} className="ws-trail-card">
                           <div className="ws-trail-card-title-row">
                             <span className="ws-trail-card-title">{t.name}</span>
+                            {t.stops.length > 0 && (
+                              <button
+                                type="button"
+                                className="trail-start-btn"
+                                title={`Follow this trail from stop 1 (${t.stops.length} stops)`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startTrail(t.name, t.stops.map((s) => ({ work_id: s.work_id, note: s.note ?? null })));
+                                }}
+                              >{"\u25b6"} Start</button>
+                            )}
                             {t.published ? (
                               <span className="ws-trail-badge published" title="Published — double-click to unpublish" onDoubleClick={async (e) => {
                                 e.stopPropagation();
