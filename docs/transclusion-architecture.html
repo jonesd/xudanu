@@ -104,26 +104,44 @@ td{padding:10px 14px;border-bottom:1px solid #21262d}
 
 <table>
 <tr><th>Feature</th><th>Status</th><th>Details</th></tr>
-<tr><td>Range-based transclusion</td><td><span class="badge badge-done">Working</span></td><td>Stores <code>(source_work_id, char_start, char_end)</code></td></tr>
+<tr><td>Structural transclusion</td><td><span class="badge badge-done">Working (FR-37)</span></td><td>Inline <code>RangeElement::Transclusion</code> in the O-tree &mdash; single source of truth, no side-table drift; read-only resolution with generation-stamped caches</td></tr>
+<tr><td>Placement UX</td><td><span class="badge badge-done">Working</span></td><td>Place transclusions at arbitrary positions; pinned quotations in the placement UI</td></tr>
+<tr><td>Range-based reference</td><td><span class="badge badge-done">Working</span></td><td>Stores <code>(source_work_id, char_start, char_end)</code></td></tr>
 <tr><td>Recursive resolution</td><td><span class="badge badge-done">Working</span></td><td>32-level depth with cycle detection</td></tr>
-<tr><td>Span migration</td><td><span class="badge badge-done">Working</span></td><td>Transclusion positions update when source is edited</td></tr>
-<tr><td>Provenance propagation</td><td><span class="badge badge-done">Working</span></td><td>Original author attribution flows through transclusion chains</td></tr>
-<tr><td>Content hash (BLAKE3)</td><td><span class="badge badge-building">FR-26 Phase 1</span></td><td>Hash stored at creation, verified on resolution</td></tr>
-<tr><td>Version pinning</td><td><span class="badge badge-done">FR-26 Phase 2</span></td><td>Source revision recorded, original version retrievable from history</td></tr>
+<tr><td>Span migration</td><td><span class="badge badge-done">Working</span></td><td>Positions update when the source is edited; migration through arbitrary deltas, including inside materialized virtuals</td></tr>
+<tr><td>Provenance propagation</td><td><span class="badge badge-done">Working</span></td><td>Original author attribution flows through transclusion chains; attribution splits honestly when passages are edited</td></tr>
+<tr><td>Derived works</td><td><span class="badge badge-done">Working (FR-37)</span></td><td>Trails materialize as real derived editions; generation-checked ensure keeps derived content consistent with sources</td></tr>
+<tr><td>Content hash (BLAKE3)</td><td><span class="badge badge-done">FR-26</span></td><td>Hash stored at creation, verified on resolution</td></tr>
+<tr><td>Version pinning</td><td><span class="badge badge-done">FR-26</span></td><td>Source revision recorded, original version retrievable from history</td></tr>
 <tr><td>Immutable snapshots</td><td><span class="badge badge-done">FR-26 Phase 3</span></td><td>Blob store preserves exact content, survives source deletion</td></tr>
-<tr><td>Immutable snapshots</td><td><span class="badge badge-future">FR-26 Phase 3</span></td><td>Blob store preserves exact content at creation time</td></tr>
-<tr><td>Cross-server transclusion</td><td><span class="badge badge-future">FR-6 + FR-26</span></td><td>Transclusions from remote servers via XCP gateway</td></tr>
+<tr><td>Cross-server transclusion</td><td><span class="badge badge-done">Working (FR-6)</span></td><td>Domain-based tumblers; content fetched from remote servers with BLAKE3 verification and Ed25519 TOFU identity</td></tr>
 <tr><td>Spanfilade</td><td><span class="badge badge-future">Future</span></td><td>I-stream transclusion &mdash; see below</td></tr>
 </table>
 
+<h2>Structural Transclusion (FR-37)</h2>
+
+<p>The largest architectural change since this document was first written: transclusions now live <strong>inside the document model itself</strong>, as an inline <code>RangeElement::Transclusion</code> element in the O-tree &mdash; one source of truth, where the earlier design kept a separate compound side-table (which could drift from the text).</p>
+
+<ul style="margin:16px 0 16px 24px;color:#8b949e;font-size:15px">
+<li><strong style="color:#e6edf3">Single source of truth</strong> &mdash; the transclusion IS an element; editing, persistence, and replication all operate on the same structure</li>
+<li><strong style="color:#e6edf3">Placement at any position</strong> &mdash; transclusions can be placed wherever the cursor is, not just appended; the placement UI supports pinned quotations</li>
+<li><strong style="color:#e6edf3">Generation-stamped caches</strong> &mdash; resolved content is cached and invalidated by generation checks, so readers never see stale transclusions (re-resolved on read)</li>
+<li><strong style="color:#e6edf3">Span migration through deltas</strong> &mdash; edits inside materialized transcluded regions split like ordinary text, and dependent caches re-check on source change</li>
+<li><strong style="color:#e6edf3">Trails as derived works</strong> &mdash; a trail's pinned spans materialize into a real derived edition, generation-checked against its sources</li>
+</ul>
+
+<div class="note">
+<strong>Current focus:</strong> read-only structural transclusion is the production path. Edge cases under active hardening: padding newlines, position migration on source edit, overlapping regions in the DOM builder. See the <a href="https://github.com/jonesd/xudanu">GitHub repository</a> for the FR-37 design notes.
+</div>
+
 <h2>Content-Addressed Transclusion (FR-26)</h2>
 
-<p>As of v1.1, every new transclusion stores a <strong>BLAKE3 content hash</strong> alongside the range reference. This means:</p>
+<p>Since v1.1, every new transclusion stores a <strong>BLAKE3 content hash</strong> alongside the range reference. This means:</p>
 
 <ul style="margin:16px 0 16px 24px;color:#8b949e;font-size:15px">
 <li><strong style="color:#e6edf3">Tamper detection</strong> &mdash; if the source passage is edited after transclusion, the hash mismatch is logged</li>
 <li><strong style="color:#e6edf3">Version awareness</strong> &mdash; the source revision is recorded, so "what was this when I transcluded it?" is answerable</li>
-<li><strong style="color:#e6edf3">Future immutability</strong> &mdash; Phase 3 will snapshot content to the blob store, so transclusions survive even if the source is deleted</li>
+<li><strong style="color:#e6edf3">Immutability</strong> &mdash; Phase 3 snapshots content to the blob store, so transclusions survive even if the source is deleted</li>
 </ul>
 
 <div class="diagram-container">
@@ -230,7 +248,7 @@ td{padding:10px 14px;border-bottom:1px solid #21262d}
 </div>
 
 <h3>Cross-Server Transclusion</h3>
-<p>Currently transclusions only work within a single server. Cross-server transclusion is planned via the <a href="https://github.com/jonesd/xcp">XCP (Xanadu Content Protocol)</a>: a transclusion references a tumbler <code>"server.domain".work_id.revision.start-end</code>, and the content is fetched via the content gateway API with BLAKE3 hash verification.</p>
+<p>Cross-server transclusion works today (FR-6): a transclusion references a tumbler <code>"server.domain".work_id.revision.start-end</code>, and the content is fetched from the remote server with <strong>BLAKE3 hash verification</strong> and <strong>Ed25519 trust-on-first-use</strong> server identity (pinned on first contact, change-detected thereafter). A transclusion from another server renders exactly like a local one, and its provenance chain reaches across the network. See the <a href="xanadu-network-guide.html">network guide</a> for the trust model and the <a href="adversarial-resilience.md">adversarial resilience notes</a> for how peer-supplied content is validated at the boundary.</p>
 
 <h2>The Xanadu Connection</h2>
 
@@ -310,6 +328,16 @@ cargo build --features server -p xudanu
 # 4. Place the transclusion in the new document
 # 5. Edit the source — watch the transclusion update live
 </pre>
+
+<h2>Further Reading</h2>
+<ul style="margin:16px 0 16px 24px;color:#8b949e;font-size:15px">
+<li><a href="https://github.com/jonesd/xudanu">GitHub repository</a> &mdash; source, releases, and the FR design notes</li>
+<li><a href="xanadu-network-guide.html">The Xanadu Network</a> &mdash; cross-server trust, tumblers, federation</li>
+<li><a href="adversarial-resilience.md">Adversarial Resilience</a> &mdash; how peer-supplied content is validated at the boundary</li>
+<li><a href="compound-documents.html">Compound Documents</a> &mdash; collections built from transclusions</li>
+<li><a href="provenance-and-attribution.html">Provenance &amp; Attribution</a> &mdash; the cryptographic chain behind every quotation</li>
+<li><a href="https://xudanu.com">xudanu.com</a> &mdash; live server; the Start Here trail walks through transclusion hands-on</li>
+</ul>
 
 <p style="margin-top:48px;color:#484f58;font-size:12px">
 Xudanu is an independent open-source project (Apache 2.0), not affiliated with Project Xanadu&trade; or the Udanax team.
