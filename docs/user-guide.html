@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Xudanu User Guide &mdash; v1.0.0</title>
+<title>Xudanu User Guide &mdash; v1.6.0</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap');
 *{margin:0;padding:0;box-sizing:border-box}
@@ -85,6 +85,9 @@ ol li{margin-bottom:8px;list-style:decimal}
   <a class="toc-sub" href="#pull">Pull from Document</a>
   <a class="toc-sub" href="#compound-vis">Visual Markers</a>
   <a class="toc-sub" href="#placement">Placement Tracking</a>
+  <a class="toc-sub" href="#notes">Notes &amp; Related Panel</a>
+  <a class="toc-sub" href="#freeze">Freezing Documents</a>
+  <a class="toc-sub" href="#password">Changing Your Password</a>
   <a class="toc-section" href="#trails">Trails</a>
   <a class="toc-section" href="#stars">Stars &amp; Library</a>
   <a class="toc-section" href="#map">Document Map</a>
@@ -265,7 +268,7 @@ Styles persist across sessions &mdash; they're stored as server-side annotations
 <h3 id="attribution">Attribution &amp; Provenance</h3>
 
 <p>
-Click <strong>Show Prov</strong> in the document toolbar to see who wrote each section. Attribution spans are colour-coded:
+Provenance underlines are <strong>on by default</strong>: a light authorship-coloured strip floats just below each passage &mdash; it never touches the text. Hover any underline to see who wrote the passage and that their Ed25519 signature verifies. The <strong>Attribution</strong> tab (right panel) lists every author; the <strong>History</strong> tab shows a proportional authors bar alongside the revision list. Toggle underlines off and on with the <strong>Prov</strong> toolbar button (your choice is remembered).
 </p>
 
 <div class="feature-grid">
@@ -562,6 +565,42 @@ Star important documents to mark them as favorites. The library sorts by most re
   <li>Stars persist server-side (WAL + checkpoint)</li>
   <li>Use the filter box to search by title or work ID</li>
 </ul>
+
+<!-- ============================================================ -->
+<h2 id="freeze">Freezing Documents</h2>
+
+<p>
+Document owners can freeze a work to make its content <strong>immutable</strong> &mdash; no one, including you, can edit the text. Links, notes, and annotations remain open, so readers can still connect and comment on frozen content. This is how showcase and tour documents stay pristine while remaining interactive.
+</p>
+
+<ul>
+  <li>Open your document &rarr; click the <strong>&#10052; Freeze</strong> button (next to Public/Private) in the document header</li>
+  <li>Confirm the freeze; the button shows <strong>&#10052; Frozen</strong></li>
+  <li>Unfreeze reverses it (owner only, with confirmation)</li>
+</ul>
+
+<div class="wow">
+  <h3>Why freeze?</h3>
+  <p>Frozen works keep their provenance intact forever: every passage's authorship signature still verifies, and transclusions from the frozen source can never drift. Freezing a quotation source before others cite it makes the citation chain tamper-evident end to end.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="notes">Notes &amp; the Related Panel</h2>
+
+<p>
+<strong>Notes</strong> are margin comments attached to a passage. Select text &rarr; click <strong>Note</strong> &rarr; choose public (readers see it) or private (only you). Notes appear as yellow rows in the footer panel; clicking a note gently highlights its passage in the document and unfolds the full note text (notes can be paragraph-length).
+</p>
+
+<p>
+The <strong>Related</strong> section beside notes shows connected pages &mdash; backlinks, outgoing links, transclusion sources, and cross-server references &mdash; as a horizontally swipeable card strip (trackpad or touch swipe).
+</p>
+
+<!-- ============================================================ -->
+<h2 id="password">Changing Your Password</h2>
+
+<p>
+Signed-in identities can change their password from the Identity panel: click your avatar (top right) &rarr; <strong>Change Password</strong>. You'll confirm your current password first; the new one must meet the strength rules (10+ characters, mixed case, a digit). Sessions on other devices are unaffected until they next sign in.
+</p>
 
 <!-- ============================================================ -->
 <h2 id="map">Document Map</h2>
