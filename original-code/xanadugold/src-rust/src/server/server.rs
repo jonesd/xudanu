@@ -9473,7 +9473,14 @@ impl Server {
 
     pub fn check_periodic_maintenance(&mut self) -> bool {
         if self.operation_counter % 10 == 0 {
-            let needs_ckpt = self.auto_checkpoint();
+            // Never checkpoint a clean state: read-only traffic (the
+            // common case on a public server) must not pay for a
+            // serialization pass that persists nothing. Observed live:
+            // 40 zero-dirty checkpoints in 3 minutes stalling reads.
+            // A work is dirty iff mark_dirty cleared its chunk_ref.
+            let has_dirty = self.works.values().any(|ws| ws.chunk_ref.is_none())
+                || !self.dirty_clubs.is_empty();
+            let needs_ckpt = has_dirty && self.auto_checkpoint();
             self.check_grab_timeouts();
             needs_ckpt
         } else {
