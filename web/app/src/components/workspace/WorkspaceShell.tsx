@@ -3879,9 +3879,29 @@ export function WorkspaceShell() {
                               ))}
                             </ul>
                           ) : (
-                            <div className="ws-placeholder-sublabel" style={{ padding: "2px 0" }}>
-                              No stop on this document — open any stop from Manage to follow the trail.
-                            </div>
+                            <ul className="ws-trail-stops">
+                              {t.stops.slice(0, 3).map((s, i) => (
+                                <li
+                                  key={i}
+                                  className="ws-trail-stop"
+                                  style={{ cursor: "pointer" }}
+                                  title={s.note || "Open this document"}
+                                  onClick={() => selectWork(s.work_id)}
+                                >
+                                  <span className="ws-trail-stop-pos">{i + 1}</span>
+                                  <span className="ws-trail-stop-note">
+                                    {(s.note || `Open stop ${i + 1}`).slice(0, 60)}
+                                    {(s.note?.length ?? 0) > 60 ? "…" : ""}
+                                  </span>
+                                </li>
+                              ))}
+                              {t.stops.length > 3 && (
+                                <li className="ws-trail-stop" style={{ cursor: "pointer", opacity: 0.7 }} onClick={() => setShowTrailsPanel(true)}>
+                                  <span className="ws-trail-stop-pos">…</span>
+                                  <span className="ws-trail-stop-note">{t.stops.length - 3} more stops</span>
+                                </li>
+                              )}
+                            </ul>
                           )}
                         </li>
                       );

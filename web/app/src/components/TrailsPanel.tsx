@@ -35,6 +35,10 @@ export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClos
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  // Auto-expand the first published trail on first load: stops (and
+  // their click-to-open behaviour) are the point of the dialog — a
+  // collapsed card hides them behind an unlabelled arrow.
+  const autoExpanded = useRef(false);
   const [editingId, setEditingId] = useState<number | null>(null);
 
   const [newName, setNewName] = useState("");
@@ -74,6 +78,15 @@ export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClos
     if (tab === "mine") refreshMine();
     else refreshDiscover();
   }, [tab, refreshMine, refreshDiscover]);
+
+  useEffect(() => {
+    if (autoExpanded.current) return;
+    const first = publishedTrails[0];
+    if (first) {
+      setExpandedId(first.trail_id);
+      autoExpanded.current = true;
+    }
+  }, [publishedTrails]);
 
   const handleCreate = () => {
     if (!client || !newName.trim()) return;
