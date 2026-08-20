@@ -1400,7 +1400,13 @@ export function WorkspaceShell() {
   const loadLinks = transclusion.loadLinks;
   const loadBacklinks = transclusion.loadBacklinks;
   useEffect(() => {
-    if (!connected || !authenticated || workBeId === null || switchingWork) return;
+    // Links and backlinks are READ data: the server checks read
+    // permission per work, and anonymous sessions can read published
+    // works. Gating on `authenticated` left anonymous visitors with
+    // no underlines and an empty Links tab — and stale-ticket sessions
+    // lost them too. The ticket-redeem window is a timing concern, not
+    // a permission one; a redundant early fetch is harmless.
+    if (!connected || workBeId === null || switchingWork) return;
     refreshAttribution();
     refreshAnnotations();
     const linkTimer = setTimeout(() => {
@@ -1410,7 +1416,7 @@ export function WorkspaceShell() {
       }
     }, 200);
     return () => clearTimeout(linkTimer);
-  }, [connected, authenticated, workBeId, switchingWork, clientRef, works, loadLinks, loadBacklinks, refreshAttribution, refreshAnnotations]);
+  }, [connected, workBeId, switchingWork, clientRef, works, loadLinks, loadBacklinks, refreshAttribution, refreshAnnotations]);
 
   // Debounced attribution refresh after text changes
   useEffect(() => {
