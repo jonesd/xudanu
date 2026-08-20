@@ -311,6 +311,7 @@ function drawOverlay(
     const drawEnd = Math.min(span.end, textLen);
     if (drawStart >= drawEnd) continue;
 
+
     const range = document.createRange();
     try {
       if (singleNode) {
@@ -474,6 +475,7 @@ function drawOverlay(
     const drawEnd = Math.min(change.end, textLen);
     if (drawStart >= drawEnd) continue;
 
+
     const range = document.createRange();
     try {
       if (singleNode) {
@@ -535,9 +537,28 @@ function drawOverlay(
     if (collapsed.has(mi)) continue;
     const marker = markers[mi];
     const lane = lanes.get(mi) ?? 0;
-    const drawStart = Math.max(marker.start, 0);
-    const drawEnd = Math.min(marker.end, textLen);
+    // Stale-offset recovery: stored spans were computed when the link
+    // was created; revised text can leave them pointing at nothing
+    // (every range construction throws, canvas paints zero, silently).
+    // If the excerpt no longer matches at the stored offset, re-locate
+    // by excerpt text within the current document.
+    let drawStart = Math.max(marker.start, 0);
+    let drawEnd = Math.min(marker.end, textLen);
+    const rawExcerpt = (marker.excerpt || "").trim();
+    if (rawExcerpt.length >= 8) {
+      const want = rawExcerpt.slice(0, 40);
+      const flat = editor.textContent || "";
+      const at = flat.slice(drawStart, drawStart + want.length);
+      if (at !== want) {
+        const found = flat.indexOf(want);
+        if (found >= 0) {
+          drawStart = found;
+          drawEnd = Math.min(found + (marker.end - marker.start), textLen);
+        }
+      }
+    }
     if (drawStart >= drawEnd) continue;
+
 
     const range = document.createRange();
     try {
@@ -735,6 +756,7 @@ function drawOverlay(
     const drawStart = Math.max(pill.start, 0);
     const drawEnd = Math.min(pill.end, textLen);
     if (drawStart >= drawEnd) continue;
+
     const range = document.createRange();
     try {
       if (singleNode) {
@@ -784,6 +806,7 @@ function drawOverlay(
     const drawStart = Math.max(change.start, 0);
     const drawEnd = Math.min(change.end, textLen);
     if (drawStart >= drawEnd) continue;
+
 
     const range = document.createRange();
     try {
