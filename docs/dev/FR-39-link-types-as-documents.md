@@ -80,6 +80,44 @@ interoperable vocabulary for free.
 - Acceptance: a Disagreement link from another server renders with
   its type name and style intact
 
+### Story 6 — Metalinks: bibliographic claims as links
+
+Heritage: LM 93.1's Title and Author are *metalinks* — metadata as
+typed links. More Xanadu-pure than record fields, and they buy what
+fields cannot: contested claims stay visible instead of silently
+overwritten, claims work across servers, and authorship becomes a
+live query rather than a lookup. (Full rationale:
+`docs/gold-link-semantics.md` §3.)
+
+- Register three built-in metalink types alongside the five content
+  types (definition works, per Stories 1-2):
+  - **Title** — a claim about what this work should be called
+  - **Author** — a claim of authorship, destination a Person work
+    or an identity; the claim's provenance is the claimant's
+    signature, NOT proof of the attribution itself
+  - **Doc-Supercedes** — version lineage: this work replaces that
+    one (cross-server by construction)
+- Positioning is complementary, not a migration: span-level Ed25519
+  provenance remains the attribution-of-record for *text*; metalinks
+  are the *bibliographic claim* layer (cataloguing, disputes,
+  cross-server credit)
+- Fields remain as cache: `work.title`/`work.owner` become the
+  materialized view of the preferred (owner's own, else most recent
+  trusted) Title/Author claim — no query explosion in work lists
+- Multiplicity renders where it exists: a work with two Author
+  metalinks shows both in its header (hover: who claimed, when),
+  with the cached field marked "contested"
+- Link matching (Story 4) makes author pages live: "every work with
+  an Author metalink to X" is one query; Doc-Supercedes chains give
+  version lineages for free
+- Acceptance:
+  - a work with two Author metalinks renders both + contested field
+  - the owner's Title metalink updates the cached title on next
+    checkpoint (no list regression)
+  - "all works attributed to X" query returns correct results on a
+    seeded corpus
+  - a Doc-Supercedes pair orders correctly in the version timeline
+
 ## Non-goals
 
 - Executable/rendering programs in definitions (Green's "equation as
