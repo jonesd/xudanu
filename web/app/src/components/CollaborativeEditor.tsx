@@ -1234,7 +1234,11 @@ export function CollaborativeEditor({
       container.removeEventListener("scroll", scrollRedraw);
       cancelAnimationFrame(rafId);
     };
-  }, [attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap]);
+  // displayText/buffer in deps: markers can arrive BEFORE the text has
+  // rendered (link load is deferred only 200ms; text sync can be
+  // slower) — the draw then finds no text nodes, paints nothing, and
+  // without a text-triggered redraw the underlines never appear.
+  }, [attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, displayText, buffer]);
 
   // Highlight a range when user clicks a transclusion in the Connections panel
   useEffect(() => {
