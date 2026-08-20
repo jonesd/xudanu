@@ -91,6 +91,7 @@ export function useTransclusion(): TransclusionState {
   const [backlinks, setBacklinks] = useState<BacklinkEntry[]>([]);
   const [linkTypes, setLinkTypes] = useState<LinkTypeInfo[]>([]);
   const linkEpoch = useRef(0);
+  const lastLinkWork = useRef<number | null>(null);
   const backlinkEpoch = useRef(0);
 
   const holdSelection = useCallback(
@@ -133,16 +134,25 @@ export function useTransclusion(): TransclusionState {
   const loadLinks = useCallback(
     async (client: CrdtSyncClient, workId: number, works: WorkListEntry[]) => {
       const epoch = ++linkEpoch.current;
+      const epochWork = workId;
+      lastLinkWork.current = workId;
+      // A later call for the SAME work does not invalidate this
+      // result: link data is per-work, idempotent, and racing refreshes
+      // (works-list updates retrigger the effect) must not silently
+      // drop markers — the observed failure was every scheduled load
+      // being superseded before its result landed, leaving the editor
+      // permanently without underlines.
+      const stale = () => epoch !== linkEpoch.current && lastLinkWork.current !== epochWork;
       let linkList;
       try {
         const rawList = await client.linkListForWork(workId);
-        if (epoch !== linkEpoch.current) return;
+        if (stale()) return;
         const seenIds = new Set<number>();
         linkList = rawList.filter((l) =>
           seenIds.has(l.link_id) ? false : (seenIds.add(l.link_id), true),
         );
       } catch {
-        if (epoch !== linkEpoch.current) return;
+        if (stale()) return;
         setLinks([]);
         setMarkers([]);
         return;
@@ -211,10 +221,10 @@ export function useTransclusion(): TransclusionState {
             });
           }
         }
-        if (epoch !== linkEpoch.current) return;
+        if (stale()) return;
         setMarkers(newMarkers);
       } catch {
-        if (epoch !== linkEpoch.current) return;
+        if (stale()) return;
         setMarkers([]);
       }
     },
