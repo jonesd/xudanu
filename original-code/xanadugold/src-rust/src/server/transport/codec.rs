@@ -1653,12 +1653,15 @@ impl JsonCodec {
                 struct Args {
                     type_id: u64,
                     name: String,
+                    #[serde(default)]
+                    definition_work: Option<BeId>,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::LinkTypeRegister {
                     type_id: args.type_id,
                     name: args.name,
+                    definition_work: args.definition_work,
                 })
             }
             OperationCode::LinkTypeList => Ok(WireRequest::LinkTypeList),

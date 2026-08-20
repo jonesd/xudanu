@@ -226,6 +226,8 @@ pub struct ServerRootChunk {
     pub standalone_editions_hash: Option<[u8; 32]>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub links_hash: Option<[u8; 32]>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub link_type_registry: Vec<crate::persist::manifest::LinkTypeRegistryEntry>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub social_hash: Option<[u8; 32]>,
     #[cfg_attr(feature = "serde", serde(default))]
@@ -526,6 +528,7 @@ pub fn checkpoint_write_root(
         clubs_index_hash,
         standalone_editions_hash,
         links_hash: manifest.links_hash.or(manifest.links_chunk_hash),
+        link_type_registry: manifest.link_type_registry.clone(),
         social_hash: manifest.social_chunk_hash,
         federation_hash: manifest
             .federation_chunk_hash
@@ -840,6 +843,7 @@ pub fn read_root_as_manifest(
         links: vec![],
         link_counter: root.link_counter,
         links_chunk_hash: root.links_hash,
+        link_type_registry: root.link_type_registry.clone(),
         reconcile_store: root
             .reconcile_store_hash
             .and_then(|h| crate::persist::manifest::read_section_chunk(store, &h).ok())
@@ -1248,6 +1252,7 @@ mod tests {
             clubs_index_hash: Some(make_test_hash(2)),
             standalone_editions_hash: None,
             links_hash: Some(make_test_hash(3)),
+            link_type_registry: vec![],
             social_hash: Some(make_test_hash(4)),
             federation_hash: None,
             annotations_hash: None,
@@ -1293,6 +1298,7 @@ mod tests {
             clubs_index_hash: None,
             standalone_editions_hash: None,
             links_hash: None,
+            link_type_registry: vec![],
             social_hash: None,
             federation_hash: None,
             annotations_hash: None,
@@ -1336,6 +1342,7 @@ mod tests {
             clubs_index_hash: None,
             standalone_editions_hash: None,
             links_hash: None,
+            link_type_registry: vec![],
             social_hash: None,
             federation_hash: None,
             annotations_hash: None,
@@ -1402,6 +1409,7 @@ mod tests {
             clubs_index_hash: None,
             standalone_editions_hash: None,
             links_hash: None,
+            link_type_registry: vec![],
             social_hash: None,
             federation_hash: None,
             annotations_hash: None,
@@ -1492,6 +1500,7 @@ mod tests {
             clubs_index_hash: None,
             standalone_editions_hash: None,
             links_hash: None,
+            link_type_registry: vec![],
             social_hash: None,
             federation_hash: None,
             annotations_hash: None,
@@ -1551,6 +1560,7 @@ mod tests {
             clubs_index_hash: None,
             standalone_editions_hash: None,
             links_hash: None,
+            link_type_registry: vec![],
             social_hash: None,
             federation_hash: None,
             annotations_hash: None,
@@ -1711,6 +1721,7 @@ mod tests {
             link_counter: 200,
             works_index_hash: Some(index_hash),
             links_hash: Some(make_test_hash(50)),
+            link_type_registry: vec![],
             social_hash: Some(make_test_hash(51)),
             standalone_editions_hash: None,
             clubs_index_hash: None,
@@ -1827,6 +1838,7 @@ mod tests {
             clubs_index_hash: Some(clubs_idx_hash),
             standalone_editions_hash: Some(standalone_hash),
             links_hash: Some(dummy(1)),
+            link_type_registry: vec![],
             social_hash: Some(dummy(2)),
             federation_hash: Some(dummy(3)),
             annotations_hash: Some(dummy(4)),

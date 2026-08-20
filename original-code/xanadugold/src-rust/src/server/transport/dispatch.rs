@@ -1942,16 +1942,24 @@ fn dispatch_inner(
             srv.link_set_types(session_id, link_id, link_types)?;
             Ok(ResponseValue::Void)
         }
-        WireRequest::LinkTypeRegister { type_id, name } => {
+        WireRequest::LinkTypeRegister {
+            type_id,
+            name,
+            definition_work,
+        } => {
             srv.ensure_authenticated(session_id)?;
-            srv.register_link_type(type_id, name);
+            srv.register_link_type_with_definition(type_id, name, definition_work);
             Ok(ResponseValue::Void)
         }
         WireRequest::LinkTypeList => {
             let types = srv
                 .list_link_types()
                 .into_iter()
-                .map(|(type_id, name)| super::protocol::LinkTypeInfoPayload { type_id, name })
+                .map(|(type_id, name)| super::protocol::LinkTypeInfoPayload {
+                    type_id,
+                    name,
+                    definition_work: srv.link_type_definition(type_id),
+                })
                 .collect();
             Ok(ResponseValue::LinkTypes(types))
         }
@@ -4551,7 +4559,11 @@ fn dispatch_inner_read(
             let types = srv
                 .list_link_types()
                 .into_iter()
-                .map(|(type_id, name)| super::protocol::LinkTypeInfoPayload { type_id, name })
+                .map(|(type_id, name)| super::protocol::LinkTypeInfoPayload {
+                    type_id,
+                    name,
+                    definition_work: srv.link_type_definition(type_id),
+                })
                 .collect();
             Ok(ResponseValue::LinkTypes(types))
         }

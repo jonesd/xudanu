@@ -298,6 +298,7 @@ fn migrate_manifest(
         clubs_index_hash,
         standalone_editions_hash,
         links_hash: m.links_chunk_hash,
+        link_type_registry: vec![],
         social_hash: m.social_chunk_hash,
         federation_hash: m.federation_chunk_hash,
         annotations_hash: m.fossil_snapshots_hash,

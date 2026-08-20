@@ -1672,6 +1672,11 @@ pub enum WireRequest {
     LinkTypeRegister {
         type_id: u64,
         name: String,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        definition_work: Option<BeId>,
     },
     LinkTypeList,
     FindExcerptPositions {
@@ -3288,6 +3293,13 @@ pub struct LinkPayload {
 pub struct LinkTypeInfoPayload {
     pub type_id: u64,
     pub name: String,
+    /// The definition work for this type, if registered (FR-39): the
+    /// work IS the type — its body carries the convention text.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub definition_work: Option<BeId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

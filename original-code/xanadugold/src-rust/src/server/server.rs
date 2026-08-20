@@ -613,6 +613,11 @@ pub struct Server {
     work_to_links: HashMap<BeId, Vec<BeId>>,
     link_counter: BeId,
     link_type_names: HashMap<u64, String>,
+    /// FR-39 Story 1: registered link types with definition works.
+    /// The work IS the type (Green's three-set-as-document); custom
+    /// type ids are definition work ids, built-ins 1-5 alias their
+    /// historical ids.
+    link_type_registry: HashMap<u64, crate::persist::manifest::LinkTypeRegistryEntry>,
     cross_server_backlinks: Vec<CrossServerBacklink>,
     backfollow: BackfollowEngine,
     content_address: ContentAddressIndex,
@@ -1026,6 +1031,7 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         links: Vec::new(),
         link_counter: payload.link_counter,
         links_chunk_hash: None,
+        link_type_registry: vec![],
         admin: payload.admin_entry.clone(),
         reconcile_store: payload.reconcile_store,
         reconcile_counter: payload.reconcile_counter,
@@ -1182,6 +1188,7 @@ impl Server {
             work_to_links: HashMap::new(),
             link_counter: 0,
             link_type_names: HashMap::new(),
+            link_type_registry: HashMap::new(),
             cross_server_backlinks: Vec::new(),
             backfollow: BackfollowEngine::new(),
             content_address: ContentAddressIndex::new(1_000_000),
@@ -11909,7 +11916,90 @@ impl Server {
     }
 
     pub fn register_link_type(&mut self, type_id: u64, name: String) {
+        self.register_link_type_with_definition(type_id, name, None);
+    }
+
+    /// Register a link type; custom types SHOULD pass their
+    /// definition work id (the type then resolves to a document
+    /// describing its conventions — FR-39 Story 1).
+    pub fn register_link_type_with_definition(
+        &mut self,
+        type_id: u64,
+        name: String,
+        definition_work: Option<BeId>,
+    ) {
+        // Validate: a definition work must exist.
+        if let Some(dw) = definition_work {
+            if !self.works.contains_key(&dw) {
+                tracing::warn!(
+                    type_id,
+                    definition_work = dw,
+                    "link type definition work not found; registering name-only"
+                );
+            }
+        }
+        let entry = crate::persist::manifest::LinkTypeRegistryEntry {
+            type_id,
+            name: name.clone(),
+            definition_work,
+        };
+        self.link_type_registry.insert(type_id, entry);
         self.link_type_names.insert(type_id, name);
+    }
+
+    pub fn link_type_definition(&self, type_id: u64) -> Option<BeId> {
+        self.link_type_registry
+            .get(&type_id)
+            .and_then(|e| e.definition_work)
+    }
+
+    /// Built-in type definitions for fresh boots: five short frozen
+    /// works, one per type, carrying the convention text and heritage
+    /// notes. Existing data dirs are left untouched (stability first).
+    pub fn seed_builtin_link_type_definitions(&mut self, session_id: SessionId) {
+        const DEFS: [(u64, &str, &str); 5] = [
+            (1, "Comment", "A remark about the passage it anchors. The connection says: I am commenting on this.\n\nHeritage: Green's marginal note; LM 93.1 Comment."),
+            (2, "Reference", "A pointer to supporting or related material. The connection says: see this for context.\n\nHeritage: LM 93.1 Citation/Counterpart lineage."),
+            (3, "Disagreement", "A contradiction or rebuttal of the target. The connection says: I dispute this. Two-way by construction: the target sees its disagreements.\n\nHeritage: not in the historical type lists; a Xudanu addition consistent with Nelson's two-way-critical-connection principle."),
+            (4, "Quotation", "The passage quotes the target. Use alongside a transclusion for the full quote-with-source chain.\n\nHeritage: Green's quote."),
+            (5, "See Also", "Related without a stronger claim. The connection says: these belong together.\n\nHeritage: LM 93.1's general relation."),
+        ];
+        for (tid, name, body) in DEFS {
+            if self
+                .link_type_registry
+                .get(&tid)
+                .and_then(|e| e.definition_work)
+                .is_some()
+            {
+                continue;
+            }
+            let title = format!("Link type: {}", name);
+            let wid = match self.create_work(
+                session_id,
+                crate::edition::Edition::from_text(&format!("# {}\n\n{}", title, body)),
+            ) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+            let _ = self.work_set_source(session_id, wid, true);
+            let _ = self.set_work_title_if_absent(wid, &title);
+            self.register_link_type_with_definition(tid, name.to_string(), Some(wid));
+            tracing::info!(
+                type_id = tid,
+                definition_work = wid,
+                "seeded builtin link type definition"
+            );
+        }
+    }
+
+    fn set_work_title_if_absent(&mut self, work_id: BeId, title: &str) -> Result<(), ServerError> {
+        if let Some(ws) = self.works.get_mut(&work_id) {
+            if ws.cached_title.is_empty() {
+                ws.cached_title = title.to_string();
+                ws.mark_dirty();
+            }
+        }
+        Ok(())
     }
 
     pub fn list_link_types(&self) -> Vec<(u64, String)> {
@@ -18180,6 +18270,7 @@ pub(crate) mod persist_snapshot {
         standalone_editions: Vec<StandaloneEditionSnapshot>,
         links: Vec<LinkSnapshot>,
         link_counter: BeId,
+        link_type_registry: Vec<crate::persist::manifest::LinkTypeRegistryEntry>,
         admin: AdminSnapshot,
         reconcile_store: crate::server::federation::ReconcileStore,
         reconcile_counter: u64,
@@ -18360,6 +18451,7 @@ pub(crate) mod persist_snapshot {
                     })
                     .collect(),
                 link_counter: self.link_counter,
+                link_type_registry: self.link_type_registry.values().cloned().collect(),
                 admin: AdminSnapshot {
                     accepting_connections: self.admin.is_accepting_connections(),
                     shutdown_requested: self.admin.is_shutdown_requested(),
@@ -18451,6 +18543,11 @@ pub(crate) mod persist_snapshot {
                 work_to_links: HashMap::new(),
                 link_counter: snapshot.link_counter,
                 link_type_names: HashMap::new(),
+                link_type_registry: snapshot
+                    .link_type_registry
+                    .iter()
+                    .map(|e| (e.type_id, e.clone()))
+                    .collect(),
                 cross_server_backlinks: Vec::new(),
                 backfollow: BackfollowEngine::new(),
                 content_address,
@@ -19357,6 +19454,7 @@ pub(crate) mod persist_snapshot {
                 links: Vec::new(),
                 link_counter: self.link_counter,
                 links_chunk_hash: None,
+                link_type_registry: vec![],
                 admin: crate::persist::manifest::AdminEntry {
                     accepting_connections: self.admin.is_accepting_connections(),
                     shutdown_requested: self.admin.is_shutdown_requested(),
