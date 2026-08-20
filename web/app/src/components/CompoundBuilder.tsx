@@ -269,7 +269,11 @@ export function CompoundBuilder({
   const structure = useMemo(() => {
     const items: Array<{ type: "original" | "transclusion"; label: string; preview: string; changed?: boolean; origin?: string; sectionNum?: number; duplicate?: boolean }> = [];
     if (compoundSpanRanges.length === 0) {
-      items.push({ type: "original", label: "Original", preview: centerText.slice(0, 60) });
+      items.push(
+      centerText.trim()
+        ? { type: "original", label: "Your text", preview: centerText.slice(0, 60) }
+        : { type: "original", label: "Empty", preview: "Include a passage from a source to begin your document" },
+    );
       return items;
     }
     const sorted = [...compoundSpanRanges].sort((a, b) => a.flat_start - b.flat_start);
@@ -279,7 +283,7 @@ export function CompoundBuilder({
     for (let i = 0; i < sorted.length; i++) {
       const span = sorted[i];
       if (span.flat_start > pos) {
-        items.push({ type: "original", label: "Original", preview: centerText.slice(pos, Math.min(pos + 60, span.flat_start)) });
+        items.push({ type: "original", label: "Your text", preview: centerText.slice(pos, Math.min(pos + 60, span.flat_start)) });
       }
       transclusionNum++;
       const title = compoundSourceTitles[span.source_work_id] || `Work ${span.source_work_id.toString(16)}`;
@@ -292,7 +296,7 @@ export function CompoundBuilder({
       pos = Math.max(pos, span.flat_end);
     }
     if (pos < centerText.length) {
-      items.push({ type: "original", label: "Original", preview: centerText.slice(pos, Math.min(pos + 60, centerText.length)) });
+      items.push({ type: "original", label: "Your text", preview: centerText.slice(pos, Math.min(pos + 60, centerText.length)) });
     }
     return items;
   }, [compoundSpanRanges, compoundSourceTitles, centerText, sourceOriginMap]);
@@ -532,9 +536,10 @@ export function CompoundBuilder({
           )}
         </div>
 
-        {/* Right: Structure Outline */}
+        {/* Right: Document Outline */}
         <div className="cb-structure-panel">
-          <div className="cb-panel-header">Structure</div>
+          <div className="cb-panel-header">Outline</div>
+          <div className="cb-panel-sub">Quoted passages and your own text, in order</div>
           <div className="cb-structure-list">
             {structure.map((item, i) => (
               <div

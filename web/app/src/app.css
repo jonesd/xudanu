@@ -5604,3 +5604,13 @@ canvas._bridge {
 .trail-start-btn:hover {
   background: rgba(88, 166, 255, 0.3);
 }
+
+/* Compound Builder outline panel */
+.cb-panel-sub {
+  font-size: 10px;
+  color: var(--text-muted, #8b949e);
+  padding: 0 10px 6px;
+  border-bottom: 1px solid var(--border, #30363d);
+}
+.cb-structure-item.original .cb-structure-num { color: var(--text-muted, #8b949e); }
+.cb-structure-item.original .cb-structure-preview { color: var(--text-muted, #8b949e); }
