@@ -415,7 +415,7 @@ export function CompoundBuilder({
               onKeyDown={(e) => {
                 if (e.key === "ArrowDown") { e.preventDefault(); setSourceHighlight((h) => Math.min(h + 1, Math.min(otherWorks.length, 20) - 1)); }
                 else if (e.key === "ArrowUp") { e.preventDefault(); setSourceHighlight((h) => Math.max(h - 1, 0)); }
-                else if (e.key === "Enter") { e.preventDefault(); const w = otherWorks[sourceHighlight]; if (w) { void addSource(w.work_id); setSourceFilter(""); } }
+                else if (e.key === "Enter") { e.preventDefault(); const w = otherWorks[sourceHighlight]; if (w) { void addSource(w.work_id); setActiveSourceId(w.work_id); setSourceFilter(""); } }
                 else if (e.key === "Escape") { setSourceFilter(""); }
               }}
             />
@@ -426,7 +426,7 @@ export function CompoundBuilder({
                     key={w.work_id}
                     className={`cb-add-source-item ${idx === sourceHighlight ? "highlighted" : ""}`}
                     onMouseEnter={() => setSourceHighlight(idx)}
-                    onClick={() => { void addSource(w.work_id); setSourceFilter(""); }}
+                    onClick={() => { void addSource(w.work_id); setActiveSourceId(w.work_id); setSourceFilter(""); }}
                   >
                     <span className="cb-source-name">
                       {transclusionSourceIds.has(w.work_id) && <span className="cb-source-tag" title="Already a transclusion source">T</span>}
