@@ -56,6 +56,7 @@ export function ConnectionsSection({
     workId: number;
     linkId?: number;
     linkTypeId?: number;
+    spanned?: boolean;
     transclusionSource?: number;
     transclusionStart?: number;
     transclusionEnd?: number;
@@ -101,10 +102,17 @@ export function ConnectionsSection({
       workId: isOutgoing ? link.destination : link.origin,
       linkId: link.link_id,
       linkTypeId: typeId,
+      // Outgoing with an anchored excerpt: the underline lives on
+      // THIS document's text ("On this page"); otherwise it's a
+      // whole-document link listed under "This document links out".
+      spanned: isOutgoing && !!(link.origin_ref?.excerpt || "").trim(),
     });
   }
 
   for (const bl of backlinks) {
+    // Archived-origin backlinks are noise: the connecting document is
+    // dead (old demo copies). Hide them; the link survives server-side.
+    if (bl.source_archived) continue;
     const key = `backlink-${bl.link_id}`;
     items.push({
       key,
@@ -182,14 +190,30 @@ export function ConnectionsSection({
           Pinned
         </div>
       )}
-      {sorted.map((item) => {
+      {(() => {
+        const sectionOf = (i: ConnItem): string => {
+          if (i.type === "transclusion") return "Includes content from";
+          if (i.type === "backlink") return "Incoming — on other documents";
+          if (i.spanned) return "On this page";
+          return "This document links out";
+        };
+        let lastSection = "";
+        return sorted.map((item) => {
+        const section = sectionOf(item);
+        const header = section !== lastSection ? (
+          <div key={`sec-${section}`} style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--text-muted)", padding: "8px 0 2px" }}>
+            {section}
+          </div>
+        ) : null;
+        lastSection = section;
         const borderColor =
           item.type === "transclusion" ? getTransclusionColor(item.workId) :
           item.type === "backlink" ? "var(--green)" :
           "var(--blue)";
         return (
+          <div key={item.key} className="conn-item-wrap">
+          {header}
         <div
-          key={item.key}
           className="conn-item"
           style={{
             borderLeft: `3px solid ${borderColor}`,
@@ -267,8 +291,10 @@ export function ConnectionsSection({
             </div>
           )}
         </div>
+        </div>
         );
-      })}
+        });
+      })()}
     </div>
   );
 }

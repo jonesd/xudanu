@@ -11980,6 +11980,11 @@ impl Server {
                 .get(&source_work_id)
                 .map(|ws| ws.cached_title.clone())
                 .filter(|t| !t.is_empty());
+            let source_archived = self
+                .works
+                .get(&source_work_id)
+                .map(|ws| ws.work.is_archived())
+                .unwrap_or(false);
             let direction = if ls.destination == work_id {
                 "incoming"
             } else {
@@ -11991,6 +11996,7 @@ impl Server {
                 link_type: format!("hyperlink_{}", direction),
                 excerpt,
                 title,
+                source_archived,
             });
         }
         Ok(results)

@@ -3317,6 +3317,10 @@ pub struct BacklinkEntryPayload {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub title: Option<String>,
+    /// Ghost/archived state of the SOURCE (origin) work — clients hide
+    /// backlinks whose origin document is archived.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub source_archived: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

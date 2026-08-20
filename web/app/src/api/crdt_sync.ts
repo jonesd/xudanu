@@ -281,6 +281,7 @@ export interface BacklinkEntry {
   link_type: string;
   excerpt?: string;
   title?: string;
+  source_archived?: boolean;
 }
 
 export interface LinkTypeInfo {
