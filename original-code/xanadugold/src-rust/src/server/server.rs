@@ -6901,15 +6901,18 @@ impl Server {
                                     .chars()
                                     .take(MAX_TITLE_CHARS)
                                     .collect::<String>();
-                                let wid = work["work_id"].as_u64();
-                                let (wid, wid_ok) = match wid {
-                                    Some(w) => (w, true),
-                                    None => (0, false),
-                                };
-                                if !wid_ok {
+                                // Remote ids are hex strings ("03ec") —
+                                // same wire shape as our own public API.
+                                let wid = work["work_id"]
+                                    .as_str()
+                                    .and_then(|h| {
+                                        u64::from_str_radix(h.trim_start_matches("0x"), 16).ok()
+                                    })
+                                    .or_else(|| work["work_id"].as_u64());
+                                let Some(wid) = wid else {
                                     malformed += 1;
                                     continue;
-                                }
+                                };
                                 results.push(serde_json::json!({
                                     "work_id": wid,
                                     "title": title,
