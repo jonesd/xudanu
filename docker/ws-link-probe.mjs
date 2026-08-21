@@ -14,6 +14,15 @@ import WebSocket from "ws";
 
 const [senderUrl, receiverAddr, receiverWorkHex, label = "probe"] = process.argv.slice(2);
 
+// Node's ws sends no Origin by default; servers with an origin
+// allowlist reject bare clients. Derive one from the URL unless
+// WS_ORIGIN is set.
+const wsHeaders = {};
+try {
+  const o = process.env.WS_ORIGIN ?? new URL(senderUrl).origin;
+  wsHeaders.origin = o;
+} catch {}
+
 function die(msg) {
   console.error(JSON.stringify({ label, ok: false, error: msg }));
   process.exit(1);
@@ -21,7 +30,7 @@ function die(msg) {
 
 let ws;
 try {
-  ws = new WebSocket(senderUrl);
+  ws = new WebSocket(senderUrl, { headers: wsHeaders });
 } catch (e) {
   die(`connect failed: ${e.message}`);
 }
