@@ -37169,39 +37169,60 @@ fn urlencode(s: &str) -> String {
     result
 }
 
+/// GET with redirect-following (same policy as the POST path):
+/// up to 3 hops of 301/302/307/308, same-host-or-subdomain only.
+/// Real-world cause: servers announcing plain addresses behind a
+/// TLS terminator (xudanu.com 308s http GETs to https).
 fn http_get_json(url: &str, timeout_secs: u64) -> Result<String, String> {
-    let is_https = url.starts_with("https://");
+    let mut current = url.to_string();
+    for _ in 0..4 {
+        let is_https = current.starts_with("https://");
 
-    let no_scheme = url
-        .strip_prefix("http://")
-        .or_else(|| url.strip_prefix("https://"))
-        .unwrap_or(url);
+        let no_scheme = current
+            .strip_prefix("http://")
+            .or_else(|| current.strip_prefix("https://"))
+            .unwrap_or(&current);
 
-    let (host_port, path) = no_scheme
-        .split_once('/')
-        .map(|(h, p)| (h, format!("/{}", p)))
-        .unwrap_or((no_scheme, "/".to_string()));
+        let (host_port, path) = no_scheme
+            .split_once('/')
+            .map(|(h, p)| (h, format!("/{}", p)))
+            .unwrap_or((no_scheme, "/".to_string()));
 
-    let default_port = if is_https { 443 } else { 80 };
-    let (host, port) = if let Some((h, p)) = host_port.rsplit_once(':') {
-        (h, p.parse::<u16>().unwrap_or(default_port))
-    } else {
-        (host_port, default_port)
-    };
+        let default_port = if is_https { 443 } else { 80 };
+        let (host, port) = if let Some((h, p)) = host_port.rsplit_once(':') {
+            (h, p.parse::<u16>().unwrap_or(default_port))
+        } else {
+            (host_port, default_port)
+        };
 
-    if is_https {
-        http_get_json_https(host, port, &path, timeout_secs)
-    } else {
-        http_get_json_http(host, port, &path, timeout_secs)
+        let (status, headers, body) = if is_https {
+            http_get_json_hop_https(&host, port, &path, timeout_secs)?
+        } else {
+            http_get_json_hop_http(&host, port, &path, timeout_secs)?
+        };
+        if !(301..=308).contains(&status) || status == 304 || status == 305 || status == 306 {
+            if !(200..300).contains(&status) {
+                return Err(format!("HTTP error: {}", status));
+            }
+            return Ok(body);
+        }
+        let location = headers
+            .iter()
+            .find(|(k, _)| k == "location")
+            .map(|(_, v)| v.clone())
+            .ok_or_else(|| format!("redirect (HTTP {}) without Location header", status))?;
+        current = normalize_redirect(&current, &location)?;
     }
+    Err(format!("too many redirects (final: {})", current))
 }
 
-fn http_get_json_https(
+/// One https GET hop; returns (status, headers, body).
+fn http_get_json_hop_https(
     host: &str,
     port: u16,
     path: &str,
     timeout_secs: u64,
-) -> Result<String, String> {
+) -> Result<(u16, Vec<(String, String)>, String), String> {
     use std::sync::Arc;
 
     let mut root_cert_store = rustls::RootCertStore::empty();
@@ -37260,24 +37281,17 @@ fn http_get_json_https(
         }
     }
 
-    let response_str = String::from_utf8_lossy(&all);
-    let status_line = response_str.lines().next().unwrap_or("");
-    if !status_line.contains("200") {
-        return Err(format!("HTTP error: {}", status_line));
-    }
-
-    let body_start = response_str.find("\r\n\r\n").ok_or("no body separator")?;
-    Ok(response_str[body_start + 4..].to_string())
+    parse_http_response(&all)
 }
 
-fn http_get_json_http(
+/// One plain-http GET hop; returns (status, headers, body).
+fn http_get_json_hop_http(
     host: &str,
     port: u16,
     path: &str,
     timeout_secs: u64,
-) -> Result<String, String> {
+) -> Result<(u16, Vec<(String, String)>, String), String> {
     use std::io::{Read, Write};
-    use std::net::TcpStream;
     use std::time::Duration;
 
     let addrs = resolve_and_verify_host(host, port)?;
@@ -37322,14 +37336,34 @@ fn http_get_json_http(
         }
     }
 
-    let response_str = String::from_utf8_lossy(&all);
-    let status_line = response_str.lines().next().unwrap_or("");
-    if !status_line.contains("200") {
-        return Err(format!("HTTP error: {}", status_line));
-    }
+    parse_http_response(&all)
+}
 
-    let body_start = response_str.find("\r\n\r\n").ok_or("no body separator")?;
-    Ok(response_str[body_start + 4..].to_string())
+/// Parse a raw HTTP/1.0 response into (status, headers, body).
+fn parse_http_response(raw: &[u8]) -> Result<(u16, Vec<(String, String)>, String), String> {
+    let response_str = String::from_utf8_lossy(raw);
+    let status = response_str
+        .lines()
+        .next()
+        .and_then(|status_line| status_line.split_whitespace().nth(1))
+        .and_then(|code| code.parse::<u16>().ok())
+        .unwrap_or(0);
+    let (head, body) = match response_str.find("\r\n\r\n") {
+        Some(split) => (
+            &response_str[..split],
+            response_str[split + 4..].to_string(),
+        ),
+        None => (response_str.as_ref(), String::new()),
+    };
+    let headers: Vec<(String, String)> = head
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            line.split_once(':')
+                .map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().to_string()))
+        })
+        .collect();
+    Ok((status, headers, body))
 }
 
 pub fn http_post_json(url: &str, body: &str, timeout_secs: u64) -> Result<String, String> {
@@ -37391,17 +37425,13 @@ pub fn http_post_json(url: &str, body: &str, timeout_secs: u64) -> Result<String
     }
 }
 
-/// Status-aware variant (FR-40 sender feedback): returns
-/// `(http_status, response_body)` so callers can distinguish an
-/// accepted POST (2xx) from a receiving-side rejection (4xx/5xx —
-/// the body carries the receiver's human-readable reason). Transport
-/// failures (DNS, connect, write, timeout) still surface as `Err`
-/// with a sender-side description.
-pub fn http_post_json_status(
+/// One hop of the status-aware POST (FR-40 sender feedback): raw
+/// request/response over plain TCP. Returns (status, headers, body).
+fn http_post_json_hop(
     url: &str,
     body: &str,
     timeout_secs: u64,
-) -> Result<(u16, String), String> {
+) -> Result<(u16, Vec<(String, String)>, String), String> {
     let no_scheme = url
         .strip_prefix("http://")
         .or_else(|| url.strip_prefix("https://"))
@@ -37459,11 +37489,178 @@ pub fn http_post_json_status(
         .and_then(|status_line| status_line.split_whitespace().nth(1))
         .and_then(|code| code.parse::<u16>().ok())
         .unwrap_or(0);
-    let body = response
-        .find("\r\n\r\n")
-        .map(|body_start| response[body_start + 4..].to_string())
-        .unwrap_or_default();
-    Ok((status, body))
+    let (head, body) = match response.find("\r\n\r\n") {
+        Some(split) => (&response[..split], response[split + 4..].to_string()),
+        None => (response.as_ref(), String::new()),
+    };
+    let headers: Vec<(String, String)> = head
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            line.split_once(':')
+                .map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().to_string()))
+        })
+        .collect();
+    Ok((status, headers, body))
+}
+
+/// Status-aware variant (FR-40 sender feedback): returns
+/// `(http_status, response_body)` so callers can distinguish an
+/// accepted POST (2xx) from a receiving-side rejection (4xx/5xx —
+/// the body carries the receiver's human-readable reason). Transport
+/// failures (DNS, connect, write, timeout) still surface as `Err`
+/// with a sender-side description.
+///
+/// Follows up to 3 redirects (301/302/307/308). Real-world cause:
+/// servers announcing plain addresses behind a TLS terminator answer
+/// http POSTs with a permanent redirect to https (e.g. xudanu.com
+/// returns 308); without redirect-following the notify would land on
+/// the redirect response instead of the endpoint. Redirect targets
+/// must be same-host-or-subdomain http(s) — anything else (scheme
+/// change beyond http/https, unexpected location) is an error, so a
+/// malicious redirect cannot retarget the notify.
+pub fn http_post_json_status(
+    url: &str,
+    body: &str,
+    timeout_secs: u64,
+) -> Result<(u16, String), String> {
+    let mut current = url.to_string();
+    for _ in 0..4 {
+        let (status, headers, resp_body) = http_post_json_hop(&current, body, timeout_secs)?;
+        if !(301..=308).contains(&status) || status == 304 || status == 305 || status == 306 {
+            return Ok((status, resp_body));
+        }
+        let location = headers
+            .iter()
+            .find(|(k, _)| k == "location")
+            .map(|(_, v)| v.clone())
+            .ok_or_else(|| {
+                format!(
+                    "redirect (HTTP {}) without Location header from {}",
+                    status, current
+                )
+            })?;
+        let next = normalize_redirect(&current, &location)?;
+        current = next;
+    }
+    Err(format!("too many redirects (final: {})", current))
+}
+
+/// host[:port] of an http(s) URL, scheme and path stripped.
+fn url_hostport(url: &str) -> String {
+    let no_scheme = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .unwrap_or(url);
+    no_scheme.split('/').next().unwrap_or("").to_string()
+}
+
+/// Resolve a redirect Location against the current URL, restricted
+/// to http/https on the same host (or a subdomain of it).
+fn normalize_redirect(current: &str, location: &str) -> Result<String, String> {
+    let cur_hostport = url_hostport(current);
+    let cur_host = cur_hostport
+        .rsplit_once(':')
+        .map(|(h, _)| h.to_string())
+        .unwrap_or_else(|| cur_hostport.clone());
+
+    let next = if location.starts_with("http://") || location.starts_with("https://") {
+        location.to_string()
+    } else if location.starts_with('/') {
+        let scheme = if current.starts_with("https://") {
+            "https"
+        } else {
+            "http"
+        };
+        format!("{}://{}{}", scheme, cur_hostport, location)
+    } else {
+        return Err(format!(
+            "unsupported redirect location {:?} (must be absolute http(s) or root-relative)",
+            location
+        ));
+    };
+
+    let next_hostport = url_hostport(&next);
+    let next_host = next_hostport
+        .rsplit_once(':')
+        .map(|(h, _)| h.to_string())
+        .unwrap_or_else(|| next_hostport.clone());
+
+    if next_host != cur_host
+        && !(next_host.ends_with(&format!(".{}", cur_host)) && !cur_host.is_empty())
+    {
+        return Err(format!(
+            "redirect to different host {:?} (from {:?}) refused",
+            next_host, cur_host
+        ));
+    }
+    Ok(next)
+}
+
+#[cfg(test)]
+mod tests_http_redirects {
+    use super::*;
+
+    #[test]
+    fn normalize_absolute_https_upgrade_same_host() {
+        let next = normalize_redirect(
+            "http://xudanu.com/api/backlink-notify",
+            "https://xudanu.com/api/backlink-notify",
+        )
+        .unwrap();
+        assert_eq!(next, "https://xudanu.com/api/backlink-notify");
+    }
+
+    #[test]
+    fn normalize_root_relative_keeps_scheme_and_host() {
+        let next = normalize_redirect("http://example.com:8080/a/b", "/c/d").unwrap();
+        assert_eq!(next, "http://example.com:8080/c/d");
+    }
+
+    #[test]
+    fn normalize_subdomain_allowed() {
+        assert!(normalize_redirect("http://example.com/x", "https://api.example.com/y").is_ok());
+    }
+
+    #[test]
+    fn normalize_different_host_refused() {
+        assert!(normalize_redirect("http://example.com/x", "https://evil.com/y").is_err());
+    }
+
+    #[test]
+    fn normalize_non_http_scheme_refused() {
+        assert!(normalize_redirect("http://example.com/x", "ftp://example.com/y").is_err());
+        assert!(normalize_redirect("http://example.com/x", "gopher://example.com/y").is_err());
+    }
+
+    #[test]
+    fn normalize_relative_path_refused() {
+        assert!(normalize_redirect("http://example.com/a/b", "c/d").is_err());
+    }
+
+    #[test]
+    fn parse_response_extracts_status_headers_body() {
+        let raw = b"HTTP/1.0 308 Permanent Redirect\r\nLocation: https://xudanu.com/x\r\nContent-Length: 0\r\n\r\n";
+        let (status, headers, body) = parse_http_response(raw).unwrap();
+        assert_eq!(status, 308);
+        assert_eq!(
+            headers
+                .iter()
+                .find(|(k, _)| k == "location")
+                .map(|(_, v)| v.clone()),
+            Some("https://xudanu.com/x".to_string())
+        );
+        assert_eq!(body, "");
+    }
+
+    #[test]
+    fn parse_response_200_with_body() {
+        let raw = b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{\"ok\":true}";
+        let (status, headers, body) = parse_http_response(raw).unwrap();
+        assert_eq!(status, 200);
+        assert!(headers.iter().any(|(k, _)| k == "content-type"));
+        assert_eq!(body, "{\"ok\":true}");
+    }
 }
 
 #[cfg(test)]
