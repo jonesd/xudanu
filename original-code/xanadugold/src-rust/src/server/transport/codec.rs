@@ -1980,6 +1980,29 @@ impl JsonCodec {
                     element: args.element,
                 })
             }
+            OperationCode::TransclusionPlaceCrossServer => {
+                #[derive(Deserialize)]
+                struct Args {
+                    dest_work: BeId,
+                    #[serde(default)]
+                    cursor: usize,
+                    tumbler: String,
+                    span_start: usize,
+                    span_end: usize,
+                    #[serde(default)]
+                    title_hint: Option<String>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TransclusionPlaceCrossServer {
+                    dest_work: args.dest_work,
+                    cursor: args.cursor,
+                    tumbler: args.tumbler,
+                    span_start: args.span_start,
+                    span_end: args.span_end,
+                    title_hint: args.title_hint,
+                })
+            }
             OperationCode::ElementUpdate => {
                 #[derive(Deserialize)]
                 struct Args {

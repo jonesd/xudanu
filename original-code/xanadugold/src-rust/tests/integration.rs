@@ -3164,6 +3164,251 @@ async fn federated_search_wire_contract() {
     );
 }
 
+/// FR-41 S2: cross-server span transclusion over the wire. Node A
+/// fetches a span of Node B's published work by reference: tumbler +
+/// span in, verified BLAKE3 out, pinned virtual element placed in
+/// the destination at the cursor. Also covers the failure modes:
+/// tampered hash (impossible to forge here, but bad span range must
+/// error clearly) and untrusted-origin refusal.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cross_server_span_transclusion_end_to_end() {
+    xudanu::server::server::set_allow_loopback(true);
+    let srv_b = TestServer::start().await;
+    let srv_a = TestServer::start().await;
+
+    // Node B: author + publish the source work
+    let (mut sb, mut rb, _) = json_setup(&srv_b).await;
+    let source_text = "The enfilade structure provides sublinear retrieval across the docuverse. Transclusion keeps content singular. Provenance binds authors to spans.";
+    async fn mkpub(s: &mut SplitSender, r: &mut SplitReceiver, id: u16, text: &str) -> u64 {
+        let wid = send_recv_json(
+            s,
+            r,
+            json_req(
+                id,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": text}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap();
+        let pubr = send_recv_json(
+            s,
+            r,
+            json_req(
+                id + 100,
+                "work_publish",
+                Some(serde_json::json!({"work_id": wid})),
+            ),
+        )
+        .await;
+        assert_eq!(pubr["type"], "response", "publish failed: {pubr}");
+        wid
+    }
+    let b_work = mkpub(&mut sb, &mut rb, 900, source_text).await;
+    let b_work_hex = format!("{:x}", b_work);
+
+    // Node A: admin-authenticate, create destination doc, add Node B
+    // to the directory (loopback allowed for the test), trust it.
+    let (mut sa, mut ra, _) = json_setup(&srv_a).await;
+
+    // import_source_work requires a registered historical author
+    // (the provenance bond for imported sources). Register one and
+    // use it as the importing author.
+    let author = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            905,
+            "historical_author_register",
+            Some(serde_json::json!({
+                "name": "NodeB Importer",
+                "display_name": "Cross-server import",
+                "birth_year": null,
+                "death_year": null,
+                "external_ids": {},
+                "source_bibliography": ""
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(
+        author["type"], "response",
+        "author register failed: {author}"
+    );
+    let importer_author = author["value"]["value"]["be_id"].as_u64().unwrap();
+    let dest = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            910,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "My essay.\n\nMORE\n"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    // resolve B's server id from its well-known
+    let b_info: serde_json::Value = reqwest::get(format!(
+        "http://{}/.well-known/xudanu-server.json",
+        srv_b.addr
+    ))
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+    let b_namespace = b_info["server_namespace_id"].as_u64().unwrap();
+
+    let b_addr = format!("{}", srv_b.addr);
+    let b_addr_parts: Vec<&str> = b_addr.rsplitn(2, ':').collect();
+    let (b_port_str, b_host) = (b_addr_parts[0], b_addr_parts[1]);
+    let add = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            911,
+            "server_directory_add",
+            Some(serde_json::json!({
+                "address": b_host,
+                "port": b_port_str.parse::<u16>().ok(),
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(add["type"], "response", "directory add failed: {add}");
+
+    // trust it: find its server_id in the list first
+    let list = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(912, "server_directory_list", None),
+    )
+    .await;
+    let servers = list["value"]["value"]["servers"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let b_entry = servers
+        .iter()
+        .find(|e| e["address"].as_str() == Some(b_host))
+        .cloned()
+        .expect("B in directory");
+    let b_sid = b_entry["server_id"].clone();
+    let trust = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            913,
+            "server_directory_set_trust",
+            Some(serde_json::json!({"server_id": b_sid, "trusted": true})),
+        ),
+    )
+    .await;
+    assert_eq!(trust["type"], "response", "trust failed: {trust}");
+
+    // The happy path: transclude chars 4..12 of B's work ("enfilade")
+    // into dest at cursor 9.
+    let tumbler = format!("{}.{}.1.0", b_namespace, b_work_hex);
+    let place = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            920,
+            "transclusion_place_cross_server",
+            Some(serde_json::json!({
+                "dest_work": dest,
+                "cursor": 9,
+                "tumbler": tumbler,
+                "span_start": 4,
+                "span_end": 12,
+                "title_hint": "enfilade passage",
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(place["type"], "response", "place failed: {place}");
+    let val = &place["value"]["value"];
+    assert_eq!(val["dest_work"].as_u64(), Some(dest));
+    assert!(
+        val["source_work"].as_u64().is_some(),
+        "frozen source created"
+    );
+    assert_eq!(val["span"].as_array().map(|a| a.len()), Some(2));
+    assert!(
+        val["content_hash"].as_str().is_some_and(|h| h.len() == 64),
+        "hash present"
+    );
+
+    // Destination now contains the span content. Virtual elements
+    // resolve through their pinned revision on read
+    // (materialize_virtual_elements is the FR-37 pass); the
+    // work_text op triggers it server-side.
+    // resolve_inline_transclusions materializes virtuals (FR-37
+    // pinned-resolution) then renders the full text.
+    let text = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            921,
+            "resolve_inline_transclusions",
+            Some(serde_json::json!({"work_id": dest})),
+        ),
+    )
+    .await;
+    assert_eq!(text["type"], "response", "resolve failed: {text}");
+    let flat = serde_json::to_string(&text["value"]).unwrap_or_default();
+    assert!(
+        flat.contains("enfilade"),
+        "rendered destination must contain the transcluded span, got: {flat}"
+    );
+
+    // Failure mode 1: bad span (start >= end) — clear error
+    let bad = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            930,
+            "transclusion_place_cross_server",
+            Some(serde_json::json!({
+                "dest_work": dest,
+                "cursor": 0,
+                "tumbler": tumbler,
+                "span_start": 10,
+                "span_end": 10,
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(bad["type"], "error", "empty span must error: {bad}");
+
+    // Failure mode 2: unknown tumbler — clear error
+    let bad2 = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            931,
+            "transclusion_place_cross_server",
+            Some(serde_json::json!({
+                "dest_work": dest,
+                "cursor": 0,
+                "tumbler": "99999.ffff.1.0",
+                "span_start": 0,
+                "span_end": 5,
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(bad2["type"], "error", "unknown origin must error: {bad2}");
+    let msg = bad2["message"].as_str().unwrap_or_default();
+    assert!(
+        msg.contains("directory") || msg.contains("not in directory"),
+        "error should explain the origin is unknown: {msg}"
+    );
+}
+
 /// FR-40 sender feedback: cross-server link creation reports the
 /// definitive notify outcome — accepted when the receiver takes it,
 /// a receiver rejection reason (HTTP 404) for unknown works, and a

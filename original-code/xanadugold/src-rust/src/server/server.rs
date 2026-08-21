@@ -5134,7 +5134,7 @@ impl Server {
     }
 
     pub fn attribution_query_resolved(
-        &self,
+        &mut self,
         work_be_id: BeId,
     ) -> Result<Vec<super::transport::protocol::AttributionSpanPayload>, ServerError> {
         let resolved = self.resolve_inline_transclusions(work_be_id)?;
@@ -7037,6 +7037,246 @@ impl Server {
             "server_public_key": server_pub_key_hex,
             "server_signature": server_sig_hex,
         }))
+    }
+
+    /// FR-41 S2: transclude a selected span of a REMOTE work into a
+    /// local document, by reference. The flow:
+    ///
+    /// 1. Resolve the tumbler to a trusted directory entry.
+    /// 2. Fetch the span from the ORIGIN's public range API — the
+    ///    origin answers with the span text, its BLAKE3 hash, and
+    ///    license classes (FR-38 egress badges).
+    /// 3. Verify the returned hash against the locally computed
+    ///    hash of the fetched text (tamper check).
+    /// 4. Store the span as a frozen local source work
+    ///    (import_source_work — provenance bond `xanadu:{tumbler}#s-e`).
+    /// 5. Place a pinned Virtual transclusion of that source at the
+    ///    destination cursor. Pinned: the quotation is frozen at the
+    ///    revision fetched; re-fetch/update is the reader's explicit
+    ///    action (S3).
+    ///
+    /// The span content is cached locally (offline resilience,
+    /// hash-verifiable), but its identity is the remote tumbler —
+    /// attribution, license classes, and origin server remain
+    /// first-class in the provenance record.
+    pub fn transclusion_place_cross_server(
+        &mut self,
+        session_id: SessionId,
+        dest_work: BeId,
+        cursor: usize,
+        tumbler: &str,
+        span_start: usize,
+        span_end: usize,
+        title_hint: Option<String>,
+    ) -> Result<super::transport::protocol::CrossServerTransclusionPayload, ServerError> {
+        use crate::edition::links::{parse_tumbler_server, tumbler_local_path};
+
+        self.ensure_authenticated(session_id)?;
+        if dest_work == 0 {
+            return Err(ServerError::InvalidArgument(
+                "destination work required".into(),
+            ));
+        }
+        if span_start >= span_end {
+            return Err(ServerError::InvalidArgument("empty span".into()));
+        }
+        if span_end - span_start > 100_000 {
+            return Err(ServerError::InvalidArgument(
+                "span too large (max 100k chars)".into(),
+            ));
+        }
+        let _ = self.work(dest_work)?;
+
+        // 1. Resolve the tumbler against the directory.
+        let (server_id_num, _addr_from_tumbler) = parse_tumbler_server(tumbler);
+        let local_path = tumbler_local_path(tumbler);
+        let remote_work_hex = local_path.split('.').next().unwrap_or("").to_string();
+        if remote_work_hex.is_empty() {
+            return Err(ServerError::InvalidArgument(format!(
+                "tumbler has no work component: {tumbler}"
+            )));
+        }
+        // Find the directory entry: by numeric id, else by address match.
+        let entry = if server_id_num != 0 {
+            self.server_directory.get(server_id_num).cloned()
+        } else {
+            None
+        };
+        let entry = match entry {
+            Some(e) => e,
+            None => {
+                // domain-style tumbler: match by address string
+                let domain = tumbler.trim_matches('"').split('.').next().unwrap_or("");
+                self.server_directory
+                    .list()
+                    .into_iter()
+                    .find(|e| e.address == domain)
+                    .cloned()
+                    .ok_or_else(|| {
+                        ServerError::NotFound(format!(
+                            "origin server for tumbler {tumbler} not in directory"
+                        ))
+                    })?
+            }
+        };
+        if entry.quarantined {
+            return Err(ServerError::InvalidArgument(format!(
+                "origin server {} is quarantined",
+                entry.name
+            )));
+        }
+        if !entry.trusted {
+            return Err(ServerError::InvalidArgument(format!(
+                "origin server {} is not trusted — ask an administrator to trust it before transcluding",
+                entry.name
+            )));
+        }
+
+        // 2. Fetch the span from the origin's public range API.
+        let base = format!("http://{}:{}", entry.address, entry.port.unwrap_or(8080));
+        let range_url = format!(
+            "{}/api/public/work/{}/range/{}/{}",
+            base, remote_work_hex, span_start, span_end
+        );
+        tracing::info!(url = %range_url, "[cross-server transclusion] fetching span");
+        let body = http_get_json(&range_url, 5).map_err(|e| {
+            ServerError::InvalidArgument(format!("failed to fetch span from {}: {}", entry.name, e))
+        })?;
+        let data: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|e| ServerError::Internal(format!("origin returned invalid JSON: {}", e)))?;
+        let span_text = data["text"]
+            .as_str()
+            .ok_or_else(|| ServerError::Internal("origin returned no span text".into()))?
+            .to_string();
+        if span_text.is_empty() {
+            return Err(ServerError::InvalidArgument(
+                "origin returned an empty span — check the character range".into(),
+            ));
+        }
+        let origin_hash_hex = data["content_hash_blake3"]
+            .as_str()
+            .ok_or_else(|| ServerError::Internal("origin returned no content hash".into()))?
+            .to_string();
+
+        // 3. Verify: BLAKE3 of fetched text must equal the origin's claim.
+        let local_hash = {
+            let mut h = blake3::Hasher::new();
+            h.update(span_text.as_bytes());
+            h.finalize().to_hex().to_string()
+        };
+        if local_hash != origin_hash_hex {
+            return Err(ServerError::Internal(format!(
+                "content hash mismatch fetching span from {} — refusing to transclude possibly-tampered content",
+                entry.name
+            )));
+        }
+
+        // 4. Frozen local source with provenance bond. The importing
+        // author of record is a dedicated historical author
+        // ("Cross-server import"), find-or-created per server —
+        // attribution of the CONTENT stays with the origin (tumbler +
+        // hash); this author records who performed the import.
+        let title = title_hint
+            .filter(|t| !t.trim().is_empty())
+            .map(|t| t.trim().chars().take(120).collect::<String>())
+            .unwrap_or_else(|| format!("{} (span {}-{})", entry.name, span_start, span_end));
+        let importer_author = {
+            let existing = self
+                .historical_authors
+                .list()
+                .into_iter()
+                .find(|a| a.name == "Cross-server import")
+                .map(|a| a.be_id);
+            match existing {
+                Some(id) => id,
+                None => {
+                    let session_club = self
+                        .sessions
+                        .get(&session_id)
+                        .and_then(|sess| {
+                            sess._key_master()
+                                .and_then(|km| km.login_authority().iter().next().copied())
+                        })
+                        .unwrap_or(0);
+                    self.register_historical_author(
+                        "Cross-server import".to_string(),
+                        "Cross-server import".to_string(),
+                        None,
+                        None,
+                        std::collections::HashMap::new(),
+                        String::new(),
+                        session_club,
+                    )?
+                    .be_id
+                }
+            }
+        };
+        let provenance = format!("xudanu:{}#{}-{}", tumbler, span_start, span_end);
+        let (source_work, _auth, _len, _t) = self.import_source_work(
+            session_id,
+            importer_author,
+            title,
+            span_text.clone(),
+            provenance,
+            0,
+            0,
+        )?;
+
+        // 5. Pinned Virtual transclusion at the cursor.
+        let revision = self
+            .works
+            .get(&source_work)
+            .map(|ws| ws.work.revision_count())
+            .unwrap_or(0);
+        let spec = crate::edition::range_element::VirtualSpec {
+            source_work_id: source_work,
+            char_start: 0,
+            char_end: span_text.chars().count(),
+            revision,
+            placed_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            placed_by: self.resolve_author_club(session_id),
+        };
+        let elem = RangeElement::virtual_element(spec);
+        let dest_edition = {
+            let ws = self
+                .works
+                .get(&dest_work)
+                .ok_or(ServerError::WorkNotFound(dest_work))?;
+            ws.work.current_edition().clone()
+        };
+        let mut entries = dest_edition.all_entries();
+        let pos = (cursor as i64).clamp(0, entries.len() as i64) as usize;
+        entries.insert(
+            pos,
+            (
+                pos as i64,
+                std::sync::Arc::new(crate::edition::Carrier::new(elem)),
+            ),
+        );
+        // Renumber: positions are dense sequence numbers.
+        let renumbered: Vec<(i64, std::sync::Arc<crate::edition::Carrier>)> = entries
+            .iter()
+            .enumerate()
+            .map(|(i, (_, c))| (i as i64, c.clone()))
+            .collect();
+        self.work_grab(session_id, dest_work)?;
+        let rev = self.work_revise(session_id, dest_work, Edition::from_entries(renumbered))?;
+        self.work_release(session_id, dest_work)?;
+        self.auto_checkpoint();
+
+        Ok(super::transport::protocol::CrossServerTransclusionPayload {
+            dest_work,
+            source_work,
+            revision: rev,
+            span: [span_start, span_end],
+            tumbler: tumbler.to_string(),
+            content_hash: origin_hash_hex,
+            server_name: entry.name.clone(),
+            text_len: span_text.chars().count() as u64,
+        })
     }
 
     pub fn public_work_range(
@@ -14455,9 +14695,13 @@ impl Server {
     }
 
     pub fn resolve_inline_transclusions(
-        &self,
+        &mut self,
         work_id: BeId,
     ) -> Result<InlineTransclusionResult, ServerError> {
+        // FR-37 Phase 3 / FR-41 S2: unmaterialized Virtual elements
+        // contribute zero text — materialize (pinned-resolution, one
+        // pass per element ever) before rendering.
+        self.materialize_virtual_elements(work_id)?;
         let mut cache: HashMap<BeId, String> = HashMap::new();
         let mut stack: Vec<BeId> = Vec::new();
         let mut span_ranges = Vec::new();
@@ -34206,7 +34450,7 @@ mod tests {
         assert_eq!(before.text, "Intro Hello End.");
 
         let snapshot = server.to_snapshot();
-        let restored = Server::from_snapshot(&snapshot);
+        let mut restored = Server::from_snapshot(&snapshot);
 
         let after = restored.resolve_inline_transclusions(doc).unwrap();
         assert_eq!(
@@ -34253,7 +34497,7 @@ mod tests {
         assert_eq!(migrated, 1, "should migrate 1 span");
 
         let snapshot = server.to_snapshot();
-        let restored = Server::from_snapshot(&snapshot);
+        let mut restored = Server::from_snapshot(&snapshot);
 
         assert!(
             restored.work_has_inline_transclusions(doc),

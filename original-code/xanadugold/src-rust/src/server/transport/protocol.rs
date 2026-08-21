@@ -299,6 +299,7 @@ pub enum OperationCode {
     EditionRetrieve,
     EditionCost,
     ElementInsert,
+    TransclusionPlaceCrossServer,
     ElementUpdate,
     RenderTransclusions,
 
@@ -649,6 +650,7 @@ impl OperationCode {
             0x0c01 => Some(OperationCode::EditionRetrieve),
             0x0c02 => Some(OperationCode::EditionCost),
             0x0c0B => Some(OperationCode::ElementInsert),
+            0x0c0C => Some(OperationCode::TransclusionPlaceCrossServer),
             0x0c0C => Some(OperationCode::ElementUpdate),
             0x0c0C => Some(OperationCode::RenderTransclusions),
             0x0c03 => Some(OperationCode::AnnotationCreate),
@@ -978,6 +980,7 @@ impl OperationCode {
             OperationCode::EditionRetrieve => 0x0c01,
             OperationCode::EditionCost => 0x0c02,
             OperationCode::ElementInsert => 0x0c0B,
+            OperationCode::TransclusionPlaceCrossServer => 0x0c0C,
             OperationCode::ElementUpdate => 0x0c0C,
             OperationCode::RenderTransclusions => 0x0c0C,
             OperationCode::AnnotationCreate => 0x0c03,
@@ -1805,6 +1808,22 @@ pub enum WireRequest {
         position: i64,
         element: RangeElementPayload,
     },
+    /// FR-41 S2: transclude a selected span of a remote work into a
+    /// local document by reference (fetch span from origin, verify
+    /// BLAKE3, freeze as source, place pinned virtual at cursor).
+    TransclusionPlaceCrossServer {
+        dest_work: BeId,
+        #[cfg_attr(feature = "serde", serde(default))]
+        cursor: usize,
+        tumbler: String,
+        span_start: usize,
+        span_end: usize,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        title_hint: Option<String>,
+    },
     ElementUpdate {
         work_id: BeId,
         char_position: usize,
@@ -2397,7 +2416,6 @@ impl WireRequest {
                 | Self::GovernanceLog { .. }
                 | Self::GovernanceStatus { .. }
                 | Self::GlobalTextSearch { .. }
-                | Self::ResolveInlineTransclusions { .. }
         )
     }
 }
@@ -2540,6 +2558,7 @@ pub enum ResponseValue {
     /// FR-23: Text at a specific revision
     TextResult(String),
     LinkInfo(LinkPayload),
+    CrossServerTransclusion(CrossServerTransclusionPayload),
     LinkList(Vec<LinkPayload>),
     LinkTypes(Vec<LinkTypeInfoPayload>),
     ConnectionPins(Vec<String>),
@@ -3279,6 +3298,18 @@ pub struct WorkListEntry {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub content_crum: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossServerTransclusionPayload {
+    pub dest_work: BeId,
+    pub source_work: BeId,
+    pub revision: u64,
+    pub span: [usize; 2],
+    pub tumbler: String,
+    pub content_hash: String,
+    pub server_name: String,
+    pub text_len: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

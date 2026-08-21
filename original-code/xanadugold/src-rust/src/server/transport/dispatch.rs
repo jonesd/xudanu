@@ -2366,6 +2366,19 @@ fn dispatch_inner(
                 method: format!("{:?}", cm).to_lowercase(),
             })
         }
+        WireRequest::TransclusionPlaceCrossServer {
+            dest_work,
+            cursor,
+            tumbler,
+            span_start,
+            span_end,
+            title_hint,
+        } => {
+            let payload = srv.transclusion_place_cross_server(
+                session_id, dest_work, cursor, &tumbler, span_start, span_end, title_hint,
+            )?;
+            Ok(ResponseValue::CrossServerTransclusion(payload))
+        }
         WireRequest::ElementInsert {
             work_id,
             position,
@@ -4712,29 +4725,19 @@ fn dispatch_inner_read(
         }
 
         WireRequest::ResolveInlineTransclusions { work_id } => {
-            srv.ensure_can_read(session_id, work_id)?;
-            let result = srv.resolve_inline_transclusions(work_id)?;
-            for sr in &result.span_ranges {
-                srv.ensure_can_read(session_id, sr.source_work_id)?;
-            }
-            Ok(ResponseValue::ResolveInlineTransclusionsResult {
-                text: result.text,
-                span_ranges: result
-                    .span_ranges
-                    .iter()
-                    .map(SpanRangePayload::from_span_range)
-                    .collect(),
-                source_titles: result.source_titles,
-            })
+            // Materializing resolver — handled on the mutable dispatch
+            // path (materialize_virtual_elements writes).
+            let _ = work_id;
+            return Err(ServerError::Internal(
+                "resolve_inline_transclusions requires the mutable dispatch path".into(),
+            ));
         }
         WireRequest::AttributionQueryResolved { work_id } => {
-            srv.ensure_can_read(session_id, work_id)?;
-            let resolved = srv.resolve_inline_transclusions(work_id)?;
-            for sr in &resolved.span_ranges {
-                srv.ensure_can_read(session_id, sr.source_work_id)?;
-            }
-            let spans = srv.attribution_query_resolved(work_id)?;
-            Ok(ResponseValue::AttributionQueryResult { spans })
+            // Materializing resolver — handled on the mutable dispatch path.
+            let _ = work_id;
+            return Err(ServerError::Internal(
+                "attribution_query_resolved requires the mutable dispatch path".into(),
+            ));
         }
         WireRequest::AdminServerHealth => {
             let health = srv.server_health();

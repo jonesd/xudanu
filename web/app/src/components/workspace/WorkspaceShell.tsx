@@ -1834,6 +1834,10 @@ export function WorkspaceShell() {
 
   // FR-41: hoisted so the remote view renders even when no local
   // work is open (network search hit on the welcome/library screen).
+  const remoteTextRef = useRef<HTMLDivElement | null>(null);
+  const [remoteActionError, setRemoteActionError] = useState<string | null>(null);
+  const [remoteActionBusy, setRemoteActionBusy] = useState(false);
+
   const remoteViewOverlay = remoteView ? (
               <div style={{
                 position: "absolute", inset: 0, zIndex: 50,
@@ -1931,7 +1935,69 @@ export function WorkspaceShell() {
                   >
                     Copy to my server
                   </button>
+                  <button
+                    type="button"
+                    disabled={!canEdit || workBeId === null}
+                    title="Transclude the selected passage by reference — your document displays the origin's span (verified BLAKE3, provenance intact). Select text in the document below first."
+                    onClick={async () => {
+                      if (!clientRef.current || workBeId === null || !remoteTextRef.current) return;
+                      const sel = window.getSelection();
+                      if (!sel || sel.rangeCount === 0 || sel.toString().trim().length === 0) {
+                        setRemoteActionError("Select a passage in the document first, then Transclude.");
+                        return;
+                      }
+                      const range = sel.getRangeAt(0);
+                      const pre = document.createRange();
+                      pre.selectNodeContents(remoteTextRef.current);
+                      try {
+                        pre.setEnd(range.startContainer, range.startOffset);
+                      } catch {
+                        setRemoteActionError("Selection outside the document text.");
+                        return;
+                      }
+                      const startChars = Array.from(pre.toString()).length;
+                      const selChars = Array.from(range.toString()).length;
+                      const end = startChars + selChars;
+                      setRemoteActionError(null);
+                      setRemoteActionBusy(true);
+                      try {
+                        const resp = await clientRef.current.sendRequest("transclusion_place_cross_server", {
+                          dest_work: workBeId,
+                          cursor: 0,
+                          tumbler: remoteView.tumbler,
+                          span_start: startChars,
+                          span_end: end,
+                          title_hint: remoteView.title,
+                        });
+                        const r = resp as Record<string, unknown>;
+                        if ((r as { type?: string }).type === "error") {
+                          setRemoteActionError(`Transclude failed: ${(r as { message?: string }).message ?? "unknown error"}`);
+                          setRemoteActionBusy(false);
+                          return;
+                        }
+                        setRemoteActionBusy(false);
+                        setRemoteView(null);
+                      } catch (e) {
+                        setRemoteActionError(e instanceof Error ? e.message : "transclude failed");
+                        setRemoteActionBusy(false);
+                      }
+                    }}
+                    style={{
+                      fontSize: 12, padding: "6px 14px",
+                      border: "2px solid var(--amber)", borderRadius: 6,
+                      background: "var(--amber)", color: "#111",
+                      cursor: canEdit && workBeId !== null ? "pointer" : "not-allowed",
+                      opacity: canEdit && workBeId !== null ? 1 : 0.4, fontWeight: 700,
+                    }}
+                  >
+                    {remoteActionBusy ? "Transcluding…" : "⇄ Transclude selection"}
+                  </button>
                 </div>
+                {remoteActionError && (
+                  <div style={{ padding: "4px 16px", fontSize: 11, color: "var(--red)", background: "var(--bg-elevated)" }}>
+                    {remoteActionError}
+                  </div>
+                )}
                 <div style={{ flex: 1, overflow: "auto", padding: "32px 48px", minHeight: 0 }}>
                   <h1 style={{
                     fontSize: 24, fontWeight: 700, marginBottom: 16,
@@ -1939,7 +2005,7 @@ export function WorkspaceShell() {
                   }}>
                     {remoteView.title}
                   </h1>
-                  <div style={{
+                  <div ref={remoteTextRef} style={{
                     whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.75,
                     fontFamily: "Source Serif 4, Georgia, serif", color: "var(--text)",
                     userSelect: "text",
