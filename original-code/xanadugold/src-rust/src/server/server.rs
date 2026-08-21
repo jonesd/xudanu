@@ -39530,6 +39530,7 @@ mod tests_fuzz_equivalent {
 #[cfg(test)]
 mod tests_security_tracker {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_sig_success_resets_failures() {
@@ -39766,5 +39767,237 @@ mod tests_security_tracker {
         assert_eq!(tumblers[0].0, w1);
         assert_eq!(tumblers[0].2.server(), "alice.com");
         assert_eq!(tumblers[0].2.first(), Some(w1 as u64));
+    }
+    // ── xanadu-spec conformance properties (FR-40 matrix) ─────────
+    //
+    // Each property cites the claim it encodes from
+    // sisbell/xanadu-spec (ASN-0043 Link Model, ASN-0121
+    // FINDLINKSFROMTOTHREE); see docs/dev/FR-40-conformance-matrix.md.
+
+    fn spec_setup_with_works(n: usize) -> (Server, SessionId, Vec<BeId>) {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let works = (0..n)
+            .map(|i| {
+                server
+                    .create_work(sid, Edition::from_text(&format!("w{}", i)))
+                    .unwrap()
+            })
+            .collect();
+        (server, sid, works)
+    }
+
+    fn spec_mk_end(work: BeId) -> crate::edition::links::HyperRef {
+        crate::edition::links::HyperRef::single(None, Some(work), None, None)
+    }
+
+    // L11b NonInjectivity: identical-content links coexist as
+    // separate objects — no dedup, identity is the id.
+    #[test]
+    fn prop_spec_l11b_identical_links_coexist() {
+        proptest! {
+            #[test]
+            fn inner(copies in 2usize..8) {
+                let (mut server, sid, works) = spec_setup_with_works(2);
+                let mut ids = std::collections::HashSet::new();
+                for _ in 0..copies {
+                    let id = server
+                        .create_link(sid, works[0], works[1], None, None)
+                        .unwrap();
+                    prop_assert!(ids.insert(id), "duplicate link id emitted");
+                }
+                prop_assert_eq!(ids.len(), copies);
+                // Both survive independently in queries.
+                let res = server
+                    .link_query(sid, &Default::default(), &Default::default(), &[], &Default::default())
+                    .unwrap();
+                prop_assert_eq!(res.len(), copies);
+            }
+        }
+    }
+
+    // L2 OwnershipEndsetIndependence: no end mutation ever changes
+    // the home document.
+    #[test]
+    fn prop_spec_l2_home_independent_of_ends() {
+        proptest! {
+            #[test]
+            fn inner(
+                home_idx in 0usize..4,
+                end_name in "(context|note|extra){1,10}",
+                n_mutations in 1usize..6,
+            ) {
+                let (mut server, sid, works) = spec_setup_with_works(5);
+                let home = works[home_idx];
+                let link_id = server
+                    .create_link_homed(sid, works[0], works[1], None, None, Some(home))
+                    .unwrap();
+                for k in 0..n_mutations {
+                    let target = works[2 + (k % 3)];
+                    let name = format!("{}{}", end_name, k);
+                    server
+                        .link_add_end(sid, link_id, &name, spec_mk_end(target))
+                        .unwrap();
+                    prop_assert_eq!(
+                        server.link_home_document(link_id),
+                        Some(home),
+                        "home changed after adding end"
+                    );
+                }
+                // Type changes must not touch home either.
+                server.link_set_types(sid, link_id, vec![1, 4]).unwrap();
+                prop_assert_eq!(server.link_home_document(link_id), Some(home));
+            }
+        }
+    }
+
+    // FL-JUNK NonImpedance: adding non-matching links never changes a
+    // query's result.
+    #[test]
+    fn prop_spec_fl_junk_links_do_not_impede() {
+        use crate::server::transport::protocol::LinkEndpointSpecPayload as Spec;
+        proptest! {
+            #[test]
+            fn inner(junk_count in 0usize..10) {
+                let (mut server, sid, works) = spec_setup_with_works(6);
+                // One seed matching link: A quotes B.
+                let seed = server
+                    .create_link(sid, works[0], works[1], None, None)
+                    .unwrap();
+                server.link_set_types(sid, seed, vec![4]).unwrap();
+                let query = |srv: &Server| {
+                    srv.link_query(
+                        sid,
+                        &Spec { work_ids: vec![works[0]], author: None },
+                        &Spec { work_ids: vec![works[1]], author: None },
+                        &[4],
+                        &Spec::any(),
+                    )
+                    .unwrap()
+                };
+                let before = query(&server);
+                // Junk: unrelated pairs and wrong types.
+                for k in 0..junk_count {
+                    let id = server
+                        .create_link(sid, works[2 + (k % 4)], works[3 + (k % 3)], None, None)
+                        .unwrap();
+                    server.link_set_types(sid, id, vec![3]).unwrap();
+                }
+                let after = query(&server);
+                let seed_found = after.iter().any(|(l, _, _)| *l == seed);
+                prop_assert_eq!(
+                    before, after,
+                    "non-matching links changed the query result"
+                );
+                prop_assert!(seed_found);
+            }
+        }
+    }
+
+    // FL-DIR PositionalDirectionality: reversing from/to specs is
+    // observable — "A→B" and "B→A" answer different questions.
+    #[test]
+    fn prop_spec_fl_dir_reversed_queries_differ() {
+        use crate::server::transport::protocol::LinkEndpointSpecPayload as Spec;
+        proptest! {
+            #[test]
+            fn inner(types in prop::collection::vec(1u64..6, 1..4)) {
+                let (mut server, sid, works) = spec_setup_with_works(3);
+                let ab = server.create_link(sid, works[0], works[1], None, None).unwrap();
+                server.link_set_types(sid, ab, types.clone()).unwrap();
+                let fwd = |srv: &Server| {
+                    srv.link_query(
+                        sid,
+                        &Spec { work_ids: vec![works[0]], author: None },
+                        &Spec { work_ids: vec![works[1]], author: None },
+                        &types,
+                        &Spec::any(),
+                    )
+                    .unwrap()
+                };
+                let rev = |srv: &Server| {
+                    srv.link_query(
+                        sid,
+                        &Spec { work_ids: vec![works[1]], author: None },
+                        &Spec { work_ids: vec![works[0]], author: None },
+                        &types,
+                        &Spec::any(),
+                    )
+                    .unwrap()
+                };
+                let f = fwd(&server);
+                let r = rev(&server);
+                prop_assert!(f.iter().any(|(l, _, _)| *l == ab), "forward finds A->B");
+                prop_assert!(r.is_empty(), "reversed must not find A->B (direction is positional)");
+            }
+        }
+    }
+
+    // L12b HomeDocumentPersistence (archive reading): archiving and
+    // restoring a home never destroys its links.
+    #[test]
+    fn prop_spec_l12b_archive_cycle_never_loses_links() {
+        proptest! {
+            #[test]
+            fn inner(n_links in 1usize..6) {
+                let (mut server, sid, works) = spec_setup_with_works(3);
+                let home = works[2];
+                let mut ids = Vec::new();
+                for k in 0..n_links {
+                    let id = server
+                        .create_link_homed(
+                            sid,
+                            works[0],
+                            works[1],
+                            None,
+                            None,
+                            Some(home),
+                        )
+                        .unwrap();
+                    server.link_set_types(sid, id, vec![4 + (k % 2) as u64]).unwrap();
+                    ids.push(id);
+                }
+                server.work_archive(sid, home).unwrap();
+                for &id in &ids {
+                    prop_assert!(
+                        server.links.contains_key(&id),
+                        "archive destroyed homed link"
+                    );
+                }
+                server.work_unarchive(sid, home).unwrap();
+                let res = server
+                    .link_query(sid, &Default::default(), &Default::default(), &[], &Default::default())
+                    .unwrap();
+                for id in &ids {
+                    prop_assert!(
+                        res.iter().any(|(l, _, _)| l == id),
+                        "restored link missing from queries"
+                    );
+                }
+            }
+        }
+    }
+
+    // L11a conformance-note: every link is reachable through a home
+    // registration — for homed links, the home's connection list
+    // always contains the link (residence is recorded, not derived).
+    #[test]
+    fn prop_spec_home_registration_is_recorded() {
+        proptest! {
+            #[test]
+            fn inner(home_idx in 0usize..3) {
+                let (mut server, sid, works) = spec_setup_with_works(4);
+                let home = works[home_idx + 1];
+                let id = server
+                    .create_link_homed(sid, works[0], works[1], None, None, Some(home))
+                    .unwrap();
+                let listed = server
+                    .list_links_for_work(home)
+                    .iter()
+                    .any(|(l, _, _)| *l == id);
+                prop_assert!(listed, "homed link must appear in home's connections");
+            }
+        }
     }
 }
