@@ -289,6 +289,39 @@ export function WorkspaceShell() {
     publicClubId,
   } = crdt;
 
+  // FR-41 S1: directory snapshot for the network search tab.
+  const [serverDirectoryForSearch, setServerDirectoryForSearch] = useState<
+    { address: string; port?: number | null; name: string }[]
+  >([]);
+  useEffect(() => {
+    if (!connected || !clientRef.current) return;
+    const client = clientRef.current;
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await client.sendRequest("server_directory_list", {});
+        const val = (resp as { value?: unknown }).value;
+        const list = Array.isArray(val)
+          ? val
+          : ((val as { value?: unknown[] })?.value as unknown[]) ?? [];
+        if (!cancelled) {
+          setServerDirectoryForSearch(
+            (list as { address: string; port: number | null; name: string }[]).map((s) => ({
+              address: s.address,
+              port: s.port,
+              name: s.name,
+            })),
+          );
+        }
+      } catch {
+        if (!cancelled) setServerDirectoryForSearch([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [connected, clientRef]);
+
   // Load blob elements from server when work changes
   useEffect(() => {
     if (!connected || workBeId === null || !clientRef.current || switchingWork) {
@@ -4516,6 +4549,7 @@ export function WorkspaceShell() {
           currentWorkId={workBeId}
           works={works}
           onSelectWork={(id) => { selectWork(id); setSearchOpen(false); }}
+          serverDirectory={serverDirectoryForSearch}
         />
       )}
       {showSettings && (

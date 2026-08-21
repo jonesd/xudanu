@@ -7,6 +7,11 @@ const RATE_WINDOW: Duration = Duration::from_secs(60);
 const GET_LIMIT: u32 = 120;
 const NOTIFY_LIMIT: u32 = 30;
 const NOTIFY_WINDOW: Duration = Duration::from_secs(3600);
+/// FR-41 S1: federated search fan-outs per minute, per session.
+/// Each fan-out costs every trusted peer a search — interactive
+/// search needs a handful; scripts need to be told to slow down.
+pub const FEDERATED_SEARCH_LIMIT: u32 = 10;
+const FEDERATED_SEARCH_WINDOW: Duration = Duration::from_secs(60);
 
 struct RateEntry {
     count: u32,
@@ -22,6 +27,7 @@ pub struct RateLimiter {
     get_entries: Mutex<HashMap<IpAddr, RateEntry>>,
     notify_by_ip: Mutex<HashMap<IpAddr, NotifyEntry>>,
     notify_by_server: Mutex<HashMap<String, NotifyEntry>>,
+    federated_search_by_session: Mutex<HashMap<u64, RateEntry>>,
 }
 
 impl RateLimiter {
@@ -30,7 +36,24 @@ impl RateLimiter {
             get_entries: Mutex::new(HashMap::new()),
             notify_by_ip: Mutex::new(HashMap::new()),
             notify_by_server: Mutex::new(HashMap::new()),
+            federated_search_by_session: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// FR-41 S1: rate-limit federated-search fan-outs per session.
+    pub fn check_federated_search(&self, session_id: u64) -> bool {
+        let mut entries = self.federated_search_by_session.lock().unwrap();
+        let now = Instant::now();
+        let entry = entries.entry(session_id).or_insert(RateEntry {
+            count: 0,
+            window_start: now,
+        });
+        if now.duration_since(entry.window_start) > FEDERATED_SEARCH_WINDOW {
+            entry.count = 0;
+            entry.window_start = now;
+        }
+        entry.count += 1;
+        entry.count <= FEDERATED_SEARCH_LIMIT
     }
 
     pub fn check_get(&self, ip: IpAddr) -> bool {
@@ -202,6 +225,30 @@ mod tests {
         }
         let (ip_ok, _) = limiter.check_notify(ip, "server-2");
         assert!(!ip_ok, "IP should be over limit");
+    }
+
+    #[test]
+    fn federated_search_limit_per_session() {
+        let limiter = RateLimiter::new();
+        for _ in 0..FEDERATED_SEARCH_LIMIT {
+            assert!(limiter.check_federated_search(42), "under limit allowed");
+        }
+        assert!(
+            !limiter.check_federated_search(42),
+            "over limit blocked (amplifier guard)"
+        );
+    }
+
+    #[test]
+    fn federated_search_sessions_independent() {
+        let limiter = RateLimiter::new();
+        for _ in 0..FEDERATED_SEARCH_LIMIT {
+            limiter.check_federated_search(1);
+        }
+        assert!(
+            limiter.check_federated_search(2),
+            "different session unaffected"
+        );
     }
 
     #[test]

@@ -3073,6 +3073,97 @@ async fn link_query_heritage_queries() {
     assert_eq!(res.len(), 3);
 }
 
+/// FR-41 S1: federated search over the wire — local results labeled,
+/// rate-limited (10/min/session, amplifier guard), empty query
+/// refused, and no peers configured means local-only (no fan-out to
+/// test, but the op must not error).
+#[tokio::test]
+async fn federated_search_wire_contract() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    async fn search(
+        s: &mut SplitSender,
+        r: &mut SplitReceiver,
+        id: u16,
+        q: &str,
+    ) -> serde_json::Value {
+        send_recv_json(
+            s,
+            r,
+            json_req(
+                id,
+                "federated_search",
+                Some(serde_json::json!({ "query": q })),
+            ),
+        )
+        .await
+    }
+
+    // Empty/whitespace query: empty result, no error
+    let resp = search(&mut s, &mut r, 920, "   ").await;
+    assert_eq!(resp["type"], "response", "empty query: {resp}");
+    let results = resp["value"]["value"]["results"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(results.is_empty(), "whitespace query yields no results");
+
+    // Local-only fan-out: works containing a marker term are labeled local
+    let marker = format!(
+        "s1netmarker{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    );
+    let wid = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(921, "work_create", Some(serde_json::json!({"edition": {"text": format!("the {} passage lives here", marker)}}))),
+    )
+    .await["value"]["value"].as_u64().unwrap();
+    // Federated search only surfaces PUBLIC works — publish it.
+    let pub_resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            9215,
+            "work_publish",
+            Some(serde_json::json!({ "work_id": wid })),
+        ),
+    )
+    .await;
+    assert_eq!(pub_resp["type"], "response", "publish failed: {pub_resp}");
+    let resp = search(&mut s, &mut r, 922, &marker).await;
+    assert_eq!(resp["type"], "response");
+    let results = resp["value"]["value"]["results"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(results.len(), 1, "local hit present: {results:?}");
+    assert_eq!(results[0]["local"], true);
+    assert_eq!(results[0]["work_id"].as_u64(), Some(wid));
+
+    // Rate limit: 10 searches per minute per session; the two above
+    // consumed 2 of the budget (empty query is rejected before the
+    // limiter? no — limiter runs first). Hammer to the limit, expect 429-style error.
+    let mut saw_rate_limit = false;
+    for i in 0..15u16 {
+        let resp = search(&mut s, &mut r, 930 + i, &marker).await;
+        if resp["type"] == "error" {
+            let msg = resp["message"].as_str().unwrap_or_default();
+            assert!(msg.contains("too many"), "unexpected error: {msg}");
+            saw_rate_limit = true;
+            break;
+        }
+    }
+    assert!(
+        saw_rate_limit,
+        "rate limiter must engage within 15 rapid fan-outs"
+    );
+}
+
 /// FR-40 sender feedback: cross-server link creation reports the
 /// definitive notify outcome — accepted when the receiver takes it,
 /// a receiver rejection reason (HTTP 404) for unknown works, and a

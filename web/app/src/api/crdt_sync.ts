@@ -34,6 +34,21 @@ export interface GlobalSearchResultItem {
   matches: SearchMatchItem[];
 }
 
+// FR-41 S1: federated search fan-out results. All remote text is
+// untrusted — render as text only, never as HTML.
+export interface FederatedSearchResultEntry {
+  work_id: number;
+  title: string;
+  revision: number;
+  char_count: number;
+  server_name: string;
+  server_id: number;
+  local: boolean;
+  // Present only for peers that didn't answer (honesty entries).
+  unreachable?: boolean;
+  reason?: string;
+}
+
 export interface GlobalSearchResults {
   results: GlobalSearchResultItem[];
   totalWorksMatched: number;
@@ -789,6 +804,12 @@ export class CrdtSyncClient {
       results: (val.results as GlobalSearchResultItem[]) || [],
       totalWorksMatched: (val.total_works_matched as number) || 0,
     };
+  }
+
+  async federatedSearch(query: string): Promise<FederatedSearchResultEntry[]> {
+    const resp = await this.sendRequest("federated_search", { query });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.results as FederatedSearchResultEntry[]) || [];
   }
 
   async workGoto(workId: number, line?: number, char?: number): Promise<GotoResult> {
@@ -2421,18 +2442,6 @@ export class CrdtSyncClient {
       works: (val.works as Array<{ work_id: string; title: string; revision: number; char_count: number }>) || [],
       originServerName: (val.origin_server_name as string) || "Unknown",
     };
-  }
-
-  async federatedSearch(query: string): Promise<Array<{
-    work_id: string; title: string; revision: number; char_count: number;
-    server_name: string; server_id: number; local: boolean;
-  }>> {
-    const resp = await this.sendRequest("federated_search", { query });
-    const val = extractValue(resp) as Record<string, unknown>;
-    return (val.results as Array<{
-      work_id: string; title: string; revision: number; char_count: number;
-      server_name: string; server_id: number; local: boolean;
-    }>) || [];
   }
 
   async crossServerLinkCreate(

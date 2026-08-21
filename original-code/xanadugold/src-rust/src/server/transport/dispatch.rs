@@ -3917,6 +3917,23 @@ fn dispatch_inner(
         #[cfg(feature = "serde")]
         WireRequest::FederatedSearch { query } => {
             srv.ensure_session(session_id)?;
+            // FR-41 S1: fan-outs cost the peers real work — a single
+            // session spamming federated_search is an amplifier
+            // vector. 10/minute per session.
+            if !state
+                .rate_limiter
+                .check_federated_search(session_id.as_u64())
+            {
+                tracing::warn!(
+                    target: "xudanu::security",
+                    session = session_id.as_u64(),
+                    event = "SECURITY:federated_search_rate_limited",
+                    "federated search rate limit exceeded"
+                );
+                return Err(ServerError::Unauthorized(
+                    "too many federated searches, wait a moment".into(),
+                ));
+            }
             let results = srv.federated_search(&query);
             Ok(ResponseValue::FederatedSearchResult { results })
         }

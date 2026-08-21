@@ -6809,13 +6809,40 @@ impl Server {
             .collect()
     }
 
+    /// FR-41 S1: fan a search out to trusted directory peers and
+    /// merge with local public results. Adversarially hardened:
+    /// - trusted, non-quarantined peers only (request-forgering a
+    ///   fan-out at arbitrary targets requires directory trust)
+    /// - per-peer timeout 3s with an overall budget (2s + 1s/peer):
+    ///   a slow or blackholed peer cannot stall the caller
+    /// - per-peer result cap and per-field truncation: a poisoned
+    ///   peer cannot flood or smuggle oversized/HTML payloads
+    /// - unresponsive peers are reported (honesty: results say which
+    ///   peers didn't answer) instead of silently omitted
     pub fn federated_search(&mut self, query: &str) -> Vec<serde_json::Value> {
+        const PEER_TIMEOUT_SECS: u64 = 3;
+        const MAX_RESULTS_PER_PEER: usize = 20;
+        const MAX_TITLE_CHARS: usize = 120;
+        let query = query.trim();
+        if query.is_empty() {
+            return Vec::new();
+        }
+
         let mut results: Vec<serde_json::Value> = Vec::new();
 
         let local_results = self.public_work_list_search(Some(query));
         for work in local_results {
+            // Local ids are hex strings ("03ec"); remote ids arrive
+            // as numbers. Normalize to numbers so clients see one shape.
+            let wid = work["work_id"]
+                .as_str()
+                .and_then(|h| u64::from_str_radix(h.trim_start_matches("0x"), 16).ok())
+                .or_else(|| work["work_id"].as_u64());
+            let Some(wid) = wid else {
+                continue;
+            };
             results.push(serde_json::json!({
-                "work_id": work["work_id"],
+                "work_id": wid,
                 "title": work["title"],
                 "revision": work["revision"],
                 "char_count": work["char_count"],
@@ -6833,7 +6860,23 @@ impl Server {
             .map(|e| (e.server_id, e.address.clone(), e.port, e.name.clone()))
             .collect();
 
+        let deadline = std::time::Instant::now()
+            + std::time::Duration::from_secs(2 + trusted_entries.len() as u64);
+
         for (server_id, address, port, server_name) in trusted_entries {
+            if std::time::Instant::now() >= deadline {
+                tracing::warn!(
+                    "Federated search budget exhausted before querying {}",
+                    server_name
+                );
+                results.push(serde_json::json!({
+                    "server_name": server_name,
+                    "server_id": server_id,
+                    "unreachable": true,
+                    "reason": "search budget exhausted",
+                }));
+                continue;
+            }
             let port = port.unwrap_or(8080);
             let url = format!(
                 "http://{}:{}/api/public/works?q={}",
@@ -6841,28 +6884,61 @@ impl Server {
                 port,
                 urlencode(query)
             );
-            tracing::info!("Federated search: {}", url);
 
-            match http_get_json(&url, 10) {
+            match http_get_json(&url, PEER_TIMEOUT_SECS) {
                 Ok(response_text) => {
+                    let mut added = 0usize;
+                    let mut malformed = 0usize;
                     if let Ok(body) = serde_json::from_str::<serde_json::Value>(&response_text) {
                         if let Some(works) = body["works"].as_array() {
                             for work in works {
+                                if added >= MAX_RESULTS_PER_PEER {
+                                    break;
+                                }
+                                let title = work["title"]
+                                    .as_str()
+                                    .unwrap_or("")
+                                    .chars()
+                                    .take(MAX_TITLE_CHARS)
+                                    .collect::<String>();
+                                let wid = work["work_id"].as_u64();
+                                let (wid, wid_ok) = match wid {
+                                    Some(w) => (w, true),
+                                    None => (0, false),
+                                };
+                                if !wid_ok {
+                                    malformed += 1;
+                                    continue;
+                                }
                                 results.push(serde_json::json!({
-                                    "work_id": work["work_id"],
-                                    "title": work["title"],
-                                    "revision": work["revision"],
-                                    "char_count": work["char_count"],
+                                    "work_id": wid,
+                                    "title": title,
+                                    "revision": work["revision"].as_u64().unwrap_or(0),
+                                    "char_count": work["char_count"].as_u64().unwrap_or(0),
                                     "server_name": server_name,
                                     "server_id": server_id,
                                     "local": false,
                                 }));
+                                added += 1;
                             }
                         }
+                    }
+                    if malformed > 0 {
+                        tracing::warn!(
+                            peer = %server_name,
+                            malformed,
+                            "federated search peer returned malformed entries (skipped)"
+                        );
                     }
                 }
                 Err(e) => {
                     tracing::warn!("Federated search failed for {}: {}", server_name, e);
+                    results.push(serde_json::json!({
+                        "server_name": server_name,
+                        "server_id": server_id,
+                        "unreachable": true,
+                        "reason": e.chars().take(120).collect::<String>(),
+                    }));
                 }
             }
         }
