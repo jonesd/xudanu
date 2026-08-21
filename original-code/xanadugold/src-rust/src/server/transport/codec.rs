@@ -1541,6 +1541,8 @@ impl JsonCodec {
                     destination_ref: Option<HyperRefPayload>,
                     #[cfg_attr(feature = "serde", serde(default))]
                     link_types: Vec<u64>,
+                    #[serde(default)]
+                    home_document: Option<BeId>,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
@@ -1550,6 +1552,7 @@ impl JsonCodec {
                     origin_ref: args.origin_ref,
                     destination_ref: args.destination_ref,
                     link_types: args.link_types,
+                    home_document: args.home_document,
                 })
             }
             OperationCode::LinkGet => {
@@ -1665,6 +1668,38 @@ impl JsonCodec {
                 })
             }
             OperationCode::LinkTypeList => Ok(WireRequest::LinkTypeList),
+            OperationCode::LinkQuery => {
+                #[derive(Deserialize, Default)]
+                struct SpecArgs {
+                    #[serde(default)]
+                    work_ids: Vec<BeId>,
+                    #[serde(default)]
+                    author: Option<BeId>,
+                }
+                #[derive(Deserialize)]
+                struct Args {
+                    #[serde(default)]
+                    from_spec: SpecArgs,
+                    #[serde(default)]
+                    to_spec: SpecArgs,
+                    #[serde(default)]
+                    type_ids: Vec<u64>,
+                    #[serde(default)]
+                    home_spec: SpecArgs,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                let to_spec = |s: SpecArgs| super::protocol::LinkEndpointSpecPayload {
+                    work_ids: s.work_ids,
+                    author: s.author,
+                };
+                Ok(WireRequest::LinkQuery {
+                    from_spec: to_spec(args.from_spec),
+                    to_spec: to_spec(args.to_spec),
+                    type_ids: args.type_ids,
+                    home_spec: to_spec(args.home_spec),
+                })
+            }
             OperationCode::FindTranscluders => {
                 #[derive(Deserialize)]
                 struct Args {

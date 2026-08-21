@@ -332,6 +332,25 @@ fn is_ip_blocked(ip: &std::net::IpAddr) -> bool {
     }
 }
 
+/// Connect to the first reachable resolved address within the
+/// timeout. Plain `TcpStream::connect` has no deadline: under a
+/// network blackhole the kernel retries SYN for ~75-130s while the
+/// caller (often the dispatch path) blocks — unacceptable.
+fn connect_timed(
+    addrs: &[std::net::SocketAddr],
+    timeout: std::time::Duration,
+) -> Result<std::net::TcpStream, String> {
+    use std::net::TcpStream;
+    let mut last_err = String::from("no addresses");
+    for addr in addrs {
+        match TcpStream::connect_timeout(addr, timeout) {
+            Ok(s) => return Ok(s),
+            Err(e) => last_err = format!("connect failed: {}", e),
+        }
+    }
+    Err(last_err)
+}
+
 pub fn resolve_and_verify_host(host: &str, port: u16) -> Result<Vec<std::net::SocketAddr>, String> {
     use std::net::ToSocketAddrs;
 
@@ -750,6 +769,23 @@ struct LinkState {
     link: HyperLink,
     origin: BeId,
     destination: BeId,
+    /// Home document (FR-40 Story 3): the work this link lives in.
+    /// None = server-global (historical behavior).
+    home_document: Option<BeId>,
+    /// Outcome of the cross-server backlink notification for this
+    /// link, when one was attempted (FR-40 sender feedback): Some
+    /// when the destination is on another server. Errors here are
+    /// sender/reachability OR receiving-side rejections.
+    cross_server_notify: Option<CrossServerNotifyOutcome>,
+}
+
+/// Persisted outcome of a cross-server backlink notification.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CrossServerNotifyOutcome {
+    pub accepted: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub notified_at: u64,
 }
 
 impl Default for Server {
@@ -3081,6 +3117,86 @@ impl Server {
                 tracing::info!("Sent backlink notification to {}", url_clone);
             });
         }
+    }
+
+    /// Synchronous variant (FR-40 sender feedback): performs the
+    /// backlink notification inline and reports the definitive
+    /// outcome so the creating user learns whether the receiving
+    /// server accepted the link. `Ok(Some(body))` = accepted (2xx);
+    /// `Err(reason)` = rejected by the receiver (its message) or a
+    /// sender-side reachability failure. Returns `Ok(None)` when the
+    /// remote server is not in the directory (no notification
+    /// possible — the caller decides how to surface that). Short
+    /// timeout: this runs on the dispatch path.
+    pub fn send_backlink_notification_sync(
+        &self,
+        remote_server_id: u64,
+        target_work_id: &str,
+        origin_work_id: u64,
+        origin_work_title: &str,
+        excerpt: &str,
+        link_type: &str,
+    ) -> Result<Option<String>, String> {
+        let Some(entry) = self.server_directory.get(remote_server_id) else {
+            return Ok(None);
+        };
+        let address = entry.address.clone();
+        let port = entry.port.unwrap_or(8080);
+        let url = format!("http://{}:{}/api/backlink-notify", address, port);
+        let body = serde_json::json!({
+            "target_work_id": target_work_id,
+            "origin_server_address": self.public_address.as_deref().unwrap_or("unknown"),
+            "origin_server_name": &self.server_name,
+            "origin_work_id": format!("{:04x}", origin_work_id),
+            "origin_work_title": origin_work_title,
+            "excerpt": excerpt,
+            "link_type": link_type,
+        });
+        match http_post_json_status(&url, &body.to_string(), 5) {
+            Ok((status, resp_body)) if (200..300).contains(&status) => Ok(Some(resp_body)),
+            Ok((status, resp_body)) => {
+                let reason = if resp_body.trim().is_empty() {
+                    format!("receiving server returned HTTP {}", status)
+                } else {
+                    format!(
+                        "receiving server rejected (HTTP {}): {}",
+                        status,
+                        resp_body.trim().chars().take(200).collect::<String>()
+                    )
+                };
+                Err(reason)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Record the cross-server notify outcome on a link so the
+    /// sender (and anyone inspecting the link later) can see whether
+    /// the receiving server accepted it.
+    pub fn set_link_cross_server_notify(
+        &mut self,
+        link_id: BeId,
+        accepted: bool,
+        error: Option<String>,
+    ) {
+        let outcome = CrossServerNotifyOutcome {
+            accepted,
+            error,
+            notified_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        };
+        if let Some(ls) = self.links.get_mut(&link_id) {
+            ls.cross_server_notify = Some(outcome);
+        }
+    }
+
+    /// Last recorded cross-server notify outcome for a link.
+    pub fn link_cross_server_notify(&self, link_id: BeId) -> Option<CrossServerNotifyOutcome> {
+        self.links
+            .get(&link_id)
+            .and_then(|ls| ls.cross_server_notify.clone())
     }
 
     pub fn is_server_trusted(&self, server_id: &str) -> bool {
@@ -7993,6 +8109,7 @@ impl Server {
         origin_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
         destination_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
         link_types: Vec<u64>,
+        home_document: Option<BeId>,
     ) {
         if !self.links.contains_key(&link_id) {
             let o_ref = origin_ref
@@ -8014,6 +8131,8 @@ impl Server {
                     link: hyperlink,
                     origin,
                     destination,
+                    cross_server_notify: None,
+                    home_document,
                 },
             );
             self.work_to_links.entry(origin).or_default().push(link_id);
@@ -8021,8 +8140,61 @@ impl Server {
                 .entry(destination)
                 .or_default()
                 .push(link_id);
+            if let Some(home) = home_document {
+                self.work_to_links.entry(home).or_default().push(link_id);
+            }
             if link_id > self.link_counter {
                 self.link_counter = link_id;
+            }
+        }
+    }
+
+    /// Raw WAL replay of link_add_end (FR-40 Story 1): applies the end
+    /// without session checks or checkpointing, mirroring the live path.
+    pub(crate) fn wal_replay_link_add_end(
+        &mut self,
+        link_id: BeId,
+        end_name: String,
+        end_ref: crate::server::transport::protocol::HyperRefPayload,
+    ) {
+        let Some(ls) = self.links.get_mut(&link_id) else {
+            return;
+        };
+        let end_work = end_ref.work_context;
+        let hr = end_ref.to_hyper_ref(end_work.unwrap_or(0));
+        ls.link = ls.link.with_end(&end_name, hr);
+        if let Some(wid) = end_work {
+            if !self
+                .work_to_links
+                .entry(wid)
+                .or_default()
+                .contains(&link_id)
+            {
+                self.work_to_links.entry(wid).or_default().push(link_id);
+            }
+        }
+    }
+
+    /// Raw WAL replay of link_remove_end (FR-40 Story 1).
+    pub(crate) fn wal_replay_link_remove_end(&mut self, link_id: BeId, end_name: String) {
+        let Some(ls) = self.links.get_mut(&link_id) else {
+            return;
+        };
+        let removed_work = ls.link.end_at(&end_name).and_then(|hr| hr.work_context());
+        ls.link = ls.link.without_end(&end_name);
+        if let Some(wid) = removed_work {
+            let still_referenced = ls.link.end_names().iter().any(|n| {
+                ls.link
+                    .end_at(n)
+                    .and_then(|hr| hr.work_context())
+                    .is_some_and(|w| w == wid)
+            }) || ls.origin == wid
+                || ls.destination == wid
+                || ls.home_document == Some(wid);
+            if !still_referenced {
+                if let Some(ids) = self.work_to_links.get_mut(&wid) {
+                    ids.retain(|id| *id != link_id);
+                }
             }
         }
     }
@@ -10238,24 +10410,42 @@ impl Server {
                         None,
                     )
                 });
-            let hyperlink =
+            let mut hyperlink =
                 crate::edition::links::HyperLink::make(link.link_types.clone(), o_ref, d_ref);
+            for (name, payload) in &link.named_ends {
+                hyperlink = hyperlink.with_end(
+                    name,
+                    payload.to_hyper_ref(payload.work_context.unwrap_or(0)),
+                );
+            }
+            let mut restored_works = vec![link.origin, link.destination];
+            restored_works.extend(link.named_ends.iter().filter_map(|(_, p)| p.work_context));
+            if let Some(home) = link.home_document {
+                restored_works.push(home);
+            }
             self.links.insert(
                 link.link_id,
                 LinkState {
                     link: hyperlink,
                     origin: link.origin,
                     destination: link.destination,
+                    cross_server_notify: None,
+                    home_document: link.home_document,
                 },
             );
-            self.work_to_links
-                .entry(link.origin)
-                .or_default()
-                .push(link.link_id);
-            self.work_to_links
-                .entry(link.destination)
-                .or_default()
-                .push(link.link_id);
+            for wid in restored_works {
+                if !self
+                    .work_to_links
+                    .entry(wid)
+                    .or_default()
+                    .contains(&link.link_id)
+                {
+                    self.work_to_links
+                        .entry(wid)
+                        .or_default()
+                        .push(link.link_id);
+                }
+            }
         }
 
         self.chunk_store = Some(Arc::new(chunk_store));
@@ -11190,6 +11380,29 @@ impl Server {
         origin_ref: Option<HyperRef>,
         destination_ref: Option<HyperRef>,
     ) -> Result<BeId, ServerError> {
+        self.create_link_homed(
+            _session_id,
+            origin,
+            destination,
+            origin_ref,
+            destination_ref,
+            None,
+        )
+    }
+
+    /// Create a link with an optional home document (FR-40 Story 3).
+    /// A homed link "lives in" that work: it appears in the home's
+    /// Connections and is hidden from listings while the home is
+    /// archived (reversible). None keeps the server-global default.
+    pub fn create_link_homed(
+        &mut self,
+        _session_id: SessionId,
+        origin: BeId,
+        destination: BeId,
+        origin_ref: Option<HyperRef>,
+        destination_ref: Option<HyperRef>,
+        home_document: Option<BeId>,
+    ) -> Result<BeId, ServerError> {
         let _guard = OperationGuard::new(
             self.consequence_tracker.clone(),
             self.consequence_tracker.begin_operation(),
@@ -11197,6 +11410,9 @@ impl Server {
         self.ensure_session(_session_id)?;
         let _ = self.work(origin)?;
         let _ = self.work(destination)?;
+        if let Some(home) = home_document {
+            let _ = self.work(home)?;
+        }
 
         self.link_counter += 1;
         let link_id = self.link_counter;
@@ -11214,17 +11430,24 @@ impl Server {
             .unwrap_or_else(|| HyperRef::single(None, Some(destination), None, None));
         let link = HyperLink::make(vec![], o_final, d_final);
 
-        let ls = LinkState {
-            link,
-            origin,
-            destination,
-        };
-        self.links.insert(link_id, ls);
+        self.links.insert(
+            link_id,
+            LinkState {
+                link,
+                origin,
+                destination,
+                cross_server_notify: None,
+                home_document,
+            },
+        );
         self.work_to_links.entry(origin).or_default().push(link_id);
         self.work_to_links
             .entry(destination)
             .or_default()
             .push(link_id);
+        if let Some(home) = home_document {
+            self.work_to_links.entry(home).or_default().push(link_id);
+        }
         self.backfollow
             .register_link_content(&self.links[&link_id].link, link_id);
         {
@@ -11244,6 +11467,7 @@ impl Server {
                 o_ref.as_ref(),
                 d_ref.as_ref(),
                 ls.link.link_types(),
+                home_document,
             );
         }
         self.auto_checkpoint();
@@ -11254,6 +11478,15 @@ impl Server {
         &mut self,
         _session_id: SessionId,
         link: HyperLink,
+    ) -> Result<BeId, ServerError> {
+        self.create_link_with_hyperlink_homed(_session_id, link, None)
+    }
+
+    pub fn create_link_with_hyperlink_homed(
+        &mut self,
+        _session_id: SessionId,
+        link: HyperLink,
+        home_document: Option<BeId>,
     ) -> Result<BeId, ServerError> {
         let _guard = OperationGuard::new(
             self.consequence_tracker.clone(),
@@ -11276,21 +11509,57 @@ impl Server {
 
         let _ = self.work(origin)?;
         let _ = self.work(destination)?;
+        if let Some(home) = home_document {
+            let _ = self.work(home)?;
+        }
 
         self.link_counter += 1;
         let link_id = self.link_counter;
 
-        let ls = LinkState {
-            link,
-            origin,
-            destination,
-        };
-        self.links.insert(link_id, ls);
+        // Named ends beyond Left/Right register against their works so
+        // those works list the link in their Connections (FR-40 Story 1).
+        let named_works: Vec<BeId> = link
+            .end_names()
+            .into_iter()
+            .filter(|n| *n != "LeftEnd" && *n != "RightEnd")
+            .filter_map(|n| link.end_at(n).and_then(|hr| hr.work_context()))
+            .collect();
+
+        self.links.insert(
+            link_id,
+            LinkState {
+                link,
+                origin,
+                destination,
+                cross_server_notify: None,
+                home_document,
+            },
+        );
         self.work_to_links.entry(origin).or_default().push(link_id);
         self.work_to_links
             .entry(destination)
             .or_default()
             .push(link_id);
+        for wid in named_works {
+            if !self
+                .work_to_links
+                .entry(wid)
+                .or_default()
+                .contains(&link_id)
+            {
+                self.work_to_links.entry(wid).or_default().push(link_id);
+            }
+        }
+        if let Some(home) = home_document {
+            if !self
+                .work_to_links
+                .entry(home)
+                .or_default()
+                .contains(&link_id)
+            {
+                self.work_to_links.entry(home).or_default().push(link_id);
+            }
+        }
         self.backfollow
             .register_link_content(&self.links[&link_id].link, link_id);
         {
@@ -11310,6 +11579,7 @@ impl Server {
                 o_ref.as_ref(),
                 d_ref.as_ref(),
                 ls.link.link_types(),
+                home_document,
             );
         }
         self.auto_checkpoint();
@@ -11769,6 +12039,129 @@ impl Server {
         Ok((ls.origin, ls.destination, &ls.link))
     }
 
+    /// Home document of a link (FR-40 Story 3); None = server-global.
+    pub fn link_home_document(&self, link_id: BeId) -> Option<BeId> {
+        self.links.get(&link_id).and_then(|ls| ls.home_document)
+    }
+
+    /// True when the link's home document is archived: homed links
+    /// belong to the document, so they are hidden from listings while
+    /// the home is archived (reversible via unarchive). Unhomed links
+    /// are never hidden by this rule.
+    pub fn link_hidden_by_home_archive(&self, link_id: BeId) -> bool {
+        match self.links.get(&link_id).and_then(|ls| ls.home_document) {
+            Some(home) => self
+                .works
+                .get(&home)
+                .map(|ws| ws.work.is_archived())
+                .unwrap_or(false),
+            None => false,
+        }
+    }
+
+    /// Green's four-set link matching (FR-40 Story 4): returns links
+    /// where one end matches `from_spec` and another end matches
+    /// `to_spec` (Any = unconstrained), the types include all of
+    /// `type_ids`, and the home document matches `home_spec` (Any =
+    /// unconstrained, including unhomed links). With multi-ended
+    /// links the from/to distinction is "the end matching this spec"
+    /// vs "a different end matching that spec" — Green's own
+    /// semantics. Honest note: linear scan, not enfiladic.
+    pub fn link_query(
+        &self,
+        session_id: SessionId,
+        from_spec: &crate::server::transport::protocol::LinkEndpointSpecPayload,
+        to_spec: &crate::server::transport::protocol::LinkEndpointSpecPayload,
+        type_ids: &[u64],
+        home_spec: &crate::server::transport::protocol::LinkEndpointSpecPayload,
+    ) -> Result<Vec<(BeId, BeId, BeId)>, ServerError> {
+        self.ensure_session(session_id)?;
+        let mut results = Vec::new();
+        for (&link_id, ls) in &self.links {
+            if self.link_hidden_by_home_archive(link_id) {
+                continue;
+            }
+            if !type_ids.iter().all(|t| ls.link.link_types().contains(t)) {
+                continue;
+            }
+            if !home_spec.is_any() {
+                let Some(home) = ls.home_document else {
+                    continue;
+                };
+                if !self.work_matches_spec(home, home_spec) {
+                    continue;
+                }
+            }
+            let ends: Vec<(String, BeId)> = ls
+                .link
+                .end_names()
+                .iter()
+                .filter_map(|n| {
+                    ls.link
+                        .end_at(n)
+                        .and_then(|hr| hr.work_context())
+                        .map(|w| (n.to_string(), w))
+                })
+                .collect();
+            // The from/to distinction with multi-ended links: "the end
+            // matching this spec" vs "a different end matching that
+            // spec" — a distinct pair of ends, Green's own semantics.
+            let from_any = from_spec.is_any();
+            let to_any = to_spec.is_any();
+            let pair_ok = if from_any && to_any {
+                true
+            } else {
+                ends.iter().any(|(na, wa)| {
+                    if !from_any && !self.work_matches_spec(*wa, from_spec) {
+                        return false;
+                    }
+                    to_any
+                        || ends
+                            .iter()
+                            .any(|(nb, wb)| nb != na && self.work_matches_spec(*wb, to_spec))
+                })
+            };
+            if !pair_ok {
+                continue;
+            }
+            let readable_origin = self
+                .work(ls.origin)
+                .map(|w| self.work_is_readable(session_id, w))
+                .unwrap_or(false);
+            let readable_dest = self
+                .work(ls.destination)
+                .map(|w| self.work_is_readable(session_id, w))
+                .unwrap_or(false);
+            if !readable_origin || !readable_dest {
+                continue;
+            }
+            results.push((link_id, ls.origin, ls.destination));
+        }
+        results.sort_by_key(|(id, _, _)| *id);
+        Ok(results)
+    }
+
+    /// A work matches an end-set spec when it is listed in `work_ids`
+    /// OR owned by the spec's author club. Empty specs match anything
+    /// (callers check `is_any` first).
+    fn work_matches_spec(
+        &self,
+        work_id: BeId,
+        spec: &crate::server::transport::protocol::LinkEndpointSpecPayload,
+    ) -> bool {
+        if spec.work_ids.contains(&work_id) {
+            return true;
+        }
+        if let Some(author) = spec.author {
+            if let Some(ws) = self.works.get(&work_id) {
+                if ws.work.owner() == Some(author) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     pub fn update_link(
         &mut self,
         _session_id: SessionId,
@@ -11813,11 +12206,22 @@ impl Server {
             .remove(&link_id)
             .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
         self.backfollow.unregister_link_content(&ls.link, link_id);
-        if let Some(ids) = self.work_to_links.get_mut(&ls.origin) {
-            ids.retain(|id| *id != link_id);
+        // Clean every work registration: origin, destination, named
+        // ends, and home (FR-40).
+        let mut works = vec![ls.origin, ls.destination];
+        works.extend(
+            ls.link
+                .end_names()
+                .iter()
+                .filter_map(|n| ls.link.end_at(n).and_then(|hr| hr.work_context())),
+        );
+        if let Some(home) = ls.home_document {
+            works.push(home);
         }
-        if let Some(ids) = self.work_to_links.get_mut(&ls.destination) {
-            ids.retain(|id| *id != link_id);
+        for wid in works {
+            if let Some(ids) = self.work_to_links.get_mut(&wid) {
+                ids.retain(|id| *id != link_id);
+            }
         }
         Ok(())
     }
@@ -11857,12 +12261,45 @@ impl Server {
             ls.link.clone()
         };
         self.backfollow.unregister_link_content(&old_link, link_id);
+        // Register the link against the new end's work so it appears
+        // in that work's Connections (FR-40 Story 1).
+        let end_work = end_ref.work_context();
         let ls = self
             .links
             .get_mut(&link_id)
             .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
         ls.link = ls.link.with_end(end_name, end_ref);
+        if let Some(wid) = end_work {
+            if !self
+                .work_to_links
+                .entry(wid)
+                .or_default()
+                .contains(&link_id)
+            {
+                self.work_to_links.entry(wid).or_default().push(link_id);
+            }
+        }
         self.backfollow.register_link_content(&ls.link, link_id);
+        {
+            let ls = self
+                .links
+                .get(&link_id)
+                .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+            let end_payload = crate::server::transport::protocol::HyperRefPayload::from_hyper_ref(
+                ls.link
+                    .end_at(end_name)
+                    .ok_or(ServerError::NotFound(format!(
+                        "link {} end {}",
+                        link_id, end_name
+                    )))?,
+            );
+            if let Err(e) =
+                self.wal
+                    .append_link_add_end(link_id, end_name.to_string(), &end_payload)
+            {
+                tracing::warn!("WAL write failed for link_add_end: {}", e);
+            }
+        }
         self.auto_checkpoint();
         Ok(())
     }
@@ -11886,12 +12323,39 @@ impl Server {
             ls.link.clone()
         };
         self.backfollow.unregister_link_content(&old_link, link_id);
+        let removed_work = old_link.end_at(end_name).and_then(|hr| hr.work_context());
         let ls = self
             .links
             .get_mut(&link_id)
             .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
         ls.link = ls.link.without_end(end_name);
+        // Drop the work_to_links registration when the removed end's
+        // work is no longer touched by any end, origin/destination, or
+        // home — the link stops appearing in that work's Connections
+        // but remains a valid link (FR-40 Story 1: removing one end of
+        // a three-ended link leaves a two-ended one, not a broken one).
+        if let Some(wid) = removed_work {
+            let still_referenced = ls.link.end_names().iter().any(|n| {
+                ls.link
+                    .end_at(n)
+                    .and_then(|hr| hr.work_context())
+                    .is_some_and(|w| w == wid)
+            }) || ls.origin == wid
+                || ls.destination == wid
+                || ls.home_document == Some(wid);
+            if !still_referenced {
+                if let Some(ids) = self.work_to_links.get_mut(&wid) {
+                    ids.retain(|id| *id != link_id);
+                }
+            }
+        }
         self.backfollow.register_link_content(&ls.link, link_id);
+        if let Err(e) = self
+            .wal
+            .append_link_remove_end(link_id, end_name.to_string())
+        {
+            tracing::warn!("WAL write failed for link_remove_end: {}", e);
+        }
         self.auto_checkpoint();
         Ok(())
     }
@@ -11919,9 +12383,79 @@ impl Server {
         self.register_link_type_with_definition(type_id, name, None);
     }
 
+    /// Link type ids 1-7 are the built-in vocabulary (Comment,
+    /// Reference, Disagreement, Quotation, See Also, Web Link, Trail).
+    /// Only admins may (re)define them — a non-admin redefining
+    /// "Comment" server-wide would silently change what every
+    /// existing typed link means (FR-39/FR-40 hardening).
+    pub const BUILTIN_LINK_TYPE_IDS: [u64; 7] = [1, 2, 3, 4, 5, 6, 7];
+
+    /// Validated registration (FR-39/FR-40 hardening). Rules:
+    /// - built-in ids 1-7 may only be (re)defined by an admin session
+    ///   (seeding uses SessionId 0, treated as admin)
+    /// - a custom type MUST carry a definition work, and its type id
+    ///   MUST equal that work's id — "the work IS the type" — so ids
+    ///   are unique by construction and cannot be squatted
+    /// - the definition work must exist
+    pub fn register_link_type_checked(
+        &mut self,
+        session_id: SessionId,
+        type_id: u64,
+        name: String,
+        definition_work: Option<BeId>,
+    ) -> Result<(), ServerError> {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return Err(ServerError::InvalidArgument(
+                "link type name must not be empty".into(),
+            ));
+        }
+        if name.chars().count() > 80 {
+            return Err(ServerError::InvalidArgument(
+                "link type name too long (max 80 chars)".into(),
+            ));
+        }
+        if Self::BUILTIN_LINK_TYPE_IDS.contains(&type_id) {
+            self.ensure_admin(session_id)
+                .map_err(|_| ServerError::NotAuthorized)?;
+        }
+        match definition_work {
+            None => {
+                if !Self::BUILTIN_LINK_TYPE_IDS.contains(&type_id) {
+                    return Err(ServerError::InvalidArgument(format!(
+                        "custom link type {} must reference a definition work (the work IS the type)",
+                        type_id
+                    )));
+                }
+            }
+            Some(dw) => {
+                if !self.works.contains_key(&dw) {
+                    return Err(ServerError::NotFound(format!(
+                        "definition work {:04x} not found",
+                        dw
+                    )));
+                }
+                // Built-in ids may alias any existing work as their
+                // definition (FR-39: stability first, definitions
+                // alias the historical ids). Custom types must BE
+                // their definition work — id equality.
+                if type_id != dw && !Self::BUILTIN_LINK_TYPE_IDS.contains(&type_id) {
+                    return Err(ServerError::InvalidArgument(format!(
+                        "custom link type id must equal its definition work id (got type {} for work {:04x})",
+                        type_id, dw
+                    )));
+                }
+            }
+        }
+        self.register_link_type_with_definition(type_id, name, definition_work);
+        Ok(())
+    }
+
     /// Register a link type; custom types SHOULD pass their
     /// definition work id (the type then resolves to a document
-    /// describing its conventions — FR-39 Story 1).
+    /// describing its conventions — FR-39 Story 1). Internal/trusted
+    /// path (seeding); user-facing registration goes through
+    /// `register_link_type_checked`.
     pub fn register_link_type_with_definition(
         &mut self,
         type_id: u64,
@@ -12031,6 +12565,9 @@ impl Server {
                 Some(ls) => ls,
                 None => continue,
             };
+            if self.link_hidden_by_home_archive(lid) {
+                continue;
+            }
             let source_work_id = if ls.destination == work_id {
                 ls.origin
             } else if ls.origin == work_id {
@@ -18250,6 +18787,21 @@ pub(crate) mod persist_snapshot {
             serde(default, skip_serializing_if = "Vec::is_empty")
         )]
         link_types: Vec<u64>,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Vec::is_empty")
+        )]
+        named_ends: Vec<(String, crate::server::transport::protocol::HyperRefPayload)>,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        home_document: Option<BeId>,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        cross_server_notify: Option<CrossServerNotifyOutcome>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -18440,6 +18992,23 @@ pub(crate) mod persist_snapshot {
                         let d_ref = ls.link.end_at("RightEnd").map(
                             crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
                         );
+                        let named_ends: Vec<(
+                            String,
+                            crate::server::transport::protocol::HyperRefPayload,
+                        )> = ls
+                            .link
+                            .end_names()
+                            .into_iter()
+                            .filter(|n| *n != "LeftEnd" && *n != "RightEnd")
+                            .filter_map(|n| {
+                                ls.link.end_at(n).map(|hr| {
+                                    (
+                                        n.to_string(),
+                                        crate::server::transport::protocol::HyperRefPayload::from_hyper_ref(hr),
+                                    )
+                                })
+                            })
+                            .collect();
                         LinkSnapshot {
                             link_id: *id,
                             origin: ls.origin,
@@ -18447,6 +19016,9 @@ pub(crate) mod persist_snapshot {
                             origin_ref: o_ref,
                             destination_ref: d_ref,
                             link_types: ls.link.link_types().to_vec(),
+                            named_ends,
+                            home_document: ls.home_document,
+                            cross_server_notify: ls.cross_server_notify.clone(),
                         }
                     })
                     .collect(),
@@ -18744,13 +19316,23 @@ pub(crate) mod persist_snapshot {
                     .as_ref()
                     .map(|hr| hr.to_hyper_ref(ls.destination))
                     .unwrap_or_else(|| HyperRef::single(None, Some(ls.destination), None, None));
-                let link = HyperLink::make(ls.link_types.clone(), o_ref, d_ref);
+                let mut link = HyperLink::make(ls.link_types.clone(), o_ref, d_ref);
+                let mut named_works = Vec::new();
+                for (name, payload) in &ls.named_ends {
+                    let wid = payload.work_context;
+                    link = link.with_end(name, payload.to_hyper_ref(wid.unwrap_or(0)));
+                    if let Some(w) = wid {
+                        named_works.push(w);
+                    }
+                }
                 server.links.insert(
                     ls.link_id,
                     LinkState {
                         link,
                         origin: ls.origin,
                         destination: ls.destination,
+                        cross_server_notify: ls.cross_server_notify.clone(),
+                        home_document: ls.home_document,
                     },
                 );
                 server
@@ -18763,6 +19345,34 @@ pub(crate) mod persist_snapshot {
                     .entry(ls.destination)
                     .or_default()
                     .push(ls.link_id);
+                for wid in named_works {
+                    if !server
+                        .work_to_links
+                        .entry(wid)
+                        .or_default()
+                        .contains(&ls.link_id)
+                    {
+                        server
+                            .work_to_links
+                            .entry(wid)
+                            .or_default()
+                            .push(ls.link_id);
+                    }
+                }
+                if let Some(home) = ls.home_document {
+                    if !server
+                        .work_to_links
+                        .entry(home)
+                        .or_default()
+                        .contains(&ls.link_id)
+                    {
+                        server
+                            .work_to_links
+                            .entry(home)
+                            .or_default()
+                            .push(ls.link_id);
+                    }
+                }
             }
 
             for (wid, ws) in &server.works {
@@ -19064,6 +19674,23 @@ pub(crate) mod persist_snapshot {
                         let d_ref = ls.link.end_at("RightEnd").map(
                             crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
                         );
+                        let named_ends: Vec<(
+                            String,
+                            crate::server::transport::protocol::HyperRefPayload,
+                        )> = ls
+                            .link
+                            .end_names()
+                            .into_iter()
+                            .filter(|n| *n != "LeftEnd" && *n != "RightEnd")
+                            .filter_map(|n| {
+                                ls.link.end_at(n).map(|hr| {
+                                    (
+                                        n.to_string(),
+                                        crate::server::transport::protocol::HyperRefPayload::from_hyper_ref(hr),
+                                    )
+                                })
+                            })
+                            .collect();
                         crate::persist::manifest::LinkEntry {
                             link_id: *id,
                             origin: ls.origin,
@@ -19071,6 +19698,9 @@ pub(crate) mod persist_snapshot {
                             origin_ref: o_ref,
                             destination_ref: d_ref,
                             link_types: ls.link.link_types().to_vec(),
+                            named_ends,
+                            home_document: ls.home_document,
+                            cross_server_notify: ls.cross_server_notify.clone(),
                         }
                     })
                     .collect();
@@ -19391,6 +20021,23 @@ pub(crate) mod persist_snapshot {
                         let d_ref = ls.link.end_at("RightEnd").map(
                             crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
                         );
+                        let named_ends: Vec<(
+                            String,
+                            crate::server::transport::protocol::HyperRefPayload,
+                        )> = ls
+                            .link
+                            .end_names()
+                            .into_iter()
+                            .filter(|n| *n != "LeftEnd" && *n != "RightEnd")
+                            .filter_map(|n| {
+                                ls.link.end_at(n).map(|hr| {
+                                    (
+                                        n.to_string(),
+                                        crate::server::transport::protocol::HyperRefPayload::from_hyper_ref(hr),
+                                    )
+                                })
+                            })
+                            .collect();
                         crate::persist::manifest::LinkEntry {
                             link_id: *id,
                             origin: ls.origin,
@@ -19398,6 +20045,9 @@ pub(crate) mod persist_snapshot {
                             origin_ref: o_ref,
                             destination_ref: d_ref,
                             link_types: ls.link.link_types().to_vec(),
+                            named_ends,
+                            home_document: ls.home_document,
+                            cross_server_notify: ls.cross_server_notify.clone(),
                         }
                     })
                     .collect();
@@ -34720,6 +35370,352 @@ mod tests {
     }
 
     #[test]
+    fn link_remove_end_drops_work_registration() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let work_c = server.create_work(sid, Edition::from_text("c")).unwrap();
+
+        let link_id = server.create_link(sid, work_a, work_b, None, None).unwrap();
+        let third = crate::edition::links::HyperRef::single(None, Some(work_c), None, None);
+        server.link_add_end(sid, link_id, "Context", third).unwrap();
+        assert!(
+            server
+                .list_links_for_work(work_c)
+                .iter()
+                .any(|(lid, _, _)| *lid == link_id),
+            "C must list the link while the end exists"
+        );
+
+        server.link_remove_end(sid, link_id, "Context").unwrap();
+        assert!(
+            !server
+                .list_links_for_work(work_c)
+                .iter()
+                .any(|(lid, _, _)| *lid == link_id),
+            "C must stop listing the link after end removal"
+        );
+        assert!(
+            server
+                .list_links_for_work(work_a)
+                .iter()
+                .any(|(lid, _, _)| *lid == link_id),
+            "A keeps the two-ended link"
+        );
+    }
+
+    #[test]
+    fn delete_link_cleans_named_end_and_home_registrations() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let work_c = server.create_work(sid, Edition::from_text("c")).unwrap();
+        let home = server
+            .create_work(sid, Edition::from_text("essay"))
+            .unwrap();
+
+        let link_id = server
+            .create_link_homed(sid, work_a, work_b, None, None, Some(home))
+            .unwrap();
+        let third = crate::edition::links::HyperRef::single(None, Some(work_c), None, None);
+        server.link_add_end(sid, link_id, "Context", third).unwrap();
+
+        server.delete_link(sid, link_id).unwrap();
+        for wid in [work_a, work_b, work_c, home] {
+            assert!(
+                !server
+                    .list_links_for_work(wid)
+                    .iter()
+                    .any(|(lid, _, _)| *lid == link_id),
+                "work {:?} must not list the deleted link",
+                wid
+            );
+        }
+    }
+
+    #[test]
+    fn homed_link_appears_in_home_connections_and_hides_on_archive() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let home = server
+            .create_work(sid, Edition::from_text("the essay"))
+            .unwrap();
+
+        let link_id = server
+            .create_link_homed(sid, work_a, work_b, None, None, Some(home))
+            .unwrap();
+        assert_eq!(server.link_home_document(link_id), Some(home));
+        assert!(
+            server
+                .list_links_for_work(home)
+                .iter()
+                .any(|(lid, _, _)| *lid == link_id),
+            "homed link must appear in H's connections"
+        );
+        assert!(!server.link_hidden_by_home_archive(link_id));
+
+        server.work_archive(sid, home).unwrap();
+        assert!(
+            server.link_hidden_by_home_archive(link_id),
+            "homed link hides when its home is archived"
+        );
+        assert!(
+            server.links.contains_key(&link_id),
+            "archive never deletes homed links"
+        );
+
+        server.work_unarchive(sid, home).unwrap();
+        assert!(
+            !server.link_hidden_by_home_archive(link_id),
+            "unarchive restores the homed link (reversible)"
+        );
+    }
+
+    #[test]
+    fn unhomed_link_ignores_home_archive_rule() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let home = server
+            .create_work(sid, Edition::from_text("unrelated"))
+            .unwrap();
+
+        let link_id = server.create_link(sid, work_a, work_b, None, None).unwrap();
+        server.work_archive(sid, home).unwrap();
+        assert!(
+            !server.link_hidden_by_home_archive(link_id),
+            "unhomed links are never hidden by home-archive rule"
+        );
+    }
+
+    #[test]
+    fn link_query_matches_from_to_type_and_home() {
+        use crate::server::transport::protocol::LinkEndpointSpecPayload as Spec;
+        let (mut server, sid) = setup_logged_in_server();
+        let a = server.create_work(sid, Edition::from_text("A")).unwrap();
+        let b = server.create_work(sid, Edition::from_text("B")).unwrap();
+        let c = server.create_work(sid, Edition::from_text("C")).unwrap();
+        let d = server.create_work(sid, Edition::from_text("D")).unwrap();
+        let home = server
+            .create_work(sid, Edition::from_text("essay H"))
+            .unwrap();
+
+        let mut mk = |o: BeId, dst: BeId, types: Vec<u64>, h: Option<BeId>| {
+            let link = crate::edition::links::HyperLink::make(
+                types.clone(),
+                crate::edition::links::HyperRef::single(None, Some(o), None, None),
+                crate::edition::links::HyperRef::single(None, Some(dst), None, None),
+            );
+            server
+                .create_link_with_hyperlink_homed(sid, link, h)
+                .unwrap()
+        };
+
+        let quote_ab = mk(a, b, vec![4], None);
+        let quote_ac = mk(a, c, vec![4], None);
+        let disagree_ab = mk(a, b, vec![3], None);
+        let quote_cd = mk(c, d, vec![4], None);
+        let quote_bh = mk(b, c, vec![4], Some(home));
+        let _disagree_bh = mk(b, a, vec![3], Some(home));
+
+        let ids = |res: Vec<(BeId, BeId, BeId)>| -> Vec<BeId> {
+            res.into_iter().map(|(l, _, _)| l).collect()
+        };
+
+        // "everywhere A quotes anyone"
+        let res = ids(server
+            .link_query(
+                sid,
+                &Spec {
+                    work_ids: vec![a],
+                    author: None,
+                },
+                &Spec::any(),
+                &[4],
+                &Spec::any(),
+            )
+            .unwrap());
+        assert!(res.contains(&quote_ab) && res.contains(&quote_ac));
+        assert!(!res.contains(&disagree_ab) && !res.contains(&quote_cd));
+
+        // "everywhere A quotes B"
+        let res = ids(server
+            .link_query(
+                sid,
+                &Spec {
+                    work_ids: vec![a],
+                    author: None,
+                },
+                &Spec {
+                    work_ids: vec![b],
+                    author: None,
+                },
+                &[4],
+                &Spec::any(),
+            )
+            .unwrap());
+        assert!(res.contains(&quote_ab));
+        assert!(!res.contains(&quote_ac) && !res.contains(&quote_bh));
+
+        // "every Disagreement homed in H" — A-B disagreement (unhomed)
+        // is excluded; B-A disagreement homed in H matches even though
+        // its from-end is B and to-end is A.
+        let res = ids(server
+            .link_query(
+                sid,
+                &Spec::any(),
+                &Spec::any(),
+                &[3],
+                &Spec {
+                    work_ids: vec![home],
+                    author: None,
+                },
+            )
+            .unwrap());
+        assert_eq!(res, vec![_disagree_bh]);
+
+        // multi-ended: a link whose third end reaches D matches a
+        // to-spec of D even though D is not origin/destination.
+        let third = crate::edition::links::HyperRef::single(None, Some(d), None, None);
+        server
+            .link_add_end(sid, quote_ab, "Context", third)
+            .unwrap();
+        let res = ids(server
+            .link_query(
+                sid,
+                &Spec {
+                    work_ids: vec![b],
+                    author: None,
+                },
+                &Spec {
+                    work_ids: vec![d],
+                    author: None,
+                },
+                &[],
+                &Spec::any(),
+            )
+            .unwrap());
+        assert!(
+            res.contains(&quote_ab),
+            "multi-ended link matches to-spec via its named end"
+        );
+        assert!(!res.contains(&quote_ac));
+    }
+
+    #[test]
+    fn link_query_author_spec_matches_work_owners() {
+        use crate::server::transport::protocol::LinkEndpointSpecPayload as Spec;
+        let (mut server, sid) = setup_logged_in_server();
+        let a = server.create_work(sid, Edition::from_text("mine")).unwrap();
+        let b = server
+            .create_work(sid, Edition::from_text("other"))
+            .unwrap();
+        let owner = server.work(a).unwrap().owner();
+
+        let link_id = server.create_link(sid, a, b, None, None).unwrap();
+        let res = server
+            .link_query(
+                sid,
+                &Spec {
+                    work_ids: vec![],
+                    author: owner,
+                },
+                &Spec::any(),
+                &[],
+                &Spec::any(),
+            )
+            .unwrap();
+        assert!(
+            res.iter().any(|(l, _, _)| *l == link_id),
+            "author spec matches ends in works owned by that club"
+        );
+        let res_none = server
+            .link_query(
+                sid,
+                &Spec {
+                    work_ids: vec![],
+                    author: Some(0xDEAD),
+                },
+                &Spec::any(),
+                &[],
+                &Spec::any(),
+            )
+            .unwrap();
+        assert!(res_none.is_empty(), "unknown author matches nothing");
+    }
+
+    #[test]
+    fn link_query_excludes_links_hidden_by_home_archive() {
+        use crate::server::transport::protocol::LinkEndpointSpecPayload as Spec;
+        let (mut server, sid) = setup_logged_in_server();
+        let a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let b = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let home = server.create_work(sid, Edition::from_text("gone")).unwrap();
+
+        let link_id = server
+            .create_link_homed(sid, a, b, None, None, Some(home))
+            .unwrap();
+        server.work_archive(sid, home).unwrap();
+
+        let res = server
+            .link_query(sid, &Spec::any(), &Spec::any(), &[], &Spec::any())
+            .unwrap();
+        assert!(
+            !res.iter().any(|(l, _, _)| *l == link_id),
+            "archived-home links are excluded from queries"
+        );
+    }
+
+    #[test]
+    fn snapshot_round_trip_preserves_named_ends_and_home() {
+        let (mut server, sid) = setup_logged_in_server();
+        let a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let b = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let c = server.create_work(sid, Edition::from_text("c")).unwrap();
+        let home = server
+            .create_work(sid, Edition::from_text("essay"))
+            .unwrap();
+
+        let link_id = server
+            .create_link_homed(sid, a, b, None, None, Some(home))
+            .unwrap();
+        let third = crate::edition::links::HyperRef::single(
+            Some(Edition::from_text("shared passage")),
+            Some(c),
+            None,
+            None,
+        )
+        .with_span(Some(3), Some(17));
+        server.link_add_end(sid, link_id, "Context", third).unwrap();
+
+        let snapshot = server.to_snapshot();
+        let restored = Server::from_snapshot(&snapshot);
+
+        let ls = restored.links.get(&link_id).expect("link survives restore");
+        assert_eq!(ls.home_document, Some(home), "home must survive restore");
+        assert_eq!(ls.link.end_count(), 3, "named ends must survive restore");
+        let ctx = ls.link.end_at("Context").expect("Context end survives");
+        assert_eq!(ctx.work_context(), Some(c));
+        assert_eq!(ctx.start_position(), Some(3));
+        assert_eq!(ctx.end_position(), Some(17));
+        assert!(
+            restored
+                .list_links_for_work(c)
+                .iter()
+                .any(|(lid, _, _)| *lid == link_id),
+            "C's connection registration must survive restore"
+        );
+        assert!(
+            restored
+                .list_links_for_work(home)
+                .iter()
+                .any(|(lid, _, _)| *lid == link_id),
+            "home's connection registration must survive restore"
+        );
+    }
+
+    #[test]
     fn backlinks_finds_incoming_link() {
         let (mut server, sid) = setup_logged_in_server();
         let work_a = server
@@ -36212,8 +37208,7 @@ fn http_get_json_https(
 
     let addrs = resolve_and_verify_host(host, port)?;
 
-    let mut connector =
-        std::net::TcpStream::connect(&addrs[..]).map_err(|e| format!("connect failed: {}", e))?;
+    let mut connector = connect_timed(&addrs[..], std::time::Duration::from_secs(timeout_secs))?;
 
     connector
         .set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
@@ -36281,8 +37276,7 @@ fn http_get_json_http(
     use std::time::Duration;
 
     let addrs = resolve_and_verify_host(host, port)?;
-    let mut stream =
-        TcpStream::connect(&addrs[..]).map_err(|e| format!("connect failed: {}", e))?;
+    let mut stream = connect_timed(&addrs[..], std::time::Duration::from_secs(timeout_secs))?;
 
     let request = format!(
         "GET {} HTTP/1.0\r\nHost: {}\r\nAccept: application/json\r\n\r\n",
@@ -36353,8 +37347,7 @@ pub fn http_post_json(url: &str, body: &str, timeout_secs: u64) -> Result<String
     use std::net::TcpStream;
 
     let addrs = resolve_and_verify_host(host, port)?;
-    let mut stream =
-        TcpStream::connect(&addrs[..]).map_err(|e| format!("connect failed: {}", e))?;
+    let mut stream = connect_timed(&addrs[..], std::time::Duration::from_secs(timeout_secs))?;
     stream
         .set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
         .ok();
@@ -36391,6 +37384,81 @@ pub fn http_post_json(url: &str, body: &str, timeout_secs: u64) -> Result<String
     } else {
         Ok(String::new())
     }
+}
+
+/// Status-aware variant (FR-40 sender feedback): returns
+/// `(http_status, response_body)` so callers can distinguish an
+/// accepted POST (2xx) from a receiving-side rejection (4xx/5xx —
+/// the body carries the receiver's human-readable reason). Transport
+/// failures (DNS, connect, write, timeout) still surface as `Err`
+/// with a sender-side description.
+pub fn http_post_json_status(
+    url: &str,
+    body: &str,
+    timeout_secs: u64,
+) -> Result<(u16, String), String> {
+    let no_scheme = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .unwrap_or(url);
+    let (host_port, path) = no_scheme
+        .split_once('/')
+        .map(|(h, p)| (h, format!("/{}", p)))
+        .unwrap_or((no_scheme, "/".to_string()));
+    let default_port = if url.starts_with("https://") { 443 } else { 80 };
+    let (host, port) = if let Some((h, p)) = host_port.rsplit_once(':') {
+        (h, p.parse::<u16>().unwrap_or(default_port))
+    } else {
+        (host_port, default_port)
+    };
+
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+
+    let addrs = resolve_and_verify_host(host, port)?;
+    let mut stream = connect_timed(&addrs[..], std::time::Duration::from_secs(timeout_secs))?;
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
+        .ok();
+    stream
+        .set_write_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
+        .ok();
+
+    let request = format!(
+        "POST {} HTTP/1.0\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        path, host, body.len(), body
+    );
+
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| format!("write failed: {}", e))?;
+
+    let mut all = Vec::new();
+    let mut buf = [0u8; 8192];
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    loop {
+        if std::time::Instant::now() > deadline {
+            break;
+        }
+        match stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => all.extend_from_slice(&buf[..n]),
+            Err(_) => break,
+        }
+    }
+
+    let response = String::from_utf8_lossy(&all);
+    let status = response
+        .lines()
+        .next()
+        .and_then(|status_line| status_line.split_whitespace().nth(1))
+        .and_then(|code| code.parse::<u16>().ok())
+        .unwrap_or(0);
+    let body = response
+        .find("\r\n\r\n")
+        .map(|body_start| response[body_start + 4..].to_string())
+        .unwrap_or_default();
+    Ok((status, body))
 }
 
 #[cfg(test)]

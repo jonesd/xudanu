@@ -6,6 +6,27 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.7.0] — 2026-08-20
+
+### FR-40: Green/Gold Link Constructs (heritage link model)
+- **feat(links):** Multi-ended links on the wire — `link_add_end`/`link_remove_end` fully live: named ends register in every end's work Connections, `named_ends` serialized on all link payloads, removing an end degrades to a valid N−1-ended link (never a broken one). WAL, snapshot, and manifest persistence all round-trip named ends.
+- **feat(links):** Type ends unify with FR-39 definitions — links materialize a derived `type_ends` entry per registered type with a definition work (Green's three-set, computed on read, never stored twice). Multi-typed links render stacked chips and filter under any of their types.
+- **feat(links):** Link home documents — `link_create` gains optional `home_document`; a homed link appears in its home's Connections, is hidden while the home is archived (reversibly, never deleted), and unhomed links behave exactly as before. Back-compat by default.
+- **feat(links):** Green's four-set link matching — new `link_query` op (0x070C): from/to/type/home specs (work-ids or author-club), answers heritage questions directly ("everywhere A quotes B", "every Disagreement homed in H"). Multi-ended links match a to-spec via any named end. Honest: linear scan, not enfiladic.
+- **feat(links):** Cross-server sender feedback — backlink notify is now synchronous, status-aware, and bounded: the creating user sees `cross_server_notify_accepted` + a human-readable `cross_server_notify_error` (receiver rejection with its reason, or sender-side reachability error) persisted on the link. All outbound HTTP paths gained connect timeouts (a network blackhole can no longer stall dispatch for minutes).
+
+### FR-39: Link Types as Documents (registration hardening)
+- **feat(types):** User-defined link types are safe by construction — built-in ids 1–7 are admin-only to redefine; custom type ids must equal their definition work's id (the work IS the type — no squatting); dangling definition works are rejected; names validated.
+- **feat(types):** `link_type_list` returns definition works; seeding of built-in definition works on fresh data dirs.
+
+### Persistence (critical fix)
+- **fix(persist):** Root-chunk corruption — `skip_serializing_if` attributes on postcard-serialized structs (introduced with the link-type registry) silently omitted fields and misaligned every subsequent field on read, corrupting all checkpoints written since 2026-08-20. Fixed for `ServerRootChunk.link_type_registry` and `LinkTypeRegistryEntry.definition_work`; no on-disk data predates the bug (verified against local data dirs), so no migration needed.
+
+### Tests
+- **test:** 13 new FR-40/FR-39 tests — multi-end add/remove over the wire, home-document lifecycle (archive/unarchive reversibility), four-set query corpus (heritage queries), type-end derivation, registration hardening (hijack/squat/dangling rejection), cross-server notify feedback (healthy/rejected/unreachable), snapshot round-trips for named ends + home + notify outcome. Suites: 3,168 lib + 310 integration, zero failures (was 43 + 16 failing on the persistence bug).
+
+---
+
 ## [v1.6.0] — 2026-08-19
 
 ### Adversarial Resilience (security hardening)

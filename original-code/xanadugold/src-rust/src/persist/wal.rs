@@ -297,6 +297,7 @@ impl WalLog {
         origin_ref: Option<&crate::server::transport::protocol::HyperRefPayload>,
         destination_ref: Option<&crate::server::transport::protocol::HyperRefPayload>,
         link_types: &[u64],
+        home_document: Option<BeId>,
     ) -> Result<u64, WalError> {
         self.append(
             "create_link",
@@ -307,6 +308,37 @@ impl WalLog {
                 "origin_ref": origin_ref,
                 "destination_ref": destination_ref,
                 "link_types": link_types,
+                "home_document": home_document,
+            }),
+        )
+    }
+
+    pub fn append_link_add_end(
+        &mut self,
+        link_id: BeId,
+        end_name: String,
+        end_ref: &crate::server::transport::protocol::HyperRefPayload,
+    ) -> Result<u64, WalError> {
+        self.append(
+            "link_add_end",
+            serde_json::json!({
+                "link_id": link_id,
+                "end_name": end_name,
+                "end_ref": end_ref,
+            }),
+        )
+    }
+
+    pub fn append_link_remove_end(
+        &mut self,
+        link_id: BeId,
+        end_name: String,
+    ) -> Result<u64, WalError> {
+        self.append(
+            "link_remove_end",
+            serde_json::json!({
+                "link_id": link_id,
+                "end_name": end_name,
             }),
         )
     }
@@ -645,6 +677,11 @@ impl WalLog {
                             .get("link_types")
                             .and_then(|v| serde_json::from_value(v.clone()).ok())
                             .unwrap_or_default();
+                        let home_document: Option<BeId> = entry
+                            .args
+                            .get("home_document")
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or(None);
                         server.wal_replay_create_link(
                             link_id,
                             origin,
@@ -652,7 +689,38 @@ impl WalLog {
                             o_ref,
                             d_ref,
                             link_types,
+                            home_document,
                         );
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "link_add_end" => {
+                    if let (Some(link_id), Some(end_name), Some(end_ref)) = (
+                        entry.args.get("link_id").and_then(|v| v.as_u64()),
+                        entry.args.get("end_name").and_then(|v| v.as_str()),
+                        entry.args.get("end_ref"),
+                    ) {
+                        if let Ok(payload) = serde_json::from_value::<
+                            crate::server::transport::protocol::HyperRefPayload,
+                        >(end_ref.clone())
+                        {
+                            server.wal_replay_link_add_end(link_id, end_name.to_string(), payload);
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }
+                "link_remove_end" => {
+                    if let (Some(link_id), Some(end_name)) = (
+                        entry.args.get("link_id").and_then(|v| v.as_u64()),
+                        entry.args.get("end_name").and_then(|v| v.as_str()),
+                    ) {
+                        server.wal_replay_link_remove_end(link_id, end_name.to_string());
                         true
                     } else {
                         false

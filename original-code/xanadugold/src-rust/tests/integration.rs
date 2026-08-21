@@ -2597,6 +2597,944 @@ async fn link_create_get_delete() {
     assert_eq!(resp["type"], "error");
 }
 
+/// FR-40 Story 1: multi-ended links. A two-ended link gains a third
+/// named end; every end's work sees the connection; named_ends is
+/// serialized; removing an end degrades gracefully to two-ended.
+#[tokio::test]
+async fn multi_ended_link_add_and_remove_end() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, sid) = json_setup(&srv).await;
+    let _ = sid;
+
+    async fn mk_work(s: &mut SplitSender, r: &mut SplitReceiver, name: &str) -> u64 {
+        send_recv_json(
+            s,
+            r,
+            json_req(
+                900,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": name}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap()
+    }
+    let a = mk_work(&mut s, &mut r, "multi-end A").await;
+    let b = mk_work(&mut s, &mut r, "multi-end B").await;
+    let c = mk_work(&mut s, &mut r, "multi-end C").await;
+
+    let link_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            901,
+            "link_create",
+            Some(serde_json::json!({ "origin": a, "destination": b })),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    // Add a third end anchored to work C
+    let add = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            902,
+            "link_add_end",
+            Some(serde_json::json!({
+                "link_id": link_id,
+                "end_name": "Comparison3",
+                "end_ref": {
+                    "kind": "single",
+                    "work_context": c,
+                    "excerpt": "multi-end C",
+                    "start_position": 0,
+                    "end_position": 11
+                }
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(add["type"], "response", "add_end failed: {add}");
+
+    // C now lists the link
+    let for_c = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            903,
+            "link_list_for_work",
+            Some(serde_json::json!({ "work_id": c })),
+        ),
+    )
+    .await;
+    let entries = for_c["value"]["value"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        entries
+            .iter()
+            .any(|l| l["link_id"].as_u64() == Some(link_id)),
+        "work C must see the multi-ended link"
+    );
+
+    // named_ends serialized beyond Left/Right
+    let get = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            904,
+            "link_get",
+            Some(serde_json::json!({ "link_id": link_id })),
+        ),
+    )
+    .await;
+    let ends = get["value"]["value"]["named_ends"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        ends.iter().any(|(pair)| {
+            let name = pair[0].as_str().unwrap_or("");
+            name == "Comparison3" && pair[1]["work_context"].as_u64() == Some(c)
+        }),
+        "named_ends must include Comparison3 -> C, got: {ends:?}"
+    );
+
+    // Remove the end: back to a clean two-ended link, C stops listing it
+    let rem = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            905,
+            "link_remove_end",
+            Some(serde_json::json!({ "link_id": link_id, "end_name": "Comparison3" })),
+        ),
+    )
+    .await;
+    assert_eq!(rem["type"], "response");
+    let for_c2 = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            906,
+            "link_list_for_work",
+            Some(serde_json::json!({ "work_id": c })),
+        ),
+    )
+    .await;
+    let entries2 = for_c2["value"]["value"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        !entries2
+            .iter()
+            .any(|l| l["link_id"].as_u64() == Some(link_id)),
+        "C must not list the link after end removal"
+    );
+    // A/B unaffected
+    let for_a = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            907,
+            "link_list_for_work",
+            Some(serde_json::json!({ "work_id": a })),
+        ),
+    )
+    .await;
+    let entries_a = for_a["value"]["value"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(entries_a
+        .iter()
+        .any(|l| l["link_id"].as_u64() == Some(link_id)));
+}
+
+/// FR-40 Story 3: link home documents. A homed link appears in the
+/// home's Connections, disappears from listings while the home is
+/// archived (reversibly), and unhomed links behave exactly as before.
+#[tokio::test]
+async fn link_home_document_lifecycle() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    async fn mk_work(s: &mut SplitSender, r: &mut SplitReceiver, name: &str) -> u64 {
+        send_recv_json(
+            s,
+            r,
+            json_req(
+                900,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": name}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap()
+    }
+    let a = mk_work(&mut s, &mut r, "homed A").await;
+    let b = mk_work(&mut s, &mut r, "homed B").await;
+    let home = mk_work(&mut s, &mut r, "the asserting essay").await;
+
+    let create = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            901,
+            "link_create",
+            Some(serde_json::json!({
+                "origin": a,
+                "destination": b,
+                "home_document": home,
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(create["type"], "response", "create failed: {create}");
+    let link_id = create["value"]["value"].as_u64().unwrap();
+
+    // Home documents surface on the payload
+    let get = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            902,
+            "link_get",
+            Some(serde_json::json!({ "link_id": link_id })),
+        ),
+    )
+    .await;
+    assert_eq!(get["value"]["value"]["home_document"].as_u64(), Some(home));
+
+    // Appears in H's Connections
+    let for_home = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            903,
+            "link_list_for_work",
+            Some(serde_json::json!({ "work_id": home })),
+        ),
+    )
+    .await;
+    let entries = for_home["value"]["value"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(entries
+        .iter()
+        .any(|l| l["link_id"].as_u64() == Some(link_id)));
+
+    // Archive H: link disappears from every listing but is not deleted
+    let archive = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            904,
+            "work_archive",
+            Some(serde_json::json!({ "work_id": home })),
+        ),
+    )
+    .await;
+    assert_eq!(archive["type"], "response", "archive failed: {archive}");
+    let for_a = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            905,
+            "link_list_for_work",
+            Some(serde_json::json!({ "work_id": a })),
+        ),
+    )
+    .await;
+    let entries_a = for_a["value"]["value"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        !entries_a
+            .iter()
+            .any(|l| l["link_id"].as_u64() == Some(link_id)),
+        "homed link hidden while home is archived"
+    );
+    let still_there = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            906,
+            "link_get",
+            Some(serde_json::json!({ "link_id": link_id })),
+        ),
+    )
+    .await;
+    assert_eq!(
+        still_there["type"], "response",
+        "archive must not delete the link"
+    );
+    assert_eq!(still_there["value"]["value"]["home_archived"], true);
+
+    // Unarchive restores it (reversible)
+    let unarchive = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            907,
+            "work_unarchive",
+            Some(serde_json::json!({ "work_id": home })),
+        ),
+    )
+    .await;
+    assert_eq!(unarchive["type"], "response");
+    let for_a2 = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            908,
+            "link_list_for_work",
+            Some(serde_json::json!({ "work_id": a })),
+        ),
+    )
+    .await;
+    let entries_a2 = for_a2["value"]["value"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(entries_a2
+        .iter()
+        .any(|l| l["link_id"].as_u64() == Some(link_id)));
+
+    // Unhomed link on the same works is unaffected by archiving an
+    // unrelated work
+    let c = mk_work(&mut s, &mut r, "unrelated").await;
+    let plain = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            909,
+            "link_create",
+            Some(serde_json::json!({ "origin": a, "destination": c })),
+        ),
+    )
+    .await;
+    let plain_id = plain["value"]["value"].as_u64().unwrap();
+    let archive_c = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            910,
+            "work_archive",
+            Some(serde_json::json!({ "work_id": c })),
+        ),
+    )
+    .await;
+    assert_eq!(archive_c["type"], "response");
+    let get_plain = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            911,
+            "link_get",
+            Some(serde_json::json!({ "link_id": plain_id })),
+        ),
+    )
+    .await;
+    assert_eq!(
+        get_plain["value"]["value"]["home_document"],
+        serde_json::Value::Null
+    );
+    assert_eq!(get_plain["value"]["value"]["home_archived"], false);
+}
+
+/// FR-40 Story 4: the four-set query over the wire — heritage
+/// questions ("everywhere A quotes B", "every Disagreement homed in
+/// H") answered correctly on a seeded corpus.
+#[tokio::test]
+async fn link_query_heritage_queries() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    async fn mk_work(s: &mut SplitSender, r: &mut SplitReceiver, name: &str) -> u64 {
+        send_recv_json(
+            s,
+            r,
+            json_req(
+                900,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": name}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap()
+    }
+    let a = mk_work(&mut s, &mut r, "corpus A").await;
+    let b = mk_work(&mut s, &mut r, "corpus B").await;
+    let c = mk_work(&mut s, &mut r, "corpus C").await;
+    let h = mk_work(&mut s, &mut r, "essay home").await;
+
+    async fn mk_link(
+        s: &mut SplitSender,
+        r: &mut SplitReceiver,
+        id: u16,
+        origin: u64,
+        destination: u64,
+        types: serde_json::Value,
+        home: Option<u64>,
+    ) -> u64 {
+        let mut payload = serde_json::json!({
+            "origin": origin,
+            "destination": destination,
+            "link_types": types,
+        });
+        if let Some(hw) = home {
+            payload["home_document"] = serde_json::json!(hw);
+        }
+        send_recv_json(s, r, json_req(id, "link_create", Some(payload))).await["value"]["value"]
+            .as_u64()
+            .unwrap()
+    }
+
+    let quote_ab = mk_link(&mut s, &mut r, 901, a, b, serde_json::json!([4]), None).await;
+    let quote_ac = mk_link(&mut s, &mut r, 902, a, c, serde_json::json!([4]), None).await;
+    let disagree_bh = mk_link(&mut s, &mut r, 903, b, a, serde_json::json!([3]), Some(h)).await;
+
+    async fn query(
+        s: &mut SplitSender,
+        r: &mut SplitReceiver,
+        id: u16,
+        body: serde_json::Value,
+    ) -> Vec<u64> {
+        let resp = send_recv_json(s, r, json_req(id, "link_query", Some(body))).await;
+        assert_eq!(resp["type"], "response", "query failed: {resp}");
+        resp["value"]["value"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .map(|l| l["link_id"].as_u64().unwrap())
+            .collect::<Vec<u64>>()
+    }
+
+    // Everywhere A quotes anyone
+    let res = query(
+        &mut s,
+        &mut r,
+        910,
+        serde_json::json!({
+            "from_spec": {"work_ids": [a]},
+            "to_spec": {},
+            "type_ids": [4],
+            "home_spec": {},
+        }),
+    )
+    .await;
+    assert!(res.contains(&quote_ab) && res.contains(&quote_ac));
+    assert!(!res.contains(&disagree_bh));
+
+    // Everywhere A quotes B (restricted to-spec)
+    let res = query(
+        &mut s,
+        &mut r,
+        911,
+        serde_json::json!({
+            "from_spec": {"work_ids": [a]},
+            "to_spec": {"work_ids": [b]},
+            "type_ids": [4],
+            "home_spec": {},
+        }),
+    )
+    .await;
+    assert_eq!(res, vec![quote_ab]);
+
+    // Every Disagreement homed in H
+    let res = query(
+        &mut s,
+        &mut r,
+        912,
+        serde_json::json!({
+            "from_spec": {},
+            "to_spec": {},
+            "type_ids": [3],
+            "home_spec": {"work_ids": [h]},
+        }),
+    )
+    .await;
+    assert_eq!(res, vec![disagree_bh]);
+
+    // Empty payload = all links
+    let res = query(&mut s, &mut r, 913, serde_json::json!({})).await;
+    assert_eq!(res.len(), 3);
+}
+
+/// FR-40 sender feedback: cross-server link creation reports the
+/// definitive notify outcome — accepted when the receiver takes it,
+/// a receiver rejection reason (HTTP 404) for unknown works, and a
+/// reachability error when the remote is down. Runs two real servers.
+// multi_thread: the cross-server notify runs synchronously on a
+// dispatch worker; the in-process receiving server needs another
+// runtime thread to answer (production runs multi-threaded runtimes
+// in separate processes).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cross_server_link_notify_sender_feedback() {
+    xudanu::server::server::set_allow_loopback(true);
+    let srv_a = TestServer::start().await;
+    let srv_b = TestServer::start().await;
+
+    async fn mk_work(s: &mut SplitSender, r: &mut SplitReceiver, name: &str) -> u64 {
+        send_recv_json(
+            s,
+            r,
+            json_req(
+                900,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": name}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap()
+    }
+
+    let (mut sa, mut ra, _) = json_setup(&srv_a).await;
+    let (mut sb, mut rb, _) = json_setup(&srv_b).await;
+    let local = mk_work(&mut sa, &mut ra, "sender's essay").await;
+    let remote = mk_work(&mut sb, &mut rb, "receiver's target work").await;
+    let remote_hex = format!("{:x}", remote);
+
+    fn csr_link(remote_addr: &str, work_hex: &str) -> serde_json::Value {
+        serde_json::json!({
+            "kind": "single",
+            "work_context": null,
+            "original_context": null,
+            "excerpt": "crossed passage",
+            "start_position": null,
+            "end_position": null,
+            "cross_server_ref": {
+                "tumbler": format!("2.{}.1.0", work_hex),
+                "origin_server_id": 2,
+                "origin_server_address": remote_addr,
+                "content_hash": "00".repeat(32),
+                "origin_author": "remote author",
+                "origin_author_key": "00".repeat(32),
+                "excerpt": "crossed passage",
+            },
+        })
+    }
+
+    async fn create_remote_link(
+        sa: &mut SplitSender,
+        ra: &mut SplitReceiver,
+        id: u16,
+        local: u64,
+        remote_addr: String,
+        work_hex: String,
+    ) -> serde_json::Value {
+        let csr = csr_link(&remote_addr, &work_hex);
+        send_recv_json(
+            sa,
+            ra,
+            json_req(
+                id,
+                "link_create",
+                Some(serde_json::json!({
+                    "origin": local,
+                    "destination": local,
+                    "origin_ref": {
+                        "kind": "single",
+                        "work_context": local,
+                        "excerpt": "crossed passage",
+                        "start_position": 0,
+                        "end_position": 15,
+                    },
+                    "destination_ref": csr,
+                })),
+            ),
+        )
+        .await
+    }
+
+    // 1. Healthy receiver: notify accepted, receipt visible on B
+    let created = create_remote_link(
+        &mut sa,
+        &mut ra,
+        910,
+        local,
+        format!("{}", srv_b.addr),
+        remote_hex.clone(),
+    )
+    .await;
+    assert_eq!(created["type"], "response", "create failed: {created}");
+    let link_id = created["value"]["value"].as_u64().unwrap();
+
+    let get = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            911,
+            "link_get",
+            Some(serde_json::json!({ "link_id": link_id })),
+        ),
+    )
+    .await;
+    let val = &get["value"]["value"];
+    assert_eq!(
+        val["cross_server_notify_accepted"], true,
+        "healthy receiver must accept: {val}"
+    );
+    assert_eq!(val["cross_server_notify_error"], serde_json::Value::Null);
+
+    let receipts = send_recv_json(
+        &mut sb,
+        &mut rb,
+        json_req(
+            912,
+            "cross_server_backlinks_get",
+            Some(serde_json::json!({ "work_id": remote })),
+        ),
+    )
+    .await;
+    let list = receipts["value"]["value"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        !list.is_empty(),
+        "receiver must hold a backlink receipt: {receipts}"
+    );
+
+    // 2. Receiver rejects: unknown target work (HTTP 404)
+    let rejected = create_remote_link(
+        &mut sa,
+        &mut ra,
+        913,
+        local,
+        format!("{}", srv_b.addr),
+        "ffffee".to_string(),
+    )
+    .await;
+    assert_eq!(rejected["type"], "response");
+    let link2 = rejected["value"]["value"].as_u64().unwrap();
+    let get2 = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            914,
+            "link_get",
+            Some(serde_json::json!({ "link_id": link2 })),
+        ),
+    )
+    .await;
+    let val2 = &get2["value"]["value"];
+    assert_eq!(
+        val2["cross_server_notify_accepted"], false,
+        "unknown work must be rejected: {val2}"
+    );
+    let err = val2["cross_server_notify_error"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        err.contains("404") || err.contains("not found"),
+        "rejection reason must be understandable: {err}"
+    );
+
+    // 3. Unreachable receiver (closed port): sender-side error, fast
+    let start = std::time::Instant::now();
+    let dead = create_remote_link(
+        &mut sa,
+        &mut ra,
+        915,
+        local,
+        "127.0.0.1:1".to_string(),
+        remote_hex.clone(),
+    )
+    .await;
+    let elapsed = start.elapsed();
+    assert_eq!(dead["type"], "response");
+    let link3 = dead["value"]["value"].as_u64().unwrap();
+    let get3 = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            916,
+            "link_get",
+            Some(serde_json::json!({ "link_id": link3 })),
+        ),
+    )
+    .await;
+    let val3 = &get3["value"]["value"];
+    assert_eq!(
+        val3["cross_server_notify_accepted"], false,
+        "dead receiver must not be accepted: {val3}"
+    );
+    let err3 = val3["cross_server_notify_error"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        err3.to_lowercase().contains("reach") || err3.to_lowercase().contains("connect"),
+        "reachability error must be understandable: {err3}"
+    );
+    assert!(
+        elapsed.as_secs() < 5,
+        "connection-refused must fail fast, took {:?}",
+        elapsed
+    );
+}
+
+/// FR-40 Story 2: type ends are derived on read — a multi-typed link
+/// materializes one type end per registered definition work, without
+/// storing them on the link itself.
+#[tokio::test]
+async fn link_type_ends_derived_on_read() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    async fn mk_work(s: &mut SplitSender, r: &mut SplitReceiver, name: &str) -> u64 {
+        send_recv_json(
+            s,
+            r,
+            json_req(
+                900,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": name}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap()
+    }
+    let a = mk_work(&mut s, &mut r, "type-end A").await;
+    let b = mk_work(&mut s, &mut r, "type-end B").await;
+    let def_comment = mk_work(&mut s, &mut r, "Comment definition work").await;
+
+    // Register type 1 (Comment) with a definition work; type 4
+    // (Quotation) stays definition-less on this server.
+    let reg = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            901,
+            "link_type_register",
+            Some(serde_json::json!({
+                "type_id": 1,
+                "name": "Comment",
+                "definition_work": def_comment,
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(reg["type"], "response");
+
+    let link_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            902,
+            "link_create",
+            Some(serde_json::json!({
+                "origin": a,
+                "destination": b,
+                "link_types": [1, 4],
+            })),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    let get = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            903,
+            "link_get",
+            Some(serde_json::json!({ "link_id": link_id })),
+        ),
+    )
+    .await;
+    let val = &get["value"]["value"];
+    let type_ends = val["type_ends"].as_array().cloned().unwrap_or_default();
+    assert_eq!(
+        type_ends.len(),
+        1,
+        "only registered-with-definition types materialize a type end: {val}"
+    );
+    assert_eq!(type_ends[0][0].as_u64(), Some(1));
+    assert_eq!(type_ends[0][1].as_u64(), Some(def_comment));
+
+    // Not stored: removing/adding ends never sees the derived end
+    let named = val["named_ends"].as_array().cloned().unwrap_or_default();
+    assert!(
+        !named
+            .iter()
+            .any(|pair| pair[0].as_str().unwrap_or("").starts_with("Type")),
+        "derived type ends must not leak into the stored ends map"
+    );
+
+    // link_type_list surfaces the definition
+    let types = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(904, "link_type_list", Some(serde_json::json!({}))),
+    )
+    .await;
+    let list = types["value"]["value"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        list.iter().any(|t| t["type_id"].as_u64() == Some(1)
+            && t["definition_work"].as_u64() == Some(def_comment)),
+        "link_type_list returns definition works: {list:?}"
+    );
+}
+
+/// FR-39/FR-40 hardening: user-defined link types are safe by
+/// construction — built-ins can't be hijacked, custom ids can't be
+/// squatted, dangling definitions are rejected, and the legit
+/// "work IS the type" flow works end to end.
+#[tokio::test]
+async fn link_type_registration_hardening() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    async fn mk_work(s: &mut SplitSender, r: &mut SplitReceiver, name: &str) -> u64 {
+        send_recv_json(
+            s,
+            r,
+            json_req(
+                900,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": name}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap()
+    }
+    let def = mk_work(
+        &mut s,
+        &mut r,
+        "Certification: this passage has been verified",
+    )
+    .await;
+
+    async fn register(
+        s: &mut SplitSender,
+        r: &mut SplitReceiver,
+        id: u16,
+        type_id: u64,
+        name: &str,
+        def_work: Option<u64>,
+    ) -> serde_json::Value {
+        let mut payload = serde_json::json!({"type_id": type_id, "name": name});
+        if let Some(dw) = def_work {
+            payload["definition_work"] = serde_json::json!(dw);
+        }
+        send_recv_json(s, r, json_req(id, "link_type_register", Some(payload))).await
+    }
+
+    // Legit custom type: id == definition work id
+    let ok = register(&mut s, &mut r, 901, def, "Certification", Some(def)).await;
+    assert_eq!(ok["type"], "response", "legit registration failed: {ok}");
+
+    // Squatting: custom id that doesn't match its definition work
+    let bad = register(&mut s, &mut r, 902, def + 100, "Fake", Some(def)).await;
+    assert_eq!(bad["type"], "error", "id squatting must be rejected: {bad}");
+
+    // Dangling: definition work doesn't exist
+    let bad = register(&mut s, &mut r, 903, 999999, "Ghost", Some(999999)).await;
+    assert_eq!(
+        bad["type"], "error",
+        "dangling definition must be rejected: {bad}"
+    );
+
+    // Definition-less custom type (non-built-in id, no work)
+    let bad = register(&mut s, &mut r, 904, 4242, "Bare", None).await;
+    assert_eq!(
+        bad["type"], "error",
+        "definition-less custom type must be rejected: {bad}"
+    );
+
+    // Empty name
+    let bad = register(&mut s, &mut r, 905, def, "  ", Some(def)).await;
+    assert_eq!(bad["type"], "error", "empty name must be rejected: {bad}");
+
+    // Built-in redefinition by a NON-admin session is blocked; by an
+    // admin session it succeeds (this session is admin).
+    let ok = register(&mut s, &mut r, 906, 3, "Disagreement", None).await;
+    assert_eq!(ok["type"], "response", "admin may redefine built-ins: {ok}");
+
+    // Register as public (non-admin) session and attempt built-in hijack
+    let (mut ps, mut pr) = connect_with_handshake(&srv, "json").await;
+    let _ = send_recv_json(&mut ps, &mut pr, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut ps, &mut pr, json_req(2, "session_login_public", None)).await;
+    let hijack = send_recv_json(
+        &mut ps,
+        &mut pr,
+        json_req(
+            3,
+            "link_type_register",
+            Some(serde_json::json!({"type_id": 1, "name": "Evil"})),
+        ),
+    )
+    .await;
+    assert_eq!(
+        hijack["type"], "error",
+        "non-admin built-in hijack must be rejected: {hijack}"
+    );
+
+    // The custom type is usable end-to-end: create a typed link with it
+    let a = mk_work(&mut s, &mut r, "cert A").await;
+    let b = mk_work(&mut s, &mut r, "cert B").await;
+    let link_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            907,
+            "link_create",
+            Some(serde_json::json!({
+                "origin": a,
+                "destination": b,
+                "link_types": [def],
+            })),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    let get = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            908,
+            "link_get",
+            Some(serde_json::json!({ "link_id": link_id })),
+        ),
+    )
+    .await;
+    let val = &get["value"]["value"];
+    assert!(
+        (val["link_types"].as_array().cloned().unwrap_or_default())
+            .iter()
+            .any(|t| t.as_u64() == Some(def)),
+        "custom type attaches to links: {val}"
+    );
+    let type_ends = val["type_ends"].as_array().cloned().unwrap_or_default();
+    assert!(
+        type_ends
+            .iter()
+            .any(|te| te[0].as_u64() == Some(def) && te[1].as_u64() == Some(def)),
+        "custom type materializes its type end: {val}"
+    );
+}
+
 #[tokio::test]
 async fn link_create_origin_only_span_is_preserved() {
     // Regression: link_create with only origin_ref (the CLI seeding

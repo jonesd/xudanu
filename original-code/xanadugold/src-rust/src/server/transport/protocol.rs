@@ -266,6 +266,7 @@ pub enum OperationCode {
     LinkSetTypes,
     LinkTypeRegister,
     LinkTypeList,
+    LinkQuery,
 
     FindExcerptPositions,
 
@@ -614,6 +615,7 @@ impl OperationCode {
             0x0709 => Some(OperationCode::LinkSetTypes),
             0x070A => Some(OperationCode::LinkTypeRegister),
             0x070B => Some(OperationCode::LinkTypeList),
+            0x070C => Some(OperationCode::LinkQuery),
 
             0x0801 => Some(OperationCode::FindTranscluders),
             0x0802 => Some(OperationCode::FindWorksForContent),
@@ -944,6 +946,7 @@ impl OperationCode {
             OperationCode::LinkSetTypes => 0x0709,
             OperationCode::LinkTypeRegister => 0x070A,
             OperationCode::LinkTypeList => 0x070B,
+            OperationCode::LinkQuery => 0x070C,
 
             OperationCode::FindTranscluders => 0x0801,
             OperationCode::FindWorksForContent => 0x0802,
@@ -1637,6 +1640,11 @@ pub enum WireRequest {
         destination_ref: Option<HyperRefPayload>,
         #[cfg_attr(feature = "serde", serde(default))]
         link_types: Vec<u64>,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        home_document: Option<BeId>,
     },
     LinkGet {
         link_id: BeId,
@@ -1679,6 +1687,20 @@ pub enum WireRequest {
         definition_work: Option<BeId>,
     },
     LinkTypeList,
+    /// Green's four-set link matching (FR-40 Story 4): find links
+    /// where one end matches `from_spec`, another end matches
+    /// `to_spec`, the types include `type_ids`, and the home document
+    /// matches `home_spec`. Empty specs mean "any".
+    LinkQuery {
+        #[cfg_attr(feature = "serde", serde(default))]
+        from_spec: LinkEndpointSpecPayload,
+        #[cfg_attr(feature = "serde", serde(default))]
+        to_spec: LinkEndpointSpecPayload,
+        #[cfg_attr(feature = "serde", serde(default))]
+        type_ids: Vec<u64>,
+        #[cfg_attr(feature = "serde", serde(default))]
+        home_spec: LinkEndpointSpecPayload,
+    },
     FindExcerptPositions {
         work_id: BeId,
         excerpt: String,
@@ -2340,6 +2362,7 @@ impl WireRequest {
                 | Self::LinkGet { .. }
                 | Self::LinkListForWork { .. }
                 | Self::LinkTypeList
+                | Self::LinkQuery { .. }
                 | Self::BlobGet { .. }
                 | Self::BlobGetPreview { .. }
                 | Self::BlobExists { .. }
@@ -3001,6 +3024,22 @@ pub enum ResponseValue {
     #[cfg(feature = "serde")]
     CrossServerLinkCreateResult {
         created: bool,
+        /// FR-40: did the receiving server acknowledge the backlink
+        /// notification? None = no notification was attempted (e.g.
+        /// remote server not in the directory).
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        remote_accepted: Option<bool>,
+        /// Human-readable failure reason when remote_accepted is
+        /// false (receiving-side rejection or sender-side reachability
+        /// error).
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        notify_error: Option<String>,
     },
     #[cfg(feature = "serde")]
     CrossServerLinkListResult {
@@ -3287,6 +3326,43 @@ pub struct LinkPayload {
         serde(default, skip_serializing_if = "Vec::is_empty")
     )]
     pub link_types: Vec<u64>,
+    /// Derived type ends (FR-40 Story 2): for each type id with a
+    /// registered definition work, the link effectively gains an end
+    /// pointing at that work — Green's three-set, materialized on
+    /// read rather than stored.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub type_ends: Vec<(u64, BeId)>,
+    /// Home document (FR-40 Story 3): the work this link lives in.
+    /// Absent = server-global (the shipped default).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub home_document: Option<BeId>,
+    /// Ghost state of the home document: homed links with an archived
+    /// home are hidden from listings (reversible via unarchive).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub home_archived: bool,
+    /// Cross-server notify outcome for links whose destination is on
+    /// another server: did the remote accept the backlink
+    /// notification (FR-40 sender feedback)? None = no notify
+    /// attempted (purely local link).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub cross_server_notify_accepted: Option<bool>,
+    /// Failure reason when the remote did not accept: either the
+    /// receiving server rejected it (e.g. "work not found", rate
+    /// limit) or the sender could not reach it (connect/DNS error).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub cross_server_notify_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3300,6 +3376,34 @@ pub struct LinkTypeInfoPayload {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub definition_work: Option<BeId>,
+}
+
+/// One end-set of Green's four-set link matching (FR-40 Story 4).
+/// An empty spec (no works, no author) matches ANY end; a spec with
+/// `work_ids` matches ends anchored in those works; a spec with
+/// `author` matches ends anchored in works owned by that club.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LinkEndpointSpecPayload {
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub work_ids: Vec<BeId>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub author: Option<BeId>,
+}
+
+impl LinkEndpointSpecPayload {
+    pub fn any() -> Self {
+        Self::default()
+    }
+
+    pub fn is_any(&self) -> bool {
+        self.work_ids.is_empty() && self.author.is_none()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3570,6 +3674,20 @@ impl CrossServerRefPayload {
             &self.origin_author,
             key_arr,
         );
+        // The address normally travels inside a domain tumbler
+        // (`"host:port".work.v.r`); when the tumbler is numeric, honor
+        // an explicit origin_server_address on the payload so the
+        // backlink notify can still reach the origin server (FR-40
+        // sender feedback).
+        if csr.origin_server_address().is_none() {
+            if let Some(addr) = self
+                .origin_server_address
+                .as_ref()
+                .filter(|a| !a.is_empty())
+            {
+                csr = csr.with_origin_server_address(addr.clone());
+            }
+        }
         csr = csr
             .with_mime_type(&self.mime_type)
             .with_byte_size(self.byte_size)

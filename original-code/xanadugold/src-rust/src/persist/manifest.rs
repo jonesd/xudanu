@@ -46,7 +46,10 @@ pub struct StandaloneEditionChunkRef {
 pub struct LinkTypeRegistryEntry {
     pub type_id: u64,
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    // NOTE: no skip_serializing_if — this struct is serialized inside
+    // the postcard root chunk (positional format); skipping a field
+    // misaligns the bytes that follow.
+    #[cfg_attr(feature = "serde", serde(default))]
     pub definition_work: Option<BeId>,
 }
 
@@ -70,6 +73,25 @@ pub struct LinkEntry {
         serde(default, skip_serializing_if = "Vec::is_empty")
     )]
     pub link_types: Vec<u64>,
+    /// Named ends beyond LeftEnd/RightEnd (FR-40 Story 1).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub named_ends: Vec<(String, crate::server::transport::protocol::HyperRefPayload)>,
+    /// Home document (FR-40 Story 3); None = server-global.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub home_document: Option<BeId>,
+    /// Cross-server notify outcome, when one was attempted (FR-40
+    /// sender feedback).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub cross_server_notify: Option<crate::server::server::CrossServerNotifyOutcome>,
 }
 
 /// On-disk representation of a work entry in the manifest.
@@ -1496,6 +1518,9 @@ mod tests {
             origin_ref: None,
             destination_ref: None,
             link_types: vec![],
+            named_ends: Vec::new(),
+            home_document: None,
+            cross_server_notify: None,
         });
         manifest.link_counter = 51;
 

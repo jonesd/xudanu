@@ -226,7 +226,10 @@ pub struct ServerRootChunk {
     pub standalone_editions_hash: Option<[u8; 32]>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub links_hash: Option<[u8; 32]>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    // NOTE: no skip_serializing_if here — this struct is serialized
+    // with postcard (positional, non-self-describing); skipping a
+    // field misaligns every field after it on read.
+    #[cfg_attr(feature = "serde", serde(default))]
     pub link_type_registry: Vec<crate::persist::manifest::LinkTypeRegistryEntry>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub social_hash: Option<[u8; 32]>,
