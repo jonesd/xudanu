@@ -7190,6 +7190,11 @@ impl Server {
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
             self.migrate_link_spans_for_delta(work_be_id, ops);
+            // FR-41 S4: CRDT edits change source content exactly like
+            // the legacy delta path — dependents' inline transclusion
+            // spans must migrate here too (the legacy path calls this
+            // in dispatch; the CRDT path previously skipped it).
+            self.migrate_inline_transclusions_for_delta(work_be_id, ops);
 
             let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result
                 .relay_to
@@ -24857,7 +24862,7 @@ mod tests {
         let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
         let _r2 = server.crdt_open_session(sid2, work_id).unwrap();
         let ops1 = vec![
-            TextDeltaOp::Retain { count: 0 },
+            crate::server::transport::TextDeltaOp::Retain { count: 0 },
             TextDeltaOp::Insert {
                 text: "A".to_string(),
             },
@@ -24865,7 +24870,7 @@ mod tests {
         let result1 = server.crdt_apply_text_delta(sid1, work_id, &ops1).unwrap();
         assert_eq!(result1.0.relay_to.len(), 1);
         let ops2 = vec![
-            TextDeltaOp::Retain { count: 0 },
+            crate::server::transport::TextDeltaOp::Retain { count: 0 },
             TextDeltaOp::Insert {
                 text: "B".to_string(),
             },
@@ -25068,7 +25073,7 @@ mod tests {
                 sid2,
                 work_id,
                 &[
-                    TextDeltaOp::Retain { count: 3 },
+                    crate::server::transport::TextDeltaOp::Retain { count: 3 },
                     TextDeltaOp::Insert {
                         text: "Y".to_string(),
                     },
@@ -39983,6 +39988,7 @@ mod tests_security_tracker {
     // registration — for homed links, the home's connection list
     // always contains the link (residence is recorded, not derived).
     #[test]
+
     fn prop_spec_home_registration_is_recorded() {
         proptest! {
             #[test]
@@ -39999,5 +40005,188 @@ mod tests_security_tracker {
                 prop_assert!(listed, "homed link must appear in home's connections");
             }
         }
+    }
+
+    // ── FR-41 S4: transclusion stability gates ────────────────────
+    //
+    // The demo's credibility floor (and the Roger-Gregory gate).
+    // Two element families with different guarantees:
+    // - Transclusion (char-span, live): span MUST migrate on source
+    //   edits through BOTH edit paths (legacy and CRDT/live editor).
+    // - Virtual (FR-37, pinned revision): content stays pinned to
+    //   the revision at placement — edits never leak in.
+
+    fn s4_setup() -> (Server, SessionId, BeId, BeId) {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let src = server
+            .create_work(sid, Edition::from_text("0123456789abcdefghij"))
+            .unwrap();
+        let dst = server.create_work(sid, Edition::from_text("dest")).unwrap();
+        (server, sid, src, dst)
+    }
+
+    fn s4_place_transclusion(
+        server: &mut Server,
+        sid: SessionId,
+        dst: BeId,
+        src: BeId,
+        start: usize,
+        end: usize,
+    ) {
+        let entries = vec![(
+            0i64,
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                RangeElement::transclusion(src, start, end),
+            )),
+        )];
+        server.work_grab(sid, dst).unwrap();
+        server
+            .work_revise(sid, dst, Edition::from_entries(entries))
+            .unwrap();
+        server.work_release(sid, dst).unwrap();
+    }
+
+    fn s4_transclusion_span(server: &Server, dst: BeId) -> Option<(i64, i64)> {
+        let ws = server.works.get(&dst)?;
+        for (_, c) in ws.work.current_edition().cached_entries() {
+            if let RangeElement::Transclusion {
+                char_start,
+                char_end,
+                ..
+            } = &c.element
+            {
+                return Some((*char_start as i64, *char_end as i64));
+            }
+            if let RangeElement::StructuralTransclusion {
+                entry_start,
+                entry_end,
+                ..
+            } = &c.element
+            {
+                return Some((*entry_start, *entry_end));
+            }
+            if let Some(spec) = c.element.virtual_spec() {
+                return Some((spec.char_start as i64, spec.char_end as i64));
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn s4_crdt_source_edit_migrates_dependent_transclusion_span() {
+        let (mut server, sid, src, dst) = s4_setup();
+        s4_place_transclusion(&mut server, sid, dst, src, 10, 16);
+        assert_eq!(s4_transclusion_span(&server, dst), Some((10, 16)));
+
+        // Edit the SOURCE through the live CRDT path (what the
+        // frontend does): insert 4 chars before the span.
+        let _ = server.crdt_open_session(sid, src).unwrap();
+        let ops = vec![
+            crate::server::transport::TextDeltaOp::Retain { count: 3 },
+            crate::server::transport::TextDeltaOp::Insert {
+                text: "XXXX".to_string(),
+            },
+            crate::server::transport::TextDeltaOp::Retain { count: 17 },
+        ];
+        server.crdt_apply_text_delta(sid, src, &ops).unwrap();
+        let _ = server.crdt_current_text(src).unwrap();
+
+        let span = s4_transclusion_span(&server, dst);
+        assert_eq!(
+            span,
+            Some((14, 20)),
+            "dependent span must migrate +4 after insert-before via CRDT path, got {:?}",
+            span
+        );
+    }
+
+    #[test]
+    fn s4_crdt_source_edit_inside_span_grows_by_insertion() {
+        let (mut server, sid, src, dst) = s4_setup();
+        s4_place_transclusion(&mut server, sid, dst, src, 10, 16);
+
+        // Insert INSIDE the span (position 12). For char-spans the
+        // contract: still covers the original characters, grows by
+        // exactly the inserted length, never jumps.
+        let _ = server.crdt_open_session(sid, src).unwrap();
+        let ops = vec![
+            crate::server::transport::TextDeltaOp::Retain { count: 12 },
+            crate::server::transport::TextDeltaOp::Insert {
+                text: "YY".to_string(),
+            },
+            crate::server::transport::TextDeltaOp::Retain { count: 8 },
+        ];
+        server.crdt_apply_text_delta(sid, src, &ops).unwrap();
+        let _ = server.crdt_current_text(src).unwrap();
+
+        let span = s4_transclusion_span(&server, dst);
+        assert_eq!(
+            span,
+            Some((10, 18)),
+            "span grows by the inserted length, covers originals"
+        );
+    }
+
+    #[test]
+    fn s4_crdt_source_delete_covering_span_end_clamps_not_inverts() {
+        let (mut server, sid, src, dst) = s4_setup();
+        s4_place_transclusion(&mut server, sid, dst, src, 10, 16);
+
+        // Delete chars 14..20 — covers the span's tail.
+        let _ = server.crdt_open_session(sid, src).unwrap();
+        let ops = vec![
+            crate::server::transport::TextDeltaOp::Retain { count: 14 },
+            crate::server::transport::TextDeltaOp::Delete { count: 6 },
+            crate::server::transport::TextDeltaOp::Retain { count: 0 },
+        ];
+        server.crdt_apply_text_delta(sid, src, &ops).unwrap();
+        let _ = server.crdt_current_text(src).unwrap();
+
+        if let Some((s, e)) = s4_transclusion_span(&server, dst) {
+            assert!(
+                s <= e,
+                "span must never invert (start > end), got {:?}",
+                (s, e)
+            );
+            assert!(
+                s <= 14,
+                "span start must not move right past the deletion point, got {:?}",
+                (s, e)
+            );
+        }
+    }
+
+    #[test]
+    fn s4_virtual_transclusion_pins_revision_across_source_edits() {
+        let (mut server, sid, src, dst) = s4_setup();
+        server
+            .place_virtual_transclusion(sid, dst, src, 10, 16)
+            .unwrap();
+        server.materialize_virtual_elements(dst).unwrap();
+
+        // Edit the source via CRDT: the Virtual element is pinned to
+        // its placement revision — content must NOT leak the edit.
+        let _ = server.crdt_open_session(sid, src).unwrap();
+        let ops = vec![
+            crate::server::transport::TextDeltaOp::Retain { count: 3 },
+            crate::server::transport::TextDeltaOp::Insert {
+                text: "XXXX".to_string(),
+            },
+            crate::server::transport::TextDeltaOp::Retain { count: 17 },
+        ];
+        server.crdt_apply_text_delta(sid, src, &ops).unwrap();
+
+        let text = server.work_text(dst).unwrap_or_default();
+        assert!(
+            text.contains("abcdef"),
+            "pinned virtual transclusion keeps its placement-revision content, got {:?}",
+            text
+        );
+        assert!(
+            !text.contains("XXXX"),
+            "source edits must never leak into pinned virtual transclusions"
+        );
     }
 }
