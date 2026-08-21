@@ -279,7 +279,18 @@ export function useTransclusion(): TransclusionState {
     async (client: CrdtSyncClient) => {
       try {
         const result = await client.linkTypeList();
-        setLinkTypes(result.length > 0 ? result : DEFAULT_LINK_TYPES.map((t) => ({ type_id: t.type_id, name: t.name })));
+        // Merge: server registry wins for ids it defines (incl.
+        // renamed built-ins); built-ins fill any gaps; unknown ids
+        // fall back to "type N" at render time.
+        const byId = new Map<number, LinkTypeInfo>();
+        for (const t of DEFAULT_LINK_TYPES) {
+          byId.set(t.type_id, { type_id: t.type_id, name: t.name, definition_work: null });
+        }
+        for (const t of result) {
+          byId.set(t.type_id, t);
+        }
+        const merged = Array.from(byId.values()).sort((a, b) => a.type_id - b.type_id);
+        setLinkTypes(merged);
       } catch {
         setLinkTypes(DEFAULT_LINK_TYPES.map((t) => ({ type_id: t.type_id, name: t.name })));
       }

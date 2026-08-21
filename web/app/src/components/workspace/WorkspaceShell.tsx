@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { useCrdtSync } from "../../hooks/useCrdtSync";
 import { useWorkStore } from "../../store/work-store";
 import { useTransclusion, DEFAULT_LINK_TYPES } from "../../hooks/useTransclusion";
+import { linkEnds, isMultiEnded, multiEndWorkIds, notifyStatus } from "../../link-ends";
+import { MultiEndCompare } from "../MultiEndCompare";
 import { useCompoundEdition } from "../../hooks/useCompoundEdition";
 import { authorColorPair } from "../../author-color";
 import { CollaborativeEditor } from "../CollaborativeEditor";
@@ -46,7 +48,7 @@ import "../../workspace.css";
 const WS_URL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/xudanu`;
 
 type LeftRailMode = "graph" | "outline";
-type RightPanelTab = "provenance" | "connections" | "trails" | "timeline" | "servers" | "more";
+type RightPanelTab = "provenance" | "connections" | "trails" | "timeline" | "servers" | "compare" | "more";
 
 interface WorkMeta {
   title: string;
@@ -207,6 +209,7 @@ export function WorkspaceShell() {
   const [provenanceLoading, setProvenanceLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeLinkTypes, setActiveLinkTypes] = useState<Set<number>>(new Set());
+  const [multiCompareWorkIds, setMultiCompareWorkIds] = useState<number[]>([]);
   // Provenance underlines are ON by default: the light floating
   // underline is subtle enough for reading, and authorship visibility
   // is the signature capability. localStorage still overrides for
@@ -3540,6 +3543,7 @@ export function WorkspaceShell() {
               ["trails", "Trails"],
               ["timeline", "History"],
               ["servers", "Servers"],
+              ["compare", "Compare"],
               ["more", "More"],
             ] as const).map(([id, label]) => (
               <button
@@ -3671,17 +3675,26 @@ export function WorkspaceShell() {
                       filteredLinks.map((link) => {
                       const isWebLink = (link.link_types || []).includes(6);
                       const destUrl = link.destination_ref?.excerpt;
+                      const ends = linkEnds(link);
+                      const extraEnds = ends.filter((e) => e.name !== "origin" && e.name !== "destination" && e.workId !== null && e.workId !== workBeId);
+                      const multi = isMultiEnded(link);
                       const destTitle = isWebLink && destUrl
                         ? destUrl
                         : (link.destination_title || `Work 0x${link.destination.toString(16)}`);
                       const typeNames = (link.link_types || []).map(
                         (tid) => DEFAULT_LINK_TYPES.find((t) => t.type_id === tid)?.name || `type ${tid}`
                       );
+                      const notif = notifyStatus(link);
+                      const reload = () => {
+                        if (clientRef.current && workBeId !== null) {
+                          void loadLinks(clientRef.current, workBeId, works);
+                        }
+                      };
                       return (
                         <div
                           key={link.link_id}
                           className="ws-conn-item"
-                          onClick={() => !isWebLink && selectWork(link.destination)}
+                          onClick={() => !isWebLink && !multi && selectWork(link.destination)}
                           title={isWebLink && destUrl ? destUrl : undefined}
                         >
                           <div className="ws-conn-title-row">
@@ -3692,22 +3705,79 @@ export function WorkspaceShell() {
                                 const di = dl ? LICENSES.find((l) => l.value === dl) : null;
                                 return di && dl !== "all-rights-reserved" ? <span className="ws-work-license-badge" title={di.label}>{di.short}</span> : null;
                               })()}
+                              {link.home_document != null && link.home_document !== workBeId && (
+                                <span
+                                  style={{ fontSize: 10, marginLeft: 4, color: "#8b949e", cursor: "pointer" }}
+                                  title={`Link lives in ${works.find((w) => w.work_id === link.home_document)?.title || `work 0x${link.home_document?.toString(16)}`} (home document) — click to open`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (link.home_document != null) selectWork(link.home_document);
+                                  }}
+                                >
+                                  ⌂ home
+                                </span>
+                              )}
                             </div>
-                            <button
-                              className="ws-conn-delete"
-                              title="Delete this link"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (confirm("Delete this link?")) {
-                                  clientRef.current?.linkDelete(link.link_id).then(() => {
-                                    if (clientRef.current && workBeId !== null) {
-                                      void loadLinks(clientRef.current, workBeId, works);
-                                    }
-                                  });
-                                }
-                              }}
-                            >×</button>
+                            <div style={{ display: "flex", gap: 4 }}>
+                              {multi && (
+                                <button
+                                  className="ws-conn-delete"
+                                  title="Compare all ends side by side"
+                                  style={{ color: "#58a6ff" }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setMultiCompareWorkIds(multiEndWorkIds(link).filter((id) => id !== null));
+                                    setRightPanelTab("compare");
+                                  }}
+                                >
+                                  ⇄
+                                </button>
+                              )}
+                              <button
+                                className="ws-conn-delete"
+                                title="Delete this link"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (confirm("Delete this link?")) {
+                                    clientRef.current?.linkDelete(link.link_id).then(reload);
+                                  }
+                                }}
+                              >×</button>
+                            </div>
                           </div>
+                          {extraEnds.length > 0 && (
+                            <div style={{ fontSize: 11, color: "#8b949e", marginTop: 2 }}>
+                              {"+ "}
+                              {extraEnds.map((e, i) => {
+                                const w = works.find((x) => x.work_id === e.workId);
+                                return (
+                                  <span key={e.name}>
+                                    {i > 0 && " · "}
+                                    <span
+                                      style={{ color: "#58a6ff", cursor: "pointer" }}
+                                      title={e.excerpt ? `"${e.excerpt.slice(0, 120)}"` : undefined}
+                                      onClick={(ev) => {
+                                        ev.stopPropagation();
+                                        if (e.workId !== null) selectWork(e.workId);
+                                      }}
+                                    >
+                                      {e.name}: {w?.title || `work 0x${e.workId?.toString(16)}`}
+                                    </span>
+                                    <span
+                                      style={{ cursor: "pointer", marginLeft: 3 }}
+                                      title={`Remove end "${e.name}"`}
+                                      onClick={(ev) => {
+                                        ev.stopPropagation();
+                                        clientRef.current?.linkRemoveEnd(link.link_id, e.name).then(reload);
+                                      }}
+                                    >
+                                      ×
+                                    </span>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
                           {typeNames.length > 0 && (
                             <div className="ws-conn-types">
                               {typeNames.map((tn, i) => {
@@ -3721,9 +3791,34 @@ export function WorkspaceShell() {
                                     {tn}
                                   </span>
                                 );
-                                })}
-                              </div>
-                            )}
+                              })}
+                              {(link.type_ends ?? []).map(([tid, defWork], i) => {
+                                const t = DEFAULT_LINK_TYPES.find((x) => x.type_id === tid);
+                                if (!t) return null;
+                                return (
+                                  <span
+                                    key={`te-${i}`}
+                                    className="ws-conn-type-badge"
+                                    style={{ background: t.color + "10", color: t.color, borderColor: t.color + "30", cursor: "pointer", fontSize: 10 }}
+                                    title={`Type definition — click to open`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      selectWork(defWork);
+                                    }}
+                                  >
+                                    {t.name} ⎋
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {notif.kind !== "none" && (
+                            <div style={{ fontSize: 10, marginTop: 2, color: notif.kind === "accepted" ? "#3fb950" : "#f85149" }}>
+                              {notif.kind === "accepted" && "✓ remote server acknowledged"}
+                              {notif.kind === "rejected" && `⚠ remote rejected: ${notif.reason}`}
+                              {notif.kind === "error" && `⚠ ${notif.reason}`}
+                            </div>
+                          )}
                           </div>
                         );
                       })
@@ -3998,6 +4093,16 @@ export function WorkspaceShell() {
                   setRemoteView(data);
                   setRightPanelTab("provenance");
                 }}
+              />
+            )}
+            {rightPanelTab === "compare" && (
+              <MultiEndCompare
+                workIds={multiCompareWorkIds}
+                works={works}
+                clientRef={clientRef}
+                currentWorkId={workBeId}
+                onPickWork={(id) => setMultiCompareWorkIds((prev) => [...prev, id])}
+                onClose={() => setRightPanelTab("connections")}
               />
             )}
             {rightPanelTab === "more" && (

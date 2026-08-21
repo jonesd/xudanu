@@ -139,6 +139,17 @@ export interface LinkEntry {
   destination_title?: string | null;
   destination_owner?: number | null;
   link_types?: number[];
+  // FR-40: named ends beyond the two-ended fast path.
+  named_ends?: [string, HyperRefPayload][];
+  // FR-40: derived type ends — one per registered type with a
+  // definition work (Green's three-set, materialized on read).
+  type_ends?: [number, number][];
+  // FR-40: home document; absent = server-global.
+  home_document?: number | null;
+  home_archived?: boolean;
+  // FR-40: cross-server notify outcome, when one was attempted.
+  cross_server_notify_accepted?: boolean | null;
+  cross_server_notify_error?: string | null;
 }
 
 export interface ProvenanceHop {
@@ -287,6 +298,20 @@ export interface BacklinkEntry {
 export interface LinkTypeInfo {
   type_id: number;
   name: string;
+  // FR-39: the definition work for this type, if registered.
+  definition_work?: number | null;
+}
+
+export interface LinkEndpointSpec {
+  work_ids?: number[];
+  author?: number | null;
+}
+
+export interface LinkQuerySpec {
+  from_spec?: LinkEndpointSpec;
+  to_spec?: LinkEndpointSpec;
+  type_ids?: number[];
+  home_spec?: LinkEndpointSpec;
 }
 
 export interface AgainHop {
@@ -983,6 +1008,7 @@ export class CrdtSyncClient {
     destination: number,
     originRef?: { excerpt: string; start: number; end: number },
     destinationRef?: { excerpt: string; start: number; end: number },
+    homeDocument?: number,
   ): Promise<number> {
     const payload: Record<string, unknown> = { origin, destination };
     if (originRef) {
@@ -1006,6 +1032,9 @@ export class CrdtSyncClient {
         start_position: destinationRef.start,
         end_position: destinationRef.end,
       };
+    }
+    if (homeDocument !== undefined && homeDocument !== null) {
+      payload.home_document = homeDocument;
     }
     const resp = await this.sendRequest("link_create", payload);
     return extractValue(resp) as number;
@@ -1063,6 +1092,51 @@ export class CrdtSyncClient {
 
   async linkSetTypes(linkId: number, linkTypes: number[]): Promise<void> {
     await this.sendRequest("link_set_types", { link_id: linkId, link_types: linkTypes });
+  }
+
+  async linkAddEnd(
+    linkId: number,
+    endName: string,
+    endRef: { workContext: number; excerpt?: string; start?: number | null; end?: number | null },
+  ): Promise<void> {
+    await this.sendRequest("link_add_end", {
+      link_id: linkId,
+      end_name: endName,
+      end_ref: {
+        kind: "single",
+        work_context: endRef.workContext,
+        original_context: null,
+        path_context: null,
+        excerpt: endRef.excerpt ?? null,
+        start_position: endRef.start ?? null,
+        end_position: endRef.end ?? null,
+      },
+    });
+  }
+
+  async linkRemoveEnd(linkId: number, endName: string): Promise<void> {
+    await this.sendRequest("link_remove_end", { link_id: linkId, end_name: endName });
+  }
+
+  async linkQuery(spec: LinkQuerySpec): Promise<LinkEntry[]> {
+    const payload: Record<string, unknown> = {
+      from_spec: spec.from_spec ?? {},
+      to_spec: spec.to_spec ?? {},
+      type_ids: spec.type_ids ?? [],
+      home_spec: spec.home_spec ?? {},
+    };
+    const resp = await this.sendRequest("link_query", payload);
+    const val = extractValue(resp);
+    if (Array.isArray(val)) return val as LinkEntry[];
+    return [];
+  }
+
+  async registerLinkType(typeId: number, name: string, definitionWork: number): Promise<void> {
+    await this.sendRequest("link_type_register", {
+      type_id: typeId,
+      name,
+      definition_work: definitionWork,
+    });
   }
 
   async linkTypeList(): Promise<LinkTypeInfo[]> {
