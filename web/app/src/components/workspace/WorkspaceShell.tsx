@@ -1832,6 +1832,131 @@ export function WorkspaceShell() {
   }, [workMeta]);
   void breadcrumb;
 
+  // FR-41: hoisted so the remote view renders even when no local
+  // work is open (network search hit on the welcome/library screen).
+  const remoteViewOverlay = remoteView ? (
+              <div style={{
+                position: "absolute", inset: 0, zIndex: 50,
+                background: "var(--bg-surface)", display: "flex",
+                flexDirection: "column", overflow: "hidden",
+              }}>
+                <div style={{
+                  padding: "8px 16px", background: "var(--bg-elevated)",
+                  borderBottom: "2px solid var(--border)", display: "flex",
+                  alignItems: "center", gap: 8, flexShrink: 0,
+                }}>
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, color: "#fff", background: "#d97706",
+                    padding: "2px 8px", borderRadius: 3, textTransform: "uppercase",
+                    letterSpacing: 0.5, userSelect: "none",
+                  }}>Remote</span>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>
+                    From {remoteView.originServerName}
+                  </span>
+                  <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                    {remoteView.license}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setRemoteView(null)}
+                    style={{
+                      marginLeft: "auto", fontSize: 11, padding: "4px 12px",
+                      border: "1px solid var(--border)", borderRadius: 4,
+                      background: "var(--bg-surface)", cursor: "pointer",
+                    }}
+                  >
+                    Back to my work
+                  </button>
+                </div>
+                <div style={{
+                  padding: "10px 16px", borderBottom: "1px solid var(--border)",
+                  display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap",
+                  background: "var(--bg-elevated)",
+                }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)" }}>
+                    Actions:
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!canEdit}
+                    onClick={() => {
+                      const sel = window.getSelection();
+                      if (!sel || sel.toString().trim().length === 0) return;
+                      const excerpt = sel.toString().trim();
+                      const citation = `\n\n> ${excerpt.split("\n").join("\n> ")}\n> — From "${remoteView.title}" via ${remoteView.originServerName} (${remoteView.tumbler})\n`;
+                      const newText = text + citation;
+                      if (clientRef.current && workBeId !== null) {
+                        void clientRef.current.workSetText(workBeId, newText);
+                      }
+                      setRemoteView(null);
+                    }}
+                    style={{
+                      marginLeft: "auto", fontSize: 12, padding: "6px 14px",
+                      border: "2px solid var(--green)", borderRadius: 6,
+                      background: "var(--green)", color: "#fff",
+                      cursor: canEdit ? "pointer" : "not-allowed",
+                      opacity: canEdit ? 1 : 0.4, fontWeight: 600,
+                    }}
+                  >
+                    Insert selected text
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canEdit}
+                    onClick={async () => {
+                      if (!clientRef.current) return;
+                      try {
+                        const provenance = `> Imported from ${remoteView.originServerName}\n> Tumbler: ${remoteView.tumbler}\n> License: ${remoteView.license}\n\n`;
+                        const importText = provenance + remoteView.text;
+                        const resp = await clientRef.current.sendRequest("work_create", {
+                          edition: { text: importText },
+                        });
+                        const newWorkId = (resp as Record<string, unknown>)?.value as Record<string, unknown> | undefined;
+                        const wid = newWorkId?.value as number | undefined;
+                        if (wid) {
+                          await clientRef.current.workSetTitle(wid, `${remoteView.title} (from ${remoteView.originServerName})`);
+                        }
+                        setRemoteView(null);
+                        if (wid) selectWork(wid);
+                      } catch (e) {
+                        console.error("Import failed:", e);
+                      }
+                    }}
+                    style={{
+                      marginLeft: "auto", fontSize: 11, padding: "4px 12px",
+                      border: "1px solid var(--green)", borderRadius: 4,
+                      background: "var(--green)", color: "#fff", cursor: canEdit ? "pointer" : "not-allowed",
+                      opacity: canEdit ? 1 : 0.5,
+                    }}
+                  >
+                    Copy to my server
+                  </button>
+                </div>
+                <div style={{ flex: 1, overflow: "auto", padding: "32px 48px", minHeight: 0 }}>
+                  <h1 style={{
+                    fontSize: 24, fontWeight: 700, marginBottom: 16,
+                    fontFamily: "Source Serif 4, Georgia, serif",
+                  }}>
+                    {remoteView.title}
+                  </h1>
+                  <div style={{
+                    whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.75,
+                    fontFamily: "Source Serif 4, Georgia, serif", color: "var(--text)",
+                    userSelect: "text",
+                  }}>
+                    {remoteView.text}
+                  </div>
+                </div>
+                <div style={{
+                  padding: "6px 16px", borderTop: "1px solid var(--border)",
+                  fontSize: 9, color: "var(--text-dim)", flexShrink: 0, display: "flex", gap: 16,
+                }}>
+                  <span>Tumbler: <code>{remoteView.tumbler}</code></span>
+                  <span>Work ID: <code>{remoteView.workId}</code></span>
+                </div>
+              </div>
+  ) : null;
+
   return (
     <div className={`ws-shell ${activeCssClass} ${navTab === "compose" ? "ws-mode-compose" : ""} ${navTab === "library" ? "ws-mode-library" : ""}`}>
       <DataIntegrityBanner />
@@ -3025,128 +3150,7 @@ export function WorkspaceShell() {
                     onCancel={transclusion.clearPending}
                   />
                 )}
-                {remoteView && (
-                  <div style={{
-                    position: "absolute", inset: 0, zIndex: 50,
-                    background: "var(--bg-surface)", display: "flex",
-                    flexDirection: "column", overflow: "hidden",
-                  }}>
-                    <div style={{
-                      padding: "8px 16px", background: "var(--bg-elevated)",
-                      borderBottom: "2px solid var(--border)", display: "flex",
-                      alignItems: "center", gap: 8, flexShrink: 0,
-                    }}>
-                      <span style={{
-                        fontSize: 9, fontWeight: 700, color: "#fff", background: "#d97706",
-                        padding: "2px 8px", borderRadius: 3, textTransform: "uppercase",
-                        letterSpacing: 0.5, userSelect: "none",
-                      }}>Remote</span>
-                      <span style={{ fontSize: 12, fontWeight: 600 }}>
-                        From {remoteView.originServerName}
-                      </span>
-                      <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
-                        {remoteView.license}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setRemoteView(null)}
-                        style={{
-                          marginLeft: "auto", fontSize: 11, padding: "4px 12px",
-                          border: "1px solid var(--border)", borderRadius: 4,
-                          background: "var(--bg-surface)", cursor: "pointer",
-                        }}
-                      >
-                        Back to my work
-                      </button>
-                    </div>
-                    <div style={{
-                      padding: "10px 16px", borderBottom: "1px solid var(--border)",
-                      display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap",
-                      background: "var(--bg-elevated)",
-                    }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)" }}>
-                        Actions:
-                      </span>
-                      <button
-                        type="button"
-                        disabled={!canEdit}
-                        onClick={() => {
-                          const sel = window.getSelection();
-                          if (!sel || sel.toString().trim().length === 0) return;
-                          const excerpt = sel.toString().trim();
-                          const citation = `\n\n> ${excerpt.split("\n").join("\n> ")}\n> — From "${remoteView.title}" via ${remoteView.originServerName} (${remoteView.tumbler})\n`;
-                          const newText = text + citation;
-                          if (clientRef.current && workBeId !== null) {
-                            void clientRef.current.workSetText(workBeId, newText);
-                          }
-                          setRemoteView(null);
-                        }}
-                        style={{
-                          marginLeft: "auto", fontSize: 12, padding: "6px 14px",
-                          border: "2px solid var(--green)", borderRadius: 6,
-                          background: "var(--green)", color: "#fff",
-                          cursor: canEdit ? "pointer" : "not-allowed",
-                          opacity: canEdit ? 1 : 0.4, fontWeight: 600,
-                        }}
-                      >
-                        Insert selected text
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!canEdit}
-                        onClick={async () => {
-                          if (!clientRef.current) return;
-                          try {
-                            const provenance = `> Imported from ${remoteView.originServerName}\n> Tumbler: ${remoteView.tumbler}\n> License: ${remoteView.license}\n\n`;
-                            const importText = provenance + remoteView.text;
-                            const resp = await clientRef.current.sendRequest("work_create", {
-                              edition: { text: importText },
-                            });
-                            const newWorkId = (resp as Record<string, unknown>)?.value as Record<string, unknown> | undefined;
-                            const wid = newWorkId?.value as number | undefined;
-                            if (wid) {
-                              await clientRef.current.workSetTitle(wid, `${remoteView.title} (from ${remoteView.originServerName})`);
-                            }
-                            setRemoteView(null);
-                            if (wid) selectWork(wid);
-                          } catch (e) {
-                            console.error("Import failed:", e);
-                          }
-                        }}
-                        style={{
-                          marginLeft: "auto", fontSize: 11, padding: "4px 12px",
-                          border: "1px solid var(--green)", borderRadius: 4,
-                          background: "var(--green)", color: "#fff", cursor: canEdit ? "pointer" : "not-allowed",
-                          opacity: canEdit ? 1 : 0.5,
-                        }}
-                      >
-                        Copy to my server
-                      </button>
-                    </div>
-                    <div style={{ flex: 1, overflow: "auto", padding: "32px 48px", minHeight: 0 }}>
-                      <h1 style={{
-                        fontSize: 24, fontWeight: 700, marginBottom: 16,
-                        fontFamily: "Source Serif 4, Georgia, serif",
-                      }}>
-                        {remoteView.title}
-                      </h1>
-                      <div style={{
-                        whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.75,
-                        fontFamily: "Source Serif 4, Georgia, serif", color: "var(--text)",
-                        userSelect: "text",
-                      }}>
-                        {remoteView.text}
-                      </div>
-                    </div>
-                    <div style={{
-                      padding: "6px 16px", borderTop: "1px solid var(--border)",
-                      fontSize: 9, color: "var(--text-dim)", flexShrink: 0, display: "flex", gap: 16,
-                    }}>
-                      <span>Tumbler: <code>{remoteView.tumbler}</code></span>
-                      <span>Work ID: <code>{remoteView.workId}</code></span>
-                    </div>
-                  </div>
-                )}
+                {remoteViewOverlay}
                 {useMDE ? (
                   <EasyMDEEditor
                     text={text}
