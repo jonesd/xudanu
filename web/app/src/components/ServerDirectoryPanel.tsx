@@ -266,14 +266,23 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
     <div className="ws-server-directory">
       <div className="ws-conn-header">
         <span>Servers</span>
-        <div style={{ display: "flex", gap: 2 }}>
+        <div style={{ display: "flex", gap: 4 }}>
           {servers.some(s => s.trusted && !s.quarantined) && (
-            <button className="ws-concept-add-btn" style={{ fontSize: 9 }} onClick={() => void handleDiscover()} title="Discover servers through trusted peers" disabled={discovering}>
-              {discovering ? "..." : "Discover"}
+            <button
+              className="ws-concept-add-btn ws-dir-action-btn"
+              onClick={() => void handleDiscover()}
+              title="Discover servers through trusted peers"
+              disabled={discovering}
+            >
+              {discovering ? "…" : "Discover"}
             </button>
           )}
-          <button className="ws-concept-add-btn" style={{ fontSize: 10 }} onClick={() => void refresh()} title="Refresh">
-            ↻
+          <button
+            className="ws-concept-add-btn ws-dir-action-btn"
+            onClick={() => void refresh()}
+            title="Refresh"
+          >
+            ↻ Refresh
           </button>
         </div>
       </div>

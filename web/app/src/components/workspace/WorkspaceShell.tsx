@@ -4550,6 +4550,11 @@ export function WorkspaceShell() {
           works={works}
           onSelectWork={(id) => { selectWork(id); setSearchOpen(false); }}
           serverDirectory={serverDirectoryForSearch}
+          onViewRemoteWork={(data) => {
+            setRemoteView(data);
+            setRightPanelTab("provenance");
+            setSearchOpen(false);
+          }}
         />
       )}
       {showSettings && (

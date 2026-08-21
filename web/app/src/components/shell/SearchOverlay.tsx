@@ -8,6 +8,12 @@ interface SearchOverlayProps {
   works: WorkListEntry[];
   onSelectWork: (workId: number) => void;
   serverDirectory: { address: string; port?: number | null; name: string }[];
+  /** FR-41 S1: open a remote hit in the main panel's remote view
+   * (same flow as Servers tab → View work). */
+  onViewRemoteWork: (data: {
+    title: string; text: string; originServerName: string;
+    license: string; tumbler: string; workId: string; serverId: string;
+  }) => void;
 }
 const SERVER_BADGE_COLORS = ["#58a6ff", "#3fb950", "#d29922", "#bc8cff", "#f97316"];
 
@@ -118,6 +124,7 @@ export function SearchOverlay({
   works,
   onSelectWork,
   serverDirectory,
+  onViewRemoteWork,
 }: SearchOverlayProps) {
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState("all");
@@ -323,16 +330,38 @@ export function SearchOverlay({
                   <div
                     key={`${r.server_id}-${r.work_id}`}
                     className="search-result-item"
-                    onClick={() => {
+                    onClick={async () => {
                       if (r.local) {
                         onSelectWork(r.work_id);
-                      } else {
-                        const server = serverByName.get(r.server_name) ?? {
-                          address: r.server_name,
-                          port: null,
-                          name: r.server_name,
-                        };
-                        setPreview({ server, workId: r.work_id });
+                        return;
+                      }
+                      // Remote hit: open in the MAIN panel remote view
+                      // (same flow as Servers tab → View work).
+                      const server = serverByName.get(r.server_name) ?? {
+                        address: r.server_name,
+                        port: null,
+                        name: r.server_name,
+                      };
+                      const base = `http://${server.address}${server.port ? `:${server.port}` : ""}`;
+                      try {
+                        const resp = await fetch(`${base}/api/public/work/${r.work_id.toString(16)}`);
+                        if (!resp.ok) {
+                          setNetError(`origin returned ${resp.status}`);
+                          return;
+                        }
+                        const data = await resp.json();
+                        onViewRemoteWork({
+                          title: typeof data.title === "string" ? data.title : `Work 0x${r.work_id.toString(16)}`,
+                          text: typeof data.text === "string" ? data.text : "",
+                          originServerName: r.server_name,
+                          license: typeof data.license === "string" ? data.license : "all-rights-reserved",
+                          tumbler: typeof data.tumbler === "string" ? data.tumbler : "",
+                          workId: r.work_id.toString(16),
+                          serverId: String(r.server_id),
+                        });
+                        onClose();
+                      } catch (e) {
+                        setNetError(e instanceof Error ? e.message : "failed to open remote work");
                       }
                     }}
                   >

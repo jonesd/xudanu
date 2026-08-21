@@ -373,6 +373,18 @@
   opacity: 0.5;
   cursor: wait;
 }
+/* Server-directory action buttons: readable text buttons (the base
+   class is a 22x22 icon button — too small for words like
+   "Discover"). */
+.ws-dir-action-btn {
+  width: auto;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  gap: 4px;
+}
 .ws-concepts-empty {
   font-size: 11px;
   color: var(--text-muted);
