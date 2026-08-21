@@ -83,6 +83,7 @@ pub fn build_router(state: SharedState) -> Router {
             get(super::oauth::google_callback_handler),
         )
         .route("/", get(index_handler))
+        .route("/vendor/{file}", get(vendor_handler))
         .fallback(get(static_fallback_handler))
         .layer(axum::middleware::from_fn(security_headers_middleware))
         .with_state(state)
@@ -142,6 +143,26 @@ async fn security_headers_middleware(
 }
 
 const EMBEDDED_INDEX_HTML: &str = include_str!("../../../static/index.html");
+
+// Self-hosted Preact for the embedded landing page (CSP: script-src
+// 'self' — no CDN dependencies, works offline).
+const EMBEDDED_VENDOR_PREACT: &[u8] = include_bytes!("../../../static/vendor/preact.umd.js");
+const EMBEDDED_VENDOR_HOOKS: &[u8] = include_bytes!("../../../static/vendor/hooks.umd.js");
+
+async fn vendor_handler(
+    axum::extract::Path(file): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let (bytes, mime) = match file.as_str() {
+        "preact.umd.js" => (EMBEDDED_VENDOR_PREACT, "application/javascript"),
+        "hooks.umd.js" => (EMBEDDED_VENDOR_HOOKS, "application/javascript"),
+        _ => return axum::http::StatusCode::NOT_FOUND.into_response(),
+    };
+    (
+        [(axum::http::header::CONTENT_TYPE, mime)],
+        axum::body::Body::from(bytes.to_vec()),
+    )
+        .into_response()
+}
 
 async fn index_handler(State(state): State<SharedState>) -> impl IntoResponse {
     let html = match &state.static_dir {

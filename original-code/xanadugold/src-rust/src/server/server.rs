@@ -37426,12 +37426,14 @@ pub fn http_post_json(url: &str, body: &str, timeout_secs: u64) -> Result<String
 }
 
 /// One hop of the status-aware POST (FR-40 sender feedback): raw
-/// request/response over plain TCP. Returns (status, headers, body).
+/// request/response over TCP, TLS when the URL is https. Returns
+/// (status, headers, body).
 fn http_post_json_hop(
     url: &str,
     body: &str,
     timeout_secs: u64,
 ) -> Result<(u16, Vec<(String, String)>, String), String> {
+    let is_https = url.starts_with("https://");
     let no_scheme = url
         .strip_prefix("http://")
         .or_else(|| url.strip_prefix("https://"))
@@ -37440,7 +37442,7 @@ fn http_post_json_hop(
         .split_once('/')
         .map(|(h, p)| (h, format!("/{}", p)))
         .unwrap_or((no_scheme, "/".to_string()));
-    let default_port = if url.starts_with("https://") { 443 } else { 80 };
+    let default_port = if is_https { 443 } else { 80 };
     let (host, port) = if let Some((h, p)) = host_port.rsplit_once(':') {
         (h, p.parse::<u16>().unwrap_or(default_port))
     } else {
@@ -37451,12 +37453,10 @@ fn http_post_json_hop(
     use std::net::TcpStream;
 
     let addrs = resolve_and_verify_host(host, port)?;
-    let mut stream = connect_timed(&addrs[..], std::time::Duration::from_secs(timeout_secs))?;
-    stream
-        .set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
+    let mut tcp = connect_timed(&addrs[..], std::time::Duration::from_secs(timeout_secs))?;
+    tcp.set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
         .ok();
-    stream
-        .set_write_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
+    tcp.set_write_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
         .ok();
 
     let request = format!(
@@ -37464,21 +37464,58 @@ fn http_post_json_hop(
         path, host, body.len(), body
     );
 
-    stream
-        .write_all(request.as_bytes())
-        .map_err(|e| format!("write failed: {}", e))?;
-
     let mut all = Vec::new();
     let mut buf = [0u8; 8192];
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
-    loop {
-        if std::time::Instant::now() > deadline {
-            break;
+
+    if is_https {
+        use std::sync::Arc;
+        let mut root_cert_store = rustls::RootCertStore::empty();
+        root_cert_store.extend(::webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let config = rustls::client::ClientConfig::builder()
+            .with_root_certificates(root_cert_store)
+            .with_no_client_auth();
+        let server_name = rustls::pki_types::ServerName::try_from(host.to_string())
+            .map_err(|e| format!("invalid hostname: {}", e))?;
+        let config = Arc::new(config);
+        let mut client = rustls::client::ClientConnection::new(config, server_name)
+            .map_err(|e| format!("TLS setup failed: {}", e))?;
+        let mut tls_stream = rustls::Stream::new(&mut client, &mut tcp);
+        tls_stream
+            .write_all(request.as_bytes())
+            .map_err(|e| format!("TLS write failed: {}", e))?;
+        loop {
+            if std::time::Instant::now() > deadline {
+                break;
+            }
+            match tls_stream.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => all.extend_from_slice(&buf[..n]),
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
+            }
         }
-        match stream.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => all.extend_from_slice(&buf[..n]),
-            Err(_) => break,
+    } else {
+        let mut stream = tcp;
+        stream
+            .write_all(request.as_bytes())
+            .map_err(|e| format!("write failed: {}", e))?;
+        loop {
+            if std::time::Instant::now() > deadline {
+                break;
+            }
+            match stream.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => all.extend_from_slice(&buf[..n]),
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
+            }
         }
     }
 
