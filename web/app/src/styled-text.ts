@@ -181,7 +181,7 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
       html += `<span style="display:none" contenteditable="false">${escapeHtml(lineText.slice(0, contentStart))}</span><span style="font-size:${sizes[lv] || "1.8em"};font-weight:${weights[lv] || "700"}">${lineHtml}</span>`;
     } else if (blockType === "list_item") {
       const bullet = listKind === "ordered" ? "&#9312;" : "&bull;";
-      html += `<span style="display:none" contenteditable="false">${escapeHtml(lineText.slice(0, contentStart))}</span><span style="display:inline-block;width:20px;user-select:none;" contenteditable="false">${bullet}</span><span>${lineHtml}</span>`;
+      html += `<span style="display:none" contenteditable="false">${escapeHtml(lineText.slice(0, contentStart))}</span><span style="display:inline-block;width:18px;user-select:none;margin-right:4px;" contenteditable="false">${bullet}</span><span>${lineHtml}</span>`;
     } else if (blockType === "blockquote") {
       html += `<span style="display:none" contenteditable="false">${escapeHtml(lineText.slice(0, contentStart))}</span><span style="border-left:3px solid #58a6ff;padding-left:12px;color:#999;">${lineHtml}</span>`;
     } else if (blockType === "code_block") {
