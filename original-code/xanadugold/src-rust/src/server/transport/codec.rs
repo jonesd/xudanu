@@ -1980,6 +1980,20 @@ impl JsonCodec {
                     element: args.element,
                 })
             }
+            OperationCode::CrossServerSpanRefresh => {
+                #[derive(Deserialize)]
+                struct Args {
+                    source_work: BeId,
+                    #[serde(default)]
+                    update: bool,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CrossServerSpanRefresh {
+                    source_work: args.source_work,
+                    update: args.update,
+                })
+            }
             OperationCode::TransclusionPlaceCrossServer => {
                 #[derive(Deserialize)]
                 struct Args {

@@ -300,6 +300,7 @@ pub enum OperationCode {
     EditionCost,
     ElementInsert,
     TransclusionPlaceCrossServer,
+    CrossServerSpanRefresh,
     ElementUpdate,
     RenderTransclusions,
 
@@ -651,6 +652,7 @@ impl OperationCode {
             0x0c02 => Some(OperationCode::EditionCost),
             0x0c0B => Some(OperationCode::ElementInsert),
             0x0c0C => Some(OperationCode::TransclusionPlaceCrossServer),
+            0x0c0D => Some(OperationCode::CrossServerSpanRefresh),
             0x0c0C => Some(OperationCode::ElementUpdate),
             0x0c0C => Some(OperationCode::RenderTransclusions),
             0x0c03 => Some(OperationCode::AnnotationCreate),
@@ -981,6 +983,7 @@ impl OperationCode {
             OperationCode::EditionCost => 0x0c02,
             OperationCode::ElementInsert => 0x0c0B,
             OperationCode::TransclusionPlaceCrossServer => 0x0c0C,
+            OperationCode::CrossServerSpanRefresh => 0x0c0D,
             OperationCode::ElementUpdate => 0x0c0C,
             OperationCode::RenderTransclusions => 0x0c0C,
             OperationCode::AnnotationCreate => 0x0c03,
@@ -1824,6 +1827,13 @@ pub enum WireRequest {
         )]
         title_hint: Option<String>,
     },
+    /// FR-41 S3: check (or apply) an origin-side edit to a
+    /// cross-server transclusion's frozen source.
+    CrossServerSpanRefresh {
+        source_work: BeId,
+        #[cfg_attr(feature = "serde", serde(default))]
+        update: bool,
+    },
     ElementUpdate {
         work_id: BeId,
         char_position: usize,
@@ -2559,6 +2569,7 @@ pub enum ResponseValue {
     TextResult(String),
     LinkInfo(LinkPayload),
     CrossServerTransclusion(CrossServerTransclusionPayload),
+    CrossServerSpanRefresh(CrossServerSpanRefreshPayload),
     LinkList(Vec<LinkPayload>),
     LinkTypes(Vec<LinkTypeInfoPayload>),
     ConnectionPins(Vec<String>),
@@ -3298,6 +3309,17 @@ pub struct WorkListEntry {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub content_crum: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossServerSpanRefreshPayload {
+    pub source_work: BeId,
+    pub changed: bool,
+    pub current_text: String,
+    pub new_revision: Option<u64>,
+    pub origin_hash: String,
+    pub tumbler: String,
+    pub span: [usize; 2],
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

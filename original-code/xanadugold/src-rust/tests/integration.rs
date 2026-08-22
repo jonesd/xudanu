@@ -3164,6 +3164,255 @@ async fn federated_search_wire_contract() {
     );
 }
 
+/// FR-41 S3: origin edits their source; the destination detects the
+/// change (check mode: changed=true, no state mutation) and can
+/// update the frozen source (update mode: new revision, old quote
+/// preserved in history). Unchanged span reports changed=false.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cross_server_span_refresh_flow() {
+    xudanu::server::server::set_allow_loopback(true);
+    let srv_b = TestServer::start().await;
+    let srv_a = TestServer::start().await;
+
+    async fn mkpub(s: &mut SplitSender, r: &mut SplitReceiver, id: u16, text: &str) -> u64 {
+        let wid = send_recv_json(
+            s,
+            r,
+            json_req(
+                id,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": text}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap();
+        let pubr = send_recv_json(
+            s,
+            r,
+            json_req(
+                id + 100,
+                "work_publish",
+                Some(serde_json::json!({"work_id": wid})),
+            ),
+        )
+        .await;
+        assert_eq!(pubr["type"], "response", "publish failed: {pubr}");
+        wid
+    }
+
+    // Node B publishes the source; Node A transcludes a span (S2 path).
+    let source_text = "v1: the sublinear enfilade story begins here";
+    let (mut sb, mut rb, _) = json_setup(&srv_b).await;
+    let b_work = mkpub(&mut sb, &mut rb, 900, source_text).await;
+    let b_work_hex = format!("{:x}", b_work);
+
+    let (mut sa, mut ra, _) = json_setup(&srv_a).await;
+    let dest = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            910,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "essay\n\nend"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    let b_info: serde_json::Value = reqwest::get(format!(
+        "http://{}/.well-known/xudanu-server.json",
+        srv_b.addr
+    ))
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+    let b_namespace = b_info["server_namespace_id"].as_u64().unwrap();
+
+    let b_addr = format!("{}", srv_b.addr);
+    let parts: Vec<&str> = b_addr.rsplitn(2, ':').collect();
+    let (b_port_str, b_host) = (parts[0], parts[1]);
+    let add = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            911,
+            "server_directory_add",
+            Some(serde_json::json!({"address": b_host, "port": b_port_str.parse::<u16>().ok()})),
+        ),
+    )
+    .await;
+    assert_eq!(add["type"], "response", "add failed: {add}");
+    let list = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(912, "server_directory_list", None),
+    )
+    .await;
+    let servers = list["value"]["value"]["servers"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let b_sid = servers
+        .iter()
+        .find(|e| e["address"].as_str() == Some(b_host))
+        .map(|e| e["server_id"].clone())
+        .expect("B in directory");
+    let trust = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            913,
+            "server_directory_set_trust",
+            Some(serde_json::json!({"server_id": b_sid, "trusted": true})),
+        ),
+    )
+    .await;
+    assert_eq!(trust["type"], "response");
+
+    let tumbler = format!("{}.{}.1.0", b_namespace, b_work_hex);
+    let place = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            920,
+            "transclusion_place_cross_server",
+            Some(serde_json::json!({
+                "dest_work": dest,
+                "cursor": 0,
+                "tumbler": tumbler,
+                "span_start": 4,
+                "span_end": 12,
+                "title_hint": "enfilade span",
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(place["type"], "response", "place failed: {place}");
+    let source_work = place["value"]["value"]["source_work"].as_u64().unwrap();
+
+    // S3 check BEFORE origin edit: unchanged.
+    let check0 = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            930,
+            "cross_server_span_refresh",
+            Some(serde_json::json!({"source_work": source_work, "update": false})),
+        ),
+    )
+    .await;
+    assert_eq!(check0["type"], "response", "check0 failed: {check0}");
+    assert_eq!(
+        check0["value"]["value"]["changed"], false,
+        "no edit yet -> unchanged"
+    );
+    assert_eq!(
+        check0["value"]["value"]["new_revision"],
+        serde_json::Value::Null,
+        "check mode never updates"
+    );
+
+    // Node B edits the source text. Span chars 4..12 of v2 is
+    // "the REWR" — same character window, different content.
+    let revise = send_recv_json(
+        &mut sb,
+        &mut rb,
+        json_req(
+            940,
+            "work_set_text",
+            Some(serde_json::json!({
+                "work_id": b_work,
+                "text": "v2: the REWRITTEN enfilade story begins here"
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(revise["type"], "response", "origin revise failed: {revise}");
+
+    // S3 check AFTER edit: changed=true, current text reported.
+    let check1 = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            931,
+            "cross_server_span_refresh",
+            Some(serde_json::json!({"source_work": source_work, "update": false})),
+        ),
+    )
+    .await;
+    assert_eq!(check1["type"], "response", "check1 failed: {check1}");
+    let v = &check1["value"]["value"];
+    assert_eq!(v["changed"], true, "origin edit must be detected");
+    let cur = v["current_text"].as_str().unwrap_or_default();
+    assert!(
+        cur.contains("REWR"),
+        "current text reflects origin v2 span, got: {cur}"
+    );
+
+    // Old revision still intact on A (check mode didn't mutate).
+    let old = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            932,
+            "work_get_edition",
+            Some(serde_json::json!({"work_id": source_work})),
+        ),
+    )
+    .await;
+    assert_eq!(old["type"], "response");
+    let old_flat = serde_json::to_string(&old["value"]).unwrap_or_default();
+    assert!(
+        old_flat.contains("subl"),
+        "frozen v1 quote preserved pre-update, got: {old_flat}"
+    );
+
+    // S3 update: new revision recorded, content now v2.
+    let upd = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            933,
+            "cross_server_span_refresh",
+            Some(serde_json::json!({"source_work": source_work, "update": true})),
+        ),
+    )
+    .await;
+    assert_eq!(upd["type"], "response", "update failed: {upd}");
+    let uv = &upd["value"]["value"];
+    assert_eq!(uv["changed"], true);
+    // Update creates a NEW frozen source (old is immutable); the
+    // payload's source_work is the new one, distinct from the old.
+    let new_source = uv["source_work"].as_u64().expect("new source id");
+    assert_ne!(
+        new_source, source_work,
+        "update mints a fresh frozen source"
+    );
+
+    // Destination now renders the updated span (virtual re-resolves
+    // through the frozen source's current text).
+    let resolved = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            934,
+            "resolve_inline_transclusions",
+            Some(serde_json::json!({"work_id": dest})),
+        ),
+    )
+    .await;
+    assert_eq!(resolved["type"], "response");
+    let flat = serde_json::to_string(&resolved["value"]).unwrap_or_default();
+    assert!(
+        flat.contains("REWR"),
+        "destination renders updated origin span, got: {flat}"
+    );
+}
+
 /// FR-41 S2: cross-server span transclusion over the wire. Node A
 /// fetches a span of Node B's published work by reference: tumbler +
 /// span in, verified BLAKE3 out, pinned virtual element placed in

@@ -2366,6 +2366,13 @@ fn dispatch_inner(
                 method: format!("{:?}", cm).to_lowercase(),
             })
         }
+        WireRequest::CrossServerSpanRefresh {
+            source_work,
+            update,
+        } => {
+            let payload = srv.cross_server_span_refresh(session_id, source_work, update)?;
+            Ok(ResponseValue::CrossServerSpanRefresh(payload))
+        }
         WireRequest::TransclusionPlaceCrossServer {
             dest_work,
             cursor,

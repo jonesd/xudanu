@@ -7279,6 +7279,250 @@ impl Server {
         })
     }
 
+    /// FR-41 S3: check whether a cross-server transclusion's origin
+    /// span changed, and optionally update the frozen source.
+    ///
+    /// `update: false` (check): fetches the origin's CURRENT text for
+    /// the provenance span (xudanu:{tumbler}#s-e recorded on the
+    /// frozen source work), hashes it, compares with the frozen
+    /// content. Returns current text + changed flag. No state changes.
+    ///
+    /// `update: true`: if changed, re-fetch, re-verify hash against
+    /// the origin's claim, then REVISE the frozen source work (new
+    /// revision — the previous quotation stays in history; pinned
+    /// virtuals pointing at the old revision keep showing it until
+    /// the reader updates the destination element). Returns the new
+    /// revision and text.
+    pub fn cross_server_span_refresh(
+        &mut self,
+        session_id: SessionId,
+        source_work: BeId,
+        update: bool,
+    ) -> Result<super::transport::protocol::CrossServerSpanRefreshPayload, ServerError> {
+        use crate::edition::links::{parse_tumbler_server, tumbler_local_path};
+
+        self.ensure_session(session_id)?;
+
+        // 1. Read the provenance bond off the frozen source work.
+        let (tumbler, span_start, span_end, frozen_text) = {
+            let ws = self
+                .works
+                .get(&source_work)
+                .ok_or(ServerError::WorkNotFound(source_work))?;
+            let info = ws.source_edition_info().unwrap_or("").to_string();
+            if !info.starts_with("xudanu:") {
+                return Err(ServerError::InvalidArgument(format!(
+                    "work 0x{:x} is not a cross-server transclusion source",
+                    source_work
+                )));
+            }
+            // format: xudanu:{tumbler}#{start}-{end}
+            let rest = info.trim_start_matches("xudanu:");
+            let (tumbler, span) = rest
+                .split_once('#')
+                .ok_or_else(|| ServerError::Internal("malformed provenance bond".into()))?;
+            let (s, e) = span
+                .split_once('-')
+                .ok_or_else(|| ServerError::Internal("malformed span in provenance bond".into()))?;
+            let span_start: usize = s
+                .parse()
+                .map_err(|_| ServerError::Internal("bad span start".into()))?;
+            let span_end: usize = e
+                .parse()
+                .map_err(|_| ServerError::Internal("bad span end".into()))?;
+            (
+                tumbler.to_string(),
+                span_start,
+                span_end,
+                ws.work.current_edition().to_text(),
+            )
+        };
+
+        // 2. Resolve the origin from the directory.
+        let (server_id_num, _) = parse_tumbler_server(&tumbler);
+        let local_path = tumbler_local_path(&tumbler);
+        let remote_work_hex = local_path.split('.').next().unwrap_or("").to_string();
+        let entry = if server_id_num != 0 {
+            self.server_directory.get(server_id_num).cloned()
+        } else {
+            None
+        };
+        let entry = match entry {
+            Some(e) if !e.quarantined => e,
+            _ => {
+                let domain = tumbler.trim_matches('"').split('.').next().unwrap_or("");
+                self.server_directory
+                    .list()
+                    .into_iter()
+                    .find(|e| e.address == domain && !e.quarantined)
+                    .cloned()
+                    .ok_or_else(|| {
+                        ServerError::NotFound(format!(
+                            "origin for {tumbler} not in directory (or quarantined)"
+                        ))
+                    })?
+            }
+        };
+
+        // 3. Fetch the origin's current span (hash verified by origin).
+        let base = format!("http://{}:{}", entry.address, entry.port.unwrap_or(8080));
+        let range_url = format!(
+            "{}/api/public/work/{}/range/{}/{}",
+            base, remote_work_hex, span_start, span_end
+        );
+        let body = http_get_json(&range_url, 5)
+            .map_err(|e| ServerError::InvalidArgument(format!("origin unreachable: {}", e)))?;
+        let data: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|e| ServerError::Internal(format!("origin invalid JSON: {}", e)))?;
+        let current_text = data["text"].as_str().unwrap_or("").to_string();
+        let origin_hash = data["content_hash_blake3"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+
+        // 4. Verify origin's claim and compute changed.
+        let local_hash = {
+            let mut h = blake3::Hasher::new();
+            h.update(current_text.as_bytes());
+            h.finalize().to_hex().to_string()
+        };
+        if !origin_hash.is_empty() && local_hash != origin_hash {
+            return Err(ServerError::Internal(
+                "content hash mismatch from origin — refusing possibly-tampered refresh".into(),
+            ));
+        }
+        let changed = current_text != frozen_text;
+
+        if !update || !changed {
+            return Ok(super::transport::protocol::CrossServerSpanRefreshPayload {
+                source_work,
+                changed,
+                current_text,
+                new_revision: None,
+                origin_hash,
+                tumbler,
+                span: [span_start, span_end],
+            });
+        }
+
+        // 5. Update: frozen sources are immutable by design — so the
+        // update creates a NEW frozen source with the current text
+        // (same provenance bond) and repoints every destination
+        // virtual element from the old source to the new one. The
+        // old quotation remains intact as its own work: the
+        // historical record of what was quoted, when.
+        let title = self
+            .works
+            .get(&source_work)
+            .map(|ws| ws.title().to_string())
+            .unwrap_or_else(|| "cross-server span".into());
+        let author_club = self.resolve_author_club(session_id);
+        let importer_author = {
+            let existing = self
+                .historical_authors
+                .list()
+                .into_iter()
+                .find(|a| a.name == "Cross-server import")
+                .map(|a| a.be_id);
+            match existing {
+                Some(id) => id,
+                None => {
+                    let session_club = self
+                        .sessions
+                        .get(&session_id)
+                        .and_then(|sess| {
+                            sess._key_master()
+                                .and_then(|km| km.login_authority().iter().next().copied())
+                        })
+                        .unwrap_or(0);
+                    self.register_historical_author(
+                        "Cross-server import".to_string(),
+                        "Cross-server import".to_string(),
+                        None,
+                        None,
+                        std::collections::HashMap::new(),
+                        String::new(),
+                        session_club,
+                    )?
+                    .be_id
+                }
+            }
+        };
+        let provenance = format!("xudanu:{}#{}-{}", tumbler, span_start, span_end);
+        let (new_source, _auth, _len, _t) = self.import_source_work(
+            session_id,
+            importer_author,
+            title,
+            current_text.clone(),
+            provenance,
+            0,
+            0,
+        )?;
+        let new_source_rev = self
+            .works
+            .get(&new_source)
+            .map(|ws| ws.work.revision_count())
+            .unwrap_or(0);
+
+        // Repoint destination virtual elements old -> new source.
+        let affected: Vec<BeId> = self
+            .works
+            .iter()
+            .filter(|(_, ws)| {
+                ws.work
+                    .current_edition()
+                    .cached_entries()
+                    .iter()
+                    .any(|(_, c)| {
+                        c.element
+                            .virtual_spec()
+                            .is_some_and(|spec| spec.source_work_id == source_work)
+                    })
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for wid in affected {
+            let ws = self.works.get(&wid);
+            if let Some(ws) = ws {
+                let entries = ws.work.current_edition().cached_entries().clone();
+                let mut changed_any = false;
+                let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::Carrier>)> =
+                    Vec::with_capacity(entries.len());
+                for (pos, carrier) in entries.iter() {
+                    let mut nc = (**carrier).clone();
+                    if let Some(spec) = nc.element.virtual_spec() {
+                        if spec.source_work_id == source_work {
+                            let mut new_spec = spec.clone();
+                            new_spec.source_work_id = new_source;
+                            new_spec.revision = new_source_rev;
+                            nc.element = RangeElement::virtual_element(new_spec);
+                            changed_any = true;
+                        }
+                    }
+                    new_entries.push((*pos, std::sync::Arc::new(nc)));
+                }
+                if changed_any {
+                    if let Some(ws) = self.works.get_mut(&wid) {
+                        ws.work_mut()
+                            .update_current_edition(Edition::from_entries(new_entries));
+                        ws.mark_dirty();
+                    }
+                }
+            }
+        }
+        self.auto_checkpoint();
+
+        Ok(super::transport::protocol::CrossServerSpanRefreshPayload {
+            source_work: new_source,
+            changed,
+            current_text,
+            new_revision: Some(new_source_rev),
+            origin_hash,
+            tumbler,
+            span: [span_start, span_end],
+        })
+    }
+
     pub fn public_work_range(
         &self,
         work_be_id: BeId,
