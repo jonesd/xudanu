@@ -7317,6 +7317,7 @@ impl Server {
                 "local": true,
             }));
         }
+        results.extend(fetched);
         results
     }
 
