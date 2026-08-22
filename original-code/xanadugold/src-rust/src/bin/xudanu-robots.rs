@@ -141,7 +141,11 @@ struct Robot {
 
 impl Robot {
     async fn connect(url: &str) -> anyhow::Result<Self> {
-        let (ws, _) = tokio_tungstenite::connect_async(url).await?;
+        let mut req =
+            tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(url)?;
+        req.headers_mut()
+            .insert("Origin", "http://localhost".parse()?);
+        let (ws, _) = tokio_tungstenite::connect_async(req).await?;
         Ok(Robot { ws, next_id: 1 })
     }
 
@@ -375,19 +379,28 @@ async fn writer_task(id: u32, url: String, _pass: String, shared: Arc<Shared>) {
             serde_json::json!({"edition": {"text": format!("robot-writer-{} doc", id)}}),
         )
         .await;
-    match resp {
+    let work_id = match resp {
         Ok(r) => {
             record_rtt(&shared, "work_create", t0.elapsed().as_millis() as u64);
-            if r["type"] == "error" {
-                shared.op_errors.fetch_add(1, Ordering::Relaxed);
-                return;
+            let v = r["value"]["value"].as_u64().or_else(|| r["value"].as_u64());
+            match v {
+                Some(w) if r["type"] != "error" => w,
+                _ => {
+                    shared.op_errors.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
             }
         }
         Err(_) => {
             shared.save_timeouts.fetch_add(1, Ordering::Relaxed);
             return;
         }
-    }
+    };
+    // Delta edits require the work to be grabbed (edit-model rule;
+    // real clients grab via crdt_sync_open).
+    let _ = bot
+        .req("work_grab", serde_json::json!({"work_id": work_id}))
+        .await;
 
     let mut text = format!("robot-writer-{} doc\n", id);
     let mut rng = StdRng::seed_from_u64(id as u64 + 0x5eed);
@@ -405,7 +418,7 @@ async fn writer_task(id: u32, url: String, _pass: String, shared: Arc<Shared>) {
                 .req(
                     "work_revise_delta",
                     serde_json::json!({
-                        "work_id": 1, "base_revision": 0, "ops": ops
+                        "work_id": work_id, "base_revision": 0, "ops": ops
                     }),
                 )
                 .await
@@ -439,7 +452,7 @@ async fn writer_task(id: u32, url: String, _pass: String, shared: Arc<Shared>) {
                     .req(
                         "work_revise_delta",
                         serde_json::json!({
-                            "work_id": 1, "base_revision": 0, "ops": ops
+                            "work_id": work_id, "base_revision": 0, "ops": ops
                         }),
                     )
                     .await
