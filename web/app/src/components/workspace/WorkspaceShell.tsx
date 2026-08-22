@@ -825,6 +825,28 @@ export function WorkspaceShell() {
           if (el) {
             el.focus();
             setCursorOffset(el, newCursorPos);
+            // setCursorOffset anchors by raw text offset; with the
+            // marker hidden in a contenteditable=false span the
+            // restore can land at/before the span boundary — cursor
+            // visually BEFORE the bullet. Walk up and pop out.
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount > 0) {
+              let node: Node | null = sel.anchorNode;
+              let guardian = 0;
+              while (node && node !== el && guardian < 20) {
+                const parent = node.parentElement;
+                if (parent && parent.getAttribute("contenteditable") === "false") {
+                  const after = document.createRange();
+                  after.setStartAfter(parent);
+                  after.collapse(true);
+                  sel.removeAllRanges();
+                  sel.addRange(after);
+                  break;
+                }
+                node = parent;
+                guardian++;
+              }
+            }
           }
         }, 50);
       }
