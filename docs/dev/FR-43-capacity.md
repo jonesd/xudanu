@@ -81,6 +81,31 @@ soak); team profile (full mix).
   only by deliberate PR — the same discipline as the conformance
   matrix
 
+
+## Long-lived results record
+
+Performance history is a first-class artifact, checked into the repo
+(not ephemeral CI logs):
+
+- `perf/results/YYYY-MM-DD/<commit>[-label>/report.json` — raw run
+  output, validated by `perf/report.schema.json` (schema is the
+  contract: meta/latency/honesty/vitals/verdict; any nonzero
+  honesty counter fails the run regardless of latency)
+- `perf/results/YYYY-MM-DD/<commit>/summary.md` — human-readable
+  narrative for that run (what degraded, why, links to issues)
+- `perf/results/INDEX.md` — append-only comparison table (date,
+  commit, runner, profile, N, p95, alarms, verdict); history is
+  never edited
+- `perf/budgets.json` — current release budgets, ratcheted only by
+  deliberate PR with a results-run justification
+
+Comparability rules: absolute numbers only compare within the same
+runner (CI runner image or named local host, recorded in
+meta.runner). Cross-machine comparisons use ratios against that
+machine's own baseline run. CI archives the report as a workflow
+artifact AND commits it back to perf/results in the release job, so
+the record lives in git history with the code it measured.
+
 ## Sequencing
 
 1. #141 (lock-held IO) — hard prerequisite; Transcluder robot

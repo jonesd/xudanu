@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Xudanu robot-run report",
+  "type": "object",
+  "required": ["meta", "latency", "honesty", "vitals"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["started_at", "duration_secs", "git_commit", "git_branch", "binary_version", "runner", "profile", "robots"],
+      "properties": {
+        "started_at": { "type": "string", "format": "date-time" },
+        "duration_secs": { "type": "integer" },
+        "git_commit": { "type": "string" },
+        "git_branch": { "type": "string" },
+        "binary_version": { "type": "string" },
+        "runner": { "type": "string", "description": "e.g. github-ubuntu-24.04-20260816 or barton-m4-local" },
+        "profile": { "enum": ["personal", "team", "collab-spike", "chaos"] },
+        "scenario": { "type": "string" },
+        "robots": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" },
+          "description": "counts by persona: writers, readers, linkers, transcluders"
+        },
+        "server_flags": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" }
+      }
+    },
+    "latency": {
+      "type": "object",
+      "description": "milliseconds; per-op histograms from dispatch + robot-felt round-trips",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["p50", "p95", "p99", "count"],
+        "properties": {
+          "p50": { "type": "number" },
+          "p95": { "type": "number" },
+          "p99": { "type": "number" },
+          "count": { "type": "integer" },
+          "max": { "type": "number" }
+        }
+      }
+    },
+    "honesty": {
+      "type": "object",
+      "required": ["lock_poisonings", "false_unsigned_spans", "delta_rejections", "text_resurrections", "save_ack_timeouts"],
+      "description": "ALL must be zero for a clean run — any nonzero is a failed gate regardless of latency",
+      "additionalProperties": { "type": "integer" }
+    },
+    "vitals": {
+      "type": "object",
+      "properties": {
+        "rss_start_mb": { "type": "number" },
+        "rss_end_mb": { "type": "number" },
+        "checkpoint_max_ms": { "type": "number" },
+        "checkpoint_stall_secs_total": { "type": "number" },
+        "wal_max_depth": { "type": "integer" },
+        "attribution_verify_p95_ms": { "type": "number" },
+        "works_created": { "type": "integer" },
+        "links_created": { "type": "integer" },
+        "ops_total": { "type": "integer" }
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "required": ["pass", "criteria"],
+      "properties": {
+        "pass": { "type": "boolean" },
+        "criteria": {
+          "type": "object",
+          "description": "each budget criterion evaluated: name -> { limit, actual, ok }"
+        },
+        "capacity_note": { "type": "string", "description": "e.g. 'first degradation: checkpoint stall at N=20'" }
+      }
+    }
+  }
+}
