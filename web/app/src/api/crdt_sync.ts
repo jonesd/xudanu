@@ -549,6 +549,13 @@ export class CrdtSyncClient {
   private crdtReady = false;
   private deltaInFlight = false;
   private pendingServerText: string | null = null;
+  /** Echo-race guard: text of the most recent locally-originated
+   * delta that has been acked, and when. Server full-text updates
+   * arriving shortly after an ack often carry PRE-edit text (the
+   * materialization broadcast lags the delta apply); accepting them
+   * resurrected deleted text. */
+  private lastAckedLocalText: string | null = null;
+  private lastAckedAt = 0;
   private crdtOpenedThisConnection = false;
   currentIdentity: WhoAmIEntry | null = null;
   private isAdmin = false;
@@ -2171,8 +2178,30 @@ export class CrdtSyncClient {
         if (this.deltaInFlight) {
           this.pendingServerText = newText;
         } else if (newText !== this.text) {
-          this.text = newText;
-          this.textListeners.forEach((cb) => cb(newText));
+          // Echo-race guard: shortly after OUR acked edit, a
+          // broadcast whose text differs from what we sent is a
+          // stale materialization (pre-edit snapshot) — applying it
+          // would resurrect deleted text. Drop it; the next genuine
+          // server-side change (another user) arrives later than
+          // this window.
+          const echoWindowMs = 2500;
+          const recentAck = Date.now() - this.lastAckedAt < echoWindowMs;
+          const isStaleEcho =
+            recentAck &&
+            this.lastAckedLocalText !== null &&
+            newText !== this.lastAckedLocalText &&
+            newText !== this.text;
+          if (isStaleEcho) {
+            // Safety: if the text keeps disagreeing after the window,
+            // reconcile with a full fetch rather than looping.
+            console.warn("[crdt] dropping stale text echo", {
+              len: newText.length,
+              ackedLen: this.lastAckedLocalText?.length,
+            });
+          } else {
+            this.text = newText;
+            this.textListeners.forEach((cb) => cb(newText));
+          }
         }
       }
     }
@@ -2373,6 +2402,8 @@ export class CrdtSyncClient {
       ops,
     }).then(() => {
       this.deltaInFlight = false;
+      this.lastAckedLocalText = newText;
+      this.lastAckedAt = Date.now();
       this.setSaveState("saved");
       this.saveStateTimer = setTimeout(() => this.setSaveState("idle"), 2000);
       if (this.pendingServerText !== null) {
