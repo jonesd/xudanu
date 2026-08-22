@@ -766,8 +766,9 @@ export function WorkspaceShell() {
       } else {
         pos = cursorPos ?? 0;
       }
-      // If cursor is on a newline, move to next line
-      if (text[pos] === "\n") pos += 1;
+      // Caret at end-of-line (just before its newline) is ON that
+      // line — no hop. (The old pos+=1 jumped to the next line and
+      // prefixed the bullet there, stranding the cursor above.)
       const lineStart = text.lastIndexOf("\n", pos - 1) + 1;
       const lineEndIdx = text.indexOf("\n", pos);
       const lineEnd = lineEndIdx === -1 ? text.length : lineEndIdx;

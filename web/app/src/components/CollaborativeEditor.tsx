@@ -1767,12 +1767,12 @@ export function CollaborativeEditor({
         }
       }
 
-      const textNode = document.createTextNode(insertText);
-      range.insertNode(textNode);
-      range.setStartAfter(textNode);
-      range.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(range);
+      // Native insertion: execCommand keeps the caret natively
+      // positioned after the inserted text and survives the React
+      // re-render that handleInput triggers. (Manual range/insertNode
+      // left the caret on a replaced node — typing silently died
+      // after the second list continuation.)
+      document.execCommand("insertText", false, insertText);
       handleInput();
     } else if (e.key === "Tab") {
       e.preventDefault();
