@@ -1784,6 +1784,23 @@ export function CollaborativeEditor({
       // innerHTML rebuild when nothing but plain text changed.
       document.execCommand("insertText", false, insertText);
       handleInput();
+      if (insertText !== "\n\u200B") {
+        // List continuation: re-render markers after React commits so
+        // the new line shows a pretty bullet instead of raw "- ".
+        // Caret is re-anchored by text offset — deterministic, not
+        // racing (the old bug was mid-typing rebuilds, not this one).
+        setTimeout(() => {
+          const el = editorRef.current;
+          if (!el) return;
+          const caret = getCursorOffset(el);
+          const textNow = getTextContent(el).replace(/\u200B/g, "");
+          try {
+            const html = buildStyledText(textNow, []);
+            if (html) el.innerHTML = html;
+            setCursorOffset(el, caret);
+          } catch { /* keep native DOM */ }
+        }, 0);
+      }
     } else if (e.key === "Tab") {
       e.preventDefault();
       const sel = window.getSelection();
