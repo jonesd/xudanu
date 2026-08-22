@@ -202,6 +202,112 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
   return html;
 }
 
+/**
+ * The single caret authority (FR: editor caret centralization).
+ *
+ * Sets the caret to a MODEL offset — a position in the text as the
+ * CRDT/save layer sees it, including hidden markers like "- " — and
+ * guarantees the resulting DOM selection:
+ *   1. never rests inside a contenteditable=false span (markers,
+ *      inline images) — typing there dies silently;
+ *   2. never rests at a boundary that precedes a marker span for
+ *      offsets >= marker length (the click/toggle/Enter bug class);
+ *   3. maps through the same tree-walk getCursorOffset uses, so
+ *      setCaretModel(el, getCursorOffset(el)) is a stable identity
+ *      except for the escape corrections.
+ *
+ * All editor code paths that reposition the caret (Enter inserts,
+ * toolbar toggles, rebuild restores, click corrections, undo) must
+ * route through this function.
+ */
+export function setCaretModel(el: HTMLElement, modelOffset: number): void {
+  const sel = window.getSelection();
+  if (!sel) return;
+
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const editorScope = el;
+  let node: Node | null;
+  let remaining = Math.max(0, modelOffset);
+
+  while ((node = walker.nextNode())) {
+    // Skip text inside non-editable spans (hidden markers etc.):
+    // their characters count in the MODEL but are not caret targets.
+    const parent = node.parentElement;
+    if (parent && parent.closest("[contenteditable=\"false\"]") && editorScope.contains(parent)) {
+      // Hidden marker spans (display:none) carry model text ("- ") —
+      // consume their length. Visible glyphs (the bullet •) are
+      // DOM-only decorations — skip WITHOUT consuming.
+      const hiddenSpan = parent.closest("[contenteditable=\"false\"]") as HTMLElement | null;
+      const isHidden = hiddenSpan?.style?.display === "none" ||
+        (parent.style?.display === "none");
+      if (isHidden) {
+        remaining -= node.textContent?.length ?? 0;
+      }
+      continue;
+    }
+    const len = node.textContent?.length ?? 0;
+    if (remaining <= len) {
+      const range = document.createRange();
+      range.setStart(node, Math.max(0, Math.min(remaining, len)));
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      escapeNonEditable(sel, editorScope);
+      return;
+    }
+    remaining -= len;
+  }
+
+  // Offset at/after end: anchor after the last EDITABLE content,
+  // never inside a trailing marker.
+  const lastEditable = lastEditableDescendant(el);
+  if (lastEditable) {
+    const range = document.createRange();
+    if (lastEditable.nodeType === Node.TEXT_NODE) {
+      range.setStart(lastEditable, lastEditable.textContent?.length ?? 0);
+    } else {
+      range.selectNodeContents(lastEditable);
+      range.collapse(false);
+    }
+    sel.removeAllRanges();
+    sel.addRange(range);
+    escapeNonEditable(sel, editorScope);
+  }
+}
+
+function escapeNonEditable(sel: Selection, scope: HTMLElement): void {
+  let node: Node | null = sel.anchorNode;
+  let guardian = 0;
+  while (node && node !== scope && guardian < 32) {
+    const parent = node.parentElement;
+    if (parent && parent.getAttribute("contenteditable") === "false") {
+      const after = document.createRange();
+      const markerParent = parent;
+      after.setStartAfter(markerParent);
+      after.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(after);
+      node = markerParent.parentElement;
+      continue;
+    }
+    node = parent;
+    guardian++;
+  }
+}
+
+function lastEditableDescendant(el: HTMLElement): Node | null {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let node: Node | null;
+  let last: Node | null = null;
+  while ((node = walker.nextNode())) {
+    const parent = node.parentElement;
+    if (parent && parent.closest("[contenteditable=\"false\"]") && el.contains(parent)) continue;
+    last = node;
+  }
+  return last;
+}
+
+
 export function getCursorOffset(el: HTMLElement): number {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0 || !el.contains(sel.anchorNode)) {

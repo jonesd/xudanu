@@ -3,7 +3,7 @@ import type { AttributionSpan, TransclusionMarker, AnnotationEntry, SpanRangePay
 import type { PendingTransclusion } from "../hooks/useTransclusion";
 import { authorColor } from "../author-color";
 import { TextBuffer } from "../api/text_buffer";
-import { extractStyleMarks, buildStyledText, getCursorOffset, setCursorOffset } from "../styled-text";
+import { extractStyleMarks, buildStyledText, getCursorOffset, setCaretModel } from "../styled-text";
 import {
   getTextContent,
   getEditableText,
@@ -1116,7 +1116,7 @@ export function CollaborativeEditor({
         if (displayText.endsWith("\n")) {
           el.appendChild(document.createTextNode("\u200B"));
         }
-      setCursorOffset(el, savedCursor);
+      setCaretModel(el, savedCursor);
     } catch (e) {
       console.error("[style-marks] rebuild failed, falling back to plain text:", e);
       el.textContent = displayText;
@@ -1191,7 +1191,7 @@ export function CollaborativeEditor({
             el.appendChild(document.createTextNode("\u200B"));
           }
         }
-        setCursorOffset(el, savedCursor);
+        setCaretModel(el, savedCursor);
       } catch (e) {
         console.error("[editor] DOM rebuild failed, falling back to plain text:", e);
         el.textContent = displayText;
@@ -1797,7 +1797,7 @@ export function CollaborativeEditor({
           try {
             const html = buildStyledText(textNow, []);
             if (html) el.innerHTML = html;
-            setCursorOffset(el, caret);
+            setCaretModel(el, caret);
             // setCursorOffset anchors into raw text nodes, but
             // buildStyledText wraps markers in contenteditable=false
             // spans — a caret restored mid-marker is dead (typing

@@ -37,7 +37,7 @@ import { AdminDashboard } from "../AdminDashboard";
 import { DocumentSettings, loadDocPreferences } from "../DocumentSettings";
 import type { DocPreferences } from "../DocumentSettings";
 import type { CrossServerBacklinkPayload } from "../../api/crdt_sync";
-import { getCursorOffset, setCursorOffset } from "../../styled-text";
+import { getCursorOffset, setCaretModel } from "../../styled-text";
 import { SEED_CONCEPTS } from "../../concepts-seed";
 import { WorkspaceTopBar } from "./WorkspaceTopBar";
 import type { WorkspaceNavTab } from "./WorkspaceTopBar";
@@ -824,29 +824,7 @@ export function WorkspaceShell() {
           const el = document.querySelector(".editor-content") as HTMLElement | null;
           if (el) {
             el.focus();
-            setCursorOffset(el, newCursorPos);
-            // setCursorOffset anchors by raw text offset; with the
-            // marker hidden in a contenteditable=false span the
-            // restore can land at/before the span boundary — cursor
-            // visually BEFORE the bullet. Walk up and pop out.
-            const sel = window.getSelection();
-            if (sel && sel.rangeCount > 0) {
-              let node: Node | null = sel.anchorNode;
-              let guardian = 0;
-              while (node && node !== el && guardian < 20) {
-                const parent = node.parentElement;
-                if (parent && parent.getAttribute("contenteditable") === "false") {
-                  const after = document.createRange();
-                  after.setStartAfter(parent);
-                  after.collapse(true);
-                  sel.removeAllRanges();
-                  sel.addRange(after);
-                  break;
-                }
-                node = parent;
-                guardian++;
-              }
-            }
+            setCaretModel(el, newCursorPos);
           }
         }, 50);
       }
