@@ -1735,7 +1735,39 @@ export function CollaborativeEditor({
       if (!sel || sel.rangeCount === 0) return;
       const range = sel.getRangeAt(0);
       range.deleteContents();
-      const textNode = document.createTextNode("\n\u200B");
+
+      // List continuation: if the caret is on a line starting with a
+      // list marker, the new line continues the list — unless the
+      // line is ONLY the marker, in which case Enter exits the list
+      // (plain newline). Markers match the formatter's output and
+      // common markdown ("- ", "* ", "+ ", "1. ").
+      let insertText = "\n\u200B";
+      if (editorRef.current) {
+        const pre = document.createRange();
+        pre.selectNodeContents(editorRef.current);
+        try { pre.setEnd(range.startContainer, range.startOffset); } catch { /* out of range */ }
+        const before = pre.toString();
+        const lineStartIdx = before.lastIndexOf("\n") + 1;
+        const lineText = before.slice(lineStartIdx);
+        const markerMatch = lineText.match(/^(?:[-*+] |\d+\. )/);
+        if (markerMatch) {
+          const marker = markerMatch[0];
+          if (lineText.trim() === marker.trim()) {
+            // Empty list item — exit the list (and remove the marker).
+            const el = editorRef.current;
+            if (el) {
+              document.execCommand("delete");
+              document.execCommand("insertText", false, "\n");
+              handleInput();
+              return;
+            }
+          } else {
+            insertText = "\n" + marker + "\u200B";
+          }
+        }
+      }
+
+      const textNode = document.createTextNode(insertText);
       range.insertNode(textNode);
       range.setStartAfter(textNode);
       range.collapse(true);
