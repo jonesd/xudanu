@@ -2003,7 +2003,34 @@ export function CollaborativeEditor({
     return { pos: fullPos - readonlyChars, rect };
   }, []);
 
+  // Clicks at a rendered line-start (bullet/heading/blockquote)
+  // anchor the caret BEFORE the hidden marker span
+  // (contenteditable=false) — typing then lands before the bullet.
+  // After any click, pop the caret past any non-editable ancestor.
+  const escapeMarkerSpan = useCallback(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return;
+    let node: Node | null = sel.anchorNode;
+    let guardian = 0;
+    while (node && node !== el && guardian < 20) {
+      const parent = node.parentElement;
+      if (parent && parent.getAttribute("contenteditable") === "false") {
+        const after = document.createRange();
+        after.setStartAfter(parent);
+        after.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(after);
+        return;
+      }
+      node = parent;
+      guardian++;
+    }
+  }, []);
+
   const handleEditorClick = useCallback((e: React.MouseEvent) => {
+
     const el = editorRef.current;
     if (!el) return;
 
@@ -2019,7 +2046,10 @@ export function CollaborativeEditor({
       }
     }
 
-    if (!pendingTransclusion && !pendingImagePlacement) return;
+    if (!pendingTransclusion && !pendingImagePlacement) {
+      escapeMarkerSpan();
+      return;
+    }
     if (!el.contains(e.target as Node)) return;
 
     const result = computePlacementPosition(e.clientX, e.clientY, el);
