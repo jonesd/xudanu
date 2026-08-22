@@ -758,12 +758,24 @@ export function WorkspaceShell() {
   const handleToggleBlock = useCallback(
     async (kind: string, _payload: string) => {
       if (workBeId === null) return;
-      // Read cursor position directly from the editor DOM
+      // Read cursor position from the LIVE DOM selection. The buttons
+      // use onMouseDown preventDefault so the editor keeps focus and
+      // the native caret through the click — but if focus was
+      // elsewhere (page load, after panel click), getCursorOffset
+      // returns 0 and the bullet prefixed the wrong line. Prefer the
+      // live selection; fall back to tracked state only when the
+      // editor has no valid selection at all.
       const editorEl = document.querySelector(".editor-content") as HTMLElement | null;
       let pos = 0;
+      let haveLiveCaret = false;
       if (editorEl) {
-        pos = getCursorOffset(editorEl);
-      } else {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0 && editorEl.contains(sel.anchorNode)) {
+          pos = getCursorOffset(editorEl);
+          haveLiveCaret = true;
+        }
+      }
+      if (!haveLiveCaret) {
         pos = cursorPos ?? 0;
       }
       // Caret at end-of-line (just before its newline) is ON that

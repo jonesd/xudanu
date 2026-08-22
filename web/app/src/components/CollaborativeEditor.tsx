@@ -1798,6 +1798,29 @@ export function CollaborativeEditor({
             const html = buildStyledText(textNow, []);
             if (html) el.innerHTML = html;
             setCursorOffset(el, caret);
+            // setCursorOffset anchors into raw text nodes, but
+            // buildStyledText wraps markers in contenteditable=false
+            // spans — a caret restored mid-marker is dead (typing
+            // ignored). Nudge forward past any non-editable span.
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount > 0) {
+              let node = sel.anchorNode;
+              let guardian = 0;
+              while (node && node !== el && guardian < 20) {
+                const parent = node.parentElement;
+                if (parent && parent.getAttribute("contenteditable") === "false") {
+                  // Move caret after this marker span
+                  const after = document.createRange();
+                  after.setStartAfter(parent);
+                  after.collapse(true);
+                  sel.removeAllRanges();
+                  sel.addRange(after);
+                  break;
+                }
+                node = parent;
+                guardian++;
+              }
+            }
           } catch { /* keep native DOM */ }
         }, 0);
       }
