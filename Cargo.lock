@@ -4234,6 +4234,7 @@ name = "xudanu"
 version = "1.7.0"
 dependencies = [
  "ammonia",
+ "anyhow",
  "argon2",
  "axum",
  "axum-server",

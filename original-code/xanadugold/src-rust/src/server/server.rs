@@ -7867,7 +7867,7 @@ impl Server {
                             let mut new_spec = spec.clone();
                             new_spec.source_work_id = new_source;
                             new_spec.revision = new_source_rev;
-                            nc.element = RangeElement::virtual_element(new_spec);
+                            nc.set_element(RangeElement::virtual_element(new_spec));
                             changed_any = true;
                         }
                     }
@@ -15877,7 +15877,7 @@ impl Server {
                             if let Some(hash) = content_hash {
                                 new_elem.set_transclusion_hash(*hash, source_revision.unwrap_or(0));
                             }
-                            new_carrier.element = new_elem;
+                            new_carrier.set_element(new_elem);
                         }
                     } else if let crate::edition::RangeElement::StructuralTransclusion {
                         source_work_id: sid,
@@ -15908,7 +15908,7 @@ impl Server {
                             if let Some(rev) = source_revision {
                                 elem.set_structural_revision(rev);
                             }
-                            new_carrier.element = elem;
+                            new_carrier.set_element(elem);
                         }
                     }
                     new_entries.push((pos, std::sync::Arc::new(new_carrier)));
