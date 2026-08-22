@@ -542,6 +542,9 @@ export class CrdtSyncClient {
   private url: string;
   private workBeId: number;
   private sessionId: number | null = null;
+  /** Server-side masked SessionId for this connection (learned from
+   * the awareness echo); differs from the session_connect id. */
+  private serverSessionId: number | null = null;
 
   getSessionId(): number | null {
     return this.sessionId;
@@ -2244,7 +2247,18 @@ export class CrdtSyncClient {
         // sessions including the originator. Rendering your own
         // caret as a "remote" cursor produced a phantom colored
         // caret+label following the user's own typing.
-        if (incoming.session_id === this.sessionId) return;
+        if (incoming.session_id === this.serverSessionId) return;
+        // Learn our server-side id from the echo: same user marker +
+        // matching connect id means this IS us under the masked id.
+        if (this.serverSessionId === null && incoming.session_id !== this.sessionId) {
+          // The server stamps awareness with its own masked id; the
+          // first echo carrying OUR user marker is ours.
+          const mine = incoming.user_name === (this.currentIdentity?.display_name || `user-${(this.sessionId ?? 0).toString(16).slice(-4)}`);
+          if (mine) {
+            this.serverSessionId = incoming.session_id;
+            return;
+          }
+        }
         this.awarenessMap.set(incoming.session_id, incoming);
         this.awarenessListeners.forEach((cb) => cb(Array.from(this.awarenessMap.values())));
       }

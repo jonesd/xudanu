@@ -3291,7 +3291,12 @@ fn dispatch_inner(
 
         WireRequest::CrdtAwarenessGet { work_id } => {
             srv.ensure_logged_in(session_id)?;
-            let states = srv.crdt_get_awareness(work_id)?;
+            let mut states = srv.crdt_get_awareness(work_id)?;
+            // Never echo the requester their own presence: the state
+            // carries the SERVER-side masked SessionId, which clients
+            // cannot predict from their session_connect id — the
+            // self-echo rendered as a phantom "remote" caret.
+            states.retain(|s| s.session_id != session_id.as_u64());
             Ok(ResponseValue::CrdtAwarenessGetResult { states })
         }
 
@@ -4915,7 +4920,12 @@ fn dispatch_inner_read(
         }
         WireRequest::CrdtAwarenessGet { work_id } => {
             srv.ensure_logged_in(session_id)?;
-            let states = srv.crdt_get_awareness(work_id)?;
+            let mut states = srv.crdt_get_awareness(work_id)?;
+            // Never echo the requester their own presence: the state
+            // carries the SERVER-side masked SessionId, which clients
+            // cannot predict from their session_connect id — the
+            // self-echo rendered as a phantom "remote" caret.
+            states.retain(|s| s.session_id != session_id.as_u64());
             Ok(ResponseValue::CrdtAwarenessGetResult { states })
         }
         WireRequest::AttributionVerify {
