@@ -7052,6 +7052,7 @@ impl Server {
             }
         };
         Ok(crate::server::server::CrossServerSpanPlan {
+            tumbler: tumbler.to_string(),
             base_url: format!("http://{}:{}", entry.address, entry.port.unwrap_or(8080)),
             work_hex,
             span_start,
@@ -7114,8 +7115,8 @@ impl Server {
             }
         };
         let provenance = format!(
-            "xudanu:{}.{}.1.0#{}-{}",
-            fetched.plan.origin_name, fetched.plan.work_hex, span_start, span_end
+            "xudanu:{}#{}-{}",
+            fetched.plan.tumbler, span_start, span_end
         );
         let (source_work, _auth, _len, _t) = self.import_source_work(
             session_id,
@@ -7173,7 +7174,7 @@ impl Server {
             source_work,
             revision: rev,
             span: [span_start, span_end],
-            tumbler: format!("{}.{}", fetched.plan.origin_name, fetched.plan.work_hex),
+            tumbler: fetched.plan.tumbler.clone(),
             content_hash: origin_hash,
             server_name: entry_name,
             text_len: span_text.chars().count() as u64,
@@ -7235,6 +7236,7 @@ impl Server {
             }
         };
         Ok(crate::server::server::CrossServerSpanPlan {
+            tumbler: tumbler.to_string(),
             base_url: format!("http://{}:{}", entry.address, entry.port.unwrap_or(8080)),
             work_hex,
             span_start,
@@ -7267,7 +7269,7 @@ impl Server {
                 current_text: fetched.text,
                 new_revision: None,
                 origin_hash: fetched.origin_hash,
-                tumbler: format!("{}.{}", fetched.plan.origin_name, fetched.plan.work_hex),
+                tumbler: fetched.plan.tumbler.clone(),
                 span: [fetched.plan.span_start, fetched.plan.span_end],
             });
         }
@@ -21755,6 +21757,7 @@ pub fn federated_fetch_peers(
 /// consumed by a lock-free fetch.
 #[derive(Debug, Clone)]
 pub struct CrossServerSpanPlan {
+    pub tumbler: String,
     pub base_url: String,
     pub work_hex: String,
     pub span_start: usize,
