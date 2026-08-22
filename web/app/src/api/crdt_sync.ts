@@ -2045,6 +2045,7 @@ export class CrdtSyncClient {
           const states = awareVal.states as AwarenessState[] || [];
           this.awarenessMap.clear();
           for (const s of states) {
+            if (s.session_id === this.sessionId) continue;
             this.awarenessMap.set(s.session_id, s);
           }
           this.awarenessListeners.forEach((cb) => cb(Array.from(this.awarenessMap.values())));
@@ -2210,6 +2211,11 @@ export class CrdtSyncClient {
       const payload = event.payload as Record<string, unknown> | undefined;
       if (payload && payload.work_id === this.workBeId) {
         const incoming = payload.state as AwarenessState;
+        // Self-echo guard: the server broadcasts awareness to all
+        // sessions including the originator. Rendering your own
+        // caret as a "remote" cursor produced a phantom colored
+        // caret+label following the user's own typing.
+        if (incoming.session_id === this.sessionId) return;
         this.awarenessMap.set(incoming.session_id, incoming);
         this.awarenessListeners.forEach((cb) => cb(Array.from(this.awarenessMap.values())));
       }
