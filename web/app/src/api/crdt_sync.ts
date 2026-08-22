@@ -76,6 +76,7 @@ export interface AttributionSpan {
   author_display_name: string | null;
   author_club_id: number | null;
   signature_valid: boolean;
+  verification_state?: string | null;
   timestamp: number;
   server_id: number[];
   author_type: string | null;

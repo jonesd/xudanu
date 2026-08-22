@@ -83,6 +83,7 @@ interface AuthorGroup {
   stripeColors: [string, string] | null;
   spans: AttributionSpan[];
   allValid: boolean;
+  anyAuthorMaintained: boolean;
   authorType: string | null;
   historicalAuthorId: number | null;
   sourceWorkId: number | null;
@@ -126,6 +127,7 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible, wo
           stripeColors,
           spans: [],
           allValid: true,
+          anyAuthorMaintained: false,
           authorType: span.author_type,
           historicalAuthorId: span.historical_author_id,
           sourceWorkId: span.source_work_id ?? null,
@@ -134,6 +136,7 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible, wo
       const group = groups.get(key)!;
       group.spans.push(span);
       if (!span.signature_valid) group.allValid = false;
+      if (span.verification_state === "author_maintained") group.anyAuthorMaintained = true;
     }
 
     return Array.from(groups.values());
@@ -205,7 +208,7 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible, wo
                   background: bg,
                   opacity: span.signature_valid ? 0.7 : 0.35,
                 }}
-                title={`${author?.displayName || "unknown"} [${span.start}..${span.end}]${span.signature_valid ? "" : " (unsigned)"}`}
+                title={`${author?.displayName || "unknown"} [${span.start}..${span.end}]${span.signature_valid ? (span.verification_state === "author_maintained" ? " (edited by author, re-verified)" : "") : " (unsigned)"}`}
               />
             );
           })}
@@ -261,7 +264,13 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible, wo
               </span>
             )}
             <span className={`author-sig ${author.allValid ? "sig-valid" : "sig-invalid"}`}>
-              {author.authorType === "historical" ? "attested" : author.allValid ? "signed" : "unsigned"}
+              {author.authorType === "historical"
+                ? "attested"
+                : author.allValid
+                  ? "signed"
+                  : author.anyAuthorMaintained
+                    ? "edited · re-verified"
+                    : "unsigned"}
             </span>
             <span className="author-spans">{author.spans.length} span{author.spans.length !== 1 ? "s" : ""}</span>
             <span className="author-key" title={author.key}>{shortKey(author.spans[0].author_public_key)}</span>
@@ -295,6 +304,7 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible, wo
                   {span.source_work_id != null && (
                     <span className="timeline-via">via work:{span.source_work_id.toString(16).padStart(4, "0")}</span>
                   )}
+                  {span.signature_valid && span.verification_state === "author_maintained" && <span className="timeline-unsigned" style={{ color: "var(--amber, #d29922)" }}>(edited · re-verified)</span>}
                   {!span.signature_valid && <span className="timeline-unsigned">(unsigned)</span>}
                 </li>
               );

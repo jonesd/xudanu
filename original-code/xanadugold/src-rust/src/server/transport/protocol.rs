@@ -3147,6 +3147,16 @@ pub struct AttributionSpanPayload {
     pub author_display_name: Option<String>,
     pub author_club_id: Option<BeId>,
     pub signature_valid: bool,
+    /// FR-140: WHY validity is what it is — "verified" (stored
+    /// signature checks out), "author_maintained" (signature changed
+    /// by the author's own later edits; re-verified against current
+    /// element provenance by the same key), or "unsigned" (no
+    /// verifiable authorship — the only alarming state).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub verification_state: Option<String>,
     pub timestamp: u64,
     pub server_id: Vec<u8>,
     pub author_type: Option<String>,

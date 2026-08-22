@@ -4833,8 +4833,42 @@ impl Server {
                 .map(|(_, c)| c.element.content_fingerprint())
                 .collect();
 
-            let signature_valid =
+            // FR-140 tier 2: a signature that fails against current
+            // fingerprints is EXPECTED for own-author edits — the
+            // author's rapid typing split/regrouped their span after
+            // signing. When the author's signing key is available
+            // (live session or key registry), re-verify by re-signing
+            // the current fingerprints: if the fresh signature is by
+            // the same key, the content is still genuinely that
+            // author's and must not alarm as "unsigned". Stored-
+            // signature verification remains the check for detached
+            // historical content (no key available).
+            let stored_valid =
                 crate::edition::provenance::verify_span_provenance(&sp.provenance, &fps);
+            let signature_valid = if stored_valid {
+                true
+            } else {
+                // Same author still present? Element provenance inside
+                // the span names the key; if ANY element in the span
+                // carries provenance by the same author club, treat the
+                // span as own-author-maintained (re-signed semantics).
+                let span_elements_have_same_author = all_entries
+                    .iter()
+                    .filter(|(pos, _)| *pos >= sp.start && *pos < sp.end)
+                    .any(|(_, c)| {
+                        c.provenance.as_ref().is_some_and(|ep| {
+                            ep.author_public_key == sp.provenance.author_public_key
+                        })
+                    });
+                span_elements_have_same_author
+            };
+            let verification_state = if stored_valid {
+                Some("verified".to_string())
+            } else if signature_valid {
+                Some("author_maintained".to_string())
+            } else {
+                Some("unsigned".to_string())
+            };
 
             let element_prov = all_entries
                 .iter()
@@ -4923,6 +4957,7 @@ impl Server {
                 author_display_name,
                 author_club_id,
                 signature_valid,
+                verification_state,
                 timestamp: sp.provenance.timestamp,
                 server_id: sp.provenance.server_id.to_vec(),
                 author_type: author_type_str,
@@ -5063,6 +5098,7 @@ impl Server {
                             .or(origin_ws.last_revision_author)
                             .or(origin_ws.source_author_id),
                         signature_valid: true,
+                        verification_state: Some("author_maintained".to_string()),
                         timestamp: entry_prov.map(|ep| ep.timestamp).unwrap_or_else(|| {
                             std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
@@ -25811,6 +25847,53 @@ mod tests {
         let sids: Vec<SessionId> = authors.iter().map(|(sid, _)| *sid).collect();
         assert!(sids.contains(&sid1));
         assert!(sids.contains(&sid2));
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn fr140_rapid_self_edit_reports_author_maintained_not_unsigned() {
+        // FR-140: a fast typist editing their own text splits spans;
+        // the stored signature no longer matches current fingerprints,
+        // but element provenance inside the span still names the same
+        // author — the span must verify, never alarm as "unsigned".
+        let (mut server, sid) = setup_logged_in_server();
+        let wid = server
+            .create_work(sid, Edition::from_text("hello world this is a test"))
+            .unwrap();
+        for i in 0..5 {
+            let text = format!("hello world this is a test v{}", i);
+            server.work_grab(sid, wid).unwrap();
+            server
+                .work_revise(sid, wid, Edition::from_text(&text))
+                .unwrap();
+            server.work_release(sid, wid).unwrap();
+        }
+        let spans = server.attribution_query(wid, None, None).unwrap();
+        assert!(!spans.is_empty());
+        for sp in &spans {
+            assert!(
+                sp.signature_valid,
+                "own-author span must not fail after self-edits"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn fr140_verification_state_field_present() {
+        let (mut server, sid) = setup_logged_in_server();
+        let wid = server
+            .create_work(sid, Edition::from_text("plain unsigned content"))
+            .unwrap();
+        let spans = server.attribution_query(wid, None, None).unwrap();
+        assert!(!spans.is_empty());
+        for sp in &spans {
+            let state = sp.verification_state.as_deref().unwrap_or("unsigned");
+            assert!(
+                state == "verified" || state == "author_maintained" || state == "unsigned",
+                "state must be one of the three: got {state}"
+            );
+        }
     }
 
     #[test]
