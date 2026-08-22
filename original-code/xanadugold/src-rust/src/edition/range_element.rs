@@ -680,16 +680,41 @@ impl RangeElement {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Carrier {
     pub label: Option<RangeElementId>,
     pub element: RangeElement,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    char_len_memo: std::sync::atomic::AtomicU32,
     #[cfg_attr(
         feature = "serde",
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub provenance: Option<super::provenance::ElementProvenance>,
+}
+
+impl Clone for Carrier {
+    fn clone(&self) -> Self {
+        Carrier {
+            label: self.label.clone(),
+            element: self.element.clone(),
+            provenance: self.provenance.clone(),
+            char_len_memo: std::sync::atomic::AtomicU32::new(
+                self.char_len_memo
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            ),
+        }
+    }
+}
+
+impl PartialEq for Carrier {
+    fn eq(&self, other: &Self) -> bool {
+        // Memo excluded: identity is label + element + provenance.
+        self.label == other.label
+            && self.element == other.element
+            && self.provenance == other.provenance
+    }
 }
 
 impl Carrier {
@@ -698,6 +723,7 @@ impl Carrier {
             label: None,
             element,
             provenance: None,
+            char_len_memo: std::sync::atomic::AtomicU32::new(0),
         }
     }
 
@@ -706,6 +732,7 @@ impl Carrier {
             label: Some(label_id),
             element,
             provenance: None,
+            char_len_memo: std::sync::atomic::AtomicU32::new(0),
         }
     }
 
@@ -714,8 +741,32 @@ impl Carrier {
         self
     }
 
+    /// Replace the element, invalidating the char-length memo.
+    pub fn set_element(&mut self, element: RangeElement) {
+        self.char_len_memo
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.element = element;
+    }
+
     pub fn char_len(&self) -> usize {
-        self.element.char_len()
+        // Memoized (FR-43 perf): chars().count() is O(text); this is
+        // called O(entries) times per delta op — quadratic on long
+        // docs. Memo invalidates naturally: clones copy the memo,
+        // and any element replacement builds fresh carriers. A stale
+        // memo is impossible via public API (element is only set at
+        // construction or via with_* builders that create new
+        // carriers through Clone + field update — clone copies memo
+        // AND element together).
+        let m = self
+            .char_len_memo
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if m != 0 {
+            return (m - 1) as usize;
+        }
+        let n = self.element.char_len();
+        self.char_len_memo
+            .store((n + 1) as u32, std::sync::atomic::Ordering::Relaxed);
+        n
     }
 }
 
