@@ -79,7 +79,27 @@ pub fn dispatch(
     let op_name = op_name.split_whitespace().next().unwrap_or("?");
     let span = tracing::info_span!("dispatch", op = op_name, session = session_id.as_u64());
     let _enter = span.enter();
+    // FR-43: per-op wall time into the metrics sink. Covers the whole
+    // dispatch incl. lock acquisition — lock-wait is part of the cost
+    // users feel.
+    let __metrics_start = std::time::Instant::now();
+    let __metrics_op = op_name.to_string();
 
+    struct MetricsGuard<'a> {
+        state: &'a SharedState,
+        op: String,
+        start: std::time::Instant,
+    }
+    impl Drop for MetricsGuard<'_> {
+        fn drop(&mut self) {
+            self.state.metrics.record(&self.op, self.start.elapsed());
+        }
+    }
+    let _metrics_guard = MetricsGuard {
+        state,
+        op: __metrics_op,
+        start: __metrics_start,
+    };
     if matches!(request, WireRequest::WorkDiffNarration { .. }) {
         return dispatch_narration(state, session_id, request);
     }
@@ -1544,6 +1564,10 @@ fn dispatch_inner(
             ))
         }
 
+        WireRequest::MetricsSnapshot => {
+            let rows = state.metrics.snapshot();
+            Ok(ResponseValue::MetricsSnapshotResult(rows))
+        }
         WireRequest::ServerStats => Ok(ResponseValue::ServerInfo(
             super::protocol::ServerInfoPayload {
                 version: env!("CARGO_PKG_VERSION").to_string(),

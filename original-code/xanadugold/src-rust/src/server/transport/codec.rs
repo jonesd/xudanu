@@ -376,6 +376,7 @@ impl BinaryCodec {
             OperationCode::AdminGrants => Ok(WireRequest::AdminGrants),
             OperationCode::AdminServerInfo => Ok(WireRequest::AdminServerInfo),
             OperationCode::ServerStats => Ok(WireRequest::ServerStats),
+            OperationCode::MetricsSnapshot => Ok(WireRequest::MetricsSnapshot),
             OperationCode::WorkList => Ok(WireRequest::WorkList {
                 offset: None,
                 limit: None,

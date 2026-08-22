@@ -277,6 +277,7 @@ pub enum OperationCode {
     WorkDiffRegions,
 
     ServerStats,
+    MetricsSnapshot,
 
     BlobUpload,
     BlobGet,
@@ -628,6 +629,7 @@ impl OperationCode {
             0x0805 => Some(OperationCode::ProvenanceAncestry),
 
             0x0601 => Some(OperationCode::ServerStats),
+            0x0602 => Some(OperationCode::MetricsSnapshot),
 
             0x0901 => Some(OperationCode::BlobUpload),
             0x0902 => Some(OperationCode::BlobGet),
@@ -959,6 +961,7 @@ impl OperationCode {
             OperationCode::WorkDiffRegions => 0x0805,
 
             OperationCode::ServerStats => 0x0601,
+            OperationCode::MetricsSnapshot => 0x0602,
 
             OperationCode::BlobUpload => 0x0901,
             OperationCode::BlobGet => 0x0902,
@@ -1732,6 +1735,7 @@ pub enum WireRequest {
     },
 
     ServerStats,
+    MetricsSnapshot,
 
     BlobUpload {
         data: String,
@@ -2388,6 +2392,7 @@ impl WireRequest {
                 | Self::ClubMembers { .. }
                 | Self::ClubRoster { .. }
                 | Self::ServerStats
+                | Self::MetricsSnapshot
                 | Self::LinkGet { .. }
                 | Self::LinkListForWork { .. }
                 | Self::LinkTypeList
@@ -2567,6 +2572,7 @@ pub enum ResponseValue {
     BlobListResult(Vec<crate::edition::edition::BlobEntry>),
     /// FR-23: Text at a specific revision
     TextResult(String),
+    MetricsSnapshotResult(Vec<(String, u64, u64, u64, u64, u64, u64)>),
     LinkInfo(LinkPayload),
     CrossServerTransclusion(CrossServerTransclusionPayload),
     CrossServerSpanRefresh(CrossServerSpanRefreshPayload),
