@@ -34,7 +34,9 @@ describe("Enter list continuation", () => {
   });
   it("exits the list on an empty item", () => {
     expect(enterInsertText("- ")).toBe("__EXIT_LIST__");
-    expect(enterInsertText("-")).toBe("__EXIT_LIST__");
+  });
+  it("bare dash without space is prose, not a list", () => {
+    expect(enterInsertText("-")).toBe("\n\u200B");
   });
   it("plain newline when not in a list", () => {
     expect(enterInsertText("just text")).toBe("\n\u200B");
