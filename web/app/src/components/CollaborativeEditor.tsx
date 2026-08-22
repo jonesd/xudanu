@@ -1092,9 +1092,18 @@ export function CollaborativeEditor({
   useEffect(() => {
     const el = editorRef.current;
     if (!el || hasInlineTransclusions || !displayText) return;
-    // Include text in the key so marker-based formatting (#, -, >) triggers rebuild
-    const marksKey = displayText.length + ":" + styleMarks.map((m) => `${m.kind}:${m.char_start}:${m.char_end}`).join("|");
-    if (marksKey === lastMarksRef.current) return;
+    // Rebuild only when marks actually changed. Length is in the key
+    // only to catch mark shifts after edits; plain-text growth from
+    // native typing/Enter must NOT rebuild (innerHTML rebuild raced
+    // the caret and killed input mid-list).
+    const marksKey = styleMarks.map((m) => `${m.kind}:${m.char_start}:${m.char_end}`).join("|");
+    if (marksKey === lastMarksRef.current) {
+      // DOM already contains the typed text (native insertion) —
+      // leave it and the caret alone.
+      if (el.textContent.replace(/\u200B/g, "").length >= displayText.replace(/\u200B/g, "").length - 2) {
+        return;
+      }
+    }
     lastMarksRef.current = marksKey;
     const savedCursor = getCursorOffset(el);
     try {
@@ -1767,11 +1776,12 @@ export function CollaborativeEditor({
         }
       }
 
-      // Native insertion: execCommand keeps the caret natively
-      // positioned after the inserted text and survives the React
-      // re-render that handleInput triggers. (Manual range/insertNode
-      // left the caret on a replaced node — typing silently died
-      // after the second list continuation.)
+      // Pure-native insertion: execCommand keeps the caret alive with
+      // zero save/restore on our side. The subsequent rebuild effects
+      // are what killed typing before (innerHTML rebuild racing the
+      // caret restore); handleInput's state round-trip is still
+      // needed for the model, and the marksKey guard skips the
+      // innerHTML rebuild when nothing but plain text changed.
       document.execCommand("insertText", false, insertText);
       handleInput();
     } else if (e.key === "Tab") {
