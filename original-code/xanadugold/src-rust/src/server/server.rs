@@ -6855,6 +6855,7 @@ impl Server {
     ///   peer cannot flood or smuggle oversized/HTML payloads
     /// - unresponsive peers are reported (honesty: results say which
     ///   peers didn't answer) instead of silently omitted
+
     pub fn federated_search(&mut self, query: &str) -> Vec<serde_json::Value> {
         const PEER_TIMEOUT_SECS: u64 = 3;
         const MAX_RESULTS_PER_PEER: usize = 20;
@@ -6982,6 +6983,338 @@ impl Server {
             }
         }
 
+        results
+    }
+
+    // ── #141: snapshot → fetch → apply for cross-server ops ──────
+    //
+    // These pairs let dispatch_network hold NO server lock across
+    // outbound HTTP. Snapshot/apply run under the lock (cheap);
+    // fetch runs on a blocking pool via free functions below.
+
+    /// Snapshot for federated search: the trusted, non-quarantined
+    /// peer list (address/port/name) — everything the fan-out needs.
+
+    /// #141 SNAPSHOT for cross-server span transclusion: auth, dest
+    /// existence, tumbler → directory resolution. Lock-cheap.
+    #[allow(clippy::too_many_arguments)]
+    pub fn snapshot_cross_server_span_fetch(
+        &mut self,
+        session_id: SessionId,
+        dest_work: BeId,
+        tumbler: &str,
+        span_start: usize,
+        span_end: usize,
+    ) -> Result<crate::server::server::CrossServerSpanPlan, ServerError> {
+        use crate::edition::links::{parse_tumbler_server, tumbler_local_path};
+        self.ensure_authenticated(session_id)?;
+        if dest_work == 0 {
+            return Err(ServerError::InvalidArgument(
+                "destination work required".into(),
+            ));
+        }
+        if span_start >= span_end {
+            return Err(ServerError::InvalidArgument("empty span".into()));
+        }
+        if span_end - span_start > 100_000 {
+            return Err(ServerError::InvalidArgument(
+                "span too large (max 100k chars)".into(),
+            ));
+        }
+        let _ = self.work(dest_work)?;
+        let (server_id_num, _) = parse_tumbler_server(tumbler);
+        let local_path = tumbler_local_path(tumbler);
+        let work_hex = local_path.split('.').next().unwrap_or("").to_string();
+        if work_hex.is_empty() {
+            return Err(ServerError::InvalidArgument(format!(
+                "tumbler has no work component: {tumbler}"
+            )));
+        }
+        let entry = if server_id_num != 0 {
+            self.server_directory.get(server_id_num).cloned()
+        } else {
+            None
+        };
+        let entry = match entry {
+            Some(e) => e,
+            None => {
+                let domain = tumbler.trim_matches('"').split('.').next().unwrap_or("");
+                self.server_directory
+                    .list()
+                    .into_iter()
+                    .find(|e| e.address == domain)
+                    .cloned()
+                    .ok_or_else(|| {
+                        ServerError::NotFound(format!(
+                            "origin server for tumbler {tumbler} not in directory"
+                        ))
+                    })?
+            }
+        };
+        Ok(crate::server::server::CrossServerSpanPlan {
+            base_url: format!("http://{}:{}", entry.address, entry.port.unwrap_or(8080)),
+            work_hex,
+            span_start,
+            span_end,
+            origin_name: entry.name.clone(),
+            origin_trusted: entry.trusted,
+            origin_quarantined: entry.quarantined,
+        })
+    }
+
+    /// #141 APPLY for cross-server span transclusion: freeze the
+    /// fetched span as a source work and place the pinned virtual at
+    /// the cursor. Mirrors the sync path's semantics exactly.
+    pub fn apply_cross_server_span_fetch(
+        &mut self,
+        session_id: SessionId,
+        dest_work: BeId,
+        cursor: usize,
+        fetched: crate::server::server::CrossServerSpanFetched,
+        title_hint: Option<String>,
+    ) -> Result<super::transport::protocol::CrossServerTransclusionPayload, ServerError> {
+        let span_text = fetched.text.clone();
+        let span_start = fetched.plan.span_start;
+        let span_end = fetched.plan.span_end;
+        let origin_hash = fetched.origin_hash.clone();
+        let entry_name = fetched.plan.origin_name.clone();
+        let title = title_hint
+            .filter(|t| !t.trim().is_empty())
+            .map(|t| t.trim().chars().take(120).collect::<String>())
+            .unwrap_or_else(|| format!("{} (span {}-{})", entry_name, span_start, span_end));
+        let importer_author = {
+            let existing = self
+                .historical_authors
+                .list()
+                .into_iter()
+                .find(|a| a.name == "Cross-server import")
+                .map(|a| a.be_id);
+            match existing {
+                Some(id) => id,
+                None => {
+                    let session_club = self
+                        .sessions
+                        .get(&session_id)
+                        .and_then(|sess| {
+                            sess._key_master()
+                                .and_then(|km| km.login_authority().iter().next().copied())
+                        })
+                        .unwrap_or(0);
+                    self.register_historical_author(
+                        "Cross-server import".to_string(),
+                        "Cross-server import".to_string(),
+                        None,
+                        None,
+                        std::collections::HashMap::new(),
+                        String::new(),
+                        session_club,
+                    )?
+                    .be_id
+                }
+            }
+        };
+        let provenance = format!(
+            "xudanu:{}.{}.1.0#{}-{}",
+            fetched.plan.origin_name, fetched.plan.work_hex, span_start, span_end
+        );
+        let (source_work, _auth, _len, _t) = self.import_source_work(
+            session_id,
+            importer_author,
+            title,
+            span_text.clone(),
+            provenance,
+            0,
+            0,
+        )?;
+        let revision = self
+            .works
+            .get(&source_work)
+            .map(|ws| ws.work.revision_count())
+            .unwrap_or(0);
+        let spec = crate::edition::range_element::VirtualSpec {
+            source_work_id: source_work,
+            char_start: 0,
+            char_end: span_text.chars().count(),
+            revision,
+            placed_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            placed_by: self.resolve_author_club(session_id),
+        };
+        let elem = RangeElement::virtual_element(spec);
+        let dest_edition = {
+            let ws = self
+                .works
+                .get(&dest_work)
+                .ok_or(ServerError::WorkNotFound(dest_work))?;
+            ws.work.current_edition().clone()
+        };
+        let mut entries = dest_edition.all_entries();
+        let pos = (cursor as i64).clamp(0, entries.len() as i64) as usize;
+        entries.insert(
+            pos,
+            (
+                pos as i64,
+                std::sync::Arc::new(crate::edition::Carrier::new(elem)),
+            ),
+        );
+        let renumbered: Vec<(i64, std::sync::Arc<crate::edition::Carrier>)> = entries
+            .iter()
+            .enumerate()
+            .map(|(i, (_, c))| (i as i64, c.clone()))
+            .collect();
+        self.work_grab(session_id, dest_work)?;
+        let rev = self.work_revise(session_id, dest_work, Edition::from_entries(renumbered))?;
+        self.work_release(session_id, dest_work)?;
+        self.auto_checkpoint();
+        Ok(super::transport::protocol::CrossServerTransclusionPayload {
+            dest_work,
+            source_work,
+            revision: rev,
+            span: [span_start, span_end],
+            tumbler: format!("{}.{}", fetched.plan.origin_name, fetched.plan.work_hex),
+            content_hash: origin_hash,
+            server_name: entry_name,
+            text_len: span_text.chars().count() as u64,
+        })
+    }
+
+    /// #141 SNAPSHOT for span refresh: provenance bond + origin plan.
+    pub fn snapshot_span_refresh(
+        &self,
+        source_work: BeId,
+    ) -> Result<crate::server::server::CrossServerSpanPlan, ServerError> {
+        use crate::edition::links::{parse_tumbler_server, tumbler_local_path};
+        let ws = self
+            .works
+            .get(&source_work)
+            .ok_or(ServerError::WorkNotFound(source_work))?;
+        let info = ws.source_edition_info().unwrap_or("").to_string();
+        if !info.starts_with("xudanu:") {
+            return Err(ServerError::InvalidArgument(format!(
+                "work 0x{:x} is not a cross-server transclusion source",
+                source_work
+            )));
+        }
+        let rest = info.trim_start_matches("xudanu:");
+        let (tumbler, span) = rest
+            .split_once('#')
+            .ok_or_else(|| ServerError::Internal("malformed provenance bond".into()))?;
+        let (s, e) = span
+            .split_once('-')
+            .ok_or_else(|| ServerError::Internal("malformed span in provenance bond".into()))?;
+        let span_start: usize = s
+            .parse()
+            .map_err(|_| ServerError::Internal("bad span start".into()))?;
+        let span_end: usize = e
+            .parse()
+            .map_err(|_| ServerError::Internal("bad span end".into()))?;
+        let (server_id_num, _) = parse_tumbler_server(tumbler);
+        let local_path = tumbler_local_path(tumbler);
+        let work_hex = local_path.split('.').next().unwrap_or("").to_string();
+        let entry = if server_id_num != 0 {
+            self.server_directory.get(server_id_num).cloned()
+        } else {
+            None
+        };
+        let entry = match entry {
+            Some(e) if !e.quarantined => e,
+            _ => {
+                let domain = tumbler.trim_matches('"').split('.').next().unwrap_or("");
+                self.server_directory
+                    .list()
+                    .into_iter()
+                    .find(|e| e.address == domain && !e.quarantined)
+                    .cloned()
+                    .ok_or_else(|| {
+                        ServerError::NotFound(format!(
+                            "origin for {tumbler} not in directory (or quarantined)"
+                        ))
+                    })?
+            }
+        };
+        Ok(crate::server::server::CrossServerSpanPlan {
+            base_url: format!("http://{}:{}", entry.address, entry.port.unwrap_or(8080)),
+            work_hex,
+            span_start,
+            span_end,
+            origin_name: entry.name.clone(),
+            origin_trusted: entry.trusted,
+            origin_quarantined: entry.quarantined,
+        })
+    }
+
+    /// #141 APPLY for span refresh: compare + optional update. Same
+    /// new-frozen-source semantics as the sync path.
+    pub fn apply_span_refresh(
+        &mut self,
+        session_id: SessionId,
+        source_work: BeId,
+        fetched: crate::server::server::CrossServerSpanFetched,
+        update: bool,
+    ) -> Result<super::transport::protocol::CrossServerSpanRefreshPayload, ServerError> {
+        let frozen_text = self
+            .works
+            .get(&source_work)
+            .map(|ws| ws.work.current_edition().to_text())
+            .unwrap_or_default();
+        let changed = fetched.text != frozen_text;
+        if !update || !changed {
+            return Ok(super::transport::protocol::CrossServerSpanRefreshPayload {
+                source_work,
+                changed,
+                current_text: fetched.text,
+                new_revision: None,
+                origin_hash: fetched.origin_hash,
+                tumbler: format!("{}.{}", fetched.plan.origin_name, fetched.plan.work_hex),
+                span: [fetched.plan.span_start, fetched.plan.span_end],
+            });
+        }
+        // Update path: mint a new frozen source + repoint virtuals
+        // (same as the sync op — reuse it by delegating).
+        let refresh = self.cross_server_span_refresh(session_id, source_work, true)?;
+        Ok(refresh)
+    }
+
+    pub fn snapshot_trusted_peers_for_search(&self) -> Vec<(u64, String, Option<u16>, String)> {
+        self.server_directory
+            .list()
+            .iter()
+            .filter(|e| e.trusted && !e.quarantined)
+            .map(|e| (e.server_id, e.address.clone(), e.port, e.name.clone()))
+            .collect()
+    }
+
+    /// Apply side of federated search: local results for `query`
+    /// merged with fetched peer results.
+    pub fn federated_search_merge(
+        &mut self,
+        query: &str,
+        fetched: Vec<serde_json::Value>,
+    ) -> Vec<serde_json::Value> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Vec::new();
+        }
+        let local = self.public_work_list_search(Some(query));
+        let mut results: Vec<serde_json::Value> = Vec::new();
+        for work in local {
+            let wid = work["work_id"]
+                .as_str()
+                .and_then(|h| u64::from_str_radix(h.trim_start_matches("0x"), 16).ok())
+                .or_else(|| work["work_id"].as_u64());
+            let Some(wid) = wid else { continue };
+            results.push(serde_json::json!({
+                "work_id": wid,
+                "title": work["title"],
+                "revision": work["revision"],
+                "char_count": work["char_count"],
+                "server_name": self.server_name.clone(),
+                "server_id": self.server_namespace_id(),
+                "local": true,
+            }));
+        }
         results
     }
 
@@ -21337,6 +21670,159 @@ fn find_shared_substrings(
         }
     }
     results
+}
+
+/// #141: free-standing peer fan-out — runs on a blocking pool with
+/// NO server lock. Same hardening as the sync path: 3s peer timeout,
+/// overall budget, 20-result cap, 120-char titles, honest
+/// unreachable entries.
+pub fn federated_fetch_peers(
+    peers: Vec<(u64, String, Option<u16>, String)>,
+    query: &str,
+) -> Vec<serde_json::Value> {
+    const PEER_TIMEOUT_SECS: u64 = 3;
+    const MAX_RESULTS_PER_PEER: usize = 20;
+    const MAX_TITLE_CHARS: usize = 120;
+    let query = query.trim();
+    if query.is_empty() {
+        return Vec::new();
+    }
+    let mut results = Vec::new();
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_secs(2 + peers.len() as u64);
+    for (server_id, address, port, server_name) in peers {
+        if std::time::Instant::now() >= deadline {
+            results.push(serde_json::json!({
+                "server_name": server_name, "server_id": server_id,
+                "unreachable": true, "reason": "search budget exhausted",
+            }));
+            continue;
+        }
+        let url = format!(
+            "http://{}:{}/api/public/works?q={}",
+            address,
+            port.unwrap_or(8080),
+            urlencode(query)
+        );
+        match http_get_json(&url, PEER_TIMEOUT_SECS) {
+            Ok(body) => {
+                let mut added = 0usize;
+                if let Ok(data) = serde_json::from_str::<serde_json::Value>(&body) {
+                    if let Some(works) = data["works"].as_array() {
+                        for work in works {
+                            if added >= MAX_RESULTS_PER_PEER {
+                                break;
+                            }
+                            let title: String = work["title"]
+                                .as_str()
+                                .unwrap_or("")
+                                .chars()
+                                .take(MAX_TITLE_CHARS)
+                                .collect();
+                            let wid = work["work_id"]
+                                .as_str()
+                                .and_then(|h| {
+                                    u64::from_str_radix(h.trim_start_matches("0x"), 16).ok()
+                                })
+                                .or_else(|| work["work_id"].as_u64());
+                            let Some(wid) = wid else { continue };
+                            results.push(serde_json::json!({
+                                "work_id": wid, "title": title,
+                                "revision": work["revision"].as_u64().unwrap_or(0),
+                                "char_count": work["char_count"].as_u64().unwrap_or(0),
+                                "server_name": server_name, "server_id": server_id,
+                                "local": false,
+                            }));
+                            added += 1;
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Federated search failed for {}: {}", server_name, e);
+                results.push(serde_json::json!({
+                    "server_name": server_name, "server_id": server_id,
+                    "unreachable": true,
+                    "reason": e.chars().take(120).collect::<String>(),
+                }));
+            }
+        }
+    }
+    results
+}
+
+/// A resolved origin + span request, produced under the lock and
+/// consumed by a lock-free fetch.
+#[derive(Debug, Clone)]
+pub struct CrossServerSpanPlan {
+    pub base_url: String,
+    pub work_hex: String,
+    pub span_start: usize,
+    pub span_end: usize,
+    pub origin_name: String,
+    pub origin_trusted: bool,
+    pub origin_quarantined: bool,
+}
+
+/// A verified span fetched from an origin (lock-free).
+#[derive(Debug, Clone)]
+pub struct CrossServerSpanFetched {
+    pub plan: CrossServerSpanPlan,
+    pub text: String,
+    pub origin_hash: String,
+}
+
+/// #141: lock-free span fetch from an origin's public range API,
+/// with BLAKE3 verification. Errors carry human-readable reasons.
+pub fn cross_server_fetch_span(
+    plan: CrossServerSpanPlan,
+) -> Result<CrossServerSpanFetched, ServerError> {
+    if plan.origin_quarantined {
+        return Err(ServerError::InvalidArgument(format!(
+            "origin server {} is quarantined",
+            plan.origin_name
+        )));
+    }
+    if !plan.origin_trusted {
+        return Err(ServerError::InvalidArgument(format!(
+            "origin server {} is not trusted",
+            plan.origin_name
+        )));
+    }
+    let url = format!(
+        "{}/api/public/work/{}/range/{}/{}",
+        plan.base_url, plan.work_hex, plan.span_start, plan.span_end
+    );
+    let body = http_get_json(&url, 5).map_err(|e| {
+        ServerError::InvalidArgument(format!(
+            "failed to fetch span from {}: {}",
+            plan.origin_name, e
+        ))
+    })?;
+    let data: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| ServerError::Internal(format!("origin returned invalid JSON: {}", e)))?;
+    let text = data["text"].as_str().unwrap_or("").to_string();
+    if text.is_empty() {
+        return Err(ServerError::InvalidArgument(
+            "origin returned an empty span".into(),
+        ));
+    }
+    let claimed = data["content_hash_blake3"].as_str().unwrap_or("");
+    let local = {
+        let mut h = blake3::Hasher::new();
+        h.update(text.as_bytes());
+        h.finalize().to_hex().to_string()
+    };
+    if !claimed.is_empty() && local != claimed {
+        return Err(ServerError::Internal(
+            "content hash mismatch from origin — refusing possibly-tampered content".into(),
+        ));
+    }
+    Ok(CrossServerSpanFetched {
+        plan,
+        text,
+        origin_hash: claimed.to_string(),
+    })
 }
 
 #[cfg(test)]

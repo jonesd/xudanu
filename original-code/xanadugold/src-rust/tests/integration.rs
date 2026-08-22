@@ -3164,6 +3164,140 @@ async fn federated_search_wire_contract() {
     );
 }
 
+/// #141: a hung peer must never stall the server. We register a
+/// "peer" at a blackhole address (socket accepted, never answers —
+/// the observed live failure), fire a federated search at it, and
+/// DURING the fan-out verify that unrelated ops (health-adjacent
+/// session op + work op) still complete quickly. Pre-fix this froze
+/// the whole server behind the write lock.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn hung_peer_does_not_stall_server() {
+    xudanu::server::server::set_allow_loopback(true);
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    // A "peer" that answers its well-known identity ONCE (so
+    // directory-add succeeds) then goes silent on everything else —
+    // the reachable-but-unresponsive worst case from the live freeze.
+    let blackhole = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let bh_addr = blackhole.local_addr().unwrap();
+    tokio::spawn(async move {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        loop {
+            let (mut sock, _) = match blackhole.accept().await {
+                Ok(x) => x,
+                Err(_) => break,
+            };
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 8192];
+                let mut answered = false;
+                loop {
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(6),
+                        sock.read(&mut buf),
+                    )
+                    .await
+                    {
+                        Ok(Ok(0)) | Err(_) | Ok(Err(_)) => break,
+                        Ok(Ok(n)) => {
+                            let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                            if !answered && req.contains("/.well-known/") {
+                                let body = r#"{"server_id":"aa5f2c1068d9a6b34d1e7c92f4b0a3d5e6f70819a2b3c4d5e6f708192a3b4c5d","server_name":"Blackhole"}"#;
+                                let resp = format!(
+                                    "HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                    body.len(), body
+                                );
+                                let _ = sock.write_all(resp.as_bytes()).await;
+                                answered = true;
+                            }
+                            // everything else: read and ignore — never answer
+                        }
+                    }
+                }
+                // hold until peer-side timeout closes us
+            });
+        }
+    });
+
+    // Register the blackhole as a trusted peer (admin).
+    async fn reg(s: &mut SplitSender, r: &mut SplitReceiver, id: u16, host: &str, port: u16) {
+        let add = send_recv_json(
+            s,
+            r,
+            json_req(
+                id,
+                "server_directory_add",
+                Some(serde_json::json!({"address": host, "port": port})),
+            ),
+        )
+        .await;
+        assert_eq!(add["type"], "response", "add failed: {add}");
+        let list = send_recv_json(s, r, json_req(id + 50, "server_directory_list", None)).await;
+        let servers = list["value"]["value"]["servers"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let entry = servers
+            .iter()
+            .find(|e| e["address"].as_str() == Some(host))
+            .cloned()
+            .expect("in dir");
+        let trust = send_recv_json(
+            s,
+            r,
+            json_req(
+                id + 51,
+                "server_directory_set_trust",
+                Some(serde_json::json!({"server_id": entry["server_id"], "trusted": true})),
+            ),
+        )
+        .await;
+        assert_eq!(trust["type"], "response", "trust failed: {trust}");
+    }
+    let (bh_host, bh_port) = (bh_addr.ip().to_string(), bh_addr.port());
+    reg(&mut s, &mut r, 970, &bh_host, bh_port).await;
+
+    // Fire the search (would hang the lock pre-fix) and concurrently
+    // probe an unrelated op repeatedly.
+    let mut search_sock = connect_with_handshake(&srv, "json").await;
+    let _ = search_sock
+        .0
+        .send(Message::Text(
+            serde_json::to_string(&json_req(
+                971,
+                "federated_search",
+                Some(serde_json::json!({"query": "anything"})),
+            ))
+            .unwrap()
+            .into(),
+        ))
+        .await;
+
+    let probe_start = std::time::Instant::now();
+    let mut worst_probe_ms: u128 = 0;
+    for i in 0..5 {
+        let t0 = std::time::Instant::now();
+        let resp = send_recv_json(
+            &mut s,
+            &mut r,
+            json_req(980 + i as u16, "club_who_am_i", None),
+        )
+        .await;
+        assert_eq!(resp["type"], "response", "probe op failed: {resp}");
+        let dt = t0.elapsed().as_millis();
+        worst_probe_ms = worst_probe_ms.max(dt);
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    let total = probe_start.elapsed().as_millis();
+    // Each probe must answer in well under the peer timeout: if the
+    // lock were held, ALL probes would block ~5s each.
+    assert!(
+        worst_probe_ms < 1500,
+        "probe op took {worst_probe_ms}ms during hung-peer fan-out — lock held?"
+    );
+    println!("hung-peer test: {total}ms total, worst probe {worst_probe_ms}ms — server responsive during fan-out");
+}
+
 /// FR-41 S3: origin edits their source; the destination detects the
 /// change (check mode: changed=true, no state mutation) and can
 /// update the frozen source (update mode: new revision, old quote

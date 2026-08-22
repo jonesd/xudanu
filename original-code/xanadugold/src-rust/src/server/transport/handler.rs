@@ -21,6 +21,7 @@ use super::audit::ThreatLevel;
 use super::channel::{ChannelDetector, EventMessage};
 use super::codec::{BinaryCodec, JsonCodec, WireCodec};
 use super::dispatch;
+use super::dispatch_network;
 use super::protocol::*;
 use super::shared::SharedState;
 use crate::edition::BeId;
@@ -1572,7 +1573,16 @@ async fn handle_socket(
                                 | WireRequest::WorkSetEditClub { .. }
                                 | WireRequest::WorkRelease { .. }
                         );
-                        let result = dispatch::dispatch(&state, session_id, parsed.inner);
+                        // #141: ops with outbound network IO take the
+                        // async path (snapshot → fetch off-lock →
+                        // apply) so a hung peer can never hold the
+                        // server write lock.
+                        let result = if dispatch_network::is_network_op(&parsed.inner) {
+                            dispatch_network::dispatch_network(&state, session_id, parsed.inner)
+                                .await
+                        } else {
+                            dispatch::dispatch(&state, session_id, parsed.inner)
+                        };
 
                         if let Err(ref err) = result {
                             let mut sec = state.security.lock().unwrap_or_else(|e| e.into_inner());
