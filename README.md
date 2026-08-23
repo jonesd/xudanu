@@ -3,6 +3,8 @@
 ![Xudanu — documents with visible connections](docs/screenshots/hero.png)
 
 > **[Read the documentation](https://dgjones.info/xudanu/)** — user guides, technical architecture, and visual diagrams.
+> **[Source on GitHub](https://github.com/jonesd/xudanu)** — releases with static binaries for Linux, macOS, and Windows.
+> **[Docker image](https://github.com/jonesd/xudanu/pkgs/container/xudanu)** — `ghcr.io/jonesd/xudanu`, multi-arch, rebuilt on every release.
 
 **xudanu** (Xudanu) is a modern Rust and TypeScript implementation inspired by the Xanadu Project and its Udanax Gold (Xanadu 92.1) system.
 
