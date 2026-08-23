@@ -139,11 +139,14 @@ jobs:
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
-          docker buildx imagetools create \
+          TAGS=""
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && TAGS="$TAGS -t $tag"
+          done <<< "${{ steps.meta.outputs.tags }}"
+          docker buildx imagetools create $TAGS \
             $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
-          echo "Manifest list created with tags: ${{ steps.meta.outputs.tags }}"
 
       - name: Inspect image
         run: |
           docker buildx imagetools inspect \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:edge
