@@ -144,6 +144,32 @@ yourdomain.com {
 Your notes, your machine, no cloud. Works offline; federation is
 opt-in and off by default.
 
+**Where your data lives.** The compose stores everything in a named
+Docker volume (`xudanu-data`) — on your disk, in documents/links/
+chunks/revisions/provenance. Nothing leaves the machine.
+
+**If you prefer a visible directory** (rsync-able, easy to inspect),
+swap the volume line in the compose for a bind mount:
+
+```yaml
+    volumes:
+      - ./xudanu-data:/data
+```
+
+**Backup** (works for either storage style):
+
+```bash
+docker run --rm -v xu-gold-2026_xudanu-data:/data \
+  -v $(pwd):/backup alpine tar czf /backup/xudanu-data.tar.gz /data
+```
+
+**Update** to the latest image — your data is untouched:
+
+```bash
+docker compose -f docker-compose.single.yml pull
+docker compose -f docker-compose.single.yml up -d
+```
+
 ### Scenario 3 — Collaborative writing (team/lab/class)
 
 Still one server — Xudanu is multi-user by design. Share the URL;
