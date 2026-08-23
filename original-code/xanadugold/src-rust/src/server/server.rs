@@ -21569,25 +21569,51 @@ pub(crate) mod persist_snapshot {
                 }
             }
 
+            // #142 archive-first GC (1984 §8i): orphans are MOVED to
+            // the archive tier, never deleted outright. Hard deletion
+            // happens only in reap_expired_archive after the grace
+            // horizon (checkpoint generations) elapses — converting
+            // "possibly harmful" reclamation into "definitely
+            // recoverable" with an undo horizon for reachability-walk
+            // bugs. Set XUDANU_GC_AGGRESSIVE=1 to restore the old
+            // immediate-delete behavior for space-constrained tests.
+            let aggressive = std::env::var("XUDANU_GC_AGGRESSIVE").as_deref() == Ok("1");
+            let mut archived = 0u64;
             let mut removed = 0u64;
             for hash in &all_chunks {
-                if !referenced.contains(hash) {
+                if referenced.contains(hash) {
+                    continue;
+                }
+                if aggressive {
                     if let Ok(()) = chunk_store.delete_chunk(hash) {
                         removed += 1;
                     }
+                } else if matches!(chunk_store.move_chunk_to_archive(hash), Ok(true)) {
+                    archived += 1;
                 }
             }
 
-            if removed > 0 {
+            // Reap archive entries past the grace horizon.
+            const GC_GRACE_GENERATIONS: u64 = 50;
+            let current_gen = self.manifest_sequence;
+            let reaped = chunk_store
+                .reap_expired_archive(current_gen, GC_GRACE_GENERATIONS)
+                .unwrap_or(0);
+
+            if archived > 0 || reaped > 0 {
                 tracing::info!(
-                    "Chunk GC: removed {} orphaned chunks ({} referenced, {} total on disk)",
-                    removed,
+                    "Chunk GC: archived {} orphaned chunk(s), reaped {} expired from archive \
+                     (grace {} gens, gen {}), {} referenced, {} total on disk",
+                    archived,
+                    reaped,
+                    GC_GRACE_GENERATIONS,
+                    current_gen,
                     referenced.len(),
                     all_chunks.len(),
                 );
             }
 
-            Ok(removed)
+            Ok(archived + reaped + removed)
         }
 
         pub fn restore_from_file(path: &std::path::Path) -> std::io::Result<Self> {
@@ -29619,6 +29645,199 @@ mod tests {
             store.chunk_exists(&prev_hash),
             "GC deleted the previous (fallback) root chunk"
         );
+    }
+
+    #[test]
+    fn gc_archive_first_moves_not_deletes() {
+        // #142: orphans must be recoverable. Write an orphan chunk,
+        // run GC, assert: not in live store, present in archive,
+        // restorable.
+        let dir = std::env::temp_dir().join(format!(
+            "xudanu_gc_archive_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = crate::persist::chunk_store::ChunkStore::open(&dir).unwrap();
+        let data = b"orphaned content".to_vec();
+        let hash = store.write_chunk(&data).unwrap();
+        assert!(store.read_chunk(&hash).is_ok());
+
+        let moved = store.move_chunk_to_archive(&hash).unwrap();
+        assert!(moved, "orphan should be archived");
+        assert!(
+            store.read_chunk(&hash).is_err(),
+            "live copy must be gone after archive"
+        );
+        let archive_dir = dir.join("archive");
+        assert!(
+            archive_dir
+                .join(crate::persist::chunk_store::hash_to_hex(&hash))
+                .exists(),
+            "archived copy must exist"
+        );
+
+        let restored = store.restore_archived_chunk(&hash).unwrap();
+        assert!(restored, "restore should succeed");
+        let back = store.read_chunk(&hash).unwrap();
+        assert_eq!(back, data, "restored content must match");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&archive_dir);
+    }
+
+    #[test]
+    fn gc_archive_is_idempotent_and_reap_clean() {
+        // Archiving an already-archived hash must not lose the copy;
+        // reaping twice must not panic or double-count.
+        let dir = std::env::temp_dir().join(format!(
+            "xudanu_gc_idem_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = crate::persist::chunk_store::ChunkStore::open(&dir).unwrap();
+        let hash = store.write_chunk(b"idempotent").unwrap();
+
+        assert!(store.move_chunk_to_archive(&hash).unwrap());
+        // Second archive of the same (now-absent) live chunk: no-op.
+        assert!(!store.move_chunk_to_archive(&hash).unwrap());
+
+        // Restore, then archive again: content preserved both times.
+        assert!(store.restore_archived_chunk(&hash).unwrap());
+        assert_eq!(store.read_chunk(&hash).unwrap(), b"idempotent".to_vec());
+        assert!(store.move_chunk_to_archive(&hash).unwrap());
+
+        // Backdate and reap twice.
+        let archive_dir = dir.join("archive");
+        std::fs::write(
+            archive_dir.join(format!(
+                "{}.gen",
+                crate::persist::chunk_store::hash_to_hex(&hash)
+            )),
+            b"0",
+        )
+        .unwrap();
+        assert_eq!(store.reap_expired_archive(100, 50).unwrap(), 1);
+        assert_eq!(
+            store.reap_expired_archive(100, 50).unwrap(),
+            0,
+            "second reap: nothing left"
+        );
+        // Restore after reap: cleanly false.
+        assert!(!store.restore_archived_chunk(&hash).unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&archive_dir);
+    }
+
+    #[test]
+    fn gc_full_path_archives_orphans_preserves_referenced() {
+        // End-to-end through gc_orphaned_chunks: a live work's chunks
+        // stay; a write-then-orphan chunk lands in the archive, not
+        // the void; XUDANU_GC_AGGRESSIVE not set.
+        let (mut server, sid) = setup_logged_in_server();
+        let dir = std::env::temp_dir().join(format!(
+            "xudanu_gc_e2e_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        server.init_data_dir(&dir, None).unwrap();
+        let wid = server
+            .create_work(sid, Edition::from_text("gc archive e2e content"))
+            .unwrap();
+        let _ = wid;
+        server.checkpoint_to_store().unwrap();
+
+        // Write a chunk directly to the store — a true orphan.
+        let chunk_store = server.chunk_store.as_ref().unwrap();
+        let orphan_data = b"true orphan payload".to_vec();
+        let orphan_hash = chunk_store.write_chunk(&orphan_data).unwrap();
+
+        let reclaimed = server.gc_orphaned_chunks().unwrap();
+        assert!(
+            reclaimed >= 1,
+            "orphan should be archived (counted): {reclaimed}"
+        );
+
+        let archive_dir = dir.join("archive");
+        assert!(
+            archive_dir
+                .join(crate::persist::chunk_store::hash_to_hex(&orphan_hash))
+                .exists(),
+            "orphan must be in archive tier, recoverable"
+        );
+        // Live work content still readable.
+        let text = server.work_text(wid).unwrap_or_default();
+        assert!(text.contains("gc archive e2e"), "live work survives GC");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gc_archive_grace_horizon_reaps_only_expired() {
+        let dir = std::env::temp_dir().join(format!(
+            "xudanu_gc_reap_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = crate::persist::chunk_store::ChunkStore::open(&dir).unwrap();
+        let old = store.write_chunk(b"old orphan").unwrap();
+        store.move_chunk_to_archive(&old).unwrap();
+        let fresh = store.write_chunk(b"fresh orphan").unwrap();
+        store.move_chunk_to_archive(&fresh).unwrap();
+
+        // Backdate the old chunk's stamp to gen 0; fresh stamps at 100.
+        let archive_dir = dir.join("archive");
+        std::fs::write(
+            archive_dir.join(format!(
+                "{}.gen",
+                crate::persist::chunk_store::hash_to_hex(&old)
+            )),
+            b"0",
+        )
+        .unwrap();
+        std::fs::write(
+            archive_dir.join(format!(
+                "{}.gen",
+                crate::persist::chunk_store::hash_to_hex(&fresh)
+            )),
+            b"100",
+        )
+        .unwrap();
+
+        // Current gen 100, grace 50: old (0) expired; fresh (100) not.
+        let reaped = store.reap_expired_archive(100, 50).unwrap();
+        assert_eq!(reaped, 1, "only the expired chunk reaps");
+        assert!(
+            !archive_dir
+                .join(crate::persist::chunk_store::hash_to_hex(&old))
+                .exists(),
+            "expired archive entry hard-deleted"
+        );
+        assert!(
+            archive_dir
+                .join(crate::persist::chunk_store::hash_to_hex(&fresh))
+                .exists(),
+            "fresh archive entry survives within grace"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&archive_dir);
     }
 
     #[test]

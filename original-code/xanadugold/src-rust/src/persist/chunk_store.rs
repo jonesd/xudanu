@@ -43,7 +43,7 @@ impl std::fmt::Display for ChunkError {
 
 impl std::error::Error for ChunkError {}
 
-fn hash_to_hex(hash: &[u8; 32]) -> String {
+pub fn hash_to_hex(hash: &[u8; 32]) -> String {
     hash.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
@@ -349,6 +349,91 @@ impl ChunkStore {
     pub fn chunk_exists(&self, hash: &[u8; 32]) -> bool {
         chunk_path(&self.base_dir, hash).exists()
             || legacy_chunk_path(&self.base_dir, hash).exists()
+    }
+
+    /// #142 archive-first GC: move a chunk to the archive tier
+    /// instead of deleting it. Content-preserving; recovery via
+    /// `restore_archived_chunk`. Returns false if no live chunk existed.
+    pub fn move_chunk_to_archive(&self, hash: &[u8; 32]) -> Result<bool, ChunkError> {
+        let src = match resolve_chunk_path(&self.base_dir, hash) {
+            Some(p) => p,
+            None => return Ok(false),
+        };
+        let archive_dir = self.base_dir.join("archive");
+        std::fs::create_dir_all(&archive_dir).map_err(|e| ChunkError::Io(e.to_string()))?;
+        let dst = archive_dir.join(hash_to_hex(hash));
+        if dst.exists() {
+            // Already archived (e.g. re-orphaned after restore) — just
+            // remove the live copy; the stamp refreshes below.
+            let _ = std::fs::remove_file(&src);
+        } else {
+            std::fs::rename(&src, &dst).map_err(|e| ChunkError::Io(e.to_string()))?;
+        }
+        // Stamp with the archive generation so the grace horizon is
+        // enforceable across restarts. Stamp file: <hex>.gen
+        let stamp = archive_dir.join(format!("{}.gen", hash_to_hex(hash)));
+        std::fs::write(&stamp, b"0").map_err(|e| ChunkError::Io(e.to_string()))?;
+        {
+            let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+            cache.entries.remove(hash);
+            cache.order.retain(|h| h != hash);
+        }
+        Ok(true)
+    }
+
+    /// #142: restore an archived chunk back to live storage.
+    pub fn restore_archived_chunk(&self, hash: &[u8; 32]) -> Result<bool, ChunkError> {
+        let archive_dir = self.base_dir.join("archive");
+        let src = archive_dir.join(hash_to_hex(hash));
+        if !src.exists() {
+            return Ok(false);
+        }
+        let dst = chunk_path(&self.base_dir, hash);
+        if let Some(parent) = dst.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| ChunkError::Io(e.to_string()))?;
+        }
+        std::fs::copy(&src, &dst).map_err(|e| ChunkError::Io(e.to_string()))?;
+        // Copy preserves the archive original for idempotent restore.
+        Ok(true)
+    }
+
+    /// #142: hard-delete archived chunks whose grace horizon
+    /// (checkpoint generations) has elapsed. Returns count deleted.
+    /// `current_gen` is the server's checkpoint sequence number.
+    pub fn reap_expired_archive(
+        &self,
+        current_gen: u64,
+        grace_generations: u64,
+    ) -> Result<u64, ChunkError> {
+        let archive_dir = self.base_dir.join("archive");
+        if !archive_dir.exists() {
+            return Ok(0);
+        }
+        let mut reaped = 0u64;
+        let entries = std::fs::read_dir(&archive_dir).map_err(|e| ChunkError::Io(e.to_string()))?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string();
+            if let Some(hex) = name.strip_suffix(".gen") {
+                let Ok(stamp_str) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                let Ok(archived_gen) = stamp_str.trim().parse::<u64>() else {
+                    continue;
+                };
+                if current_gen.saturating_sub(archived_gen) >= grace_generations {
+                    let data_path = archive_dir.join(hex);
+                    let _ = std::fs::remove_file(&data_path);
+                    let _ = std::fs::remove_file(&path);
+                    reaped += 1;
+                }
+            }
+        }
+        Ok(reaped)
     }
 
     pub fn delete_chunk(&self, hash: &[u8; 32]) -> Result<(), ChunkError> {
