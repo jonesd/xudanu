@@ -156,12 +156,8 @@ jobs:
           # packaged GNU cross-toolchain, aws-lc happy, no downloads.
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
-          mkdir -p original-code/xanadugold/src-rust/.cargo
-          printf '%s\n' \
-            '[target.aarch64-unknown-linux-gnu]' \
-            'linker = "aarch64-linux-gnu-gcc"' \
-            'rustflags = ["-C", "link-arg=-fuse-ld=bfd"]' \
-            > original-code/xanadugold/src-rust/.cargo/config.toml
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS=-C link-arg=-fuse-ld=bfd" >> "$GITHUB_ENV"
 
       - name: Test
         if: matrix.run_test
