@@ -2,6 +2,7 @@ use super::protocol::*;
 use super::shared::SharedState;
 use crate::edition::{BeId, Edition};
 use crate::server::Server;
+use crate::server::ServerError;
 use std::collections::HashMap;
 
 const LLM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
@@ -13,6 +14,62 @@ fn llm_semaphore() -> &'static tokio::sync::Semaphore {
     LLM_SEMAPHORE.get_or_init(|| tokio::sync::Semaphore::new(LLM_MAX_CONCURRENCY))
 }
 
+/// Build the wire payload for a link (FR-40): named ends beyond the
+/// two-ended fast path, derived type ends (Green's three-set,
+/// materialized on read), and home-document state.
+fn build_link_payload(
+    srv: &Server,
+    link_id: BeId,
+    origin: BeId,
+    destination: BeId,
+    link: &crate::edition::links::HyperLink,
+) -> LinkPayload {
+    let o_ref = link.end_at("LeftEnd").map(HyperRefPayload::from_hyper_ref);
+    let d_ref = link.end_at("RightEnd").map(HyperRefPayload::from_hyper_ref);
+    let (origin_archived, origin_title, origin_owner) = srv.link_endpoint_meta(origin);
+    let (destination_archived, destination_title, destination_owner) =
+        srv.link_endpoint_meta(destination);
+    let named_ends: Vec<(String, HyperRefPayload)> = link
+        .end_names()
+        .into_iter()
+        .filter(|n| *n != "LeftEnd" && *n != "RightEnd")
+        .filter_map(|n| {
+            link.end_at(n)
+                .map(|hr| (n.to_string(), HyperRefPayload::from_hyper_ref(hr)))
+        })
+        .collect();
+    let type_ends: Vec<(u64, BeId)> = link
+        .link_types()
+        .iter()
+        .filter_map(|&tid| srv.link_type_definition(tid).map(|dw| (tid, dw)))
+        .collect();
+    let home_document = srv.link_home_document(link_id);
+    let home_archived = home_document
+        .map(|h| srv.link_endpoint_meta(h).0)
+        .unwrap_or(false);
+    let notify = srv.link_cross_server_notify(link_id);
+    LinkPayload {
+        link_id,
+        origin,
+        destination,
+        origin_ref: o_ref,
+        destination_ref: d_ref,
+        origin_archived,
+        origin_title,
+        origin_owner,
+        destination_archived,
+        destination_title,
+        destination_owner,
+        named_ends,
+        link_types: link.link_types().to_vec(),
+        type_ends,
+        home_document,
+        home_archived,
+        cross_server_notify_accepted: notify.as_ref().map(|n| n.accepted),
+        cross_server_notify_error: notify.and_then(|n| n.error),
+    }
+}
+
 pub fn dispatch(
     state: &SharedState,
     session_id: crate::server::SessionId,
@@ -22,7 +79,27 @@ pub fn dispatch(
     let op_name = op_name.split_whitespace().next().unwrap_or("?");
     let span = tracing::info_span!("dispatch", op = op_name, session = session_id.as_u64());
     let _enter = span.enter();
+    // FR-43: per-op wall time into the metrics sink. Covers the whole
+    // dispatch incl. lock acquisition — lock-wait is part of the cost
+    // users feel.
+    let __metrics_start = std::time::Instant::now();
+    let __metrics_op = op_name.to_string();
 
+    struct MetricsGuard<'a> {
+        state: &'a SharedState,
+        op: String,
+        start: std::time::Instant,
+    }
+    impl Drop for MetricsGuard<'_> {
+        fn drop(&mut self) {
+            self.state.metrics.record(&self.op, self.start.elapsed());
+        }
+    }
+    let _metrics_guard = MetricsGuard {
+        state,
+        op: __metrics_op,
+        start: __metrics_start,
+    };
     if matches!(request, WireRequest::WorkDiffNarration { .. }) {
         return dispatch_narration(state, session_id, request);
     }
@@ -665,7 +742,9 @@ fn dispatch_inner(
 
         WireRequest::WorkCreate { edition } => {
             srv.ensure_authenticated(session_id)?;
-            let ed = edition.to_edition();
+            let ed = edition
+                .to_edition_checked(0)
+                .map_err(ServerError::InvalidArgument)?;
             let id = srv.create_work(session_id, ed)?;
             Ok(ResponseValue::Id(id))
         }
@@ -679,7 +758,9 @@ fn dispatch_inner(
         }
         WireRequest::WorkRevise { work_id, edition } => {
             srv.ensure_authenticated(session_id)?;
-            let ed = edition.to_edition();
+            let ed = edition
+                .to_edition_checked(work_id)
+                .map_err(ServerError::InvalidArgument)?;
             let rev = srv.work_revise(session_id, work_id, ed)?;
             // FR-37 Phase 2: a full-edition revise changes source
             // content exactly like a delta — dependents' caches must be
@@ -791,7 +872,9 @@ fn dispatch_inner(
         }
         WireRequest::WorkSaveAndRelease { work_id, edition } => {
             srv.ensure_authenticated(session_id)?;
-            let ed = edition.to_edition();
+            let ed = edition
+                .to_edition_checked(work_id)
+                .map_err(ServerError::InvalidArgument)?;
             srv.work_save_and_release(session_id, work_id, ed)?;
             Ok(ResponseValue::Void)
         }
@@ -842,6 +925,25 @@ fn dispatch_inner(
         WireRequest::WorkStar { work_id } => {
             srv.work_star(session_id, work_id)?;
             Ok(ResponseValue::Void)
+        }
+        WireRequest::WorkSetSource { work_id, is_source } => {
+            srv.work_set_source(session_id, work_id, is_source)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::WebFetchSanitize {
+            url,
+            max_chars,
+            import_as_source,
+            title,
+        } => {
+            let result = srv.web_fetch_sanitize(
+                session_id,
+                &url,
+                max_chars,
+                import_as_source.unwrap_or(false),
+                title,
+            )?;
+            Ok(ResponseValue::WebFetchSanitizeResult(result))
         }
         WireRequest::WorkSetTitle { work_id, title } => {
             srv.ensure_can_edit(session_id, work_id)?;
@@ -1078,6 +1180,14 @@ fn dispatch_inner(
             srv.ensure_authenticated(session_id)?;
             srv.trail_update(session_id, trail_id, introduction, categories)?;
             Ok(ResponseValue::Void)
+        }
+        WireRequest::TrailDerivedWork { trail_id } => {
+            // FR-37 4d: write op — first call may create the derived
+            // work; generation-checked (crum equality) so repeat calls
+            // are cheap.
+            srv.ensure_authenticated(session_id)?;
+            let wid = srv.ensure_trail_derived_work(session_id, trail_id)?;
+            Ok(ResponseValue::Humber(wid))
         }
         WireRequest::TrailPublish { trail_id } => {
             srv.ensure_authenticated(session_id)?;
@@ -1369,7 +1479,9 @@ fn dispatch_inner(
 
         WireRequest::EditionStore { edition } => {
             srv.ensure_authenticated(session_id)?;
-            let ed = edition.to_edition();
+            let ed = edition
+                .to_edition_checked(0)
+                .map_err(ServerError::InvalidArgument)?;
             let id = srv.store_edition(session_id, ed)?;
             Ok(ResponseValue::Id(id))
         }
@@ -1452,6 +1564,10 @@ fn dispatch_inner(
             ))
         }
 
+        WireRequest::MetricsSnapshot => {
+            let rows = state.metrics.snapshot();
+            Ok(ResponseValue::MetricsSnapshotResult(rows))
+        }
         WireRequest::ServerStats => Ok(ResponseValue::ServerInfo(
             super::protocol::ServerInfoPayload {
                 version: env!("CARGO_PKG_VERSION").to_string(),
@@ -1577,10 +1693,14 @@ fn dispatch_inner(
             origin_ref,
             destination_ref,
             link_types,
+            home_document,
         } => {
             srv.ensure_authenticated(session_id)?;
             srv.ensure_can_read(session_id, origin)?;
             srv.ensure_can_read(session_id, destination)?;
+            if let Some(home) = home_document {
+                srv.ensure_can_read(session_id, home)?;
+            }
             let destination_ref_payload = destination_ref.clone();
             let o_ref = origin_ref.map(|hr| {
                 tracing::info!(
@@ -1640,7 +1760,7 @@ fn dispatch_inner(
                 hr_built
             });
             let link_id = if link_types.is_empty() {
-                srv.create_link(session_id, origin, destination, o_ref, d_ref)?
+                srv.create_link_homed(session_id, origin, destination, o_ref, d_ref, home_document)?
             } else {
                 let chain = srv.compute_provenance_chain(origin);
                 let o_with_chain = o_ref
@@ -1654,7 +1774,7 @@ fn dispatch_inner(
                 });
                 let link =
                     crate::edition::links::HyperLink::make(link_types, o_with_chain, d_final);
-                srv.create_link_with_hyperlink(session_id, link)?
+                srv.create_link_with_hyperlink_homed(session_id, link, home_document)?
             };
 
             if let Some(ref d_hyper_ref) = destination_ref_payload {
@@ -1689,12 +1809,48 @@ fn dispatch_inner(
                                 "Sending cross-server backlink notification to {}",
                                 notify_url
                             );
-                            if let Err(e) = crate::server::server::http_post_json(
+                            // FR-40 sender feedback: record the definitive
+                            // outcome on the link so the creating user
+                            // learns whether the receiving server
+                            // accepted it (queryable via link_get).
+                            // Timeout is deliberately short: this runs
+                            // inline on the dispatch path — a network
+                            // blackhole must not stall other users.
+                            match crate::server::server::http_post_json_status(
                                 &notify_url,
                                 &notify_body.to_string(),
-                                10,
+                                5,
                             ) {
-                                tracing::warn!("Cross-server backlink notification failed: {}", e);
+                                Ok((status, resp_body)) if (200..300).contains(&status) => {
+                                    srv.set_link_cross_server_notify(link_id, true, None);
+                                }
+                                Ok((status, resp_body)) => {
+                                    let reason = if resp_body.trim().is_empty() {
+                                        format!("receiving server returned HTTP {}", status)
+                                    } else {
+                                        format!(
+                                            "receiving server rejected (HTTP {}): {}",
+                                            status,
+                                            resp_body.trim().chars().take(200).collect::<String>()
+                                        )
+                                    };
+                                    tracing::warn!(
+                                        "Cross-server backlink notification rejected: {}",
+                                        reason
+                                    );
+                                    srv.set_link_cross_server_notify(link_id, false, Some(reason));
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Cross-server backlink notification failed: {}",
+                                        e
+                                    );
+                                    srv.set_link_cross_server_notify(
+                                        link_id,
+                                        false,
+                                        Some(format!("could not reach receiving server: {}", e)),
+                                    );
+                                }
                             }
                         }
                     }
@@ -1707,43 +1863,13 @@ fn dispatch_inner(
             let (origin, destination, link) = srv.get_link(link_id)?;
             srv.ensure_can_read(session_id, origin)?;
             srv.ensure_can_read(session_id, destination)?;
-            let o_ref = link
-                .end_at("LeftEnd")
-                .map(super::protocol::HyperRefPayload::from_hyper_ref);
-            let d_ref = link
-                .end_at("RightEnd")
-                .map(super::protocol::HyperRefPayload::from_hyper_ref);
-            let (origin_archived, origin_title, origin_owner) = srv.link_endpoint_meta(origin);
-            let (destination_archived, destination_title, destination_owner) =
-                srv.link_endpoint_meta(destination);
-            let named_ends: Vec<(String, super::protocol::HyperRefPayload)> = link
-                .end_names()
-                .into_iter()
-                .filter_map(|name| {
-                    link.end_at(name).map(|hr| {
-                        (
-                            name.to_string(),
-                            super::protocol::HyperRefPayload::from_hyper_ref(hr),
-                        )
-                    })
-                })
-                .collect();
-            let link_types = link.link_types().to_vec();
-            Ok(ResponseValue::LinkInfo(super::protocol::LinkPayload {
+            Ok(ResponseValue::LinkInfo(build_link_payload(
+                srv,
                 link_id,
                 origin,
                 destination,
-                origin_ref: o_ref,
-                destination_ref: d_ref,
-                origin_archived,
-                origin_title,
-                origin_owner,
-                destination_archived,
-                destination_title,
-                destination_owner,
-                named_ends,
-                link_types,
-            }))
+                link,
+            )))
         }
         WireRequest::LinkUpdate {
             link_id,
@@ -1840,33 +1966,10 @@ fn dispatch_inner(
             let all: Vec<_> = srv
                 .list_links_for_work(work_id)
                 .into_iter()
+                .filter(|&(link_id, _, _)| !srv.link_hidden_by_home_archive(link_id))
                 .filter_map(|(link_id, origin, destination)| {
                     let (_, _, link) = srv.get_link(link_id).ok()?;
-                    let o_ref = link
-                        .end_at("LeftEnd")
-                        .map(super::protocol::HyperRefPayload::from_hyper_ref);
-                    let d_ref = link
-                        .end_at("RightEnd")
-                        .map(super::protocol::HyperRefPayload::from_hyper_ref);
-                    let (origin_archived, origin_title, origin_owner) =
-                        srv.link_endpoint_meta(origin);
-                    let (destination_archived, destination_title, destination_owner) =
-                        srv.link_endpoint_meta(destination);
-                    Some(super::protocol::LinkPayload {
-                        link_id,
-                        origin,
-                        destination,
-                        origin_ref: o_ref,
-                        destination_ref: d_ref,
-                        origin_archived,
-                        origin_title,
-                        origin_owner,
-                        destination_archived,
-                        destination_title,
-                        destination_owner,
-                        named_ends: Vec::new(),
-                        link_types: link.link_types().to_vec(),
-                    })
+                    Some(build_link_payload(srv, link_id, origin, destination, link))
                 })
                 .collect();
             let total_count = all.len() as u64;
@@ -1906,18 +2009,43 @@ fn dispatch_inner(
             srv.link_set_types(session_id, link_id, link_types)?;
             Ok(ResponseValue::Void)
         }
-        WireRequest::LinkTypeRegister { type_id, name } => {
+        WireRequest::LinkTypeRegister {
+            type_id,
+            name,
+            definition_work,
+        } => {
             srv.ensure_authenticated(session_id)?;
-            srv.register_link_type(type_id, name);
+            srv.register_link_type_checked(session_id, type_id, name, definition_work)?;
             Ok(ResponseValue::Void)
         }
         WireRequest::LinkTypeList => {
             let types = srv
                 .list_link_types()
                 .into_iter()
-                .map(|(type_id, name)| super::protocol::LinkTypeInfoPayload { type_id, name })
+                .map(|(type_id, name)| super::protocol::LinkTypeInfoPayload {
+                    type_id,
+                    name,
+                    definition_work: srv.link_type_definition(type_id),
+                })
                 .collect();
             Ok(ResponseValue::LinkTypes(types))
+        }
+        WireRequest::LinkQuery {
+            from_spec,
+            to_spec,
+            type_ids,
+            home_spec,
+        } => {
+            let matches =
+                srv.link_query(session_id, &from_spec, &to_spec, &type_ids, &home_spec)?;
+            let entries: Vec<_> = matches
+                .into_iter()
+                .filter_map(|(link_id, origin, destination)| {
+                    let (_, _, link) = srv.get_link(link_id).ok()?;
+                    Some(build_link_payload(srv, link_id, origin, destination, link))
+                })
+                .collect();
+            Ok(ResponseValue::LinkList(entries))
         }
         WireRequest::FindExcerptPositions { work_id, excerpt } => {
             srv.ensure_can_read(session_id, work_id)?;
@@ -2162,7 +2290,9 @@ fn dispatch_inner(
             new_edition,
         } => {
             srv.ensure_authenticated(session_id)?;
-            let ed = new_edition.to_edition();
+            let ed = new_edition
+                .to_edition_checked(work_id)
+                .map_err(ServerError::InvalidArgument)?;
             let updated = srv.edition_rebind(session_id, work_id, position, ed)?;
             Ok(ResponseValue::Edition(EditionPayload::from_edition(
                 &updated,
@@ -2259,6 +2389,26 @@ fn dispatch_inner(
                 billed_bytes: cost.billed_bytes(),
                 method: format!("{:?}", cm).to_lowercase(),
             })
+        }
+        WireRequest::CrossServerSpanRefresh {
+            source_work,
+            update,
+        } => {
+            let payload = srv.cross_server_span_refresh(session_id, source_work, update)?;
+            Ok(ResponseValue::CrossServerSpanRefresh(payload))
+        }
+        WireRequest::TransclusionPlaceCrossServer {
+            dest_work,
+            cursor,
+            tumbler,
+            span_start,
+            span_end,
+            title_hint,
+        } => {
+            let payload = srv.transclusion_place_cross_server(
+                session_id, dest_work, cursor, &tumbler, span_start, span_end, title_hint,
+            )?;
+            Ok(ResponseValue::CrossServerTransclusion(payload))
         }
         WireRequest::ElementInsert {
             work_id,
@@ -3165,7 +3315,12 @@ fn dispatch_inner(
 
         WireRequest::CrdtAwarenessGet { work_id } => {
             srv.ensure_logged_in(session_id)?;
-            let states = srv.crdt_get_awareness(work_id)?;
+            let mut states = srv.crdt_get_awareness(work_id)?;
+            // Never echo the requester their own presence: the state
+            // carries the SERVER-side masked SessionId, which clients
+            // cannot predict from their session_connect id — the
+            // self-echo rendered as a phantom "remote" caret.
+            states.retain(|s| s.session_id != session_id.as_u64());
             Ok(ResponseValue::CrdtAwarenessGetResult { states })
         }
 
@@ -3647,9 +3802,12 @@ fn dispatch_inner(
                 total_works_matched,
             })
         }
-        WireRequest::SeedDemoAttribution { work_id } => {
+        WireRequest::SeedDemoAttribution {
+            work_id,
+            author_count,
+        } => {
             srv.ensure_authenticated(session_id)?;
-            srv.seed_demo_attribution(work_id)?;
+            srv.seed_demo_attribution(session_id, work_id, author_count)?;
             Ok(ResponseValue::Boolean(true))
         }
         #[cfg(feature = "serde")]
@@ -3808,6 +3966,23 @@ fn dispatch_inner(
         #[cfg(feature = "serde")]
         WireRequest::FederatedSearch { query } => {
             srv.ensure_session(session_id)?;
+            // FR-41 S1: fan-outs cost the peers real work — a single
+            // session spamming federated_search is an amplifier
+            // vector. 10/minute per session.
+            if !state
+                .rate_limiter
+                .check_federated_search(session_id.as_u64())
+            {
+                tracing::warn!(
+                    target: "xudanu::security",
+                    session = session_id.as_u64(),
+                    event = "SECURITY:federated_search_rate_limited",
+                    "federated search rate limit exceeded"
+                );
+                return Err(ServerError::Unauthorized(
+                    "too many federated searches, wait a moment".into(),
+                ));
+            }
             let results = srv.federated_search(&query);
             Ok(ResponseValue::FederatedSearchResult { results })
         }
@@ -3853,15 +4028,38 @@ fn dispatch_inner(
                 link_type.clone(),
             );
             let local_title = srv.work_title(local_work_id).unwrap_or_default();
-            srv.send_backlink_notification(
-                remote_server_id,
-                &remote_tumbler,
-                local_work_id,
-                &local_title,
-                "",
-                &link_type,
-            );
-            Ok(ResponseValue::CrossServerLinkCreateResult { created: true })
+            // FR-40 sender feedback: notify synchronously and surface
+            // the definitive outcome to the creating user instead of
+            // fire-and-forget. Ok(None) = remote server not in the
+            // directory (no notification attempted).
+            let (remote_accepted, notify_error) = match srv
+                .send_backlink_notification_sync(
+                    remote_server_id,
+                    &remote_tumbler,
+                    local_work_id,
+                    &local_title,
+                    "",
+                    &link_type,
+                ) {
+                Ok(Some(_)) => (Some(true), None),
+                Ok(None) => (None, Some(format!(
+                    "remote server {} not in the server directory — the link is saved locally but the remote was not notified",
+                    remote_server_id
+                ))),
+                Err(e) => (Some(false), Some(e)),
+            };
+            if let Some(err) = &notify_error {
+                tracing::warn!(
+                    "Cross-server link notification outcome: accepted={:?} reason={}",
+                    remote_accepted,
+                    err
+                );
+            }
+            Ok(ResponseValue::CrossServerLinkCreateResult {
+                created: true,
+                remote_accepted,
+                notify_error,
+            })
         }
         #[cfg(feature = "serde")]
         WireRequest::CrossServerLinkList { work_id } => {
@@ -4419,43 +4617,13 @@ fn dispatch_inner_read(
             let (origin, destination, link) = srv.get_link(link_id)?;
             srv.ensure_can_read(session_id, origin)?;
             srv.ensure_can_read(session_id, destination)?;
-            let o_ref = link
-                .end_at("LeftEnd")
-                .map(super::protocol::HyperRefPayload::from_hyper_ref);
-            let d_ref = link
-                .end_at("RightEnd")
-                .map(super::protocol::HyperRefPayload::from_hyper_ref);
-            let (origin_archived, origin_title, origin_owner) = srv.link_endpoint_meta(origin);
-            let (destination_archived, destination_title, destination_owner) =
-                srv.link_endpoint_meta(destination);
-            let named_ends: Vec<(String, super::protocol::HyperRefPayload)> = link
-                .end_names()
-                .into_iter()
-                .filter_map(|name| {
-                    link.end_at(name).map(|hr| {
-                        (
-                            name.to_string(),
-                            super::protocol::HyperRefPayload::from_hyper_ref(hr),
-                        )
-                    })
-                })
-                .collect();
-            let link_types = link.link_types().to_vec();
-            Ok(ResponseValue::LinkInfo(super::protocol::LinkPayload {
+            Ok(ResponseValue::LinkInfo(build_link_payload(
+                srv,
                 link_id,
                 origin,
                 destination,
-                origin_ref: o_ref,
-                destination_ref: d_ref,
-                origin_archived,
-                origin_title,
-                origin_owner,
-                destination_archived,
-                destination_title,
-                destination_owner,
-                named_ends,
-                link_types,
-            }))
+                link,
+            )))
         }
         WireRequest::LinkListForWork {
             work_id,
@@ -4466,33 +4634,10 @@ fn dispatch_inner_read(
             let all: Vec<_> = srv
                 .list_links_for_work(work_id)
                 .into_iter()
+                .filter(|&(link_id, _, _)| !srv.link_hidden_by_home_archive(link_id))
                 .filter_map(|(link_id, origin, destination)| {
                     let (_, _, link) = srv.get_link(link_id).ok()?;
-                    let o_ref = link
-                        .end_at("LeftEnd")
-                        .map(super::protocol::HyperRefPayload::from_hyper_ref);
-                    let d_ref = link
-                        .end_at("RightEnd")
-                        .map(super::protocol::HyperRefPayload::from_hyper_ref);
-                    let (origin_archived, origin_title, origin_owner) =
-                        srv.link_endpoint_meta(origin);
-                    let (destination_archived, destination_title, destination_owner) =
-                        srv.link_endpoint_meta(destination);
-                    Some(super::protocol::LinkPayload {
-                        link_id,
-                        origin,
-                        destination,
-                        origin_ref: o_ref,
-                        destination_ref: d_ref,
-                        origin_archived,
-                        origin_title,
-                        origin_owner,
-                        destination_archived,
-                        destination_title,
-                        destination_owner,
-                        named_ends: Vec::new(),
-                        link_types: link.link_types().to_vec(),
-                    })
+                    Some(build_link_payload(srv, link_id, origin, destination, link))
                 })
                 .collect();
             let total_count = all.len() as u64;
@@ -4506,11 +4651,32 @@ fn dispatch_inner_read(
                 has_more,
             })
         }
+        WireRequest::LinkQuery {
+            from_spec,
+            to_spec,
+            type_ids,
+            home_spec,
+        } => {
+            let matches =
+                srv.link_query(session_id, &from_spec, &to_spec, &type_ids, &home_spec)?;
+            let entries: Vec<_> = matches
+                .into_iter()
+                .filter_map(|(link_id, origin, destination)| {
+                    let (_, _, link) = srv.get_link(link_id).ok()?;
+                    Some(build_link_payload(srv, link_id, origin, destination, link))
+                })
+                .collect();
+            Ok(ResponseValue::LinkList(entries))
+        }
         WireRequest::LinkTypeList => {
             let types = srv
                 .list_link_types()
                 .into_iter()
-                .map(|(type_id, name)| super::protocol::LinkTypeInfoPayload { type_id, name })
+                .map(|(type_id, name)| super::protocol::LinkTypeInfoPayload {
+                    type_id,
+                    name,
+                    definition_work: srv.link_type_definition(type_id),
+                })
                 .collect();
             Ok(ResponseValue::LinkTypes(types))
         }
@@ -4595,29 +4761,19 @@ fn dispatch_inner_read(
         }
 
         WireRequest::ResolveInlineTransclusions { work_id } => {
-            srv.ensure_can_read(session_id, work_id)?;
-            let result = srv.resolve_inline_transclusions(work_id)?;
-            for sr in &result.span_ranges {
-                srv.ensure_can_read(session_id, sr.source_work_id)?;
-            }
-            Ok(ResponseValue::ResolveInlineTransclusionsResult {
-                text: result.text,
-                span_ranges: result
-                    .span_ranges
-                    .iter()
-                    .map(SpanRangePayload::from_span_range)
-                    .collect(),
-                source_titles: result.source_titles,
-            })
+            // Materializing resolver — handled on the mutable dispatch
+            // path (materialize_virtual_elements writes).
+            let _ = work_id;
+            return Err(ServerError::Internal(
+                "resolve_inline_transclusions requires the mutable dispatch path".into(),
+            ));
         }
         WireRequest::AttributionQueryResolved { work_id } => {
-            srv.ensure_can_read(session_id, work_id)?;
-            let resolved = srv.resolve_inline_transclusions(work_id)?;
-            for sr in &resolved.span_ranges {
-                srv.ensure_can_read(session_id, sr.source_work_id)?;
-            }
-            let spans = srv.attribution_query_resolved(work_id)?;
-            Ok(ResponseValue::AttributionQueryResult { spans })
+            // Materializing resolver — handled on the mutable dispatch path.
+            let _ = work_id;
+            return Err(ServerError::Internal(
+                "attribution_query_resolved requires the mutable dispatch path".into(),
+            ));
         }
         WireRequest::AdminServerHealth => {
             let health = srv.server_health();
@@ -4788,7 +4944,12 @@ fn dispatch_inner_read(
         }
         WireRequest::CrdtAwarenessGet { work_id } => {
             srv.ensure_logged_in(session_id)?;
-            let states = srv.crdt_get_awareness(work_id)?;
+            let mut states = srv.crdt_get_awareness(work_id)?;
+            // Never echo the requester their own presence: the state
+            // carries the SERVER-side masked SessionId, which clients
+            // cannot predict from their session_connect id — the
+            // self-echo rendered as a phantom "remote" caret.
+            states.retain(|s| s.session_id != session_id.as_u64());
             Ok(ResponseValue::CrdtAwarenessGetResult { states })
         }
         WireRequest::AttributionVerify {

@@ -1326,20 +1326,74 @@ fn group_consecutive(positions: &[i64]) -> Vec<(i64, i64)> {
     groups
 }
 
-fn try_migrate_span(span: &SpanProvenance, mapping: &Mapping) -> Option<SpanProvenance> {
+/// Split semantics: an edit inside a span divides the author's text
+/// into surviving fragments. Each fragment keeps the author's
+/// identity and original signature (which attests the pre-split
+/// content recorded in the append-only attribution log); the fragment
+/// covers ONLY its surviving characters — the editor's inserted text
+/// is not attributed to the original author.
+fn try_migrate_span_multi(span: &SpanProvenance, mapping: &Mapping) -> Vec<SpanProvenance> {
     let region = XnRegion::interval(span.start, span.end);
     let mapped = mapping.of_region(&region);
     let intervals = mapped.simple_regions();
 
     if intervals.len() == 1 {
         let (new_start, new_end) = intervals[0];
-        Some(SpanProvenance {
+        vec![SpanProvenance {
             start: new_start,
             end: new_end,
             provenance: span.provenance.clone(),
-        })
+        }]
+    } else if intervals.len() > 1 {
+        // Split: one fragment per mapped interval of the AUTHOR'S OWN
+        // text. Gaps between intervals are the editor's insertions —
+        // they get no fragment here.
+        intervals
+            .into_iter()
+            .map(|(s, e)| SpanProvenance {
+                start: s,
+                end: e.max(s + 1),
+                provenance: span.provenance.clone(),
+            })
+            .collect()
     } else {
-        None
+        // The H1 incident shape: build_merge_mapping matches entries
+        // by content fingerprint, so an edit INSIDE a span's entry
+        // (prefixing "# " to a coalesced author region) leaves the
+        // whole region unmapped. Entry-granular fallback: the span
+        // keeps covering its surviving text via the neighbourhood
+        // envelope (positions just before/after map reliably — their
+        // entries were untouched).
+        let lo_env = mapping.of_region(&XnRegion::interval(span.start - 1, span.start));
+        let hi_env = mapping.of_region(&XnRegion::interval(span.end, span.end + 1));
+        let lo = lo_env.simple_regions();
+        let hi = hi_env.simple_regions();
+        if let (Some((lo_s, _)), Some((_, hi_e))) = (lo.first(), hi.last()) {
+            let new_start = *lo_s;
+            let new_end = (*hi_e).max(new_start + 1);
+            if new_end > new_start {
+                return vec![SpanProvenance {
+                    start: new_start,
+                    end: new_end,
+                    provenance: span.provenance.clone(),
+                }];
+            }
+        }
+        // Degenerate: span at the document edge with no mapped
+        // neighbours — anchor to the closest mapped positions.
+        let all = mapping
+            .of_region(&XnRegion::interval(i64::MIN / 2, i64::MAX / 2))
+            .simple_regions();
+        if let (Some(first), Some(last)) = (all.first(), all.last()) {
+            let new_start = if span.start == 0 { first.0 } else { last.0 };
+            let new_end = last.1.max(new_start + 1);
+            return vec![SpanProvenance {
+                start: new_start,
+                end: new_end,
+                provenance: span.provenance.clone(),
+            }];
+        }
+        Vec::new()
     }
 }
 
@@ -1349,7 +1403,7 @@ pub fn migrate_span_provenance_single(
 ) -> Vec<SpanProvenance> {
     spans
         .iter()
-        .filter_map(|span| try_migrate_span(span, mapping))
+        .flat_map(|span| try_migrate_span_multi(span, mapping))
         .collect()
 }
 
@@ -1362,12 +1416,10 @@ fn migrate_span_provenance(
     let mut result = Vec::new();
 
     for span in a_spans {
-        if let Some(migrated) = try_migrate_span(span, a_to_merged) {
-            result.push(migrated);
-        }
+        result.extend(try_migrate_span_multi(span, a_to_merged));
     }
     for span in b_spans {
-        if let Some(migrated) = try_migrate_span(span, b_to_merged) {
+        for migrated in try_migrate_span_multi(span, b_to_merged) {
             let is_dup = result.iter().any(|existing| {
                 existing.start == migrated.start
                     && existing.end == migrated.end
@@ -1392,6 +1444,89 @@ mod tests {
 
     fn text_edition(s: &str) -> Edition {
         Edition::from_text(s)
+    }
+
+    /// Regression: the H1 incident. A coalesced multi-author edition
+    /// (one big entry per author region) whose span-containing entry
+    /// is edited (prefix insert of "# ") must NOT lose that author's
+    /// span. build_merge_mapping matches entries by fingerprint; the
+    /// edited entry's fingerprint changes, the region maps to nothing,
+    /// and try_migrate_span dropped the span wholesale.
+    #[test]
+    fn span_survives_edit_inside_author_region() {
+        use ed25519_dalek::SigningKey;
+        let author_a = SigningKey::generate(&mut rand::rngs::OsRng);
+        let author_b = SigningKey::generate(&mut rand::rngs::OsRng);
+        let text_a = "AAAA".repeat(30);
+        let text_b = "BBBB".repeat(30);
+
+        let mk_prov = |key: &SigningKey, name: &str| ElementProvenance {
+            author_public_key: key.verifying_key().to_bytes(),
+            author_display_name: name.to_string(),
+            author_club_id: 1,
+            timestamp: 1000,
+            author_type: AuthorType::Human,
+            llm_model: None,
+            historical_author_id: None,
+            source_work_id: None,
+            transcluded_by: None,
+            derived_by: None,
+        };
+
+        // Build the two-entry coalesced edition the seeder produces.
+        let mut carrier_a =
+            crate::edition::range_element::Carrier::new(RangeElement::text(text_a.clone()));
+        carrier_a.provenance = Some(mk_prov(&author_a, "Author A"));
+        let mut carrier_b =
+            crate::edition::range_element::Carrier::new(RangeElement::text(text_b.clone()));
+        carrier_b.provenance = Some(mk_prov(&author_b, "Author B"));
+        let base = Edition::from_entries(vec![(0, Arc::new(carrier_a)), (1, Arc::new(carrier_b))]);
+
+        // Span provenance over the two entries (positions 0..1, 1..2).
+        let spans = vec![
+            SpanProvenance {
+                start: 0,
+                end: 1,
+                provenance: crate::edition::provenance::sign_span(
+                    &author_a,
+                    &[RangeElement::text(text_a.clone()).content_fingerprint()],
+                    1000,
+                    &[0u8; 32],
+                ),
+            },
+            SpanProvenance {
+                start: 1,
+                end: 2,
+                provenance: crate::edition::provenance::sign_span(
+                    &author_b,
+                    &[RangeElement::text(text_b.clone()).content_fingerprint()],
+                    1000,
+                    &[0u8; 32],
+                ),
+            },
+        ];
+        let base = base.with_span_provenance(spans);
+
+        // Simulate the user edit: insert "# " at the start of Author
+        // A's text. Rebuild the edition the way the edit path would
+        // (Author A's entry changes, Author B's is untouched).
+        let mut edited_a = crate::edition::range_element::Carrier::new(RangeElement::text(
+            format!("# {}", text_a),
+        ));
+        edited_a.provenance = Some(mk_prov(&author_a, "Author A"));
+        let edited = Edition::from_entries(vec![
+            (0, Arc::new(edited_a)),
+            (1, base.cached_entries()[1].1.clone()),
+        ]);
+
+        let mapping = build_merge_mapping(&base, &edited);
+        let migrated = migrate_span_provenance_single(base.span_provenance(), &mapping);
+
+        assert_eq!(
+            migrated.len(),
+            2,
+            "both author spans must survive an edit inside one region — the H1 regression"
+        );
     }
 
     #[test]
@@ -2546,10 +2681,18 @@ mod tests {
 
         assert_eq!(mr.merged.to_text(), "abXYZWc");
         let sp = mr.merged.span_provenance();
-        assert_eq!(
-            sp.len(),
-            0,
-            "span mapping to non-contiguous positions should be dropped"
+        // Split contract: the author's text survives as fragments
+        // around the other editor's XYZW insert; the inserted chars
+        // are not theirs. Never dropped.
+        assert!(
+            !sp.is_empty(),
+            "author attribution must survive a non-contiguous merge"
+        );
+        assert!(
+            sp.iter()
+                .all(|s| s.end <= 2 || s.start >= 6 || (s.end - s.start) <= 3),
+            "fragments cover only the author's characters, got {:?}",
+            sp.iter().map(|s| (s.start, s.end)).collect::<Vec<_>>()
         );
     }
 
@@ -2658,11 +2801,26 @@ mod tests {
         };
 
         let migrated = migrate_span_provenance_single(&[span], &mapping);
-        assert_eq!(
-            migrated.len(),
-            0,
-            "insertion in middle of span creates non-contiguous mapping"
+        // Split contract: the author keeps fragments covering exactly
+        // their surviving text; the editor's inserted 'X' is NOT
+        // attributed to them. 'a' -> [0,1), 'bc' -> [2,4).
+        assert!(
+            migrated.len() >= 1,
+            "mid-span insertion must never erase the author's attribution"
         );
+        let covered: Vec<(i64, i64)> = migrated.iter().map(|s| (s.start, s.end)).collect();
+        assert!(
+            covered.contains(&(0, 1)) && covered.contains(&(2, 4)),
+            "expected fragments [0,1) and [2,4) around the inserted 'X', got {:?}",
+            covered
+        );
+        for f in &migrated {
+            assert!(
+                !(f.start <= 1 && f.end > 1),
+                "no fragment may cover the editor's inserted character at 1, got {:?}",
+                covered
+            );
+        }
     }
 
     #[test]

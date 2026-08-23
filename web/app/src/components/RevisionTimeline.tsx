@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
-import type { CrdtSyncClient, RevisionMeta } from "../api/crdt_sync";
+import type { CrdtSyncClient, RevisionMeta, AttributionSpan } from "../api/crdt_sync";
+import { authorColor } from "../author-color";
 
 interface RevisionTimelineProps {
   workId: number | null;
   client: CrdtSyncClient | null;
-  onViewRevision: (revisionId: number, text: string) => void;
+  onViewRevision: (revisionId: number, textAtRevision: string) => void;
 }
 
 function formatDate(ts: number): string {
@@ -19,6 +20,7 @@ export function RevisionTimeline({ workId, client, onViewRevision }: RevisionTim
   const [editingDesc, setEditingDesc] = useState<number | null>(null);
   const [descText, setDescText] = useState("");
   const [viewingRevision, setViewingRevision] = useState<number | null>(null);
+  const [authors, setAuthors] = useState<AttributionSpan[] | null>(null);
 
   const loadRevisions = useCallback(async () => {
     if (!client || workId === null) {
@@ -40,6 +42,37 @@ export function RevisionTimeline({ workId, client, onViewRevision }: RevisionTim
   useEffect(() => {
     void loadRevisions();
   }, [loadRevisions]);
+
+  // Authorship summary: attribution spans of the CURRENT edition —
+  // complements the revision list (which shows who saved each
+  // revision) with who wrote which passage, proportionally.
+  useEffect(() => {
+    if (!client || workId === null) {
+      setAuthors(null);
+      return;
+    }
+    let cancelled = false;
+    client
+      .attributionQuery(workId)
+      .then((spans) => {
+        if (cancelled) return;
+        const named = spans.filter((s) => s.author_display_name);
+        const seen = new Set<string>();
+        const deduped = named.filter((s) => {
+          const key = s.author_display_name! + ":" + s.author_public_key.join(",");
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        setAuthors(deduped.length > 0 ? deduped : null);
+      })
+      .catch(() => {
+        if (!cancelled) setAuthors(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, workId]);
 
   const handleView = useCallback(async (revisionId: number) => {
     if (!client || workId === null) return;
@@ -100,6 +133,50 @@ export function RevisionTimeline({ workId, client, onViewRevision }: RevisionTim
 
   return (
     <div className="ws-timeline">
+      {authors && authors.length > 0 && (
+        <div className="ws-authors-summary">
+          <div className="ws-conn-header">
+            Authors ({authors.length})
+          </div>
+          <div className="ws-authors-bar">
+            {(() => {
+              const spans = [...authors].sort((a, b) => a.start - b.start);
+              const total = Math.max(1, spans[spans.length - 1].end);
+              return spans.map((s, i) => (
+                <div
+                  key={i}
+                  title={`${s.author_display_name} — ${s.end - s.start} chars${s.signature_valid ? " (verified)" : ""}`}
+                  style={{
+                    width: `${((s.end - s.start) / total) * 100}%`,
+                    background: authorColor(s.author_display_name || "unknown"),
+                    opacity: s.signature_valid ? 0.9 : 0.5,
+                    height: 8,
+                    display: "inline-block",
+                  }}
+                />
+              ));
+            })()}
+          </div>
+          {authors.map((s, i) => (
+            <div key={i} className="ws-authors-row">
+              <span
+                className="ws-authors-dot"
+                style={{ background: authorColor(s.author_display_name || "unknown") }}
+              />
+              <span className="ws-authors-name">{s.author_display_name}</span>
+              {s.author_type === "llm" && (
+                <span className="ws-authors-tag">LLM</span>
+              )}
+              {s.author_type === "historical" && (
+                <span className="ws-authors-tag">imported</span>
+              )}
+              <span className="ws-authors-sig" title={s.signature_valid ? "Signature verified (Ed25519)" : "Signature not valid"}>
+                {s.signature_valid ? "✓" : "⚠"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       {sorted.map((rev) => {
         const isCurrent = rev.revision_id === revisions.length - 1;
         const isEditing = editingDesc === rev.revision_id;

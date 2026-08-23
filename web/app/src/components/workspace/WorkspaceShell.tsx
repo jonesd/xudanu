@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { useCrdtSync } from "../../hooks/useCrdtSync";
 import { useWorkStore } from "../../store/work-store";
 import { useTransclusion, DEFAULT_LINK_TYPES } from "../../hooks/useTransclusion";
+import { linkEnds, isMultiEnded, multiEndWorkIds, notifyStatus } from "../../link-ends";
+import { MultiEndCompare } from "../MultiEndCompare";
 import { useCompoundEdition } from "../../hooks/useCompoundEdition";
 import { authorColorPair } from "../../author-color";
 import { CollaborativeEditor } from "../CollaborativeEditor";
@@ -35,7 +37,7 @@ import { AdminDashboard } from "../AdminDashboard";
 import { DocumentSettings, loadDocPreferences } from "../DocumentSettings";
 import type { DocPreferences } from "../DocumentSettings";
 import type { CrossServerBacklinkPayload } from "../../api/crdt_sync";
-import { getCursorOffset, setCursorOffset } from "../../styled-text";
+import { getCursorOffset, setCaretModel } from "../../styled-text";
 import { SEED_CONCEPTS } from "../../concepts-seed";
 import { WorkspaceTopBar } from "./WorkspaceTopBar";
 import type { WorkspaceNavTab } from "./WorkspaceTopBar";
@@ -46,7 +48,7 @@ import "../../workspace.css";
 const WS_URL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/xudanu`;
 
 type LeftRailMode = "graph" | "outline";
-type RightPanelTab = "provenance" | "connections" | "trails" | "timeline" | "servers" | "more";
+type RightPanelTab = "provenance" | "connections" | "trails" | "timeline" | "servers" | "compare" | "more";
 
 interface WorkMeta {
   title: string;
@@ -166,6 +168,7 @@ export function WorkspaceShell() {
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [showTrailsPanel, setShowTrailsPanel] = useState(false);
+
   const [trailsForWork, setTrailsForWork] = useState<TrailPayload[]>([]);
   const [trailsLoading, setTrailsLoading] = useState(false);
   const [addToSelector, setAddToSelector] = useState<{ trailId: number; trailName: string } | null>(null);
@@ -198,6 +201,7 @@ export function WorkspaceShell() {
   const [showImport, setShowImport] = useState(false);
   const [demoTrigger, setDemoTrigger] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
+  const [isFrozen, setIsFrozen] = useState(false);
   const [crossServerBacklinks, setCrossServerBacklinks] = useState<CrossServerBacklinkPayload[]>([]);
   const [whereUsed, setWhereUsed] = useState<{ edition_ids: number[]; work_ids: number[] } | null>(null);
   const [whereUsedLoading, setWhereUsedLoading] = useState(false);
@@ -205,6 +209,14 @@ export function WorkspaceShell() {
   const [provenanceLoading, setProvenanceLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeLinkTypes, setActiveLinkTypes] = useState<Set<number>>(new Set());
+  const [multiCompareWorkIds, setMultiCompareWorkIds] = useState<number[]>([]);
+  // Provenance underlines are ON by default: the light floating
+  // underline is subtle enough for reading, and authorship visibility
+  // is the signature capability. localStorage still overrides for
+  // users who prefer clean text.
+  const [showProv, setShowProv] = useState(() => {
+    try { return localStorage.getItem("xudanu_showProv") !== "false"; } catch { return true; }
+  });
   const [showLinkDesc, setShowLinkDesc] = useState(() => {
     try { return localStorage.getItem("xudanu_showLinkDesc") !== "false"; }
     catch { return true; }
@@ -270,11 +282,45 @@ export function WorkspaceShell() {
     awareness,
     login,
     createIdentity,
+    changePassword,
     logout,
     reconnectAttempt,
     switchingWork,
     publicClubId,
   } = crdt;
+
+  // FR-41 S1: directory snapshot for the network search tab.
+  const [serverDirectoryForSearch, setServerDirectoryForSearch] = useState<
+    { address: string; port?: number | null; name: string }[]
+  >([]);
+  useEffect(() => {
+    if (!connected || !clientRef.current) return;
+    const client = clientRef.current;
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await client.sendRequest("server_directory_list", {});
+        const val = (resp as { value?: unknown }).value;
+        const list = Array.isArray(val)
+          ? val
+          : ((val as { value?: unknown[] })?.value as unknown[]) ?? [];
+        if (!cancelled) {
+          setServerDirectoryForSearch(
+            (list as { address: string; port: number | null; name: string }[]).map((s) => ({
+              address: s.address,
+              port: s.port,
+              name: s.name,
+            })),
+          );
+        }
+      } catch {
+        if (!cancelled) setServerDirectoryForSearch([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [connected, clientRef]);
 
   // Load blob elements from server when work changes
   useEffect(() => {
@@ -393,6 +439,53 @@ export function WorkspaceShell() {
     window.history.replaceState({}, "", url.toString());
   }, [navTab]);
 
+  // Trail following: the trail being followed and current stop index.
+  // Persisted so a refresh mid-tour resumes where the reader left off.
+  const [followTrail, setFollowTrail] = useState<{ name: string; stops: Array<{ work_id: number; note?: string | null }> } | null>(() => {
+    try {
+      const raw = localStorage.getItem("xudanu_follow_trail");
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  });
+  const [followIndex, setFollowIndex] = useState<number>(() => {
+    try { return Number(localStorage.getItem("xudanu_follow_index") || 0); } catch { return 0; }
+  });
+  useEffect(() => {
+    try {
+      if (followTrail) {
+        localStorage.setItem("xudanu_follow_trail", JSON.stringify(followTrail));
+        localStorage.setItem("xudanu_follow_index", String(followIndex));
+      } else {
+        localStorage.removeItem("xudanu_follow_trail");
+        localStorage.removeItem("xudanu_follow_index");
+      }
+    } catch { /* no-op */ }
+  }, [followTrail, followIndex]);
+  const startTrail = useCallback((name: string, stops: Array<{ work_id: number; note?: string | null }>) => {
+    if (stops.length === 0) return;
+    setFollowTrail({ name, stops });
+    setFollowIndex(0);
+    setShowTrailsPanel(false);
+    selectWork(stops[0].work_id);
+  }, [selectWork]);
+  const followNext = useCallback(() => {
+    if (!followTrail) return;
+    const next = followIndex + 1;
+    if (next >= followTrail.stops.length) {
+      setFollowTrail(null); // tour complete
+      return;
+    }
+    setFollowIndex(next);
+    selectWork(followTrail.stops[next].work_id);
+  }, [followTrail, followIndex, selectWork]);
+  const followPrev = useCallback(() => {
+    if (!followTrail || followIndex === 0) return;
+    const prev = followIndex - 1;
+    setFollowIndex(prev);
+    selectWork(followTrail.stops[prev].work_id);
+  }, [followTrail, followIndex, selectWork]);
+  const stopFollowing = useCallback(() => setFollowTrail(null), []);
+
   // Single effect: fetch works list when connected; set work metadata if available
   useEffect(() => {
     if (!connected || !fetchWorkList) {
@@ -431,6 +524,7 @@ export function WorkspaceShell() {
           try { localStorage.setItem(`xudanu_meta_${workBeId}`, JSON.stringify(meta)); } catch { /* no-op */ }
           setFollowState((prev) => ({ ...prev, following: !!match.is_starred }));
           setIsPublished(!!match.read_club && match.read_club === publicClubId);
+          setIsFrozen(!!match.is_source);
         } else {
           // Work not in the list — still try to open it (it may be readable)
           setWorkMeta({
@@ -588,10 +682,21 @@ export function WorkspaceShell() {
     [selectionRange, workBeId, text, clientRef, transclusion, linkDescription],
   );
 
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    if (msg.toLowerCase().includes("fail") || msg.toLowerCase().includes("error")) {
+      console.error("[TOAST ERROR]", msg);
+    }
+    setTimeout(() => setToast(null), 5000);
+  }, []);
+
   const handleCreateAnnotation = useCallback(() => {
-    if (!selectionRange) return;
+    if (!selectionRange) {
+      showToast("Select some text first — notes attach to a passage");
+      return;
+    }
     setAnnotationTarget({ start: selectionRange.start, end: selectionRange.end });
-  }, [selectionRange]);
+  }, [selectionRange, showToast]);
 
   const handleToggleStyle = useCallback(
     async (kind: string, start: number, end: number) => {
@@ -653,16 +758,29 @@ export function WorkspaceShell() {
   const handleToggleBlock = useCallback(
     async (kind: string, _payload: string) => {
       if (workBeId === null) return;
-      // Read cursor position directly from the editor DOM
+      // Read cursor position from the LIVE DOM selection. The buttons
+      // use onMouseDown preventDefault so the editor keeps focus and
+      // the native caret through the click — but if focus was
+      // elsewhere (page load, after panel click), getCursorOffset
+      // returns 0 and the bullet prefixed the wrong line. Prefer the
+      // live selection; fall back to tracked state only when the
+      // editor has no valid selection at all.
       const editorEl = document.querySelector(".editor-content") as HTMLElement | null;
       let pos = 0;
+      let haveLiveCaret = false;
       if (editorEl) {
-        pos = getCursorOffset(editorEl);
-      } else {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0 && editorEl.contains(sel.anchorNode)) {
+          pos = getCursorOffset(editorEl);
+          haveLiveCaret = true;
+        }
+      }
+      if (!haveLiveCaret) {
         pos = cursorPos ?? 0;
       }
-      // If cursor is on a newline, move to next line
-      if (text[pos] === "\n") pos += 1;
+      // Caret at end-of-line (just before its newline) is ON that
+      // line — no hop. (The old pos+=1 jumped to the next line and
+      // prefixed the bullet there, stranding the cursor above.)
       const lineStart = text.lastIndexOf("\n", pos - 1) + 1;
       const lineEndIdx = text.indexOf("\n", pos);
       const lineEnd = lineEndIdx === -1 ? text.length : lineEndIdx;
@@ -706,7 +824,7 @@ export function WorkspaceShell() {
           const el = document.querySelector(".editor-content") as HTMLElement | null;
           if (el) {
             el.focus();
-            setCursorOffset(el, newCursorPos);
+            setCaretModel(el, newCursorPos);
           }
         }, 50);
       }
@@ -724,14 +842,6 @@ export function WorkspaceShell() {
     if (line.startsWith("```")) return "```";
     return "";
   }
-
-  const showToast = useCallback((msg: string) => {
-    setToast(msg);
-    if (msg.toLowerCase().includes("fail") || msg.toLowerCase().includes("error")) {
-      console.error("[TOAST ERROR]", msg);
-    }
-    setTimeout(() => setToast(null), 5000);
-  }, []);
 
   useEffect(() => {
     if (saveState === "error" && prevSaveState.current !== "error") {
@@ -1156,6 +1266,47 @@ export function WorkspaceShell() {
     [workBeId, text, compound, transclusion, showToast]
   );
 
+  const handleNavigateToSource = useCallback(
+    (workId: number, spanStart: number | null, spanEnd: number | null) => {
+      if (workId === workBeId && spanStart != null && spanEnd != null && spanEnd > spanStart) {
+        // Same document: highlight + smooth-scroll to the quoted span.
+        setHighlightRange({ start: spanStart, end: spanEnd });
+        setTimeout(() => setHighlightRange(null), 4000);
+      } else {
+        // Cross-document: navigate; the destination lands scrolled via
+        // the URL hash (#C<char>) the editor already honors when the
+        // new text arrives. Set the hash BEFORE selectWork — its
+        // replaceState rebuilds the URL from location.href and
+        // preserves the fragment.
+        if (spanStart != null) {
+          window.history.replaceState(
+            null,
+            "",
+            window.location.pathname + window.location.search + `#C${spanStart}`,
+          );
+        }
+        selectWork(workId);
+      }
+    },
+    [workBeId, selectWork]
+  );
+
+  const handlePlacePinnedTransclusion = useCallback(
+    async (position: number) => {
+      if (workBeId === null) return;
+      const pending = transclusion.pending;
+      if (!pending) return;
+      const insertPos = Math.max(0, Math.min(position, text.length));
+      await compound.addPinnedSpan(insertPos, pending.sourceWorkId, pending.start, pending.end);
+      await compound.reload();
+      setTimeout(() => compound.reload(), 2000);
+      transclusion.clearPending();
+      setShowUndoToast(true);
+      setTimeout(() => setShowUndoToast(false), 6000);
+    },
+    [workBeId, text, compound, transclusion, showToast]
+  );
+
   const handlePlaceImage = useCallback(
     async (position: number) => {
       if (workBeId === null || !pendingImage || !clientRef.current) return;
@@ -1267,15 +1418,20 @@ export function WorkspaceShell() {
     }
     setTrailsLoading(true);
     try {
-      const all = await clientRef.current.trailList();
-      setTrailsForWork(all);
+      // Merge: your own trails first, then everyone's published trails.
+      // trail_list alone is owner-scoped — a fresh user would see an
+      // empty panel and never discover the onboarding tour.
+      const [mine, publishedResp] = await Promise.allSettled([
+        clientRef.current.trailList(),
+        clientRef.current.trailListPublished(),
+      ]);
+      const mineList = mine.status === "fulfilled" ? mine.value : [];
+      const published = publishedResp.status === "fulfilled" ? publishedResp.value : [];
+      const mineIds = new Set(mineList.map((t) => t.trail_id));
+      const merged = [...mineList, ...published.filter((t) => !mineIds.has(t.trail_id))];
+      setTrailsForWork(merged);
     } catch {
-      try {
-        const published = await clientRef.current.trailListPublished();
-        setTrailsForWork(published);
-      } catch {
-        setTrailsForWork([]);
-      }
+      setTrailsForWork([]);
     } finally {
       setTrailsLoading(false);
     }
@@ -1293,7 +1449,13 @@ export function WorkspaceShell() {
   const loadLinks = transclusion.loadLinks;
   const loadBacklinks = transclusion.loadBacklinks;
   useEffect(() => {
-    if (!connected || !authenticated || workBeId === null || switchingWork) return;
+    // Links and backlinks are READ data: the server checks read
+    // permission per work, and anonymous sessions can read published
+    // works. Gating on `authenticated` left anonymous visitors with
+    // no underlines and an empty Links tab — and stale-ticket sessions
+    // lost them too. The ticket-redeem window is a timing concern, not
+    // a permission one; a redundant early fetch is harmless.
+    if (!connected || workBeId === null || switchingWork) return;
     refreshAttribution();
     refreshAnnotations();
     const linkTimer = setTimeout(() => {
@@ -1303,7 +1465,7 @@ export function WorkspaceShell() {
       }
     }, 200);
     return () => clearTimeout(linkTimer);
-  }, [connected, authenticated, workBeId, switchingWork, clientRef, works, loadLinks, loadBacklinks, refreshAttribution, refreshAnnotations]);
+  }, [connected, workBeId, switchingWork, clientRef, works, loadLinks, loadBacklinks, refreshAttribution, refreshAnnotations]);
 
   // Debounced attribution refresh after text changes
   useEffect(() => {
@@ -1682,6 +1844,197 @@ export function WorkspaceShell() {
     return ["Library", workMeta.collection || "Drafts", workMeta.title].filter(Boolean);
   }, [workMeta]);
   void breadcrumb;
+
+  // FR-41: hoisted so the remote view renders even when no local
+  // work is open (network search hit on the welcome/library screen).
+  const remoteTextRef = useRef<HTMLDivElement | null>(null);
+  const [remoteActionError, setRemoteActionError] = useState<string | null>(null);
+  const [remoteActionBusy, setRemoteActionBusy] = useState(false);
+
+  const remoteViewOverlay = remoteView ? (
+              <div style={{
+                position: "absolute", inset: 0, zIndex: 50,
+                background: "var(--bg-surface)", display: "flex",
+                flexDirection: "column", overflow: "hidden",
+              }}>
+                <div style={{
+                  padding: "8px 16px", background: "var(--bg-elevated)",
+                  borderBottom: "2px solid var(--border)", display: "flex",
+                  alignItems: "center", gap: 8, flexShrink: 0,
+                }}>
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, color: "#fff", background: "#d97706",
+                    padding: "2px 8px", borderRadius: 3, textTransform: "uppercase",
+                    letterSpacing: 0.5, userSelect: "none",
+                  }}>Remote</span>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>
+                    From {remoteView.originServerName}
+                  </span>
+                  <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                    {remoteView.license}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setRemoteView(null)}
+                    style={{
+                      marginLeft: "auto", fontSize: 11, padding: "4px 12px",
+                      border: "1px solid var(--border)", borderRadius: 4,
+                      background: "var(--bg-surface)", cursor: "pointer",
+                    }}
+                  >
+                    Back to my work
+                  </button>
+                </div>
+                <div style={{
+                  padding: "10px 16px", borderBottom: "1px solid var(--border)",
+                  display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap",
+                  background: "var(--bg-elevated)",
+                }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)" }}>
+                    Actions:
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!canEdit}
+                    onClick={() => {
+                      const sel = window.getSelection();
+                      if (!sel || sel.toString().trim().length === 0) return;
+                      const excerpt = sel.toString().trim();
+                      const citation = `\n\n> ${excerpt.split("\n").join("\n> ")}\n> — From "${remoteView.title}" via ${remoteView.originServerName} (${remoteView.tumbler})\n`;
+                      const newText = text + citation;
+                      if (clientRef.current && workBeId !== null) {
+                        void clientRef.current.workSetText(workBeId, newText);
+                      }
+                      setRemoteView(null);
+                    }}
+                    style={{
+                      marginLeft: "auto", fontSize: 12, padding: "6px 14px",
+                      border: "2px solid var(--green)", borderRadius: 6,
+                      background: "var(--green)", color: "#fff",
+                      cursor: canEdit ? "pointer" : "not-allowed",
+                      opacity: canEdit ? 1 : 0.4, fontWeight: 600,
+                    }}
+                  >
+                    Insert selected text
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canEdit}
+                    onClick={async () => {
+                      if (!clientRef.current) return;
+                      try {
+                        const provenance = `> Imported from ${remoteView.originServerName}\n> Tumbler: ${remoteView.tumbler}\n> License: ${remoteView.license}\n\n`;
+                        const importText = provenance + remoteView.text;
+                        const resp = await clientRef.current.sendRequest("work_create", {
+                          edition: { text: importText },
+                        });
+                        const newWorkId = (resp as Record<string, unknown>)?.value as Record<string, unknown> | undefined;
+                        const wid = newWorkId?.value as number | undefined;
+                        if (wid) {
+                          await clientRef.current.workSetTitle(wid, `${remoteView.title} (from ${remoteView.originServerName})`);
+                        }
+                        setRemoteView(null);
+                        if (wid) selectWork(wid);
+                      } catch (e) {
+                        console.error("Import failed:", e);
+                      }
+                    }}
+                    style={{
+                      marginLeft: "auto", fontSize: 11, padding: "4px 12px",
+                      border: "1px solid var(--green)", borderRadius: 4,
+                      background: "var(--green)", color: "#fff", cursor: canEdit ? "pointer" : "not-allowed",
+                      opacity: canEdit ? 1 : 0.5,
+                    }}
+                  >
+                    Copy to my server
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canEdit || workBeId === null}
+                    title="Transclude the selected passage by reference — your document displays the origin's span (verified BLAKE3, provenance intact). Select text in the document below first."
+                    onClick={async () => {
+                      if (!clientRef.current || workBeId === null || !remoteTextRef.current) return;
+                      const sel = window.getSelection();
+                      if (!sel || sel.rangeCount === 0 || sel.toString().trim().length === 0) {
+                        setRemoteActionError("Select a passage in the document first, then Transclude.");
+                        return;
+                      }
+                      const range = sel.getRangeAt(0);
+                      const pre = document.createRange();
+                      pre.selectNodeContents(remoteTextRef.current);
+                      try {
+                        pre.setEnd(range.startContainer, range.startOffset);
+                      } catch {
+                        setRemoteActionError("Selection outside the document text.");
+                        return;
+                      }
+                      const startChars = Array.from(pre.toString()).length;
+                      const selChars = Array.from(range.toString()).length;
+                      const end = startChars + selChars;
+                      setRemoteActionError(null);
+                      setRemoteActionBusy(true);
+                      try {
+                        const resp = await clientRef.current.sendRequest("transclusion_place_cross_server", {
+                          dest_work: workBeId,
+                          cursor: 0,
+                          tumbler: remoteView.tumbler,
+                          span_start: startChars,
+                          span_end: end,
+                          title_hint: remoteView.title,
+                        });
+                        const r = resp as Record<string, unknown>;
+                        if ((r as { type?: string }).type === "error") {
+                          setRemoteActionError(`Transclude failed: ${(r as { message?: string }).message ?? "unknown error"}`);
+                          setRemoteActionBusy(false);
+                          return;
+                        }
+                        setRemoteActionBusy(false);
+                        setRemoteView(null);
+                      } catch (e) {
+                        setRemoteActionError(e instanceof Error ? e.message : "transclude failed");
+                        setRemoteActionBusy(false);
+                      }
+                    }}
+                    style={{
+                      fontSize: 12, padding: "6px 14px",
+                      border: "2px solid var(--amber)", borderRadius: 6,
+                      background: "var(--amber)", color: "#111",
+                      cursor: canEdit && workBeId !== null ? "pointer" : "not-allowed",
+                      opacity: canEdit && workBeId !== null ? 1 : 0.4, fontWeight: 700,
+                    }}
+                  >
+                    {remoteActionBusy ? "Transcluding…" : "⇄ Transclude selection"}
+                  </button>
+                </div>
+                {remoteActionError && (
+                  <div style={{ padding: "4px 16px", fontSize: 11, color: "var(--red)", background: "var(--bg-elevated)" }}>
+                    {remoteActionError}
+                  </div>
+                )}
+                <div style={{ flex: 1, overflow: "auto", padding: "32px 48px", minHeight: 0 }}>
+                  <h1 style={{
+                    fontSize: 24, fontWeight: 700, marginBottom: 16,
+                    fontFamily: "Source Serif 4, Georgia, serif",
+                  }}>
+                    {remoteView.title}
+                  </h1>
+                  <div ref={remoteTextRef} style={{
+                    whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.75,
+                    fontFamily: "Source Serif 4, Georgia, serif", color: "var(--text)",
+                    userSelect: "text",
+                  }}>
+                    {remoteView.text}
+                  </div>
+                </div>
+                <div style={{
+                  padding: "6px 16px", borderTop: "1px solid var(--border)",
+                  fontSize: 9, color: "var(--text-dim)", flexShrink: 0, display: "flex", gap: 16,
+                }}>
+                  <span>Tumbler: <code>{remoteView.tumbler}</code></span>
+                  <span>Work ID: <code>{remoteView.workId}</code></span>
+                </div>
+              </div>
+  ) : null;
 
   return (
     <div className={`ws-shell ${activeCssClass} ${navTab === "compose" ? "ws-mode-compose" : ""} ${navTab === "library" ? "ws-mode-library" : ""}`}>
@@ -2185,6 +2538,20 @@ export function WorkspaceShell() {
                       {editorMode === "authoring" ? "📖" : "✏️"}
                     </button>
                   )}
+                  <button
+                    className={`ws-action-btn ${showProv ? "active" : ""}`}
+                    onClick={() => {
+                      const next = !showProv;
+                      setShowProv(next);
+                      try { localStorage.setItem("xudanu_showProv", String(next)); } catch { /* no-op */ }
+                    }}
+                    title={showProv
+                      ? "Provenance underlines ON — light colour strip under each passage shows its author. Click to hide."
+                      : "Show provenance — light authorship underline beneath each passage (colour-coded, verified signatures)"}
+                    style={showProv ? { background: "rgba(255, 196, 0, 0.15)", borderColor: "rgba(255, 196, 0, 0.4)" } : {}}
+                  >
+                    Prov
+                  </button>
                   {canEdit && (
                     <button
                       className={`ws-action-btn ${isPublished ? "active" : ""}`}
@@ -2212,6 +2579,15 @@ export function WorkspaceShell() {
                       {isPublished ? "🌍 Public" : "🔒 Private"}
                     </button>
                   )}
+                  {isFrozen && (
+                    <span
+                      className="ws-action-btn"
+                      style={{ color: "#58a6ff", cursor: "default", background: "rgba(88, 166, 255, 0.15)", borderColor: "rgba(88, 166, 255, 0.4)" }}
+                      title="Frozen — content is immutable (links and notes still welcome). Unfreeze from the ⋯ menu."
+                    >
+                      ❄
+                    </span>
+                  )}
                   {canEdit && (
                     <label className="ws-action-btn ws-image-upload-btn" title="Insert image">
                       📷
@@ -2237,6 +2613,28 @@ export function WorkspaceShell() {
                     </button>
                     {moreMenuOpen && (
                       <div className="ws-more-menu" role="menu">
+                        {canEdit && workBeId !== null && (
+                          <button
+                            className="ws-more-item"
+                            onClick={async () => {
+                              setMoreMenuOpen(false);
+                              if (!clientRef.current) return;
+                              const next = !isFrozen;
+                              if (next && !confirm("Freeze this document?\n\nContent becomes immutable — no one (including you) can edit the text. Links, notes and annotations stay open. You can unfreeze later.")) return;
+                              if (!next && !confirm("Unfreeze this document? Editing becomes possible again.")) return;
+                              try {
+                                await clientRef.current.workSetSource(workBeId, next);
+                                setIsFrozen(next);
+                                setWorks((prev) => prev.map((w) => w.work_id === workBeId ? { ...w, is_source: next } : w));
+                                showToast(next ? "Document frozen — content immutable" : "Document unfrozen");
+                              } catch (e) {
+                                showToast(`Freeze failed: ${e instanceof Error ? e.message : "not owner"}`);
+                              }
+                            }}
+                          >
+                            {isFrozen ? "❄ Unfreeze document" : "❄ Freeze document"}
+                          </button>
+                        )}
                         <button
                           className="ws-more-item"
                           onClick={() => { handleCite(); setMoreMenuOpen(false); }}
@@ -2515,11 +2913,13 @@ export function WorkspaceShell() {
                       </button>
                       <button
                         type="button"
+                        onClick={handleCreateAnnotation}
                         disabled={!canEdit}
-                      onClick={handleCreateAnnotation}
-                      title="Add a note or comment to this passage"
-                    >
-                      ✎ Note
+                        title={canEdit
+                          ? "Add a note to this passage — select text first. Public (shared with readers) or private (only visible to you)"
+                          : "Sign in to add notes"}
+                      >
+                        Note
                     </button>
                     <button
                       type="button"
@@ -2825,131 +3225,11 @@ export function WorkspaceShell() {
                     pending={transclusion.pending}
                     cursorPosition={selectionRange?.start ?? null}
                     onPlace={handlePlaceTransclusion}
+                    onPlacePinned={handlePlacePinnedTransclusion}
                     onCancel={transclusion.clearPending}
                   />
                 )}
-                {remoteView && (
-                  <div style={{
-                    position: "absolute", inset: 0, zIndex: 50,
-                    background: "var(--bg-surface)", display: "flex",
-                    flexDirection: "column", overflow: "hidden",
-                  }}>
-                    <div style={{
-                      padding: "8px 16px", background: "var(--bg-elevated)",
-                      borderBottom: "2px solid var(--border)", display: "flex",
-                      alignItems: "center", gap: 8, flexShrink: 0,
-                    }}>
-                      <span style={{
-                        fontSize: 9, fontWeight: 700, color: "#fff", background: "#d97706",
-                        padding: "2px 8px", borderRadius: 3, textTransform: "uppercase",
-                        letterSpacing: 0.5, userSelect: "none",
-                      }}>Remote</span>
-                      <span style={{ fontSize: 12, fontWeight: 600 }}>
-                        From {remoteView.originServerName}
-                      </span>
-                      <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
-                        {remoteView.license}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setRemoteView(null)}
-                        style={{
-                          marginLeft: "auto", fontSize: 11, padding: "4px 12px",
-                          border: "1px solid var(--border)", borderRadius: 4,
-                          background: "var(--bg-surface)", cursor: "pointer",
-                        }}
-                      >
-                        Back to my work
-                      </button>
-                    </div>
-                    <div style={{
-                      padding: "10px 16px", borderBottom: "1px solid var(--border)",
-                      display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap",
-                      background: "var(--bg-elevated)",
-                    }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)" }}>
-                        Actions:
-                      </span>
-                      <button
-                        type="button"
-                        disabled={!canEdit}
-                        onClick={() => {
-                          const sel = window.getSelection();
-                          if (!sel || sel.toString().trim().length === 0) return;
-                          const excerpt = sel.toString().trim();
-                          const citation = `\n\n> ${excerpt.split("\n").join("\n> ")}\n> — From "${remoteView.title}" via ${remoteView.originServerName} (${remoteView.tumbler})\n`;
-                          const newText = text + citation;
-                          if (clientRef.current && workBeId !== null) {
-                            void clientRef.current.workSetText(workBeId, newText);
-                          }
-                          setRemoteView(null);
-                        }}
-                        style={{
-                          marginLeft: "auto", fontSize: 12, padding: "6px 14px",
-                          border: "2px solid var(--green)", borderRadius: 6,
-                          background: "var(--green)", color: "#fff",
-                          cursor: canEdit ? "pointer" : "not-allowed",
-                          opacity: canEdit ? 1 : 0.4, fontWeight: 600,
-                        }}
-                      >
-                        Insert selected text
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!canEdit}
-                        onClick={async () => {
-                          if (!clientRef.current) return;
-                          try {
-                            const provenance = `> Imported from ${remoteView.originServerName}\n> Tumbler: ${remoteView.tumbler}\n> License: ${remoteView.license}\n\n`;
-                            const importText = provenance + remoteView.text;
-                            const resp = await clientRef.current.sendRequest("work_create", {
-                              edition: { text: importText },
-                            });
-                            const newWorkId = (resp as Record<string, unknown>)?.value as Record<string, unknown> | undefined;
-                            const wid = newWorkId?.value as number | undefined;
-                            if (wid) {
-                              await clientRef.current.workSetTitle(wid, `${remoteView.title} (from ${remoteView.originServerName})`);
-                            }
-                            setRemoteView(null);
-                            if (wid) selectWork(wid);
-                          } catch (e) {
-                            console.error("Import failed:", e);
-                          }
-                        }}
-                        style={{
-                          marginLeft: "auto", fontSize: 11, padding: "4px 12px",
-                          border: "1px solid var(--green)", borderRadius: 4,
-                          background: "var(--green)", color: "#fff", cursor: canEdit ? "pointer" : "not-allowed",
-                          opacity: canEdit ? 1 : 0.5,
-                        }}
-                      >
-                        Copy to my server
-                      </button>
-                    </div>
-                    <div style={{ flex: 1, overflow: "auto", padding: "32px 48px", minHeight: 0 }}>
-                      <h1 style={{
-                        fontSize: 24, fontWeight: 700, marginBottom: 16,
-                        fontFamily: "Source Serif 4, Georgia, serif",
-                      }}>
-                        {remoteView.title}
-                      </h1>
-                      <div style={{
-                        whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.75,
-                        fontFamily: "Source Serif 4, Georgia, serif", color: "var(--text)",
-                        userSelect: "text",
-                      }}>
-                        {remoteView.text}
-                      </div>
-                    </div>
-                    <div style={{
-                      padding: "6px 16px", borderTop: "1px solid var(--border)",
-                      fontSize: 9, color: "var(--text-dim)", flexShrink: 0, display: "flex", gap: 16,
-                    }}>
-                      <span>Tumbler: <code>{remoteView.tumbler}</code></span>
-                      <span>Work ID: <code>{remoteView.workId}</code></span>
-                    </div>
-                  </div>
-                )}
+                {remoteViewOverlay}
                 {useMDE ? (
                   <EasyMDEEditor
                     text={text}
@@ -2972,6 +3252,7 @@ export function WorkspaceShell() {
                   }}
                   connected={connected}
                   attributionSpans={resolvedAttributionSpans}
+                  showAttributionColors={showProv}
                   editable={canEdit}
                   readingMode={editorMode === "reading"}
                   fontSize={14}
@@ -2979,6 +3260,8 @@ export function WorkspaceShell() {
                   transclusionMarkers={transclusion.markers}
                   pendingTransclusion={transclusion.pending}
                   onPlaceTransclusion={handlePlaceTransclusion}
+                  onPlacePinnedTransclusion={handlePlacePinnedTransclusion}
+                  onNavigateToSource={handleNavigateToSource}
                   selectionRange={selectionRange}
                   highlightRange={highlightRange}
                   onNavigateToWork={selectWork}
@@ -3232,7 +3515,12 @@ export function WorkspaceShell() {
                         onClick={() => {
                           const ta = document.querySelector<HTMLTextAreaElement>(".ws-anno-text");
                           const cb = document.querySelector<HTMLInputElement>("#ws-anno-private-cb");
-                          if (ta) void handleAnnotationSubmit(ta.value, cb?.checked ?? false);
+                          const txt = ta?.value.trim() ?? "";
+                          if (!txt) {
+                            ta?.focus();
+                            return;
+                          }
+                          void handleAnnotationSubmit(txt, cb?.checked ?? false);
                         }}
                       >
                         Save
@@ -3345,6 +3633,12 @@ export function WorkspaceShell() {
           )}
           {workBeId !== null && (
             <RelatedFooter
+              annotations={annotations}
+              onDeleteAnnotation={deleteAnnotation}
+              onJumpToSpan={(start, end) => {
+                setHighlightRange({ start, end });
+                setTimeout(() => setHighlightRange(null), 4000);
+              }}
               backlinks={transclusion.backlinks}
               outgoingLinks={transclusion.links}
               compoundSpanRanges={compound.spanRanges}
@@ -3360,11 +3654,12 @@ export function WorkspaceShell() {
         <aside className={`ws-right-panel ${rightPanelHidden ? "hidden" : ""}`}>
           <div className="ws-tabs">
             {([
-              ["provenance", "Prov"],
+              ["provenance", "Attribution"],
               ["connections", "Links"],
               ["trails", "Trails"],
               ["timeline", "History"],
               ["servers", "Servers"],
+              ["compare", "Compare"],
               ["more", "More"],
             ] as const).map(([id, label]) => (
               <button
@@ -3496,17 +3791,26 @@ export function WorkspaceShell() {
                       filteredLinks.map((link) => {
                       const isWebLink = (link.link_types || []).includes(6);
                       const destUrl = link.destination_ref?.excerpt;
+                      const ends = linkEnds(link);
+                      const extraEnds = ends.filter((e) => e.name !== "origin" && e.name !== "destination" && e.workId !== null && e.workId !== workBeId);
+                      const multi = isMultiEnded(link);
                       const destTitle = isWebLink && destUrl
                         ? destUrl
                         : (link.destination_title || `Work 0x${link.destination.toString(16)}`);
                       const typeNames = (link.link_types || []).map(
                         (tid) => DEFAULT_LINK_TYPES.find((t) => t.type_id === tid)?.name || `type ${tid}`
                       );
+                      const notif = notifyStatus(link);
+                      const reload = () => {
+                        if (clientRef.current && workBeId !== null) {
+                          void loadLinks(clientRef.current, workBeId, works);
+                        }
+                      };
                       return (
                         <div
                           key={link.link_id}
                           className="ws-conn-item"
-                          onClick={() => !isWebLink && selectWork(link.destination)}
+                          onClick={() => !isWebLink && !multi && selectWork(link.destination)}
                           title={isWebLink && destUrl ? destUrl : undefined}
                         >
                           <div className="ws-conn-title-row">
@@ -3517,22 +3821,79 @@ export function WorkspaceShell() {
                                 const di = dl ? LICENSES.find((l) => l.value === dl) : null;
                                 return di && dl !== "all-rights-reserved" ? <span className="ws-work-license-badge" title={di.label}>{di.short}</span> : null;
                               })()}
+                              {link.home_document != null && link.home_document !== workBeId && (
+                                <span
+                                  style={{ fontSize: 10, marginLeft: 4, color: "#8b949e", cursor: "pointer" }}
+                                  title={`Link lives in ${works.find((w) => w.work_id === link.home_document)?.title || `work 0x${link.home_document?.toString(16)}`} (home document) — click to open`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (link.home_document != null) selectWork(link.home_document);
+                                  }}
+                                >
+                                  ⌂ home
+                                </span>
+                              )}
                             </div>
-                            <button
-                              className="ws-conn-delete"
-                              title="Delete this link"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (confirm("Delete this link?")) {
-                                  clientRef.current?.linkDelete(link.link_id).then(() => {
-                                    if (clientRef.current && workBeId !== null) {
-                                      void loadLinks(clientRef.current, workBeId, works);
-                                    }
-                                  });
-                                }
-                              }}
-                            >×</button>
+                            <div style={{ display: "flex", gap: 4 }}>
+                              {multi && (
+                                <button
+                                  className="ws-conn-delete"
+                                  title="Compare all ends side by side"
+                                  style={{ color: "#58a6ff" }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setMultiCompareWorkIds(multiEndWorkIds(link).filter((id) => id !== null));
+                                    setRightPanelTab("compare");
+                                  }}
+                                >
+                                  ⇄
+                                </button>
+                              )}
+                              <button
+                                className="ws-conn-delete"
+                                title="Delete this link"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (confirm("Delete this link?")) {
+                                    clientRef.current?.linkDelete(link.link_id).then(reload);
+                                  }
+                                }}
+                              >×</button>
+                            </div>
                           </div>
+                          {extraEnds.length > 0 && (
+                            <div style={{ fontSize: 11, color: "#8b949e", marginTop: 2 }}>
+                              {"+ "}
+                              {extraEnds.map((e, i) => {
+                                const w = works.find((x) => x.work_id === e.workId);
+                                return (
+                                  <span key={e.name}>
+                                    {i > 0 && " · "}
+                                    <span
+                                      style={{ color: "#58a6ff", cursor: "pointer" }}
+                                      title={e.excerpt ? `"${e.excerpt.slice(0, 120)}"` : undefined}
+                                      onClick={(ev) => {
+                                        ev.stopPropagation();
+                                        if (e.workId !== null) selectWork(e.workId);
+                                      }}
+                                    >
+                                      {e.name}: {w?.title || `work 0x${e.workId?.toString(16)}`}
+                                    </span>
+                                    <span
+                                      style={{ cursor: "pointer", marginLeft: 3 }}
+                                      title={`Remove end "${e.name}"`}
+                                      onClick={(ev) => {
+                                        ev.stopPropagation();
+                                        clientRef.current?.linkRemoveEnd(link.link_id, e.name).then(reload);
+                                      }}
+                                    >
+                                      ×
+                                    </span>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
                           {typeNames.length > 0 && (
                             <div className="ws-conn-types">
                               {typeNames.map((tn, i) => {
@@ -3546,9 +3907,34 @@ export function WorkspaceShell() {
                                     {tn}
                                   </span>
                                 );
-                                })}
-                              </div>
-                            )}
+                              })}
+                              {(link.type_ends ?? []).map(([tid, defWork], i) => {
+                                const t = DEFAULT_LINK_TYPES.find((x) => x.type_id === tid);
+                                if (!t) return null;
+                                return (
+                                  <span
+                                    key={`te-${i}`}
+                                    className="ws-conn-type-badge"
+                                    style={{ background: t.color + "10", color: t.color, borderColor: t.color + "30", cursor: "pointer", fontSize: 10 }}
+                                    title={`Type definition — click to open`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      selectWork(defWork);
+                                    }}
+                                  >
+                                    {t.name} ⎋
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {notif.kind !== "none" && (
+                            <div style={{ fontSize: 10, marginTop: 2, color: notif.kind === "accepted" ? "#3fb950" : "#f85149" }}>
+                              {notif.kind === "accepted" && "✓ remote server acknowledged"}
+                              {notif.kind === "rejected" && `⚠ remote rejected: ${notif.reason}`}
+                              {notif.kind === "error" && `⚠ ${notif.reason}`}
+                            </div>
+                          )}
                           </div>
                         );
                       })
@@ -3698,8 +4084,8 @@ export function WorkspaceShell() {
                   <div className="ws-placeholder"><div className="ws-placeholder-label">Loading…</div></div>
                 ) : trailsForWork.length === 0 ? (
                   <div className="ws-placeholder">
-                    <div className="ws-placeholder-label">No stops on this work</div>
-                    <div className="ws-placeholder-sublabel">Your trails may have stops on other works. Click Manage to see all.</div>
+                    <div className="ws-placeholder-label">No trails yet</div>
+                    <div className="ws-placeholder-sublabel">Create one from selected text (+ Trail), or ask another server's user to publish theirs.</div>
                   </div>
                 ) : (
                   <ul className="ws-trail-list">
@@ -3711,6 +4097,17 @@ export function WorkspaceShell() {
                         <li key={t.trail_id} className="ws-trail-card">
                           <div className="ws-trail-card-title-row">
                             <span className="ws-trail-card-title">{t.name}</span>
+                            {t.stops.length > 0 && (
+                              <button
+                                type="button"
+                                className="trail-start-btn"
+                                title={`Follow this trail from stop 1 (${t.stops.length} stops)`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startTrail(t.name, t.stops.map((s) => ({ work_id: s.work_id, note: s.note ?? null })));
+                                }}
+                              >{"\u25b6"} Start</button>
+                            )}
                             {t.published ? (
                               <span className="ws-trail-badge published" title="Published — double-click to unpublish" onDoubleClick={async (e) => {
                                 e.stopPropagation();
@@ -3738,9 +4135,9 @@ export function WorkspaceShell() {
                             <div className="ws-trail-card-intro">{t.introduction}</div>
                           )}
                           <div className="ws-trail-card-meta">
-                            {t.stops.length} stops · {workStops.length} on this work
+                            {t.stops.length} stops{workStops.length > 0 ? ` · ${workStops.length} on this work` : ""}
                           </div>
-                          {workStops.length > 0 && (
+                          {workStops.length > 0 ? (
                             <ul className="ws-trail-stops">
                               {workStops.map((s) => (
                                 <li
@@ -3756,6 +4153,30 @@ export function WorkspaceShell() {
                                   </span>
                                 </li>
                               ))}
+                            </ul>
+                          ) : (
+                            <ul className="ws-trail-stops">
+                              {t.stops.slice(0, 3).map((s, i) => (
+                                <li
+                                  key={i}
+                                  className="ws-trail-stop"
+                                  style={{ cursor: "pointer" }}
+                                  title={s.note || "Open this document"}
+                                  onClick={() => selectWork(s.work_id)}
+                                >
+                                  <span className="ws-trail-stop-pos">{i + 1}</span>
+                                  <span className="ws-trail-stop-note">
+                                    {(s.note || `Open stop ${i + 1}`).slice(0, 60)}
+                                    {(s.note?.length ?? 0) > 60 ? "…" : ""}
+                                  </span>
+                                </li>
+                              ))}
+                              {t.stops.length > 3 && (
+                                <li className="ws-trail-stop" style={{ cursor: "pointer", opacity: 0.7 }} onClick={() => setShowTrailsPanel(true)}>
+                                  <span className="ws-trail-stop-pos">…</span>
+                                  <span className="ws-trail-stop-note">{t.stops.length - 3} more stops</span>
+                                </li>
+                              )}
                             </ul>
                           )}
                         </li>
@@ -3788,6 +4209,16 @@ export function WorkspaceShell() {
                   setRemoteView(data);
                   setRightPanelTab("provenance");
                 }}
+              />
+            )}
+            {rightPanelTab === "compare" && (
+              <MultiEndCompare
+                workIds={multiCompareWorkIds}
+                works={works}
+                clientRef={clientRef}
+                currentWorkId={workBeId}
+                onPickWork={(id) => setMultiCompareWorkIds((prev) => [...prev, id])}
+                onClose={() => setRightPanelTab("connections")}
               />
             )}
             {rightPanelTab === "more" && (
@@ -3887,6 +4318,7 @@ export function WorkspaceShell() {
               connected={connected}
               onLogin={login}
               onCreateIdentity={createIdentity}
+              onChangePassword={changePassword}
               onLogout={logout}
               llmEnabled={crdt.llmEnabled}
               llmUsage={crdt.llmUsage}
@@ -4030,11 +4462,61 @@ export function WorkspaceShell() {
           currentWorkId={workBeId}
           works={works}
           onSelectWork={selectWork}
+          onStartTrail={startTrail}
           onClose={() => {
             setShowTrailsPanel(false);
             if (rightPanelTab === "trails") void loadTrailsForWork();
           }}
         />
+      )}
+
+      {/* Trail follow bar: persistent Next/Prev while following a trail */}
+      {followTrail && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 16,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 300,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            background: "var(--bg-elevated, #21262d)",
+            border: "1px solid var(--accent-blue, #58a6ff)",
+            borderRadius: 8,
+            padding: "8px 14px",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+            maxWidth: "90vw",
+          }}
+        >
+          <span style={{ fontWeight: 600, fontSize: 13 }}>
+            {followTrail.name}
+          </span>
+          <span style={{ fontSize: 11, opacity: 0.75 }}>
+            stop {followIndex + 1} / {followTrail.stops.length}
+          </span>
+          {followTrail.stops[followIndex]?.note && (
+            <span style={{ fontSize: 11, opacity: 0.9, maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={followTrail.stops[followIndex].note ?? undefined}>
+              {followTrail.stops[followIndex].note}
+            </span>
+          )}
+          <button type="button" className="ws-action-btn" onClick={followPrev} disabled={followIndex === 0} title="Previous stop">
+            ‹ Prev
+          </button>
+          <button
+            type="button"
+            className="ws-action-btn"
+            style={{ borderColor: "var(--accent-blue, #58a6ff)", color: "var(--accent-blue, #58a6ff)" }}
+            onClick={followNext}
+            title={followIndex + 1 >= followTrail.stops.length ? "Finish trail" : "Next stop"}
+          >
+            {followIndex + 1 >= followTrail.stops.length ? "Finish ✓" : "Next ›"}
+          </button>
+          <button type="button" className="ws-action-btn" onClick={stopFollowing} title="Stop following this trail">
+            ×
+          </button>
+        </div>
       )}
 
       {licenseHelpOpen && (
@@ -4150,6 +4632,12 @@ export function WorkspaceShell() {
           currentWorkId={workBeId}
           works={works}
           onSelectWork={(id) => { selectWork(id); setSearchOpen(false); }}
+          serverDirectory={serverDirectoryForSearch}
+          onViewRemoteWork={(data) => {
+            setRemoteView(data);
+            setRightPanelTab("provenance");
+            setSearchOpen(false);
+          }}
         />
       )}
       {showSettings && (

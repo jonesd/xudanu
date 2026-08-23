@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Document Space: Tumblers and Enfilades &mdash; Xudanu Developer Guide</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+.example-block{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin:16px 0}
+.example-block .example-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#484f58;margin-bottom:8px;font-weight:600}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.fast{color:#3fb950;font-family:'JetBrains Mono',monospace;font-weight:600}
+.naive{color:#f85149;font-family:'JetBrains Mono',monospace}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:16px 0}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.toc .toc-sub{padding-left:16px}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-purple{color:#a371f7}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.accent-cyan{color:#39d2c0}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0;font-size:12px;color:#8b949e}
+.legend-item{display:flex;align-items:center;gap:6px}
+.legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+ul{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:4px}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}h2{page-break-before:always;margin-top:40px}.diagram-container{border:1px solid #ddd;background:#fafafa}pre{background:#f5f5f5;border-color:#ddd;color:#333}code{background:#f0f0f0;color:#555}.note{background:#f0f7ff;border-left-color:#3b82f6}.note strong{color:#3b82f6}a{color:#2563eb}.footer{color:#999}.toc a{color:#444}.fast{color:#16a34a}.naive{color:#dc2626}}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}.two-col{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Document Space: Tumblers and Enfilades</h1>
+<p class="subtitle">The mathematical foundation underlying every position, region, span, mapping, and address in Xudanu &mdash; explained from the ground up, with diagrams and worked examples.</p>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. Why an Algebra?</a>
+  <a class="toc-section" href="#s2">2. The Four Core Traits</a>
+  <a class="toc-section" href="#s3">3. Position: A Point in Space</a>
+  <a class="toc-section" href="#s4">4. Region: A Set of Points</a>
+  <a class="toc-section" href="#s5">5. Dsp (Displacement): Moving Points</a>
+  <a class="toc-section" href="#s6">6. OrderSpec: Sorting Positions</a>
+  <a class="toc-section" href="#s7">7. The Transition-Set Trick: How Regions Actually Work</a>
+  <a class="toc-section" href="#s8">8. Concrete Space 1: IntegerSpace (Where Documents Live)</a>
+  <a class="toc-section" href="#s9">9. Concrete Space 2: RealSpace (For Fractional Positions)</a>
+  <a class="toc-section" href="#s10">10. Concrete Space 3: SequenceSpace (Tumblers &amp; Federation)</a>
+  <a class="toc-section" href="#s11">11. Tumbler Addressing: The Federation Address Book</a>
+  <a class="toc-section" href="#s12">10. Concrete Space 4: CrossSpace2 (Two Dimensions)</a>
+  <a class="toc-section" href="#s13">11. Concrete Space 5: CrossSpaceN (N Dimensions)</a>
+  <a class="toc-section" href="#s14">12. Concrete Space 6: FilterSpace (Permission Tags)</a>
+  <a class="toc-section" href="#s15">13. Mappings: Domain-Restricted Displacements</a>
+  <a class="toc-section" href="#s16">14. Span Migration: How Mappings Keep Links Alive</a>
+  <a class="toc-section" href="#s17">15. Shared Mappings: Detecting Transcluded Content</a>
+  <a class="toc-section" href="#s18">16. The Compactor: Squeezing Gaps Out of Regions</a>
+  <a class="toc-section" href="#s19">17. Order Combinators: Reverse and Chain</a>
+  <a class="toc-section" href="#s18b">18. Arrangement: Sorted Positions for Rendering</a>
+  <a class="toc-section" href="#s19">19. How Everything Connects</a>
+  <a class="toc-section" href="#s20">20. Source Code Map</a>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 1 -->
+<!-- ============================================================ -->
+<h2 id="s1">1. Why an Algebra?</h2>
+
+<p>
+If you look at a document in Xudanu, you might think "position 42" is just a number.
+But that number needs to do a surprising number of things:
+</p>
+
+<ul>
+  <li>Identify a specific character in a document</li>
+  <li>Be part of a <strong>span</strong> (positions 3&ndash;7) that a link can point at</li>
+  <li><strong>Shift</strong> when text is inserted before it (position 42 becomes 45)</li>
+  <li>Be <strong>compared</strong> to another position (is this span before or after that one?)</li>
+  <li>Be <strong>composed</strong> into a hierarchical address for federation (server 1, work 5, edition 3, position 2, element 7)</li>
+  <li>Be <strong>filtered</strong> by permission tags (show only content endorsed by club 42)</li>
+</ul>
+
+<p>
+The <code>space/</code> module provides a single set of Rust traits &mdash; <code>Space</code>,
+<code>Position</code>, <code>Region</code>, <code>Dsp</code> (displacement), and
+<code>OrderSpec</code> &mdash; that abstract over all these operations. Different concrete
+implementations handle different needs (integers, reals, tumblers, cross-products).
+</p>
+
+<div class="note">
+<strong>The key insight:</strong> By defining these as traits, the edition model, the link
+engine, the transclusion detector, and the federation layer can all work with positions
+and regions <em>without knowing which concrete space they're in</em>. The same
+<code>intersect</code>, <code>union</code>, <code>shift</code>, and <code>contains</code>
+operations work identically whether you're dealing with character positions, tumbler
+addresses, or multi-dimensional endorsement regions.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 2 -->
+<!-- ============================================================ -->
+<h2 id="s2">2. The Four Core Traits</h2>
+
+<p>
+The entire algebra is built on four traits, defined in <code>space/traits.rs</code>:
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 700 380" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrA" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#8b949e"/></marker>
+  </defs>
+
+  <!-- Space -->
+  <rect x="250" y="20" width="200" height="60" rx="10" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="350" y="44" text-anchor="middle" fill="#58a6ff" font-size="16" font-weight="700">Space</text>
+  <text x="350" y="64" text-anchor="middle" fill="#8b949e" font-size="11">factory: empty, full, identity_dsp, orders</text>
+
+  <!-- Position -->
+  <rect x="40" y="140" width="180" height="55" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="2"/>
+  <text x="130" y="163" text-anchor="middle" fill="#3fb950" font-size="15" font-weight="700">Position</text>
+  <text x="130" y="181" text-anchor="middle" fill="#8b949e" font-size="10">a point; can become a singleton region</text>
+
+  <!-- Region -->
+  <rect x="260" y="140" width="180" height="55" rx="10" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="2"/>
+  <text x="350" y="163" text-anchor="middle" fill="#a371f7" font-size="15" font-weight="700">Region</text>
+  <text x="350" y="181" text-anchor="middle" fill="#8b949e" font-size="10">a set of points; set-algebra ops</text>
+
+  <!-- Dsp -->
+  <rect x="480" y="140" width="180" height="55" rx="10" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="2"/>
+  <text x="570" y="163" text-anchor="middle" fill="#d29922" font-size="15" font-weight="700">Dsp</text>
+  <text x="570" y="181" text-anchor="middle" fill="#8b949e" font-size="10">displacement; moves points</text>
+
+  <!-- OrderSpec -->
+  <rect x="260" y="260" width="180" height="55" rx="10" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="2"/>
+  <text x="350" y="283" text-anchor="middle" fill="#f85149" font-size="15" font-weight="700">OrderSpec</text>
+  <text x="350" y="301" text-anchor="middle" fill="#8b949e" font-size="10">sorts positions; follows / compare</text>
+
+  <!-- Arrows from Space to its associated types -->
+  <line x1="300" y1="80" x2="160" y2="135" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arrA)" stroke-dasharray="4 3"/>
+  <text x="200" y="110" fill="#8b949e" font-size="9">associates</text>
+  <line x1="350" y1="80" x2="350" y2="135" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arrA)" stroke-dasharray="4 3"/>
+  <line x1="400" y1="80" x2="540" y2="135" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arrA)" stroke-dasharray="4 3"/>
+
+  <!-- Space -> OrderSpec -->
+  <line x1="350" y1="80" x2="350" y2="255" stroke="#8b949e" stroke-width="1" stroke-dasharray="2 4" opacity="0.4"/>
+</svg>
+</div>
+<p class="diagram-caption">The four core traits. A Space associates a Position type, a Region type, and a Dsp type.</p>
+
+<p>Here's the Rust trait hierarchy in full:</p>
+
+<pre>pub trait Space {
+    type Position: Position&lt;Region = Self::Region&gt;;
+    type Region:   Region&lt;Position = Self::Position&gt;;
+    type Dsp:      Dsp&lt;Position = Self::Position, Region = Self::Region&gt;;
+
+    fn empty_region(&amp;self) -&gt; Self::Region;
+    fn full_region(&amp;self) -&gt; Self::Region;
+    fn identity_dsp(&amp;self) -&gt; Self::Dsp;
+    fn ascending(&amp;self) -&gt; Box&lt;dyn OrderSpec&lt;Position = Self::Position&gt;&gt;;
+    fn descending(&amp;self) -&gt; Box&lt;dyn OrderSpec&lt;Position = Self::Position&gt;&gt;;
+}
+
+pub trait Position {
+    type Region: Region&lt;Position = Self&gt;;
+    fn as_region(&amp;self) -&gt; Self::Region;  // singleton
+}
+
+pub trait Region {
+    type Position: Position&lt;Region = Self&gt;;
+    fn is_empty(&amp;self) -&gt; bool;
+    fn is_full(&amp;self) -&gt; bool;
+    fn contains(&amp;self, pos: &amp;Self::Position) -&gt; bool;
+    fn intersects(&amp;self, other: &amp;Self) -&gt; bool;
+    fn intersect(&amp;self, other: &amp;Self) -&gt; Self;   // A &cap; B
+    fn union_with(&amp;self, other: &amp;Self) -&gt; Self;    // A &cup; B
+    fn complement(&amp;self) -&gt; Self;                    // &not;A
+    fn minus(&amp;self, other: &amp;Self) -&gt; Self;           // A &minus; B
+    fn is_simple(&amp;self) -&gt; bool;   // one contiguous interval?
+    fn count(&amp;self) -&gt; Option&lt;usize&gt;;  // None = infinite
+}
+
+pub trait Dsp {
+    type Position: Position&lt;Region = Self::Region&gt;;
+    type Region: Region&lt;Position = Self::Position&gt;;
+    fn of(&amp;self, pos: &amp;Self::Position) -&gt; Self::Position;       // move a point
+    fn of_all(&amp;self, region: &amp;Self::Region) -&gt; Self::Region;     // move a region
+    fn inverse(&amp;self) -&gt; Self;                                     // undo
+    fn compose(&amp;self, other: &amp;Self) -&gt; Self;                       // chain
+}</pre>
+
+<div class="note">
+<strong>Don't panic!</strong> These are just the rules for a coordinate system. If you've
+ever used Python's <code>set</code> operations (<code>&amp;</code>, <code>|</code>,
+<code>-</code>, <code>~</code>), you already understand Region. Dsp is just
+"add an offset." Position is just "a point." Space is the factory that creates them.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 3 -->
+<!-- ============================================================ -->
+<h2 id="s3">3. Position: A Point in Space</h2>
+
+<p>
+A <code>Position</code> is the simplest concept: a single point. In
+<code>IntegerSpace</code>, it's just a number:
+</p>
+
+<pre>pub struct IntegerPos(pub i64);  // position 42</pre>
+
+<p>
+Every position can be promoted to a singleton region (a region containing just that
+one point):
+</p>
+
+<pre>impl Position for IntegerPos {
+    fn as_region(&amp;self) -&gt; IntegerRegion {
+        IntegerRegion::singleton(self.0)  // just {42}
+    }
+}</pre>
+
+<p>
+In <code>SequenceSpace</code>, a position is a <code>Sequence</code> &mdash; a
+hierarchical tumbler address like <code>1.5.3.2.7</code>. In
+<code>CrossSpace2&lt;Integer, Integer&gt;</code>, a position is a pair:
+<code>Tuple2(IntegerPos(1), IntegerPos(10))</code>.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 4 -->
+<!-- ============================================================ -->
+<h2 id="s4">4. Region: A Set of Points</h2>
+
+<p>
+A <code>Region</code> is a set of positions. It supports all the set operations you'd
+expect:
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 600 280" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <!-- Intersect -->
+  <circle cx="120" cy="60" r="40" fill="rgba(163,113,247,0.15)" stroke="#a371f7" stroke-width="2"/>
+  <circle cx="170" cy="60" r="40" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="2"/>
+  <path d="M 145 25 A 40 40 0 0 1 145 95 A 40 40 0 0 1 145 25 Z" fill="rgba(57,210,192,0.25)"/>
+  <text x="145" y="115" text-anchor="middle" fill="#8b949e" font-size="11">intersect (A &cap; B)</text>
+
+  <!-- Union -->
+  <circle cx="120" cy="160" r="40" fill="rgba(163,113,247,0.15)" stroke="#a371f7" stroke-width="2"/>
+  <circle cx="170" cy="160" r="40" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="145" y="215" text-anchor="middle" fill="#8b949e" font-size="11">union (A &cup; B)</text>
+
+  <!-- Minus -->
+  <circle cx="420" cy="60" r="40" fill="rgba(163,113,247,0.15)" stroke="#a371f7" stroke-width="2"/>
+  <path d="M 420 20 A 40 40 0 0 1 420 100 A 40 40 0 0 0 420 20" fill="rgba(163,113,247,0.15)" stroke="#a371f7" stroke-width="2"/>
+  <circle cx="470" cy="60" r="40" fill="none" stroke="#58a6ff" stroke-width="2" stroke-dasharray="4 3"/>
+  <text x="445" y="115" text-anchor="middle" fill="#8b949e" font-size="11">minus (A &minus; B)</text>
+
+  <!-- Complement -->
+  <rect x="380" y="125" width="130" height="70" rx="10" fill="rgba(248,81,73,0.06)" stroke="#f85149" stroke-width="1.5"/>
+  <circle cx="420" cy="160" r="30" fill="#0d1117" stroke="#f85149" stroke-width="2"/>
+  <text x="445" y="215" text-anchor="middle" fill="#8b949e" font-size="11">complement (&not;A)</text>
+</svg>
+</div>
+<p class="diagram-caption">The four set operations every Region supports.</p>
+
+<div class="example-block">
+<div class="example-label">Worked Example: Character Spans</div>
+<pre>// A link points at characters 3&ndash;7 in a document
+let span = IntegerRegion::interval(3, 7);
+
+// Another link points at characters 5&ndash;10
+let other = IntegerRegion::interval(5, 10);
+
+// Where do they overlap?
+let overlap = span.intersect(&amp;other);    // {5, 6} &mdash; interval [5, 7)
+
+// What's the combined coverage?
+let combined = span.union_with(&amp;other);   // {3,4,5,6,7,8,9} &mdash; interval [3, 10)
+
+// What's in the first span but not the second?
+let unique = span.minus(&amp;other);          // {3, 4} &mdash; interval [3, 5)
+
+// How many characters?
+assert_eq!(span.count(), Some(4));        // 3,4,5,6 (stop is exclusive)</pre>
+</div>
+
+<p>
+Regions can represent finite spans, infinite ranges, or arbitrary unions of intervals.
+The <code>is_simple</code> method tells you if a region is a single contiguous interval
+(most document spans are simple). <code>count()</code> returns <code>None</code> for
+infinite regions (like <code>above(10)</code> = all positions &ge; 10).
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 5 -->
+<!-- ============================================================ -->
+<h2 id="s5">5. Dsp (Displacement): Moving Points</h2>
+
+<p>
+A <code>Dsp</code> (displacement) is a translation. In <code>IntegerSpace</code>, it's
+just an offset:
+</p>
+
+<pre>pub struct IntegerDsp(pub i64);
+
+impl Dsp for IntegerDsp {
+    fn of(&amp;self, pos: &amp;IntegerPos) -&gt; IntegerPos {
+        IntegerPos(pos.0.wrapping_add(self.0))  // shift by offset
+    }
+
+    fn of_all(&amp;self, region: &amp;IntegerRegion) -&gt; IntegerRegion {
+        // shift every point in the region by the offset
+        IntegerRegion { inner: region.inner.shift(self.0) }
+    }
+
+    fn inverse(&amp;self) -&gt; Self {
+        IntegerDsp(self.0.wrapping_neg())  // shift back
+    }
+
+    fn compose(&amp;self, other: &amp;Self) -&gt; Self {
+        IntegerDsp(self.0.wrapping_add(other.0))  // chain two shifts
+    }
+}</pre>
+
+<div class="example-block">
+<div class="example-label">Worked Example: Text Insertion</div>
+<pre>// A link points at position 10
+let link_pos = IntegerPos(10);
+
+// User inserts 3 characters at position 5
+let shift = IntegerDsp(3);  // displacement: +3
+
+// The link's position must move to stay correct
+let new_pos = shift.of(&amp;link_pos);  // IntegerPos(13)
+
+// Or shift the whole span [10, 20) at once
+let span = IntegerRegion::interval(10, 20);
+let new_span = shift.of_all(&amp;span);  // interval [13, 23)</pre>
+</div>
+
+<p>
+Displacements form a <strong>group</strong>: they have an identity (offset 0), every
+displacement has an inverse (negate the offset), and composing is associative. This
+mathematical structure is what makes span migration work reliably.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 6 -->
+<!-- ============================================================ -->
+<h2 id="s6">6. OrderSpec: Sorting Positions</h2>
+
+<p>
+An <code>OrderSpec</code> defines how to sort positions. The simplest are ascending
+and descending:
+</p>
+
+<pre>pub struct IntegerAscending;
+impl OrderSpec for IntegerAscending {
+    fn follows(&amp;self, a: &amp;IntegerPos, b: &amp;IntegerPos) -&gt; bool {
+        a.0 &gt;= b.0  // a comes after (or equals) b
+    }
+}</pre>
+
+<p>
+OrderSpecs can be composed: <code>ReverseOrder</code> flips any order, and
+<code>ChainedOrder</code> uses a secondary order when the primary can't decide.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 7 -->
+<!-- ============================================================ -->
+<h2 id="s7">7. The Transition-Set Trick: How Regions Actually Work</h2>
+
+<p>
+The most clever piece of engineering in the space module is the
+<strong>transition-set representation</strong> used by <code>XnRegion</code> (which
+backs <code>IntegerRegion</code>) and <code>RealRegion</code>. Instead of storing
+every point in a region, we store the <em>boundaries</em> where the region starts or
+stops being inside.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 200" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <!-- Number line -->
+  <line x1="40" y1="100" x2="740" y2="100" stroke="#30363d" stroke-width="2"/>
+  <text x="40" y="125" fill="#484f58" font-size="10" text-anchor="middle">0</text>
+  <text x="120" y="125" fill="#484f58" font-size="10" text-anchor="middle">5</text>
+  <text x="200" y="125" fill="#484f58" font-size="10" text-anchor="middle">10</text>
+  <text x="280" y="125" fill="#484f58" font-size="10" text-anchor="middle">15</text>
+  <text x="360" y="125" fill="#484f58" font-size="10" text-anchor="middle">20</text>
+  <text x="440" y="125" fill="#484f58" font-size="10" text-anchor="middle">25</text>
+  <text x="520" y="125" fill="#484f58" font-size="10" text-anchor="middle">30</text>
+  <text x="600" y="125" fill="#484f58" font-size="10" text-anchor="middle">35</text>
+  <text x="680" y="125" fill="#484f58" font-size="10" text-anchor="middle">40</text>
+  <text x="740" y="125" fill="#484f58" font-size="10" text-anchor="middle">45</text>
+
+  <!-- Region [5, 15) ∪ [25, 35) -->
+  <!-- Inside zone 1 -->
+  <rect x="120" y="80" width="80" height="40" fill="rgba(163,113,247,0.15)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="160" y="70" text-anchor="middle" fill="#a371f7" font-size="10" font-weight="600">[5, 15)</text>
+
+  <!-- Inside zone 2 -->
+  <rect x="360" y="80" width="80" height="40" fill="rgba(163,113,247,0.15)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="400" y="70" text-anchor="middle" fill="#a371f7" font-size="10" font-weight="600">[25, 35)</text>
+
+  <!-- Transition markers -->
+  <line x1="120" y1="75" x2="120" y2="125" stroke="#f85149" stroke-width="2"/>
+  <text x="120" y="145" text-anchor="middle" fill="#f85149" font-size="9">enter at 5</text>
+  <line x1="200" y1="75" x2="200" y2="125" stroke="#f85149" stroke-width="2"/>
+  <text x="200" y="145" text-anchor="middle" fill="#f85149" font-size="9">exit at 15</text>
+  <line x1="360" y1="75" x2="360" y2="125" stroke="#f85149" stroke-width="2"/>
+  <text x="360" y="145" text-anchor="middle" fill="#f85149" font-size="9">enter at 25</text>
+  <line x1="440" y1="75" x2="440" y2="125" stroke="#f85149" stroke-width="2"/>
+  <text x="440" y="145" text-anchor="middle" fill="#f85149" font-size="9">exit at 35</text>
+
+  <!-- Data representation -->
+  <rect x="120" y="165" width="480" height="25" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="360" y="182" text-anchor="middle" fill="#a371f7" font-size="10" font-family="JetBrains Mono">starts_inside: false  transitions: [5, 15, 25, 35]</text>
+</svg>
+</div>
+<p class="diagram-caption">The region [5,15) &cup; [25,35) stored as four transition points plus a boolean. Only 5 values instead of 20 individual positions.</p>
+
+<p>
+The key insight: a region is represented as <code>starts_inside: bool</code> plus a
+sorted list of <code>transitions: Vec&lt;i64&gt;</code>. At each transition point, you
+flip between inside and outside. To check if a point is inside, you do a binary search
+and count how many transitions come before it &mdash; if that count is odd, you're inside.
+</p>
+
+<div class="note">
+<strong>Why this matters:</strong> This representation is incredibly compact. A span
+of 100,000 characters takes exactly 2 transition values (the start and stop). Set
+operations (intersect, union, minus) become a simple <strong>merge</strong> of two
+sorted transition lists &mdash; O(n+m) time where n and m are the number of transitions,
+not the number of points. This is what makes Xudanu's region algebra fast even on
+large documents.
+</div>
+
+<p>
+The merge algorithm is deceptively simple: walk both transition lists in sorted order,
+flipping each region's inside/outside state, and emit a transition in the result only
+when the combined boolean changes:
+</p>
+
+<pre>// Pseudocode for intersect (AND), union (OR), or minus (AND NOT)
+fn merge_transitions(a, b, combine: fn(bool,bool)-&gt;bool) -&gt; Region {
+    let new_starts = combine(a.starts_inside, b.starts_inside);
+    walk both lists in sorted order;
+    at each transition, flip the corresponding region's state;
+    emit a transition in the result only when combine(a_inside, b_inside) changes;
+}</pre>
+
+<p>
+By passing different <code>combine</code> functions, you get all set operations from
+the same code: <code>|a, b| a &amp;&amp; b</code> for intersect, <code>|a, b| a || b</code>
+for union, <code>|a, b| a &amp;&amp; !b</code> for minus.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 8 -->
+<!-- ============================================================ -->
+<h2 id="s8">8. Concrete Space 1: IntegerSpace (Where Documents Live)</h2>
+
+<p>
+<code>IntegerSpace</code> is the workhorse. Every Edition's positions are
+<code>IntegerPos</code> values. Every document span is an <code>IntegerRegion</code>.
+Every text-delta displacement is an <code>IntegerDsp</code>.
+</p>
+
+<pre>let space = IntegerSpace::new();
+
+// Positions
+let p = space.position(42);           // IntegerPos(42)
+
+// Regions
+let span = space.interval(3, 7);      // characters 3,4,5,6
+let all_above = space.above(100, true);  // everything >= 100
+let all_below = space.below(50, false);  // everything < 50
+
+// Displacements
+let shift = space.translation(5);     // IntegerDsp(5) &mdash; shift by +5
+
+// Ordering
+let asc = space.ascending();          // IntegerAscending
+let desc = space.descending();        // IntegerDescending</pre>
+
+<p>
+<code>IntegerRegion</code> is a thin wrapper around <code>XnRegion</code> (defined in
+<code>edition/xn_region.rs</code>) which implements the transition-set representation
+described above. The full set of operations is verified by the test suite including
+De Morgan's laws and double-complement identity.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 9 -->
+<!-- ============================================================ -->
+<h2 id="s9">9. Concrete Space 2: RealSpace (For Fractional Positions)</h2>
+
+<p>
+<code>RealSpace</code> works with <code>f64</code> positions. This is important for
+the O-tree CRDT, which needs to insert new positions <em>between</em> existing ones
+(without renumbering). Real positions allow fractional values like 3.5.
+</p>
+
+<pre>let space = RealSpace::new();
+let pos = space.position(3.14159);
+
+// Intervals can have open/closed endpoints
+let closed = space.interval(1.0, 5.0, true, true);   // [1.0, 5.0]
+let open   = space.interval(1.0, 5.0, false, false);  // (1.0, 5.0)</pre>
+
+<p>
+<code>RealRegion</code> uses the same transition-set trick as <code>XnRegion</code>,
+but with <code>f64</code> transitions. The merge algorithm for set operations is
+identical. Equality uses <code>f64::to_bits()</code> for exact comparison (no epsilon
+approximation).
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 10 -->
+<!-- ============================================================ -->
+<h2 id="s10">10. Concrete Space 3: SequenceSpace (Tumblers &amp; Federation)</h2>
+
+<p>
+<code>SequenceSpace</code> is the most distinctive Xanadu concept. A
+<code>Sequence</code> is a hierarchical address &mdash; what Ted Nelson called a
+<strong>tumbler</strong>. Think of it as a dotted path like a file system, but for
+hypertext:
+</p>
+
+<pre>Sequence::from_dotted("1.5.3.2.7")
+// = server 1, work 5, edition 3, position 2, element 7</pre>
+
+<p>
+Internally, a Sequence stores its numbers with zeros as separators:
+</p>
+
+<pre>// "1.5.3" is stored as [1, 0, 5, 0, 3]
+// The zeros act as level separators in the hierarchy</pre>
+
+<p>
+Sequences support lexicographic comparison (<code>1.2 &lt; 1.3 &lt; 2.0</code>),
+addition (<code>plus</code>), subtraction (<code>minus</code>), and hierarchical
+decomposition (<code>first</code> / <code>rest</code>):
+</p>
+
+<pre>let addr = Sequence::from_dotted("1.5.3.2.7");
+let server = addr.first();     // Sequence::one(1)
+let rest1 = addr.rest();       // "5.3.2.7"
+let work = rest1.first();      // Sequence::one(5)
+// ...and so on</pre>
+
+<div class="diagram-container">
+<svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <!-- Level 0: root -->
+  <rect x="300" y="10" width="100" height="36" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="2"/>
+  <text x="350" y="33" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700">docuverse</text>
+
+  <!-- Level 1: servers -->
+  <rect x="160" y="70" width="100" height="36" rx="8" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="210" y="93" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="600">server 1</text>
+
+  <rect x="440" y="70" width="100" height="36" rx="8" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="490" y="93" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="600">server 2</text>
+
+  <line x1="325" y1="42" x2="210" y2="65" stroke="#8b949e" stroke-width="1"/>
+  <line x1="375" y1="42" x2="490" y2="65" stroke="#8b949e" stroke-width="1"/>
+
+  <!-- Level 2: works under server 1 -->
+  <rect x="80" y="135" width="100" height="36" rx="8" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="2"/>
+  <text x="130" y="158" text-anchor="middle" fill="#a371f7" font-size="12" font-weight="600">work 1.5</text>
+
+  <rect x="220" y="135" width="100" height="36" rx="8" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="2"/>
+  <text x="270" y="158" text-anchor="middle" fill="#a371f7" font-size="12" font-weight="600">work 1.8</text>
+
+  <line x1="190" y1="102" x2="130" y2="130" stroke="#8b949e" stroke-width="1"/>
+  <line x1="230" y1="102" x2="270" y2="130" stroke="#8b949e" stroke-width="1"/>
+
+  <!-- Level 3: editions -->
+  <rect x="30" y="205" width="100" height="36" rx="8" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="2"/>
+  <text x="80" y="228" text-anchor="middle" fill="#d29922" font-size="11" font-weight="600">ed 1.5.3</text>
+  <line x1="110" y1="167" x2="80" y2="200" stroke="#8b949e" stroke-width="1"/>
+
+  <!-- Highlighted path -->
+  <rect x="140" y="255" width="420" height="30" rx="6" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="1.5"/>
+  <text x="350" y="275" text-anchor="middle" fill="#39d2c0" font-size="11" font-family="JetBrains Mono">1 . 5 . 3 . 2 . 7  &rarr;  server.work.edition.position.element</text>
+</svg>
+</div>
+<p class="diagram-caption">Tumbler addressing: every piece of content has a unique hierarchical path across the federated docuverse.</p>
+
+<h3>Prefix Regions for Hierarchical Lookup</h3>
+
+<p>
+<code>SequenceRegion</code> supports a special <code>prefixed_by</code> constructor
+that creates a region matching everything under a given tumbler prefix:
+</p>
+
+<pre>let space = SequenceSpace::new();
+let server1 = space.prefixed_by(&amp;Sequence::one(1), 0);
+
+// Matches anything on server 1
+server1.contains_sequence(&amp;Sequence::from_dotted("1.5"));     // true
+server1.contains_sequence(&amp;Sequence::from_dotted("1.99.42")); // true
+server1.contains_sequence(&amp;Sequence::from_dotted("2.5"));     // false</pre>
+
+<p>
+This is how federation routing works: "give me everything under server 1" is a prefix
+query. The tumbler hierarchy naturally scopes to servers, works, editions, and
+individual elements.
+</p>
+
+<h3>SequenceDsp: Navigating the Hierarchy</h3>
+
+<p>
+A <code>SequenceDsp</code> has two parts: a <code>shift</code> (which level to move at)
+and a <code>translation</code> (what to add). This lets you express things like "move
+to the next work on the same server" or "go to the same position on a different edition":
+</p>
+
+<pre>// Shift at level 2 (the work level): navigate between works
+let dsp = SequenceDsp::new(2, Sequence::zero());
+let pos = SequencePos(Sequence::from_dotted("1.3.5"));
+let shifted = dsp.of(&amp;pos);
+// Result: 1.0.1.0.3.0.5 &mdash; server becomes 0+1=1, work becomes 0+1=1,
+//          but the shift at level 2 means "go to next work at this level"</pre>
+
+<!-- ============================================================ -->
+<!-- SECTION 11 -->
+<!-- ============================================================ -->
+<h2 id="s11">11. Tumbler Addressing: The Federation Address Book</h2>
+
+<p>
+Tumblers solve a fundamental problem in federated systems: how do you give every
+piece of content a globally unique address without a central authority? The answer
+is hierarchical delegation:
+</p>
+
+<table>
+<tr><th>Level</th><th>Tumbler component</th><th>Example</th><th>Who assigns it</th></tr>
+<tr><td>1</td><td>Server</td><td><code>1</code></td><td>Federation registry (or mutual agreement)</td></tr>
+<tr><td>2</td><td>Work</td><td><code>5</code></td><td>The server (local BeId allocation)</td></tr>
+<tr><td>3</td><td>Edition</td><td><code>3</code></td><td>Revision number within the work</td></tr>
+<tr><td>4</td><td>Position</td><td><code>2</code></td><td>O-tree position within the edition</td></tr>
+<tr><td>5</td><td>Element</td><td><code>7</code></td><td>Element within a multi-element position</td></tr>
+</table>
+
+<div class="gold">
+<strong>Gold heritage:</strong> Tumblers were one of the most important innovations
+in Udanax-Gold. They give every transcluded or linked passage a permanent, globally
+unique, hierarchically-delegated address. When server 1 creates a work, it assigns it
+a local number. The full tumbler <code>1.5.3.2.7</code> is unique across the entire
+federation because no other server will use server-id 1.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 12 -->
+<!-- ============================================================ -->
+<h2 id="s12">10. Concrete Space 4: CrossSpace2 (Two Dimensions)</h2>
+
+<p>
+<code>CrossSpace2&lt;A, B&gt;</code> is the Cartesian product of two spaces. A
+position is a <code>Tuple2(a_pos, b_pos)</code>. A region is a set of
+"boxes" &mdash; pairs of regions from each axis.
+</p>
+
+<pre>let space = CrossSpace2::new(IntegerSpace::new(), IntegerSpace::new());
+
+// A 2D position: (club_id=1, token_id=10)
+let pos = space.position(IntegerPos(1), IntegerPos(10));
+
+// A 2D box: clubs 1&ndash;5, tokens 10&ndash;20
+let region = space.box_region(
+    IntegerRegion::interval(1, 5),
+    IntegerRegion::interval(10, 20),
+);
+
+assert!(region.contains(&amp;pos));  // true: 1 is in [1,5), 10 is in [10,20)</pre>
+
+<p>
+Cross-regions support <strong>projections</strong> &mdash; you can extract just one
+axis:
+</p>
+
+<pre>let club_axis = region.projection_a();  // IntegerRegion [1, 5)
+let token_axis = region.projection_b(); // IntegerRegion [10, 20)</pre>
+
+<div class="diagram-container">
+<svg viewBox="0 0 600 320" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <!-- Axes -->
+  <line x1="100" y1="280" x2="560" y2="280" stroke="#30363d" stroke-width="2"/>
+  <line x1="100" y1="280" x2="100" y2="20" stroke="#30363d" stroke-width="2"/>
+  <text x="560" y="300" fill="#58a6ff" font-size="11" text-anchor="middle">Club ID &rarr;</text>
+  <text x="80" y="20" fill="#a371f7" font-size="11" text-anchor="middle" transform="rotate(-90 80 20)">Token ID &uarr;</text>
+
+  <!-- Box A -->
+  <rect x="140" y="100" width="120" height="80" fill="rgba(88,166,255,0.10)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="200" y="145" text-anchor="middle" fill="#58a6ff" font-size="10">Box A</text>
+  <text x="200" y="160" text-anchor="middle" fill="#8b949e" font-size="8">clubs [1,5)</text>
+  <text x="200" y="172" text-anchor="middle" fill="#8b949e" font-size="8">tokens [10,20)</text>
+
+  <!-- Box B -->
+  <rect x="340" y="160" width="100" height="60" fill="rgba(163,113,247,0.10)" stroke="#a371f7" stroke-width="2"/>
+  <text x="390" y="195" text-anchor="middle" fill="#a371f7" font-size="10">Box B</text>
+
+  <!-- Intersection -->
+  <rect x="340" y="100" width="20" height="20" fill="rgba(57,210,192,0.30)" stroke="#39d2c0" stroke-width="2"/>
+  <text x="370" y="112" fill="#39d2c0" font-size="8">A&cap;B</text>
+
+  <!-- Projection arrows -->
+  <line x1="140" y1="280" x2="260" y2="280" stroke="#58a6ff" stroke-width="3"/>
+  <text x="200" y="300" text-anchor="middle" fill="#58a6ff" font-size="9">projection_a = [1,5)</text>
+</svg>
+</div>
+<p class="diagram-caption">CrossSpace2: two-dimensional regions for endorsement (club &times; token). Boxes can overlap; projections extract one axis.</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 13 -->
+<!-- ============================================================ -->
+<h2 id="s13">11. Concrete Space 5: CrossSpaceN (N Dimensions)</h2>
+
+<p>
+When you need 3 or more dimensions, <code>CrossSpaceN</code> provides a dynamic,
+type-erased version. Each dimension can be Integer, Real, Sequence, or even another
+Cross:
+</p>
+
+<pre>let space = CrossSpaceN::new(vec![
+    CrossSpaceNSlot::integer(),    // dim 0: club ID
+    CrossSpaceNSlot::integer(),    // dim 1: token ID
+    CrossSpaceNSlot::integer(),    // dim 2: position
+]);
+
+let pos = space.position(vec![
+    DynPosition::integer(1),
+    DynPosition::integer(10),
+    DynPosition::integer(100),
+]);</pre>
+
+<p>
+Positions are <code>DynPosition</code> values that can be Integer, Real, Sequence, or
+Composite (nested). This allows runtime-polymorphic multi-dimensional addressing
+without compile-time generic complexity.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 14 -->
+<!-- ============================================================ -->
+<h2 id="s14">12. Concrete Space 6: FilterSpace (Permission Tags)</h2>
+
+<p>
+<code>FilterSpace</code> is fundamentally different: its "positions" are permission
+tags, and its "regions" are boolean expressions over tag sets. This is how the
+<strong>canopy</strong> filters content by permissions (see
+<a href="transclusion-engine.html">Transclusion Engine</a>).
+</p>
+
+<pre>pub enum Filter {
+    Full,                 // match everything
+    Empty,                // match nothing
+    Subset(u64),          // tag must be present
+    Superset(u64),        // tag must be present
+    Intersection(u64),    // non-empty intersection with tag set
+    NotSubset(u64),       // tag must NOT be present
+    NotSuperset(u64),     // tag must NOT be present
+    And(Vec&lt;Filter&gt;),     // all must match
+    Or(Vec&lt;Filter&gt;),      // any must match
+}</pre>
+
+<p>
+Filters compose with De Morgan's laws: the complement of an AND is the OR of complements,
+and vice versa. The <code>match_tag</code> method tests whether a filter passes against
+a set of tags:
+</p>
+
+<pre>let filter = Filter::and(vec![
+    Filter::subset(42),           // must have club 42
+    Filter::not_subset(99),       // must NOT have club 99
+]);
+
+let tags = vec![42, 100];
+assert!(filter.match_tag(0, &amp;tags));  // true: has 42, doesn't have 99
+
+let tags2 = vec![42, 99];
+assert!(!filter.match_tag(0, &amp;tags2)); // false: has 99</pre>
+
+<div class="note">
+<strong>How it connects:</strong> The canopy stores <code>Filter</code> values in its
+crums. When a query walks the canopy tree, it uses <code>PropFinder</code> (which wraps
+a Filter) to decide which branches to descend into. This is how "show me only public
+content" or "show me content my club can see" becomes a tree-pruning operation.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 15 -->
+<!-- ============================================================ -->
+<h2 id="s15">13. Mappings: Domain-Restricted Displacements</h2>
+
+<p>
+A <code>Mapping</code> is a displacement that only applies within a specific region.
+This is the key abstraction for span migration, three-way merge, and shared-content
+detection.
+</p>
+
+<p>
+The edition layer defines its own mapping types in <code>edition/mapping.rs</code>,
+working with raw <code>i64</code> positions and <code>XnRegion</code>:
+</p>
+
+<pre>pub enum Mapping {
+    Empty,
+    Simple { offset: i64, region: XnRegion },   // shift by offset, but only within region
+    Composite(Vec&lt;Mapping&gt;),                     // multiple piecewise mappings
+}</pre>
+
+<div class="example-block">
+<div class="example-label">Worked Example: Insertion in the Middle</div>
+<pre>// Original document: positions [0, 20)
+// User inserts 5 characters at position 10
+
+// The mapping has two pieces:
+let mapping = Mapping::Composite(vec![
+    // Characters before position 10: don't move
+    Mapping::Simple {
+        offset: 0,
+        region: XnRegion::interval(0, 10),
+    },
+    // Characters at position 10 and after: shift by +5
+    Mapping::Simple {
+        offset: 5,
+        region: XnRegion::above(10),
+    },
+]);
+
+// A link at position 15 needs to move
+assert_eq!(mapping.of(15), Some(20));  // shifted to 20
+
+// A link at position 5 stays put
+assert_eq!(mapping.of(5), Some(5));    // unchanged</pre>
+</div>
+
+<p>
+The space layer's <code>SimpleMapping&lt;S&gt;</code> (in <code>space/mapping.rs</code>)
+generalizes this to any space type, with full support for inverse, restrict, and
+compose. <code>CompositeMapping</code> chains multiple domain-restricted displacements.
+<code>ConstantMapping</code> maps any position in a domain to a fixed set of values
+(useful for default-value regions).
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 16 -->
+<!-- ============================================================ -->
+<h2 id="s16">14. Span Migration: How Mappings Keep Links Alive</h2>
+
+<p>
+When text is edited, every link's span needs to be updated so it still points at the
+right characters. This is called <strong>span migration</strong>. The server's
+<code>migrate_link_spans_for_delta</code> method processes each text delta operation
+and adjusts link spans:
+</p>
+
+<pre>// server.rs:9542
+pub fn migrate_link_spans_for_delta(
+    &amp;mut self,
+    source_work_id: BeId,
+    ops: &amp;[TextDeltaOp],  // Retain/Insert/Delete
+) {
+    for link_id in self.work_to_links.get(&amp;source_work_id) {
+        // For each link end pointing at this work...
+        if let (Some(start), Some(end)) = (hr.start_position(), hr.end_position()) {
+            // Map the old span through the delta operations
+            let (new_start, new_end) =
+                map_span_through_delta(start, end, &amp;delta_ops);
+
+            // Update the link with the new span
+            let new_hr = hr.with_span(Some(new_start), Some(new_end));
+            link = link.with_end(&amp;name, new_hr);
+        }
+    }
+}</pre>
+
+<p>
+<code>map_span_through_delta</code> walks the retain/insert/delete operations and
+computes where the span's start and end positions land. Inserts before the span shift
+it forward; deletes inside the span shrink it; retains keep it in place.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 280" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <!-- Before -->
+  <text x="180" y="25" text-anchor="middle" fill="#8b949e" font-size="12" font-weight="600">BEFORE edit</text>
+  <rect x="40" y="40" width="320" height="30" rx="4" fill="#161b22" stroke="#30363d"/>
+  <text x="50" y="60" fill="#c9d1d9" font-size="11" font-family="JetBrains Mono">H e l l o   W o r l d</text>
+  <!-- Link span -->
+  <rect x="140" y="35" width="60" height="40" rx="4" fill="none" stroke="#a371f7" stroke-width="2" stroke-dasharray="4 2"/>
+  <text x="170" y="90" text-anchor="middle" fill="#a371f7" font-size="10">link: [5, 11)</text>
+
+  <!-- Arrow -->
+  <text x="400" y="60" text-anchor="middle" fill="#58a6ff" font-size="11">insert "Beautiful "</text>
+  <text x="400" y="75" text-anchor="middle" fill="#8b949e" font-size="9">at position 6</text>
+  <path d="M 370 55 L 430 55" fill="none" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrG)"/>
+
+  <!-- After -->
+  <text x="600" y="25" text-anchor="middle" fill="#8b949e" font-size="12" font-weight="600">AFTER edit</text>
+  <rect x="460" y="40" width="300" height="30" rx="4" fill="#161b22" stroke="#30363d"/>
+  <text x="470" y="60" fill="#c9d1d9" font-size="11" font-family="JetBrains Mono">Hello Beautiful World</text>
+  <!-- Migrated link span -->
+  <rect x="555" y="35" width="100" height="40" rx="4" fill="none" stroke="#a371f7" stroke-width="2" stroke-dasharray="4 2"/>
+  <text x="605" y="90" text-anchor="middle" fill="#a371f7" font-size="10">link: [5, 21) migrated!</text>
+
+  <!-- Mapping annotation -->
+  <rect x="40" y="130" width="720" height="25" rx="6" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="1"/>
+  <text x="400" y="147" text-anchor="middle" fill="#39d2c0" font-size="10" font-family="JetBrains Mono">Mapping: { offset: 0 for [0,6), offset: +10 for [6, &infin;) }</text>
+
+  <!-- Three-way merge context -->
+  <rect x="40" y="180" width="720" height="80" rx="8" fill="rgba(88,166,255,0.04)" stroke="#30363d" stroke-width="1"/>
+  <text x="60" y="205" fill="#58a6ff" font-size="12" font-weight="600">Three-Way Merge Uses Mappings Too</text>
+  <text x="60" y="225" fill="#8b949e" font-size="11">build_merge_mapping(source, merged) &rarr; Mapping</text>
+  <text x="60" y="245" fill="#8b949e" font-size="11">Tells you where each position in the source edition landed in the merged result.</text>
+</svg>
+</div>
+<p class="diagram-caption">Span migration: when "Beautiful " (10 chars) is inserted, the link span shifts from [5,11) to [5,21). The mapping encodes this shift.</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 17 -->
+<!-- ============================================================ -->
+<h2 id="s17">15. Shared Mappings: Detecting Transcluded Content</h2>
+
+<p>
+<code>SharedMapping</code> (in <code>edition/shared_mapping.rs</code>) is a sparse,
+position-to-position mapping that connects identical content across editions. It's
+how Xudanu detects transclusions &mdash; content that appears in multiple documents.
+</p>
+
+<p>
+The algorithm fingerprints each element by its content hash, then builds a mapping
+from positions in one edition to positions with the same content in another:
+</p>
+
+<pre>pub fn content_map_shared_onto(
+    my_entries: &amp;[(i64, Carrier)],
+    other_entries: &amp;[(i64, Carrier)],
+) -&gt; SharedMapping {
+    // Build a lookup: content_fingerprint &rarr; positions in other edition
+    let by_fingerprint: BTreeMap&lt;[u8;8], Vec&lt;i64&gt;&gt; = ...;
+
+    // For each of my entries, find matching positions
+    for (pos, carrier) in my_entries {
+        let fp = carrier.element.content_fingerprint();
+        if let Some(other_positions) = by_fingerprint.get(&amp;fp) {
+            pairs.push((*pos, other_pos));  // map my pos &rarr; their pos
+        }
+    }
+    SharedMapping::from_pairs(pairs)
+}</pre>
+
+<p>
+<code>content_shared_region</code> does the simpler version: just return the region
+of positions in my edition that also appear in the other edition (without the
+position-to-position mapping). This is used by the transclusion index to identify
+overlapping content.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 18 -->
+<!-- ============================================================ -->
+<h2 id="s18">16. The Compactor: Squeezing Gaps Out of Regions</h2>
+
+<p>
+Sometimes you need to take a sparse region (e.g., positions [0,5) &cup; [10,15) &cup;
+[20,25)) and "compact" it into a dense region [0,15) where the gaps are removed. The
+<code>compactor()</code> method on <code>XnRegion</code> does exactly this:
+</p>
+
+<pre>impl XnRegion {
+    pub fn compactor(&amp;self) -&gt; Mapping {
+        let mut mappings = Vec::new();
+        let mut end = 0;
+        for (start, stop) in &amp;self.intervals() {
+            let offset = end - start;  // how far to shift this interval
+            mappings.push(Mapping::restricted(offset, XnRegion::interval(*start, *stop)));
+            end += stop - start;
+        }
+        // Returns a Composite mapping that shifts each interval down
+    }
+}</pre>
+
+<div class="example-block">
+<div class="example-label">Worked Example: Compacting [0,5) &cup; [10,15) &cup; [20,25)</div>
+<pre>// Interval [0,5):   offset = 0 - 0 = 0,  maps to [0, 5)
+// Interval [10,15): offset = 5 - 10 = -5, maps to [5, 10)
+// Interval [20,25): offset = 10 - 20 = -10, maps to [10, 15)
+// Result: compact region [0, 15)
+
+// The compactor returns the MAPPING, not just the region.
+// You can apply it to positions or use its inverse to expand back.</pre>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 19 -->
+<!-- ============================================================ -->
+<h2 id="s19">17. Order Combinators: Reverse and Chain</h2>
+
+<p>
+<code>ReverseOrder</code> wraps any <code>OrderSpec</code> and reverses it:
+</p>
+
+<pre>impl&lt;P: Position&gt; OrderSpec for ReverseOrder&lt;P&gt; {
+    fn follows(&amp;self, a: &amp;P, b: &amp;P) -&gt; bool {
+        self.inner.follows(b, a)  // swap arguments!
+    }
+}</pre>
+
+<p>
+<code>ChainedOrder</code> uses a primary order, falling back to a secondary order
+when the primary can't decide (returns <code>None</code> from <code>compare</code>):
+</p>
+
+<pre>impl&lt;P: Position&gt; OrderSpec for ChainedOrder&lt;P&gt; {
+    fn follows(&amp;self, a: &amp;P, b: &amp;P) -&gt; bool {
+        match self.primary.compare(a, b) {
+            Some(Greater | Equal) =&gt; true,
+            Some(Less) =&gt; false,
+            None =&gt; self.secondary.follows(a, b),  // fallback
+        }
+    }
+}</pre>
+
+<!-- ============================================================ -->
+<!-- SECTION 20 -->
+<!-- ============================================================ -->
+<h2 id="s18b">18. Arrangement: Sorted Positions for Rendering</h2>
+
+<p>
+<code>Arrangement&lt;P&gt;</code> is a utility that takes a set of positions, sorts
+them by a comparison function, and provides indexed access. It's used for rendering
+content in order and for efficient slicing:
+</p>
+
+<pre>let arr = Arrangement::new(|a: &amp;i64, b: &amp;i64| a.cmp(b), vec![50, 30, 10, 40, 20]);
+assert_eq!(arr.position_at(0), Some(&amp;10));  // sorted
+assert_eq!(arr.slice(1, 4), &amp;[20, 30, 40]); // range access</pre>
+
+<!-- ============================================================ -->
+<!-- SECTION 21 -->
+<!-- ============================================================ -->
+<h2 id="s19">19. How Everything Connects</h2>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 520" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrC" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#8b949e"/></marker>
+    <marker id="arrG3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+    <marker id="arrB3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#58a6ff"/></marker>
+    <marker id="arrP3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#a371f7"/></marker>
+    <marker id="arrA3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#d29922"/></marker>
+  </defs>
+
+  <!-- Layer label -->
+  <text x="20" y="50" fill="#484f58" font-size="11" font-weight="600" letter-spacing="1">SPACE ALGEBRA</text>
+  <text x="20" y="200" fill="#484f58" font-size="11" font-weight="600" letter-spacing="1">EDITION MODEL</text>
+  <text x="20" y="350" fill="#484f58" font-size="11" font-weight="600" letter-spacing="1">APPLICATION</text>
+
+  <!-- IntegerSpace -->
+  <rect x="40" y="60" width="130" height="50" rx="8" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="105" y="82" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="700">IntegerSpace</text>
+  <text x="105" y="98" text-anchor="middle" fill="#8b949e" font-size="9">positions, spans</text>
+
+  <!-- SequenceSpace -->
+  <rect x="200" y="60" width="130" height="50" rx="8" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="2"/>
+  <text x="265" y="82" text-anchor="middle" fill="#a371f7" font-size="12" font-weight="700">SequenceSpace</text>
+  <text x="265" y="98" text-anchor="middle" fill="#8b949e" font-size="9">tumblers</text>
+
+  <!-- CrossSpace2 -->
+  <rect x="360" y="60" width="130" height="50" rx="8" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="2"/>
+  <text x="425" y="82" text-anchor="middle" fill="#39d2c0" font-size="12" font-weight="700">CrossSpace2</text>
+  <text x="425" y="98" text-anchor="middle" fill="#8b949e" font-size="9">2D regions</text>
+
+  <!-- FilterSpace -->
+  <rect x="520" y="60" width="130" height="50" rx="8" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="2"/>
+  <text x="585" y="82" text-anchor="middle" fill="#f85149" font-size="12" font-weight="700">FilterSpace</text>
+  <text x="585" y="98" text-anchor="middle" fill="#8b949e" font-size="9">permissions</text>
+
+  <!-- RealSpace -->
+  <rect x="40" y="130" width="130" height="40" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="105" y="155" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">RealSpace</text>
+
+  <!-- XnRegion + Mapping (edition layer) -->
+  <rect x="40" y="210" width="130" height="50" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="2"/>
+  <text x="105" y="232" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700">XnRegion</text>
+  <text x="105" y="248" text-anchor="middle" fill="#8b949e" font-size="9">transition sets</text>
+
+  <rect x="200" y="210" width="130" height="50" rx="8" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="2"/>
+  <text x="265" y="232" text-anchor="middle" fill="#d29922" font-size="12" font-weight="700">Mapping</text>
+  <text x="265" y="248" text-anchor="middle" fill="#8b949e" font-size="9">span migration</text>
+
+  <rect x="360" y="210" width="130" height="50" rx="8" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="2"/>
+  <text x="425" y="232" text-anchor="middle" fill="#39d2c0" font-size="12" font-weight="700">SharedMapping</text>
+  <text x="425" y="248" text-anchor="middle" fill="#8b949e" font-size="9">transclusion detect</text>
+
+  <rect x="520" y="210" width="130" height="50" rx="8" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="585" y="232" text-anchor="middle" fill="#a371f7" font-size="12" font-weight="700">Canopy</text>
+  <text x="585" y="248" text-anchor="middle" fill="#8b949e" font-size="9">filtered queries</text>
+
+  <!-- Arrows: space -> edition -->
+  <line x1="105" y1="110" x2="105" y2="205" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arrG3)"/>
+  <text x="120" y="160" fill="#3fb950" font-size="9">backs</text>
+  <line x1="585" y1="110" x2="585" y2="205" stroke="#f85149" stroke-width="1.5" marker-end="url(#arrC)"/>
+  <text x="600" y="160" fill="#f85149" font-size="9">filters</text>
+
+  <!-- Application layer -->
+  <rect x="40" y="360" width="150" height="45" rx="8" fill="rgba(88,166,255,0.04)" stroke="#30363d" stroke-width="1.5"/>
+  <text x="115" y="380" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">Edition / O-Tree</text>
+  <text x="115" y="395" text-anchor="middle" fill="#8b949e" font-size="9">documents</text>
+
+  <rect x="220" y="360" width="150" height="45" rx="8" fill="rgba(163,113,247,0.04)" stroke="#30363d" stroke-width="1.5"/>
+  <text x="295" y="380" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">Links &amp; Backlinks</text>
+  <text x="295" y="395" text-anchor="middle" fill="#8b949e" font-size="9">spans migrate</text>
+
+  <rect x="400" y="360" width="150" height="45" rx="8" fill="rgba(57,210,192,0.04)" stroke="#30363d" stroke-width="1.5"/>
+  <text x="475" y="380" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">Transclusion</text>
+  <text x="475" y="395" text-anchor="middle" fill="#8b949e" font-size="9">shared content</text>
+
+  <rect x="580" y="360" width="160" height="45" rx="8" fill="rgba(248,81,73,0.04)" stroke="#30363d" stroke-width="1.5"/>
+  <text x="660" y="380" text-anchor="middle" fill="#e6edf3" font-size="11" font-weight="600">Federation</text>
+  <text x="660" y="395" text-anchor="middle" fill="#8b949e" font-size="9">tumbler routing</text>
+
+  <!-- Arrows: edition -> application -->
+  <line x1="105" y1="260" x2="115" y2="355" stroke="#8b949e" stroke-width="1" stroke-dasharray="3 3" marker-end="url(#arrC)"/>
+  <line x1="265" y1="260" x2="295" y2="355" stroke="#8b949e" stroke-width="1" stroke-dasharray="3 3" marker-end="url(#arrC)"/>
+  <line x1="425" y1="260" x2="475" y2="355" stroke="#8b949e" stroke-width="1" stroke-dasharray="3 3" marker-end="url(#arrC)"/>
+  <line x1="265" y1="85" x2="580" y2="375" stroke="#a371f7" stroke-width="1" stroke-dasharray="3 3" opacity="0.4" marker-end="url(#arrC)"/>
+  <line x1="585" y1="260" x2="660" y2="355" stroke="#8b949e" stroke-width="1" stroke-dasharray="3 3" marker-end="url(#arrC)"/>
+
+  <!-- Bottom annotation -->
+  <rect x="40" y="440" width="700" height="60" rx="8" fill="rgba(88,166,255,0.04)" stroke="#30363d"/>
+  <text x="390" y="462" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="600">The Same Algebra Everywhere</text>
+  <text x="390" y="480" text-anchor="middle" fill="#8b949e" font-size="11">intersect, union, shift, contains, compose &mdash; all work identically</text>
+  <text x="390" y="494" text-anchor="middle" fill="#8b949e" font-size="11">whether you're processing character spans or tumbler addresses</text>
+</svg>
+</div>
+<p class="diagram-caption">The space algebra flows from abstract traits (top) through edition-layer implementations (middle) to application features (bottom).</p>
+
+<div class="note">
+<strong>For developers getting started:</strong> You almost never need to work with
+the space traits directly. The practical API is:
+<ul>
+  <li><code>XnRegion::interval(start, stop)</code> for character spans</li>
+  <li><code>Mapping::shift(offset)</code> for displacement after edits</li>
+  <li><code>region.intersect / union / minus</code> for set operations on spans</li>
+  <li><code>Sequence::from_dotted("1.5.3")</code> for federation addressing</li>
+</ul>
+The traits exist so these operations are <em>guaranteed consistent</em> across all
+position types.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 22 -->
+<!-- ============================================================ -->
+<h2 id="s20">20. Source Code Map</h2>
+
+<table>
+<tr><th>File</th><th>Path</th><th>Key Types</th></tr>
+<tr><td><code class="accent-blue">traits.rs</code></td><td><code>src/space/traits.rs</code></td><td><code>Space</code>, <code>Position</code>, <code>Region</code>, <code>Dsp</code>, <code>OrderSpec</code></td></tr>
+<tr><td><code class="accent-blue">integer.rs</code></td><td><code>src/space/integer.rs</code></td><td><code>IntegerSpace</code>, <code>IntegerPos</code>, <code>IntegerRegion</code>, <code>IntegerDsp</code>, <code>IntegerAscending/Descending</code></td></tr>
+<tr><td><code class="accent-blue">real.rs</code></td><td><code>src/space/real.rs</code></td><td><code>RealSpace</code>, <code>RealPos</code>, <code>RealRegion</code>, <code>RealDsp</code></td></tr>
+<tr><td><code class="accent-purple">sequence.rs</code></td><td><code>src/space/sequence.rs</code></td><td><code>Sequence</code>, <code>SequenceSpace</code>, <code>SequencePos</code>, <code>SequenceRegion</code>, <code>SequenceDsp</code>, <code>SequenceEdge</code></td></tr>
+<tr><td><code class="accent-cyan">cross.rs</code></td><td><code>src/space/cross.rs</code></td><td><code>CrossSpace2</code>, <code>Tuple2</code>, <code>CrossRegion2</code>, <code>CrossDsp2</code>, <code>CrossOrder2</code></td></tr>
+<tr><td><code class="accent-cyan">cross_n.rs</code></td><td><code>src/space/cross_n.rs</code></td><td><code>CrossSpaceN</code>, <code>CrossSpaceNSlot</code>, <code>DynPosition</code>, <code>CrossRegionN</code>, <code>CrossDspN</code></td></tr>
+<tr><td><code class="accent-red">filter.rs</code></td><td><code>src/space/filter.rs</code></td><td><code>FilterSpace</code>, <code>FilterPosition</code>, <code>Filter</code> (Full/Empty/Subset/Superset/Intersection/Not/And/Or), <code>Joint</code>, <code>RegionDelta</code></td></tr>
+<tr><td><code class="accent-amber">mapping.rs</code></td><td><code>src/space/mapping.rs</code></td><td><code>SimpleMapping</code>, <code>CompositeMapping</code>, <code>ConstantMapping</code>, <code>EmptyMapping</code>, <code>MappingSpace/Region/Dsp</code> traits</td></tr>
+<tr><td><code class="accent-red">order.rs</code></td><td><code>src/space/order.rs</code></td><td><code>ReverseOrder</code>, <code>ChainedOrder</code></td></tr>
+<tr><td><code class="accent-green">arrangement.rs</code></td><td><code>src/space/arrangement.rs</code></td><td><code>Arrangement&lt;P&gt;</code></td></tr>
+<tr><td><code>phase3_tests.rs</code></td><td><code>src/space/phase3_tests.rs</code></td><td>1319 lines of tests: tumbler addressing, cross-spaces, endorsement regions</td></tr>
+<tr><td colspan="3">&nbsp;</td></tr>
+<tr><td colspan="3"><strong>Edition-layer consumers</strong></td></tr>
+<tr><td><code class="accent-green">xn_region.rs</code></td><td><code>src/edition/xn_region.rs</code></td><td><code>XnRegion</code> &mdash; the transition-set implementation backing IntegerRegion</td></tr>
+<tr><td><code class="accent-amber">mapping.rs</code></td><td><code>src/edition/mapping.rs</code></td><td><code>Mapping</code> (Empty/Simple/Composite) &mdash; edition-layer displacement</td></tr>
+<tr><td><code class="accent-cyan">shared_mapping.rs</code></td><td><code>src/edition/shared_mapping.rs</code></td><td><code>SharedMapping</code>, <code>content_map_shared_onto</code>, <code>content_shared_region</code></td></tr>
+</table>
+
+<div class="legend" style="margin-top:24px">
+  <div class="legend-item"><div class="legend-swatch" style="background:rgba(88,166,255,0.3);border:1px solid #58a6ff"></div> Integer/Real spaces</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:rgba(163,113,247,0.3);border:1px solid #a371f7"></div> Sequence/tumbler space</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:rgba(57,210,192,0.3);border:1px solid #39d2c0"></div> Cross spaces</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:rgba(248,81,73,0.3);border:1px solid #f85149"></div> Filter space</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:rgba(210,153,34,0.3);border:1px solid #d29922"></div> Mappings</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:rgba(63,185,80,0.3);border:1px solid #3fb950"></div> XnRegion / Edition</div>
+</div>
+
+<div class="footer">
+  Xudanu Documentation &mdash; <a href="index.html">Home</a> &mdash; <a href="editions-and-works.html">Editions &amp; Works</a> &mdash; <a href="ent-dagwood-trace-dag.html">Ent, DagWood &amp; Trace DAG</a> &mdash; <a href="transclusion-engine.html">Transclusion Engine</a>
+</div>
+
+</div>
+<script src="github-links.js"></script>
+</body>
+</html>

@@ -429,8 +429,8 @@ fn walk_clamped(
                     }
 
                     let within = old_char_pos.saturating_sub(entry_start);
-                    let available = entry_len - within;
-                    let remaining = target_char_pos - old_char_pos;
+                    let available = entry_len.saturating_sub(within);
+                    let remaining = target_char_pos.saturating_sub(old_char_pos);
                     let take = remaining.min(available);
 
                     if within == 0 && take == entry_len {
@@ -461,8 +461,8 @@ fn walk_clamped(
                     }
                     let entry_start = starts[current_entry_idx];
                     let within = old_char_pos.saturating_sub(entry_start);
-                    let available = entry_len - within;
-                    let remaining = target_char_pos - old_char_pos;
+                    let available = entry_len.saturating_sub(within);
+                    let remaining = target_char_pos.saturating_sub(old_char_pos);
                     let take = remaining.min(available);
                     old_char_pos += take;
                     if within + take == entry_len {

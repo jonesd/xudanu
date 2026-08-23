@@ -1,6 +1,6 @@
 [package]
 name = "xudanu"
-version = "1.5.0"
+version = "1.7.0"
 edition = "2021"
 license = "Apache-2.0"
 authors = ["David Jones <david@dgjones.info>"]
@@ -12,6 +12,11 @@ crate-type = ["cdylib", "rlib"]
 [[bin]]
 name = "xudanu-server"
 required-features = ["server"]
+
+[[bin]]
+name = "xudanu-robots"
+required-features = ["server"]
+path = "src/bin/xudanu-robots.rs"
 
 [[bin]]
 name = "xudanu-cli"
@@ -60,6 +65,7 @@ hkdf = { version = "0.12", optional = true }
 argon2 = { version = "0.5", optional = true }
 subtle = { version = "2.5", optional = true }
 rand = { version = "0.8", optional = true }
+anyhow = "1"
 zeroize = { version = "1.8", features = ["derive"], optional = true }
 mime_guess = { version = "2.0.5", optional = true }
 tokio-rustls = { version = "0.26", optional = true }
@@ -77,6 +83,7 @@ cli-epub-to-text = { version = "0.1", optional = true }
 image = { version = "0.25", optional = true, features = ["webp", "png", "jpeg", "gif", "bmp"] }
 oxipng = { version = "9", optional = true, default-features = false }
 libheif-rs = { version = "2", optional = true, features = ["image"] }
+ammonia = "4.1.4"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

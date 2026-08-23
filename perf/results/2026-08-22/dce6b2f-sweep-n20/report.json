@@ -1,0 +1,77 @@
+{
+  "meta": {
+    "started_at": "1787443018Z",
+    "duration_secs": 120,
+    "git_commit": "unknown",
+    "binary_version": "unknown",
+    "runner": "local",
+    "profile": "sweep-n20",
+    "robots": {
+      "readers": 5,
+      "transcluders": 0,
+      "writers": 20,
+      "linkers": 3
+    }
+  },
+  "latency": {
+    "ops": {
+      "work_revise_delta": {
+        "p50": 0,
+        "p95": 1,
+        "p99": 2,
+        "count": 4060,
+        "max": 23
+      },
+      "work_create": {
+        "p50": 10,
+        "p95": 16,
+        "p99": 17,
+        "count": 20,
+        "max": 17
+      },
+      "federated_search": {
+        "p50": 1,
+        "p95": 1,
+        "p99": 1,
+        "count": 10,
+        "max": 1
+      }
+    }
+  },
+  "honesty": {
+    "save_ack_timeouts": 0,
+    "op_errors": 4,
+    "text_resurrections": 0,
+    "lock_poisonings": 0,
+    "false_unsigned_spans": 0
+  },
+  "vitals": {
+    "ops_total": 4090,
+    "rss_note": ""
+  },
+  "verdict": {
+    "pass": true,
+    "criteria": {
+      "save_ack_timeouts_zero": {
+        "limit": 0,
+        "actual": 0,
+        "ok": true
+      },
+      "keystroke_p95_lt_150ms": {
+        "limit": 150,
+        "actual": 1,
+        "ok": true
+      },
+      "op_error_rate_lt_1pct": {
+        "limit": 40,
+        "actual": 4,
+        "ok": true
+      },
+      "work_create_p95_lt_500ms": {
+        "limit": 500,
+        "actual": 16,
+        "ok": true
+      }
+    }
+  }
+}

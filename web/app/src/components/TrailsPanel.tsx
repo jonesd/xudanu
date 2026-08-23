@@ -8,6 +8,7 @@ interface Props {
   works: WorkListEntry[];
   onSelectWork: (workId: number) => void;
   onClose: () => void;
+  onStartTrail?: (name: string, stops: Array<{ work_id: number; note?: string | null }>) => void;
 }
 
 function hexId(id: number): string {
@@ -26,7 +27,7 @@ function patchTrail(trails: TrailPayload[], trailId: number, fn: (t: TrailPayloa
   return trails.map((t) => (t.trail_id === trailId ? fn(t) : t));
 }
 
-export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClose }: Props) {
+export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClose, onStartTrail }: Props) {
   const { drag, onMouseDown, dialogRef } = useDraggable();
   const [tab, setTab] = useState<Tab>("mine");
   const [trails, setTrails] = useState<TrailPayload[]>([]);
@@ -35,6 +36,10 @@ export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClos
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  // Auto-expand the first published trail on first load: stops (and
+  // their click-to-open behaviour) are the point of the dialog — a
+  // collapsed card hides them behind an unlabelled arrow.
+  const autoExpanded = useRef(false);
   const [editingId, setEditingId] = useState<number | null>(null);
 
   const [newName, setNewName] = useState("");
@@ -59,14 +64,14 @@ export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClos
 
   const refreshDiscover = useCallback(async () => {
     if (!client) return;
-    try {
-      const [cats, list] = await Promise.all([
-        client.trailListCategories(),
-        client.trailListPublished(selectedCategory ?? undefined),
-      ]);
-      setCategories(cats);
-      setPublishedTrails(list);
-    } catch { /* network error — will retry */ }
+    // Independent: a categories failure must not blank the trail list
+    // (and vice versa) — they answer different questions.
+    const [catsR, listR] = await Promise.allSettled([
+      client.trailListCategories(),
+      client.trailListPublished(selectedCategory ?? undefined),
+    ]);
+    if (catsR.status === "fulfilled") setCategories(catsR.value);
+    if (listR.status === "fulfilled") setPublishedTrails(listR.value);
     setLoading(false);
   }, [client, selectedCategory]);
 
@@ -74,6 +79,15 @@ export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClos
     if (tab === "mine") refreshMine();
     else refreshDiscover();
   }, [tab, refreshMine, refreshDiscover]);
+
+  useEffect(() => {
+    if (autoExpanded.current) return;
+    const first = publishedTrails[0];
+    if (first) {
+      setExpandedId(first.trail_id);
+      autoExpanded.current = true;
+    }
+  }, [publishedTrails]);
 
   const handleCreate = () => {
     if (!client || !newName.trim()) return;
@@ -241,6 +255,17 @@ export function TrailsPanel({ client, currentWorkId, works, onSelectWork, onClos
           <span className="trail-card-name">{trail.name}</span>
           {trail.published && <span className="trail-badge trail-badge-published">Published</span>}
           <span className="trail-card-count">{trail.stops.length} stop{trail.stops.length !== 1 ? "s" : ""}</span>
+          {onStartTrail && trail.stops.length > 0 && (
+            <button
+              type="button"
+              className="trail-start-btn"
+              title={`Follow this trail from stop 1 (${trail.stops.length} stops)`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onStartTrail(trail.name, trail.stops.map((s) => ({ work_id: s.work_id, note: s.note ?? null })));
+              }}
+            >{"\u25b6"} Start</button>
+          )}
           {interactive && currentWorkId && (
             <button
               type="button"

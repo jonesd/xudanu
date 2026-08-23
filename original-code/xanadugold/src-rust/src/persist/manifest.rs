@@ -39,6 +39,20 @@ pub struct StandaloneEditionChunkRef {
     pub edition_ref: EditionChunkRef,
 }
 
+/// FR-39 Story 1: a registered link type. Custom types carry the
+/// definition work's id as the type id; built-ins 1-5 alias their
+/// historical ids and gain definition works on fresh boots.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LinkTypeRegistryEntry {
+    pub type_id: u64,
+    pub name: String,
+    // NOTE: no skip_serializing_if — this struct is serialized inside
+    // the postcard root chunk (positional format); skipping a field
+    // misaligns the bytes that follow.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub definition_work: Option<BeId>,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LinkEntry {
     pub link_id: BeId,
@@ -59,6 +73,25 @@ pub struct LinkEntry {
         serde(default, skip_serializing_if = "Vec::is_empty")
     )]
     pub link_types: Vec<u64>,
+    /// Named ends beyond LeftEnd/RightEnd (FR-40 Story 1).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub named_ends: Vec<(String, crate::server::transport::protocol::HyperRefPayload)>,
+    /// Home document (FR-40 Story 3); None = server-global.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub home_document: Option<BeId>,
+    /// Cross-server notify outcome, when one was attempted (FR-40
+    /// sender feedback).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub cross_server_notify: Option<crate::server::server::CrossServerNotifyOutcome>,
 }
 
 /// On-disk representation of a work entry in the manifest.
@@ -236,6 +269,11 @@ pub struct TrailManifestEntry {
     pub stops: Vec<TrailStopManifestEntry>,
     pub created_at: u64,
     pub updated_at: u64,
+    /// FR-37 4c/4d: the derived work presenting this trail as an
+    /// addressable edition (serde-default: pre-4c manifests restore
+    /// as None -> lazy rebuild on first ensure).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub derived_work_id: Option<BeId>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -363,6 +401,16 @@ pub struct Manifest {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub links_chunk_hash: Option<[u8; 32]>,
+
+    // ── link type registry (FR-39 Story 1) ──
+    // Registered link types with their definition works. Type ids for
+    // custom types are the definition work's id (the work IS the type);
+    // built-ins 1-5 alias their historical ids.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub link_type_registry: Vec<LinkTypeRegistryEntry>,
 
     // ── v3: federation ──
     // Migrated to chunk storage.
@@ -1219,6 +1267,7 @@ pub fn create_empty_manifest(
         links: Vec::new(),
         link_counter: 0,
         links_chunk_hash: None,
+        link_type_registry: vec![],
         admin: AdminEntry {
             accepting_connections: true,
             shutdown_requested: false,
@@ -1469,6 +1518,9 @@ mod tests {
             origin_ref: None,
             destination_ref: None,
             link_types: vec![],
+            named_ends: Vec::new(),
+            home_document: None,
+            cross_server_notify: None,
         });
         manifest.link_counter = 51;
 

@@ -40,6 +40,8 @@ pub struct AppState {
     pub governance_tx: tokio::sync::broadcast::Sender<super::federation_handler::FederationFrame>,
     pub rate_limiter: Arc<RateLimiter>,
     pub dev_mode: bool,
+    /// FR-43: per-op dispatch latency (robots/CI read via snapshot).
+    pub metrics: DispatchMetrics,
 }
 
 impl AppState {
@@ -68,6 +70,7 @@ impl AppState {
             verification: crate::server::verification::VerificationState::new(String::new()),
             governance_tx: gov_tx,
             rate_limiter: Arc::new(RateLimiter::new()),
+            metrics: DispatchMetrics::default(),
             dev_mode: false,
         }
     }
@@ -537,5 +540,132 @@ mod tests {
         let result = handle.save_ticket_nonces();
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::NotFound);
+    }
+}
+
+/// FR-43 metrics sink: per-op dispatch wall-time, in-process.
+/// Fixed log-ish buckets + count/sum; p50/p95/p99 computed on read.
+/// Read via `metrics_snapshot()` (robots / admin ops).
+#[derive(Debug, Default)]
+pub struct DispatchMetrics {
+    /// op name -> (count, total_us, bucket_idx -> count)
+    ops: std::sync::RwLock<std::collections::HashMap<String, OpHist>>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct OpHist {
+    pub count: u64,
+    pub total_us: u64,
+    pub max_us: u64,
+    /// buckets: <=1ms, <=5ms, <=20ms, <=100ms, <=500ms, <=2s, >2s
+    pub buckets: [u64; 7],
+}
+
+impl DispatchMetrics {
+    pub fn record(&self, op: &str, duration: std::time::Duration) {
+        let us = duration.as_micros() as u64;
+        let bucket = if us <= 1_000 {
+            0
+        } else if us <= 5_000 {
+            1
+        } else if us <= 20_000 {
+            2
+        } else if us <= 100_000 {
+            3
+        } else if us <= 500_000 {
+            4
+        } else if us <= 2_000_000 {
+            5
+        } else {
+            6
+        };
+        if let Ok(mut ops) = self.ops.write() {
+            let h = ops.entry(op.to_string()).or_default();
+            h.count += 1;
+            h.total_us += us;
+            h.max_us = h.max_us.max(us);
+            h.buckets[bucket] += 1;
+        }
+    }
+
+    /// Snapshot: op -> (count, avg_us, max_us, p50_us, p95_us, p99_us)
+    /// percentiles from bucket interpolation (sufficient for capacity
+    /// trending; not HDR precision).
+    pub fn snapshot(&self) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {
+        let ops = match self.ops.read() {
+            Ok(o) => o,
+            Err(e) => e.into_inner(),
+        };
+        let mut out: Vec<(String, u64, u64, u64, u64, u64, u64)> = ops
+            .iter()
+            .map(|(op, h)| {
+                let p = |q: f64| -> u64 {
+                    let target = (h.count as f64 * q).ceil() as u64;
+                    let mut acc = 0u64;
+                    for (i, &b) in h.buckets.iter().enumerate() {
+                        acc += b;
+                        if acc >= target && b > 0 {
+                            return match i {
+                                0 => 500,
+                                1 => 3_000,
+                                2 => 10_000,
+                                3 => 50_000,
+                                4 => 250_000,
+                                5 => 1_000_000,
+                                _ => 3_000_000,
+                            };
+                        }
+                    }
+                    h.max_us
+                };
+                (
+                    op.clone(),
+                    h.count,
+                    if h.count > 0 { h.total_us / h.count } else { 0 },
+                    h.max_us,
+                    p(0.50),
+                    p(0.95),
+                    p(0.99),
+                )
+            })
+            .collect();
+        out.sort_by(|a, b| b.3.cmp(&a.3));
+        out
+    }
+}
+
+#[cfg(test)]
+mod metrics_tests {
+    use super::*;
+
+    #[test]
+    fn buckets_and_percentiles() {
+        let m = DispatchMetrics::default();
+        for _ in 0..95 {
+            m.record("op", std::time::Duration::from_micros(500)); // <=1ms
+        }
+        for _ in 0..4 {
+            m.record("op", std::time::Duration::from_micros(3_000)); // <=5ms
+        }
+        m.record("op", std::time::Duration::from_millis(50)); // <=100ms
+        let snap = m.snapshot();
+        let (op, count, avg, max, p50, p95, p99) = snap[0].clone();
+        assert_eq!(op, "op");
+        assert_eq!(count, 100);
+        assert_eq!(p50, 500); // majority in <=1ms bucket
+        assert!(p95 <= 3_000, "p95 in second bucket: {p95}");
+        // p99 of 100 samples = 99th smallest — the 4 slow bucket1 samples
+        // cover ranks 96-99, so p99 correctly lands in bucket1; the 50ms
+        // sample is rank 100 (the max), reported by max not p99.
+        assert_eq!(p99, 3_000);
+        assert_eq!(max, 50_000);
+        assert!(max >= 50_000);
+        assert!(avg > 0);
+    }
+
+    #[test]
+    fn empty_is_zero() {
+        let m = DispatchMetrics::default();
+        assert!(m.snapshot().is_empty());
     }
 }

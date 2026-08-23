@@ -179,6 +179,8 @@ pub enum OperationCode {
     WorkUnsponsor,
     WorkSponsors,
     WorkStar,
+    WorkSetSource,
+    WebFetchSanitize,
     WorkUnstar,
     WorkIsStarred,
     ConnectionPinSet,
@@ -264,6 +266,7 @@ pub enum OperationCode {
     LinkSetTypes,
     LinkTypeRegister,
     LinkTypeList,
+    LinkQuery,
 
     FindExcerptPositions,
 
@@ -274,6 +277,7 @@ pub enum OperationCode {
     WorkDiffRegions,
 
     ServerStats,
+    MetricsSnapshot,
 
     BlobUpload,
     BlobGet,
@@ -296,6 +300,8 @@ pub enum OperationCode {
     EditionRetrieve,
     EditionCost,
     ElementInsert,
+    TransclusionPlaceCrossServer,
+    CrossServerSpanRefresh,
     ElementUpdate,
     RenderTransclusions,
 
@@ -469,6 +475,7 @@ pub enum OperationCode {
     TrailUnpublish,
     TrailListPublished,
     TrailListCategories,
+    TrailDerivedWork,
 }
 
 impl OperationCode {
@@ -535,6 +542,8 @@ impl OperationCode {
             0x0315 => Some(OperationCode::WorkListByOwner),
             0x0316 => Some(OperationCode::WorkReviseDelta),
             0x0335 => Some(OperationCode::WorkStar),
+            0x0351 => Some(OperationCode::WorkSetSource),
+            0x0352 => Some(OperationCode::WebFetchSanitize),
             0x0336 => Some(OperationCode::WorkUnstar),
             0x0337 => Some(OperationCode::WorkIsStarred),
             0x0338 => Some(OperationCode::WorkGraph),
@@ -563,6 +572,7 @@ impl OperationCode {
             0x0346 => Some(OperationCode::TrailUnpublish),
             0x0347 => Some(OperationCode::TrailListPublished),
             0x0348 => Some(OperationCode::TrailListCategories),
+            0x0349 => Some(OperationCode::TrailDerivedWork),
             0x0349 => Some(OperationCode::ConnectionPinSet),
             0x034a => Some(OperationCode::ConnectionPinUnset),
             0x034b => Some(OperationCode::ConnectionPinsGet),
@@ -608,6 +618,7 @@ impl OperationCode {
             0x0709 => Some(OperationCode::LinkSetTypes),
             0x070A => Some(OperationCode::LinkTypeRegister),
             0x070B => Some(OperationCode::LinkTypeList),
+            0x070C => Some(OperationCode::LinkQuery),
 
             0x0801 => Some(OperationCode::FindTranscluders),
             0x0802 => Some(OperationCode::FindWorksForContent),
@@ -618,6 +629,7 @@ impl OperationCode {
             0x0805 => Some(OperationCode::ProvenanceAncestry),
 
             0x0601 => Some(OperationCode::ServerStats),
+            0x0602 => Some(OperationCode::MetricsSnapshot),
 
             0x0901 => Some(OperationCode::BlobUpload),
             0x0902 => Some(OperationCode::BlobGet),
@@ -641,6 +653,8 @@ impl OperationCode {
             0x0c01 => Some(OperationCode::EditionRetrieve),
             0x0c02 => Some(OperationCode::EditionCost),
             0x0c0B => Some(OperationCode::ElementInsert),
+            0x0c0C => Some(OperationCode::TransclusionPlaceCrossServer),
+            0x0c0D => Some(OperationCode::CrossServerSpanRefresh),
             0x0c0C => Some(OperationCode::ElementUpdate),
             0x0c0C => Some(OperationCode::RenderTransclusions),
             0x0c03 => Some(OperationCode::AnnotationCreate),
@@ -847,6 +861,8 @@ impl OperationCode {
             OperationCode::WorkUnsponsor => 0x0311,
             OperationCode::WorkSponsors => 0x0312,
             OperationCode::WorkStar => 0x0335,
+            OperationCode::WorkSetSource => 0x0351,
+            OperationCode::WebFetchSanitize => 0x0352,
             OperationCode::WorkUnstar => 0x0336,
             OperationCode::WorkIsStarred => 0x0337,
             OperationCode::WorkGraph => 0x0338,
@@ -875,6 +891,7 @@ impl OperationCode {
             OperationCode::TrailUnpublish => 0x0346,
             OperationCode::TrailListPublished => 0x0347,
             OperationCode::TrailListCategories => 0x0348,
+            OperationCode::TrailDerivedWork => 0x0349,
             OperationCode::ConnectionPinSet => 0x0349,
             OperationCode::ConnectionPinUnset => 0x034a,
             OperationCode::ConnectionPinsGet => 0x034b,
@@ -935,6 +952,7 @@ impl OperationCode {
             OperationCode::LinkSetTypes => 0x0709,
             OperationCode::LinkTypeRegister => 0x070A,
             OperationCode::LinkTypeList => 0x070B,
+            OperationCode::LinkQuery => 0x070C,
 
             OperationCode::FindTranscluders => 0x0801,
             OperationCode::FindWorksForContent => 0x0802,
@@ -943,6 +961,7 @@ impl OperationCode {
             OperationCode::WorkDiffRegions => 0x0805,
 
             OperationCode::ServerStats => 0x0601,
+            OperationCode::MetricsSnapshot => 0x0602,
 
             OperationCode::BlobUpload => 0x0901,
             OperationCode::BlobGet => 0x0902,
@@ -966,6 +985,8 @@ impl OperationCode {
             OperationCode::EditionRetrieve => 0x0c01,
             OperationCode::EditionCost => 0x0c02,
             OperationCode::ElementInsert => 0x0c0B,
+            OperationCode::TransclusionPlaceCrossServer => 0x0c0C,
+            OperationCode::CrossServerSpanRefresh => 0x0c0D,
             OperationCode::ElementUpdate => 0x0c0C,
             OperationCode::RenderTransclusions => 0x0c0C,
             OperationCode::AnnotationCreate => 0x0c03,
@@ -1270,6 +1291,31 @@ pub enum WireRequest {
     WorkStar {
         work_id: BeId,
     },
+    WorkSetSource {
+        work_id: BeId,
+        is_source: bool,
+    },
+    /// Fetch a web page server-side, sanitize it with ammonia, and
+    /// return clean text (+ sanitized excerpt). Optionally import as a
+    /// frozen source work so the quotation keeps its provenance.
+    WebFetchSanitize {
+        url: String,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        max_chars: Option<u64>,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        import_as_source: Option<bool>,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        title: Option<String>,
+    },
     WorkUnstar {
         work_id: BeId,
     },
@@ -1407,6 +1453,11 @@ pub enum WireRequest {
         category: Option<String>,
     },
     TrailListCategories,
+    /// FR-37 4d: ensure the trail's derived work exists and is in
+    /// sync with its stops (generation-checked); returns the work id.
+    TrailDerivedWork {
+        trail_id: BeId,
+    },
 
     WorkSetReadClub {
         work_id: BeId,
@@ -1598,6 +1649,11 @@ pub enum WireRequest {
         destination_ref: Option<HyperRefPayload>,
         #[cfg_attr(feature = "serde", serde(default))]
         link_types: Vec<u64>,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        home_document: Option<BeId>,
     },
     LinkGet {
         link_id: BeId,
@@ -1633,8 +1689,27 @@ pub enum WireRequest {
     LinkTypeRegister {
         type_id: u64,
         name: String,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        definition_work: Option<BeId>,
     },
     LinkTypeList,
+    /// Green's four-set link matching (FR-40 Story 4): find links
+    /// where one end matches `from_spec`, another end matches
+    /// `to_spec`, the types include `type_ids`, and the home document
+    /// matches `home_spec`. Empty specs mean "any".
+    LinkQuery {
+        #[cfg_attr(feature = "serde", serde(default))]
+        from_spec: LinkEndpointSpecPayload,
+        #[cfg_attr(feature = "serde", serde(default))]
+        to_spec: LinkEndpointSpecPayload,
+        #[cfg_attr(feature = "serde", serde(default))]
+        type_ids: Vec<u64>,
+        #[cfg_attr(feature = "serde", serde(default))]
+        home_spec: LinkEndpointSpecPayload,
+    },
     FindExcerptPositions {
         work_id: BeId,
         excerpt: String,
@@ -1660,6 +1735,7 @@ pub enum WireRequest {
     },
 
     ServerStats,
+    MetricsSnapshot,
 
     BlobUpload {
         data: String,
@@ -1738,6 +1814,29 @@ pub enum WireRequest {
         work_id: BeId,
         position: i64,
         element: RangeElementPayload,
+    },
+    /// FR-41 S2: transclude a selected span of a remote work into a
+    /// local document by reference (fetch span from origin, verify
+    /// BLAKE3, freeze as source, place pinned virtual at cursor).
+    TransclusionPlaceCrossServer {
+        dest_work: BeId,
+        #[cfg_attr(feature = "serde", serde(default))]
+        cursor: usize,
+        tumbler: String,
+        span_start: usize,
+        span_end: usize,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        title_hint: Option<String>,
+    },
+    /// FR-41 S3: check (or apply) an origin-side edit to a
+    /// cross-server transclusion's frozen source.
+    CrossServerSpanRefresh {
+        source_work: BeId,
+        #[cfg_attr(feature = "serde", serde(default))]
+        update: bool,
     },
     ElementUpdate {
         work_id: BeId,
@@ -2138,6 +2237,8 @@ pub enum WireRequest {
     },
     SeedDemoAttribution {
         work_id: BeId,
+        #[cfg_attr(feature = "serde", serde(default))]
+        author_count: Option<u32>,
     },
 
     #[cfg(feature = "serde")]
@@ -2291,9 +2392,11 @@ impl WireRequest {
                 | Self::ClubMembers { .. }
                 | Self::ClubRoster { .. }
                 | Self::ServerStats
+                | Self::MetricsSnapshot
                 | Self::LinkGet { .. }
                 | Self::LinkListForWork { .. }
                 | Self::LinkTypeList
+                | Self::LinkQuery { .. }
                 | Self::BlobGet { .. }
                 | Self::BlobGetPreview { .. }
                 | Self::BlobExists { .. }
@@ -2328,7 +2431,6 @@ impl WireRequest {
                 | Self::GovernanceLog { .. }
                 | Self::GovernanceStatus { .. }
                 | Self::GlobalTextSearch { .. }
-                | Self::ResolveInlineTransclusions { .. }
         )
     }
 }
@@ -2369,6 +2471,29 @@ impl EditionPayload {
                 ed
             }
             EditionPayload::Empty => Edition::empty(),
+        }
+    }
+
+    /// Trust-boundary conversion: deserialize the payload AND validate
+    /// structural invariants before the edition may touch server
+    /// state. Deserialization bypasses constructors (a reversed
+    /// transclusion range survives the wire in raw form), so this —
+    /// not construction — is the gate for untrusted input.
+    pub fn to_edition_checked(&self, self_work_id: u64) -> Result<crate::edition::Edition, String> {
+        let edition = self.to_edition();
+        let report = crate::edition::document_invariants::validate_edition(&edition, self_work_id);
+        if report.is_valid() {
+            Ok(edition)
+        } else {
+            Err(format!(
+                "malformed edition: {}",
+                report
+                    .violations
+                    .iter()
+                    .map(|v| v.code.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
         }
     }
 
@@ -2447,7 +2572,10 @@ pub enum ResponseValue {
     BlobListResult(Vec<crate::edition::edition::BlobEntry>),
     /// FR-23: Text at a specific revision
     TextResult(String),
+    MetricsSnapshotResult(Vec<(String, u64, u64, u64, u64, u64, u64)>),
     LinkInfo(LinkPayload),
+    CrossServerTransclusion(CrossServerTransclusionPayload),
+    CrossServerSpanRefresh(CrossServerSpanRefreshPayload),
     LinkList(Vec<LinkPayload>),
     LinkTypes(Vec<LinkTypeInfoPayload>),
     ConnectionPins(Vec<String>),
@@ -2822,6 +2950,8 @@ pub enum ResponseValue {
         text_length: u64,
     },
 
+    WebFetchSanitizeResult(WebFetchSanitizePayload),
+
     SourceDetectResult {
         source_type: String,
         detected: bool,
@@ -2930,6 +3060,22 @@ pub enum ResponseValue {
     #[cfg(feature = "serde")]
     CrossServerLinkCreateResult {
         created: bool,
+        /// FR-40: did the receiving server acknowledge the backlink
+        /// notification? None = no notification was attempted (e.g.
+        /// remote server not in the directory).
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        remote_accepted: Option<bool>,
+        /// Human-readable failure reason when remote_accepted is
+        /// false (receiving-side rejection or sender-side reachability
+        /// error).
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        notify_error: Option<String>,
     },
     #[cfg(feature = "serde")]
     CrossServerLinkListResult {
@@ -3007,6 +3153,16 @@ pub struct AttributionSpanPayload {
     pub author_display_name: Option<String>,
     pub author_club_id: Option<BeId>,
     pub signature_valid: bool,
+    /// FR-140: WHY validity is what it is — "verified" (stored
+    /// signature checks out), "author_maintained" (signature changed
+    /// by the author's own later edits; re-verified against current
+    /// element provenance by the same key), or "unsigned" (no
+    /// verifiable authorship — the only alarming state).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub verification_state: Option<String>,
     pub timestamp: u64,
     pub server_id: Vec<u8>,
     pub author_type: Option<String>,
@@ -3172,6 +3328,29 @@ pub struct WorkListEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossServerSpanRefreshPayload {
+    pub source_work: BeId,
+    pub changed: bool,
+    pub current_text: String,
+    pub new_revision: Option<u64>,
+    pub origin_hash: String,
+    pub tumbler: String,
+    pub span: [usize; 2],
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossServerTransclusionPayload {
+    pub dest_work: BeId,
+    pub source_work: BeId,
+    pub revision: u64,
+    pub span: [usize; 2],
+    pub tumbler: String,
+    pub content_hash: String,
+    pub server_name: String,
+    pub text_len: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinkPayload {
     pub link_id: BeId,
     pub origin: BeId,
@@ -3216,12 +3395,84 @@ pub struct LinkPayload {
         serde(default, skip_serializing_if = "Vec::is_empty")
     )]
     pub link_types: Vec<u64>,
+    /// Derived type ends (FR-40 Story 2): for each type id with a
+    /// registered definition work, the link effectively gains an end
+    /// pointing at that work — Green's three-set, materialized on
+    /// read rather than stored.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub type_ends: Vec<(u64, BeId)>,
+    /// Home document (FR-40 Story 3): the work this link lives in.
+    /// Absent = server-global (the shipped default).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub home_document: Option<BeId>,
+    /// Ghost state of the home document: homed links with an archived
+    /// home are hidden from listings (reversible via unarchive).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub home_archived: bool,
+    /// Cross-server notify outcome for links whose destination is on
+    /// another server: did the remote accept the backlink
+    /// notification (FR-40 sender feedback)? None = no notify
+    /// attempted (purely local link).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub cross_server_notify_accepted: Option<bool>,
+    /// Failure reason when the remote did not accept: either the
+    /// receiving server rejected it (e.g. "work not found", rate
+    /// limit) or the sender could not reach it (connect/DNS error).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub cross_server_notify_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinkTypeInfoPayload {
     pub type_id: u64,
     pub name: String,
+    /// The definition work for this type, if registered (FR-39): the
+    /// work IS the type — its body carries the convention text.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub definition_work: Option<BeId>,
+}
+
+/// One end-set of Green's four-set link matching (FR-40 Story 4).
+/// An empty spec (no works, no author) matches ANY end; a spec with
+/// `work_ids` matches ends anchored in those works; a spec with
+/// `author` matches ends anchored in works owned by that club.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LinkEndpointSpecPayload {
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub work_ids: Vec<BeId>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub author: Option<BeId>,
+}
+
+impl LinkEndpointSpecPayload {
+    pub fn any() -> Self {
+        Self::default()
+    }
+
+    pub fn is_any(&self) -> bool {
+        self.work_ids.is_empty() && self.author.is_none()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3251,6 +3502,10 @@ pub struct BacklinkEntryPayload {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub title: Option<String>,
+    /// Ghost/archived state of the SOURCE (origin) work — clients hide
+    /// backlinks whose origin document is archived.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub source_archived: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3326,6 +3581,13 @@ pub struct TrailStopPayload {
 pub struct TrailPayload {
     pub trail_id: BeId,
     pub name: String,
+    /// FR-37 4c: the derived work presenting this trail as an
+    /// addressable edition (None until first refresh).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub derived_work_id: Option<BeId>,
     #[cfg_attr(
         feature = "serde",
         serde(default, skip_serializing_if = "Option::is_none")
@@ -3481,6 +3743,20 @@ impl CrossServerRefPayload {
             &self.origin_author,
             key_arr,
         );
+        // The address normally travels inside a domain tumbler
+        // (`"host:port".work.v.r`); when the tumbler is numeric, honor
+        // an explicit origin_server_address on the payload so the
+        // backlink notify can still reach the origin server (FR-40
+        // sender feedback).
+        if csr.origin_server_address().is_none() {
+            if let Some(addr) = self
+                .origin_server_address
+                .as_ref()
+                .filter(|a| !a.is_empty())
+            {
+                csr = csr.with_origin_server_address(addr.clone());
+            }
+        }
         csr = csr
             .with_mime_type(&self.mime_type)
             .with_byte_size(self.byte_size)
@@ -4193,6 +4469,22 @@ pub struct ServerInfoPayload {
     pub public_club_id: BeId,
     pub llm_enabled: bool,
     pub llm_usage: crate::server::ollama::LlmUsageSummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebFetchSanitizePayload {
+    /// Ammonia-cleaned HTML fragment (whitelisted tags only).
+    pub sanitized_html: String,
+    /// Plain-text extraction (readability-lite).
+    pub text: String,
+    pub final_url: String,
+    pub content_type: String,
+    /// Set when import_as_source created a frozen work.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub imported_work_id: Option<BeId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

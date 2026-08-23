@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import type { CrdtSyncClient, WorkListEntry, CrossServerRefPayload } from "../api/crdt_sync";
+import { useState, useMemo, useEffect } from "react";
+import type { CrdtSyncClient, WorkListEntry, CrossServerRefPayload, LinkTypeInfo } from "../api/crdt_sync";
 import { DEFAULT_LINK_TYPES } from "../hooks/useTransclusion";
 
 const LINK_TYPE_DESCRIPTIONS: Record<number, string> = {
@@ -31,8 +31,13 @@ interface LinkCreatorProps {
   onSelectTextInOtherDoc: () => void;
 }
 
-type Step = "target" | "type" | "remote" | "web" | "done";
+type Step = "target" | "type" | "extra-ends" | "remote" | "web" | "done";
 type TargetMode = "whole-work" | "other-doc-text" | "same-doc" | "remote" | "web" | null;
+
+interface ExtraEnd {
+  name: string;
+  workId: number;
+}
 
 export function LinkCreator({
   open,
@@ -47,7 +52,10 @@ export function LinkCreator({
   const [step, setStep] = useState<Step>("target");
   const [targetMode, setTargetMode] = useState<TargetMode>(null);
   const [selectedWorkId, setSelectedWorkId] = useState<number | null>(null);
-  const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null);
+  const [selectedTypeIds, setSelectedTypeIds] = useState<Set<number>>(new Set());
+  const [serverTypes, setServerTypes] = useState<LinkTypeInfo[]>([]);
+  const [extraEnds, setExtraEnds] = useState<ExtraEnd[]>([]);
+  const [homeDocument, setHomeDocument] = useState<number | "">("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [remoteTumbler, setRemoteTumbler] = useState("");
@@ -59,6 +67,42 @@ export function LinkCreator({
   const [fetching, setFetching] = useState(false);
   const [webUrl, setWebUrl] = useState("");
   const [description, setDescription] = useState("");
+
+  // Merge server-registered types with built-ins (server wins on
+  // name/definition; built-ins fill gaps). Custom types get a
+  // fallback description pointing at their definition work.
+  const allTypes = useMemo(() => {
+    const byId = new Map<number, { type_id: number; name: string; color: string; lineStyle: string; custom: boolean }>();
+    for (const t of DEFAULT_LINK_TYPES) {
+      byId.set(t.type_id, { ...t, custom: false });
+    }
+    for (const t of serverTypes) {
+      const builtin = byId.get(t.type_id);
+      byId.set(t.type_id, {
+        type_id: t.type_id,
+        name: t.name,
+        color: builtin?.color ?? "#8b949e",
+        lineStyle: builtin?.lineStyle ?? "dashed",
+        custom: !builtin,
+      });
+    }
+    return Array.from(byId.values()).sort((a, b) => (a.custom === b.custom ? a.type_id - b.type_id : a.custom ? 1 : -1));
+  }, [serverTypes]);
+
+  useEffect(() => {
+    if (open && clientRef.current) {
+      clientRef.current
+        .linkTypeList()
+        .then((types) => setServerTypes(types))
+        .catch(() => setServerTypes([]));
+    }
+  }, [open, clientRef]);
+
+  const typeDesc = (typeId: number): string => {
+    if (LINK_TYPE_DESCRIPTIONS[typeId]) return LINK_TYPE_DESCRIPTIONS[typeId];
+    const st = serverTypes.find((t) => t.type_id === typeId);
+    return st ? `Custom type defined by a work on this server` : "";
+  };
 
   const handlePasteReference = async () => {
     try {
@@ -87,7 +131,9 @@ export function LinkCreator({
     setStep("target");
     setTargetMode(null);
     setSelectedWorkId(null);
-    setSelectedTypeId(null);
+    setSelectedTypeIds(new Set());
+    setExtraEnds([]);
+    setHomeDocument("");
     setError(null);
     setCreating(false);
     setRemoteTumbler("");
@@ -123,22 +169,40 @@ export function LinkCreator({
     setStep("type");
   };
 
+  const toggleType = (typeId: number) => {
+    setSelectedTypeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(typeId)) {
+        next.delete(typeId);
+      } else {
+        next.add(typeId);
+      }
+      return next;
+    });
+  };
+
   const handleCreate = async () => {
-    if (!clientRef.current || !source || selectedTypeId === null) return;
     const client = clientRef.current;
+    if (!client || !source || selectedTypeIds.size === 0) return;
     setCreating(true);
     setError(null);
     try {
       if (targetMode === "whole-work" && selectedWorkId !== null) {
-        const targetWork = works.find((w) => w.work_id === selectedWorkId);
         const linkId = await client.linkCreate(
           source.workId,
           selectedWorkId,
           { excerpt: source.text, start: source.start, end: source.end },
           { excerpt: "", start: 0, end: 0 },
+          homeDocument === "" ? undefined : Number(homeDocument),
         );
-        if (selectedTypeId > 0) {
-          await client.linkSetTypes(linkId, [selectedTypeId]);
+        if (selectedTypeIds.size > 0) {
+          await client.linkSetTypes(linkId, Array.from(selectedTypeIds));
+        }
+        for (const extra of extraEnds) {
+          await client.linkAddEnd(linkId, extra.name, {
+            workContext: extra.workId,
+            excerpt: "",
+          });
         }
         if (description.trim()) {
           await client.annotationCreate(
@@ -150,7 +214,6 @@ export function LinkCreator({
             source.end,
           );
         }
-        void targetWork;
         setStep("done");
         setTimeout(() => {
           onLinkCreated();
@@ -381,10 +444,13 @@ export function LinkCreator({
           <div className="link-creator-body">
             <div className="link-creator-step-title">
               Link type
+              <span style={{ fontSize: 11, color: "#8b949e", marginLeft: 8 }}>
+                toggle one or more
+              </span>
               <button
                 type="button"
                 className="link-back-btn"
-                onClick={() => { setStep("target"); setSelectedTypeId(null); }}
+                onClick={() => { setStep("target"); setSelectedTypeIds(new Set()); }}
               >
                 {"\u2190"} back
               </button>
@@ -394,51 +460,168 @@ export function LinkCreator({
               <strong>{works.find((w) => w.work_id === selectedWorkId)?.title || "Unknown"}</strong>
             </div>
             <div className="link-type-grid">
-              {DEFAULT_LINK_TYPES.map((t) => (
-                <button
-                  key={t.type_id}
-                  type="button"
-                  className={`link-type-card ${selectedTypeId === t.type_id ? "selected" : ""}`}
-                  style={{ borderColor: selectedTypeId === t.type_id ? t.color : undefined }}
-                  onClick={() => setSelectedTypeId(t.type_id)}
-                >
-                  <div className="link-type-preview-line">
-                    <svg width="60" height="8">
-                      <line
-                        x1="0" y1="4" x2="60" y2="4"
-                        stroke={t.color}
-                        strokeWidth="2"
-                        strokeDasharray={t.lineStyle === "solid" ? undefined : t.lineStyle === "dashed" ? "4,3" : t.lineStyle === "dotted" ? "1,3" : t.lineStyle === "underline" ? "8,3" : "6,2,1,2"}
-                      />
-                    </svg>
-                  </div>
-                  <div className="link-type-card-name" style={{ color: t.color }}>{t.name}</div>
-                  <div className="link-type-card-desc">{LINK_TYPE_DESCRIPTIONS[t.type_id]}</div>
-                </button>
-              ))}
+              {allTypes.map((t) => {
+                const selected = selectedTypeIds.has(t.type_id);
+                return (
+                  <button
+                    key={t.type_id}
+                    type="button"
+                    className={`link-type-card ${selected ? "selected" : ""}`}
+                    style={{ borderColor: selected ? t.color : undefined }}
+                    onClick={() => toggleType(t.type_id)}
+                  >
+                    <div className="link-type-preview-line">
+                      <svg width="60" height="8">
+                        <line
+                          x1="0" y1="4" x2="60" y2="4"
+                          stroke={t.color}
+                          strokeWidth="2"
+                          strokeDasharray={t.lineStyle === "solid" ? undefined : t.lineStyle === "dashed" ? "4,3" : t.lineStyle === "dotted" ? "1,3" : t.lineStyle === "underline" ? "8,3" : "6,2,1,2"}
+                        />
+                      </svg>
+                      {t.custom && (
+                        <span style={{ fontSize: 9, color: "#8b949e", marginLeft: 4 }}>custom</span>
+                      )}
+                    </div>
+                    <div className="link-type-card-name" style={{ color: t.color }}>{t.name}</div>
+                    <div className="link-type-card-desc">{typeDesc(t.type_id)}</div>
+                  </button>
+                );
+              })}
             </div>
-            {selectedTypeId !== null && (
-              <label className="link-form-label" style={{ marginTop: 12 }}>
-                Description
-                <textarea
-                  className="link-form-input"
-                  placeholder="Explain why this link exists — this appears in the margin box next to the linked text"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
-                  style={{ resize: "vertical", fontFamily: "inherit", fontSize: 13 }}
-                />
-              </label>
+            {selectedTypeIds.size > 0 && (
+              <>
+                <div className="link-form-label" style={{ marginTop: 12 }}>
+                  Description
+                  <textarea
+                    className="link-form-input"
+                    placeholder="Explain why this link exists — this appears in the margin box next to the linked text"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={3}
+                    style={{ resize: "vertical", fontFamily: "inherit", fontSize: 13 }}
+                  />
+                </div>
+                <div className="link-form-label" style={{ marginTop: 8 }}>
+                  Home document (optional — the link lives in this work)
+                  <select
+                    className="link-form-input"
+                    value={homeDocument}
+                    onChange={(e) => setHomeDocument(e.target.value === "" ? "" : Number(e.target.value))}
+                  >
+                    <option value="">Server-wide (no home)</option>
+                    {works.map((w) => (
+                      <option key={w.work_id} value={w.work_id}>
+                        {w.title || "Untitled"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="link-create-submit"
+                    style={{ background: "transparent", border: "1px solid #30363d", color: "#8b949e", width: "100%", marginBottom: extraEnds.length > 0 ? 8 : 0 }}
+                    disabled={creating}
+                    onClick={() => setStep("extra-ends")}
+                  >
+                    + Add another end (multi-ended link)
+                    {extraEnds.length > 0 && ` — ${extraEnds.length} added`}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="link-create-submit"
+                  disabled={creating}
+                  onClick={handleCreate}
+                >
+                  {creating ? "Creating\u2026" : `Create Link${selectedTypeIds.size > 1 ? ` (${selectedTypeIds.size} types)` : ""}`}
+                </button>
+              </>
             )}
             {error && <div className="link-creator-error">{error}</div>}
+          </div>
+        )}
+
+        {step === "extra-ends" && (
+          <div className="link-creator-body">
+            <div className="link-creator-step-title">
+              Additional ends
+              <button
+                type="button"
+                className="link-back-btn"
+                onClick={() => setStep("type")}
+              >
+                {"\u2190"} back
+              </button>
+            </div>
+            <div className="link-form-hint">
+              A multi-ended link is ONE connection between several places — "A, B and C form a
+              comparison." Each extra end is clickable in Connections and joinable from every
+              end's work.
+            </div>
+            {extraEnds.length > 0 && (
+              <div style={{ margin: "8px 0" }}>
+                {extraEnds.map((e, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "4px 8px",
+                      border: "1px solid #30363d",
+                      borderRadius: 4,
+                      marginBottom: 4,
+                      fontSize: 12,
+                    }}
+                  >
+                    <span>
+                      <strong>{e.name}</strong> → {works.find((w) => w.work_id === e.workId)?.title || `0x${e.workId.toString(16)}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setExtraEnds((prev) => prev.filter((_, j) => j !== i))}
+                      style={{ background: "none", border: "none", color: "#f85149", cursor: "pointer" }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="link-work-picker">
+              <div className="link-work-picker-label">Pick a work to add as an end:</div>
+              <div className="link-work-list">
+                {otherWorks
+                  .filter((w) => w.work_id !== selectedWorkId && !extraEnds.some((e) => e.workId === w.work_id))
+                  .map((w) => (
+                    <button
+                      key={w.work_id}
+                      type="button"
+                      className="link-work-item"
+                      onClick={() =>
+                        setExtraEnds((prev) => [
+                          ...prev,
+                          { name: `End${prev.length + 1}`, workId: w.work_id },
+                        ])
+                      }
+                    >
+                      <span className="link-work-title">{w.title || "Untitled"}</span>
+                      <span className="link-work-id">{w.work_id.toString(16).padStart(4, "0")}</span>
+                    </button>
+                  ))}
+              </div>
+            </div>
             <button
               type="button"
               className="link-create-submit"
-              disabled={selectedTypeId === null || creating}
+              disabled={creating || selectedTypeIds.size === 0}
               onClick={handleCreate}
             >
-              {creating ? "Creating\u2026" : "Create Link"}
+              {creating ? "Creating\u2026" : `Create Link (${2 + extraEnds.length} ends)`}
             </button>
+            {error && <div className="link-creator-error">{error}</div>}
           </div>
         )}
 

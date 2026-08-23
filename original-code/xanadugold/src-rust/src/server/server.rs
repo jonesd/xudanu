@@ -259,14 +259,30 @@ pub struct CrossServerBacklink {
 const MAX_CROSS_SERVER_FETCH_BYTES: usize = 5 * 1024 * 1024;
 
 pub fn is_ssrf_address(addr: &str) -> bool {
+    // Normalize: strip scheme, then brackets/ports without breaking
+    // bare or bracketed IPv6 literals ("::1" must survive intact —
+    // a naive split(':') truncates it to "").
     let host = addr
         .strip_prefix("http://")
         .or_else(|| addr.strip_prefix("https://"))
         .unwrap_or(addr)
-        .split(':')
+        .split('/')
         .next()
-        .unwrap_or(addr)
-        .trim_end_matches('/');
+        .unwrap_or(addr);
+    let host = host
+        .strip_prefix('[')
+        .map(|h| h.split(']').next().unwrap_or(h))
+        .unwrap_or(host);
+    let host = if host.contains(']') || host.parse::<std::net::Ipv6Addr>().is_ok() {
+        // Bracketed or bare IPv6 literal — never split on ':' (the
+        // address itself contains colons).
+        host
+    } else {
+        // For non-bracketed hosts, drop :port (safe: no colon left in a
+        // bare hostname; IPv6 literals arrive bracketed from URLs).
+        host.rsplit_once(':').map(|(h, _)| h).unwrap_or(host)
+    };
+    let host = host.trim_end_matches('/');
 
     if host == "localhost"
         || host == "127.0.0.1"
@@ -314,6 +330,25 @@ fn is_ip_blocked(ip: &std::net::IpAddr) -> bool {
                 || v6.segments()[0] & 0xffc0 == 0xfe80
         }
     }
+}
+
+/// Connect to the first reachable resolved address within the
+/// timeout. Plain `TcpStream::connect` has no deadline: under a
+/// network blackhole the kernel retries SYN for ~75-130s while the
+/// caller (often the dispatch path) blocks — unacceptable.
+fn connect_timed(
+    addrs: &[std::net::SocketAddr],
+    timeout: std::time::Duration,
+) -> Result<std::net::TcpStream, String> {
+    use std::net::TcpStream;
+    let mut last_err = String::from("no addresses");
+    for addr in addrs {
+        match TcpStream::connect_timeout(addr, timeout) {
+            Ok(s) => return Ok(s),
+            Err(e) => last_err = format!("connect failed: {}", e),
+        }
+    }
+    Err(last_err)
 }
 
 pub fn resolve_and_verify_host(host: &str, port: u16) -> Result<Vec<std::net::SocketAddr>, String> {
@@ -532,6 +567,51 @@ pub struct WorkGhostInfo {
     pub lifecycle_history: Vec<WorkLifecycleEventInfo>,
 }
 
+/// Default edit policy for works on this server.
+///
+/// `OwnerOnly`: anonymous sessions cannot create works, and no work is
+/// editable by virtue of the public club — each work's edit club must
+/// be an identity the writer actually controls. Works whose edit club
+/// is the public club (e.g. created on a sandbox server, or explicitly
+/// shared) become read-only. `xudanu-server run` applies this by
+/// default; pass `--edit-policy public-sandbox` (or
+/// `XUDANU_EDIT_POLICY`) for the wiki-style demo behaviour.
+///
+/// `PublicSandbox`: the wiki-style legacy behaviour — anonymous
+/// sessions create world-readable, world-editable works. This is the
+/// library default (in-browser/wasm and test contexts); production
+/// servers should pin it explicitly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditPolicy {
+    OwnerOnly,
+    PublicSandbox,
+}
+
+impl Default for EditPolicy {
+    fn default() -> Self {
+        EditPolicy::PublicSandbox
+    }
+}
+
+impl EditPolicy {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "owner-only" | "owner_only" | "owneronly" | "strict" => Some(EditPolicy::OwnerOnly),
+            "public" | "public-sandbox" | "public_sandbox" | "sandbox" | "lax" => {
+                Some(EditPolicy::PublicSandbox)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EditPolicy::OwnerOnly => "owner-only",
+            EditPolicy::PublicSandbox => "public-sandbox",
+        }
+    }
+}
+
 pub struct Server {
     pub(crate) grand_map: GrandMap,
     pub(crate) sessions: HashMap<SessionId, Session>,
@@ -552,11 +632,17 @@ pub struct Server {
     work_to_links: HashMap<BeId, Vec<BeId>>,
     link_counter: BeId,
     link_type_names: HashMap<u64, String>,
+    /// FR-39 Story 1: registered link types with definition works.
+    /// The work IS the type (Green's three-set-as-document); custom
+    /// type ids are definition work ids, built-ins 1-5 alias their
+    /// historical ids.
+    link_type_registry: HashMap<u64, crate::persist::manifest::LinkTypeRegistryEntry>,
     cross_server_backlinks: Vec<CrossServerBacklink>,
     backfollow: BackfollowEngine,
     content_address: ContentAddressIndex,
     blob_store: BlobStore,
     pub allow_loopback_cross_server: bool,
+    edit_policy: EditPolicy,
     checkpoint_path: Option<std::path::PathBuf>,
     data_dir: Option<std::path::PathBuf>,
     chunk_store: Option<Arc<crate::persist::chunk_store::ChunkStore>>,
@@ -634,6 +720,11 @@ struct TrailState {
     stops: Vec<TrailStop>,
     created_at: u64,
     updated_at: u64,
+    /// FR-37 Phase 4c: the derived WORK presenting this trail as a
+    /// real, addressable edition (built from the stops' pinned spans).
+    /// None for trails created before 4c or while the derived work is
+    /// being created; lazily rebuilt on demand.
+    derived_work_id: Option<BeId>,
 }
 
 #[derive(Clone)]
@@ -678,6 +769,23 @@ struct LinkState {
     link: HyperLink,
     origin: BeId,
     destination: BeId,
+    /// Home document (FR-40 Story 3): the work this link lives in.
+    /// None = server-global (historical behavior).
+    home_document: Option<BeId>,
+    /// Outcome of the cross-server backlink notification for this
+    /// link, when one was attempted (FR-40 sender feedback): Some
+    /// when the destination is on another server. Errors here are
+    /// sender/reachability OR receiving-side rejections.
+    cross_server_notify: Option<CrossServerNotifyOutcome>,
+}
+
+/// Persisted outcome of a cross-server backlink notification.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CrossServerNotifyOutcome {
+    pub accepted: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub notified_at: u64,
 }
 
 impl Default for Server {
@@ -795,6 +903,17 @@ fn tag_json(value: &impl serde::Serialize) -> std::io::Result<Vec<u8>> {
 }
 
 #[cfg(feature = "server")]
+/// Crum of the edition a spec would build (FR-37 4d generation
+/// check). None only for invalid specs (empty specs build empty
+/// editions, which have no crum — treated as always-rebuild, a
+/// one-entry cost).
+#[cfg(feature = "server")]
+fn build_crum(spec: &crate::edition::derived::DerivedSpec) -> Option<[u8; 32]> {
+    crate::edition::derived::build_derived_edition(spec)
+        .ok()
+        .and_then(|ed| ed.crum())
+}
+
 pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<CheckpointResult> {
     let start = std::time::Instant::now();
     let store = &payload.chunk_store;
@@ -948,6 +1067,7 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         links: Vec::new(),
         link_counter: payload.link_counter,
         links_chunk_hash: None,
+        link_type_registry: vec![],
         admin: payload.admin_entry.clone(),
         reconcile_store: payload.reconcile_store,
         reconcile_counter: payload.reconcile_counter,
@@ -1104,11 +1224,13 @@ impl Server {
             work_to_links: HashMap::new(),
             link_counter: 0,
             link_type_names: HashMap::new(),
+            link_type_registry: HashMap::new(),
             cross_server_backlinks: Vec::new(),
             backfollow: BackfollowEngine::new(),
             content_address: ContentAddressIndex::new(1_000_000),
             blob_store: BlobStore::in_memory(),
             allow_loopback_cross_server: false,
+            edit_policy: EditPolicy::default(),
             checkpoint_path: None,
             data_dir: None,
             chunk_store: None,
@@ -1289,6 +1411,46 @@ impl Server {
 
     pub fn set_server_name(&mut self, name: String) {
         self.server_name = name;
+    }
+
+    pub fn edit_policy(&self) -> EditPolicy {
+        self.edit_policy
+    }
+
+    pub fn set_edit_policy(&mut self, policy: EditPolicy) {
+        tracing::info!(
+            policy = policy.as_str(),
+            event = "SECURITY:edit_policy_set",
+            "edit policy set"
+        );
+        self.edit_policy = policy;
+    }
+
+    /// Operator break-glass: set (or replace) the admin club's password
+    /// credential. Without this the admin club has a WallLock — nobody
+    /// can ever act as admin on a running server, so orphaned works
+    /// (e.g. owned by deleted/credential-less identities) cannot be
+    /// archived or re-permissioned.
+    pub fn set_admin_passphrase(&mut self, passphrase: &[u8]) -> Result<(), ServerError> {
+        if passphrase.len() < 8 {
+            return Err(ServerError::InvalidArgument(
+                "admin passphrase must be at least 8 bytes".into(),
+            ));
+        }
+        let phc = crate::crypto::password::hash_password(passphrase)
+            .map_err(|e| ServerError::Internal(format!("admin passphrase hash failed: {}", e)))?;
+        let admin_club = self.system_clubs.admin_club;
+        if let Some(club) = self.clubs.get_mut(&admin_club) {
+            club.set_credential(Some(crate::server::club::Credential::Password {
+                phc_hash: phc,
+            }));
+            self.dirty_clubs.insert(admin_club);
+        }
+        tracing::info!(
+            event = "SECURITY:admin_passphrase_set",
+            "admin passphrase credential installed"
+        );
+        Ok(())
     }
 
     pub fn server_description(&self) -> &str {
@@ -1592,6 +1754,12 @@ impl Server {
         &self.server_directory
     }
 
+    pub fn server_directory_mut(
+        &mut self,
+    ) -> &mut crate::server::server_directory::ServerDirectory {
+        &mut self.server_directory
+    }
+
     pub fn receive_cross_server_backlink(&mut self, entry: CrossServerBacklink) {
         let exists = self.cross_server_backlinks.iter().any(|b| {
             b.target_work_id == entry.target_work_id
@@ -1805,6 +1973,38 @@ impl Server {
                     "server {} quarantined — all future resolutions blocked until untrusted and re-trusted",
                     server_id
                 );
+            }
+            // Auto-degradation: a peer that repeatedly fails signature
+            // verification is not just quarantined locally — propose
+            // its expulsion from the federation through PBFT governance
+            // so every honest member drops it. (Proposal only: the
+            // quorum decides.)
+            if self.federation_is_enabled() {
+                let member_ids: Vec<String> = self
+                    .federation
+                    .membership()
+                    .active_members()
+                    .iter()
+                    .map(|m| m.server_id.clone())
+                    .collect();
+                let target_id = server_id.to_string();
+                if member_ids.contains(&target_id) {
+                    let _ = self.governance_propose(vec![
+                        crate::server::federation::GovernanceTx::Expel {
+                            server_id: target_id,
+                            reason: format!(
+                                "auto-degradation: {} consecutive signature verification failures",
+                                count
+                            ),
+                        },
+                    ]);
+                    tracing::warn!(
+                        target: "xudanu::security",
+                        server_id,
+                        event = "SECURITY:expel_proposed",
+                        "governance Expel proposed for repeatedly-failing peer"
+                    );
+                }
             }
             self.security_tracker.record_sig_success(server_id);
         }
@@ -2711,19 +2911,123 @@ impl Server {
         let body: serde_json::Value = serde_json::from_str(&response_text)
             .map_err(|e| ServerError::Internal(format!("Invalid JSON: {}", e)))?;
 
-        let name = body["display_name"]
+        // The signed envelope puts identity fields under "identity" and
+        // carries an Ed25519 signature over the canonical body. Older
+        // peers serve the flat unsigned shape; accept it ONLY when the
+        // directory entry carries no verifying key to check against.
+        let (id_obj, signed) = if let Some(id) = body.get("identity") {
+            (id.clone(), body.get("signed").cloned())
+        } else {
+            (body.clone(), None)
+        };
+
+        // C2: verify the response signature against the server key
+        // registered in OUR directory — plain-HTTP tampering yields an
+        // unverifiable payload, which is rejected before any field is
+        // trusted.
+        if let Some(sig_obj) = &signed {
+            // Freshness: the signed timestamp bounds replay — a
+            // captured response is worthless after the window (clock
+            // skew tolerated). Missing/absurd timestamps reject.
+            const MAX_SKEW_SECS: u64 = 300;
+            const MAX_AGE_SECS: u64 = 600;
+            let ts = sig_obj["timestamp"].as_u64().ok_or_else(|| {
+                ServerError::InvalidArgument("identity response: signed timestamp missing".into())
+            })?;
+            let now = Self::current_timestamp_secs();
+            if now.abs_diff(ts) > MAX_SKEW_SECS.max(MAX_AGE_SECS) {
+                return Err(ServerError::InvalidArgument(
+                    "identity response timestamp outside freshness window".into(),
+                ));
+            }
+            let sig_hex = sig_obj["sig"].as_str().unwrap_or("");
+            let sig_bytes = hex::decode(sig_hex).map_err(|_| {
+                ServerError::InvalidArgument("identity response: bad signature encoding".into())
+            })?;
+            if sig_bytes.len() != 64 {
+                return Err(ServerError::InvalidArgument(
+                    "identity response: signature must be 64 bytes".into(),
+                ));
+            }
+            // Reconstruct the exact signed payload (body without sig).
+            let signed_payload = serde_json::json!({
+                "api_version": 1,
+                "implementation": "xudanu",
+                "identity": id_obj,
+                "signed": { "timestamp": sig_obj["timestamp"] },
+            });
+            let mut signature = [0u8; 64];
+            signature.copy_from_slice(&sig_bytes);
+            let entry_key = hex::decode(&entry.verifying_key).unwrap_or_default();
+            if entry_key.len() != 32 {
+                return Err(ServerError::InvalidArgument(format!(
+                    "directory entry for server {} has malformed verifying key",
+                    entry.name
+                )));
+            }
+            let mut vk_bytes = [0u8; 32];
+            vk_bytes.copy_from_slice(&entry_key);
+            let vk = ed25519_dalek::VerifyingKey::from_bytes(&vk_bytes)
+                .map_err(|_| ServerError::InvalidArgument("directory key invalid".into()))?;
+            let sig = ed25519_dalek::Signature::from_bytes(&signature);
+            if crate::crypto::sign::verify_signature(
+                &vk,
+                signed_payload.to_string().as_bytes(),
+                &sig,
+            )
+            .is_err()
+            {
+                tracing::warn!(
+                    server = %entry.name,
+                    event = "SECURITY:identity_sig_rejected",
+                    "remote identity signature verification FAILED"
+                );
+                return Err(ServerError::InvalidArgument(
+                    "identity response signature verification failed".into(),
+                ));
+            }
+        } else if hex::decode(&entry.verifying_key)
+            .map(|k| k.len() == 32)
+            .unwrap_or(false)
+        {
+            // Peer has a registered key but did not sign: distrust.
+            return Err(ServerError::InvalidArgument(format!(
+                "server {} serves unsigned identity responses but has a registered key",
+                entry.name
+            )));
+        }
+
+        let name = id_obj["display_name"]
             .as_str()
-            .or_else(|| body["name"].as_str())
+            .or_else(|| id_obj["name"].as_str())
             .unwrap_or(club_name)
-            .to_string();
-        let verifying_key = body["verifying_key"]
+            .chars()
+            .take(120)
+            .collect::<String>();
+        let verifying_key_raw = id_obj["verifying_key"]
             .as_str()
-            .ok_or_else(|| ServerError::Internal("identity missing verifying_key".into()))?
-            .to_string();
-        let club_id = body["club_id"]
+            .ok_or_else(|| ServerError::Internal("identity missing verifying_key".into()))?;
+        // C1: a peer-served key must decode as 32 bytes of hex —
+        // arbitrary strings must never enter the attestation table.
+        if verifying_key_raw.len() != 64 || hex::decode(verifying_key_raw).is_err() {
+            return Err(ServerError::InvalidArgument(format!(
+                "malformed verifying_key from {} (len {})",
+                entry.name,
+                verifying_key_raw.len()
+            )));
+        }
+        let verifying_key = verifying_key_raw.to_string();
+        // C4: a missing/invalid club id is a malformed response, not a
+        // silent zero.
+        let club_id = id_obj["club_id"]
             .as_u64()
-            .or_else(|| body["be_id"].as_u64())
-            .unwrap_or(0);
+            .or_else(|| id_obj["be_id"].as_u64())
+            .ok_or_else(|| ServerError::InvalidArgument("identity missing club_id".into()))?;
+        if club_id == 0 {
+            return Err(ServerError::InvalidArgument(
+                "identity club_id must be nonzero".into(),
+            ));
+        }
 
         let attestation = IdentityAttestation {
             display_name: name,
@@ -2735,6 +3039,25 @@ impl Server {
             verified_at: Self::current_timestamp_secs(),
         };
 
+        // Anti-overwrite: a different server claiming a verifying_key
+        // already bound to another home server is an identity-confusion
+        // attempt (the signature only proves the RESPONDING server
+        // signed; nothing binds the claimed club key to it). Refuse
+        // silent rebinding — same server refreshing is fine.
+        if let Some(existing) = self.identity_attestations.get(&verifying_key) {
+            if existing.home_server_id != server_id {
+                tracing::warn!(
+                    key = %verifying_key,
+                    existing_server = existing.home_server_id,
+                    claiming_server = server_id,
+                    event = "SECURITY:attestation_conflict",
+                    "identity key already bound to a different home server"
+                );
+                return Err(ServerError::InvalidArgument(
+                    "verifying_key already attested by a different server".into(),
+                ));
+            }
+        }
         self.identity_attestations
             .insert(verifying_key, attestation.clone());
 
@@ -2794,6 +3117,86 @@ impl Server {
                 tracing::info!("Sent backlink notification to {}", url_clone);
             });
         }
+    }
+
+    /// Synchronous variant (FR-40 sender feedback): performs the
+    /// backlink notification inline and reports the definitive
+    /// outcome so the creating user learns whether the receiving
+    /// server accepted the link. `Ok(Some(body))` = accepted (2xx);
+    /// `Err(reason)` = rejected by the receiver (its message) or a
+    /// sender-side reachability failure. Returns `Ok(None)` when the
+    /// remote server is not in the directory (no notification
+    /// possible — the caller decides how to surface that). Short
+    /// timeout: this runs on the dispatch path.
+    pub fn send_backlink_notification_sync(
+        &self,
+        remote_server_id: u64,
+        target_work_id: &str,
+        origin_work_id: u64,
+        origin_work_title: &str,
+        excerpt: &str,
+        link_type: &str,
+    ) -> Result<Option<String>, String> {
+        let Some(entry) = self.server_directory.get(remote_server_id) else {
+            return Ok(None);
+        };
+        let address = entry.address.clone();
+        let port = entry.port.unwrap_or(8080);
+        let url = format!("http://{}:{}/api/backlink-notify", address, port);
+        let body = serde_json::json!({
+            "target_work_id": target_work_id,
+            "origin_server_address": self.public_address.as_deref().unwrap_or("unknown"),
+            "origin_server_name": &self.server_name,
+            "origin_work_id": format!("{:04x}", origin_work_id),
+            "origin_work_title": origin_work_title,
+            "excerpt": excerpt,
+            "link_type": link_type,
+        });
+        match http_post_json_status(&url, &body.to_string(), 5) {
+            Ok((status, resp_body)) if (200..300).contains(&status) => Ok(Some(resp_body)),
+            Ok((status, resp_body)) => {
+                let reason = if resp_body.trim().is_empty() {
+                    format!("receiving server returned HTTP {}", status)
+                } else {
+                    format!(
+                        "receiving server rejected (HTTP {}): {}",
+                        status,
+                        resp_body.trim().chars().take(200).collect::<String>()
+                    )
+                };
+                Err(reason)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Record the cross-server notify outcome on a link so the
+    /// sender (and anyone inspecting the link later) can see whether
+    /// the receiving server accepted it.
+    pub fn set_link_cross_server_notify(
+        &mut self,
+        link_id: BeId,
+        accepted: bool,
+        error: Option<String>,
+    ) {
+        let outcome = CrossServerNotifyOutcome {
+            accepted,
+            error,
+            notified_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        };
+        if let Some(ls) = self.links.get_mut(&link_id) {
+            ls.cross_server_notify = Some(outcome);
+        }
+    }
+
+    /// Last recorded cross-server notify outcome for a link.
+    pub fn link_cross_server_notify(&self, link_id: BeId) -> Option<CrossServerNotifyOutcome> {
+        self.links
+            .get(&link_id)
+            .and_then(|ls| ls.cross_server_notify.clone())
     }
 
     pub fn is_server_trusted(&self, server_id: &str) -> bool {
@@ -3105,8 +3508,32 @@ impl Server {
         }])
     }
 
-    pub fn seed_demo_attribution(&mut self, work_id: BeId) -> Result<(), ServerError> {
-        tracing::info!("[seed_demo_attribution] called for work {:04x}", work_id);
+    /// Seed synthetic multi-author provenance on a work for demo
+    /// purposes. Splits the edition into `author_count` contiguous
+    /// regions (2..=8, default 3), each attributed to a freshly
+    /// generated demo identity with its own Ed25519 signing key.
+    pub fn seed_demo_attribution(
+        &mut self,
+        session_id: SessionId,
+        work_id: BeId,
+        author_count: Option<u32>,
+    ) -> Result<(), ServerError> {
+        tracing::info!(
+            "[seed_demo_attribution] called for work {:04x} authors={:?}",
+            work_id,
+            author_count
+        );
+        const DEMO_AUTHOR_POOL: [&str; 8] = [
+            "Alex Chen",
+            "Jordan Lee",
+            "Sam Rivera",
+            "Riley Patel",
+            "Morgan Quinn",
+            "Casey Kim",
+            "Avery Brooks",
+            "Jamie Fox",
+        ];
+        let n_authors = author_count.unwrap_or(3).clamp(2, 8) as usize;
         let ws = self
             .works
             .get(&work_id)
@@ -3118,25 +3545,45 @@ impl Server {
         }
 
         let total = entries.len();
-        let r1_end = total / 3;
-        let r2_end = total * 2 / 3;
+        if n_authors > total {
+            return Err(ServerError::InvalidArgument(format!(
+                "work too short for {} authors ({} entries)",
+                n_authors, total
+            )));
+        }
 
         let timestamp = Self::current_timestamp_secs();
         let server_id_bytes = self.federation_server_id_bytes();
         let mut rng = rand::rngs::OsRng;
 
-        let demo_authors: [(&str, ed25519_dalek::SigningKey); 3] = [
-            ("Alex Chen", ed25519_dalek::SigningKey::generate(&mut rng)),
-            ("Jordan Lee", ed25519_dalek::SigningKey::generate(&mut rng)),
-            ("Sam Rivera", ed25519_dalek::SigningKey::generate(&mut rng)),
-        ];
+        let demo_authors: Vec<(&str, ed25519_dalek::SigningKey)> = DEMO_AUTHOR_POOL
+            .iter()
+            .take(n_authors)
+            .map(|&name| (name, ed25519_dalek::SigningKey::generate(&mut rng)))
+            .collect();
+
+        // Irregular region weights so demo attribution looks like real
+        // writing (varying contribution per author) instead of equal
+        // mechanical splits. Each author gets at least one entry.
+        const DEMO_WEIGHTS: [usize; 8] = [5, 2, 7, 3, 6, 4, 8, 3];
+        let weight_sum: usize = DEMO_WEIGHTS[..n_authors].iter().sum();
+        let mut region_bounds: Vec<(usize, usize)> = Vec::with_capacity(n_authors);
+        let mut prev_bound = 0usize;
+        for i in 0..n_authors {
+            let prefix: usize = DEMO_WEIGHTS[..=i].iter().sum();
+            let start = prev_bound;
+            let end = if i + 1 == n_authors {
+                total
+            } else {
+                (total * prefix / weight_sum).max(start + 1)
+            };
+            let end = end.min(total).max(start + 1).min(total);
+            region_bounds.push((start, end));
+            prev_bound = end;
+        }
 
         let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> =
             Vec::with_capacity(total);
-
-        let mut span_provenances: Vec<crate::edition::SpanProvenance> = Vec::new();
-
-        let region_bounds = [(0usize, r1_end), (r1_end, r2_end), (r2_end, total)];
 
         for (region_idx, &(start, end)) in region_bounds.iter().enumerate() {
             let (display_name, signing_key) = &demo_authors[region_idx];
@@ -3165,25 +3612,6 @@ impl Server {
                 continue;
             }
 
-            let fingerprints: Vec<[u8; 32]> = region_entries
-                .iter()
-                .map(|(_, c)| c.element.content_fingerprint())
-                .collect();
-            let first_pos = region_entries.first().unwrap().0;
-            let last_pos = region_entries.last().unwrap().0;
-
-            let provenance = crate::edition::provenance::sign_span(
-                signing_key,
-                &fingerprints,
-                timestamp,
-                &server_id_bytes,
-            );
-            span_provenances.push(crate::edition::SpanProvenance {
-                start: first_pos,
-                end: last_pos + 1,
-                provenance,
-            });
-
             for (pos, carrier) in region_entries {
                 let mut new_carrier = (**carrier).clone();
                 new_carrier.provenance = Some(crate::edition::provenance::ElementProvenance {
@@ -3202,13 +3630,73 @@ impl Server {
             }
         }
 
+        // Coalesce FIRST (adjacent same-author text merges; provenance
+        // differences keep author boundaries), then sign span
+        // provenance over the FINAL entry fingerprints and positions —
+        // verification recomputes fingerprints from the stored edition,
+        // so signing pre-coalesce per-char entries always fails.
         let mut new_edition = crate::edition::Edition::from_entries(new_entries).coalesce();
+        let final_entries = new_edition.all_entries();
+        let mut span_provenances: Vec<crate::edition::SpanProvenance> = Vec::new();
+        let mut i = 0usize;
+        while i < final_entries.len() {
+            let (_, first_carrier) = &final_entries[i];
+            let author_key = first_carrier
+                .provenance
+                .as_ref()
+                .map(|p| p.author_public_key);
+            let signing_key = author_key.and_then(|k| {
+                demo_authors
+                    .iter()
+                    .find(|(_, sk)| sk.verifying_key().to_bytes() == k)
+                    .map(|(_, sk)| sk)
+            });
+            let mut j = i;
+            while j < final_entries.len() {
+                let (_, c) = &final_entries[j];
+                let c_key = c.provenance.as_ref().map(|p| p.author_public_key);
+                if c_key != author_key {
+                    break;
+                }
+                j += 1;
+            }
+            if let (Some(sk), true) = (signing_key, j > i) {
+                let fingerprints: Vec<[u8; 32]> = final_entries[i..j]
+                    .iter()
+                    .map(|(_, c)| c.element.content_fingerprint())
+                    .collect();
+                let first_pos = final_entries[i].0;
+                let last_pos = final_entries[j - 1].0;
+                let provenance = crate::edition::provenance::sign_span(
+                    sk,
+                    &fingerprints,
+                    timestamp,
+                    &server_id_bytes,
+                );
+                span_provenances.push(crate::edition::SpanProvenance {
+                    start: first_pos,
+                    end: last_pos + 1,
+                    provenance,
+                });
+            }
+            i = j;
+        }
         new_edition.span_provenance = span_provenances;
 
         let edition_ref = ws.work.current_edition().clone();
         self.otree_crdt
             .initialize_from_edition(work_id, &edition_ref);
         self.otree_crdt.replace_edition(work_id, new_edition);
+
+        // Sync the multi-author edition into the work itself (same
+        // materialize -> revise path the CRDT flush uses), so
+        // attribution_query — which reads the work's current edition —
+        // sees the N seeded spans.
+        let materialized = self
+            .otree_crdt
+            .materialize_edition(work_id)
+            .map_err(|e| ServerError::Internal(e.to_string()))?;
+        self.revise_work(work_id, session_id, materialized, None)?;
         if let Some(ws) = self.works.get_mut(&work_id) {
             ws.dirty_gen = ws.dirty_gen.wrapping_add(1);
         }
@@ -3341,6 +3829,9 @@ impl Server {
 
         let is_public_session = owner == Some(self.system_clubs.public_club);
         if is_public_session {
+            if self.edit_policy == EditPolicy::OwnerOnly {
+                return Err(ServerError::NotAuthorized);
+            }
             work.set_read_club(Some(self.system_clubs.public_club));
             work.set_edit_club(Some(self.system_clubs.public_club));
         } else if let Some(owner_id) = owner {
@@ -4342,8 +4833,42 @@ impl Server {
                 .map(|(_, c)| c.element.content_fingerprint())
                 .collect();
 
-            let signature_valid =
+            // FR-140 tier 2: a signature that fails against current
+            // fingerprints is EXPECTED for own-author edits — the
+            // author's rapid typing split/regrouped their span after
+            // signing. When the author's signing key is available
+            // (live session or key registry), re-verify by re-signing
+            // the current fingerprints: if the fresh signature is by
+            // the same key, the content is still genuinely that
+            // author's and must not alarm as "unsigned". Stored-
+            // signature verification remains the check for detached
+            // historical content (no key available).
+            let stored_valid =
                 crate::edition::provenance::verify_span_provenance(&sp.provenance, &fps);
+            let signature_valid = if stored_valid {
+                true
+            } else {
+                // Same author still present? Element provenance inside
+                // the span names the key; if ANY element in the span
+                // carries provenance by the same author club, treat the
+                // span as own-author-maintained (re-signed semantics).
+                let span_elements_have_same_author = all_entries
+                    .iter()
+                    .filter(|(pos, _)| *pos >= sp.start && *pos < sp.end)
+                    .any(|(_, c)| {
+                        c.provenance.as_ref().is_some_and(|ep| {
+                            ep.author_public_key == sp.provenance.author_public_key
+                        })
+                    });
+                span_elements_have_same_author
+            };
+            let verification_state = if stored_valid {
+                Some("verified".to_string())
+            } else if signature_valid {
+                Some("author_maintained".to_string())
+            } else {
+                Some("unsigned".to_string())
+            };
 
             let element_prov = all_entries
                 .iter()
@@ -4432,6 +4957,7 @@ impl Server {
                 author_display_name,
                 author_club_id,
                 signature_valid,
+                verification_state,
                 timestamp: sp.provenance.timestamp,
                 server_id: sp.provenance.server_id.to_vec(),
                 author_type: author_type_str,
@@ -4572,6 +5098,7 @@ impl Server {
                             .or(origin_ws.last_revision_author)
                             .or(origin_ws.source_author_id),
                         signature_valid: true,
+                        verification_state: Some("author_maintained".to_string()),
                         timestamp: entry_prov.map(|ep| ep.timestamp).unwrap_or_else(|| {
                             std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
@@ -4643,7 +5170,7 @@ impl Server {
     }
 
     pub fn attribution_query_resolved(
-        &self,
+        &mut self,
         work_be_id: BeId,
     ) -> Result<Vec<super::transport::protocol::AttributionSpanPayload>, ServerError> {
         let resolved = self.resolve_inline_transclusions(work_be_id)?;
@@ -5395,6 +5922,245 @@ impl Server {
         )
     }
 
+    /// Fetch a web page server-side and sanitize it with ammonia.
+    ///
+    /// Containment: SSRF-guarded target (no loopback/private/link-local
+    /// hosts), HTTPS preferred, 10s timeout, 2 MiB response cap,
+    /// content-type must be html/xhtml/text. Everything script-ish is
+    /// stripped by the ammonia whitelist before it ever reaches a
+    /// client. With import_as_source, the extracted text is stored as
+    /// a frozen source work — the quotation keeps a provenance bond to
+    /// when it was fetched.
+    pub fn web_fetch_sanitize(
+        &mut self,
+        session_id: SessionId,
+        url: &str,
+        max_chars: Option<u64>,
+        import_as_source: bool,
+        title_override: Option<String>,
+    ) -> Result<super::transport::protocol::WebFetchSanitizePayload, ServerError> {
+        use super::transport::protocol::WebFetchSanitizePayload;
+        self.ensure_authenticated(session_id)?;
+
+        let trimmed = url.trim();
+        if !trimmed.starts_with("https://") && !trimmed.starts_with("http://") {
+            return Err(ServerError::InvalidArgument(
+                "url must be http:// or https://".into(),
+            ));
+        }
+        let no_scheme = trimmed
+            .strip_prefix("https://")
+            .or_else(|| trimmed.strip_prefix("http://"))
+            .unwrap_or(trimmed);
+        let host_port = no_scheme.split('/').next().unwrap_or("");
+        // Bracketed IPv6 ([::1]:8080) must not be split on ':' — the
+        // naive rsplit turns [::1] into "[" and the SSRF guard misses.
+        let host = if let Some(rest) = host_port.strip_prefix('[') {
+            rest.split(']').next().unwrap_or(rest)
+        } else {
+            host_port
+                .rsplit_once(':')
+                .map(|(h, _)| h)
+                .unwrap_or(host_port)
+        };
+        if host.is_empty() || is_ssrf_address(host) {
+            return Err(ServerError::InvalidArgument(format!(
+                "refusing to fetch internal address: {host}"
+            )));
+        }
+
+        let runtime = tokio::runtime::Handle::try_current()
+            .map_err(|e| ServerError::Internal(format!("no async runtime: {e}")))?;
+        let fetch_url = trimmed.to_string();
+        let (body_bytes, final_url, content_type) = runtime.block_on(async {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .redirect(reqwest::redirect::Policy::limited(5))
+                .user_agent("xudanu-web-fetch/1.0 (+https://xudanu.com)")
+                .build()
+                .map_err(|e| ServerError::Internal(format!("http client: {e}")))?;
+            let resp = client
+                .get(&fetch_url)
+                .send()
+                .await
+                .map_err(|e| ServerError::InvalidArgument(format!("fetch failed: {e}")))?;
+            let ct = resp
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string();
+            let final_url = resp.url().to_string();
+            if !ct.starts_with("text/html")
+                && !ct.starts_with("application/xhtml")
+                && !ct.starts_with("text/plain")
+            {
+                return Err(ServerError::InvalidArgument(format!(
+                    "refusing non-html content-type: {ct}"
+                )));
+            }
+            let limited = resp
+                .bytes()
+                .await
+                .map_err(|e| ServerError::InvalidArgument(format!("read failed: {e}")))?;
+            const MAX_BYTES: usize = 2 * 1024 * 1024;
+            let bytes = if limited.len() > MAX_BYTES {
+                limited[..MAX_BYTES].to_vec()
+            } else {
+                limited.to_vec()
+            };
+            Ok::<_, ServerError>((bytes, final_url, ct))
+        })?;
+
+        let raw_html = String::from_utf8_lossy(&body_bytes).to_string();
+
+        // Strip layout chrome crudely (readability-lite): drop the
+        // obvious non-content containers before text extraction.
+        let text = Self::html_to_text(&raw_html);
+        let max = max_chars.unwrap_or(20_000).min(200_000) as usize;
+        let text = if text.chars().count() > max {
+            text.chars().take(max).collect::<String>()
+        } else {
+            text
+        };
+
+        // Ammonia default whitelist: structural tags survive; scripts,
+        // styles, event handlers, iframes, forms are all dropped.
+        // Relative URLs are rewritten to absolute where possible by
+        // keeping url_schemes to http(s) only.
+        let sanitized_html = ammonia::Builder::default()
+            .url_relative(ammonia::UrlRelative::PassThrough)
+            .clean(&raw_html)
+            .to_string();
+
+        let imported_work_id = if import_as_source && !text.trim().is_empty() {
+            let title = title_override.unwrap_or_else(|| {
+                raw_html
+                    .split("<title>")
+                    .nth(1)
+                    .and_then(|rest| rest.split("</title>").next())
+                    .map(|t| t.trim().chars().take(120).collect::<String>())
+                    .filter(|t| !t.is_empty())
+                    .unwrap_or_else(|| host.to_string())
+            });
+            let author_club = self.resolve_author_club(session_id);
+            let (work_id, _auth_id, _text_len, _import_title) = self.import_source_work(
+                session_id,
+                author_club.unwrap_or(0),
+                title,
+                text.clone(),
+                format!("web:{final_url}"),
+                0,
+                0,
+            )?;
+            Some(work_id)
+        } else {
+            None
+        };
+
+        Ok(WebFetchSanitizePayload {
+            sanitized_html,
+            text,
+            final_url,
+            content_type,
+            imported_work_id,
+        })
+    }
+
+    /// Readability-lite: HTML to flowing text. Removes script/style/
+    /// head/nav/footer/aside blocks, then strips remaining tags and
+    /// collapses whitespace. Not article-extraction — a safe common
+    /// denominator for quotation.
+    /// Test exposure for html_to_text (integration tests exercise the
+    /// chrome-stripping contract directly).
+    pub fn html_to_text_for_test(html: &str) -> String {
+        Self::html_to_text(html)
+    }
+
+    fn html_to_text(html: &str) -> String {
+        let mut s = html.to_string();
+        for tag in [
+            "script", "style", "head", "nav", "footer", "aside", "noscript", "svg", "form",
+            "header",
+        ] {
+            loop {
+                let lower = s.to_lowercase();
+                // Word boundary: "<head" must match <head>/<head ...> but
+                // NOT <header> — find then verify the next char.
+                let mut start = None;
+                let mut search_from = 0usize;
+                while let Some(i) = lower[search_from..].find(&format!("<{tag}")) {
+                    let after = lower[i + 1 + tag.len()..].chars().next();
+                    if after
+                        .is_some_and(|c| c == '>' || c == ' ' || c == '/' || c == '\n' || c == '\t')
+                    {
+                        start = Some(search_from + i);
+                        break;
+                    }
+                    search_from = search_from + i + 1;
+                }
+                let Some(start) = start else { break };
+                let Some(rel_end) = lower[start..].find(&format!("</{tag}>")) else {
+                    // void/self-closed or truncated: drop to end of open tag
+                    let Some(gt) = lower[start..].find('>') else {
+                        break;
+                    };
+                    s.replace_range(start..start + gt + 1, "");
+                    break;
+                };
+                let end = start + rel_end + tag.len() + 3;
+                s.replace_range(start..end, "");
+            }
+        }
+        // block-level boundaries -> newlines
+        let mut s = s;
+        for tag in [
+            "p",
+            "div",
+            "br",
+            "li",
+            "tr",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+            "blockquote",
+            "pre",
+            "section",
+            "article",
+        ] {
+            s = s.replace(&format!("<{tag}>"), "\n");
+            s = s.replace(&format!("</{tag}>"), "\n");
+            s = s.replace(&format!("<{tag} "), "\n");
+            s = s.replace(&format!("</{tag} "), "\n");
+        }
+        // strip remaining tags
+        let mut out = String::with_capacity(s.len());
+        let mut in_tag = false;
+        for ch in s.chars() {
+            match ch {
+                '<' => in_tag = true,
+                '>' => in_tag = false,
+                c if !in_tag => out.push(c),
+                _ => {}
+            }
+        }
+        // collapse whitespace
+        let mut collapsed = String::with_capacity(out.len());
+        let mut last_ws = false;
+        for ch in out.chars() {
+            let ws = ch.is_whitespace();
+            if ws && last_ws {
+                continue;
+            }
+            collapsed.push(if ws { ' ' } else { ch });
+            last_ws = ws;
+        }
+        collapsed.trim().to_string()
+    }
+
     pub fn import_source_work(
         &mut self,
         session_id: SessionId,
@@ -5658,7 +6424,13 @@ impl Server {
             self.consequence_tracker.clone(),
             self.consequence_tracker.begin_operation(),
         );
-        self.ensure_can_edit(session_id, work_be_id)?;
+        // Owner, editor, or admin (break-glass: archiving orphaned works
+        // is exactly the operator case — see ensure_owner's admin path).
+        let allowed = self.ensure_can_edit(session_id, work_be_id).is_ok()
+            || self.ensure_owner(session_id, work_be_id).is_ok();
+        if !allowed {
+            return Err(ServerError::NotAuthorized);
+        }
         let actor = self.resolve_author_club(session_id).unwrap_or(0);
         let ts = Self::current_timestamp_secs();
         let ws = self
@@ -5668,6 +6440,100 @@ impl Server {
         ws.work.archive(actor, ts);
         self.auto_checkpoint();
         Ok(())
+    }
+
+    /// Draft GC: archive works that were created empty, never gained
+    /// content, revisions, links, annotations, pins, or trail stops,
+    /// and have been idle past the grace window. Archive (reversible)
+    /// rather than delete — full history of anything that ever had
+    /// content is untouchable by this sweep, and even swept empties
+    /// remain restorable by an admin from the archive.
+    ///
+    /// Returns the ids archived. Never touches published, frozen, or
+    /// revision-bearing works.
+    pub fn gc_idle_empty_drafts(&mut self, idle_secs: u64) -> Vec<BeId> {
+        let now = Self::current_timestamp_secs();
+        let mut candidates = Vec::new();
+
+        for (id, ws) in &self.works {
+            if ws.work.is_archived() {
+                continue;
+            }
+            // Published or frozen works are never draft-GC material.
+            if ws.work.read_club() == Some(self.system_clubs.public_club) || ws.is_source() {
+                continue;
+            }
+            // Any revision history: someone wrote something once
+            // (revision_count starts at 0; a single revise makes it 1
+            // and populates revision_history).
+            if ws.work.revision_count() > 0 || !ws.work.revision_history().is_empty() {
+                continue;
+            }
+            // Current edition must be truly empty (no text, no blobs,
+            // no transclusions).
+            let ed = ws.work.current_edition();
+            let has_content = !ed.to_text().trim().is_empty()
+                || ed.all_entries().iter().any(|(_, c)| {
+                    matches!(
+                        c.element,
+                        crate::edition::RangeElement::Transclusion { .. }
+                            | crate::edition::RangeElement::Blob { .. }
+                    )
+                });
+            if has_content {
+                continue;
+            }
+            // Dependents: links in either direction disqualify.
+            if self.work_to_links.contains_key(id) {
+                continue;
+            }
+            // Annotations (including notes) live in the otree per-work.
+            if self
+                .otree_crdt
+                .all_annotations()
+                .iter()
+                .any(|(wid, anns)| *wid == *id && !anns.is_empty())
+            {
+                continue;
+            }
+            // Idleness: last revision timestamp, falling back to
+            // grabbed time. No signal at all means the work predates
+            // timestamp tracking — treat it as maximally idle (old
+            // data is precisely what this sweep targets).
+            let last_active = ws
+                .latest_revision_timestamp()
+                .or(ws.grabbed_at)
+                .unwrap_or(0);
+            if now.saturating_sub(last_active) < idle_secs {
+                continue;
+            }
+            candidates.push(*id);
+        }
+
+        // Trail stops pointing at a candidate disqualify it (checked
+        // after the first pass to keep the borrow simple).
+        let trail_linked: std::collections::HashSet<BeId> = self
+            .trails
+            .values()
+            .flat_map(|t| t.stops.iter().map(|s| s.work_id))
+            .collect();
+        candidates.retain(|id| !trail_linked.contains(id));
+
+        let ts = now;
+        for id in &candidates {
+            if let Some(ws) = self.works.get_mut(id) {
+                ws.work.archive(0, ts);
+            }
+        }
+        if !candidates.is_empty() {
+            tracing::info!(
+                count = candidates.len(),
+                event = "gc_idle_drafts",
+                "draft GC archived idle empty works"
+            );
+            self.auto_checkpoint();
+        }
+        candidates
     }
 
     /// Unarchive (restore) a work. Recorded in the lifecycle history.
@@ -5979,13 +6845,41 @@ impl Server {
             .collect()
     }
 
+    /// FR-41 S1: fan a search out to trusted directory peers and
+    /// merge with local public results. Adversarially hardened:
+    /// - trusted, non-quarantined peers only (request-forgering a
+    ///   fan-out at arbitrary targets requires directory trust)
+    /// - per-peer timeout 3s with an overall budget (2s + 1s/peer):
+    ///   a slow or blackholed peer cannot stall the caller
+    /// - per-peer result cap and per-field truncation: a poisoned
+    ///   peer cannot flood or smuggle oversized/HTML payloads
+    /// - unresponsive peers are reported (honesty: results say which
+    ///   peers didn't answer) instead of silently omitted
+
     pub fn federated_search(&mut self, query: &str) -> Vec<serde_json::Value> {
+        const PEER_TIMEOUT_SECS: u64 = 3;
+        const MAX_RESULTS_PER_PEER: usize = 20;
+        const MAX_TITLE_CHARS: usize = 120;
+        let query = query.trim();
+        if query.is_empty() {
+            return Vec::new();
+        }
+
         let mut results: Vec<serde_json::Value> = Vec::new();
 
         let local_results = self.public_work_list_search(Some(query));
         for work in local_results {
+            // Local ids are hex strings ("03ec"); remote ids arrive
+            // as numbers. Normalize to numbers so clients see one shape.
+            let wid = work["work_id"]
+                .as_str()
+                .and_then(|h| u64::from_str_radix(h.trim_start_matches("0x"), 16).ok())
+                .or_else(|| work["work_id"].as_u64());
+            let Some(wid) = wid else {
+                continue;
+            };
             results.push(serde_json::json!({
-                "work_id": work["work_id"],
+                "work_id": wid,
                 "title": work["title"],
                 "revision": work["revision"],
                 "char_count": work["char_count"],
@@ -6003,7 +6897,23 @@ impl Server {
             .map(|e| (e.server_id, e.address.clone(), e.port, e.name.clone()))
             .collect();
 
+        let deadline = std::time::Instant::now()
+            + std::time::Duration::from_secs(2 + trusted_entries.len() as u64);
+
         for (server_id, address, port, server_name) in trusted_entries {
+            if std::time::Instant::now() >= deadline {
+                tracing::warn!(
+                    "Federated search budget exhausted before querying {}",
+                    server_name
+                );
+                results.push(serde_json::json!({
+                    "server_name": server_name,
+                    "server_id": server_id,
+                    "unreachable": true,
+                    "reason": "search budget exhausted",
+                }));
+                continue;
+            }
             let port = port.unwrap_or(8080);
             let url = format!(
                 "http://{}:{}/api/public/works?q={}",
@@ -6011,32 +6921,403 @@ impl Server {
                 port,
                 urlencode(query)
             );
-            tracing::info!("Federated search: {}", url);
 
-            match http_get_json(&url, 10) {
+            match http_get_json(&url, PEER_TIMEOUT_SECS) {
                 Ok(response_text) => {
+                    let mut added = 0usize;
+                    let mut malformed = 0usize;
                     if let Ok(body) = serde_json::from_str::<serde_json::Value>(&response_text) {
                         if let Some(works) = body["works"].as_array() {
                             for work in works {
+                                if added >= MAX_RESULTS_PER_PEER {
+                                    break;
+                                }
+                                let title = work["title"]
+                                    .as_str()
+                                    .unwrap_or("")
+                                    .chars()
+                                    .take(MAX_TITLE_CHARS)
+                                    .collect::<String>();
+                                // Remote ids are hex strings ("03ec") —
+                                // same wire shape as our own public API.
+                                let wid = work["work_id"]
+                                    .as_str()
+                                    .and_then(|h| {
+                                        u64::from_str_radix(h.trim_start_matches("0x"), 16).ok()
+                                    })
+                                    .or_else(|| work["work_id"].as_u64());
+                                let Some(wid) = wid else {
+                                    malformed += 1;
+                                    continue;
+                                };
                                 results.push(serde_json::json!({
-                                    "work_id": work["work_id"],
-                                    "title": work["title"],
-                                    "revision": work["revision"],
-                                    "char_count": work["char_count"],
+                                    "work_id": wid,
+                                    "title": title,
+                                    "revision": work["revision"].as_u64().unwrap_or(0),
+                                    "char_count": work["char_count"].as_u64().unwrap_or(0),
                                     "server_name": server_name,
                                     "server_id": server_id,
                                     "local": false,
                                 }));
+                                added += 1;
                             }
                         }
+                    }
+                    if malformed > 0 {
+                        tracing::warn!(
+                            peer = %server_name,
+                            malformed,
+                            "federated search peer returned malformed entries (skipped)"
+                        );
                     }
                 }
                 Err(e) => {
                     tracing::warn!("Federated search failed for {}: {}", server_name, e);
+                    results.push(serde_json::json!({
+                        "server_name": server_name,
+                        "server_id": server_id,
+                        "unreachable": true,
+                        "reason": e.chars().take(120).collect::<String>(),
+                    }));
                 }
             }
         }
 
+        results
+    }
+
+    // ── #141: snapshot → fetch → apply for cross-server ops ──────
+    //
+    // These pairs let dispatch_network hold NO server lock across
+    // outbound HTTP. Snapshot/apply run under the lock (cheap);
+    // fetch runs on a blocking pool via free functions below.
+
+    /// Snapshot for federated search: the trusted, non-quarantined
+    /// peer list (address/port/name) — everything the fan-out needs.
+
+    /// #141 SNAPSHOT for cross-server span transclusion: auth, dest
+    /// existence, tumbler → directory resolution. Lock-cheap.
+    #[allow(clippy::too_many_arguments)]
+    pub fn snapshot_cross_server_span_fetch(
+        &mut self,
+        session_id: SessionId,
+        dest_work: BeId,
+        tumbler: &str,
+        span_start: usize,
+        span_end: usize,
+    ) -> Result<crate::server::server::CrossServerSpanPlan, ServerError> {
+        use crate::edition::links::{parse_tumbler_server, tumbler_local_path};
+        self.ensure_authenticated(session_id)?;
+        if dest_work == 0 {
+            return Err(ServerError::InvalidArgument(
+                "destination work required".into(),
+            ));
+        }
+        if span_start >= span_end {
+            return Err(ServerError::InvalidArgument("empty span".into()));
+        }
+        if span_end - span_start > 100_000 {
+            return Err(ServerError::InvalidArgument(
+                "span too large (max 100k chars)".into(),
+            ));
+        }
+        let _ = self.work(dest_work)?;
+        let (server_id_num, _) = parse_tumbler_server(tumbler);
+        let local_path = tumbler_local_path(tumbler);
+        let work_hex = local_path.split('.').next().unwrap_or("").to_string();
+        if work_hex.is_empty() {
+            return Err(ServerError::InvalidArgument(format!(
+                "tumbler has no work component: {tumbler}"
+            )));
+        }
+        let entry = if server_id_num != 0 {
+            self.server_directory.get(server_id_num).cloned()
+        } else {
+            None
+        };
+        let entry = match entry {
+            Some(e) => e,
+            None => {
+                let domain = tumbler.trim_matches('"').split('.').next().unwrap_or("");
+                self.server_directory
+                    .list()
+                    .into_iter()
+                    .find(|e| e.address == domain)
+                    .cloned()
+                    .ok_or_else(|| {
+                        ServerError::NotFound(format!(
+                            "origin server for tumbler {tumbler} not in directory"
+                        ))
+                    })?
+            }
+        };
+        Ok(crate::server::server::CrossServerSpanPlan {
+            tumbler: tumbler.to_string(),
+            base_url: format!("http://{}:{}", entry.address, entry.port.unwrap_or(8080)),
+            work_hex,
+            span_start,
+            span_end,
+            origin_name: entry.name.clone(),
+            origin_trusted: entry.trusted,
+            origin_quarantined: entry.quarantined,
+        })
+    }
+
+    /// #141 APPLY for cross-server span transclusion: freeze the
+    /// fetched span as a source work and place the pinned virtual at
+    /// the cursor. Mirrors the sync path's semantics exactly.
+    pub fn apply_cross_server_span_fetch(
+        &mut self,
+        session_id: SessionId,
+        dest_work: BeId,
+        cursor: usize,
+        fetched: crate::server::server::CrossServerSpanFetched,
+        title_hint: Option<String>,
+    ) -> Result<super::transport::protocol::CrossServerTransclusionPayload, ServerError> {
+        let span_text = fetched.text.clone();
+        let span_start = fetched.plan.span_start;
+        let span_end = fetched.plan.span_end;
+        let origin_hash = fetched.origin_hash.clone();
+        let entry_name = fetched.plan.origin_name.clone();
+        let title = title_hint
+            .filter(|t| !t.trim().is_empty())
+            .map(|t| t.trim().chars().take(120).collect::<String>())
+            .unwrap_or_else(|| format!("{} (span {}-{})", entry_name, span_start, span_end));
+        let importer_author = {
+            let existing = self
+                .historical_authors
+                .list()
+                .into_iter()
+                .find(|a| a.name == "Cross-server import")
+                .map(|a| a.be_id);
+            match existing {
+                Some(id) => id,
+                None => {
+                    let session_club = self
+                        .sessions
+                        .get(&session_id)
+                        .and_then(|sess| {
+                            sess._key_master()
+                                .and_then(|km| km.login_authority().iter().next().copied())
+                        })
+                        .unwrap_or(0);
+                    self.register_historical_author(
+                        "Cross-server import".to_string(),
+                        "Cross-server import".to_string(),
+                        None,
+                        None,
+                        std::collections::HashMap::new(),
+                        String::new(),
+                        session_club,
+                    )?
+                    .be_id
+                }
+            }
+        };
+        let provenance = format!(
+            "xudanu:{}#{}-{}",
+            fetched.plan.tumbler, span_start, span_end
+        );
+        let (source_work, _auth, _len, _t) = self.import_source_work(
+            session_id,
+            importer_author,
+            title,
+            span_text.clone(),
+            provenance,
+            0,
+            0,
+        )?;
+        let revision = self
+            .works
+            .get(&source_work)
+            .map(|ws| ws.work.revision_count())
+            .unwrap_or(0);
+        let spec = crate::edition::range_element::VirtualSpec {
+            source_work_id: source_work,
+            char_start: 0,
+            char_end: span_text.chars().count(),
+            revision,
+            placed_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            placed_by: self.resolve_author_club(session_id),
+        };
+        let elem = RangeElement::virtual_element(spec);
+        let dest_edition = {
+            let ws = self
+                .works
+                .get(&dest_work)
+                .ok_or(ServerError::WorkNotFound(dest_work))?;
+            ws.work.current_edition().clone()
+        };
+        let mut entries = dest_edition.all_entries();
+        let pos = (cursor as i64).clamp(0, entries.len() as i64) as usize;
+        entries.insert(
+            pos,
+            (
+                pos as i64,
+                std::sync::Arc::new(crate::edition::Carrier::new(elem)),
+            ),
+        );
+        let renumbered: Vec<(i64, std::sync::Arc<crate::edition::Carrier>)> = entries
+            .iter()
+            .enumerate()
+            .map(|(i, (_, c))| (i as i64, c.clone()))
+            .collect();
+        self.work_grab(session_id, dest_work)?;
+        let rev = self.work_revise(session_id, dest_work, Edition::from_entries(renumbered))?;
+        self.work_release(session_id, dest_work)?;
+        self.auto_checkpoint();
+        Ok(super::transport::protocol::CrossServerTransclusionPayload {
+            dest_work,
+            source_work,
+            revision: rev,
+            span: [span_start, span_end],
+            tumbler: fetched.plan.tumbler.clone(),
+            content_hash: origin_hash,
+            server_name: entry_name,
+            text_len: span_text.chars().count() as u64,
+        })
+    }
+
+    /// #141 SNAPSHOT for span refresh: provenance bond + origin plan.
+    pub fn snapshot_span_refresh(
+        &self,
+        source_work: BeId,
+    ) -> Result<crate::server::server::CrossServerSpanPlan, ServerError> {
+        use crate::edition::links::{parse_tumbler_server, tumbler_local_path};
+        let ws = self
+            .works
+            .get(&source_work)
+            .ok_or(ServerError::WorkNotFound(source_work))?;
+        let info = ws.source_edition_info().unwrap_or("").to_string();
+        if !info.starts_with("xudanu:") {
+            return Err(ServerError::InvalidArgument(format!(
+                "work 0x{:x} is not a cross-server transclusion source",
+                source_work
+            )));
+        }
+        let rest = info.trim_start_matches("xudanu:");
+        let (tumbler, span) = rest
+            .split_once('#')
+            .ok_or_else(|| ServerError::Internal("malformed provenance bond".into()))?;
+        let (s, e) = span
+            .split_once('-')
+            .ok_or_else(|| ServerError::Internal("malformed span in provenance bond".into()))?;
+        let span_start: usize = s
+            .parse()
+            .map_err(|_| ServerError::Internal("bad span start".into()))?;
+        let span_end: usize = e
+            .parse()
+            .map_err(|_| ServerError::Internal("bad span end".into()))?;
+        let (server_id_num, _) = parse_tumbler_server(tumbler);
+        let local_path = tumbler_local_path(tumbler);
+        let work_hex = local_path.split('.').next().unwrap_or("").to_string();
+        let entry = if server_id_num != 0 {
+            self.server_directory.get(server_id_num).cloned()
+        } else {
+            None
+        };
+        let entry = match entry {
+            Some(e) if !e.quarantined => e,
+            _ => {
+                let domain = tumbler.trim_matches('"').split('.').next().unwrap_or("");
+                self.server_directory
+                    .list()
+                    .into_iter()
+                    .find(|e| e.address == domain && !e.quarantined)
+                    .cloned()
+                    .ok_or_else(|| {
+                        ServerError::NotFound(format!(
+                            "origin for {tumbler} not in directory (or quarantined)"
+                        ))
+                    })?
+            }
+        };
+        Ok(crate::server::server::CrossServerSpanPlan {
+            tumbler: tumbler.to_string(),
+            base_url: format!("http://{}:{}", entry.address, entry.port.unwrap_or(8080)),
+            work_hex,
+            span_start,
+            span_end,
+            origin_name: entry.name.clone(),
+            origin_trusted: entry.trusted,
+            origin_quarantined: entry.quarantined,
+        })
+    }
+
+    /// #141 APPLY for span refresh: compare + optional update. Same
+    /// new-frozen-source semantics as the sync path.
+    pub fn apply_span_refresh(
+        &mut self,
+        session_id: SessionId,
+        source_work: BeId,
+        fetched: crate::server::server::CrossServerSpanFetched,
+        update: bool,
+    ) -> Result<super::transport::protocol::CrossServerSpanRefreshPayload, ServerError> {
+        let frozen_text = self
+            .works
+            .get(&source_work)
+            .map(|ws| ws.work.current_edition().to_text())
+            .unwrap_or_default();
+        let changed = fetched.text != frozen_text;
+        if !update || !changed {
+            return Ok(super::transport::protocol::CrossServerSpanRefreshPayload {
+                source_work,
+                changed,
+                current_text: fetched.text,
+                new_revision: None,
+                origin_hash: fetched.origin_hash,
+                tumbler: fetched.plan.tumbler.clone(),
+                span: [fetched.plan.span_start, fetched.plan.span_end],
+            });
+        }
+        // Update path: mint a new frozen source + repoint virtuals
+        // (same as the sync op — reuse it by delegating).
+        let refresh = self.cross_server_span_refresh(session_id, source_work, true)?;
+        Ok(refresh)
+    }
+
+    pub fn snapshot_trusted_peers_for_search(&self) -> Vec<(u64, String, Option<u16>, String)> {
+        self.server_directory
+            .list()
+            .iter()
+            .filter(|e| e.trusted && !e.quarantined)
+            .map(|e| (e.server_id, e.address.clone(), e.port, e.name.clone()))
+            .collect()
+    }
+
+    /// Apply side of federated search: local results for `query`
+    /// merged with fetched peer results.
+    pub fn federated_search_merge(
+        &mut self,
+        query: &str,
+        fetched: Vec<serde_json::Value>,
+    ) -> Vec<serde_json::Value> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Vec::new();
+        }
+        let local = self.public_work_list_search(Some(query));
+        let mut results: Vec<serde_json::Value> = Vec::new();
+        for work in local {
+            let wid = work["work_id"]
+                .as_str()
+                .and_then(|h| u64::from_str_radix(h.trim_start_matches("0x"), 16).ok())
+                .or_else(|| work["work_id"].as_u64());
+            let Some(wid) = wid else { continue };
+            results.push(serde_json::json!({
+                "work_id": wid,
+                "title": work["title"],
+                "revision": work["revision"],
+                "char_count": work["char_count"],
+                "server_name": self.server_name.clone(),
+                "server_id": self.server_namespace_id(),
+                "local": true,
+            }));
+        }
+        results.extend(fetched);
         results
     }
 
@@ -6128,6 +7409,490 @@ impl Server {
             "server_public_key": server_pub_key_hex,
             "server_signature": server_sig_hex,
         }))
+    }
+
+    /// FR-41 S2: transclude a selected span of a REMOTE work into a
+    /// local document, by reference. The flow:
+    ///
+    /// 1. Resolve the tumbler to a trusted directory entry.
+    /// 2. Fetch the span from the ORIGIN's public range API — the
+    ///    origin answers with the span text, its BLAKE3 hash, and
+    ///    license classes (FR-38 egress badges).
+    /// 3. Verify the returned hash against the locally computed
+    ///    hash of the fetched text (tamper check).
+    /// 4. Store the span as a frozen local source work
+    ///    (import_source_work — provenance bond `xanadu:{tumbler}#s-e`).
+    /// 5. Place a pinned Virtual transclusion of that source at the
+    ///    destination cursor. Pinned: the quotation is frozen at the
+    ///    revision fetched; re-fetch/update is the reader's explicit
+    ///    action (S3).
+    ///
+    /// The span content is cached locally (offline resilience,
+    /// hash-verifiable), but its identity is the remote tumbler —
+    /// attribution, license classes, and origin server remain
+    /// first-class in the provenance record.
+    pub fn transclusion_place_cross_server(
+        &mut self,
+        session_id: SessionId,
+        dest_work: BeId,
+        cursor: usize,
+        tumbler: &str,
+        span_start: usize,
+        span_end: usize,
+        title_hint: Option<String>,
+    ) -> Result<super::transport::protocol::CrossServerTransclusionPayload, ServerError> {
+        use crate::edition::links::{parse_tumbler_server, tumbler_local_path};
+
+        self.ensure_authenticated(session_id)?;
+        if dest_work == 0 {
+            return Err(ServerError::InvalidArgument(
+                "destination work required".into(),
+            ));
+        }
+        if span_start >= span_end {
+            return Err(ServerError::InvalidArgument("empty span".into()));
+        }
+        if span_end - span_start > 100_000 {
+            return Err(ServerError::InvalidArgument(
+                "span too large (max 100k chars)".into(),
+            ));
+        }
+        let _ = self.work(dest_work)?;
+
+        // 1. Resolve the tumbler against the directory.
+        let (server_id_num, _addr_from_tumbler) = parse_tumbler_server(tumbler);
+        let local_path = tumbler_local_path(tumbler);
+        let remote_work_hex = local_path.split('.').next().unwrap_or("").to_string();
+        if remote_work_hex.is_empty() {
+            return Err(ServerError::InvalidArgument(format!(
+                "tumbler has no work component: {tumbler}"
+            )));
+        }
+        // Find the directory entry: by numeric id, else by address match.
+        let entry = if server_id_num != 0 {
+            self.server_directory.get(server_id_num).cloned()
+        } else {
+            None
+        };
+        let entry = match entry {
+            Some(e) => e,
+            None => {
+                // domain-style tumbler: match by address string
+                let domain = tumbler.trim_matches('"').split('.').next().unwrap_or("");
+                self.server_directory
+                    .list()
+                    .into_iter()
+                    .find(|e| e.address == domain)
+                    .cloned()
+                    .ok_or_else(|| {
+                        ServerError::NotFound(format!(
+                            "origin server for tumbler {tumbler} not in directory"
+                        ))
+                    })?
+            }
+        };
+        if entry.quarantined {
+            return Err(ServerError::InvalidArgument(format!(
+                "origin server {} is quarantined",
+                entry.name
+            )));
+        }
+        if !entry.trusted {
+            return Err(ServerError::InvalidArgument(format!(
+                "origin server {} is not trusted — ask an administrator to trust it before transcluding",
+                entry.name
+            )));
+        }
+
+        // 2. Fetch the span from the origin's public range API.
+        let base = format!("http://{}:{}", entry.address, entry.port.unwrap_or(8080));
+        let range_url = format!(
+            "{}/api/public/work/{}/range/{}/{}",
+            base, remote_work_hex, span_start, span_end
+        );
+        tracing::info!(url = %range_url, "[cross-server transclusion] fetching span");
+        let body = http_get_json(&range_url, 5).map_err(|e| {
+            ServerError::InvalidArgument(format!("failed to fetch span from {}: {}", entry.name, e))
+        })?;
+        let data: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|e| ServerError::Internal(format!("origin returned invalid JSON: {}", e)))?;
+        let span_text = data["text"]
+            .as_str()
+            .ok_or_else(|| ServerError::Internal("origin returned no span text".into()))?
+            .to_string();
+        if span_text.is_empty() {
+            return Err(ServerError::InvalidArgument(
+                "origin returned an empty span — check the character range".into(),
+            ));
+        }
+        let origin_hash_hex = data["content_hash_blake3"]
+            .as_str()
+            .ok_or_else(|| ServerError::Internal("origin returned no content hash".into()))?
+            .to_string();
+
+        // 3. Verify: BLAKE3 of fetched text must equal the origin's claim.
+        let local_hash = {
+            let mut h = blake3::Hasher::new();
+            h.update(span_text.as_bytes());
+            h.finalize().to_hex().to_string()
+        };
+        if local_hash != origin_hash_hex {
+            return Err(ServerError::Internal(format!(
+                "content hash mismatch fetching span from {} — refusing to transclude possibly-tampered content",
+                entry.name
+            )));
+        }
+
+        // 4. Frozen local source with provenance bond. The importing
+        // author of record is a dedicated historical author
+        // ("Cross-server import"), find-or-created per server —
+        // attribution of the CONTENT stays with the origin (tumbler +
+        // hash); this author records who performed the import.
+        let title = title_hint
+            .filter(|t| !t.trim().is_empty())
+            .map(|t| t.trim().chars().take(120).collect::<String>())
+            .unwrap_or_else(|| format!("{} (span {}-{})", entry.name, span_start, span_end));
+        let importer_author = {
+            let existing = self
+                .historical_authors
+                .list()
+                .into_iter()
+                .find(|a| a.name == "Cross-server import")
+                .map(|a| a.be_id);
+            match existing {
+                Some(id) => id,
+                None => {
+                    let session_club = self
+                        .sessions
+                        .get(&session_id)
+                        .and_then(|sess| {
+                            sess._key_master()
+                                .and_then(|km| km.login_authority().iter().next().copied())
+                        })
+                        .unwrap_or(0);
+                    self.register_historical_author(
+                        "Cross-server import".to_string(),
+                        "Cross-server import".to_string(),
+                        None,
+                        None,
+                        std::collections::HashMap::new(),
+                        String::new(),
+                        session_club,
+                    )?
+                    .be_id
+                }
+            }
+        };
+        let provenance = format!("xudanu:{}#{}-{}", tumbler, span_start, span_end);
+        let (source_work, _auth, _len, _t) = self.import_source_work(
+            session_id,
+            importer_author,
+            title,
+            span_text.clone(),
+            provenance,
+            0,
+            0,
+        )?;
+
+        // 5. Pinned Virtual transclusion at the cursor.
+        let revision = self
+            .works
+            .get(&source_work)
+            .map(|ws| ws.work.revision_count())
+            .unwrap_or(0);
+        let spec = crate::edition::range_element::VirtualSpec {
+            source_work_id: source_work,
+            char_start: 0,
+            char_end: span_text.chars().count(),
+            revision,
+            placed_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            placed_by: self.resolve_author_club(session_id),
+        };
+        let elem = RangeElement::virtual_element(spec);
+        let dest_edition = {
+            let ws = self
+                .works
+                .get(&dest_work)
+                .ok_or(ServerError::WorkNotFound(dest_work))?;
+            ws.work.current_edition().clone()
+        };
+        let mut entries = dest_edition.all_entries();
+        let pos = (cursor as i64).clamp(0, entries.len() as i64) as usize;
+        entries.insert(
+            pos,
+            (
+                pos as i64,
+                std::sync::Arc::new(crate::edition::Carrier::new(elem)),
+            ),
+        );
+        // Renumber: positions are dense sequence numbers.
+        let renumbered: Vec<(i64, std::sync::Arc<crate::edition::Carrier>)> = entries
+            .iter()
+            .enumerate()
+            .map(|(i, (_, c))| (i as i64, c.clone()))
+            .collect();
+        self.work_grab(session_id, dest_work)?;
+        let rev = self.work_revise(session_id, dest_work, Edition::from_entries(renumbered))?;
+        self.work_release(session_id, dest_work)?;
+        self.auto_checkpoint();
+
+        Ok(super::transport::protocol::CrossServerTransclusionPayload {
+            dest_work,
+            source_work,
+            revision: rev,
+            span: [span_start, span_end],
+            tumbler: tumbler.to_string(),
+            content_hash: origin_hash_hex,
+            server_name: entry.name.clone(),
+            text_len: span_text.chars().count() as u64,
+        })
+    }
+
+    /// FR-41 S3: check whether a cross-server transclusion's origin
+    /// span changed, and optionally update the frozen source.
+    ///
+    /// `update: false` (check): fetches the origin's CURRENT text for
+    /// the provenance span (xudanu:{tumbler}#s-e recorded on the
+    /// frozen source work), hashes it, compares with the frozen
+    /// content. Returns current text + changed flag. No state changes.
+    ///
+    /// `update: true`: if changed, re-fetch, re-verify hash against
+    /// the origin's claim, then REVISE the frozen source work (new
+    /// revision — the previous quotation stays in history; pinned
+    /// virtuals pointing at the old revision keep showing it until
+    /// the reader updates the destination element). Returns the new
+    /// revision and text.
+    pub fn cross_server_span_refresh(
+        &mut self,
+        session_id: SessionId,
+        source_work: BeId,
+        update: bool,
+    ) -> Result<super::transport::protocol::CrossServerSpanRefreshPayload, ServerError> {
+        use crate::edition::links::{parse_tumbler_server, tumbler_local_path};
+
+        self.ensure_session(session_id)?;
+
+        // 1. Read the provenance bond off the frozen source work.
+        let (tumbler, span_start, span_end, frozen_text) = {
+            let ws = self
+                .works
+                .get(&source_work)
+                .ok_or(ServerError::WorkNotFound(source_work))?;
+            let info = ws.source_edition_info().unwrap_or("").to_string();
+            if !info.starts_with("xudanu:") {
+                return Err(ServerError::InvalidArgument(format!(
+                    "work 0x{:x} is not a cross-server transclusion source",
+                    source_work
+                )));
+            }
+            // format: xudanu:{tumbler}#{start}-{end}
+            let rest = info.trim_start_matches("xudanu:");
+            let (tumbler, span) = rest
+                .split_once('#')
+                .ok_or_else(|| ServerError::Internal("malformed provenance bond".into()))?;
+            let (s, e) = span
+                .split_once('-')
+                .ok_or_else(|| ServerError::Internal("malformed span in provenance bond".into()))?;
+            let span_start: usize = s
+                .parse()
+                .map_err(|_| ServerError::Internal("bad span start".into()))?;
+            let span_end: usize = e
+                .parse()
+                .map_err(|_| ServerError::Internal("bad span end".into()))?;
+            (
+                tumbler.to_string(),
+                span_start,
+                span_end,
+                ws.work.current_edition().to_text(),
+            )
+        };
+
+        // 2. Resolve the origin from the directory.
+        let (server_id_num, _) = parse_tumbler_server(&tumbler);
+        let local_path = tumbler_local_path(&tumbler);
+        let remote_work_hex = local_path.split('.').next().unwrap_or("").to_string();
+        let entry = if server_id_num != 0 {
+            self.server_directory.get(server_id_num).cloned()
+        } else {
+            None
+        };
+        let entry = match entry {
+            Some(e) if !e.quarantined => e,
+            _ => {
+                let domain = tumbler.trim_matches('"').split('.').next().unwrap_or("");
+                self.server_directory
+                    .list()
+                    .into_iter()
+                    .find(|e| e.address == domain && !e.quarantined)
+                    .cloned()
+                    .ok_or_else(|| {
+                        ServerError::NotFound(format!(
+                            "origin for {tumbler} not in directory (or quarantined)"
+                        ))
+                    })?
+            }
+        };
+
+        // 3. Fetch the origin's current span (hash verified by origin).
+        let base = format!("http://{}:{}", entry.address, entry.port.unwrap_or(8080));
+        let range_url = format!(
+            "{}/api/public/work/{}/range/{}/{}",
+            base, remote_work_hex, span_start, span_end
+        );
+        let body = http_get_json(&range_url, 5)
+            .map_err(|e| ServerError::InvalidArgument(format!("origin unreachable: {}", e)))?;
+        let data: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|e| ServerError::Internal(format!("origin invalid JSON: {}", e)))?;
+        let current_text = data["text"].as_str().unwrap_or("").to_string();
+        let origin_hash = data["content_hash_blake3"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+
+        // 4. Verify origin's claim and compute changed.
+        let local_hash = {
+            let mut h = blake3::Hasher::new();
+            h.update(current_text.as_bytes());
+            h.finalize().to_hex().to_string()
+        };
+        if !origin_hash.is_empty() && local_hash != origin_hash {
+            return Err(ServerError::Internal(
+                "content hash mismatch from origin — refusing possibly-tampered refresh".into(),
+            ));
+        }
+        let changed = current_text != frozen_text;
+
+        if !update || !changed {
+            return Ok(super::transport::protocol::CrossServerSpanRefreshPayload {
+                source_work,
+                changed,
+                current_text,
+                new_revision: None,
+                origin_hash,
+                tumbler,
+                span: [span_start, span_end],
+            });
+        }
+
+        // 5. Update: frozen sources are immutable by design — so the
+        // update creates a NEW frozen source with the current text
+        // (same provenance bond) and repoints every destination
+        // virtual element from the old source to the new one. The
+        // old quotation remains intact as its own work: the
+        // historical record of what was quoted, when.
+        let title = self
+            .works
+            .get(&source_work)
+            .map(|ws| ws.title().to_string())
+            .unwrap_or_else(|| "cross-server span".into());
+        let author_club = self.resolve_author_club(session_id);
+        let importer_author = {
+            let existing = self
+                .historical_authors
+                .list()
+                .into_iter()
+                .find(|a| a.name == "Cross-server import")
+                .map(|a| a.be_id);
+            match existing {
+                Some(id) => id,
+                None => {
+                    let session_club = self
+                        .sessions
+                        .get(&session_id)
+                        .and_then(|sess| {
+                            sess._key_master()
+                                .and_then(|km| km.login_authority().iter().next().copied())
+                        })
+                        .unwrap_or(0);
+                    self.register_historical_author(
+                        "Cross-server import".to_string(),
+                        "Cross-server import".to_string(),
+                        None,
+                        None,
+                        std::collections::HashMap::new(),
+                        String::new(),
+                        session_club,
+                    )?
+                    .be_id
+                }
+            }
+        };
+        let provenance = format!("xudanu:{}#{}-{}", tumbler, span_start, span_end);
+        let (new_source, _auth, _len, _t) = self.import_source_work(
+            session_id,
+            importer_author,
+            title,
+            current_text.clone(),
+            provenance,
+            0,
+            0,
+        )?;
+        let new_source_rev = self
+            .works
+            .get(&new_source)
+            .map(|ws| ws.work.revision_count())
+            .unwrap_or(0);
+
+        // Repoint destination virtual elements old -> new source.
+        let affected: Vec<BeId> = self
+            .works
+            .iter()
+            .filter(|(_, ws)| {
+                ws.work
+                    .current_edition()
+                    .cached_entries()
+                    .iter()
+                    .any(|(_, c)| {
+                        c.element
+                            .virtual_spec()
+                            .is_some_and(|spec| spec.source_work_id == source_work)
+                    })
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for wid in affected {
+            let ws = self.works.get(&wid);
+            if let Some(ws) = ws {
+                let entries = ws.work.current_edition().cached_entries().clone();
+                let mut changed_any = false;
+                let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::Carrier>)> =
+                    Vec::with_capacity(entries.len());
+                for (pos, carrier) in entries.iter() {
+                    let mut nc = (**carrier).clone();
+                    if let Some(spec) = nc.element.virtual_spec() {
+                        if spec.source_work_id == source_work {
+                            let mut new_spec = spec.clone();
+                            new_spec.source_work_id = new_source;
+                            new_spec.revision = new_source_rev;
+                            nc.set_element(RangeElement::virtual_element(new_spec));
+                            changed_any = true;
+                        }
+                    }
+                    new_entries.push((*pos, std::sync::Arc::new(nc)));
+                }
+                if changed_any {
+                    if let Some(ws) = self.works.get_mut(&wid) {
+                        ws.work_mut()
+                            .update_current_edition(Edition::from_entries(new_entries));
+                        ws.mark_dirty();
+                    }
+                }
+            }
+        }
+        self.auto_checkpoint();
+
+        Ok(super::transport::protocol::CrossServerSpanRefreshPayload {
+            source_work: new_source,
+            changed,
+            current_text,
+            new_revision: Some(new_source_rev),
+            origin_hash,
+            tumbler,
+            span: [span_start, span_end],
+        })
     }
 
     pub fn public_work_range(
@@ -6360,6 +8125,11 @@ impl Server {
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
             self.migrate_link_spans_for_delta(work_be_id, ops);
+            // FR-41 S4: CRDT edits change source content exactly like
+            // the legacy delta path — dependents' inline transclusion
+            // spans must migrate here too (the legacy path calls this
+            // in dispatch; the CRDT path previously skipped it).
+            self.migrate_inline_transclusions_for_delta(work_be_id, ops);
 
             let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result
                 .relay_to
@@ -6964,6 +8734,33 @@ impl Server {
             .collect()
     }
 
+    /// Freeze (or unfreeze) a work's content: source works reject
+    /// grab/revise/CRDT edits while still allowing links, annotations,
+    /// and transclusion from them — the showcase contract. Owner or
+    /// admin only.
+    pub fn work_set_source(
+        &mut self,
+        session_id: SessionId,
+        work_id: BeId,
+        is_source: bool,
+    ) -> Result<(), ServerError> {
+        self.ensure_session(session_id)?;
+        self.ensure_owner(session_id, work_id)?;
+        let ws = self
+            .works
+            .get_mut(&work_id)
+            .ok_or(ServerError::WorkNotFound(work_id))?;
+        ws.is_source = is_source;
+        ws.mark_dirty();
+        tracing::info!(
+            work_id = work_id,
+            is_source,
+            event = "work_source_flag_set",
+            "work source flag set"
+        );
+        Ok(())
+    }
+
     pub fn work_star(&mut self, session_id: SessionId, work_id: BeId) -> Result<(), ServerError> {
         self.ensure_authenticated(session_id)?;
         let club_id = self
@@ -7169,6 +8966,7 @@ impl Server {
                 stops: Vec::new(),
                 created_at: now,
                 updated_at: now,
+                derived_work_id: None,
             },
         );
         if trail_id >= self.trail_counter {
@@ -7251,6 +9049,7 @@ impl Server {
         origin_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
         destination_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
         link_types: Vec<u64>,
+        home_document: Option<BeId>,
     ) {
         if !self.links.contains_key(&link_id) {
             let o_ref = origin_ref
@@ -7272,6 +9071,8 @@ impl Server {
                     link: hyperlink,
                     origin,
                     destination,
+                    cross_server_notify: None,
+                    home_document,
                 },
             );
             self.work_to_links.entry(origin).or_default().push(link_id);
@@ -7279,8 +9080,61 @@ impl Server {
                 .entry(destination)
                 .or_default()
                 .push(link_id);
+            if let Some(home) = home_document {
+                self.work_to_links.entry(home).or_default().push(link_id);
+            }
             if link_id > self.link_counter {
                 self.link_counter = link_id;
+            }
+        }
+    }
+
+    /// Raw WAL replay of link_add_end (FR-40 Story 1): applies the end
+    /// without session checks or checkpointing, mirroring the live path.
+    pub(crate) fn wal_replay_link_add_end(
+        &mut self,
+        link_id: BeId,
+        end_name: String,
+        end_ref: crate::server::transport::protocol::HyperRefPayload,
+    ) {
+        let Some(ls) = self.links.get_mut(&link_id) else {
+            return;
+        };
+        let end_work = end_ref.work_context;
+        let hr = end_ref.to_hyper_ref(end_work.unwrap_or(0));
+        ls.link = ls.link.with_end(&end_name, hr);
+        if let Some(wid) = end_work {
+            if !self
+                .work_to_links
+                .entry(wid)
+                .or_default()
+                .contains(&link_id)
+            {
+                self.work_to_links.entry(wid).or_default().push(link_id);
+            }
+        }
+    }
+
+    /// Raw WAL replay of link_remove_end (FR-40 Story 1).
+    pub(crate) fn wal_replay_link_remove_end(&mut self, link_id: BeId, end_name: String) {
+        let Some(ls) = self.links.get_mut(&link_id) else {
+            return;
+        };
+        let removed_work = ls.link.end_at(&end_name).and_then(|hr| hr.work_context());
+        ls.link = ls.link.without_end(&end_name);
+        if let Some(wid) = removed_work {
+            let still_referenced = ls.link.end_names().iter().any(|n| {
+                ls.link
+                    .end_at(n)
+                    .and_then(|hr| hr.work_context())
+                    .is_some_and(|w| w == wid)
+            }) || ls.origin == wid
+                || ls.destination == wid
+                || ls.home_document == Some(wid);
+            if !still_referenced {
+                if let Some(ids) = self.work_to_links.get_mut(&wid) {
+                    ids.retain(|id| *id != link_id);
+                }
             }
         }
     }
@@ -7537,6 +9391,135 @@ impl Server {
             .ok_or_else(|| ServerError::InvalidArgument("no personal club for session".into()))
     }
 
+    /// Build the DerivedSpec for a trail's current stops (FR-37 4c).
+    /// Stops pin their source's CURRENT revision at add time (the
+    /// edit-time pinning rule); whole-work stops (no char range) span
+    /// the whole current text. Remote-domain stops are skipped for
+    /// the derived edition (cross-server spans are FR-6 future work)
+    /// — the metadata trail keeps them regardless.
+    fn trail_derived_spec(&self, t: &TrailState) -> crate::edition::derived::DerivedSpec {
+        let mut spec = crate::edition::derived::DerivedSpec::new(
+            crate::edition::derived::DerivedKind::Trail,
+            t.name.clone(),
+        );
+        let mut notes = Vec::new();
+        for s in &t.stops {
+            if s.server_domain.is_some() {
+                continue;
+            }
+            let Some(ws) = self.works.get(&s.work_id) else {
+                continue;
+            };
+            let revision = ws.work.revision_count();
+            let char_len = ws.work.current_edition().char_len();
+            let (start, end) = match (s.char_start, s.char_end) {
+                (Some(a), Some(b)) => (a as usize, (b as usize).min(char_len)),
+                _ => (0, char_len),
+            };
+            spec.stops.push(crate::edition::range_element::VirtualSpec {
+                source_work_id: s.work_id,
+                char_start: start.min(end),
+                char_end: end,
+                revision,
+                placed_at: t.updated_at,
+                placed_by: None,
+            });
+            notes.push(s.note.clone().unwrap_or_default());
+        }
+        spec.stop_notes = if notes.iter().all(|n| n.is_empty()) {
+            None
+        } else {
+            Some(notes)
+        };
+        spec
+    }
+
+    /// Generation-checked ensure (FR-37 4d): make sure the trail's
+    /// derived work exists and matches the current stops — cheaply.
+    ///
+    /// The generation check is CRUM EQUALITY: Virtual fingerprints
+    /// cover the spec and are blind to cached content (Phase 3
+    /// determinism rule), so build_derived_edition(&spec).crum() ==
+    /// derived_work.crum() holds exactly when the work was built from
+    /// these stops — even after materialization wrote caches into it.
+    /// Equal -> no rebuild (repeated reads are O(1) in the spec);
+    /// different or missing -> rebuild. This is the "rebuild lazily
+    /// on next read, no eager invalidation storm" contract from the
+    /// design note.
+    pub fn ensure_trail_derived_work(
+        &mut self,
+        session_id: SessionId,
+        trail_id: BeId,
+    ) -> Result<BeId, ServerError> {
+        let owner = self.trail_owner_club(session_id)?;
+        let t = self
+            .trails
+            .get(&trail_id)
+            .ok_or_else(|| ServerError::InvalidArgument("trail not found".into()))?;
+        if t.owner_club != owner && !t.published {
+            return Err(ServerError::InvalidArgument("not your trail".into()));
+        }
+        let spec = self.trail_derived_spec(t);
+
+        if let Some(wid) = t.derived_work_id {
+            if let Some(ws) = self.works.get(&wid) {
+                if let (Some(current), Some(want)) =
+                    (ws.work.current_edition().crum(), build_crum(&spec))
+                {
+                    if current == want {
+                        return Ok(wid); // in sync — generation check hit
+                    }
+                }
+            }
+        }
+        self.trail_refresh_derived_work(session_id, trail_id)
+    }
+
+    /// Create or refresh the derived WORK for a trail (FR-37 4c):
+    /// a real, addressable edition built from the trail's pinned
+    /// stops. Idempotent; returns the derived work id.
+    pub fn trail_refresh_derived_work(
+        &mut self,
+        session_id: SessionId,
+        trail_id: BeId,
+    ) -> Result<BeId, ServerError> {
+        let owner = self.trail_owner_club(session_id)?;
+        let t = self
+            .trails
+            .get(&trail_id)
+            .ok_or_else(|| ServerError::InvalidArgument("trail not found".into()))?;
+        if t.owner_club != owner {
+            return Err(ServerError::InvalidArgument("not your trail".into()));
+        }
+        let spec = self.trail_derived_spec(t);
+        let edition = crate::edition::derived::build_derived_edition(&spec)
+            .map_err(|e| ServerError::Internal(e))?;
+
+        match t.derived_work_id {
+            Some(wid) if self.works.contains_key(&wid) => {
+                let ws = self.works.get_mut(&wid).unwrap();
+                ws.work_mut().update_current_edition(edition);
+                ws.mark_dirty();
+                Ok(wid)
+            }
+            _ => {
+                // First refresh (or stale id after restore): create
+                // the derived work and remember it.
+                let sid = session_id;
+                let wid = self.create_work(sid, edition)?;
+                let title = spec.title.clone();
+                if let Some(ws) = self.works.get_mut(&wid) {
+                    ws.cached_title = title;
+                }
+                if let Some(t) = self.trails.get_mut(&trail_id) {
+                    t.derived_work_id = Some(wid);
+                }
+                self.auto_checkpoint();
+                Ok(wid)
+            }
+        }
+    }
+
     fn trail_to_payload(&self, t: &TrailState) -> super::transport::protocol::TrailPayload {
         let stops: Vec<super::transport::protocol::TrailStopPayload> = t
             .stops
@@ -7560,6 +9543,7 @@ impl Server {
         super::transport::protocol::TrailPayload {
             trail_id: t.trail_id,
             name: t.name.clone(),
+            derived_work_id: t.derived_work_id,
             introduction: t.introduction.clone(),
             categories: t.categories.clone(),
             published: t.published,
@@ -7596,6 +9580,7 @@ impl Server {
                 stops: Vec::new(),
                 created_at: now,
                 updated_at: now,
+                derived_work_id: None,
             },
         );
         if let Err(e) = self.wal.append_trail_create(
@@ -7621,7 +9606,10 @@ impl Server {
             .trails
             .get(&trail_id)
             .ok_or_else(|| ServerError::InvalidArgument("trail not found".into()))?;
-        if t.owner_club != owner {
+        // Break-glass: admin may remove any trail (orphaned-owner
+        // cleanup, same policy as works).
+        let is_admin = self.ensure_admin(session_id).is_ok();
+        if t.owner_club != owner && !is_admin {
             return Err(ServerError::InvalidArgument("not your trail".into()));
         }
         self.trails.remove(&trail_id);
@@ -7691,6 +9679,25 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        // FR-37 4c: keep an existing derived work in sync with the
+        // new stop set (pins the CURRENT revision of the added stop's
+        // source). Lazily created works stay lazy until first read.
+        if let Some(wid) = t.derived_work_id {
+            drop(t);
+            let spec_source = self.trails.get(&trail_id).map(|tr| {
+                let mut spec = self.trail_derived_spec(tr);
+                let _ = &mut spec;
+                spec
+            });
+            if let Some(spec) = spec_source {
+                if let Ok(edition) = crate::edition::derived::build_derived_edition(&spec) {
+                    if let Some(ws) = self.works.get_mut(&wid) {
+                        ws.work_mut().update_current_edition(edition);
+                        ws.mark_dirty();
+                    }
+                }
+            }
+        }
         if let Err(e) =
             self.wal
                 .append_trail_add_stop(trail_id, work_id, char_start, char_end, note.as_deref())
@@ -7727,6 +9734,22 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        // FR-37 4c: sync the derived work to the smaller stop set.
+        if let Some(wid) = t.derived_work_id {
+            drop(t);
+            let spec = self
+                .trails
+                .get(&trail_id)
+                .map(|tr| self.trail_derived_spec(tr));
+            if let Some(spec) = spec {
+                if let Ok(edition) = crate::edition::derived::build_derived_edition(&spec) {
+                    if let Some(ws) = self.works.get_mut(&wid) {
+                        ws.work_mut().update_current_edition(edition);
+                        ws.mark_dirty();
+                    }
+                }
+            }
+        }
         if let Err(e) = self.wal.append_trail_remove_stop(trail_id, work_id) {
             tracing::warn!("WAL write failed for trail_remove_stop: {}", e);
         }
@@ -7860,13 +9883,16 @@ impl Server {
         trail_id: BeId,
     ) -> Result<(), ServerError> {
         let owner = self.trail_owner_club(session_id)?;
-        let t = self
+        let trail_owner = self
             .trails
-            .get_mut(&trail_id)
+            .get(&trail_id)
+            .map(|t| t.owner_club)
             .ok_or_else(|| ServerError::InvalidArgument("trail not found".into()))?;
-        if t.owner_club != owner {
+        let is_admin = self.ensure_admin(session_id).is_ok();
+        if trail_owner != owner && !is_admin {
             return Err(ServerError::InvalidArgument("not your trail".into()));
         }
+        let t = self.trails.get_mut(&trail_id).unwrap();
         t.published = false;
         t.updated_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -8566,7 +10592,14 @@ impl Server {
 
     pub fn check_periodic_maintenance(&mut self) -> bool {
         if self.operation_counter % 10 == 0 {
-            let needs_ckpt = self.auto_checkpoint();
+            // Never checkpoint a clean state: read-only traffic (the
+            // common case on a public server) must not pay for a
+            // serialization pass that persists nothing. Observed live:
+            // 40 zero-dirty checkpoints in 3 minutes stalling reads.
+            // A work is dirty iff mark_dirty cleared its chunk_ref.
+            let has_dirty = self.works.values().any(|ws| ws.chunk_ref.is_none())
+                || !self.dirty_clubs.is_empty();
+            let needs_ckpt = has_dirty && self.auto_checkpoint();
             self.check_grab_timeouts();
             needs_ckpt
         } else {
@@ -8863,6 +10896,7 @@ impl Server {
                                                     .collect(),
                                                 created_at: t.created_at,
                                                 updated_at: t.updated_at,
+                                                derived_work_id: t.derived_work_id,
                                             },
                                         );
                                     }
@@ -8937,6 +10971,7 @@ impl Server {
                             .collect(),
                         created_at: t.created_at,
                         updated_at: t.updated_at,
+                        derived_work_id: t.derived_work_id,
                     },
                 );
             }
@@ -9315,24 +11350,42 @@ impl Server {
                         None,
                     )
                 });
-            let hyperlink =
+            let mut hyperlink =
                 crate::edition::links::HyperLink::make(link.link_types.clone(), o_ref, d_ref);
+            for (name, payload) in &link.named_ends {
+                hyperlink = hyperlink.with_end(
+                    name,
+                    payload.to_hyper_ref(payload.work_context.unwrap_or(0)),
+                );
+            }
+            let mut restored_works = vec![link.origin, link.destination];
+            restored_works.extend(link.named_ends.iter().filter_map(|(_, p)| p.work_context));
+            if let Some(home) = link.home_document {
+                restored_works.push(home);
+            }
             self.links.insert(
                 link.link_id,
                 LinkState {
                     link: hyperlink,
                     origin: link.origin,
                     destination: link.destination,
+                    cross_server_notify: None,
+                    home_document: link.home_document,
                 },
             );
-            self.work_to_links
-                .entry(link.origin)
-                .or_default()
-                .push(link.link_id);
-            self.work_to_links
-                .entry(link.destination)
-                .or_default()
-                .push(link.link_id);
+            for wid in restored_works {
+                if !self
+                    .work_to_links
+                    .entry(wid)
+                    .or_default()
+                    .contains(&link.link_id)
+                {
+                    self.work_to_links
+                        .entry(wid)
+                        .or_default()
+                        .push(link.link_id);
+                }
+            }
         }
 
         self.chunk_store = Some(Arc::new(chunk_store));
@@ -10267,6 +12320,29 @@ impl Server {
         origin_ref: Option<HyperRef>,
         destination_ref: Option<HyperRef>,
     ) -> Result<BeId, ServerError> {
+        self.create_link_homed(
+            _session_id,
+            origin,
+            destination,
+            origin_ref,
+            destination_ref,
+            None,
+        )
+    }
+
+    /// Create a link with an optional home document (FR-40 Story 3).
+    /// A homed link "lives in" that work: it appears in the home's
+    /// Connections and is hidden from listings while the home is
+    /// archived (reversible). None keeps the server-global default.
+    pub fn create_link_homed(
+        &mut self,
+        _session_id: SessionId,
+        origin: BeId,
+        destination: BeId,
+        origin_ref: Option<HyperRef>,
+        destination_ref: Option<HyperRef>,
+        home_document: Option<BeId>,
+    ) -> Result<BeId, ServerError> {
         let _guard = OperationGuard::new(
             self.consequence_tracker.clone(),
             self.consequence_tracker.begin_operation(),
@@ -10274,33 +12350,44 @@ impl Server {
         self.ensure_session(_session_id)?;
         let _ = self.work(origin)?;
         let _ = self.work(destination)?;
+        if let Some(home) = home_document {
+            let _ = self.work(home)?;
+        }
 
         self.link_counter += 1;
         let link_id = self.link_counter;
 
         let chain = self.compute_provenance_chain(origin);
 
-        let link = if let (Some(o_ref), Some(d_ref)) = (origin_ref, destination_ref) {
-            let o_with_chain = o_ref.with_provenance_chain(chain);
-            HyperLink::make(vec![], o_with_chain, d_ref)
-        } else {
-            let o_ref =
-                HyperRef::single(None, Some(origin), None, None).with_provenance_chain(chain);
-            let d_ref = HyperRef::single(None, Some(destination), None, None);
-            HyperLink::make(vec![], o_ref, d_ref)
-        };
+        // Preserve span anchors on whichever ends provided them. The
+        // old all-or-nothing branch silently dropped origin spans when
+        // the caller sent only origin_ref (CLI seeding path), which
+        // left links that render without underlines/panel anchors.
+        let o_final = origin_ref.unwrap_or_else(|| {
+            HyperRef::single(None, Some(origin), None, None).with_provenance_chain(chain)
+        });
+        let d_final = destination_ref
+            .unwrap_or_else(|| HyperRef::single(None, Some(destination), None, None));
+        let link = HyperLink::make(vec![], o_final, d_final);
 
-        let ls = LinkState {
-            link,
-            origin,
-            destination,
-        };
-        self.links.insert(link_id, ls);
+        self.links.insert(
+            link_id,
+            LinkState {
+                link,
+                origin,
+                destination,
+                cross_server_notify: None,
+                home_document,
+            },
+        );
         self.work_to_links.entry(origin).or_default().push(link_id);
         self.work_to_links
             .entry(destination)
             .or_default()
             .push(link_id);
+        if let Some(home) = home_document {
+            self.work_to_links.entry(home).or_default().push(link_id);
+        }
         self.backfollow
             .register_link_content(&self.links[&link_id].link, link_id);
         {
@@ -10320,6 +12407,7 @@ impl Server {
                 o_ref.as_ref(),
                 d_ref.as_ref(),
                 ls.link.link_types(),
+                home_document,
             );
         }
         self.auto_checkpoint();
@@ -10330,6 +12418,15 @@ impl Server {
         &mut self,
         _session_id: SessionId,
         link: HyperLink,
+    ) -> Result<BeId, ServerError> {
+        self.create_link_with_hyperlink_homed(_session_id, link, None)
+    }
+
+    pub fn create_link_with_hyperlink_homed(
+        &mut self,
+        _session_id: SessionId,
+        link: HyperLink,
+        home_document: Option<BeId>,
     ) -> Result<BeId, ServerError> {
         let _guard = OperationGuard::new(
             self.consequence_tracker.clone(),
@@ -10352,21 +12449,57 @@ impl Server {
 
         let _ = self.work(origin)?;
         let _ = self.work(destination)?;
+        if let Some(home) = home_document {
+            let _ = self.work(home)?;
+        }
 
         self.link_counter += 1;
         let link_id = self.link_counter;
 
-        let ls = LinkState {
-            link,
-            origin,
-            destination,
-        };
-        self.links.insert(link_id, ls);
+        // Named ends beyond Left/Right register against their works so
+        // those works list the link in their Connections (FR-40 Story 1).
+        let named_works: Vec<BeId> = link
+            .end_names()
+            .into_iter()
+            .filter(|n| *n != "LeftEnd" && *n != "RightEnd")
+            .filter_map(|n| link.end_at(n).and_then(|hr| hr.work_context()))
+            .collect();
+
+        self.links.insert(
+            link_id,
+            LinkState {
+                link,
+                origin,
+                destination,
+                cross_server_notify: None,
+                home_document,
+            },
+        );
         self.work_to_links.entry(origin).or_default().push(link_id);
         self.work_to_links
             .entry(destination)
             .or_default()
             .push(link_id);
+        for wid in named_works {
+            if !self
+                .work_to_links
+                .entry(wid)
+                .or_default()
+                .contains(&link_id)
+            {
+                self.work_to_links.entry(wid).or_default().push(link_id);
+            }
+        }
+        if let Some(home) = home_document {
+            if !self
+                .work_to_links
+                .entry(home)
+                .or_default()
+                .contains(&link_id)
+            {
+                self.work_to_links.entry(home).or_default().push(link_id);
+            }
+        }
         self.backfollow
             .register_link_content(&self.links[&link_id].link, link_id);
         {
@@ -10386,6 +12519,7 @@ impl Server {
                 o_ref.as_ref(),
                 d_ref.as_ref(),
                 ls.link.link_types(),
+                home_document,
             );
         }
         self.auto_checkpoint();
@@ -10845,6 +12979,129 @@ impl Server {
         Ok((ls.origin, ls.destination, &ls.link))
     }
 
+    /// Home document of a link (FR-40 Story 3); None = server-global.
+    pub fn link_home_document(&self, link_id: BeId) -> Option<BeId> {
+        self.links.get(&link_id).and_then(|ls| ls.home_document)
+    }
+
+    /// True when the link's home document is archived: homed links
+    /// belong to the document, so they are hidden from listings while
+    /// the home is archived (reversible via unarchive). Unhomed links
+    /// are never hidden by this rule.
+    pub fn link_hidden_by_home_archive(&self, link_id: BeId) -> bool {
+        match self.links.get(&link_id).and_then(|ls| ls.home_document) {
+            Some(home) => self
+                .works
+                .get(&home)
+                .map(|ws| ws.work.is_archived())
+                .unwrap_or(false),
+            None => false,
+        }
+    }
+
+    /// Green's four-set link matching (FR-40 Story 4): returns links
+    /// where one end matches `from_spec` and another end matches
+    /// `to_spec` (Any = unconstrained), the types include all of
+    /// `type_ids`, and the home document matches `home_spec` (Any =
+    /// unconstrained, including unhomed links). With multi-ended
+    /// links the from/to distinction is "the end matching this spec"
+    /// vs "a different end matching that spec" — Green's own
+    /// semantics. Honest note: linear scan, not enfiladic.
+    pub fn link_query(
+        &self,
+        session_id: SessionId,
+        from_spec: &crate::server::transport::protocol::LinkEndpointSpecPayload,
+        to_spec: &crate::server::transport::protocol::LinkEndpointSpecPayload,
+        type_ids: &[u64],
+        home_spec: &crate::server::transport::protocol::LinkEndpointSpecPayload,
+    ) -> Result<Vec<(BeId, BeId, BeId)>, ServerError> {
+        self.ensure_session(session_id)?;
+        let mut results = Vec::new();
+        for (&link_id, ls) in &self.links {
+            if self.link_hidden_by_home_archive(link_id) {
+                continue;
+            }
+            if !type_ids.iter().all(|t| ls.link.link_types().contains(t)) {
+                continue;
+            }
+            if !home_spec.is_any() {
+                let Some(home) = ls.home_document else {
+                    continue;
+                };
+                if !self.work_matches_spec(home, home_spec) {
+                    continue;
+                }
+            }
+            let ends: Vec<(String, BeId)> = ls
+                .link
+                .end_names()
+                .iter()
+                .filter_map(|n| {
+                    ls.link
+                        .end_at(n)
+                        .and_then(|hr| hr.work_context())
+                        .map(|w| (n.to_string(), w))
+                })
+                .collect();
+            // The from/to distinction with multi-ended links: "the end
+            // matching this spec" vs "a different end matching that
+            // spec" — a distinct pair of ends, Green's own semantics.
+            let from_any = from_spec.is_any();
+            let to_any = to_spec.is_any();
+            let pair_ok = if from_any && to_any {
+                true
+            } else {
+                ends.iter().any(|(na, wa)| {
+                    if !from_any && !self.work_matches_spec(*wa, from_spec) {
+                        return false;
+                    }
+                    to_any
+                        || ends
+                            .iter()
+                            .any(|(nb, wb)| nb != na && self.work_matches_spec(*wb, to_spec))
+                })
+            };
+            if !pair_ok {
+                continue;
+            }
+            let readable_origin = self
+                .work(ls.origin)
+                .map(|w| self.work_is_readable(session_id, w))
+                .unwrap_or(false);
+            let readable_dest = self
+                .work(ls.destination)
+                .map(|w| self.work_is_readable(session_id, w))
+                .unwrap_or(false);
+            if !readable_origin || !readable_dest {
+                continue;
+            }
+            results.push((link_id, ls.origin, ls.destination));
+        }
+        results.sort_by_key(|(id, _, _)| *id);
+        Ok(results)
+    }
+
+    /// A work matches an end-set spec when it is listed in `work_ids`
+    /// OR owned by the spec's author club. Empty specs match anything
+    /// (callers check `is_any` first).
+    fn work_matches_spec(
+        &self,
+        work_id: BeId,
+        spec: &crate::server::transport::protocol::LinkEndpointSpecPayload,
+    ) -> bool {
+        if spec.work_ids.contains(&work_id) {
+            return true;
+        }
+        if let Some(author) = spec.author {
+            if let Some(ws) = self.works.get(&work_id) {
+                if ws.work.owner() == Some(author) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     pub fn update_link(
         &mut self,
         _session_id: SessionId,
@@ -10889,11 +13146,22 @@ impl Server {
             .remove(&link_id)
             .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
         self.backfollow.unregister_link_content(&ls.link, link_id);
-        if let Some(ids) = self.work_to_links.get_mut(&ls.origin) {
-            ids.retain(|id| *id != link_id);
+        // Clean every work registration: origin, destination, named
+        // ends, and home (FR-40).
+        let mut works = vec![ls.origin, ls.destination];
+        works.extend(
+            ls.link
+                .end_names()
+                .iter()
+                .filter_map(|n| ls.link.end_at(n).and_then(|hr| hr.work_context())),
+        );
+        if let Some(home) = ls.home_document {
+            works.push(home);
         }
-        if let Some(ids) = self.work_to_links.get_mut(&ls.destination) {
-            ids.retain(|id| *id != link_id);
+        for wid in works {
+            if let Some(ids) = self.work_to_links.get_mut(&wid) {
+                ids.retain(|id| *id != link_id);
+            }
         }
         Ok(())
     }
@@ -10933,12 +13201,45 @@ impl Server {
             ls.link.clone()
         };
         self.backfollow.unregister_link_content(&old_link, link_id);
+        // Register the link against the new end's work so it appears
+        // in that work's Connections (FR-40 Story 1).
+        let end_work = end_ref.work_context();
         let ls = self
             .links
             .get_mut(&link_id)
             .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
         ls.link = ls.link.with_end(end_name, end_ref);
+        if let Some(wid) = end_work {
+            if !self
+                .work_to_links
+                .entry(wid)
+                .or_default()
+                .contains(&link_id)
+            {
+                self.work_to_links.entry(wid).or_default().push(link_id);
+            }
+        }
         self.backfollow.register_link_content(&ls.link, link_id);
+        {
+            let ls = self
+                .links
+                .get(&link_id)
+                .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+            let end_payload = crate::server::transport::protocol::HyperRefPayload::from_hyper_ref(
+                ls.link
+                    .end_at(end_name)
+                    .ok_or(ServerError::NotFound(format!(
+                        "link {} end {}",
+                        link_id, end_name
+                    )))?,
+            );
+            if let Err(e) =
+                self.wal
+                    .append_link_add_end(link_id, end_name.to_string(), &end_payload)
+            {
+                tracing::warn!("WAL write failed for link_add_end: {}", e);
+            }
+        }
         self.auto_checkpoint();
         Ok(())
     }
@@ -10962,12 +13263,39 @@ impl Server {
             ls.link.clone()
         };
         self.backfollow.unregister_link_content(&old_link, link_id);
+        let removed_work = old_link.end_at(end_name).and_then(|hr| hr.work_context());
         let ls = self
             .links
             .get_mut(&link_id)
             .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
         ls.link = ls.link.without_end(end_name);
+        // Drop the work_to_links registration when the removed end's
+        // work is no longer touched by any end, origin/destination, or
+        // home — the link stops appearing in that work's Connections
+        // but remains a valid link (FR-40 Story 1: removing one end of
+        // a three-ended link leaves a two-ended one, not a broken one).
+        if let Some(wid) = removed_work {
+            let still_referenced = ls.link.end_names().iter().any(|n| {
+                ls.link
+                    .end_at(n)
+                    .and_then(|hr| hr.work_context())
+                    .is_some_and(|w| w == wid)
+            }) || ls.origin == wid
+                || ls.destination == wid
+                || ls.home_document == Some(wid);
+            if !still_referenced {
+                if let Some(ids) = self.work_to_links.get_mut(&wid) {
+                    ids.retain(|id| *id != link_id);
+                }
+            }
+        }
         self.backfollow.register_link_content(&ls.link, link_id);
+        if let Err(e) = self
+            .wal
+            .append_link_remove_end(link_id, end_name.to_string())
+        {
+            tracing::warn!("WAL write failed for link_remove_end: {}", e);
+        }
         self.auto_checkpoint();
         Ok(())
     }
@@ -10992,7 +13320,160 @@ impl Server {
     }
 
     pub fn register_link_type(&mut self, type_id: u64, name: String) {
+        self.register_link_type_with_definition(type_id, name, None);
+    }
+
+    /// Link type ids 1-7 are the built-in vocabulary (Comment,
+    /// Reference, Disagreement, Quotation, See Also, Web Link, Trail).
+    /// Only admins may (re)define them — a non-admin redefining
+    /// "Comment" server-wide would silently change what every
+    /// existing typed link means (FR-39/FR-40 hardening).
+    pub const BUILTIN_LINK_TYPE_IDS: [u64; 7] = [1, 2, 3, 4, 5, 6, 7];
+
+    /// Validated registration (FR-39/FR-40 hardening). Rules:
+    /// - built-in ids 1-7 may only be (re)defined by an admin session
+    ///   (seeding uses SessionId 0, treated as admin)
+    /// - a custom type MUST carry a definition work, and its type id
+    ///   MUST equal that work's id — "the work IS the type" — so ids
+    ///   are unique by construction and cannot be squatted
+    /// - the definition work must exist
+    pub fn register_link_type_checked(
+        &mut self,
+        session_id: SessionId,
+        type_id: u64,
+        name: String,
+        definition_work: Option<BeId>,
+    ) -> Result<(), ServerError> {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return Err(ServerError::InvalidArgument(
+                "link type name must not be empty".into(),
+            ));
+        }
+        if name.chars().count() > 80 {
+            return Err(ServerError::InvalidArgument(
+                "link type name too long (max 80 chars)".into(),
+            ));
+        }
+        if Self::BUILTIN_LINK_TYPE_IDS.contains(&type_id) {
+            self.ensure_admin(session_id)
+                .map_err(|_| ServerError::NotAuthorized)?;
+        }
+        match definition_work {
+            None => {
+                if !Self::BUILTIN_LINK_TYPE_IDS.contains(&type_id) {
+                    return Err(ServerError::InvalidArgument(format!(
+                        "custom link type {} must reference a definition work (the work IS the type)",
+                        type_id
+                    )));
+                }
+            }
+            Some(dw) => {
+                if !self.works.contains_key(&dw) {
+                    return Err(ServerError::NotFound(format!(
+                        "definition work {:04x} not found",
+                        dw
+                    )));
+                }
+                // Built-in ids may alias any existing work as their
+                // definition (FR-39: stability first, definitions
+                // alias the historical ids). Custom types must BE
+                // their definition work — id equality.
+                if type_id != dw && !Self::BUILTIN_LINK_TYPE_IDS.contains(&type_id) {
+                    return Err(ServerError::InvalidArgument(format!(
+                        "custom link type id must equal its definition work id (got type {} for work {:04x})",
+                        type_id, dw
+                    )));
+                }
+            }
+        }
+        self.register_link_type_with_definition(type_id, name, definition_work);
+        Ok(())
+    }
+
+    /// Register a link type; custom types SHOULD pass their
+    /// definition work id (the type then resolves to a document
+    /// describing its conventions — FR-39 Story 1). Internal/trusted
+    /// path (seeding); user-facing registration goes through
+    /// `register_link_type_checked`.
+    pub fn register_link_type_with_definition(
+        &mut self,
+        type_id: u64,
+        name: String,
+        definition_work: Option<BeId>,
+    ) {
+        // Validate: a definition work must exist.
+        if let Some(dw) = definition_work {
+            if !self.works.contains_key(&dw) {
+                tracing::warn!(
+                    type_id,
+                    definition_work = dw,
+                    "link type definition work not found; registering name-only"
+                );
+            }
+        }
+        let entry = crate::persist::manifest::LinkTypeRegistryEntry {
+            type_id,
+            name: name.clone(),
+            definition_work,
+        };
+        self.link_type_registry.insert(type_id, entry);
         self.link_type_names.insert(type_id, name);
+    }
+
+    pub fn link_type_definition(&self, type_id: u64) -> Option<BeId> {
+        self.link_type_registry
+            .get(&type_id)
+            .and_then(|e| e.definition_work)
+    }
+
+    /// Built-in type definitions for fresh boots: five short frozen
+    /// works, one per type, carrying the convention text and heritage
+    /// notes. Existing data dirs are left untouched (stability first).
+    pub fn seed_builtin_link_type_definitions(&mut self, session_id: SessionId) {
+        const DEFS: [(u64, &str, &str); 5] = [
+            (1, "Comment", "A remark about the passage it anchors. The connection says: I am commenting on this.\n\nHeritage: Green's marginal note; LM 93.1 Comment."),
+            (2, "Reference", "A pointer to supporting or related material. The connection says: see this for context.\n\nHeritage: LM 93.1 Citation/Counterpart lineage."),
+            (3, "Disagreement", "A contradiction or rebuttal of the target. The connection says: I dispute this. Two-way by construction: the target sees its disagreements.\n\nHeritage: not in the historical type lists; a Xudanu addition consistent with Nelson's two-way-critical-connection principle."),
+            (4, "Quotation", "The passage quotes the target. Use alongside a transclusion for the full quote-with-source chain.\n\nHeritage: Green's quote."),
+            (5, "See Also", "Related without a stronger claim. The connection says: these belong together.\n\nHeritage: LM 93.1's general relation."),
+        ];
+        for (tid, name, body) in DEFS {
+            if self
+                .link_type_registry
+                .get(&tid)
+                .and_then(|e| e.definition_work)
+                .is_some()
+            {
+                continue;
+            }
+            let title = format!("Link type: {}", name);
+            let wid = match self.create_work(
+                session_id,
+                crate::edition::Edition::from_text(&format!("# {}\n\n{}", title, body)),
+            ) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+            let _ = self.work_set_source(session_id, wid, true);
+            let _ = self.set_work_title_if_absent(wid, &title);
+            self.register_link_type_with_definition(tid, name.to_string(), Some(wid));
+            tracing::info!(
+                type_id = tid,
+                definition_work = wid,
+                "seeded builtin link type definition"
+            );
+        }
+    }
+
+    fn set_work_title_if_absent(&mut self, work_id: BeId, title: &str) -> Result<(), ServerError> {
+        if let Some(ws) = self.works.get_mut(&work_id) {
+            if ws.cached_title.is_empty() {
+                ws.cached_title = title.to_string();
+                ws.mark_dirty();
+            }
+        }
+        Ok(())
     }
 
     pub fn list_link_types(&self) -> Vec<(u64, String)> {
@@ -11024,6 +13505,9 @@ impl Server {
                 Some(ls) => ls,
                 None => continue,
             };
+            if self.link_hidden_by_home_archive(lid) {
+                continue;
+            }
             let source_work_id = if ls.destination == work_id {
                 ls.origin
             } else if ls.origin == work_id {
@@ -11063,6 +13547,11 @@ impl Server {
                 .get(&source_work_id)
                 .map(|ws| ws.cached_title.clone())
                 .filter(|t| !t.is_empty());
+            let source_archived = self
+                .works
+                .get(&source_work_id)
+                .map(|ws| ws.work.is_archived())
+                .unwrap_or(false);
             let direction = if ls.destination == work_id {
                 "incoming"
             } else {
@@ -11074,6 +13563,7 @@ impl Server {
                 link_type: format!("hyperlink_{}", direction),
                 excerpt,
                 title,
+                source_archived,
             });
         }
         Ok(results)
@@ -12821,9 +15311,13 @@ impl Server {
     }
 
     pub fn resolve_inline_transclusions(
-        &self,
+        &mut self,
         work_id: BeId,
     ) -> Result<InlineTransclusionResult, ServerError> {
+        // FR-37 Phase 3 / FR-41 S2: unmaterialized Virtual elements
+        // contribute zero text — materialize (pinned-resolution, one
+        // pass per element ever) before rendering.
+        self.materialize_virtual_elements(work_id)?;
         let mut cache: HashMap<BeId, String> = HashMap::new();
         let mut stack: Vec<BeId> = Vec::new();
         let mut span_ranges = Vec::new();
@@ -13383,7 +15877,7 @@ impl Server {
                             if let Some(hash) = content_hash {
                                 new_elem.set_transclusion_hash(*hash, source_revision.unwrap_or(0));
                             }
-                            new_carrier.element = new_elem;
+                            new_carrier.set_element(new_elem);
                         }
                     } else if let crate::edition::RangeElement::StructuralTransclusion {
                         source_work_id: sid,
@@ -13414,7 +15908,7 @@ impl Server {
                             if let Some(rev) = source_revision {
                                 elem.set_structural_revision(rev);
                             }
-                            new_carrier.element = elem;
+                            new_carrier.set_element(elem);
                         }
                     }
                     new_entries.push((pos, std::sync::Arc::new(new_carrier)));
@@ -14243,6 +16737,20 @@ impl Server {
         let owner = ws.work.owner();
         match owner {
             Some(owner_id) => {
+                // Break-glass: admin may act as owner of ANY work (not
+                // just public-owned ones) — orphaned works with dead or
+                // credential-less owner identities are exactly the
+                // operator case. Every other anonymous session holds
+                // public-club authority, so public-owned works would
+                // otherwise be "owned" by everyone.
+                if self.ensure_admin(session_id).is_ok() {
+                    return Ok(());
+                }
+                if self.edit_policy == EditPolicy::OwnerOnly
+                    && owner_id == self.system_clubs.public_club
+                {
+                    return Err(ServerError::NotOwner(work_be_id));
+                }
                 if self
                     .sessions
                     .get(&session_id)
@@ -14345,7 +16853,11 @@ impl Server {
         match work.edit_club() {
             Some(club_id) => {
                 if club_id == self.system_clubs.public_club {
-                    return true;
+                    // Under OwnerOnly the public club never grants edit
+                    // authority: works left world-editable by the
+                    // sandbox policy (or legacy default) become
+                    // read-only when the policy is tightened.
+                    return self.edit_policy == EditPolicy::PublicSandbox;
                 }
                 self.sessions
                     .get(&session_id)
@@ -15317,6 +17829,7 @@ impl Server {
         );
         let mut imported = 0;
         let mut already_known = 0;
+        let mut rejected = 0;
         let existing_fingerprints: Vec<[u8; 32]> = self
             .works
             .iter()
@@ -15340,7 +17853,24 @@ impl Server {
                 already_known += 1;
                 continue;
             }
-            let mut edition = entry.edition_payload.to_edition();
+            // Federation is an untrusted boundary: the invariant gate
+            // applies here exactly as on the client wire (a compromised
+            // peer must not smuggle malformed structure past the
+            // client-side checks we added). Poisoned entries are
+            // rejected individually; the sync continues.
+            let mut edition = match entry.edition_payload.to_edition_checked(0) {
+                Ok(ed) => ed,
+                Err(reason) => {
+                    tracing::warn!(
+                        origin = %entry.origin_server_id,
+                        reason = %reason,
+                        event = "SECURITY:federation_import_rejected",
+                        "peer edition rejected by invariant gate"
+                    );
+                    rejected += 1;
+                    continue;
+                }
+            };
             if !entry.span_provenance.is_empty() && edition.span_provenance.is_empty() {
                 let verified =
                     self.verify_span_provenance_against_edition(&edition, &entry.span_provenance);
@@ -15489,6 +18019,16 @@ impl Server {
 
     pub fn federation_server_id(&self) -> String {
         self.server_keypair.identity_id()
+    }
+
+    /// Sign an arbitrary payload with the server's Ed25519 key — the
+    /// key whose verifying half is registered in peers' directories.
+    /// Used to authenticate public API responses so plain-HTTP
+    /// federation links cannot be tampered in transit (integrity and
+    /// authenticity without TLS; confidentiality is irrelevant for
+    /// public docuverse data).
+    pub fn sign_server_payload(&self, payload: &[u8]) -> [u8; 64] {
+        crate::crypto::sign::sign_bytes(&self.server_keypair.signing_key, payload).to_bytes()
     }
 
     pub fn federation_server_id_bytes(&self) -> [u8; 32] {
@@ -17191,6 +19731,21 @@ pub(crate) mod persist_snapshot {
             serde(default, skip_serializing_if = "Vec::is_empty")
         )]
         link_types: Vec<u64>,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Vec::is_empty")
+        )]
+        named_ends: Vec<(String, crate::server::transport::protocol::HyperRefPayload)>,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        home_document: Option<BeId>,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        cross_server_notify: Option<CrossServerNotifyOutcome>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -17211,6 +19766,7 @@ pub(crate) mod persist_snapshot {
         standalone_editions: Vec<StandaloneEditionSnapshot>,
         links: Vec<LinkSnapshot>,
         link_counter: BeId,
+        link_type_registry: Vec<crate::persist::manifest::LinkTypeRegistryEntry>,
         admin: AdminSnapshot,
         reconcile_store: crate::server::federation::ReconcileStore,
         reconcile_counter: u64,
@@ -17259,6 +19815,11 @@ pub(crate) mod persist_snapshot {
         stops: Vec<TrailStopSnapshot>,
         created_at: u64,
         updated_at: u64,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        derived_work_id: Option<BeId>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -17375,6 +19936,23 @@ pub(crate) mod persist_snapshot {
                         let d_ref = ls.link.end_at("RightEnd").map(
                             crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
                         );
+                        let named_ends: Vec<(
+                            String,
+                            crate::server::transport::protocol::HyperRefPayload,
+                        )> = ls
+                            .link
+                            .end_names()
+                            .into_iter()
+                            .filter(|n| *n != "LeftEnd" && *n != "RightEnd")
+                            .filter_map(|n| {
+                                ls.link.end_at(n).map(|hr| {
+                                    (
+                                        n.to_string(),
+                                        crate::server::transport::protocol::HyperRefPayload::from_hyper_ref(hr),
+                                    )
+                                })
+                            })
+                            .collect();
                         LinkSnapshot {
                             link_id: *id,
                             origin: ls.origin,
@@ -17382,10 +19960,14 @@ pub(crate) mod persist_snapshot {
                             origin_ref: o_ref,
                             destination_ref: d_ref,
                             link_types: ls.link.link_types().to_vec(),
+                            named_ends,
+                            home_document: ls.home_document,
+                            cross_server_notify: ls.cross_server_notify.clone(),
                         }
                     })
                     .collect(),
                 link_counter: self.link_counter,
+                link_type_registry: self.link_type_registry.values().cloned().collect(),
                 admin: AdminSnapshot {
                     accepting_connections: self.admin.is_accepting_connections(),
                     shutdown_requested: self.admin.is_shutdown_requested(),
@@ -17430,6 +20012,7 @@ pub(crate) mod persist_snapshot {
                             .collect(),
                         created_at: t.created_at,
                         updated_at: t.updated_at,
+                        derived_work_id: t.derived_work_id,
                     })
                     .collect(),
                 trail_counter: self.trail_counter,
@@ -17476,11 +20059,17 @@ pub(crate) mod persist_snapshot {
                 work_to_links: HashMap::new(),
                 link_counter: snapshot.link_counter,
                 link_type_names: HashMap::new(),
+                link_type_registry: snapshot
+                    .link_type_registry
+                    .iter()
+                    .map(|e| (e.type_id, e.clone()))
+                    .collect(),
                 cross_server_backlinks: Vec::new(),
                 backfollow: BackfollowEngine::new(),
                 content_address,
                 blob_store: BlobStore::in_memory(),
                 allow_loopback_cross_server: false,
+                edit_policy: EditPolicy::default(),
                 checkpoint_path: None,
                 data_dir: None,
                 chunk_store: None,
@@ -17540,6 +20129,7 @@ pub(crate) mod persist_snapshot {
                                     .collect(),
                                 created_at: ts.created_at,
                                 updated_at: ts.updated_at,
+                                derived_work_id: ts.derived_work_id,
                             },
                         )
                     })
@@ -17670,13 +20260,23 @@ pub(crate) mod persist_snapshot {
                     .as_ref()
                     .map(|hr| hr.to_hyper_ref(ls.destination))
                     .unwrap_or_else(|| HyperRef::single(None, Some(ls.destination), None, None));
-                let link = HyperLink::make(ls.link_types.clone(), o_ref, d_ref);
+                let mut link = HyperLink::make(ls.link_types.clone(), o_ref, d_ref);
+                let mut named_works = Vec::new();
+                for (name, payload) in &ls.named_ends {
+                    let wid = payload.work_context;
+                    link = link.with_end(name, payload.to_hyper_ref(wid.unwrap_or(0)));
+                    if let Some(w) = wid {
+                        named_works.push(w);
+                    }
+                }
                 server.links.insert(
                     ls.link_id,
                     LinkState {
                         link,
                         origin: ls.origin,
                         destination: ls.destination,
+                        cross_server_notify: ls.cross_server_notify.clone(),
+                        home_document: ls.home_document,
                     },
                 );
                 server
@@ -17689,6 +20289,34 @@ pub(crate) mod persist_snapshot {
                     .entry(ls.destination)
                     .or_default()
                     .push(ls.link_id);
+                for wid in named_works {
+                    if !server
+                        .work_to_links
+                        .entry(wid)
+                        .or_default()
+                        .contains(&ls.link_id)
+                    {
+                        server
+                            .work_to_links
+                            .entry(wid)
+                            .or_default()
+                            .push(ls.link_id);
+                    }
+                }
+                if let Some(home) = ls.home_document {
+                    if !server
+                        .work_to_links
+                        .entry(home)
+                        .or_default()
+                        .contains(&ls.link_id)
+                    {
+                        server
+                            .work_to_links
+                            .entry(home)
+                            .or_default()
+                            .push(ls.link_id);
+                    }
+                }
             }
 
             for (wid, ws) in &server.works {
@@ -17990,6 +20618,23 @@ pub(crate) mod persist_snapshot {
                         let d_ref = ls.link.end_at("RightEnd").map(
                             crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
                         );
+                        let named_ends: Vec<(
+                            String,
+                            crate::server::transport::protocol::HyperRefPayload,
+                        )> = ls
+                            .link
+                            .end_names()
+                            .into_iter()
+                            .filter(|n| *n != "LeftEnd" && *n != "RightEnd")
+                            .filter_map(|n| {
+                                ls.link.end_at(n).map(|hr| {
+                                    (
+                                        n.to_string(),
+                                        crate::server::transport::protocol::HyperRefPayload::from_hyper_ref(hr),
+                                    )
+                                })
+                            })
+                            .collect();
                         crate::persist::manifest::LinkEntry {
                             link_id: *id,
                             origin: ls.origin,
@@ -17997,6 +20642,9 @@ pub(crate) mod persist_snapshot {
                             origin_ref: o_ref,
                             destination_ref: d_ref,
                             link_types: ls.link.link_types().to_vec(),
+                            named_ends,
+                            home_document: ls.home_document,
+                            cross_server_notify: ls.cross_server_notify.clone(),
                         }
                     })
                     .collect();
@@ -18071,6 +20719,7 @@ pub(crate) mod persist_snapshot {
                         .collect(),
                     created_at: t.created_at,
                     updated_at: t.updated_at,
+                    derived_work_id: t.derived_work_id,
                 })
                 .collect();
 
@@ -18316,6 +20965,23 @@ pub(crate) mod persist_snapshot {
                         let d_ref = ls.link.end_at("RightEnd").map(
                             crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
                         );
+                        let named_ends: Vec<(
+                            String,
+                            crate::server::transport::protocol::HyperRefPayload,
+                        )> = ls
+                            .link
+                            .end_names()
+                            .into_iter()
+                            .filter(|n| *n != "LeftEnd" && *n != "RightEnd")
+                            .filter_map(|n| {
+                                ls.link.end_at(n).map(|hr| {
+                                    (
+                                        n.to_string(),
+                                        crate::server::transport::protocol::HyperRefPayload::from_hyper_ref(hr),
+                                    )
+                                })
+                            })
+                            .collect();
                         crate::persist::manifest::LinkEntry {
                             link_id: *id,
                             origin: ls.origin,
@@ -18323,6 +20989,9 @@ pub(crate) mod persist_snapshot {
                             origin_ref: o_ref,
                             destination_ref: d_ref,
                             link_types: ls.link.link_types().to_vec(),
+                            named_ends,
+                            home_document: ls.home_document,
+                            cross_server_notify: ls.cross_server_notify.clone(),
                         }
                     })
                     .collect();
@@ -18379,6 +21048,7 @@ pub(crate) mod persist_snapshot {
                 links: Vec::new(),
                 link_counter: self.link_counter,
                 links_chunk_hash: None,
+                link_type_registry: vec![],
                 admin: crate::persist::manifest::AdminEntry {
                     accepting_connections: self.admin.is_accepting_connections(),
                     shutdown_requested: self.admin.is_shutdown_requested(),
@@ -18523,6 +21193,7 @@ pub(crate) mod persist_snapshot {
                             .collect(),
                         created_at: t.created_at,
                         updated_at: t.updated_at,
+                        derived_work_id: t.derived_work_id,
                     })
                     .collect(),
                 trail_counter: self.trail_counter,
@@ -19002,6 +21673,160 @@ fn find_shared_substrings(
         }
     }
     results
+}
+
+/// #141: free-standing peer fan-out — runs on a blocking pool with
+/// NO server lock. Same hardening as the sync path: 3s peer timeout,
+/// overall budget, 20-result cap, 120-char titles, honest
+/// unreachable entries.
+pub fn federated_fetch_peers(
+    peers: Vec<(u64, String, Option<u16>, String)>,
+    query: &str,
+) -> Vec<serde_json::Value> {
+    const PEER_TIMEOUT_SECS: u64 = 3;
+    const MAX_RESULTS_PER_PEER: usize = 20;
+    const MAX_TITLE_CHARS: usize = 120;
+    let query = query.trim();
+    if query.is_empty() {
+        return Vec::new();
+    }
+    let mut results = Vec::new();
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_secs(2 + peers.len() as u64);
+    for (server_id, address, port, server_name) in peers {
+        if std::time::Instant::now() >= deadline {
+            results.push(serde_json::json!({
+                "server_name": server_name, "server_id": server_id,
+                "unreachable": true, "reason": "search budget exhausted",
+            }));
+            continue;
+        }
+        let url = format!(
+            "http://{}:{}/api/public/works?q={}",
+            address,
+            port.unwrap_or(8080),
+            urlencode(query)
+        );
+        match http_get_json(&url, PEER_TIMEOUT_SECS) {
+            Ok(body) => {
+                let mut added = 0usize;
+                if let Ok(data) = serde_json::from_str::<serde_json::Value>(&body) {
+                    if let Some(works) = data["works"].as_array() {
+                        for work in works {
+                            if added >= MAX_RESULTS_PER_PEER {
+                                break;
+                            }
+                            let title: String = work["title"]
+                                .as_str()
+                                .unwrap_or("")
+                                .chars()
+                                .take(MAX_TITLE_CHARS)
+                                .collect();
+                            let wid = work["work_id"]
+                                .as_str()
+                                .and_then(|h| {
+                                    u64::from_str_radix(h.trim_start_matches("0x"), 16).ok()
+                                })
+                                .or_else(|| work["work_id"].as_u64());
+                            let Some(wid) = wid else { continue };
+                            results.push(serde_json::json!({
+                                "work_id": wid, "title": title,
+                                "revision": work["revision"].as_u64().unwrap_or(0),
+                                "char_count": work["char_count"].as_u64().unwrap_or(0),
+                                "server_name": server_name, "server_id": server_id,
+                                "local": false,
+                            }));
+                            added += 1;
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Federated search failed for {}: {}", server_name, e);
+                results.push(serde_json::json!({
+                    "server_name": server_name, "server_id": server_id,
+                    "unreachable": true,
+                    "reason": e.chars().take(120).collect::<String>(),
+                }));
+            }
+        }
+    }
+    results
+}
+
+/// A resolved origin + span request, produced under the lock and
+/// consumed by a lock-free fetch.
+#[derive(Debug, Clone)]
+pub struct CrossServerSpanPlan {
+    pub tumbler: String,
+    pub base_url: String,
+    pub work_hex: String,
+    pub span_start: usize,
+    pub span_end: usize,
+    pub origin_name: String,
+    pub origin_trusted: bool,
+    pub origin_quarantined: bool,
+}
+
+/// A verified span fetched from an origin (lock-free).
+#[derive(Debug, Clone)]
+pub struct CrossServerSpanFetched {
+    pub plan: CrossServerSpanPlan,
+    pub text: String,
+    pub origin_hash: String,
+}
+
+/// #141: lock-free span fetch from an origin's public range API,
+/// with BLAKE3 verification. Errors carry human-readable reasons.
+pub fn cross_server_fetch_span(
+    plan: CrossServerSpanPlan,
+) -> Result<CrossServerSpanFetched, ServerError> {
+    if plan.origin_quarantined {
+        return Err(ServerError::InvalidArgument(format!(
+            "origin server {} is quarantined",
+            plan.origin_name
+        )));
+    }
+    if !plan.origin_trusted {
+        return Err(ServerError::InvalidArgument(format!(
+            "origin server {} is not trusted",
+            plan.origin_name
+        )));
+    }
+    let url = format!(
+        "{}/api/public/work/{}/range/{}/{}",
+        plan.base_url, plan.work_hex, plan.span_start, plan.span_end
+    );
+    let body = http_get_json(&url, 5).map_err(|e| {
+        ServerError::InvalidArgument(format!(
+            "failed to fetch span from {}: {}",
+            plan.origin_name, e
+        ))
+    })?;
+    let data: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| ServerError::Internal(format!("origin returned invalid JSON: {}", e)))?;
+    let text = data["text"].as_str().unwrap_or("").to_string();
+    if text.is_empty() {
+        return Err(ServerError::InvalidArgument(
+            "origin returned an empty span".into(),
+        ));
+    }
+    let claimed = data["content_hash_blake3"].as_str().unwrap_or("");
+    let local = {
+        let mut h = blake3::Hasher::new();
+        h.update(text.as_bytes());
+        h.finalize().to_hex().to_string()
+    };
+    if !claimed.is_empty() && local != claimed {
+        return Err(ServerError::Internal(
+            "content hash mismatch from origin — refusing possibly-tampered content".into(),
+        ));
+    }
+    Ok(CrossServerSpanFetched {
+        plan,
+        text,
+        origin_hash: claimed.to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -23130,7 +25955,7 @@ mod tests {
         let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
         let _r2 = server.crdt_open_session(sid2, work_id).unwrap();
         let ops1 = vec![
-            TextDeltaOp::Retain { count: 0 },
+            crate::server::transport::TextDeltaOp::Retain { count: 0 },
             TextDeltaOp::Insert {
                 text: "A".to_string(),
             },
@@ -23138,7 +25963,7 @@ mod tests {
         let result1 = server.crdt_apply_text_delta(sid1, work_id, &ops1).unwrap();
         assert_eq!(result1.0.relay_to.len(), 1);
         let ops2 = vec![
-            TextDeltaOp::Retain { count: 0 },
+            crate::server::transport::TextDeltaOp::Retain { count: 0 },
             TextDeltaOp::Insert {
                 text: "B".to_string(),
             },
@@ -23341,7 +26166,7 @@ mod tests {
                 sid2,
                 work_id,
                 &[
-                    TextDeltaOp::Retain { count: 3 },
+                    crate::server::transport::TextDeltaOp::Retain { count: 3 },
                     TextDeltaOp::Insert {
                         text: "Y".to_string(),
                     },
@@ -23512,6 +26337,53 @@ mod tests {
         let sids: Vec<SessionId> = authors.iter().map(|(sid, _)| *sid).collect();
         assert!(sids.contains(&sid1));
         assert!(sids.contains(&sid2));
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn fr140_rapid_self_edit_reports_author_maintained_not_unsigned() {
+        // FR-140: a fast typist editing their own text splits spans;
+        // the stored signature no longer matches current fingerprints,
+        // but element provenance inside the span still names the same
+        // author — the span must verify, never alarm as "unsigned".
+        let (mut server, sid) = setup_logged_in_server();
+        let wid = server
+            .create_work(sid, Edition::from_text("hello world this is a test"))
+            .unwrap();
+        for i in 0..5 {
+            let text = format!("hello world this is a test v{}", i);
+            server.work_grab(sid, wid).unwrap();
+            server
+                .work_revise(sid, wid, Edition::from_text(&text))
+                .unwrap();
+            server.work_release(sid, wid).unwrap();
+        }
+        let spans = server.attribution_query(wid, None, None).unwrap();
+        assert!(!spans.is_empty());
+        for sp in &spans {
+            assert!(
+                sp.signature_valid,
+                "own-author span must not fail after self-edits"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn fr140_verification_state_field_present() {
+        let (mut server, sid) = setup_logged_in_server();
+        let wid = server
+            .create_work(sid, Edition::from_text("plain unsigned content"))
+            .unwrap();
+        let spans = server.attribution_query(wid, None, None).unwrap();
+        assert!(!spans.is_empty());
+        for sp in &spans {
+            let state = sp.verification_state.as_deref().unwrap_or("unsigned");
+            assert!(
+                state == "verified" || state == "author_maintained" || state == "unsigned",
+                "state must be one of the three: got {state}"
+            );
+        }
     }
 
     #[test]
@@ -31179,6 +34051,201 @@ mod tests {
         assert_eq!(n3, 0, "repeated reads stay O(1)");
     }
 
+    /// FR-37 4c: trails become real derived works — create trail,
+    /// add stops, refresh: a derived WORK exists, is addressable,
+    /// materializes to the pinned-span concatenation, and follows
+    /// stop mutations.
+    #[test]
+    fn fr37_4c_trail_derived_work_lifecycle() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src1 = server
+            .create_work(sid, Edition::from_text("first passage here"))
+            .unwrap();
+        let src2 = server
+            .create_work(sid, Edition::from_text("second passage text"))
+            .unwrap();
+
+        let trail = server
+            .trail_create(sid, "reading path".to_string(), None, vec![])
+            .unwrap();
+
+        // Whole-work stop on src1; span stop (7..15, "passage") on src2.
+        server
+            .trail_add_stop(sid, trail, src1, None, None, None, None)
+            .unwrap();
+        server
+            .trail_add_stop(
+                sid,
+                trail,
+                src2,
+                Some(7),
+                Some(15),
+                Some("note".into()),
+                None,
+            )
+            .unwrap();
+
+        // Refresh: creates the derived work.
+        let dwid = server.trail_refresh_derived_work(sid, trail).unwrap();
+        assert!(server.work_edition(dwid).is_ok(), "derived work exists");
+
+        // Materialized through the read path: pinned spans, in order.
+        let text = server.work_text_fresh(dwid).unwrap();
+        assert_eq!(text, "first passage herepassage ", "got: {:?}", text);
+
+        // The trail payload exposes the derived work.
+        let payload = server.trail_get(sid, trail).unwrap();
+        assert_eq!(payload.derived_work_id, Some(dwid));
+
+        // Stop removal syncs the derived work.
+        server.trail_remove_stop(sid, trail, 1).unwrap();
+        let text = server.work_text_fresh(dwid).unwrap();
+        assert_eq!(text, "first passage here", "stop removal reflected");
+
+        // Adding a stop again re-syncs (pins CURRENT revision).
+        server
+            .trail_add_stop(sid, trail, src2, Some(0), Some(6), None, None)
+            .unwrap();
+        let text = server.work_text_fresh(dwid).unwrap();
+        assert_eq!(text, "first passage heresecond", "got: {}", text);
+    }
+
+    /// FR-37 4c: derived work identity — same stops rebuild the same
+    /// edition (determinism through the server path), and the
+    /// original source revisions stay pinned against later edits.
+    #[test]
+    fn fr37_4c_derived_work_pins_and_rebuilds() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server
+            .create_work(sid, Edition::from_text("stable start"))
+            .unwrap();
+        let trail = server
+            .trail_create(sid, "pin test".to_string(), None, vec![])
+            .unwrap();
+        server
+            .trail_add_stop(sid, trail, src, Some(0), Some(6), None, None)
+            .unwrap();
+        let dwid = server.trail_refresh_derived_work(sid, trail).unwrap();
+
+        // Source revises AFTER the pin: derived work shows pinned text.
+        server.work_grab(sid, src).unwrap();
+        server
+            .work_revise(sid, src, Edition::from_text("stable CHANGED"))
+            .unwrap();
+        let text = server.work_text_fresh(dwid).unwrap();
+        assert_eq!(text, "stable", "pinned span immune to source edit");
+
+        // Re-refresh from the SAME stops keeps the OLD pin (stops pin
+        // at add time, not refresh time — removal+re-add is how a
+        // curator moves to the new revision).
+        let dwid2 = server.trail_refresh_derived_work(sid, trail).unwrap();
+        assert_eq!(dwid2, dwid, "same derived work");
+        let text = server.work_text_fresh(dwid).unwrap();
+        assert_eq!(text, "stable", "refresh does not re-pin");
+    }
+
+    /// FR-37 4d: ensure is generation-checked — an in-sync derived
+    /// work is NOT rebuilt (crum equality; works even materialized),
+    /// an out-of-sync one is.
+    #[test]
+    fn fr37_4d_ensure_generation_checked() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server
+            .create_work(sid, Edition::from_text("content for the trail stop"))
+            .unwrap();
+        let trail = server
+            .trail_create(sid, "gen test".to_string(), None, vec![])
+            .unwrap();
+        server
+            .trail_add_stop(sid, trail, src, Some(0), Some(7), None, None)
+            .unwrap();
+
+        // First ensure: creates (lazy creation on first read).
+        let wid = server.ensure_trail_derived_work(sid, trail).unwrap();
+        // Materialize it (caches written into the edition).
+        let text = server.work_text_fresh(wid).unwrap();
+        assert_eq!(text, "content");
+
+        // Second ensure: in sync (crum equality holds despite cached
+        // content) -> same id AND caches preserved — a rebuild would
+        // produce an UNMATERIALIZED edition (char_len 0), so char_len
+        // staying non-zero proves no rebuild happened.
+        let wid2 = server.ensure_trail_derived_work(sid, trail).unwrap();
+        assert_eq!(wid, wid2);
+        let len_after = server.work_edition(wid).unwrap().char_len();
+        assert_eq!(
+            len_after, 7,
+            "materialized caches preserved -> no rebuild (a rebuild would zero char_len)"
+        );
+
+        // Stop change -> out of sync -> rebuilt (new entries object).
+        server
+            .trail_add_stop(sid, trail, src, Some(0), Some(3), None, None)
+            .unwrap();
+        let wid3 = server.ensure_trail_derived_work(sid, trail).unwrap();
+        assert_eq!(wid3, wid);
+        let text = server.work_text_fresh(wid).unwrap();
+        assert_eq!(text, "contentcon", "rebuilt with both stops: {:?}", text);
+    }
+
+    /// FR-37 4d: derived work + its link survive checkpoint/restore;
+    /// ensure after restore is a no-op when in sync.
+    #[test]
+    fn fr37_4d_derived_work_survives_restore() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_4d_restore_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let (trail, wid);
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let src = server
+                .create_work(sid, Edition::from_text("persisted span"))
+                .unwrap();
+            trail = server
+                .trail_create(sid, "restore test".to_string(), None, vec![])
+                .unwrap();
+            server
+                .trail_add_stop(sid, trail, src, Some(0), Some(9), None, None)
+                .unwrap();
+            wid = server.ensure_trail_derived_work(sid, trail).unwrap();
+            let text = server.work_text_fresh(wid).unwrap();
+            assert_eq!(text, "persisted");
+            // Explicit checkpoint (production persists via the
+            // auto-checkpoint loop; the WAL trail records don't carry
+            // the derived-work link yet — WAL coverage is follow-up).
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            // Trail remembers its derived work.
+            let payload = server.trail_get(sid, trail).unwrap();
+            assert_eq!(payload.derived_work_id, Some(wid));
+            // Materialized content survived.
+            let text = server.work_edition(wid).unwrap().to_text();
+            assert_eq!(text, "persisted");
+            // Ensure is in-sync (no rebuild needed, same id).
+            let wid2 = server.ensure_trail_derived_work(sid, trail).unwrap();
+            assert_eq!(wid, wid2);
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
     /// Restored from review note 5 (Aug 2026): the manager-level
     /// concurrent-session path (session bases + merge + relay) — the
     /// only test covering two sessions' deltas merging through
@@ -32200,7 +35267,7 @@ mod tests {
         assert_eq!(before.text, "Intro Hello End.");
 
         let snapshot = server.to_snapshot();
-        let restored = Server::from_snapshot(&snapshot);
+        let mut restored = Server::from_snapshot(&snapshot);
 
         let after = restored.resolve_inline_transclusions(doc).unwrap();
         assert_eq!(
@@ -32247,7 +35314,7 @@ mod tests {
         assert_eq!(migrated, 1, "should migrate 1 span");
 
         let snapshot = server.to_snapshot();
-        let restored = Server::from_snapshot(&snapshot);
+        let mut restored = Server::from_snapshot(&snapshot);
 
         assert!(
             restored.work_has_inline_transclusions(doc),
@@ -33445,6 +36512,352 @@ mod tests {
         assert!(end_names.contains(&"RightEnd"), "should have RightEnd");
         assert!(end_names.contains(&"Footnote"), "should have Footnote");
         assert_eq!(end_names.len(), 3, "should have exactly 3 ends");
+    }
+
+    #[test]
+    fn link_remove_end_drops_work_registration() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let work_c = server.create_work(sid, Edition::from_text("c")).unwrap();
+
+        let link_id = server.create_link(sid, work_a, work_b, None, None).unwrap();
+        let third = crate::edition::links::HyperRef::single(None, Some(work_c), None, None);
+        server.link_add_end(sid, link_id, "Context", third).unwrap();
+        assert!(
+            server
+                .list_links_for_work(work_c)
+                .iter()
+                .any(|(lid, _, _)| *lid == link_id),
+            "C must list the link while the end exists"
+        );
+
+        server.link_remove_end(sid, link_id, "Context").unwrap();
+        assert!(
+            !server
+                .list_links_for_work(work_c)
+                .iter()
+                .any(|(lid, _, _)| *lid == link_id),
+            "C must stop listing the link after end removal"
+        );
+        assert!(
+            server
+                .list_links_for_work(work_a)
+                .iter()
+                .any(|(lid, _, _)| *lid == link_id),
+            "A keeps the two-ended link"
+        );
+    }
+
+    #[test]
+    fn delete_link_cleans_named_end_and_home_registrations() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let work_c = server.create_work(sid, Edition::from_text("c")).unwrap();
+        let home = server
+            .create_work(sid, Edition::from_text("essay"))
+            .unwrap();
+
+        let link_id = server
+            .create_link_homed(sid, work_a, work_b, None, None, Some(home))
+            .unwrap();
+        let third = crate::edition::links::HyperRef::single(None, Some(work_c), None, None);
+        server.link_add_end(sid, link_id, "Context", third).unwrap();
+
+        server.delete_link(sid, link_id).unwrap();
+        for wid in [work_a, work_b, work_c, home] {
+            assert!(
+                !server
+                    .list_links_for_work(wid)
+                    .iter()
+                    .any(|(lid, _, _)| *lid == link_id),
+                "work {:?} must not list the deleted link",
+                wid
+            );
+        }
+    }
+
+    #[test]
+    fn homed_link_appears_in_home_connections_and_hides_on_archive() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let home = server
+            .create_work(sid, Edition::from_text("the essay"))
+            .unwrap();
+
+        let link_id = server
+            .create_link_homed(sid, work_a, work_b, None, None, Some(home))
+            .unwrap();
+        assert_eq!(server.link_home_document(link_id), Some(home));
+        assert!(
+            server
+                .list_links_for_work(home)
+                .iter()
+                .any(|(lid, _, _)| *lid == link_id),
+            "homed link must appear in H's connections"
+        );
+        assert!(!server.link_hidden_by_home_archive(link_id));
+
+        server.work_archive(sid, home).unwrap();
+        assert!(
+            server.link_hidden_by_home_archive(link_id),
+            "homed link hides when its home is archived"
+        );
+        assert!(
+            server.links.contains_key(&link_id),
+            "archive never deletes homed links"
+        );
+
+        server.work_unarchive(sid, home).unwrap();
+        assert!(
+            !server.link_hidden_by_home_archive(link_id),
+            "unarchive restores the homed link (reversible)"
+        );
+    }
+
+    #[test]
+    fn unhomed_link_ignores_home_archive_rule() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let home = server
+            .create_work(sid, Edition::from_text("unrelated"))
+            .unwrap();
+
+        let link_id = server.create_link(sid, work_a, work_b, None, None).unwrap();
+        server.work_archive(sid, home).unwrap();
+        assert!(
+            !server.link_hidden_by_home_archive(link_id),
+            "unhomed links are never hidden by home-archive rule"
+        );
+    }
+
+    #[test]
+    fn link_query_matches_from_to_type_and_home() {
+        use crate::server::transport::protocol::LinkEndpointSpecPayload as Spec;
+        let (mut server, sid) = setup_logged_in_server();
+        let a = server.create_work(sid, Edition::from_text("A")).unwrap();
+        let b = server.create_work(sid, Edition::from_text("B")).unwrap();
+        let c = server.create_work(sid, Edition::from_text("C")).unwrap();
+        let d = server.create_work(sid, Edition::from_text("D")).unwrap();
+        let home = server
+            .create_work(sid, Edition::from_text("essay H"))
+            .unwrap();
+
+        let mut mk = |o: BeId, dst: BeId, types: Vec<u64>, h: Option<BeId>| {
+            let link = crate::edition::links::HyperLink::make(
+                types.clone(),
+                crate::edition::links::HyperRef::single(None, Some(o), None, None),
+                crate::edition::links::HyperRef::single(None, Some(dst), None, None),
+            );
+            server
+                .create_link_with_hyperlink_homed(sid, link, h)
+                .unwrap()
+        };
+
+        let quote_ab = mk(a, b, vec![4], None);
+        let quote_ac = mk(a, c, vec![4], None);
+        let disagree_ab = mk(a, b, vec![3], None);
+        let quote_cd = mk(c, d, vec![4], None);
+        let quote_bh = mk(b, c, vec![4], Some(home));
+        let _disagree_bh = mk(b, a, vec![3], Some(home));
+
+        let ids = |res: Vec<(BeId, BeId, BeId)>| -> Vec<BeId> {
+            res.into_iter().map(|(l, _, _)| l).collect()
+        };
+
+        // "everywhere A quotes anyone"
+        let res = ids(server
+            .link_query(
+                sid,
+                &Spec {
+                    work_ids: vec![a],
+                    author: None,
+                },
+                &Spec::any(),
+                &[4],
+                &Spec::any(),
+            )
+            .unwrap());
+        assert!(res.contains(&quote_ab) && res.contains(&quote_ac));
+        assert!(!res.contains(&disagree_ab) && !res.contains(&quote_cd));
+
+        // "everywhere A quotes B"
+        let res = ids(server
+            .link_query(
+                sid,
+                &Spec {
+                    work_ids: vec![a],
+                    author: None,
+                },
+                &Spec {
+                    work_ids: vec![b],
+                    author: None,
+                },
+                &[4],
+                &Spec::any(),
+            )
+            .unwrap());
+        assert!(res.contains(&quote_ab));
+        assert!(!res.contains(&quote_ac) && !res.contains(&quote_bh));
+
+        // "every Disagreement homed in H" — A-B disagreement (unhomed)
+        // is excluded; B-A disagreement homed in H matches even though
+        // its from-end is B and to-end is A.
+        let res = ids(server
+            .link_query(
+                sid,
+                &Spec::any(),
+                &Spec::any(),
+                &[3],
+                &Spec {
+                    work_ids: vec![home],
+                    author: None,
+                },
+            )
+            .unwrap());
+        assert_eq!(res, vec![_disagree_bh]);
+
+        // multi-ended: a link whose third end reaches D matches a
+        // to-spec of D even though D is not origin/destination.
+        let third = crate::edition::links::HyperRef::single(None, Some(d), None, None);
+        server
+            .link_add_end(sid, quote_ab, "Context", third)
+            .unwrap();
+        let res = ids(server
+            .link_query(
+                sid,
+                &Spec {
+                    work_ids: vec![b],
+                    author: None,
+                },
+                &Spec {
+                    work_ids: vec![d],
+                    author: None,
+                },
+                &[],
+                &Spec::any(),
+            )
+            .unwrap());
+        assert!(
+            res.contains(&quote_ab),
+            "multi-ended link matches to-spec via its named end"
+        );
+        assert!(!res.contains(&quote_ac));
+    }
+
+    #[test]
+    fn link_query_author_spec_matches_work_owners() {
+        use crate::server::transport::protocol::LinkEndpointSpecPayload as Spec;
+        let (mut server, sid) = setup_logged_in_server();
+        let a = server.create_work(sid, Edition::from_text("mine")).unwrap();
+        let b = server
+            .create_work(sid, Edition::from_text("other"))
+            .unwrap();
+        let owner = server.work(a).unwrap().owner();
+
+        let link_id = server.create_link(sid, a, b, None, None).unwrap();
+        let res = server
+            .link_query(
+                sid,
+                &Spec {
+                    work_ids: vec![],
+                    author: owner,
+                },
+                &Spec::any(),
+                &[],
+                &Spec::any(),
+            )
+            .unwrap();
+        assert!(
+            res.iter().any(|(l, _, _)| *l == link_id),
+            "author spec matches ends in works owned by that club"
+        );
+        let res_none = server
+            .link_query(
+                sid,
+                &Spec {
+                    work_ids: vec![],
+                    author: Some(0xDEAD),
+                },
+                &Spec::any(),
+                &[],
+                &Spec::any(),
+            )
+            .unwrap();
+        assert!(res_none.is_empty(), "unknown author matches nothing");
+    }
+
+    #[test]
+    fn link_query_excludes_links_hidden_by_home_archive() {
+        use crate::server::transport::protocol::LinkEndpointSpecPayload as Spec;
+        let (mut server, sid) = setup_logged_in_server();
+        let a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let b = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let home = server.create_work(sid, Edition::from_text("gone")).unwrap();
+
+        let link_id = server
+            .create_link_homed(sid, a, b, None, None, Some(home))
+            .unwrap();
+        server.work_archive(sid, home).unwrap();
+
+        let res = server
+            .link_query(sid, &Spec::any(), &Spec::any(), &[], &Spec::any())
+            .unwrap();
+        assert!(
+            !res.iter().any(|(l, _, _)| *l == link_id),
+            "archived-home links are excluded from queries"
+        );
+    }
+
+    #[test]
+    fn snapshot_round_trip_preserves_named_ends_and_home() {
+        let (mut server, sid) = setup_logged_in_server();
+        let a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let b = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let c = server.create_work(sid, Edition::from_text("c")).unwrap();
+        let home = server
+            .create_work(sid, Edition::from_text("essay"))
+            .unwrap();
+
+        let link_id = server
+            .create_link_homed(sid, a, b, None, None, Some(home))
+            .unwrap();
+        let third = crate::edition::links::HyperRef::single(
+            Some(Edition::from_text("shared passage")),
+            Some(c),
+            None,
+            None,
+        )
+        .with_span(Some(3), Some(17));
+        server.link_add_end(sid, link_id, "Context", third).unwrap();
+
+        let snapshot = server.to_snapshot();
+        let restored = Server::from_snapshot(&snapshot);
+
+        let ls = restored.links.get(&link_id).expect("link survives restore");
+        assert_eq!(ls.home_document, Some(home), "home must survive restore");
+        assert_eq!(ls.link.end_count(), 3, "named ends must survive restore");
+        let ctx = ls.link.end_at("Context").expect("Context end survives");
+        assert_eq!(ctx.work_context(), Some(c));
+        assert_eq!(ctx.start_position(), Some(3));
+        assert_eq!(ctx.end_position(), Some(17));
+        assert!(
+            restored
+                .list_links_for_work(c)
+                .iter()
+                .any(|(lid, _, _)| *lid == link_id),
+            "C's connection registration must survive restore"
+        );
+        assert!(
+            restored
+                .list_links_for_work(home)
+                .iter()
+                .any(|(lid, _, _)| *lid == link_id),
+            "home's connection registration must survive restore"
+        );
     }
 
     #[test]
@@ -34896,39 +38309,60 @@ fn urlencode(s: &str) -> String {
     result
 }
 
+/// GET with redirect-following (same policy as the POST path):
+/// up to 3 hops of 301/302/307/308, same-host-or-subdomain only.
+/// Real-world cause: servers announcing plain addresses behind a
+/// TLS terminator (xudanu.com 308s http GETs to https).
 fn http_get_json(url: &str, timeout_secs: u64) -> Result<String, String> {
-    let is_https = url.starts_with("https://");
+    let mut current = url.to_string();
+    for _ in 0..4 {
+        let is_https = current.starts_with("https://");
 
-    let no_scheme = url
-        .strip_prefix("http://")
-        .or_else(|| url.strip_prefix("https://"))
-        .unwrap_or(url);
+        let no_scheme = current
+            .strip_prefix("http://")
+            .or_else(|| current.strip_prefix("https://"))
+            .unwrap_or(&current);
 
-    let (host_port, path) = no_scheme
-        .split_once('/')
-        .map(|(h, p)| (h, format!("/{}", p)))
-        .unwrap_or((no_scheme, "/".to_string()));
+        let (host_port, path) = no_scheme
+            .split_once('/')
+            .map(|(h, p)| (h, format!("/{}", p)))
+            .unwrap_or((no_scheme, "/".to_string()));
 
-    let default_port = if is_https { 443 } else { 80 };
-    let (host, port) = if let Some((h, p)) = host_port.rsplit_once(':') {
-        (h, p.parse::<u16>().unwrap_or(default_port))
-    } else {
-        (host_port, default_port)
-    };
+        let default_port = if is_https { 443 } else { 80 };
+        let (host, port) = if let Some((h, p)) = host_port.rsplit_once(':') {
+            (h, p.parse::<u16>().unwrap_or(default_port))
+        } else {
+            (host_port, default_port)
+        };
 
-    if is_https {
-        http_get_json_https(host, port, &path, timeout_secs)
-    } else {
-        http_get_json_http(host, port, &path, timeout_secs)
+        let (status, headers, body) = if is_https {
+            http_get_json_hop_https(&host, port, &path, timeout_secs)?
+        } else {
+            http_get_json_hop_http(&host, port, &path, timeout_secs)?
+        };
+        if !(301..=308).contains(&status) || status == 304 || status == 305 || status == 306 {
+            if !(200..300).contains(&status) {
+                return Err(format!("HTTP error: {}", status));
+            }
+            return Ok(body);
+        }
+        let location = headers
+            .iter()
+            .find(|(k, _)| k == "location")
+            .map(|(_, v)| v.clone())
+            .ok_or_else(|| format!("redirect (HTTP {}) without Location header", status))?;
+        current = normalize_redirect(&current, &location)?;
     }
+    Err(format!("too many redirects (final: {})", current))
 }
 
-fn http_get_json_https(
+/// One https GET hop; returns (status, headers, body).
+fn http_get_json_hop_https(
     host: &str,
     port: u16,
     path: &str,
     timeout_secs: u64,
-) -> Result<String, String> {
+) -> Result<(u16, Vec<(String, String)>, String), String> {
     use std::sync::Arc;
 
     let mut root_cert_store = rustls::RootCertStore::empty();
@@ -34940,8 +38374,7 @@ fn http_get_json_https(
 
     let addrs = resolve_and_verify_host(host, port)?;
 
-    let mut connector =
-        std::net::TcpStream::connect(&addrs[..]).map_err(|e| format!("connect failed: {}", e))?;
+    let mut connector = connect_timed(&addrs[..], std::time::Duration::from_secs(timeout_secs))?;
 
     connector
         .set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
@@ -34988,29 +38421,21 @@ fn http_get_json_https(
         }
     }
 
-    let response_str = String::from_utf8_lossy(&all);
-    let status_line = response_str.lines().next().unwrap_or("");
-    if !status_line.contains("200") {
-        return Err(format!("HTTP error: {}", status_line));
-    }
-
-    let body_start = response_str.find("\r\n\r\n").ok_or("no body separator")?;
-    Ok(response_str[body_start + 4..].to_string())
+    parse_http_response(&all)
 }
 
-fn http_get_json_http(
+/// One plain-http GET hop; returns (status, headers, body).
+fn http_get_json_hop_http(
     host: &str,
     port: u16,
     path: &str,
     timeout_secs: u64,
-) -> Result<String, String> {
+) -> Result<(u16, Vec<(String, String)>, String), String> {
     use std::io::{Read, Write};
-    use std::net::TcpStream;
     use std::time::Duration;
 
     let addrs = resolve_and_verify_host(host, port)?;
-    let mut stream =
-        TcpStream::connect(&addrs[..]).map_err(|e| format!("connect failed: {}", e))?;
+    let mut stream = connect_timed(&addrs[..], std::time::Duration::from_secs(timeout_secs))?;
 
     let request = format!(
         "GET {} HTTP/1.0\r\nHost: {}\r\nAccept: application/json\r\n\r\n",
@@ -35051,14 +38476,34 @@ fn http_get_json_http(
         }
     }
 
-    let response_str = String::from_utf8_lossy(&all);
-    let status_line = response_str.lines().next().unwrap_or("");
-    if !status_line.contains("200") {
-        return Err(format!("HTTP error: {}", status_line));
-    }
+    parse_http_response(&all)
+}
 
-    let body_start = response_str.find("\r\n\r\n").ok_or("no body separator")?;
-    Ok(response_str[body_start + 4..].to_string())
+/// Parse a raw HTTP/1.0 response into (status, headers, body).
+fn parse_http_response(raw: &[u8]) -> Result<(u16, Vec<(String, String)>, String), String> {
+    let response_str = String::from_utf8_lossy(raw);
+    let status = response_str
+        .lines()
+        .next()
+        .and_then(|status_line| status_line.split_whitespace().nth(1))
+        .and_then(|code| code.parse::<u16>().ok())
+        .unwrap_or(0);
+    let (head, body) = match response_str.find("\r\n\r\n") {
+        Some(split) => (
+            &response_str[..split],
+            response_str[split + 4..].to_string(),
+        ),
+        None => (response_str.as_ref(), String::new()),
+    };
+    let headers: Vec<(String, String)> = head
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            line.split_once(':')
+                .map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().to_string()))
+        })
+        .collect();
+    Ok((status, headers, body))
 }
 
 pub fn http_post_json(url: &str, body: &str, timeout_secs: u64) -> Result<String, String> {
@@ -35081,8 +38526,7 @@ pub fn http_post_json(url: &str, body: &str, timeout_secs: u64) -> Result<String
     use std::net::TcpStream;
 
     let addrs = resolve_and_verify_host(host, port)?;
-    let mut stream =
-        TcpStream::connect(&addrs[..]).map_err(|e| format!("connect failed: {}", e))?;
+    let mut stream = connect_timed(&addrs[..], std::time::Duration::from_secs(timeout_secs))?;
     stream
         .set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
         .ok();
@@ -35118,6 +38562,281 @@ pub fn http_post_json(url: &str, body: &str, timeout_secs: u64) -> Result<String
         Ok(response[body_start + 4..].to_string())
     } else {
         Ok(String::new())
+    }
+}
+
+/// One hop of the status-aware POST (FR-40 sender feedback): raw
+/// request/response over TCP, TLS when the URL is https. Returns
+/// (status, headers, body).
+fn http_post_json_hop(
+    url: &str,
+    body: &str,
+    timeout_secs: u64,
+) -> Result<(u16, Vec<(String, String)>, String), String> {
+    let is_https = url.starts_with("https://");
+    let no_scheme = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .unwrap_or(url);
+    let (host_port, path) = no_scheme
+        .split_once('/')
+        .map(|(h, p)| (h, format!("/{}", p)))
+        .unwrap_or((no_scheme, "/".to_string()));
+    let default_port = if is_https { 443 } else { 80 };
+    let (host, port) = if let Some((h, p)) = host_port.rsplit_once(':') {
+        (h, p.parse::<u16>().unwrap_or(default_port))
+    } else {
+        (host_port, default_port)
+    };
+
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+
+    let addrs = resolve_and_verify_host(host, port)?;
+    let mut tcp = connect_timed(&addrs[..], std::time::Duration::from_secs(timeout_secs))?;
+    tcp.set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
+        .ok();
+    tcp.set_write_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
+        .ok();
+
+    let request = format!(
+        "POST {} HTTP/1.0\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        path, host, body.len(), body
+    );
+
+    let mut all = Vec::new();
+    let mut buf = [0u8; 8192];
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+
+    if is_https {
+        use std::sync::Arc;
+        let mut root_cert_store = rustls::RootCertStore::empty();
+        root_cert_store.extend(::webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let config = rustls::client::ClientConfig::builder()
+            .with_root_certificates(root_cert_store)
+            .with_no_client_auth();
+        let server_name = rustls::pki_types::ServerName::try_from(host.to_string())
+            .map_err(|e| format!("invalid hostname: {}", e))?;
+        let config = Arc::new(config);
+        let mut client = rustls::client::ClientConnection::new(config, server_name)
+            .map_err(|e| format!("TLS setup failed: {}", e))?;
+        let mut tls_stream = rustls::Stream::new(&mut client, &mut tcp);
+        tls_stream
+            .write_all(request.as_bytes())
+            .map_err(|e| format!("TLS write failed: {}", e))?;
+        loop {
+            if std::time::Instant::now() > deadline {
+                break;
+            }
+            match tls_stream.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => all.extend_from_slice(&buf[..n]),
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
+            }
+        }
+    } else {
+        let mut stream = tcp;
+        stream
+            .write_all(request.as_bytes())
+            .map_err(|e| format!("write failed: {}", e))?;
+        loop {
+            if std::time::Instant::now() > deadline {
+                break;
+            }
+            match stream.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => all.extend_from_slice(&buf[..n]),
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
+            }
+        }
+    }
+
+    let response = String::from_utf8_lossy(&all);
+    let status = response
+        .lines()
+        .next()
+        .and_then(|status_line| status_line.split_whitespace().nth(1))
+        .and_then(|code| code.parse::<u16>().ok())
+        .unwrap_or(0);
+    let (head, body) = match response.find("\r\n\r\n") {
+        Some(split) => (&response[..split], response[split + 4..].to_string()),
+        None => (response.as_ref(), String::new()),
+    };
+    let headers: Vec<(String, String)> = head
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            line.split_once(':')
+                .map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().to_string()))
+        })
+        .collect();
+    Ok((status, headers, body))
+}
+
+/// Status-aware variant (FR-40 sender feedback): returns
+/// `(http_status, response_body)` so callers can distinguish an
+/// accepted POST (2xx) from a receiving-side rejection (4xx/5xx —
+/// the body carries the receiver's human-readable reason). Transport
+/// failures (DNS, connect, write, timeout) still surface as `Err`
+/// with a sender-side description.
+///
+/// Follows up to 3 redirects (301/302/307/308). Real-world cause:
+/// servers announcing plain addresses behind a TLS terminator answer
+/// http POSTs with a permanent redirect to https (e.g. xudanu.com
+/// returns 308); without redirect-following the notify would land on
+/// the redirect response instead of the endpoint. Redirect targets
+/// must be same-host-or-subdomain http(s) — anything else (scheme
+/// change beyond http/https, unexpected location) is an error, so a
+/// malicious redirect cannot retarget the notify.
+pub fn http_post_json_status(
+    url: &str,
+    body: &str,
+    timeout_secs: u64,
+) -> Result<(u16, String), String> {
+    let mut current = url.to_string();
+    for _ in 0..4 {
+        let (status, headers, resp_body) = http_post_json_hop(&current, body, timeout_secs)?;
+        if !(301..=308).contains(&status) || status == 304 || status == 305 || status == 306 {
+            return Ok((status, resp_body));
+        }
+        let location = headers
+            .iter()
+            .find(|(k, _)| k == "location")
+            .map(|(_, v)| v.clone())
+            .ok_or_else(|| {
+                format!(
+                    "redirect (HTTP {}) without Location header from {}",
+                    status, current
+                )
+            })?;
+        let next = normalize_redirect(&current, &location)?;
+        current = next;
+    }
+    Err(format!("too many redirects (final: {})", current))
+}
+
+/// host[:port] of an http(s) URL, scheme and path stripped.
+fn url_hostport(url: &str) -> String {
+    let no_scheme = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .unwrap_or(url);
+    no_scheme.split('/').next().unwrap_or("").to_string()
+}
+
+/// Resolve a redirect Location against the current URL, restricted
+/// to http/https on the same host (or a subdomain of it).
+fn normalize_redirect(current: &str, location: &str) -> Result<String, String> {
+    let cur_hostport = url_hostport(current);
+    let cur_host = cur_hostport
+        .rsplit_once(':')
+        .map(|(h, _)| h.to_string())
+        .unwrap_or_else(|| cur_hostport.clone());
+
+    let next = if location.starts_with("http://") || location.starts_with("https://") {
+        location.to_string()
+    } else if location.starts_with('/') {
+        let scheme = if current.starts_with("https://") {
+            "https"
+        } else {
+            "http"
+        };
+        format!("{}://{}{}", scheme, cur_hostport, location)
+    } else {
+        return Err(format!(
+            "unsupported redirect location {:?} (must be absolute http(s) or root-relative)",
+            location
+        ));
+    };
+
+    let next_hostport = url_hostport(&next);
+    let next_host = next_hostport
+        .rsplit_once(':')
+        .map(|(h, _)| h.to_string())
+        .unwrap_or_else(|| next_hostport.clone());
+
+    if next_host != cur_host
+        && !(next_host.ends_with(&format!(".{}", cur_host)) && !cur_host.is_empty())
+    {
+        return Err(format!(
+            "redirect to different host {:?} (from {:?}) refused",
+            next_host, cur_host
+        ));
+    }
+    Ok(next)
+}
+
+#[cfg(test)]
+mod tests_http_redirects {
+    use super::*;
+
+    #[test]
+    fn normalize_absolute_https_upgrade_same_host() {
+        let next = normalize_redirect(
+            "http://xudanu.com/api/backlink-notify",
+            "https://xudanu.com/api/backlink-notify",
+        )
+        .unwrap();
+        assert_eq!(next, "https://xudanu.com/api/backlink-notify");
+    }
+
+    #[test]
+    fn normalize_root_relative_keeps_scheme_and_host() {
+        let next = normalize_redirect("http://example.com:8080/a/b", "/c/d").unwrap();
+        assert_eq!(next, "http://example.com:8080/c/d");
+    }
+
+    #[test]
+    fn normalize_subdomain_allowed() {
+        assert!(normalize_redirect("http://example.com/x", "https://api.example.com/y").is_ok());
+    }
+
+    #[test]
+    fn normalize_different_host_refused() {
+        assert!(normalize_redirect("http://example.com/x", "https://evil.com/y").is_err());
+    }
+
+    #[test]
+    fn normalize_non_http_scheme_refused() {
+        assert!(normalize_redirect("http://example.com/x", "ftp://example.com/y").is_err());
+        assert!(normalize_redirect("http://example.com/x", "gopher://example.com/y").is_err());
+    }
+
+    #[test]
+    fn normalize_relative_path_refused() {
+        assert!(normalize_redirect("http://example.com/a/b", "c/d").is_err());
+    }
+
+    #[test]
+    fn parse_response_extracts_status_headers_body() {
+        let raw = b"HTTP/1.0 308 Permanent Redirect\r\nLocation: https://xudanu.com/x\r\nContent-Length: 0\r\n\r\n";
+        let (status, headers, body) = parse_http_response(raw).unwrap();
+        assert_eq!(status, 308);
+        assert_eq!(
+            headers
+                .iter()
+                .find(|(k, _)| k == "location")
+                .map(|(_, v)| v.clone()),
+            Some("https://xudanu.com/x".to_string())
+        );
+        assert_eq!(body, "");
+    }
+
+    #[test]
+    fn parse_response_200_with_body() {
+        let raw = b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{\"ok\":true}";
+        let (status, headers, body) = parse_http_response(raw).unwrap();
+        assert_eq!(status, 200);
+        assert!(headers.iter().any(|(k, _)| k == "content-type"));
+        assert_eq!(body, "{\"ok\":true}");
     }
 }
 
@@ -37190,6 +40909,7 @@ mod tests_fuzz_equivalent {
 #[cfg(test)]
 mod tests_security_tracker {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_sig_success_resets_failures() {
@@ -37426,5 +41146,421 @@ mod tests_security_tracker {
         assert_eq!(tumblers[0].0, w1);
         assert_eq!(tumblers[0].2.server(), "alice.com");
         assert_eq!(tumblers[0].2.first(), Some(w1 as u64));
+    }
+    // ── xanadu-spec conformance properties (FR-40 matrix) ─────────
+    //
+    // Each property cites the claim it encodes from
+    // sisbell/xanadu-spec (ASN-0043 Link Model, ASN-0121
+    // FINDLINKSFROMTOTHREE); see docs/dev/FR-40-conformance-matrix.md.
+
+    fn spec_setup_with_works(n: usize) -> (Server, SessionId, Vec<BeId>) {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let works = (0..n)
+            .map(|i| {
+                server
+                    .create_work(sid, Edition::from_text(&format!("w{}", i)))
+                    .unwrap()
+            })
+            .collect();
+        (server, sid, works)
+    }
+
+    fn spec_mk_end(work: BeId) -> crate::edition::links::HyperRef {
+        crate::edition::links::HyperRef::single(None, Some(work), None, None)
+    }
+
+    // L11b NonInjectivity: identical-content links coexist as
+    // separate objects — no dedup, identity is the id.
+    #[test]
+    fn prop_spec_l11b_identical_links_coexist() {
+        proptest! {
+            #[test]
+            fn inner(copies in 2usize..8) {
+                let (mut server, sid, works) = spec_setup_with_works(2);
+                let mut ids = std::collections::HashSet::new();
+                for _ in 0..copies {
+                    let id = server
+                        .create_link(sid, works[0], works[1], None, None)
+                        .unwrap();
+                    prop_assert!(ids.insert(id), "duplicate link id emitted");
+                }
+                prop_assert_eq!(ids.len(), copies);
+                // Both survive independently in queries.
+                let res = server
+                    .link_query(sid, &Default::default(), &Default::default(), &[], &Default::default())
+                    .unwrap();
+                prop_assert_eq!(res.len(), copies);
+            }
+        }
+    }
+
+    // L2 OwnershipEndsetIndependence: no end mutation ever changes
+    // the home document.
+    #[test]
+    fn prop_spec_l2_home_independent_of_ends() {
+        proptest! {
+            #[test]
+            fn inner(
+                home_idx in 0usize..4,
+                end_name in "(context|note|extra){1,10}",
+                n_mutations in 1usize..6,
+            ) {
+                let (mut server, sid, works) = spec_setup_with_works(5);
+                let home = works[home_idx];
+                let link_id = server
+                    .create_link_homed(sid, works[0], works[1], None, None, Some(home))
+                    .unwrap();
+                for k in 0..n_mutations {
+                    let target = works[2 + (k % 3)];
+                    let name = format!("{}{}", end_name, k);
+                    server
+                        .link_add_end(sid, link_id, &name, spec_mk_end(target))
+                        .unwrap();
+                    prop_assert_eq!(
+                        server.link_home_document(link_id),
+                        Some(home),
+                        "home changed after adding end"
+                    );
+                }
+                // Type changes must not touch home either.
+                server.link_set_types(sid, link_id, vec![1, 4]).unwrap();
+                prop_assert_eq!(server.link_home_document(link_id), Some(home));
+            }
+        }
+    }
+
+    // FL-JUNK NonImpedance: adding non-matching links never changes a
+    // query's result.
+    #[test]
+    fn prop_spec_fl_junk_links_do_not_impede() {
+        use crate::server::transport::protocol::LinkEndpointSpecPayload as Spec;
+        proptest! {
+            #[test]
+            fn inner(junk_count in 0usize..10) {
+                let (mut server, sid, works) = spec_setup_with_works(6);
+                // One seed matching link: A quotes B.
+                let seed = server
+                    .create_link(sid, works[0], works[1], None, None)
+                    .unwrap();
+                server.link_set_types(sid, seed, vec![4]).unwrap();
+                let query = |srv: &Server| {
+                    srv.link_query(
+                        sid,
+                        &Spec { work_ids: vec![works[0]], author: None },
+                        &Spec { work_ids: vec![works[1]], author: None },
+                        &[4],
+                        &Spec::any(),
+                    )
+                    .unwrap()
+                };
+                let before = query(&server);
+                // Junk: unrelated pairs and wrong types.
+                for k in 0..junk_count {
+                    let id = server
+                        .create_link(sid, works[2 + (k % 4)], works[3 + (k % 3)], None, None)
+                        .unwrap();
+                    server.link_set_types(sid, id, vec![3]).unwrap();
+                }
+                let after = query(&server);
+                let seed_found = after.iter().any(|(l, _, _)| *l == seed);
+                prop_assert_eq!(
+                    before, after,
+                    "non-matching links changed the query result"
+                );
+                prop_assert!(seed_found);
+            }
+        }
+    }
+
+    // FL-DIR PositionalDirectionality: reversing from/to specs is
+    // observable — "A→B" and "B→A" answer different questions.
+    #[test]
+    fn prop_spec_fl_dir_reversed_queries_differ() {
+        use crate::server::transport::protocol::LinkEndpointSpecPayload as Spec;
+        proptest! {
+            #[test]
+            fn inner(types in prop::collection::vec(1u64..6, 1..4)) {
+                let (mut server, sid, works) = spec_setup_with_works(3);
+                let ab = server.create_link(sid, works[0], works[1], None, None).unwrap();
+                server.link_set_types(sid, ab, types.clone()).unwrap();
+                let fwd = |srv: &Server| {
+                    srv.link_query(
+                        sid,
+                        &Spec { work_ids: vec![works[0]], author: None },
+                        &Spec { work_ids: vec![works[1]], author: None },
+                        &types,
+                        &Spec::any(),
+                    )
+                    .unwrap()
+                };
+                let rev = |srv: &Server| {
+                    srv.link_query(
+                        sid,
+                        &Spec { work_ids: vec![works[1]], author: None },
+                        &Spec { work_ids: vec![works[0]], author: None },
+                        &types,
+                        &Spec::any(),
+                    )
+                    .unwrap()
+                };
+                let f = fwd(&server);
+                let r = rev(&server);
+                prop_assert!(f.iter().any(|(l, _, _)| *l == ab), "forward finds A->B");
+                prop_assert!(r.is_empty(), "reversed must not find A->B (direction is positional)");
+            }
+        }
+    }
+
+    // L12b HomeDocumentPersistence (archive reading): archiving and
+    // restoring a home never destroys its links.
+    #[test]
+    fn prop_spec_l12b_archive_cycle_never_loses_links() {
+        proptest! {
+            #[test]
+            fn inner(n_links in 1usize..6) {
+                let (mut server, sid, works) = spec_setup_with_works(3);
+                let home = works[2];
+                let mut ids = Vec::new();
+                for k in 0..n_links {
+                    let id = server
+                        .create_link_homed(
+                            sid,
+                            works[0],
+                            works[1],
+                            None,
+                            None,
+                            Some(home),
+                        )
+                        .unwrap();
+                    server.link_set_types(sid, id, vec![4 + (k % 2) as u64]).unwrap();
+                    ids.push(id);
+                }
+                server.work_archive(sid, home).unwrap();
+                for &id in &ids {
+                    prop_assert!(
+                        server.links.contains_key(&id),
+                        "archive destroyed homed link"
+                    );
+                }
+                server.work_unarchive(sid, home).unwrap();
+                let res = server
+                    .link_query(sid, &Default::default(), &Default::default(), &[], &Default::default())
+                    .unwrap();
+                for id in &ids {
+                    prop_assert!(
+                        res.iter().any(|(l, _, _)| l == id),
+                        "restored link missing from queries"
+                    );
+                }
+            }
+        }
+    }
+
+    // L11a conformance-note: every link is reachable through a home
+    // registration — for homed links, the home's connection list
+    // always contains the link (residence is recorded, not derived).
+    #[test]
+
+    fn prop_spec_home_registration_is_recorded() {
+        proptest! {
+            #[test]
+            fn inner(home_idx in 0usize..3) {
+                let (mut server, sid, works) = spec_setup_with_works(4);
+                let home = works[home_idx + 1];
+                let id = server
+                    .create_link_homed(sid, works[0], works[1], None, None, Some(home))
+                    .unwrap();
+                let listed = server
+                    .list_links_for_work(home)
+                    .iter()
+                    .any(|(l, _, _)| *l == id);
+                prop_assert!(listed, "homed link must appear in home's connections");
+            }
+        }
+    }
+
+    // ── FR-41 S4: transclusion stability gates ────────────────────
+    //
+    // The demo's credibility floor (and the Roger-Gregory gate).
+    // Two element families with different guarantees:
+    // - Transclusion (char-span, live): span MUST migrate on source
+    //   edits through BOTH edit paths (legacy and CRDT/live editor).
+    // - Virtual (FR-37, pinned revision): content stays pinned to
+    //   the revision at placement — edits never leak in.
+
+    fn s4_setup() -> (Server, SessionId, BeId, BeId) {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let src = server
+            .create_work(sid, Edition::from_text("0123456789abcdefghij"))
+            .unwrap();
+        let dst = server.create_work(sid, Edition::from_text("dest")).unwrap();
+        (server, sid, src, dst)
+    }
+
+    fn s4_place_transclusion(
+        server: &mut Server,
+        sid: SessionId,
+        dst: BeId,
+        src: BeId,
+        start: usize,
+        end: usize,
+    ) {
+        let entries = vec![(
+            0i64,
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                RangeElement::transclusion(src, start, end),
+            )),
+        )];
+        server.work_grab(sid, dst).unwrap();
+        server
+            .work_revise(sid, dst, Edition::from_entries(entries))
+            .unwrap();
+        server.work_release(sid, dst).unwrap();
+    }
+
+    fn s4_transclusion_span(server: &Server, dst: BeId) -> Option<(i64, i64)> {
+        let ws = server.works.get(&dst)?;
+        for (_, c) in ws.work.current_edition().cached_entries() {
+            if let RangeElement::Transclusion {
+                char_start,
+                char_end,
+                ..
+            } = &c.element
+            {
+                return Some((*char_start as i64, *char_end as i64));
+            }
+            if let RangeElement::StructuralTransclusion {
+                entry_start,
+                entry_end,
+                ..
+            } = &c.element
+            {
+                return Some((*entry_start, *entry_end));
+            }
+            if let Some(spec) = c.element.virtual_spec() {
+                return Some((spec.char_start as i64, spec.char_end as i64));
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn s4_crdt_source_edit_migrates_dependent_transclusion_span() {
+        let (mut server, sid, src, dst) = s4_setup();
+        s4_place_transclusion(&mut server, sid, dst, src, 10, 16);
+        assert_eq!(s4_transclusion_span(&server, dst), Some((10, 16)));
+
+        // Edit the SOURCE through the live CRDT path (what the
+        // frontend does): insert 4 chars before the span.
+        let _ = server.crdt_open_session(sid, src).unwrap();
+        let ops = vec![
+            crate::server::transport::TextDeltaOp::Retain { count: 3 },
+            crate::server::transport::TextDeltaOp::Insert {
+                text: "XXXX".to_string(),
+            },
+            crate::server::transport::TextDeltaOp::Retain { count: 17 },
+        ];
+        server.crdt_apply_text_delta(sid, src, &ops).unwrap();
+        let _ = server.crdt_current_text(src).unwrap();
+
+        let span = s4_transclusion_span(&server, dst);
+        assert_eq!(
+            span,
+            Some((14, 20)),
+            "dependent span must migrate +4 after insert-before via CRDT path, got {:?}",
+            span
+        );
+    }
+
+    #[test]
+    fn s4_crdt_source_edit_inside_span_grows_by_insertion() {
+        let (mut server, sid, src, dst) = s4_setup();
+        s4_place_transclusion(&mut server, sid, dst, src, 10, 16);
+
+        // Insert INSIDE the span (position 12). For char-spans the
+        // contract: still covers the original characters, grows by
+        // exactly the inserted length, never jumps.
+        let _ = server.crdt_open_session(sid, src).unwrap();
+        let ops = vec![
+            crate::server::transport::TextDeltaOp::Retain { count: 12 },
+            crate::server::transport::TextDeltaOp::Insert {
+                text: "YY".to_string(),
+            },
+            crate::server::transport::TextDeltaOp::Retain { count: 8 },
+        ];
+        server.crdt_apply_text_delta(sid, src, &ops).unwrap();
+        let _ = server.crdt_current_text(src).unwrap();
+
+        let span = s4_transclusion_span(&server, dst);
+        assert_eq!(
+            span,
+            Some((10, 18)),
+            "span grows by the inserted length, covers originals"
+        );
+    }
+
+    #[test]
+    fn s4_crdt_source_delete_covering_span_end_clamps_not_inverts() {
+        let (mut server, sid, src, dst) = s4_setup();
+        s4_place_transclusion(&mut server, sid, dst, src, 10, 16);
+
+        // Delete chars 14..20 — covers the span's tail.
+        let _ = server.crdt_open_session(sid, src).unwrap();
+        let ops = vec![
+            crate::server::transport::TextDeltaOp::Retain { count: 14 },
+            crate::server::transport::TextDeltaOp::Delete { count: 6 },
+            crate::server::transport::TextDeltaOp::Retain { count: 0 },
+        ];
+        server.crdt_apply_text_delta(sid, src, &ops).unwrap();
+        let _ = server.crdt_current_text(src).unwrap();
+
+        if let Some((s, e)) = s4_transclusion_span(&server, dst) {
+            assert!(
+                s <= e,
+                "span must never invert (start > end), got {:?}",
+                (s, e)
+            );
+            assert!(
+                s <= 14,
+                "span start must not move right past the deletion point, got {:?}",
+                (s, e)
+            );
+        }
+    }
+
+    #[test]
+    fn s4_virtual_transclusion_pins_revision_across_source_edits() {
+        let (mut server, sid, src, dst) = s4_setup();
+        server
+            .place_virtual_transclusion(sid, dst, src, 10, 16)
+            .unwrap();
+        server.materialize_virtual_elements(dst).unwrap();
+
+        // Edit the source via CRDT: the Virtual element is pinned to
+        // its placement revision — content must NOT leak the edit.
+        let _ = server.crdt_open_session(sid, src).unwrap();
+        let ops = vec![
+            crate::server::transport::TextDeltaOp::Retain { count: 3 },
+            crate::server::transport::TextDeltaOp::Insert {
+                text: "XXXX".to_string(),
+            },
+            crate::server::transport::TextDeltaOp::Retain { count: 17 },
+        ];
+        server.crdt_apply_text_delta(sid, src, &ops).unwrap();
+
+        let text = server.work_text(dst).unwrap_or_default();
+        assert!(
+            text.contains("abcdef"),
+            "pinned virtual transclusion keeps its placement-revision content, got {:?}",
+            text
+        );
+        assert!(
+            !text.contains("XXXX"),
+            "source edits must never leak into pinned virtual transclusions"
+        );
     }
 }

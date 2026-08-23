@@ -24,6 +24,7 @@ export interface CrdtSyncState {
   identity: WhoAmIEntry | null;
   login: (clubName: string, password: string) => Promise<void>;
   createIdentity: (displayName: string, password: string) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   createWork: () => Promise<number | null>;
   shareWork: () => Promise<void>;
   unshareWork: () => Promise<void>;
@@ -86,6 +87,8 @@ export function useCrdtSync(
   const [connectionEpoch, setConnectionEpoch] = useState(0);
   const epochRef = useRef(0);
   const [canEdit, setCanEdit] = useState(false);
+  const identityEpochRef = useRef(0);
+  const [identityEpoch, setIdentityEpoch] = useState(0);
   const [recentChanges, setRecentChanges] = useState<ChangeHighlight[]>([]);
   const authInitiatedRef = useRef(false);
   const attributionEpochRef = useRef(0);
@@ -143,6 +146,11 @@ export function useCrdtSync(
       if (id) setAuthenticated(true);
       try { localStorage.setItem("xudanu_identity_cache", JSON.stringify(id)); } catch { /* no-op */ }
       setIsAdmin(client!.getIsAdmin());
+      // Permissions are identity-scoped: signing in/out must re-check
+      // canEdit for the currently open work, or the UI keeps stale
+      // greyed-out controls until the user reloads.
+      identityEpochRef.current += 1;
+      setIdentityEpoch(identityEpochRef.current);
     });
     const unsubChanges = client.onChangeHighlights(setRecentChanges);
 
@@ -301,7 +309,9 @@ export function useCrdtSync(
     let cancelled = false;
     client.canEdit(workBeId).then((ok) => { if (!cancelled) setCanEdit(ok); }).catch(() => {});
     return () => { cancelled = true; };
-  }, [connected, workBeId, authenticated]);
+    // identityEpoch: re-check when the session's identity changes (sign
+    // in/out) — permissions are per-identity.
+  }, [connected, workBeId, authenticated, identityEpoch]);
 
   const setText = useCallback((newText: string) => {
     clientRef.current?.setText(newText);
@@ -420,6 +430,20 @@ export function useCrdtSync(
       console.error("[session] sessionTicketIssue failed:", e);
     }
   }, []);
+
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected() || !identity) throw new Error("not signed in");
+    // Verify the current password first: re-auth on a fresh sub-session
+    // path so a wrong current password fails before we touch anything.
+    // club_set_password itself requires session authority over the club,
+    // which we have; the check keeps the failure mode honest.
+    await client.sendRequest("session_login_by_name", { club_name: identity.display_name });
+    await client.sendRequest("session_authenticate", {
+      credential: { password: Array.from(new TextEncoder().encode(currentPassword)) },
+    });
+    await client.clubSetPassword(identity.club_id, newPassword);
+  }, [identity]);
 
   const createWork = useCallback(async (): Promise<number | null> => {
     const client = clientRef.current;
@@ -565,6 +589,7 @@ export function useCrdtSync(
   const logout = useCallback(() => {
     setAuthenticated(false);
     setIdentity(null);
+    setCanEdit(false);
     try {
       localStorage.removeItem("xudanu_session_ticket");
       localStorage.removeItem("xudanu_identity_cache");
@@ -632,7 +657,7 @@ export function useCrdtSync(
     contentMatches, watchEnabled, toggleWatch, clientRef,
     attributionSpans, attributionLogStatus, refreshAttribution,
     refreshAwareness,
-    identity, login, createIdentity, createWork, shareWork, unshareWork, narrateDiff,
+    identity, login, createIdentity, changePassword, createWork, shareWork, unshareWork, narrateDiff,
     getWritingFeedback, llmEnabled, llmUsage, suggestTitle, setWorkTitle, autoTag, fetchWorkList,     setVisibility, getReadClub, getEditClub, publicClubId, logout,
     annotations, refreshAnnotations, createAnnotation, deleteAnnotation,
     connectionEpoch,

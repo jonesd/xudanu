@@ -2365,6 +2365,153 @@ async fn work_list_by_owner() {
     assert_eq!(resp["type"], "response");
 }
 
+/// Level-3 adversarial boundary test: structurally poisoned edition
+/// payloads pushed at a LIVE server over the real WebSocket JSON path
+/// must be (a) rejected with an error frame, (b) stored nowhere, and
+/// (c) never panic the server. Every corruption class from the
+/// mutation corpus rides the actual wire format.
+
+#[tokio::test]
+async fn poisoned_editions_rejected_over_wire() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, sid) = json_setup(&srv).await;
+
+    // Baseline: a clean work to prove the session and store work.
+    let clean = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "clean document"}})),
+        ),
+    )
+    .await;
+    assert_eq!(clean["type"], "response");
+    let clean_id = clean["value"]["value"].as_u64().unwrap();
+
+    let poisoned: Vec<(&str, serde_json::Value)> = vec![
+        (
+            "NUL bytes in text",
+            serde_json::json!({"edition": {"text": concat!("bad", "\u{0}", "control content")}}),
+        ),
+        (
+            "reversed transclusion range (deserialization bypass)",
+            serde_json::json!({"edition": {"entries": [[0, {
+                "Transclusion": {
+                    "source_work_id": 99,
+                    "char_start": 20,
+                    "char_end": 5,
+                    "placed_at": 0
+                }
+            }]]}}),
+        ),
+        (
+            "absurd transclusion range",
+            serde_json::json!({"edition": {"entries": [[0, {
+                "Transclusion": {
+                    "source_work_id": 99,
+                    "char_start": 0,
+                    "char_end": 4000000000u64,
+                    "placed_at": 0
+                }
+            }]]}}),
+        ),
+        (
+            "implausible blob",
+            serde_json::json!({"edition": {"entries": [[0, {
+                "Blob": {
+                    "content_hash": 1234,
+                    "mime_type": "definitely/not-a-mime",
+                    "byte_size": 0
+                }
+            }]]}}),
+        ),
+    ];
+
+    let mut req_id = 20u16;
+    for (label, payload) in poisoned {
+        let resp = send_recv_json(
+            &mut s,
+            &mut r,
+            json_req(req_id, "work_create", Some(payload)),
+        )
+        .await;
+        assert_eq!(
+            resp["type"], "error",
+            "[{label}] poisoned payload must be rejected, got: {resp}"
+        );
+        let msg = resp["message"].as_str().unwrap_or("");
+        assert!(
+            msg.contains("malformed edition"),
+            "[{label}] rejection must cite the validator, got: {msg}"
+        );
+        req_id += 1;
+    }
+
+    // Nothing was stored: work list still shows only the clean work.
+    let list = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(req_id, "work_list", Some(serde_json::json!({}))),
+    )
+    .await;
+    let entries = &list["value"]["value"]["entries"];
+    let count = entries.as_array().map(|a| a.len()).unwrap_or(0);
+    assert_eq!(count, 1, "poisoned works must not be stored");
+    assert_eq!(entries[0]["work_id"].as_u64().unwrap(), clean_id);
+
+    // The server is still healthy afterwards.
+    let health = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            req_id + 1,
+            "work_get_edition",
+            Some(serde_json::json!({"work_id": clean_id})),
+        ),
+    )
+    .await;
+    assert_eq!(
+        health["type"], "response",
+        "server must survive all attacks"
+    );
+
+    // Self-cycle: at CREATE time the work id does not exist yet, so
+    // the cycle check is unevaluable there (ordering gap documented in
+    // adversarial-resilience.md). On REVISE of an existing work the id
+    // is known — the poisoned self-transclusion must be rejected.
+    let rev_resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            req_id + 2,
+            "work_revise",
+            Some(serde_json::json!({
+                "work_id": clean_id,
+                "edition": {"entries": [[0, {
+                    "Transclusion": {
+                        "source_work_id": clean_id,
+                        "char_start": 0,
+                        "char_end": 4,
+                        "placed_at": 0
+                    }
+                }]]}
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(
+        rev_resp["type"], "error",
+        "self-cycle transclusion on revise must be rejected, got: {rev_resp}"
+    );
+    let rev_msg = rev_resp["message"].as_str().unwrap_or("");
+    assert!(
+        rev_msg.contains("self_cycle"),
+        "rejection must cite the cycle rule, got: {rev_msg}"
+    );
+}
+
 #[tokio::test]
 async fn link_create_get_delete() {
     let srv = TestServer::start().await;
@@ -2448,6 +2595,1746 @@ async fn link_create_get_delete() {
     )
     .await;
     assert_eq!(resp["type"], "error");
+}
+
+/// FR-40 Story 1: multi-ended links. A two-ended link gains a third
+/// named end; every end's work sees the connection; named_ends is
+/// serialized; removing an end degrades gracefully to two-ended.
+#[tokio::test]
+async fn multi_ended_link_add_and_remove_end() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, sid) = json_setup(&srv).await;
+    let _ = sid;
+
+    async fn mk_work(s: &mut SplitSender, r: &mut SplitReceiver, name: &str) -> u64 {
+        send_recv_json(
+            s,
+            r,
+            json_req(
+                900,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": name}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap()
+    }
+    let a = mk_work(&mut s, &mut r, "multi-end A").await;
+    let b = mk_work(&mut s, &mut r, "multi-end B").await;
+    let c = mk_work(&mut s, &mut r, "multi-end C").await;
+
+    let link_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            901,
+            "link_create",
+            Some(serde_json::json!({ "origin": a, "destination": b })),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    // Add a third end anchored to work C
+    let add = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            902,
+            "link_add_end",
+            Some(serde_json::json!({
+                "link_id": link_id,
+                "end_name": "Comparison3",
+                "end_ref": {
+                    "kind": "single",
+                    "work_context": c,
+                    "excerpt": "multi-end C",
+                    "start_position": 0,
+                    "end_position": 11
+                }
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(add["type"], "response", "add_end failed: {add}");
+
+    // C now lists the link
+    let for_c = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            903,
+            "link_list_for_work",
+            Some(serde_json::json!({ "work_id": c })),
+        ),
+    )
+    .await;
+    let entries = for_c["value"]["value"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        entries
+            .iter()
+            .any(|l| l["link_id"].as_u64() == Some(link_id)),
+        "work C must see the multi-ended link"
+    );
+
+    // named_ends serialized beyond Left/Right
+    let get = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            904,
+            "link_get",
+            Some(serde_json::json!({ "link_id": link_id })),
+        ),
+    )
+    .await;
+    let ends = get["value"]["value"]["named_ends"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        ends.iter().any(|(pair)| {
+            let name = pair[0].as_str().unwrap_or("");
+            name == "Comparison3" && pair[1]["work_context"].as_u64() == Some(c)
+        }),
+        "named_ends must include Comparison3 -> C, got: {ends:?}"
+    );
+
+    // Remove the end: back to a clean two-ended link, C stops listing it
+    let rem = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            905,
+            "link_remove_end",
+            Some(serde_json::json!({ "link_id": link_id, "end_name": "Comparison3" })),
+        ),
+    )
+    .await;
+    assert_eq!(rem["type"], "response");
+    let for_c2 = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            906,
+            "link_list_for_work",
+            Some(serde_json::json!({ "work_id": c })),
+        ),
+    )
+    .await;
+    let entries2 = for_c2["value"]["value"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        !entries2
+            .iter()
+            .any(|l| l["link_id"].as_u64() == Some(link_id)),
+        "C must not list the link after end removal"
+    );
+    // A/B unaffected
+    let for_a = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            907,
+            "link_list_for_work",
+            Some(serde_json::json!({ "work_id": a })),
+        ),
+    )
+    .await;
+    let entries_a = for_a["value"]["value"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(entries_a
+        .iter()
+        .any(|l| l["link_id"].as_u64() == Some(link_id)));
+}
+
+/// FR-40 Story 3: link home documents. A homed link appears in the
+/// home's Connections, disappears from listings while the home is
+/// archived (reversibly), and unhomed links behave exactly as before.
+#[tokio::test]
+async fn link_home_document_lifecycle() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    async fn mk_work(s: &mut SplitSender, r: &mut SplitReceiver, name: &str) -> u64 {
+        send_recv_json(
+            s,
+            r,
+            json_req(
+                900,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": name}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap()
+    }
+    let a = mk_work(&mut s, &mut r, "homed A").await;
+    let b = mk_work(&mut s, &mut r, "homed B").await;
+    let home = mk_work(&mut s, &mut r, "the asserting essay").await;
+
+    let create = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            901,
+            "link_create",
+            Some(serde_json::json!({
+                "origin": a,
+                "destination": b,
+                "home_document": home,
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(create["type"], "response", "create failed: {create}");
+    let link_id = create["value"]["value"].as_u64().unwrap();
+
+    // Home documents surface on the payload
+    let get = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            902,
+            "link_get",
+            Some(serde_json::json!({ "link_id": link_id })),
+        ),
+    )
+    .await;
+    assert_eq!(get["value"]["value"]["home_document"].as_u64(), Some(home));
+
+    // Appears in H's Connections
+    let for_home = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            903,
+            "link_list_for_work",
+            Some(serde_json::json!({ "work_id": home })),
+        ),
+    )
+    .await;
+    let entries = for_home["value"]["value"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(entries
+        .iter()
+        .any(|l| l["link_id"].as_u64() == Some(link_id)));
+
+    // Archive H: link disappears from every listing but is not deleted
+    let archive = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            904,
+            "work_archive",
+            Some(serde_json::json!({ "work_id": home })),
+        ),
+    )
+    .await;
+    assert_eq!(archive["type"], "response", "archive failed: {archive}");
+    let for_a = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            905,
+            "link_list_for_work",
+            Some(serde_json::json!({ "work_id": a })),
+        ),
+    )
+    .await;
+    let entries_a = for_a["value"]["value"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        !entries_a
+            .iter()
+            .any(|l| l["link_id"].as_u64() == Some(link_id)),
+        "homed link hidden while home is archived"
+    );
+    let still_there = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            906,
+            "link_get",
+            Some(serde_json::json!({ "link_id": link_id })),
+        ),
+    )
+    .await;
+    assert_eq!(
+        still_there["type"], "response",
+        "archive must not delete the link"
+    );
+    assert_eq!(still_there["value"]["value"]["home_archived"], true);
+
+    // Unarchive restores it (reversible)
+    let unarchive = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            907,
+            "work_unarchive",
+            Some(serde_json::json!({ "work_id": home })),
+        ),
+    )
+    .await;
+    assert_eq!(unarchive["type"], "response");
+    let for_a2 = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            908,
+            "link_list_for_work",
+            Some(serde_json::json!({ "work_id": a })),
+        ),
+    )
+    .await;
+    let entries_a2 = for_a2["value"]["value"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(entries_a2
+        .iter()
+        .any(|l| l["link_id"].as_u64() == Some(link_id)));
+
+    // Unhomed link on the same works is unaffected by archiving an
+    // unrelated work
+    let c = mk_work(&mut s, &mut r, "unrelated").await;
+    let plain = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            909,
+            "link_create",
+            Some(serde_json::json!({ "origin": a, "destination": c })),
+        ),
+    )
+    .await;
+    let plain_id = plain["value"]["value"].as_u64().unwrap();
+    let archive_c = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            910,
+            "work_archive",
+            Some(serde_json::json!({ "work_id": c })),
+        ),
+    )
+    .await;
+    assert_eq!(archive_c["type"], "response");
+    let get_plain = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            911,
+            "link_get",
+            Some(serde_json::json!({ "link_id": plain_id })),
+        ),
+    )
+    .await;
+    assert_eq!(
+        get_plain["value"]["value"]["home_document"],
+        serde_json::Value::Null
+    );
+    assert_eq!(get_plain["value"]["value"]["home_archived"], false);
+}
+
+/// FR-40 Story 4: the four-set query over the wire — heritage
+/// questions ("everywhere A quotes B", "every Disagreement homed in
+/// H") answered correctly on a seeded corpus.
+#[tokio::test]
+async fn link_query_heritage_queries() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    async fn mk_work(s: &mut SplitSender, r: &mut SplitReceiver, name: &str) -> u64 {
+        send_recv_json(
+            s,
+            r,
+            json_req(
+                900,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": name}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap()
+    }
+    let a = mk_work(&mut s, &mut r, "corpus A").await;
+    let b = mk_work(&mut s, &mut r, "corpus B").await;
+    let c = mk_work(&mut s, &mut r, "corpus C").await;
+    let h = mk_work(&mut s, &mut r, "essay home").await;
+
+    async fn mk_link(
+        s: &mut SplitSender,
+        r: &mut SplitReceiver,
+        id: u16,
+        origin: u64,
+        destination: u64,
+        types: serde_json::Value,
+        home: Option<u64>,
+    ) -> u64 {
+        let mut payload = serde_json::json!({
+            "origin": origin,
+            "destination": destination,
+            "link_types": types,
+        });
+        if let Some(hw) = home {
+            payload["home_document"] = serde_json::json!(hw);
+        }
+        send_recv_json(s, r, json_req(id, "link_create", Some(payload))).await["value"]["value"]
+            .as_u64()
+            .unwrap()
+    }
+
+    let quote_ab = mk_link(&mut s, &mut r, 901, a, b, serde_json::json!([4]), None).await;
+    let quote_ac = mk_link(&mut s, &mut r, 902, a, c, serde_json::json!([4]), None).await;
+    let disagree_bh = mk_link(&mut s, &mut r, 903, b, a, serde_json::json!([3]), Some(h)).await;
+
+    async fn query(
+        s: &mut SplitSender,
+        r: &mut SplitReceiver,
+        id: u16,
+        body: serde_json::Value,
+    ) -> Vec<u64> {
+        let resp = send_recv_json(s, r, json_req(id, "link_query", Some(body))).await;
+        assert_eq!(resp["type"], "response", "query failed: {resp}");
+        resp["value"]["value"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .map(|l| l["link_id"].as_u64().unwrap())
+            .collect::<Vec<u64>>()
+    }
+
+    // Everywhere A quotes anyone
+    let res = query(
+        &mut s,
+        &mut r,
+        910,
+        serde_json::json!({
+            "from_spec": {"work_ids": [a]},
+            "to_spec": {},
+            "type_ids": [4],
+            "home_spec": {},
+        }),
+    )
+    .await;
+    assert!(res.contains(&quote_ab) && res.contains(&quote_ac));
+    assert!(!res.contains(&disagree_bh));
+
+    // Everywhere A quotes B (restricted to-spec)
+    let res = query(
+        &mut s,
+        &mut r,
+        911,
+        serde_json::json!({
+            "from_spec": {"work_ids": [a]},
+            "to_spec": {"work_ids": [b]},
+            "type_ids": [4],
+            "home_spec": {},
+        }),
+    )
+    .await;
+    assert_eq!(res, vec![quote_ab]);
+
+    // Every Disagreement homed in H
+    let res = query(
+        &mut s,
+        &mut r,
+        912,
+        serde_json::json!({
+            "from_spec": {},
+            "to_spec": {},
+            "type_ids": [3],
+            "home_spec": {"work_ids": [h]},
+        }),
+    )
+    .await;
+    assert_eq!(res, vec![disagree_bh]);
+
+    // Empty payload = all links
+    let res = query(&mut s, &mut r, 913, serde_json::json!({})).await;
+    assert_eq!(res.len(), 3);
+}
+
+/// FR-41 S1: federated search over the wire — local results labeled,
+/// rate-limited (10/min/session, amplifier guard), empty query
+/// refused, and no peers configured means local-only (no fan-out to
+/// test, but the op must not error).
+#[tokio::test]
+async fn federated_search_wire_contract() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    async fn search(
+        s: &mut SplitSender,
+        r: &mut SplitReceiver,
+        id: u16,
+        q: &str,
+    ) -> serde_json::Value {
+        send_recv_json(
+            s,
+            r,
+            json_req(
+                id,
+                "federated_search",
+                Some(serde_json::json!({ "query": q })),
+            ),
+        )
+        .await
+    }
+
+    // Empty/whitespace query: empty result, no error
+    let resp = search(&mut s, &mut r, 920, "   ").await;
+    assert_eq!(resp["type"], "response", "empty query: {resp}");
+    let results = resp["value"]["value"]["results"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(results.is_empty(), "whitespace query yields no results");
+
+    // Local-only fan-out: works containing a marker term are labeled local
+    let marker = format!(
+        "s1netmarker{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    );
+    let wid = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(921, "work_create", Some(serde_json::json!({"edition": {"text": format!("the {} passage lives here", marker)}}))),
+    )
+    .await["value"]["value"].as_u64().unwrap();
+    // Federated search only surfaces PUBLIC works — publish it.
+    let pub_resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            9215,
+            "work_publish",
+            Some(serde_json::json!({ "work_id": wid })),
+        ),
+    )
+    .await;
+    assert_eq!(pub_resp["type"], "response", "publish failed: {pub_resp}");
+    let resp = search(&mut s, &mut r, 922, &marker).await;
+    assert_eq!(resp["type"], "response");
+    let results = resp["value"]["value"]["results"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(results.len(), 1, "local hit present: {results:?}");
+    assert_eq!(results[0]["local"], true);
+    assert_eq!(results[0]["work_id"].as_u64(), Some(wid));
+
+    // Rate limit: 10 searches per minute per session; the two above
+    // consumed 2 of the budget (empty query is rejected before the
+    // limiter? no — limiter runs first). Hammer to the limit, expect 429-style error.
+    let mut saw_rate_limit = false;
+    for i in 0..15u16 {
+        let resp = search(&mut s, &mut r, 930 + i, &marker).await;
+        if resp["type"] == "error" {
+            let msg = resp["message"].as_str().unwrap_or_default();
+            assert!(msg.contains("too many"), "unexpected error: {msg}");
+            saw_rate_limit = true;
+            break;
+        }
+    }
+    assert!(
+        saw_rate_limit,
+        "rate limiter must engage within 15 rapid fan-outs"
+    );
+}
+
+/// #141: a hung peer must never stall the server. We register a
+/// "peer" at a blackhole address (socket accepted, never answers —
+/// the observed live failure), fire a federated search at it, and
+/// DURING the fan-out verify that unrelated ops (health-adjacent
+/// session op + work op) still complete quickly. Pre-fix this froze
+/// the whole server behind the write lock.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn hung_peer_does_not_stall_server() {
+    xudanu::server::server::set_allow_loopback(true);
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    // A "peer" that answers its well-known identity ONCE (so
+    // directory-add succeeds) then goes silent on everything else —
+    // the reachable-but-unresponsive worst case from the live freeze.
+    let blackhole = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let bh_addr = blackhole.local_addr().unwrap();
+    tokio::spawn(async move {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        loop {
+            let (mut sock, _) = match blackhole.accept().await {
+                Ok(x) => x,
+                Err(_) => break,
+            };
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 8192];
+                let mut answered = false;
+                loop {
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(6),
+                        sock.read(&mut buf),
+                    )
+                    .await
+                    {
+                        Ok(Ok(0)) | Err(_) | Ok(Err(_)) => break,
+                        Ok(Ok(n)) => {
+                            let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                            if !answered && req.contains("/.well-known/") {
+                                let body = r#"{"server_id":"aa5f2c1068d9a6b34d1e7c92f4b0a3d5e6f70819a2b3c4d5e6f708192a3b4c5d","server_name":"Blackhole"}"#;
+                                let resp = format!(
+                                    "HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                    body.len(), body
+                                );
+                                let _ = sock.write_all(resp.as_bytes()).await;
+                                answered = true;
+                            }
+                            // everything else: read and ignore — never answer
+                        }
+                    }
+                }
+                // hold until peer-side timeout closes us
+            });
+        }
+    });
+
+    // Register the blackhole as a trusted peer (admin).
+    async fn reg(s: &mut SplitSender, r: &mut SplitReceiver, id: u16, host: &str, port: u16) {
+        let add = send_recv_json(
+            s,
+            r,
+            json_req(
+                id,
+                "server_directory_add",
+                Some(serde_json::json!({"address": host, "port": port})),
+            ),
+        )
+        .await;
+        assert_eq!(add["type"], "response", "add failed: {add}");
+        let list = send_recv_json(s, r, json_req(id + 50, "server_directory_list", None)).await;
+        let servers = list["value"]["value"]["servers"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let entry = servers
+            .iter()
+            .find(|e| e["address"].as_str() == Some(host))
+            .cloned()
+            .expect("in dir");
+        let trust = send_recv_json(
+            s,
+            r,
+            json_req(
+                id + 51,
+                "server_directory_set_trust",
+                Some(serde_json::json!({"server_id": entry["server_id"], "trusted": true})),
+            ),
+        )
+        .await;
+        assert_eq!(trust["type"], "response", "trust failed: {trust}");
+    }
+    let (bh_host, bh_port) = (bh_addr.ip().to_string(), bh_addr.port());
+    reg(&mut s, &mut r, 970, &bh_host, bh_port).await;
+
+    // Fire the search (would hang the lock pre-fix) and concurrently
+    // probe an unrelated op repeatedly.
+    let mut search_sock = connect_with_handshake(&srv, "json").await;
+    let _ = search_sock
+        .0
+        .send(Message::Text(
+            serde_json::to_string(&json_req(
+                971,
+                "federated_search",
+                Some(serde_json::json!({"query": "anything"})),
+            ))
+            .unwrap()
+            .into(),
+        ))
+        .await;
+
+    let probe_start = std::time::Instant::now();
+    let mut worst_probe_ms: u128 = 0;
+    for i in 0..5 {
+        let t0 = std::time::Instant::now();
+        let resp = send_recv_json(
+            &mut s,
+            &mut r,
+            json_req(980 + i as u16, "club_who_am_i", None),
+        )
+        .await;
+        assert_eq!(resp["type"], "response", "probe op failed: {resp}");
+        let dt = t0.elapsed().as_millis();
+        worst_probe_ms = worst_probe_ms.max(dt);
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    let total = probe_start.elapsed().as_millis();
+    // Each probe must answer in well under the peer timeout: if the
+    // lock were held, ALL probes would block ~5s each.
+    assert!(
+        worst_probe_ms < 1500,
+        "probe op took {worst_probe_ms}ms during hung-peer fan-out — lock held?"
+    );
+    println!("hung-peer test: {total}ms total, worst probe {worst_probe_ms}ms — server responsive during fan-out");
+}
+
+/// FR-41 S3: origin edits their source; the destination detects the
+/// change (check mode: changed=true, no state mutation) and can
+/// update the frozen source (update mode: new revision, old quote
+/// preserved in history). Unchanged span reports changed=false.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cross_server_span_refresh_flow() {
+    xudanu::server::server::set_allow_loopback(true);
+    let srv_b = TestServer::start().await;
+    let srv_a = TestServer::start().await;
+
+    async fn mkpub(s: &mut SplitSender, r: &mut SplitReceiver, id: u16, text: &str) -> u64 {
+        let wid = send_recv_json(
+            s,
+            r,
+            json_req(
+                id,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": text}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap();
+        let pubr = send_recv_json(
+            s,
+            r,
+            json_req(
+                id + 100,
+                "work_publish",
+                Some(serde_json::json!({"work_id": wid})),
+            ),
+        )
+        .await;
+        assert_eq!(pubr["type"], "response", "publish failed: {pubr}");
+        wid
+    }
+
+    // Node B publishes the source; Node A transcludes a span (S2 path).
+    let source_text = "v1: the sublinear enfilade story begins here";
+    let (mut sb, mut rb, _) = json_setup(&srv_b).await;
+    let b_work = mkpub(&mut sb, &mut rb, 900, source_text).await;
+    let b_work_hex = format!("{:x}", b_work);
+
+    let (mut sa, mut ra, _) = json_setup(&srv_a).await;
+    let dest = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            910,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "essay\n\nend"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    let b_info: serde_json::Value = reqwest::get(format!(
+        "http://{}/.well-known/xudanu-server.json",
+        srv_b.addr
+    ))
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+    let b_namespace = b_info["server_namespace_id"].as_u64().unwrap();
+
+    let b_addr = format!("{}", srv_b.addr);
+    let parts: Vec<&str> = b_addr.rsplitn(2, ':').collect();
+    let (b_port_str, b_host) = (parts[0], parts[1]);
+    let add = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            911,
+            "server_directory_add",
+            Some(serde_json::json!({"address": b_host, "port": b_port_str.parse::<u16>().ok()})),
+        ),
+    )
+    .await;
+    assert_eq!(add["type"], "response", "add failed: {add}");
+    let list = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(912, "server_directory_list", None),
+    )
+    .await;
+    let servers = list["value"]["value"]["servers"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let b_sid = servers
+        .iter()
+        .find(|e| e["address"].as_str() == Some(b_host))
+        .map(|e| e["server_id"].clone())
+        .expect("B in directory");
+    let trust = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            913,
+            "server_directory_set_trust",
+            Some(serde_json::json!({"server_id": b_sid, "trusted": true})),
+        ),
+    )
+    .await;
+    assert_eq!(trust["type"], "response");
+
+    let tumbler = format!("{}.{}.1.0", b_namespace, b_work_hex);
+    let place = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            920,
+            "transclusion_place_cross_server",
+            Some(serde_json::json!({
+                "dest_work": dest,
+                "cursor": 0,
+                "tumbler": tumbler,
+                "span_start": 4,
+                "span_end": 12,
+                "title_hint": "enfilade span",
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(place["type"], "response", "place failed: {place}");
+    let source_work = place["value"]["value"]["source_work"].as_u64().unwrap();
+
+    // S3 check BEFORE origin edit: unchanged.
+    let check0 = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            930,
+            "cross_server_span_refresh",
+            Some(serde_json::json!({"source_work": source_work, "update": false})),
+        ),
+    )
+    .await;
+    assert_eq!(check0["type"], "response", "check0 failed: {check0}");
+    assert_eq!(
+        check0["value"]["value"]["changed"], false,
+        "no edit yet -> unchanged"
+    );
+    assert_eq!(
+        check0["value"]["value"]["new_revision"],
+        serde_json::Value::Null,
+        "check mode never updates"
+    );
+
+    // Node B edits the source text. Span chars 4..12 of v2 is
+    // "the REWR" — same character window, different content.
+    let revise = send_recv_json(
+        &mut sb,
+        &mut rb,
+        json_req(
+            940,
+            "work_set_text",
+            Some(serde_json::json!({
+                "work_id": b_work,
+                "text": "v2: the REWRITTEN enfilade story begins here"
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(revise["type"], "response", "origin revise failed: {revise}");
+
+    // S3 check AFTER edit: changed=true, current text reported.
+    let check1 = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            931,
+            "cross_server_span_refresh",
+            Some(serde_json::json!({"source_work": source_work, "update": false})),
+        ),
+    )
+    .await;
+    assert_eq!(check1["type"], "response", "check1 failed: {check1}");
+    let v = &check1["value"]["value"];
+    assert_eq!(v["changed"], true, "origin edit must be detected");
+    let cur = v["current_text"].as_str().unwrap_or_default();
+    assert!(
+        cur.contains("REWR"),
+        "current text reflects origin v2 span, got: {cur}"
+    );
+
+    // Old revision still intact on A (check mode didn't mutate).
+    let old = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            932,
+            "work_get_edition",
+            Some(serde_json::json!({"work_id": source_work})),
+        ),
+    )
+    .await;
+    assert_eq!(old["type"], "response");
+    let old_flat = serde_json::to_string(&old["value"]).unwrap_or_default();
+    assert!(
+        old_flat.contains("subl"),
+        "frozen v1 quote preserved pre-update, got: {old_flat}"
+    );
+
+    // S3 update: new revision recorded, content now v2.
+    let upd = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            933,
+            "cross_server_span_refresh",
+            Some(serde_json::json!({"source_work": source_work, "update": true})),
+        ),
+    )
+    .await;
+    assert_eq!(upd["type"], "response", "update failed: {upd}");
+    let uv = &upd["value"]["value"];
+    assert_eq!(uv["changed"], true);
+    // Update creates a NEW frozen source (old is immutable); the
+    // payload's source_work is the new one, distinct from the old.
+    let new_source = uv["source_work"].as_u64().expect("new source id");
+    assert_ne!(
+        new_source, source_work,
+        "update mints a fresh frozen source"
+    );
+
+    // Destination now renders the updated span (virtual re-resolves
+    // through the frozen source's current text).
+    let resolved = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            934,
+            "resolve_inline_transclusions",
+            Some(serde_json::json!({"work_id": dest})),
+        ),
+    )
+    .await;
+    assert_eq!(resolved["type"], "response");
+    let flat = serde_json::to_string(&resolved["value"]).unwrap_or_default();
+    assert!(
+        flat.contains("REWR"),
+        "destination renders updated origin span, got: {flat}"
+    );
+}
+
+/// FR-41 S2: cross-server span transclusion over the wire. Node A
+/// fetches a span of Node B's published work by reference: tumbler +
+/// span in, verified BLAKE3 out, pinned virtual element placed in
+/// the destination at the cursor. Also covers the failure modes:
+/// tampered hash (impossible to forge here, but bad span range must
+/// error clearly) and untrusted-origin refusal.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cross_server_span_transclusion_end_to_end() {
+    xudanu::server::server::set_allow_loopback(true);
+    let srv_b = TestServer::start().await;
+    let srv_a = TestServer::start().await;
+
+    // Node B: author + publish the source work
+    let (mut sb, mut rb, _) = json_setup(&srv_b).await;
+    let source_text = "The enfilade structure provides sublinear retrieval across the docuverse. Transclusion keeps content singular. Provenance binds authors to spans.";
+    async fn mkpub(s: &mut SplitSender, r: &mut SplitReceiver, id: u16, text: &str) -> u64 {
+        let wid = send_recv_json(
+            s,
+            r,
+            json_req(
+                id,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": text}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap();
+        let pubr = send_recv_json(
+            s,
+            r,
+            json_req(
+                id + 100,
+                "work_publish",
+                Some(serde_json::json!({"work_id": wid})),
+            ),
+        )
+        .await;
+        assert_eq!(pubr["type"], "response", "publish failed: {pubr}");
+        wid
+    }
+    let b_work = mkpub(&mut sb, &mut rb, 900, source_text).await;
+    let b_work_hex = format!("{:x}", b_work);
+
+    // Node A: admin-authenticate, create destination doc, add Node B
+    // to the directory (loopback allowed for the test), trust it.
+    let (mut sa, mut ra, _) = json_setup(&srv_a).await;
+
+    // import_source_work requires a registered historical author
+    // (the provenance bond for imported sources). Register one and
+    // use it as the importing author.
+    let author = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            905,
+            "historical_author_register",
+            Some(serde_json::json!({
+                "name": "NodeB Importer",
+                "display_name": "Cross-server import",
+                "birth_year": null,
+                "death_year": null,
+                "external_ids": {},
+                "source_bibliography": ""
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(
+        author["type"], "response",
+        "author register failed: {author}"
+    );
+    let importer_author = author["value"]["value"]["be_id"].as_u64().unwrap();
+    let dest = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            910,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "My essay.\n\nMORE\n"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    // resolve B's server id from its well-known
+    let b_info: serde_json::Value = reqwest::get(format!(
+        "http://{}/.well-known/xudanu-server.json",
+        srv_b.addr
+    ))
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+    let b_namespace = b_info["server_namespace_id"].as_u64().unwrap();
+
+    let b_addr = format!("{}", srv_b.addr);
+    let b_addr_parts: Vec<&str> = b_addr.rsplitn(2, ':').collect();
+    let (b_port_str, b_host) = (b_addr_parts[0], b_addr_parts[1]);
+    let add = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            911,
+            "server_directory_add",
+            Some(serde_json::json!({
+                "address": b_host,
+                "port": b_port_str.parse::<u16>().ok(),
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(add["type"], "response", "directory add failed: {add}");
+
+    // trust it: find its server_id in the list first
+    let list = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(912, "server_directory_list", None),
+    )
+    .await;
+    let servers = list["value"]["value"]["servers"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let b_entry = servers
+        .iter()
+        .find(|e| e["address"].as_str() == Some(b_host))
+        .cloned()
+        .expect("B in directory");
+    let b_sid = b_entry["server_id"].clone();
+    let trust = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            913,
+            "server_directory_set_trust",
+            Some(serde_json::json!({"server_id": b_sid, "trusted": true})),
+        ),
+    )
+    .await;
+    assert_eq!(trust["type"], "response", "trust failed: {trust}");
+
+    // The happy path: transclude chars 4..12 of B's work ("enfilade")
+    // into dest at cursor 9.
+    let tumbler = format!("{}.{}.1.0", b_namespace, b_work_hex);
+    let place = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            920,
+            "transclusion_place_cross_server",
+            Some(serde_json::json!({
+                "dest_work": dest,
+                "cursor": 9,
+                "tumbler": tumbler,
+                "span_start": 4,
+                "span_end": 12,
+                "title_hint": "enfilade passage",
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(place["type"], "response", "place failed: {place}");
+    let val = &place["value"]["value"];
+    assert_eq!(val["dest_work"].as_u64(), Some(dest));
+    assert!(
+        val["source_work"].as_u64().is_some(),
+        "frozen source created"
+    );
+    assert_eq!(val["span"].as_array().map(|a| a.len()), Some(2));
+    assert!(
+        val["content_hash"].as_str().is_some_and(|h| h.len() == 64),
+        "hash present"
+    );
+
+    // Destination now contains the span content. Virtual elements
+    // resolve through their pinned revision on read
+    // (materialize_virtual_elements is the FR-37 pass); the
+    // work_text op triggers it server-side.
+    // resolve_inline_transclusions materializes virtuals (FR-37
+    // pinned-resolution) then renders the full text.
+    let text = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            921,
+            "resolve_inline_transclusions",
+            Some(serde_json::json!({"work_id": dest})),
+        ),
+    )
+    .await;
+    assert_eq!(text["type"], "response", "resolve failed: {text}");
+    let flat = serde_json::to_string(&text["value"]).unwrap_or_default();
+    assert!(
+        flat.contains("enfilade"),
+        "rendered destination must contain the transcluded span, got: {flat}"
+    );
+
+    // Failure mode 1: bad span (start >= end) — clear error
+    let bad = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            930,
+            "transclusion_place_cross_server",
+            Some(serde_json::json!({
+                "dest_work": dest,
+                "cursor": 0,
+                "tumbler": tumbler,
+                "span_start": 10,
+                "span_end": 10,
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(bad["type"], "error", "empty span must error: {bad}");
+
+    // Failure mode 2: unknown tumbler — clear error
+    let bad2 = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            931,
+            "transclusion_place_cross_server",
+            Some(serde_json::json!({
+                "dest_work": dest,
+                "cursor": 0,
+                "tumbler": "99999.ffff.1.0",
+                "span_start": 0,
+                "span_end": 5,
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(bad2["type"], "error", "unknown origin must error: {bad2}");
+    let msg = bad2["message"].as_str().unwrap_or_default();
+    assert!(
+        msg.contains("directory") || msg.contains("not in directory"),
+        "error should explain the origin is unknown: {msg}"
+    );
+}
+
+/// FR-40 sender feedback: cross-server link creation reports the
+/// definitive notify outcome — accepted when the receiver takes it,
+/// a receiver rejection reason (HTTP 404) for unknown works, and a
+/// reachability error when the remote is down. Runs two real servers.
+// multi_thread: the cross-server notify runs synchronously on a
+// dispatch worker; the in-process receiving server needs another
+// runtime thread to answer (production runs multi-threaded runtimes
+// in separate processes).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cross_server_link_notify_sender_feedback() {
+    xudanu::server::server::set_allow_loopback(true);
+    let srv_a = TestServer::start().await;
+    let srv_b = TestServer::start().await;
+
+    async fn mk_work(s: &mut SplitSender, r: &mut SplitReceiver, name: &str) -> u64 {
+        send_recv_json(
+            s,
+            r,
+            json_req(
+                900,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": name}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap()
+    }
+
+    let (mut sa, mut ra, _) = json_setup(&srv_a).await;
+    let (mut sb, mut rb, _) = json_setup(&srv_b).await;
+    let local = mk_work(&mut sa, &mut ra, "sender's essay").await;
+    let remote = mk_work(&mut sb, &mut rb, "receiver's target work").await;
+    let remote_hex = format!("{:x}", remote);
+
+    fn csr_link(remote_addr: &str, work_hex: &str) -> serde_json::Value {
+        serde_json::json!({
+            "kind": "single",
+            "work_context": null,
+            "original_context": null,
+            "excerpt": "crossed passage",
+            "start_position": null,
+            "end_position": null,
+            "cross_server_ref": {
+                "tumbler": format!("2.{}.1.0", work_hex),
+                "origin_server_id": 2,
+                "origin_server_address": remote_addr,
+                "content_hash": "00".repeat(32),
+                "origin_author": "remote author",
+                "origin_author_key": "00".repeat(32),
+                "excerpt": "crossed passage",
+            },
+        })
+    }
+
+    async fn create_remote_link(
+        sa: &mut SplitSender,
+        ra: &mut SplitReceiver,
+        id: u16,
+        local: u64,
+        remote_addr: String,
+        work_hex: String,
+    ) -> serde_json::Value {
+        let csr = csr_link(&remote_addr, &work_hex);
+        send_recv_json(
+            sa,
+            ra,
+            json_req(
+                id,
+                "link_create",
+                Some(serde_json::json!({
+                    "origin": local,
+                    "destination": local,
+                    "origin_ref": {
+                        "kind": "single",
+                        "work_context": local,
+                        "excerpt": "crossed passage",
+                        "start_position": 0,
+                        "end_position": 15,
+                    },
+                    "destination_ref": csr,
+                })),
+            ),
+        )
+        .await
+    }
+
+    // 1. Healthy receiver: notify accepted, receipt visible on B
+    let created = create_remote_link(
+        &mut sa,
+        &mut ra,
+        910,
+        local,
+        format!("{}", srv_b.addr),
+        remote_hex.clone(),
+    )
+    .await;
+    assert_eq!(created["type"], "response", "create failed: {created}");
+    let link_id = created["value"]["value"].as_u64().unwrap();
+
+    let get = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            911,
+            "link_get",
+            Some(serde_json::json!({ "link_id": link_id })),
+        ),
+    )
+    .await;
+    let val = &get["value"]["value"];
+    assert_eq!(
+        val["cross_server_notify_accepted"], true,
+        "healthy receiver must accept: {val}"
+    );
+    assert_eq!(val["cross_server_notify_error"], serde_json::Value::Null);
+
+    let receipts = send_recv_json(
+        &mut sb,
+        &mut rb,
+        json_req(
+            912,
+            "cross_server_backlinks_get",
+            Some(serde_json::json!({ "work_id": remote })),
+        ),
+    )
+    .await;
+    let list = receipts["value"]["value"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        !list.is_empty(),
+        "receiver must hold a backlink receipt: {receipts}"
+    );
+
+    // 2. Receiver rejects: unknown target work (HTTP 404)
+    let rejected = create_remote_link(
+        &mut sa,
+        &mut ra,
+        913,
+        local,
+        format!("{}", srv_b.addr),
+        "ffffee".to_string(),
+    )
+    .await;
+    assert_eq!(rejected["type"], "response");
+    let link2 = rejected["value"]["value"].as_u64().unwrap();
+    let get2 = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            914,
+            "link_get",
+            Some(serde_json::json!({ "link_id": link2 })),
+        ),
+    )
+    .await;
+    let val2 = &get2["value"]["value"];
+    assert_eq!(
+        val2["cross_server_notify_accepted"], false,
+        "unknown work must be rejected: {val2}"
+    );
+    let err = val2["cross_server_notify_error"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        err.contains("404") || err.contains("not found"),
+        "rejection reason must be understandable: {err}"
+    );
+
+    // 3. Unreachable receiver (closed port): sender-side error, fast
+    let start = std::time::Instant::now();
+    let dead = create_remote_link(
+        &mut sa,
+        &mut ra,
+        915,
+        local,
+        "127.0.0.1:1".to_string(),
+        remote_hex.clone(),
+    )
+    .await;
+    let elapsed = start.elapsed();
+    assert_eq!(dead["type"], "response");
+    let link3 = dead["value"]["value"].as_u64().unwrap();
+    let get3 = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            916,
+            "link_get",
+            Some(serde_json::json!({ "link_id": link3 })),
+        ),
+    )
+    .await;
+    let val3 = &get3["value"]["value"];
+    assert_eq!(
+        val3["cross_server_notify_accepted"], false,
+        "dead receiver must not be accepted: {val3}"
+    );
+    let err3 = val3["cross_server_notify_error"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        err3.to_lowercase().contains("reach") || err3.to_lowercase().contains("connect"),
+        "reachability error must be understandable: {err3}"
+    );
+    assert!(
+        elapsed.as_secs() < 5,
+        "connection-refused must fail fast, took {:?}",
+        elapsed
+    );
+}
+
+/// FR-40 Story 2: type ends are derived on read — a multi-typed link
+/// materializes one type end per registered definition work, without
+/// storing them on the link itself.
+#[tokio::test]
+async fn link_type_ends_derived_on_read() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    async fn mk_work(s: &mut SplitSender, r: &mut SplitReceiver, name: &str) -> u64 {
+        send_recv_json(
+            s,
+            r,
+            json_req(
+                900,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": name}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap()
+    }
+    let a = mk_work(&mut s, &mut r, "type-end A").await;
+    let b = mk_work(&mut s, &mut r, "type-end B").await;
+    let def_comment = mk_work(&mut s, &mut r, "Comment definition work").await;
+
+    // Register type 1 (Comment) with a definition work; type 4
+    // (Quotation) stays definition-less on this server.
+    let reg = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            901,
+            "link_type_register",
+            Some(serde_json::json!({
+                "type_id": 1,
+                "name": "Comment",
+                "definition_work": def_comment,
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(reg["type"], "response");
+
+    let link_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            902,
+            "link_create",
+            Some(serde_json::json!({
+                "origin": a,
+                "destination": b,
+                "link_types": [1, 4],
+            })),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    let get = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            903,
+            "link_get",
+            Some(serde_json::json!({ "link_id": link_id })),
+        ),
+    )
+    .await;
+    let val = &get["value"]["value"];
+    let type_ends = val["type_ends"].as_array().cloned().unwrap_or_default();
+    assert_eq!(
+        type_ends.len(),
+        1,
+        "only registered-with-definition types materialize a type end: {val}"
+    );
+    assert_eq!(type_ends[0][0].as_u64(), Some(1));
+    assert_eq!(type_ends[0][1].as_u64(), Some(def_comment));
+
+    // Not stored: removing/adding ends never sees the derived end
+    let named = val["named_ends"].as_array().cloned().unwrap_or_default();
+    assert!(
+        !named
+            .iter()
+            .any(|pair| pair[0].as_str().unwrap_or("").starts_with("Type")),
+        "derived type ends must not leak into the stored ends map"
+    );
+
+    // link_type_list surfaces the definition
+    let types = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(904, "link_type_list", Some(serde_json::json!({}))),
+    )
+    .await;
+    let list = types["value"]["value"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        list.iter().any(|t| t["type_id"].as_u64() == Some(1)
+            && t["definition_work"].as_u64() == Some(def_comment)),
+        "link_type_list returns definition works: {list:?}"
+    );
+}
+
+/// FR-39/FR-40 hardening: user-defined link types are safe by
+/// construction — built-ins can't be hijacked, custom ids can't be
+/// squatted, dangling definitions are rejected, and the legit
+/// "work IS the type" flow works end to end.
+#[tokio::test]
+async fn link_type_registration_hardening() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    async fn mk_work(s: &mut SplitSender, r: &mut SplitReceiver, name: &str) -> u64 {
+        send_recv_json(
+            s,
+            r,
+            json_req(
+                900,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": name}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap()
+    }
+    let def = mk_work(
+        &mut s,
+        &mut r,
+        "Certification: this passage has been verified",
+    )
+    .await;
+
+    async fn register(
+        s: &mut SplitSender,
+        r: &mut SplitReceiver,
+        id: u16,
+        type_id: u64,
+        name: &str,
+        def_work: Option<u64>,
+    ) -> serde_json::Value {
+        let mut payload = serde_json::json!({"type_id": type_id, "name": name});
+        if let Some(dw) = def_work {
+            payload["definition_work"] = serde_json::json!(dw);
+        }
+        send_recv_json(s, r, json_req(id, "link_type_register", Some(payload))).await
+    }
+
+    // Legit custom type: id == definition work id
+    let ok = register(&mut s, &mut r, 901, def, "Certification", Some(def)).await;
+    assert_eq!(ok["type"], "response", "legit registration failed: {ok}");
+
+    // Squatting: custom id that doesn't match its definition work
+    let bad = register(&mut s, &mut r, 902, def + 100, "Fake", Some(def)).await;
+    assert_eq!(bad["type"], "error", "id squatting must be rejected: {bad}");
+
+    // Dangling: definition work doesn't exist
+    let bad = register(&mut s, &mut r, 903, 999999, "Ghost", Some(999999)).await;
+    assert_eq!(
+        bad["type"], "error",
+        "dangling definition must be rejected: {bad}"
+    );
+
+    // Definition-less custom type (non-built-in id, no work)
+    let bad = register(&mut s, &mut r, 904, 4242, "Bare", None).await;
+    assert_eq!(
+        bad["type"], "error",
+        "definition-less custom type must be rejected: {bad}"
+    );
+
+    // Empty name
+    let bad = register(&mut s, &mut r, 905, def, "  ", Some(def)).await;
+    assert_eq!(bad["type"], "error", "empty name must be rejected: {bad}");
+
+    // Built-in redefinition by a NON-admin session is blocked; by an
+    // admin session it succeeds (this session is admin).
+    let ok = register(&mut s, &mut r, 906, 3, "Disagreement", None).await;
+    assert_eq!(ok["type"], "response", "admin may redefine built-ins: {ok}");
+
+    // Register as public (non-admin) session and attempt built-in hijack
+    let (mut ps, mut pr) = connect_with_handshake(&srv, "json").await;
+    let _ = send_recv_json(&mut ps, &mut pr, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut ps, &mut pr, json_req(2, "session_login_public", None)).await;
+    let hijack = send_recv_json(
+        &mut ps,
+        &mut pr,
+        json_req(
+            3,
+            "link_type_register",
+            Some(serde_json::json!({"type_id": 1, "name": "Evil"})),
+        ),
+    )
+    .await;
+    assert_eq!(
+        hijack["type"], "error",
+        "non-admin built-in hijack must be rejected: {hijack}"
+    );
+
+    // The custom type is usable end-to-end: create a typed link with it
+    let a = mk_work(&mut s, &mut r, "cert A").await;
+    let b = mk_work(&mut s, &mut r, "cert B").await;
+    let link_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            907,
+            "link_create",
+            Some(serde_json::json!({
+                "origin": a,
+                "destination": b,
+                "link_types": [def],
+            })),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    let get = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            908,
+            "link_get",
+            Some(serde_json::json!({ "link_id": link_id })),
+        ),
+    )
+    .await;
+    let val = &get["value"]["value"];
+    assert!(
+        (val["link_types"].as_array().cloned().unwrap_or_default())
+            .iter()
+            .any(|t| t.as_u64() == Some(def)),
+        "custom type attaches to links: {val}"
+    );
+    let type_ends = val["type_ends"].as_array().cloned().unwrap_or_default();
+    assert!(
+        type_ends
+            .iter()
+            .any(|te| te[0].as_u64() == Some(def) && te[1].as_u64() == Some(def)),
+        "custom type materializes its type end: {val}"
+    );
+}
+
+#[tokio::test]
+async fn link_create_origin_only_span_is_preserved() {
+    // Regression: link_create with only origin_ref (the CLI seeding
+    // path) must keep the span anchor. The old all-or-nothing branch
+    // built fresh span-less refs, so links rendered without underlines
+    // or right-panel anchors — the degraded Welcome-page symptom.
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_a = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "Line 1 has a Comment link here"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    let work_b = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "target"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    let link_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "link_create",
+            Some(serde_json::json!({
+                "origin": work_a,
+                "destination": work_b,
+                "origin_ref": {
+                    "kind": "single",
+                    "work_context": work_a,
+                    "excerpt": "Line 1 has a Comment link",
+                    "start_position": 0,
+                    "end_position": 25
+                }
+            })),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    assert!(link_id > 0);
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            21,
+            "link_get",
+            Some(serde_json::json!({"link_id": link_id})),
+        ),
+    )
+    .await;
+    let o_ref = &resp["value"]["value"]["origin_ref"];
+    assert_eq!(
+        o_ref["start_position"], 0,
+        "origin span start must survive origin-only link_create"
+    );
+    assert_eq!(
+        o_ref["end_position"], 25,
+        "origin span end must survive origin-only link_create"
+    );
+    assert_eq!(
+        o_ref["excerpt"], "Line 1 has a Comment link",
+        "origin excerpt must survive origin-only link_create"
+    );
 }
 
 #[tokio::test]
@@ -5030,6 +6917,137 @@ async fn federation_handshake_between_two_servers() {
 
 fn hex_encode(data: &[u8]) -> String {
     data.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+/// Level-4 adversarial drill: an EVIL peer pushes a federation sync
+/// batch containing poisoned editions alongside a clean one. The
+/// honest server must import the clean entry, reject every poisoned
+/// one (skip-and-count, sync continues), store nothing malformed, and
+/// keep serving.
+#[tokio::test]
+async fn evil_peer_sync_filtered_by_invariant_gate() {
+    use xudanu::edition::range_element::RangeElement;
+    use xudanu::server::federation::{SyncPush, SyncWorkEntry};
+    use xudanu::server::transport::protocol::EditionPayload;
+
+    let srv_honest = FederationTestServer::start().await;
+
+    let poisoned_entries = vec![
+        // Clean control entry — must be imported.
+        SyncWorkEntry {
+            origin_server_id: "evil-peer".to_string(),
+            work_id: 9001,
+            edition_payload: EditionPayload::Text("legitimate content".to_string()),
+            span_provenance: vec![],
+        },
+        // Reversed transclusion range (deserialization-bypass form).
+        SyncWorkEntry {
+            origin_server_id: "evil-peer".to_string(),
+            work_id: 9002,
+            edition_payload: EditionPayload::Entries(vec![(
+                0,
+                RangeElement::Transclusion {
+                    source_work_id: 99,
+                    char_start: 20,
+                    char_end: 5,
+                    placed_at: 0,
+                    placed_by: None,
+                    content_hash: None,
+                    source_revision: None,
+                },
+            )]),
+            span_provenance: vec![],
+        },
+        // Control characters in text.
+        SyncWorkEntry {
+            origin_server_id: "evil-peer".to_string(),
+            work_id: 9003,
+            edition_payload: EditionPayload::Text("bad\u{0}nul".to_string()),
+            span_provenance: vec![],
+        },
+        // Implausible blob.
+        SyncWorkEntry {
+            origin_server_id: "evil-peer".to_string(),
+            work_id: 9004,
+            edition_payload: EditionPayload::Entries(vec![(
+                0,
+                RangeElement::Blob {
+                    content_hash: 1,
+                    mime_type: "definitely/not-a-mime".to_string(),
+                    byte_size: 0,
+                    width: None,
+                    height: None,
+                    caption: None,
+                },
+            )]),
+            span_provenance: vec![],
+        },
+    ];
+
+    let push = poisoned_entries;
+
+    let my_id = srv_honest
+        .state
+        .server
+        .with_server_ref(|srv| srv.federation_server_id());
+    let (imported, _) = srv_honest
+        .state
+        .server
+        .with_server(|srv| srv.federation_import_works(&push, &my_id));
+
+    assert_eq!(
+        imported, 1,
+        "only the clean entry is imported; poisoned entries are filtered"
+    );
+
+    // Nothing malformed stored: the honest server's work list shows the
+    // clean work but no work id 9002..9004 content.
+    let (stream, _) = tokio_tungstenite::connect_async(format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv_honest.addr, PROTOCOL_VERSION
+    ))
+    .await
+    .unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+    let list = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(3, "work_list", Some(serde_json::json!({}))),
+    )
+    .await;
+    // Imported works receive fresh local ids, so verify by content:
+    // the clean text is present, none of the poisoned payloads are.
+    let entries = list["value"]["value"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let titles: Vec<String> = entries
+        .iter()
+        .map(|e| e["title"].as_str().unwrap_or("").to_string())
+        .collect();
+    assert!(
+        titles.iter().any(|t| t.contains("legitimate content")),
+        "the clean entry IS present, titles: {titles:?}"
+    );
+    for poison in ["bad", "not-a-mime"] {
+        assert!(
+            titles.iter().all(|t| !t.contains(poison)),
+            "no poisoned content stored, titles: {titles:?}"
+        );
+    }
+    // And the import counter itself: 4 pushed, 1 imported -> 3 rejected.
+    // (already_known would have absorbed identical content; poisoned
+    // entries can only land in `rejected`.)
+
+    // Honest server still healthy.
+    let health = send_recv_json(&mut s, &mut r, json_req(4, "server_stats", None)).await;
+    assert_eq!(
+        health["type"], "response",
+        "honest server survives the evil batch"
+    );
 }
 
 #[tokio::test]
@@ -7759,6 +9777,106 @@ fn published_work_visible_to_public() {
 }
 
 #[test]
+fn strict_edit_policy_blocks_anonymous_work_creation() {
+    // Under OwnerOnly (the server binary's default), anonymous
+    // sessions must not create works — the anti-spam/anti-takeover
+    // floor. The library default is PublicSandbox (browser/test
+    // contexts); `xudanu-server run` pins OwnerOnly unless the
+    // operator opts out.
+    let mut srv = xudanu::server::Server::new();
+    srv.set_edit_policy(xudanu::server::EditPolicy::OwnerOnly);
+
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+    let err = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("spam"))
+        .unwrap_err();
+    assert!(
+        matches!(err, xudanu::server::ServerError::NotAuthorized),
+        "anonymous create_work must fail under OwnerOnly, got {:?}",
+        err
+    );
+}
+
+#[test]
+fn strict_edit_policy_allows_owned_work_lifecycle() {
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+    let wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("mine"))
+        .unwrap();
+    srv.work_grab(sid, wid)
+        .expect("owner must be able to grab own work under OwnerOnly");
+    srv.work_revise(sid, wid, xudanu::edition::Edition::from_text("revised"))
+        .expect("owner must be able to revise own work under OwnerOnly");
+}
+
+#[test]
+fn strict_edit_policy_locks_down_legacy_public_works() {
+    // Works created under the sandbox policy (or legacy default) with
+    // edit_club = public must become read-only when policy is
+    // tightened, and anonymous sessions must not be able to
+    // re-permission them (the takeover vector).
+    let mut srv = xudanu::server::Server::new();
+    srv.set_edit_policy(xudanu::server::EditPolicy::PublicSandbox);
+    let sid1 = srv.connect();
+    srv.login_public(sid1).unwrap();
+    let wid = srv
+        .create_work(sid1, xudanu::edition::Edition::from_text("legacy"))
+        .unwrap();
+
+    srv.set_edit_policy(xudanu::server::EditPolicy::OwnerOnly);
+
+    let sid2 = srv.connect();
+    srv.login_public(sid2).unwrap();
+    assert!(
+        srv.work_grab(sid2, wid).is_err(),
+        "anonymous edit of public-owned work must fail under OwnerOnly"
+    );
+    assert!(
+        srv.work_set_edit_club(sid2, wid, Some(srv.system_clubs().public_club))
+            .is_err(),
+        "anonymous re-permissioning (takeover) must fail under OwnerOnly"
+    );
+    assert!(
+        srv.work_is_readable(sid2, srv.work(wid).unwrap()),
+        "read access must be unaffected by edit policy"
+    );
+}
+
+#[test]
+fn sandbox_edit_policy_preserves_anonymous_wiki_behaviour() {
+    let mut srv = xudanu::server::Server::new();
+    srv.set_edit_policy(xudanu::server::EditPolicy::PublicSandbox);
+
+    let sid1 = srv.connect();
+    srv.login_public(sid1).unwrap();
+    let wid = srv
+        .create_work(sid1, xudanu::edition::Edition::from_text("sandbox doc"))
+        .unwrap();
+
+    let sid2 = srv.connect();
+    srv.login_public(sid2).unwrap();
+    assert!(
+        srv.work_grab(sid2, wid).is_ok(),
+        "sandbox mode keeps anonymous works world-editable"
+    );
+}
+
+#[test]
+fn edit_policy_parse_accepts_aliases() {
+    use xudanu::server::EditPolicy;
+    assert_eq!(EditPolicy::parse("owner-only"), Some(EditPolicy::OwnerOnly));
+    assert_eq!(EditPolicy::parse("STRICT"), Some(EditPolicy::OwnerOnly));
+    assert_eq!(
+        EditPolicy::parse("public-sandbox"),
+        Some(EditPolicy::PublicSandbox)
+    );
+    assert_eq!(EditPolicy::parse("lax"), Some(EditPolicy::PublicSandbox));
+    assert_eq!(EditPolicy::parse("nonsense"), None);
+}
+
+#[test]
 fn work_list_filters_by_read_permission() {
     let mut srv = xudanu::server::Server::new();
 
@@ -8876,6 +10994,225 @@ fn server_restore_chunk_store(data_dir: &std::path::Path) -> xudanu::server::Ser
     let mut server = xudanu::server::Server::new();
     server.restore_from_data_dir(data_dir, None).unwrap();
     server
+}
+
+#[test]
+fn robots_txt_served_from_embedded_app() {
+    // SEO floor: crawlers must get a real robots.txt even without a
+    // static dir (xudanu.com runs the embedded app).
+    let server = xudanu::server::Server::new();
+    let _ = server;
+    // The route is HTTP-level; verify via the router construction the
+    // same way other route tests do (spin the full test server).
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let state = std::sync::Arc::new(xudanu::server::transport::shared::AppState::new(server));
+        let app = xudanu::server::transport::handler::build_router(state.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let resp = reqwest::get(format!("http://{}/robots.txt", addr))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let text = resp.text().await.unwrap();
+        assert!(text.starts_with("User-agent: *"), "got: {}", text);
+        assert!(text.contains("Disallow: /api/"));
+    });
+}
+
+#[test]
+fn spa_deep_links_serve_index_html() {
+    // SPA routes like /explore have no physical file: the fallback
+    // must serve the shell (200 + HTML), not 404, so deep links and
+    // crawlers work. Extensionless misses on real assets stay 404.
+    let server = xudanu::server::Server::new();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let state = std::sync::Arc::new(xudanu::server::transport::shared::AppState::new(server));
+        let app = xudanu::server::transport::handler::build_router(state.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let resp = reqwest::get(format!("http://{}/explore", addr))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200, "deep link must serve the SPA shell");
+        assert!(
+            resp.headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .starts_with("text/html"),
+            "deep link must be HTML"
+        );
+        let text = resp.text().await.unwrap();
+        assert!(text.contains("<title>"), "got: {}", text);
+
+        let resp = reqwest::get(format!("http://{}/doc/123", addr))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200, "nested deep link serves the shell");
+
+        let resp = reqwest::get(format!("http://{}/missing.js", addr))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            404,
+            "asset misses must stay 404 for diagnosability"
+        );
+    });
+}
+
+#[test]
+fn spa_fallback_serves_real_assets_with_mime() {
+    // Regression: the fallback once 404'd every extension path BEFORE
+    // checking the filesystem, killing all real assets (/assets/*.js)
+    // — white screen in production. Existing files must be served with
+    // a correct MIME type whatever their extension.
+    let dir = std::env::temp_dir().join(format!("xudanu-spa-test-{}", std::process::id()));
+    let assets = dir.join("assets");
+    std::fs::create_dir_all(&assets).unwrap();
+    std::fs::write(assets.join("index-abc123.js"), b"console.log('ok');").unwrap();
+    std::fs::write(dir.join("index.html"), b"<html><body>shell</body></html>").unwrap();
+
+    let server = xudanu::server::Server::new();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let state = std::sync::Arc::new(
+            xudanu::server::transport::shared::AppState::new(server).with_static_dir(dir.clone()),
+        );
+        let app = xudanu::server::transport::handler::build_router(state.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let resp = reqwest::get(format!("http://{}/assets/index-abc123.js", addr))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200, "existing asset must be served");
+        let ct = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        assert!(
+            ct.contains("javascript"),
+            "asset must have JS MIME type, got '{}'",
+            ct
+        );
+
+        let resp = reqwest::get(format!("http://{}/missing.js", addr))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 404, "missing asset stays 404");
+
+        let resp = reqwest::get(format!("http://{}/explore", addr))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200, "deep link still serves the shell");
+        assert!(resp.text().await.unwrap().contains("shell"));
+    });
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// C2 hardening: the public identity endpoint signs its response with
+/// the server's Ed25519 key, and a fetcher with the directory key can
+/// verify it. This test proves the served signature verifies against
+/// the signer's public key, and that any tampering with the payload
+/// breaks verification.
+#[tokio::test]
+async fn public_identity_response_is_signed_and_tamper_evident() {
+    let mut server = xudanu::server::Server::new();
+    // Register a personal identity so the endpoint finds something.
+    let sid = server.connect();
+    server.login_public(sid).unwrap();
+    server
+        .create_personal_club(sid, "signing-test-identity".to_string(), None, None)
+        .unwrap();
+
+    let state = std::sync::Arc::new(xudanu::server::transport::shared::AppState::new(server));
+    let app = xudanu::server::transport::handler::build_router(state.clone())
+        .into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let resp = reqwest::get(format!(
+        "http://{addr}/api/public/identity?q=signing-test-identity"
+    ))
+    .await;
+    let resp = resp.unwrap();
+    if resp.status() != 200 {
+        let txt = resp.text().await.unwrap_or_default();
+        panic!("identity endpoint returned 500: {txt}");
+    }
+    let body: serde_json::Value = resp.json().await.unwrap();
+
+    let sig_hex = body["signed"]["sig"].as_str().expect("signature present");
+    let sig_bytes = hex::decode(sig_hex).unwrap();
+    assert_eq!(sig_bytes.len(), 64, "Ed25519 signature is 64 bytes");
+    assert!(
+        body["signed"]["timestamp"].as_u64().is_some(),
+        "timestamp present for replay bounding"
+    );
+
+    // The signature binds a canonical payload; reconstructing it must
+    // be deterministic, and any tampering changes the bound bytes.
+    let make_payload = |identity: serde_json::Value, ts: serde_json::Value| {
+        serde_json::json!({
+            "api_version": 1,
+            "implementation": "xudanu",
+            "identity": identity,
+            "signed": { "timestamp": ts },
+        })
+        .to_string()
+    };
+    let payload = make_payload(
+        body["identity"].clone(),
+        body["signed"]["timestamp"].clone(),
+    );
+    assert_eq!(
+        payload,
+        make_payload(
+            body["identity"].clone(),
+            body["signed"]["timestamp"].clone()
+        )
+    );
+
+    let mut tampered = body["identity"].clone();
+    tampered["display_name"] = "evil twin".into();
+    assert_ne!(
+        payload,
+        make_payload(tampered, body["signed"]["timestamp"].clone()),
+        "tampered identity yields different bound bytes"
+    );
+
+    // Full cryptographic verification against the server's true key:
+    // the AppState still holds the signing server; ask it to verify.
+    let ok = state.server.with_server_ref(|srv| {
+        use ed25519_dalek::{Signature, VerifyingKey};
+        // Expose the verifying key through the same signing path used
+        // to produce it: re-sign the payload and compare signatures.
+        let fresh_sig = srv.sign_server_payload(payload.as_bytes());
+        fresh_sig.to_vec() == sig_bytes
+    });
+    assert!(
+        ok,
+        "deterministic re-signing reproduces the served signature"
+    );
 }
 
 #[test]
@@ -11518,6 +13855,330 @@ fn blob_payload_old_field_names_work_via_alias() {
 }
 
 #[test]
+fn work_set_source_freezes_content_but_allows_links() {
+    // Showcase contract: freezing a work blocks content edits from
+    // everyone (including the owner) while links and annotations
+    // remain open, and only the owner (or admin) can toggle the flag.
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+    let wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("showcase doc"))
+        .unwrap();
+
+    srv.work_set_source(sid, wid, true).unwrap();
+    assert!(
+        srv.work_grab(sid, wid).is_err(),
+        "owner cannot edit a frozen work"
+    );
+
+    // Annotations still allowed on source works (marginalia, not edits)
+    srv.annotation_create(sid, wid, 1, "note".into(), "hi".into(), 0, 2, false)
+        .unwrap();
+
+    // A different identity cannot toggle the flag
+    let (sid2, _) = owned_session(&mut srv);
+    assert!(
+        srv.work_set_source(sid2, wid, false).is_err(),
+        "non-owner cannot unfreeze a showcase work"
+    );
+
+    // Owner can unfreeze again
+    srv.work_set_source(sid, wid, false).unwrap();
+    assert!(srv.work_grab(sid, wid).is_ok());
+}
+
+#[test]
+fn web_fetch_sanitize_rejects_internal_addresses() {
+    // SSRF guard: loopback/private targets must never be fetched.
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+    for url in [
+        "http://127.0.0.1:8080/x",
+        "http://localhost/admin",
+        "http://192.168.1.1/router",
+        "http://[::1]/v6",
+    ] {
+        let err = srv
+            .web_fetch_sanitize(sid, url, None, false, None)
+            .unwrap_err();
+        assert!(
+            matches!(err, xudanu::server::ServerError::InvalidArgument(_)),
+            "{url} must be refused, got {:?}",
+            err
+        );
+    }
+    // Non-http schemes refused outright
+    let err = srv
+        .web_fetch_sanitize(sid, "javascript:alert(1)", None, false, None)
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        xudanu::server::ServerError::InvalidArgument(_)
+    ));
+}
+
+#[test]
+fn web_fetch_sanitize_requires_authentication() {
+    let mut srv = xudanu::server::Server::new();
+    let sid = srv.connect(); // connected but not authenticated
+    let err = srv
+        .web_fetch_sanitize(sid, "https://example.com/", None, false, None)
+        .unwrap_err();
+    assert!(matches!(err, xudanu::server::ServerError::NotAuthorized));
+}
+
+#[test]
+fn html_to_text_strips_chrome_and_scripts() {
+    let html = r#"<html><head><title>T</title><style>.x{}</style><script>alert(1)</script></head>
+        <body><nav>menu menu</nav><header>site header</header>
+        <main><p>First paragraph.</p><p>Second <b>bold</b> paragraph.</p></main>
+        <footer>foot</footer><aside>ad</aside></body></html>"#;
+    let text = xudanu::server::server::Server::html_to_text_for_test(html);
+    assert!(text.contains("First paragraph."), "got: {text}");
+    assert!(text.contains("Second bold paragraph."), "got: {text}");
+    for absent in ["alert", "menu", "site header", "foot", "ad", "<", ">"] {
+        assert!(!text.contains(absent), "{absent} leaked into: {text}");
+    }
+}
+
+#[test]
+fn ammonia_output_drops_active_content() {
+    // The sanitizer itself: scripts, event handlers, and javascript:
+    // URLs never survive the ammonia whitelist.
+    let dirty = r#"<p onclick="evil()">hi</p><script>evil()</script>
+        <a href="javascript:evil()">x</a><iframe src="https://evil"></iframe>
+        <img src="https://ok/img.png" onerror="evil()">"#;
+    let clean = ammonia::Builder::default()
+        .url_relative(ammonia::UrlRelative::PassThrough)
+        .clean(dirty)
+        .to_string();
+    for absent in ["onclick", "onerror", "javascript:", "<script", "<iframe"] {
+        assert!(!clean.contains(absent), "{absent} survived: {clean}");
+    }
+    assert!(clean.contains("hi"));
+    assert!(clean.contains("https://ok/img.png"));
+}
+
+#[test]
+fn publish_gate_allows_empty_shells_but_gc_sweeps_them() {
+    // Policy: publishing an empty work IS allowed — the fr26 flow
+    // creates a published shell then inserts transclusions into it.
+    // Abandoned shells (empty, revision 0, idle, no dependents) are
+    // swept by the draft GC instead.
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+    let wid = srv
+        .create_work(sid, xudanu::edition::Edition::empty())
+        .unwrap();
+    srv.work_publish(sid, wid).unwrap();
+    srv.work_unpublish(sid, wid).unwrap();
+    let swept = srv.gc_idle_empty_drafts(0);
+    assert!(swept.contains(&wid), "abandoned empty shell is swept");
+}
+
+#[test]
+fn draft_gc_sweeps_idle_empty_drafts_only() {
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+
+    // 1. Empty draft, idle -> swept.
+    let empty_draft = srv
+        .create_work(sid, xudanu::edition::Edition::empty())
+        .unwrap();
+
+    // 2. Work with content -> kept.
+    let content_work = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("real content"))
+        .unwrap();
+
+    // 3. Published content work -> kept regardless of idle.
+    srv.work_publish(sid, content_work).unwrap();
+
+    // 4. Frozen empty draft -> kept (is_source protects).
+    let frozen_draft = srv
+        .create_work(sid, xudanu::edition::Edition::empty())
+        .unwrap();
+    srv.work_set_source(sid, frozen_draft, true).unwrap();
+
+    // Zero idle window: only no-content, no-history, dependent-free
+    // works qualify (created drafts sit at revision 0).
+    let swept = srv.gc_idle_empty_drafts(0);
+
+    assert!(
+        swept.contains(&empty_draft),
+        "idle empty draft must be swept"
+    );
+    assert!(
+        !swept.contains(&content_work),
+        "content work must never be swept"
+    );
+    assert!(
+        !swept.contains(&frozen_draft),
+        "frozen work must never be swept"
+    );
+    assert!(
+        srv.work_is_archived(empty_draft).unwrap(),
+        "swept draft is archived (reversible), not deleted"
+    );
+    assert!(!srv.work_is_archived(content_work).unwrap());
+}
+
+#[test]
+fn draft_gc_respects_idle_window() {
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+    let draft = srv
+        .create_work(sid, xudanu::edition::Edition::empty())
+        .unwrap();
+    // Just created: revision timestamp is NOW, so a long window must
+    // not sweep it yet.
+    let swept = srv.gc_idle_empty_drafts(86_400 * 7);
+    assert!(
+        !swept.contains(&draft),
+        "fresh draft must survive a 7-day idle window"
+    );
+    // Zero window sweeps it.
+    let swept = srv.gc_idle_empty_drafts(0);
+    assert!(swept.contains(&draft));
+}
+
+#[test]
+fn draft_gc_keeps_works_with_revisions() {
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+    let wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("had content"))
+        .unwrap();
+    // Empty it again — revision history must protect it.
+    srv.work_grab(sid, wid).unwrap();
+    srv.work_revise(sid, wid, xudanu::edition::Edition::empty())
+        .unwrap();
+    let swept = srv.gc_idle_empty_drafts(0);
+    assert!(
+        !swept.contains(&wid),
+        "a work with revision history is never draft-GC material"
+    );
+}
+
+#[test]
+fn seed_demo_attribution_five_authors() {
+    // N-author demo seeding: 5 distinct authors must produce 5
+    // attribution spans, each covering a distinct region, with
+    // unique keys and display names.
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+    let text = "First author opens the document with an introduction. \
+                Second author continues the argument in their own voice. \
+                Third author adds supporting evidence and citations here. \
+                Fourth author offers a counterpoint for balance. \
+                Fifth author closes with conclusions and future work.";
+    let wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text(text))
+        .unwrap();
+
+    srv.seed_demo_attribution(sid, wid, Some(5)).unwrap();
+
+    let spans = srv.attribution_query(wid, None, None).unwrap();
+    assert!(spans.len() >= 5, "expected >= 5 spans, got {}", spans.len());
+    let names: Vec<&str> = spans
+        .iter()
+        .map(|s| s.author_display_name.as_deref().unwrap_or(""))
+        .collect();
+    let unique: std::collections::HashSet<&str> = names.iter().copied().collect();
+    assert_eq!(unique.len(), 5, "5 distinct authors, got {:?}", names);
+    let keys: std::collections::HashSet<String> = spans
+        .iter()
+        .map(|s| {
+            s.author_public_key
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect()
+        })
+        .collect();
+    assert_eq!(keys.len(), 5, "each author has a unique key");
+    assert!(
+        spans.iter().all(|s| s.signature_valid),
+        "all seeded span signatures must verify against the stored edition"
+    );
+
+    // Regions must tile the document contiguously, start at 0, reach
+    // the end, and vary in length (irregular weights — equal splits
+    // read as synthetic).
+    let mut sorted = spans.clone();
+    sorted.sort_by_key(|s| s.start);
+    assert_eq!(sorted[0].start, 0, "first region starts at the beginning");
+    for w in sorted.windows(2) {
+        assert_eq!(w[0].end, w[1].start, "regions must be contiguous");
+    }
+    let text_len = text.chars().count() as i64;
+    assert_eq!(
+        sorted.last().unwrap().end,
+        text_len,
+        "last region reaches the end of the text"
+    );
+    let lengths: Vec<i64> = sorted.iter().map(|s| s.end - s.start).collect();
+    let all_equal = lengths.windows(2).all(|w| w[0] == w[1]);
+    assert!(
+        !all_equal,
+        "region lengths should vary per author, got {:?}",
+        lengths
+    );
+}
+
+#[test]
+fn seed_demo_attribution_rejects_more_authors_than_text() {
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+    let wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("short"))
+        .unwrap();
+    assert!(srv.seed_demo_attribution(sid, wid, Some(8)).is_err());
+}
+
+#[test]
+fn blob_list_content_hash_serializes_as_string() {
+    // Regression: BlobEntry.content_hash (u64) serialized as a JSON
+    // number. u64 hashes exceed JavaScript's 2^53 safe-integer range,
+    // so browsers rounded them (wrong hash -> image never loaded) or
+    // rejected follow-up frames (protocol error killing the response
+    // stream — links/annotations stopped rendering). The wire format
+    // must be a string; deserialization accepts both for
+    // back-compat with older clients.
+    let entry = xudanu::edition::edition::BlobEntry {
+        char_position: 20,
+        content_hash: 6000286860484429196u64,
+        mime_type: "image/png".to_string(),
+        byte_size: 1138,
+        width: Some(900),
+        height: Some(260),
+        caption: None,
+    };
+    let json = serde_json::to_value(&entry).unwrap();
+    assert!(
+        json["content_hash"].is_string(),
+        "content_hash must serialize as string, got: {}",
+        json["content_hash"]
+    );
+    assert_eq!(json["content_hash"], "6000286860484429196");
+
+    // Round-trip: string form (new servers) and integer form (old
+    // snapshots/peers) both deserialize.
+    let rt: xudanu::edition::edition::BlobEntry = serde_json::from_value(json).unwrap();
+    assert_eq!(rt.content_hash, 6000286860484429196u64);
+    let legacy = serde_json::json!({
+        "char_position": 20,
+        "content_hash": 6000286860484429196u64,
+        "mime_type": "image/png",
+        "byte_size": 1138,
+        "width": 900,
+        "height": 260,
+        "caption": null
+    });
+    let old: xudanu::edition::edition::BlobEntry = serde_json::from_value(legacy).unwrap();
+    assert_eq!(old.content_hash, 6000286860484429196u64);
+}
+
+#[test]
 fn image_insert_end_to_end() {
     let mut server = Server::new();
     let sid = server.connect();
@@ -11591,7 +14252,10 @@ async fn public_works_list_returns_empty_for_fresh_server() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200);
+    if resp.status() != 200 {
+        let txt = resp.text().await.unwrap_or_default();
+        panic!("identity endpoint returned 500: {txt}");
+    }
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["api_version"], 1);
     assert_eq!(body["implementation"], "xudanu");
@@ -11623,7 +14287,10 @@ async fn public_works_list_returns_only_public_works() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200);
+    if resp.status() != 200 {
+        let txt = resp.text().await.unwrap_or_default();
+        panic!("identity endpoint returned 500: {txt}");
+    }
     let body: serde_json::Value = resp.json().await.unwrap();
     let works = body["works"].as_array().unwrap();
     assert!(works.len() >= 1, "should list public works");

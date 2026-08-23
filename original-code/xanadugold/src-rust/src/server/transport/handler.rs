@@ -21,6 +21,7 @@ use super::audit::ThreatLevel;
 use super::channel::{ChannelDetector, EventMessage};
 use super::codec::{BinaryCodec, JsonCodec, WireCodec};
 use super::dispatch;
+use super::dispatch_network;
 use super::protocol::*;
 use super::shared::SharedState;
 use crate::edition::BeId;
@@ -53,6 +54,7 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/blobs/{hash}/preview", get(blob_preview_handler))
         .route("/api/blob/upload", post(blob_upload_handler))
         .route("/health", get(health_handler))
+        .route("/robots.txt", get(robots_txt_handler))
         .route("/.well-known/xudanu-server.json", get(well_known_handler))
         .route("/.well-known/xanadu-server.json", get(well_known_handler))
         .route("/api/public/work/{work_id}", get(public_work_handler))
@@ -82,6 +84,7 @@ pub fn build_router(state: SharedState) -> Router {
             get(super::oauth::google_callback_handler),
         )
         .route("/", get(index_handler))
+        .route("/vendor/{file}", get(vendor_handler))
         .fallback(get(static_fallback_handler))
         .layer(axum::middleware::from_fn(security_headers_middleware))
         .with_state(state)
@@ -142,6 +145,26 @@ async fn security_headers_middleware(
 
 const EMBEDDED_INDEX_HTML: &str = include_str!("../../../static/index.html");
 
+// Self-hosted Preact for the embedded landing page (CSP: script-src
+// 'self' — no CDN dependencies, works offline).
+const EMBEDDED_VENDOR_PREACT: &[u8] = include_bytes!("../../../static/vendor/preact.umd.js");
+const EMBEDDED_VENDOR_HOOKS: &[u8] = include_bytes!("../../../static/vendor/hooks.umd.js");
+
+async fn vendor_handler(
+    axum::extract::Path(file): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let (bytes, mime) = match file.as_str() {
+        "preact.umd.js" => (EMBEDDED_VENDOR_PREACT, "application/javascript"),
+        "hooks.umd.js" => (EMBEDDED_VENDOR_HOOKS, "application/javascript"),
+        _ => return axum::http::StatusCode::NOT_FOUND.into_response(),
+    };
+    (
+        [(axum::http::header::CONTENT_TYPE, mime)],
+        axum::body::Body::from(bytes.to_vec()),
+    )
+        .into_response()
+}
+
 async fn index_handler(State(state): State<SharedState>) -> impl IntoResponse {
     let html = match &state.static_dir {
         Some(dir) => match tokio::fs::read_to_string(dir.join("index.html")).await {
@@ -177,6 +200,22 @@ async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
     (
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         json,
+    )
+}
+
+/// Crawler directive (served from embedded content so deployments
+/// without a static dir still answer). All crawling allowed; the API
+/// paths are disallowed because they're JSON surfaces, and the app
+/// itself is a WebSocket SPA crawlers can't usefully render — public
+/// CONTENT is meant to be surfaced via future read-only work pages
+/// and the docs/blog linking to them.
+async fn robots_txt_handler() -> impl IntoResponse {
+    (
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; charset=utf-8".to_string(),
+        )],
+        "User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /xudanu\n",
     )
 }
 
@@ -354,10 +393,33 @@ async fn public_identity_handler(
     });
     match result {
         Some(identity) => {
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
             let body = serde_json::json!({
                 "api_version": 1,
                 "implementation": "xudanu",
                 "identity": identity,
+                "signed": {
+                    "timestamp": timestamp,
+                },
+            });
+            // Sign the canonical body (without the signature field) so
+            // peers on plain-HTTP links can verify authenticity against
+            // the server key registered in their directory.
+            let payload = body.to_string();
+            let signature = state
+                .server
+                .with_server_ref(|srv| srv.sign_server_payload(payload.as_bytes()));
+            let signed_body = serde_json::json!({
+                "api_version": 1,
+                "implementation": "xudanu",
+                "identity": identity,
+                "signed": {
+                    "timestamp": timestamp,
+                    "sig": signature.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+                },
             });
             (
                 [
@@ -367,7 +429,7 @@ async fn public_identity_handler(
                     ),
                     (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
                 ],
-                body.to_string(),
+                signed_body.to_string(),
             )
                 .into_response()
         }
@@ -873,18 +935,45 @@ fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+async fn serve_index_html(state: &SharedState) -> axum::response::Response {
+    let html = match &state.static_dir {
+        Some(dir) => match tokio::fs::read_to_string(dir.join("index.html")).await {
+            Ok(content) => content,
+            Err(_) => EMBEDDED_INDEX_HTML.to_owned(),
+        },
+        None => EMBEDDED_INDEX_HTML.to_owned(),
+    };
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        html,
+    )
+        .into_response()
+}
+
 async fn static_fallback_handler(
     axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
     State(state): State<SharedState>,
 ) -> impl IntoResponse {
-    let dir = match &state.static_dir {
-        Some(d) => d,
-        None => return axum::http::StatusCode::NOT_FOUND.into_response(),
-    };
+    // Client-side routes (e.g. /explore, /doc/123) have no physical file
+    // behind them: serve the SPA shell so deep links and crawlers get a
+    // 200 + HTML instead of a 404. Extension misses (e.g. /missing.js)
+    // stay 404 so broken asset references remain diagnosable — but only
+    // on MISS: real files must be served whatever their extension.
     let path = uri.path().trim_start_matches('/');
     if path.is_empty() {
-        return axum::http::StatusCode::NOT_FOUND.into_response();
+        return serve_index_html(&state).await;
     }
+    let dir = match &state.static_dir {
+        Some(d) => d,
+        None => {
+            // No static dir (embedded-app deployments): nothing to serve
+            // but the shell. Asset-like paths still 404.
+            if std::path::Path::new(path).extension().is_some() {
+                return axum::http::StatusCode::NOT_FOUND.into_response();
+            }
+            return serve_index_html(&state).await;
+        }
+    };
     let file_path = dir.join(path);
     if !file_path.starts_with(dir) {
         return axum::http::StatusCode::FORBIDDEN.into_response();
@@ -898,7 +987,15 @@ async fn static_fallback_handler(
             )
                 .into_response()
         }
-        Err(_) => axum::http::StatusCode::NOT_FOUND.into_response(),
+        // No physical file: extensionless paths are SPA deep links;
+        // asset-like misses 404.
+        Err(_) => {
+            if std::path::Path::new(path).extension().is_some() {
+                axum::http::StatusCode::NOT_FOUND.into_response()
+            } else {
+                serve_index_html(&state).await
+            }
+        }
     }
 }
 
@@ -1476,7 +1573,16 @@ async fn handle_socket(
                                 | WireRequest::WorkSetEditClub { .. }
                                 | WireRequest::WorkRelease { .. }
                         );
-                        let result = dispatch::dispatch(&state, session_id, parsed.inner);
+                        // #141: ops with outbound network IO take the
+                        // async path (snapshot → fetch off-lock →
+                        // apply) so a hung peer can never hold the
+                        // server write lock.
+                        let result = if dispatch_network::is_network_op(&parsed.inner) {
+                            dispatch_network::dispatch_network(&state, session_id, parsed.inner)
+                                .await
+                        } else {
+                            dispatch::dispatch(&state, session_id, parsed.inner)
+                        };
 
                         if let Err(ref err) = result {
                             let mut sec = state.security.lock().unwrap_or_else(|e| e.into_inner());

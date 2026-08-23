@@ -7,6 +7,9 @@ pub mod canopy;
 #[cfg(feature = "serde")]
 pub mod compound;
 pub mod content_address;
+#[cfg(feature = "serde")]
+pub mod derived;
+pub mod document_invariants;
 pub mod edition;
 pub use edition::SpanLicenseSummary;
 pub mod endorsement;

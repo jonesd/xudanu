@@ -80,8 +80,9 @@ impl XudanuTumbler {
         XudanuTumbler::local(parse_path(s))
     }
 
-    /// Serialize to wire format string.
-    pub fn to_string(&self) -> String {
+    /// Serialize to wire format string. (Inherent to_string removed —
+    /// it shadowed Display's; the Display impl delegates here.)
+    pub fn to_wire_string(&self) -> String {
         if self.server.is_empty() {
             return self
                 .path
@@ -283,9 +284,9 @@ impl XudanuTumbler {
     }
 }
 
-impl fmt::Display for XudanuTumbler {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_string())
+impl std::fmt::Display for XudanuTumbler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.to_wire_string())
     }
 }
 

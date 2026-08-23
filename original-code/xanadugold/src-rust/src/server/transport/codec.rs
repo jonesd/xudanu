@@ -376,6 +376,7 @@ impl BinaryCodec {
             OperationCode::AdminGrants => Ok(WireRequest::AdminGrants),
             OperationCode::AdminServerInfo => Ok(WireRequest::AdminServerInfo),
             OperationCode::ServerStats => Ok(WireRequest::ServerStats),
+            OperationCode::MetricsSnapshot => Ok(WireRequest::MetricsSnapshot),
             OperationCode::WorkList => Ok(WireRequest::WorkList {
                 offset: None,
                 limit: None,
@@ -649,6 +650,7 @@ impl JsonCodec {
             OperationCode::SourcePatternList,
             OperationCode::WorkGraph,
             OperationCode::TrailList,
+            OperationCode::TrailListCategories,
             OperationCode::WorkListArchived,
             OperationCode::ConnectionPinsGet,
             #[cfg(feature = "serde")]
@@ -1540,6 +1542,8 @@ impl JsonCodec {
                     destination_ref: Option<HyperRefPayload>,
                     #[cfg_attr(feature = "serde", serde(default))]
                     link_types: Vec<u64>,
+                    #[serde(default)]
+                    home_document: Option<BeId>,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
@@ -1549,6 +1553,7 @@ impl JsonCodec {
                     origin_ref: args.origin_ref,
                     destination_ref: args.destination_ref,
                     link_types: args.link_types,
+                    home_document: args.home_document,
                 })
             }
             OperationCode::LinkGet => {
@@ -1652,15 +1657,50 @@ impl JsonCodec {
                 struct Args {
                     type_id: u64,
                     name: String,
+                    #[serde(default)]
+                    definition_work: Option<BeId>,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::LinkTypeRegister {
                     type_id: args.type_id,
                     name: args.name,
+                    definition_work: args.definition_work,
                 })
             }
             OperationCode::LinkTypeList => Ok(WireRequest::LinkTypeList),
+            OperationCode::LinkQuery => {
+                #[derive(Deserialize, Default)]
+                struct SpecArgs {
+                    #[serde(default)]
+                    work_ids: Vec<BeId>,
+                    #[serde(default)]
+                    author: Option<BeId>,
+                }
+                #[derive(Deserialize)]
+                struct Args {
+                    #[serde(default)]
+                    from_spec: SpecArgs,
+                    #[serde(default)]
+                    to_spec: SpecArgs,
+                    #[serde(default)]
+                    type_ids: Vec<u64>,
+                    #[serde(default)]
+                    home_spec: SpecArgs,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                let to_spec = |s: SpecArgs| super::protocol::LinkEndpointSpecPayload {
+                    work_ids: s.work_ids,
+                    author: s.author,
+                };
+                Ok(WireRequest::LinkQuery {
+                    from_spec: to_spec(args.from_spec),
+                    to_spec: to_spec(args.to_spec),
+                    type_ids: args.type_ids,
+                    home_spec: to_spec(args.home_spec),
+                })
+            }
             OperationCode::FindTranscluders => {
                 #[derive(Deserialize)]
                 struct Args {
@@ -1939,6 +1979,43 @@ impl JsonCodec {
                     work_id: args.work_id,
                     position: args.position,
                     element: args.element,
+                })
+            }
+            OperationCode::CrossServerSpanRefresh => {
+                #[derive(Deserialize)]
+                struct Args {
+                    source_work: BeId,
+                    #[serde(default)]
+                    update: bool,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CrossServerSpanRefresh {
+                    source_work: args.source_work,
+                    update: args.update,
+                })
+            }
+            OperationCode::TransclusionPlaceCrossServer => {
+                #[derive(Deserialize)]
+                struct Args {
+                    dest_work: BeId,
+                    #[serde(default)]
+                    cursor: usize,
+                    tumbler: String,
+                    span_start: usize,
+                    span_end: usize,
+                    #[serde(default)]
+                    title_hint: Option<String>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TransclusionPlaceCrossServer {
+                    dest_work: args.dest_work,
+                    cursor: args.cursor,
+                    tumbler: args.tumbler,
+                    span_start: args.span_start,
+                    span_end: args.span_end,
+                    title_hint: args.title_hint,
                 })
             }
             OperationCode::ElementUpdate => {
@@ -3032,11 +3109,14 @@ impl JsonCodec {
                 #[derive(Deserialize)]
                 struct Args {
                     work_id: BeId,
+                    #[serde(default)]
+                    author_count: Option<u32>,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::SeedDemoAttribution {
                     work_id: args.work_id,
+                    author_count: args.author_count,
                 })
             }
             OperationCode::WorkStar => {
@@ -3048,6 +3128,39 @@ impl JsonCodec {
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::WorkStar {
                     work_id: args.work_id,
+                })
+            }
+            OperationCode::WorkSetSource => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    is_source: bool,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkSetSource {
+                    work_id: args.work_id,
+                    is_source: args.is_source,
+                })
+            }
+            OperationCode::WebFetchSanitize => {
+                #[derive(Deserialize)]
+                struct Args {
+                    url: String,
+                    #[serde(default)]
+                    max_chars: Option<u64>,
+                    #[serde(default)]
+                    import_as_source: Option<bool>,
+                    #[serde(default)]
+                    title: Option<String>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WebFetchSanitize {
+                    url: args.url,
+                    max_chars: args.max_chars,
+                    import_as_source: args.import_as_source,
+                    title: args.title,
                 })
             }
             OperationCode::WorkUnstar => {
@@ -3202,6 +3315,17 @@ impl JsonCodec {
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::TrailGet {
+                    trail_id: args.trail_id,
+                })
+            }
+            OperationCode::TrailDerivedWork => {
+                #[derive(Deserialize)]
+                struct Args {
+                    trail_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TrailDerivedWork {
                     trail_id: args.trail_id,
                 })
             }

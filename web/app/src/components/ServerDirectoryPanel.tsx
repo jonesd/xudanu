@@ -195,7 +195,7 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
   }, [client, browsingServerId, onViewRemoteWork]);
 
   const [federatedResults, setFederatedResults] = useState<Array<{
-    work_id: string; title: string; revision: number; char_count: number;
+    work_id: string | number; title: string; revision: number; char_count: number;
     server_name: string; server_id: number; local: boolean;
   }>>([]);
   const [fedSearching, setFedSearching] = useState(false);
@@ -266,14 +266,23 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
     <div className="ws-server-directory">
       <div className="ws-conn-header">
         <span>Servers</span>
-        <div style={{ display: "flex", gap: 2 }}>
+        <div style={{ display: "flex", gap: 4 }}>
           {servers.some(s => s.trusted && !s.quarantined) && (
-            <button className="ws-concept-add-btn" style={{ fontSize: 9 }} onClick={() => void handleDiscover()} title="Discover servers through trusted peers" disabled={discovering}>
-              {discovering ? "..." : "Discover"}
+            <button
+              className="ws-concept-add-btn ws-dir-action-btn"
+              onClick={() => void handleDiscover()}
+              title="Discover servers through trusted peers"
+              disabled={discovering}
+            >
+              {discovering ? "…" : "Discover"}
             </button>
           )}
-          <button className="ws-concept-add-btn" style={{ fontSize: 10 }} onClick={() => void refresh()} title="Refresh">
-            ↻
+          <button
+            className="ws-concept-add-btn ws-dir-action-btn"
+            onClick={() => void refresh()}
+            title="Refresh"
+          >
+            ↻ Refresh
           </button>
         </div>
       </div>
@@ -327,7 +336,43 @@ export function ServerDirectoryPanel({ client, connected, onNavigateToWork: _onN
             <button className="ws-concept-add-btn" style={{ fontSize: 10 }} onClick={() => setFederatedResults([])}>✕</button>
           </div>
           {federatedResults.map((r) => (
-            <div key={`${r.server_id}-${r.work_id}`} className="ws-conn-item">
+            <div
+              key={`${r.server_id}-${r.work_id}`}
+              className="ws-conn-item"
+              style={{ cursor: r.local ? "default" : "pointer" }}
+              title={r.local ? undefined : "Open this remote work"}
+              onClick={async () => {
+                if (r.local) return;
+                const entry = servers.find((s) => s.name === r.server_name);
+                if (!entry) return;
+                const base = `http://${entry.address}${entry.port ? `:${entry.port}` : ""}`;
+                // Remote ids may arrive as hex strings ("03ec") or numbers.
+                const hexId = typeof r.work_id === "string"
+                  ? r.work_id.replace(/^0x/, "")
+                  : r.work_id.toString(16);
+                try {
+                  const resp = await fetch(`${base}/api/public/work/${hexId}`);
+                  if (!resp.ok) {
+                    setRemoteError(`Origin returned ${resp.status}`);
+                    return;
+                  }
+                  const data = await resp.json();
+                  if (onViewRemoteWork) {
+                    onViewRemoteWork({
+                      title: (data.title as string) || `Work 0x${hexId}`,
+                      text: (data.text as string) || "",
+                      originServerName: r.server_name,
+                      license: (data.license as string) || "all-rights-reserved",
+                      tumbler: (data.tumbler as string) || "",
+                      workId: hexId,
+                      serverId: String(r.server_id),
+                    });
+                  }
+                } catch (e) {
+                  setRemoteError(e instanceof Error ? e.message : "failed to open remote work");
+                }
+              }}
+            >
               <div className="ws-conn-title" style={{ fontSize: 12 }}>
                 {r.title}
               </div>

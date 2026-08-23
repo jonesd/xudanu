@@ -4,6 +4,7 @@ import type {
   BacklinkEntry,
   SpanRangePayload,
   CrossServerBacklinkPayload,
+  AnnotationEntry,
 } from "../api/crdt_sync";
 
 const LINK_TYPE_LABELS: Record<number, string> = {
@@ -25,6 +26,12 @@ interface RelatedItem {
 }
 
 interface RelatedFooterProps {
+  /** Notes (kind="note" annotations) on this work — server-filtered
+   * so private notes only appear for their creator. */
+  annotations: AnnotationEntry[];
+  onDeleteAnnotation?: (annotationId: number) => void;
+  /** Click a note -> highlight + scroll to its span. */
+  onJumpToSpan?: (start: number, end: number) => void;
   backlinks: BacklinkEntry[];
   outgoingLinks: LinkEntry[];
   compoundSpanRanges: SpanRangePayload[];
@@ -34,9 +41,12 @@ interface RelatedFooterProps {
   onNavigateToWork: (workId: number) => void;
 }
 
-const MAX_ITEMS = 8;
+const MAX_ITEMS = 12;
 
 export function RelatedFooter({
+  annotations,
+  onDeleteAnnotation,
+  onJumpToSpan,
   backlinks,
   outgoingLinks,
   compoundSpanRanges,
@@ -88,7 +98,7 @@ export function RelatedFooter({
           reason: "Web Link",
           excerpt: url.slice(0, 120),
           workId: null,
-          remoteUrl: url.startsWith("http") ? url : null,
+          remoteUrl: /^https?:\/\//i.test(url) ? url : null,
         });
         continue;
       }
@@ -152,15 +162,82 @@ export function RelatedFooter({
     return ids.size;
   }, [backlinks, outgoingLinks, compoundSpanRanges, crossServerBacklinks, currentWorkId]);
 
-  if (totalCount === 0) return null;
+  const notes = useMemo(
+    () =>
+      (annotations || []).filter(
+        (a) => a.kind === "note" && (a.payload || "").trim().length > 0,
+      ),
+    [annotations],
+  );
+  const [notesCollapsed, setNotesCollapsed] = useState(false);
+  // Expanded note row: clicking a note both jumps to its passage and
+  // unfolds the full text — notes can be paragraph-length, and the
+  // one-line row truncates.
+  const [expandedNote, setExpandedNote] = useState<number | null>(null);
+
+  if (totalCount === 0 && notes.length === 0) return null;
 
   return (
     <div className="related-footer-panel">
-      <button
-        type="button"
-        className="related-footer-toggle"
-        onClick={() => setCollapsed((c) => !c)}
-      >
+      {notes.length > 0 && (
+        <div className="related-notes">
+          <button
+            type="button"
+            className="related-footer-toggle"
+            onClick={() => setNotesCollapsed((nc) => !nc)}
+          >
+            <span className="related-footer-header">Notes</span>
+            <span className="related-footer-count">{notes.length}</span>
+            <span className="related-footer-chevron">{notesCollapsed ? "\u25B2" : "\u25BC"}</span>
+          </button>
+          {!notesCollapsed && (
+            <div className="related-notes-list">
+              {notes.map((a) => {
+                const expanded = expandedNote === a.annotation_id;
+                return (
+                  <div
+                    key={a.annotation_id}
+                    className={`related-note-row ${expanded ? "expanded" : ""}`}
+                    title={onJumpToSpan ? "Click to highlight this passage and read the full note" : undefined}
+                    onClick={() => {
+                      setExpandedNote(expanded ? null : a.annotation_id);
+                      onJumpToSpan?.(a.char_start, a.char_end);
+                    }}
+                  >
+                    <span className="related-note-kind">
+                      {a.is_private ? "\u{1F512}" : "\u{1F4AC}"} {a.is_private ? "private" : "public"}
+                    </span>
+                    <span className="related-note-text">{a.payload}</span>
+                    <span className="related-note-meta">
+                      {a.created_by_name || ""}
+                      {onDeleteAnnotation && (
+                        <button
+                          type="button"
+                          className="related-note-del"
+                          title="Delete this note"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteAnnotation(a.annotation_id);
+                          }}
+                        >
+                          {"\u00D7"}
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+      {totalCount > 0 && (
+        <>
+          <button
+            type="button"
+            className="related-footer-toggle"
+            onClick={() => setCollapsed((c) => !c)}
+          >
         <span className="related-footer-header">Related</span>
         <span className="related-footer-count">{totalCount}</span>
         <span className="related-footer-chevron">{collapsed ? "\u25B2" : "\u25BC"}</span>
@@ -185,7 +262,9 @@ export function RelatedFooter({
               {item.excerpt && <div className="related-card-excerpt">{item.excerpt}</div>}
             </button>
           ))}
-        </div>
+          </div>
+        )}
+        </>
       )}
     </div>
   );

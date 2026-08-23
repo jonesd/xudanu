@@ -91,6 +91,7 @@ export function useTransclusion(): TransclusionState {
   const [backlinks, setBacklinks] = useState<BacklinkEntry[]>([]);
   const [linkTypes, setLinkTypes] = useState<LinkTypeInfo[]>([]);
   const linkEpoch = useRef(0);
+  const lastLinkWork = useRef<number | null>(null);
   const backlinkEpoch = useRef(0);
 
   const holdSelection = useCallback(
@@ -133,16 +134,25 @@ export function useTransclusion(): TransclusionState {
   const loadLinks = useCallback(
     async (client: CrdtSyncClient, workId: number, works: WorkListEntry[]) => {
       const epoch = ++linkEpoch.current;
+      const epochWork = workId;
+      lastLinkWork.current = workId;
+      // A later call for the SAME work does not invalidate this
+      // result: link data is per-work, idempotent, and racing refreshes
+      // (works-list updates retrigger the effect) must not silently
+      // drop markers — the observed failure was every scheduled load
+      // being superseded before its result landed, leaving the editor
+      // permanently without underlines.
+      const stale = () => epoch !== linkEpoch.current && lastLinkWork.current !== epochWork;
       let linkList;
       try {
         const rawList = await client.linkListForWork(workId);
-        if (epoch !== linkEpoch.current) return;
+        if (stale()) return;
         const seenIds = new Set<number>();
         linkList = rawList.filter((l) =>
           seenIds.has(l.link_id) ? false : (seenIds.add(l.link_id), true),
         );
       } catch {
-        if (epoch !== linkEpoch.current) return;
+        if (stale()) return;
         setLinks([]);
         setMarkers([]);
         return;
@@ -206,13 +216,15 @@ export function useTransclusion(): TransclusionState {
               otherWorkIsArchived: !!otherArchived,
               otherWorkOwner: otherOwner ?? null,
               crossServerRef,
+              sourceSpanStart: remoteRef?.start_position ?? null,
+              sourceSpanEnd: remoteRef?.end_position ?? null,
             });
           }
         }
-        if (epoch !== linkEpoch.current) return;
+        if (stale()) return;
         setMarkers(newMarkers);
       } catch {
-        if (epoch !== linkEpoch.current) return;
+        if (stale()) return;
         setMarkers([]);
       }
     },
@@ -267,7 +279,18 @@ export function useTransclusion(): TransclusionState {
     async (client: CrdtSyncClient) => {
       try {
         const result = await client.linkTypeList();
-        setLinkTypes(result.length > 0 ? result : DEFAULT_LINK_TYPES.map((t) => ({ type_id: t.type_id, name: t.name })));
+        // Merge: server registry wins for ids it defines (incl.
+        // renamed built-ins); built-ins fill any gaps; unknown ids
+        // fall back to "type N" at render time.
+        const byId = new Map<number, LinkTypeInfo>();
+        for (const t of DEFAULT_LINK_TYPES) {
+          byId.set(t.type_id, { type_id: t.type_id, name: t.name, definition_work: null });
+        }
+        for (const t of result) {
+          byId.set(t.type_id, t);
+        }
+        const merged = Array.from(byId.values()).sort((a, b) => a.type_id - b.type_id);
+        setLinkTypes(merged);
       } catch {
         setLinkTypes(DEFAULT_LINK_TYPES.map((t) => ({ type_id: t.type_id, name: t.name })));
       }

@@ -6,6 +6,54 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.7.0] — 2026-08-20
+
+### FR-40: Green/Gold Link Constructs (heritage link model)
+- **feat(links):** Multi-ended links on the wire — `link_add_end`/`link_remove_end` fully live: named ends register in every end's work Connections, `named_ends` serialized on all link payloads, removing an end degrades to a valid N−1-ended link (never a broken one). WAL, snapshot, and manifest persistence all round-trip named ends.
+- **feat(links):** Type ends unify with FR-39 definitions — links materialize a derived `type_ends` entry per registered type with a definition work (Green's three-set, computed on read, never stored twice). Multi-typed links render stacked chips and filter under any of their types.
+- **feat(links):** Link home documents — `link_create` gains optional `home_document`; a homed link appears in its home's Connections, is hidden while the home is archived (reversibly, never deleted), and unhomed links behave exactly as before. Back-compat by default.
+- **feat(links):** Green's four-set link matching — new `link_query` op (0x070C): from/to/type/home specs (work-ids or author-club), answers heritage questions directly ("everywhere A quotes B", "every Disagreement homed in H"). Multi-ended links match a to-spec via any named end. Honest: linear scan, not enfiladic.
+- **feat(links):** Cross-server sender feedback — backlink notify is now synchronous, status-aware, and bounded: the creating user sees `cross_server_notify_accepted` + a human-readable `cross_server_notify_error` (receiver rejection with its reason, or sender-side reachability error) persisted on the link. All outbound HTTP paths gained connect timeouts (a network blackhole can no longer stall dispatch for minutes).
+
+### FR-39: Link Types as Documents (registration hardening)
+- **feat(types):** User-defined link types are safe by construction — built-in ids 1–7 are admin-only to redefine; custom type ids must equal their definition work's id (the work IS the type — no squatting); dangling definition works are rejected; names validated.
+- **feat(types):** `link_type_list` returns definition works; seeding of built-in definition works on fresh data dirs.
+
+### Persistence (critical fix)
+- **fix(persist):** Root-chunk corruption — `skip_serializing_if` attributes on postcard-serialized structs (introduced with the link-type registry) silently omitted fields and misaligned every subsequent field on read, corrupting all checkpoints written since 2026-08-20. Fixed for `ServerRootChunk.link_type_registry` and `LinkTypeRegistryEntry.definition_work`; no on-disk data predates the bug (verified against local data dirs), so no migration needed.
+
+### Tests
+- **test:** 13 new FR-40/FR-39 tests — multi-end add/remove over the wire, home-document lifecycle (archive/unarchive reversibility), four-set query corpus (heritage queries), type-end derivation, registration hardening (hijack/squat/dangling rejection), cross-server notify feedback (healthy/rejected/unreachable), snapshot round-trips for named ends + home + notify outcome. Suites: 3,168 lib + 310 integration, zero failures (was 43 + 16 failing on the persistence bug).
+
+---
+
+## [v1.6.0] — 2026-08-19
+
+### Adversarial Resilience (security hardening)
+- **feat(sec):** Document structure invariants — a total (never-panics) validator over entries, spans, transclusions, and provenance; 18 violation codes, size caps against resource exhaustion, all violations reported together (no probe-order oracle). Wired into every untrusted boundary: client wire (`work_create`/`work_revise`/`work_save_and_release`/`edition_store`/`edition_rebind`) and federation import. See `docs/adversarial-resilience.md` for the method and findings.
+- **feat(sec):** Mutation-corpus tests — every corruption class (reversed ranges, NUL bytes, self-cycles, absurd ranges, forged keys) caught over the live wire, with nothing stored and no panic. Property tests guarantee no false positives.
+- **feat(sec):** Signed identity exchange — `/api/public/identity` responses signed with the server Ed25519 key; fetchers verify against the directory key (plain-HTTP tampering yields unverifiable payloads), enforce a freshness window, validate peer-served keys, cap names, and refuse cross-server attestation overwrites. Club/identity adversarial review: `docs/club-identity-adversarial-review.md`.
+- **feat(sec):** `web_fetch_sanitize` op — SSRF-guarded (IPv6-hardened) fetch + ammonia HTML cleaning + readability-lite extraction; optional import as frozen source work.
+- **fix(sec):** Web links open externally only for well-formed `http(s)` URLs; `--admin-passphrase` operator break-glass; seed credentials scrubbed from the repo (generated locally, gitignored).
+
+### Provenance (attribution integrity)
+- **feat(prov):** Span splitting — an edit inside an author's passage splits the span into fragments covering exactly their surviving text; the editor's insertion is not misattributed. The H1 incident (silent authorship loss on within-passage edits) is fixed and regression-locked.
+- **feat(web):** Provenance underlines on by default — light authorship strip floating below each passage, hover shows author + verification. Renamed panel tab to Attribution; authors summary (proportional coverage bar) atop the History tab.
+- **feat(server):** `seed_demo_attribution` generalized to N authors with natural (weighted) region sizes; signatures now verify against the stored edition.
+
+### Server & federation
+- **feat(server):** `work_set_source` — freeze/unfreeze any work by owner or admin (immutable content; links/notes stay open). Owner-facing ❄ button in the UI.
+- **feat(server):** `gc_idle_empty_drafts` — reversible archival of empty, revision-free, dependent-free, idle drafts (revision history and links always protect).
+- **feat(demo):** "Start Here" trail + frozen showcase documents seeded on xudanu.com.
+
+### Web UI
+- **feat(web):** Change-password in the Identity panel (re-verifies current password, strength meter).
+- **feat(web):** Related pages as a swipeable single-row strip (scroll-snap; no more multi-row footer).
+- **fix(web):** Note click highlight is a gentle fade gesture; note rows expand to full text. Native cursor everywhere (no more question-mark cursor). Compact author tooltip (`Name ✓`). Author hover zones built from all visible line rects.
+- **fix(web):** SPA deep links serve the shell (crawlers get 200+HTML; real assets unaffected); real title/meta/robots.txt on xudanu.com.
+
+---
+
 ## [v1.0.1] — 2026-07-25
 
 ### Block Formatting (Headings, Lists, Blockquotes, Code Blocks)

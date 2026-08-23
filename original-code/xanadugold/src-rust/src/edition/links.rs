@@ -427,6 +427,11 @@ impl CrossServerRef {
         self
     }
 
+    pub fn with_origin_server_address(mut self, addr: impl Into<String>) -> Self {
+        self.origin_server_address = Some(addr.into());
+        self
+    }
+
     pub fn with_server_sig(mut self, sig: Vec<u8>) -> Self {
         self.origin_server_sig = sig;
         self

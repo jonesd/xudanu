@@ -12,6 +12,7 @@ interface IdentityPanelProps {
   connected: boolean;
   onLogin: (clubName: string, password: string) => Promise<void>;
   onCreateIdentity: (displayName: string, password: string) => Promise<void>;
+  onChangePassword?: (currentPassword: string, newPassword: string) => Promise<void>;
   onLogout: () => void;
   rosters?: Record<number, Roster>;
   llmEnabled?: boolean;
@@ -47,7 +48,7 @@ export function passwordStrength(pw: string): { score: number; label: string; co
   return { score, label: "Strong", color: "#27ae60" };
 }
 
-export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, onLogout, rosters, llmEnabled, llmUsage }: IdentityPanelProps) {
+export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, onChangePassword, onLogout, rosters, llmEnabled, llmUsage }: IdentityPanelProps) {
   const [mode, setMode] = useState<"closed" | "login" | "create">("closed");
   const [clubName, setClubName] = useState("");
   const [password, setPassword] = useState("");
@@ -55,6 +56,12 @@ export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwDone, setPwDone] = useState(false);
 
   if (identity) {
     const clubHex = identity.club_id.toString(16).padStart(4, "0");
@@ -160,6 +167,89 @@ export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, 
             <p className="llm-usage-disabled">Enable with <code>--ollama-url</code> flag on the server.</p>
           )}
         </div>
+        {onChangePassword && (
+          <div className="identity-pw-change">
+            {!pwOpen ? (
+              <button
+                type="button"
+                className="identity-btn identity-btn-secondary"
+                onClick={() => { setPwOpen(true); setPwError(null); setPwDone(false); }}
+              >
+                Change Password
+              </button>
+            ) : (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setPwError(null);
+                  const pwErr = validatePassword(pwNew);
+                  if (pwErr) { setPwError(pwErr); return; }
+                  setPwBusy(true);
+                  try {
+                    await onChangePassword(pwCurrent, pwNew);
+                    setPwDone(true);
+                    setPwCurrent("");
+                    setPwNew("");
+                    setTimeout(() => { setPwOpen(false); setPwDone(false); }, 1500);
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    setPwError(
+                      /lock failed|credential/i.test(msg)
+                        ? "Current password is incorrect."
+                        : msg
+                    );
+                  } finally {
+                    setPwBusy(false);
+                  }
+                }}
+                style={{ display: "flex", flexDirection: "column", gap: "8px" }}
+              >
+                <div className="identity-form-title" style={{ fontSize: "0.9em" }}>Change Password</div>
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  placeholder="Current password"
+                  value={pwCurrent}
+                  onChange={(e) => setPwCurrent(e.target.value)}
+                  className="identity-input"
+                  disabled={pwBusy}
+                />
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="New password"
+                  value={pwNew}
+                  onChange={(e) => setPwNew(e.target.value)}
+                  className="identity-input"
+                  disabled={pwBusy}
+                />
+                {pwNew && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.8em" }}>
+                    <div style={{ flex: 1, height: "4px", background: "#eee", borderRadius: "2px", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${(passwordStrength(pwNew).score / 5) * 100}%`, background: passwordStrength(pwNew).color, transition: "width 0.2s" }} />
+                    </div>
+                    <span style={{ color: passwordStrength(pwNew).color }}>{passwordStrength(pwNew).label}</span>
+                  </div>
+                )}
+                {pwError && <div className="identity-error">{pwError}</div>}
+                {pwDone && <div style={{ color: "#27ae60", fontSize: "0.85em" }}>Password updated ✓</div>}
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button type="submit" className="identity-submit" disabled={pwBusy || !pwCurrent || !pwNew} style={{ flex: 1 }}>
+                    {pwBusy ? "..." : "Update"}
+                  </button>
+                  <button
+                    type="button"
+                    className="identity-btn identity-btn-secondary"
+                    onClick={() => { setPwOpen(false); setPwCurrent(""); setPwNew(""); setPwError(null); }}
+                    disabled={pwBusy}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
         <button type="button" className="identity-logout" onClick={onLogout}>Sign Out</button>
       </div>
     );

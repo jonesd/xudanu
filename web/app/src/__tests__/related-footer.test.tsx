@@ -72,6 +72,7 @@ function renderFooter(overrides: {
   const onNavigate = vi.fn();
   const result = render(
     <RelatedFooter
+      annotations={[]}
       backlinks={overrides.backlinks ?? []}
       outgoingLinks={overrides.outgoingLinks ?? []}
       compoundSpanRanges={overrides.compoundSpanRanges ?? []}
@@ -134,8 +135,8 @@ describe("RelatedFooter", () => {
     expect(cards).toHaveLength(1);
   });
 
-  it("limits to max 8 items", () => {
-    const backlinks = Array.from({ length: 12 }, (_, i) =>
+  it("limits rendered cards (single-row strip scrolls for overflow)", () => {
+    const backlinks = Array.from({ length: 16 }, (_, i) =>
       mkBacklink({
         link_id: 300 + i,
         source_work_id: 0x50 + i,
@@ -144,7 +145,7 @@ describe("RelatedFooter", () => {
     );
     renderFooter({ backlinks });
     const cards = screen.getAllByRole("button").filter((b) => b.className.includes("related-card"));
-    expect(cards).toHaveLength(8);
+    expect(cards).toHaveLength(12);
   });
 
   it("shows count badge with total connections", () => {
@@ -159,5 +160,63 @@ describe("RelatedFooter", () => {
     expect(screen.queryByText("Rebuttal Essay")).toBeNull();
     fireEvent.click(toggle);
     expect(screen.getByText("Rebuttal Essay")).toBeTruthy();
+  });
+});
+
+describe("RelatedFooter notes section", () => {
+  const mkNote = (id: number, over: Partial<Record<string, unknown>> = {}) => ({
+    annotation_id: id,
+    kind: "note",
+    payload: `note ${id}`,
+    char_start: 3,
+    char_end: 9,
+    created_by: 1,
+    created_by_name: "Ann",
+    created_at: 1000,
+    is_private: false,
+    ...over,
+  });
+
+  function renderFooter(annotations: Record<string, unknown>[]) {
+    return render(
+      <RelatedFooter
+        annotations={annotations as never}
+        onJumpToSpan={vi.fn()}
+        backlinks={[]}
+        outgoingLinks={[]}
+        compoundSpanRanges={[]}
+        compoundSourceTitles={{}}
+        crossServerBacklinks={[]}
+        currentWorkId={7}
+        onNavigateToWork={vi.fn()}
+      />,
+    );
+  }
+
+  it("renders notes with count and public/private badges", () => {
+    renderFooter([mkNote(1), mkNote(2, { is_private: true })]);
+    expect(screen.getByText(/Notes/)).toBeTruthy();
+    expect(screen.getByText(/public/)).toBeTruthy();
+    expect(screen.getByText(/private/)).toBeTruthy();
+  });
+
+  it("shows the footer when only notes exist (no related)", () => {
+    const r = renderFooter([mkNote(1)]);
+    expect(r.container.querySelector(".related-note-row")).toBeTruthy();
+    expect(screen.queryByText(/^Related$/)).toBeNull();
+  });
+
+  it("renders nothing when no notes and no related", () => {
+    const r = renderFooter([]);
+    expect(r.container.querySelector(".related-footer-panel")).toBeNull();
+  });
+
+  it("filters empty and non-note annotations out", () => {
+    const r = renderFooter([
+      mkNote(1),
+      { ...mkNote(2), payload: "   " },
+      { ...mkNote(3), kind: "bold" },
+    ]);
+    expect(r.container.querySelectorAll(".related-note-row").length).toBe(1);
   });
 });

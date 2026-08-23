@@ -34,6 +34,21 @@ export interface GlobalSearchResultItem {
   matches: SearchMatchItem[];
 }
 
+// FR-41 S1: federated search fan-out results. All remote text is
+// untrusted — render as text only, never as HTML.
+export interface FederatedSearchResultEntry {
+  work_id: number;
+  title: string;
+  revision: number;
+  char_count: number;
+  server_name: string;
+  server_id: number;
+  local: boolean;
+  // Present only for peers that didn't answer (honesty entries).
+  unreachable?: boolean;
+  reason?: string;
+}
+
 export interface GlobalSearchResults {
   results: GlobalSearchResultItem[];
   totalWorksMatched: number;
@@ -61,6 +76,7 @@ export interface AttributionSpan {
   author_display_name: string | null;
   author_club_id: number | null;
   signature_valid: boolean;
+  verification_state?: string | null;
   timestamp: number;
   server_id: number[];
   author_type: string | null;
@@ -139,6 +155,17 @@ export interface LinkEntry {
   destination_title?: string | null;
   destination_owner?: number | null;
   link_types?: number[];
+  // FR-40: named ends beyond the two-ended fast path.
+  named_ends?: [string, HyperRefPayload][];
+  // FR-40: derived type ends — one per registered type with a
+  // definition work (Green's three-set, materialized on read).
+  type_ends?: [number, number][];
+  // FR-40: home document; absent = server-global.
+  home_document?: number | null;
+  home_archived?: boolean;
+  // FR-40: cross-server notify outcome, when one was attempted.
+  cross_server_notify_accepted?: boolean | null;
+  cross_server_notify_error?: string | null;
 }
 
 export interface ProvenanceHop {
@@ -172,6 +199,7 @@ export interface SpanRangePayload {
 export type RangeElementPayload =
   | { type: "text"; text: string }
   | { type: "transclusion"; transclusion_source: number; transclusion_start: number; transclusion_end: number }
+  | { type: "virtual"; virtual_source: number; virtual_revision: number; transclusion_start: number; transclusion_end: number }
   | { type: "blob"; blob_hash: string; blob_mime: string; blob_size: number; blob_width?: number; blob_height?: number; blob_caption?: string };
 
 export interface AuthorContribution {
@@ -280,11 +308,26 @@ export interface BacklinkEntry {
   link_type: string;
   excerpt?: string;
   title?: string;
+  source_archived?: boolean;
 }
 
 export interface LinkTypeInfo {
   type_id: number;
   name: string;
+  // FR-39: the definition work for this type, if registered.
+  definition_work?: number | null;
+}
+
+export interface LinkEndpointSpec {
+  work_ids?: number[];
+  author?: number | null;
+}
+
+export interface LinkQuerySpec {
+  from_spec?: LinkEndpointSpec;
+  to_spec?: LinkEndpointSpec;
+  type_ids?: number[];
+  home_spec?: LinkEndpointSpec;
 }
 
 export interface AgainHop {
@@ -333,6 +376,12 @@ export interface TransclusionMarker {
   otherWorkIsArchived?: boolean;
   otherWorkOwner?: number | null;
   crossServerRef?: { tumbler: string; contentHash: string } | null;
+  /** Source-span coordinates in the OTHER work (the quoted origin) —
+   * set when the link's other-side ref carries positions; enables
+   * click-to-jump-to-source (same doc: highlight+scroll; other doc:
+   * navigate and land on the span). */
+  sourceSpanStart?: number | null;
+  sourceSpanEnd?: number | null;
 }
 
 export interface WorkListEntry {
@@ -494,6 +543,9 @@ export class CrdtSyncClient {
   private url: string;
   private workBeId: number;
   private sessionId: number | null = null;
+  /** Server-side masked SessionId for this connection (learned from
+   * the awareness echo); differs from the session_connect id. */
+  private serverSessionId: number | null = null;
 
   getSessionId(): number | null {
     return this.sessionId;
@@ -501,6 +553,13 @@ export class CrdtSyncClient {
   private crdtReady = false;
   private deltaInFlight = false;
   private pendingServerText: string | null = null;
+  /** Echo-race guard: text of the most recent locally-originated
+   * delta that has been acked, and when. Server full-text updates
+   * arriving shortly after an ack often carry PRE-edit text (the
+   * materialization broadcast lags the delta apply); accepting them
+   * resurrected deleted text. */
+  private lastAckedLocalText: string | null = null;
+  private lastAckedAt = 0;
   private crdtOpenedThisConnection = false;
   currentIdentity: WhoAmIEntry | null = null;
   private isAdmin = false;
@@ -758,6 +817,12 @@ export class CrdtSyncClient {
     };
   }
 
+  async federatedSearch(query: string): Promise<FederatedSearchResultEntry[]> {
+    const resp = await this.sendRequest("federated_search", { query });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.results as FederatedSearchResultEntry[]) || [];
+  }
+
   async workGoto(workId: number, line?: number, char?: number): Promise<GotoResult> {
     const resp = await this.sendRequest("work_goto", {
       work_id: workId,
@@ -975,6 +1040,7 @@ export class CrdtSyncClient {
     destination: number,
     originRef?: { excerpt: string; start: number; end: number },
     destinationRef?: { excerpt: string; start: number; end: number },
+    homeDocument?: number,
   ): Promise<number> {
     const payload: Record<string, unknown> = { origin, destination };
     if (originRef) {
@@ -998,6 +1064,9 @@ export class CrdtSyncClient {
         start_position: destinationRef.start,
         end_position: destinationRef.end,
       };
+    }
+    if (homeDocument !== undefined && homeDocument !== null) {
+      payload.home_document = homeDocument;
     }
     const resp = await this.sendRequest("link_create", payload);
     return extractValue(resp) as number;
@@ -1055,6 +1124,51 @@ export class CrdtSyncClient {
 
   async linkSetTypes(linkId: number, linkTypes: number[]): Promise<void> {
     await this.sendRequest("link_set_types", { link_id: linkId, link_types: linkTypes });
+  }
+
+  async linkAddEnd(
+    linkId: number,
+    endName: string,
+    endRef: { workContext: number; excerpt?: string; start?: number | null; end?: number | null },
+  ): Promise<void> {
+    await this.sendRequest("link_add_end", {
+      link_id: linkId,
+      end_name: endName,
+      end_ref: {
+        kind: "single",
+        work_context: endRef.workContext,
+        original_context: null,
+        path_context: null,
+        excerpt: endRef.excerpt ?? null,
+        start_position: endRef.start ?? null,
+        end_position: endRef.end ?? null,
+      },
+    });
+  }
+
+  async linkRemoveEnd(linkId: number, endName: string): Promise<void> {
+    await this.sendRequest("link_remove_end", { link_id: linkId, end_name: endName });
+  }
+
+  async linkQuery(spec: LinkQuerySpec): Promise<LinkEntry[]> {
+    const payload: Record<string, unknown> = {
+      from_spec: spec.from_spec ?? {},
+      to_spec: spec.to_spec ?? {},
+      type_ids: spec.type_ids ?? [],
+      home_spec: spec.home_spec ?? {},
+    };
+    const resp = await this.sendRequest("link_query", payload);
+    const val = extractValue(resp);
+    if (Array.isArray(val)) return val as LinkEntry[];
+    return [];
+  }
+
+  async registerLinkType(typeId: number, name: string, definitionWork: number): Promise<void> {
+    await this.sendRequest("link_type_register", {
+      type_id: typeId,
+      name,
+      definition_work: definitionWork,
+    });
   }
 
   async linkTypeList(): Promise<LinkTypeInfo[]> {
@@ -1216,6 +1330,17 @@ export class CrdtSyncClient {
     return [];
   }
 
+    async trailDerivedWork(trailId: number): Promise<number | null> {
+    try {
+      const resp = await this.sendRequest("trail_derived_work", { trail_id: trailId });
+      const val = extractValue(resp);
+      if (typeof val === "number") return val;
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   async migrateCompoundToInline(workId: number): Promise<number | null> {
     try {
       const resp = await this.sendRequest("migrate_compound_to_inline", { work_id: workId });
@@ -1249,6 +1374,10 @@ export class CrdtSyncClient {
     if (Array.isArray(val)) return val as WorkListEntry[];
     const rec = val as Record<string, unknown>;
     return (rec.work_list as WorkListEntry[]) || [];
+  }
+
+  async workSetSource(workId: number, isSource: boolean): Promise<void> {
+    await this.sendRequest("work_set_source", { work_id: workId, is_source: isSource });
   }
 
   async workStar(workId: number): Promise<void> {
@@ -1629,6 +1758,13 @@ export class CrdtSyncClient {
     return identity;
   }
 
+  async clubSetPassword(clubId: number, password: string): Promise<void> {
+    await this.sendRequest("club_set_password", {
+      club_id: clubId,
+      password: Array.from(new TextEncoder().encode(password)),
+    });
+  }
+
   async loginByName(clubName: string, password: string): Promise<void> {
     await this.sendRequest("session_login_by_name", { club_name: clubName });
     const pwBytes = Array.from(new TextEncoder().encode(password));
@@ -1920,6 +2056,7 @@ export class CrdtSyncClient {
           const states = awareVal.states as AwarenessState[] || [];
           this.awarenessMap.clear();
           for (const s of states) {
+            if (s.session_id === this.sessionId) continue;
             this.awarenessMap.set(s.session_id, s);
           }
           this.awarenessListeners.forEach((cb) => cb(Array.from(this.awarenessMap.values())));
@@ -2045,8 +2182,30 @@ export class CrdtSyncClient {
         if (this.deltaInFlight) {
           this.pendingServerText = newText;
         } else if (newText !== this.text) {
-          this.text = newText;
-          this.textListeners.forEach((cb) => cb(newText));
+          // Echo-race guard: shortly after OUR acked edit, a
+          // broadcast whose text differs from what we sent is a
+          // stale materialization (pre-edit snapshot) — applying it
+          // would resurrect deleted text. Drop it; the next genuine
+          // server-side change (another user) arrives later than
+          // this window.
+          const echoWindowMs = 2500;
+          const recentAck = Date.now() - this.lastAckedAt < echoWindowMs;
+          const isStaleEcho =
+            recentAck &&
+            this.lastAckedLocalText !== null &&
+            newText !== this.lastAckedLocalText &&
+            newText !== this.text;
+          if (isStaleEcho) {
+            // Safety: if the text keeps disagreeing after the window,
+            // reconcile with a full fetch rather than looping.
+            console.warn("[crdt] dropping stale text echo", {
+              len: newText.length,
+              ackedLen: this.lastAckedLocalText?.length,
+            });
+          } else {
+            this.text = newText;
+            this.textListeners.forEach((cb) => cb(newText));
+          }
         }
       }
     }
@@ -2085,6 +2244,22 @@ export class CrdtSyncClient {
       const payload = event.payload as Record<string, unknown> | undefined;
       if (payload && payload.work_id === this.workBeId) {
         const incoming = payload.state as AwarenessState;
+        // Self-echo guard: the server broadcasts awareness to all
+        // sessions including the originator. Rendering your own
+        // caret as a "remote" cursor produced a phantom colored
+        // caret+label following the user's own typing.
+        if (incoming.session_id === this.serverSessionId) return;
+        // Learn our server-side id from the echo: same user marker +
+        // matching connect id means this IS us under the masked id.
+        if (this.serverSessionId === null && incoming.session_id !== this.sessionId) {
+          // The server stamps awareness with its own masked id; the
+          // first echo carrying OUR user marker is ours.
+          const mine = incoming.user_name === (this.currentIdentity?.display_name || `user-${(this.sessionId ?? 0).toString(16).slice(-4)}`);
+          if (mine) {
+            this.serverSessionId = incoming.session_id;
+            return;
+          }
+        }
         this.awarenessMap.set(incoming.session_id, incoming);
         this.awarenessListeners.forEach((cb) => cb(Array.from(this.awarenessMap.values())));
       }
@@ -2242,6 +2417,8 @@ export class CrdtSyncClient {
       ops,
     }).then(() => {
       this.deltaInFlight = false;
+      this.lastAckedLocalText = newText;
+      this.lastAckedAt = Date.now();
       this.setSaveState("saved");
       this.saveStateTimer = setTimeout(() => this.setSaveState("idle"), 2000);
       if (this.pendingServerText !== null) {
@@ -2317,18 +2494,6 @@ export class CrdtSyncClient {
       works: (val.works as Array<{ work_id: string; title: string; revision: number; char_count: number }>) || [],
       originServerName: (val.origin_server_name as string) || "Unknown",
     };
-  }
-
-  async federatedSearch(query: string): Promise<Array<{
-    work_id: string; title: string; revision: number; char_count: number;
-    server_name: string; server_id: number; local: boolean;
-  }>> {
-    const resp = await this.sendRequest("federated_search", { query });
-    const val = extractValue(resp) as Record<string, unknown>;
-    return (val.results as Array<{
-      work_id: string; title: string; revision: number; char_count: number;
-      server_name: string; server_id: number; local: boolean;
-    }>) || [];
   }
 
   async crossServerLinkCreate(

@@ -3,7 +3,7 @@ import type { AttributionSpan, TransclusionMarker, AnnotationEntry, SpanRangePay
 import type { PendingTransclusion } from "../hooks/useTransclusion";
 import { authorColor } from "../author-color";
 import { TextBuffer } from "../api/text_buffer";
-import { extractStyleMarks, buildStyledText, getCursorOffset, setCursorOffset } from "../styled-text";
+import { extractStyleMarks, buildStyledText, getCursorOffset, setCaretModel } from "../styled-text";
 import {
   getTextContent,
   getEditableText,
@@ -56,6 +56,11 @@ interface CollaborativeEditorProps {
   transclusionMarkers?: TransclusionMarker[];
   pendingTransclusion?: PendingTransclusion | null;
   onPlaceTransclusion?: (position: number, padding?: string) => void;
+  /** FR-37: place as a pinned (revision-frozen) quotation. */
+  onPlacePinnedTransclusion?: (position: number) => void;
+  /** Click-to-source: jump to the quoted span — same doc highlights
+   * in place; another doc navigates and lands on the span. */
+  onNavigateToSource?: (workId: number, spanStart: number | null, spanEnd: number | null) => void;
   selectionRange?: { start: number; end: number } | null;
   highlightRange?: { start: number; end: number } | null;
   onNavigateToWork?: (workId: number) => void;
@@ -111,6 +116,15 @@ interface MarkerHitZone {
   height: number;
   densityCluster?: number;
   densityCount?: number;
+}
+
+interface AuthorBarZone {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: string;
+  color: string;
 }
 
 const LINK_TYPE_STYLES: Record<number, { color: string; dash: number[] }> = {
@@ -192,6 +206,10 @@ const HATCH_COLORS: [string, string][] = [
 
 const hatchCache = new Map<number, CanvasPattern | null>();
 
+// Left-margin authorship bars drawn by the last drawOverlay pass;
+// consumed by the hover handler for tooltips.
+const authorBarZones: AuthorBarZone[] = [];
+
 function getHatchPattern(ctx: CanvasRenderingContext2D, workId: number): CanvasPattern | null {
   const cached = hatchCache.get(workId);
   if (cached !== undefined) return cached;
@@ -241,6 +259,7 @@ function drawOverlay(
   linkDescMap: Map<number, { text: string; resolved: boolean }> = new Map(),
 ): MarkerHitZone[] {
   const hitZones: MarkerHitZone[] = [];
+  authorBarZones.length = 0;
   if (!editor || !canvas) return hitZones;
   if (spans.length === 0 && markers.length === 0 && annotations.length === 0 && compoundSpans.length === 0 && recentChanges.length === 0) {
     // Still need to clear the canvas of any previous content
@@ -260,15 +279,20 @@ function drawOverlay(
   if (rect.width === 0 || rect.height === 0) return hitZones;
 
   const dpr = window.devicePixelRatio || 1;
+  // Pad the canvas beyond the visible viewport so decorations that
+  // extend past the last text line (e.g. the floating provenance
+  // underline at line-bottom + 2px) are not clipped at the document
+  // end.
+  const CANVAS_PAD = 8;
   canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
+  canvas.height = (rect.height + CANVAS_PAD) * dpr;
   canvas.style.width = rect.width + "px";
-  canvas.style.height = rect.height + "px";
+  canvas.style.height = rect.height + CANVAS_PAD + "px";
 
   const ctx = canvas.getContext("2d");
   if (!ctx) return hitZones;
   ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, rect.width, rect.height);
+  ctx.clearRect(0, 0, rect.width, rect.height + CANVAS_PAD);
 
   const textLen = editor.textContent?.length ?? 0;
   if (textLen === 0) return hitZones;
@@ -276,7 +300,7 @@ function drawOverlay(
   const singleNode = textNode && textNode.nodeType === Node.TEXT_NODE && textNode === editor.lastChild;
 
   const viewportTop = container.scrollTop - 50;
-  const viewportBottom = container.scrollTop + rect.height + 50;
+  const viewportBottom = container.scrollTop + rect.height + 50 + CANVAS_PAD;
 
   for (const span of showAttribution ? spans : []) {
     const key = bytesToHex(span.author_public_key);
@@ -286,6 +310,7 @@ function drawOverlay(
     const drawStart = Math.max(span.start, 0);
     const drawEnd = Math.min(span.end, textLen);
     if (drawStart >= drawEnd) continue;
+
 
     const range = document.createRange();
     try {
@@ -306,11 +331,14 @@ function drawOverlay(
     const rangeRects = range.getClientRects();
     const isHistorical = style.authorType === "historical";
     const isUnsigned = !span.signature_valid;
+    const visibleRects: DOMRect[] = [];
     for (const r of rangeRects) {
       const y = r.top - rect.top;
       if (y + r.height < viewportTop || y > viewportBottom) continue;
       const x = r.left - rect.left;
       if (isUnsigned) {
+        // Signature failures stay in-text: red wash + dashed underline
+        // is a security signal, not cosmetic authorship.
         ctx.fillStyle = "#f8514922";
         ctx.fillRect(x, y, r.width, r.height);
         ctx.save();
@@ -323,23 +351,43 @@ function drawOverlay(
         ctx.stroke();
         ctx.restore();
       } else {
-        ctx.fillStyle = style.color + (isHistorical ? "18" : "25");
-        ctx.fillRect(x, y, r.width, r.height);
-        if (isHistorical) {
-          ctx.save();
-          ctx.setLineDash([4, 3]);
-          ctx.strokeStyle = style.color + "90";
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.moveTo(x, y + r.height - 1);
-          ctx.lineTo(x + r.width, y + r.height - 1);
-          ctx.stroke();
-          ctx.restore();
-        } else {
-          ctx.fillStyle = style.color + "60";
-          ctx.fillRect(x, y + r.height - 2, r.width, 2);
-        }
+        // Floating underline: a light authorship-colour strip offset
+        // a few pixels below the text — it never touches the glyphs
+        // and there is no background wash, so the text stays clean.
+        // Historical (imported) authors get the dashed variant.
+        const underlineY = Math.round(y + r.height + 2) + 0.5;
+        ctx.save();
+        if (isHistorical) ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = style.color + (isHistorical ? "80" : "50");
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, underlineY);
+        ctx.lineTo(x + r.width, underlineY);
+        ctx.stroke();
+        ctx.restore();
+        visibleRects.push(r);
       }
+    }
+    // Hover zone from ALL visible rects of the span — the span's first
+    // line can be short (a title) or scrolled out of view, and zones
+    // keyed to rangeRects[0] missed the cursor both horizontally
+    // (narrow first line) and entirely (first line culled).
+    if (!isUnsigned && visibleRects.length > 0) {
+      const first = visibleRects[0];
+      const last = visibleRects[visibleRects.length - 1];
+      const zoneLeft = Math.min(...visibleRects.map((r) => r.left)) - rect.left;
+      const zoneRight = Math.max(...visibleRects.map((r) => r.right)) - rect.left;
+      const label = isHistorical
+        ? `${style.name} (historical author — imported)`
+        : `${style.name}${style.authorType === "llm" ? " (LLM-assisted)" : ""} ✓`;
+      authorBarZones.push({
+        x: zoneLeft - 3,
+        y: first.top - rect.top,
+        width: zoneRight - zoneLeft + 6,
+        height: last.bottom - first.top + 4,
+        label,
+        color: style.color,
+      });
     }
   }
 
@@ -427,6 +475,7 @@ function drawOverlay(
     const drawEnd = Math.min(change.end, textLen);
     if (drawStart >= drawEnd) continue;
 
+
     const range = document.createRange();
     try {
       if (singleNode) {
@@ -488,9 +537,28 @@ function drawOverlay(
     if (collapsed.has(mi)) continue;
     const marker = markers[mi];
     const lane = lanes.get(mi) ?? 0;
-    const drawStart = Math.max(marker.start, 0);
-    const drawEnd = Math.min(marker.end, textLen);
+    // Stale-offset recovery: stored spans were computed when the link
+    // was created; revised text can leave them pointing at nothing
+    // (every range construction throws, canvas paints zero, silently).
+    // If the excerpt no longer matches at the stored offset, re-locate
+    // by excerpt text within the current document.
+    let drawStart = Math.max(marker.start, 0);
+    let drawEnd = Math.min(marker.end, textLen);
+    const rawExcerpt = (marker.excerpt || "").trim();
+    if (rawExcerpt.length >= 8) {
+      const want = rawExcerpt.slice(0, 40);
+      const flat = editor.textContent || "";
+      const at = flat.slice(drawStart, drawStart + want.length);
+      if (at !== want) {
+        const found = flat.indexOf(want);
+        if (found >= 0) {
+          drawStart = found;
+          drawEnd = Math.min(found + (marker.end - marker.start), textLen);
+        }
+      }
+    }
     if (drawStart >= drawEnd) continue;
+
 
     const range = document.createRange();
     try {
@@ -688,6 +756,7 @@ function drawOverlay(
     const drawStart = Math.max(pill.start, 0);
     const drawEnd = Math.min(pill.end, textLen);
     if (drawStart >= drawEnd) continue;
+
     const range = document.createRange();
     try {
       if (singleNode) {
@@ -737,6 +806,7 @@ function drawOverlay(
     const drawStart = Math.max(change.start, 0);
     const drawEnd = Math.min(change.end, textLen);
     if (drawStart >= drawEnd) continue;
+
 
     const range = document.createRange();
     try {
@@ -851,6 +921,7 @@ export function CollaborativeEditor({
   transclusionMarkers = [],
   pendingTransclusion,
   onPlaceTransclusion,
+  onNavigateToSource,
   highlightRange,
   onNavigateToWork,
   onCrossServerResolve,
@@ -867,7 +938,10 @@ export function CollaborativeEditor({
   remoteCursors = [],
   compoundSourceTitles: compoundSourceTitles = {},
   recentChanges = [],
-  showAttributionColors = true,
+  // Opt-in: single-author documents paint one attribution span across
+  // the whole page, which reads as a distracting colour wash. The Prov
+  // toolbar toggle enables it on demand.
+  showAttributionColors = false,
   inlineResolvedText,
   onUndoLastTransclusion,
   showLinkDescriptions = false,
@@ -901,6 +975,7 @@ export function CollaborativeEditor({
   const [resolving, setResolving] = useState(false);
   const [provenanceChain, setProvenanceChain] = useState<AgainHop[] | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  const [authorTooltip, setAuthorTooltip] = useState<AuthorBarZone | null>(null);
   const [linkTypeFilter, setLinkTypeFilterState] = useState<Set<number> | null>(() => {
     try {
       const saved = localStorage.getItem("xudanu_linkTypeFilter");
@@ -1002,12 +1077,33 @@ export function CollaborativeEditor({
   const hasInlineTransclusions = !!inlineResolvedText && compoundSpanRanges.length > 0;
   const hasInlineBlobs = blobEntries.length > 0;
 
+  // New document => start at the top. Without this, scroll position
+  // leaks between documents (trail Next stops mid-scroll, library
+  // jumps land wherever the previous doc was). Trail stops and manual
+  // navigation both mean "arrival", never "resumption".
+  const lastDocRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (workId == null || workId === lastDocRef.current) return;
+    lastDocRef.current = workId;
+    const container = editorRef.current?.parentElement;
+    if (container) container.scrollTop = 0;
+  }, [workId]);
+
   useEffect(() => {
     const el = editorRef.current;
     if (!el || hasInlineTransclusions || !displayText) return;
-    // Include text in the key so marker-based formatting (#, -, >) triggers rebuild
-    const marksKey = displayText.length + ":" + styleMarks.map((m) => `${m.kind}:${m.char_start}:${m.char_end}`).join("|");
-    if (marksKey === lastMarksRef.current) return;
+    // Rebuild only when marks actually changed. Length is in the key
+    // only to catch mark shifts after edits; plain-text growth from
+    // native typing/Enter must NOT rebuild (innerHTML rebuild raced
+    // the caret and killed input mid-list).
+    const marksKey = styleMarks.map((m) => `${m.kind}:${m.char_start}:${m.char_end}`).join("|");
+    if (marksKey === lastMarksRef.current) {
+      // DOM already contains the typed text (native insertion) —
+      // leave it and the caret alone.
+      if (el.textContent.replace(/\u200B/g, "").length >= displayText.replace(/\u200B/g, "").length - 2) {
+        return;
+      }
+    }
     lastMarksRef.current = marksKey;
     const savedCursor = getCursorOffset(el);
     try {
@@ -1020,7 +1116,7 @@ export function CollaborativeEditor({
         if (displayText.endsWith("\n")) {
           el.appendChild(document.createTextNode("\u200B"));
         }
-      setCursorOffset(el, savedCursor);
+      setCaretModel(el, savedCursor);
     } catch (e) {
       console.error("[style-marks] rebuild failed, falling back to plain text:", e);
       el.textContent = displayText;
@@ -1095,7 +1191,7 @@ export function CollaborativeEditor({
             el.appendChild(document.createTextNode("\u200B"));
           }
         }
-        setCursorOffset(el, savedCursor);
+        setCaretModel(el, savedCursor);
       } catch (e) {
         console.error("[editor] DOM rebuild failed, falling back to plain text:", e);
         el.textContent = displayText;
@@ -1170,7 +1266,11 @@ export function CollaborativeEditor({
       container.removeEventListener("scroll", scrollRedraw);
       cancelAnimationFrame(rafId);
     };
-  }, [attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap]);
+  // displayText/buffer in deps: markers can arrive BEFORE the text has
+  // rendered (link load is deferred only 200ms; text sync can be
+  // slower) — the draw then finds no text nodes, paints nothing, and
+  // without a text-triggered redraw the underlines never appear.
+  }, [attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, displayText, buffer]);
 
   // Highlight a range when user clicks a transclusion in the Connections panel
   useEffect(() => {
@@ -1180,44 +1280,83 @@ export function CollaborativeEditor({
     const container = el.parentElement;
     if (!container) return;
 
-    const draw = () => {
+    const draw = (alpha: number) => {
       if (!highlightRange) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       const rect = container.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
+      const clear = () => {
+        // Canvas is shared with other overlays and is NOT auto-cleared:
+        // repainting without clearing accumulates alpha toward solid
+        // yellow, drowning the text. Always wipe first (raw pixel
+        // space, before the dpr scale).
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+      };
       ctx.save();
       ctx.scale(dpr, dpr);
       const drawStart = Math.max(highlightRange.start, 0);
       const drawEnd = Math.min(highlightRange.end, el.textContent?.length ?? 0);
-      if (drawStart >= drawEnd) { ctx.restore(); return; }
+      if (drawStart >= drawEnd) { clear(); ctx.restore(); return; }
       try {
         const sn = findTextNodeAt(el, drawStart, false);
         const en = findTextNodeAt(el, drawEnd - 1, false);
-        if (!sn || !en) { ctx.restore(); return; }
+        if (!sn || !en) { clear(); ctx.restore(); return; }
         const range = document.createRange();
         range.setStart(sn.node, sn.offset);
         range.setEnd(en.node, en.offset + 1);
         const rangeRects = range.getClientRects();
-        for (const r of rangeRects) {
-          const x = r.left - rect.left;
-          const y = r.top - rect.top;
-          ctx.fillStyle = "rgba(255, 224, 0, 0.12)";
-          ctx.fillRect(x, y, r.width, r.height);
-          ctx.strokeStyle = "rgba(255, 180, 0, 0.8)";
-          ctx.lineWidth = 1.5;
-          ctx.strokeRect(x + 0.5, y + 0.5, r.width - 1, r.height - 1);
+        clear();
+        // Gentle breathing highlight: a pale wash that fades out on
+        // its own — noticeable enough to locate the passage, never
+        // loud enough to fight the text.
+        const a = Math.max(0, alpha);
+        if (a > 0.005) {
+          for (const r of rangeRects) {
+            const x = r.left - rect.left;
+            const y = r.top - rect.top;
+            ctx.fillStyle = `rgba(255, 223, 0, ${(0.16 * a).toFixed(3)})`;
+            ctx.fillRect(x, y, r.width, r.height);
+            ctx.strokeStyle = `rgba(255, 180, 0, ${(0.22 * a).toFixed(3)})`;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x + 0.5, y + 0.5, r.width - 1, r.height - 1);
+          }
         }
       } catch { /* range error — ignore */ }
       ctx.restore();
     };
 
     if (highlightRange) {
-      requestAnimationFrame(draw);
-      const interval = setInterval(draw, 100);
-      return () => clearInterval(interval);
+      // Fade the highlight in briefly, then let it decay to nothing —
+      // a single calm gesture rather than a persistent painted block.
+      const FADE_MS = 3000;
+      const t0 = performance.now();
+      let raf = 0;
+      const anim = () => {
+        const elapsed = performance.now() - t0;
+        const rampIn = Math.min(1, elapsed / 200);
+        const decay = Math.max(0, 1 - Math.max(0, elapsed - 400) / FADE_MS);
+        const alpha = rampIn * decay;
+        draw(alpha);
+        if (alpha > 0.005) {
+          raf = requestAnimationFrame(anim);
+        } else {
+          draw(0);
+        }
+      };
+      raf = requestAnimationFrame(anim);
+      // Scroll the highlighted span into view (same math as
+      // jumpToCharOffset) — highlight-without-scroll leaves long
+      // documents looking like nothing happened.
+      const line = buffer.getLineForChar(Math.max(0, Math.min(highlightRange.start, (el.textContent?.length ?? 1) - 1)));
+      const targetScroll = line * parseFloat(getComputedStyle(el).lineHeight || "20");
+      container.scrollTo({ top: Math.max(0, targetScroll - container.clientHeight / 3), behavior: "smooth" });
+      return () => cancelAnimationFrame(raf);
     }
-  }, [highlightRange]);
+  }, [highlightRange, buffer]);
 
   useEffect(() => {
     if (recentChanges.length === 0) return;
@@ -1290,6 +1429,7 @@ export function CollaborativeEditor({
   const scheduleHideTooltip = useCallback(() => {
     hideTooltipTimer.current = setTimeout(() => {
       setHoveredMarker(null);
+      setAuthorTooltip(null);
       setTooltipPos(null);
       hideTooltipTimer.current = null;
     }, 2000);
@@ -1322,7 +1462,6 @@ export function CollaborativeEditor({
       setHoveredAnnotation({ text: annHit.text, x: e.clientX, y: e.clientY, id: annHit.id });
       setHoveredMarker(null);
       setTooltipPos(null);
-      e.currentTarget.style.cursor = "help";
       return;
     }
     if (hoveredAnnotation) {
@@ -1338,14 +1477,27 @@ export function CollaborativeEditor({
         : hit.marker;
       setHoveredMarker(m);
       setTooltipPos({ x: e.clientX, y: e.clientY });
-      e.currentTarget.style.cursor = "pointer";
     } else {
-      e.currentTarget.style.cursor = pendingTransclusion ? "crosshair" : "";
-      if (hoveredMarker) {
-        scheduleHideTooltip();
+      // Single-author documents: the hover would only restate the
+      // obvious ("you wrote everything") — suppress it. Tooltips earn
+      // their interruption cost when authorship actually varies.
+      const singleAuthor = authorColorMap.size <= 1;
+      const bar = singleAuthor
+        ? undefined
+        : authorBarZones.find((bz) =>
+            x >= bz.x && x <= bz.x + bz.width && y >= bz.y && y <= bz.y + bz.height
+          );
+      if (bar) {
+        setTooltipPos({ x: e.clientX, y: e.clientY });
+        setAuthorTooltip(bar);
+      } else {
+        setAuthorTooltip(null);
+        if (hoveredMarker) {
+          scheduleHideTooltip();
+        }
       }
     }
-  }, [hoveredMarker, hoveredAnnotation, scheduleHideTooltip, pendingTransclusion]);
+  }, [hoveredMarker, hoveredAnnotation, scheduleHideTooltip, pendingTransclusion, authorColorMap]);
 
   const handleOverlayMouseLeave = useCallback(() => {
     scheduleHideTooltip();
@@ -1399,10 +1551,17 @@ export function CollaborativeEditor({
     if (e.detail === 2 && onShowBacklinks) {
       const excerpt = (hit.marker as unknown as Record<string, unknown>).excerpt as string || "";
       onShowBacklinks(hit.marker.otherWorkId, excerpt);
-    } else if (e.detail === 1 && onNavigateToWork) {
-      onNavigateToWork(hit.marker.otherWorkId);
+    } else if (e.detail === 1) {
+      // Click-to-source: when the quoted span's coordinates are known,
+      // jump TO THE SPAN (same-doc: highlight+scroll; cross-doc:
+      // navigate+land) instead of merely switching works.
+      if (onNavigateToSource && (hit.marker.sourceSpanStart != null || hit.marker.sourceSpanEnd != null)) {
+        onNavigateToSource(hit.marker.otherWorkId, hit.marker.sourceSpanStart ?? null, hit.marker.sourceSpanEnd ?? null);
+      } else if (onNavigateToWork) {
+        onNavigateToWork(hit.marker.otherWorkId);
+      }
     }
-  }, [onNavigateToWork, onShowBacklinks, toggleClusterExpansion, onEditLinkDescription, linkDescMap]);
+  }, [onNavigateToWork, onNavigateToSource, onShowBacklinks, toggleClusterExpansion, onEditLinkDescription, linkDescMap]);
 
   const getSelectionInEditor = useCallback((): { start: number; end: number } => {
     const el = editorRef.current;
@@ -1585,13 +1744,86 @@ export function CollaborativeEditor({
       if (!sel || sel.rangeCount === 0) return;
       const range = sel.getRangeAt(0);
       range.deleteContents();
-      const textNode = document.createTextNode("\n\u200B");
-      range.insertNode(textNode);
-      range.setStartAfter(textNode);
-      range.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(range);
+
+      // List continuation: if the caret is on a line starting with a
+      // list marker, the new line continues the list — unless the
+      // line is ONLY the marker, in which case Enter exits the list
+      // (plain newline). Markers match the formatter's output and
+      // common markdown ("- ", "* ", "+ ", "1. ").
+      let insertText = "\n\u200B";
+      if (editorRef.current) {
+        const pre = document.createRange();
+        pre.selectNodeContents(editorRef.current);
+        try { pre.setEnd(range.startContainer, range.startOffset); } catch { /* out of range */ }
+        const before = pre.toString();
+        const lineStartIdx = before.lastIndexOf("\n") + 1;
+        const lineText = before.slice(lineStartIdx);
+        const markerMatch = lineText.match(/^(?:[-*+] |\d+\. )/);
+        if (markerMatch) {
+          const marker = markerMatch[0];
+          if (lineText.trim() === marker.trim()) {
+            // Empty list item — exit the list (and remove the marker).
+            const el = editorRef.current;
+            if (el) {
+              document.execCommand("delete");
+              document.execCommand("insertText", false, "\n");
+              handleInput();
+              return;
+            }
+          } else {
+            insertText = "\n" + marker + "\u200B";
+          }
+        }
+      }
+
+      // Pure-native insertion: execCommand keeps the caret alive with
+      // zero save/restore on our side. The subsequent rebuild effects
+      // are what killed typing before (innerHTML rebuild racing the
+      // caret restore); handleInput's state round-trip is still
+      // needed for the model, and the marksKey guard skips the
+      // innerHTML rebuild when nothing but plain text changed.
+      document.execCommand("insertText", false, insertText);
       handleInput();
+      if (insertText !== "\n\u200B") {
+        // List continuation: re-render markers after React commits so
+        // the new line shows a pretty bullet instead of raw "- ".
+        // Caret is re-anchored by text offset — deterministic, not
+        // racing (the old bug was mid-typing rebuilds, not this one).
+        setTimeout(() => {
+          const el = editorRef.current;
+          if (!el) return;
+          const caret = getCursorOffset(el);
+          const textNow = getTextContent(el).replace(/\u200B/g, "");
+          try {
+            const html = buildStyledText(textNow, []);
+            if (html) el.innerHTML = html;
+            setCaretModel(el, caret);
+            // setCursorOffset anchors into raw text nodes, but
+            // buildStyledText wraps markers in contenteditable=false
+            // spans — a caret restored mid-marker is dead (typing
+            // ignored). Nudge forward past any non-editable span.
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount > 0) {
+              let node = sel.anchorNode;
+              let guardian = 0;
+              while (node && node !== el && guardian < 20) {
+                const parent = node.parentElement;
+                if (parent && parent.getAttribute("contenteditable") === "false") {
+                  // Move caret after this marker span
+                  const after = document.createRange();
+                  after.setStartAfter(parent);
+                  after.collapse(true);
+                  sel.removeAllRanges();
+                  sel.addRange(after);
+                  break;
+                }
+                node = parent;
+                guardian++;
+              }
+            }
+          } catch { /* keep native DOM */ }
+        }, 0);
+      }
     } else if (e.key === "Tab") {
       e.preventDefault();
       const sel = window.getSelection();
@@ -1771,7 +2003,34 @@ export function CollaborativeEditor({
     return { pos: fullPos - readonlyChars, rect };
   }, []);
 
+  // Clicks at a rendered line-start (bullet/heading/blockquote)
+  // anchor the caret BEFORE the hidden marker span
+  // (contenteditable=false) — typing then lands before the bullet.
+  // After any click, pop the caret past any non-editable ancestor.
+  const escapeMarkerSpan = useCallback(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return;
+    let node: Node | null = sel.anchorNode;
+    let guardian = 0;
+    while (node && node !== el && guardian < 20) {
+      const parent = node.parentElement;
+      if (parent && parent.getAttribute("contenteditable") === "false") {
+        const after = document.createRange();
+        after.setStartAfter(parent);
+        after.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(after);
+        return;
+      }
+      node = parent;
+      guardian++;
+    }
+  }, []);
+
   const handleEditorClick = useCallback((e: React.MouseEvent) => {
+
     const el = editorRef.current;
     if (!el) return;
 
@@ -1787,7 +2046,10 @@ export function CollaborativeEditor({
       }
     }
 
-    if (!pendingTransclusion && !pendingImagePlacement) return;
+    if (!pendingTransclusion && !pendingImagePlacement) {
+      escapeMarkerSpan();
+      return;
+    }
     if (!el.contains(e.target as Node)) return;
 
     const result = computePlacementPosition(e.clientX, e.clientY, el);
@@ -1988,6 +2250,23 @@ export function CollaborativeEditor({
             ref={overlayRef}
             className="attribution-overlay"
           />
+          {authorTooltip && tooltipPos && (
+            <div
+              className="marker-tooltip"
+              style={{
+                position: "fixed",
+                ...(tooltipPos.x > window.innerWidth - 320
+                  ? { right: window.innerWidth - tooltipPos.x + 10 }
+                  : { left: tooltipPos.x + 10 }),
+                top: Math.min(tooltipPos.y + 16, window.innerHeight - 100),
+                zIndex: 100,
+              }}
+            >
+              <div className="marker-tooltip-title" style={{ color: authorTooltip.color }}>
+                {authorTooltip.label}
+              </div>
+            </div>
+          )}
           {hoveredMarker && tooltipPos && (
             <div
               className="marker-tooltip"

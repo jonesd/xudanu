@@ -65,6 +65,7 @@ ol li{margin-bottom:8px;list-style:decimal}
   <a class="toc-section" href="#setup">Setting Up a Server</a>
   <a class="toc-section" href="#connect">Connecting Two Servers</a>
   <a class="toc-section" href="#security">Security Model</a>
+  <a class="toc-section" href="#operating">Operating a Server Safely</a>
   <a class="toc-section" href="#heritage">Gold Heritage</a>
   <a class="toc-section" href="#history">History: From 1960 to Today</a>
 </div>
@@ -309,14 +310,45 @@ A man-in-the-middle cannot substitute different content because they would need 
 <h3>Additional protections</h3>
 <table>
   <tr><th>Protection</th><th>Status</th></tr>
-  <tr><td>SSRF protection (reject loopback/private IPs)</td><td class="accent-green">Done</td></tr>
+  <tr><td>SSRF protection (reject loopback/private IPs, IPv6-aware)</td><td class="accent-green">Done</td></tr>
   <tr><td>5MB byte cap on fetches</td><td class="accent-green">Done</td></tr>
   <tr><td>Trust gate (untrusted servers rejected)</td><td class="accent-green">Done</td></tr>
   <tr><td>Ed25519 TOFU (pin on first use, warn on change)</td><td class="accent-green">Done</td></tr>
   <tr><td>HTTPS pinning (refuse downgrade)</td><td class="accent-green">Done</td></tr>
   <tr><td>Byte tracking (RoyaltyEntry per fetch)</td><td class="accent-green">Done</td></tr>
+  <tr><td>Structure validation on peer content (invariant gate)</td><td class="accent-green">Done (v1.6.0)</td></tr>
+  <tr><td>Signed identity responses (verified against directory keys)</td><td class="accent-green">Done (v1.6.0)</td></tr>
   <tr><td>Rate limiting on public endpoints</td><td>Planned (#105)</td></tr>
 </table>
+
+<h3>Adversarial resilience (v1.6.0)</h3>
+<p>
+Every document arriving from a peer passes a <strong>structure validation gate</strong> before it can touch server state: positions, spans, transclusion ranges, and provenance are checked against strict invariants, with size caps against resource exhaustion. Malformed entries are rejected individually and logged &mdash; the sync continues, the attacker's data does not. Identity responses are Ed25519-signed by the serving server and verified against the key registered in your directory, with a freshness window against replay. See <a href="adversarial-resilience.md">Adversarial Resilience</a> for the full method and findings.
+</p>
+
+<h3>Governance</h3>
+<p>
+Federation membership decisions (admit, expel, key rotation) are made by a <strong>PBFT consensus</strong> among 3&ndash;10 member servers: total ordering, Byzantine fault tolerance (f faulty members tolerated in 3f+1), no forks. A single compromised server cannot corrupt governance or rotate another server's keys &mdash; the quorum is required.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="operating">Operating a Server Safely</h2>
+
+<p>
+Server operators control the trust posture with run flags. The defaults are safe; the flags let you relax them deliberately.
+</p>
+
+<table>
+  <tr><th>Flag / env</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>--edit-policy owner-only</code><br/><code>XUDANU_EDIT_POLICY</code></td><td>owner-only</td><td>Only signed-in identities can create or edit works. <code>public-sandbox</code> enables wiki-style anonymous editing (demo servers).</td></tr>
+  <tr><td><code>--admin-passphrase</code><br/><code>XUDANU_ADMIN_PASSPHRASE</code></td><td>none</td><td>Sets the admin club's password (break-glass: archive orphans, manage grants). Without it the admin club has no credential by design.</td></tr>
+  <tr><td><code>--allowed-origin</code></td><td>(must set)</td><td>WebSocket/API origin allowlist &mdash; set exactly your site origins.</td></tr>
+  <tr><td><code>--tls-cert / --tls-key</code></td><td>off</td><td>Native TLS; or terminate at a reverse proxy (Caddy/nginx).</td></tr>
+</table>
+
+<div class="note">
+<strong>Confidentiality note.</strong> The network is an open sharing platform: published works are meant to be found and quoted, so peer traffic needs integrity and authenticity (which signatures provide) rather than secrecy. TLS remains recommended for reader privacy, and private works stay within their read clubs.
+</div>
 
 <!-- ============================================================ -->
 <h2 id="heritage">Gold Heritage</h2>
