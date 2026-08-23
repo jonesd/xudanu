@@ -1,0 +1,34 @@
+# docker-compose.single.yml — one Xudanu server, one volume.
+#
+# The self-hosting quickstart: `docker compose -f docker-compose.single.yml up -d`
+# then open http://localhost:8080. Data persists in the named volume.
+#
+# For the 3-node federated demo cluster instead, use docker/docker-compose.yml.
+
+services:
+  xudanu:
+    image: ghcr.io/jonesd/xudanu:latest
+    # Build locally instead of pulling:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - xudanu-data:/data
+    command:
+      - "run"
+      - "0.0.0.0:8080"
+      - "/data"
+      - "--server-name"
+      - "My Xudanu"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  xudanu-data:

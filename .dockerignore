@@ -1,9 +1,40 @@
-.git
-.github
-docs
-**/target
-**/node_modules
-**/dist
-**/data
-**/*.tar.gz
-**/.DS_Store
+# Shrink the Docker build context (repo root is the context).
+# These paths are never needed inside the image.
+
+target/
+**/target/
+**/node_modules/
+web/app/dist/
+web/app/node_modules/
+
+# Data dirs — never bake data into images
+data/
+data-*/
+**/data/
+**/data-*/
+*.bak
+*.old
+
+# Dev tooling
+.git/
+.github/
+.vscode/
+.idea/
+*.iml
+
+# Docs & media (not needed in image; keeps context small)
+docs/
+!README.md
+!Dockerfile
+LICENSE
+CHANGELOG.md
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+coverage/
+lcov.info
+proptest-regressions/
+perf/

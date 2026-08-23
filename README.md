@@ -108,7 +108,40 @@ This project is an ongoing evolution, not a static port.
 
 ## Quick Start
 
-### 1. Prerequisites
+### Docker (recommended for self-hosting)
+
+```bash
+curl -O https://raw.githubusercontent.com/jonesd/xudanu/main/docker-compose.single.yml
+docker compose -f docker-compose.single.yml up -d
+```
+
+Open `http://localhost:8080` — that's your Xudanu server, with data
+persisted in a named volume. To stop: `docker compose -f
+docker-compose.single.yml down` (add `-v` to also delete the data).
+
+The image is `ghcr.io/jonesd/xudanu` — multi-arch (amd64 + arm64),
+rebuilt on every release. Tags: `latest`, `stable` (last release),
+`1.7` (major.minor), `edge` (tracks main).
+
+**Binary install** (no Docker): grab a release from
+[github.com/jonesd/xudanu/releases](https://github.com/jonesd/xudanu/releases) —
+static builds for Linux (musl, runs anywhere), macOS (Apple Silicon
+and Intel), and Windows. Then:
+
+```bash
+./xudanu-server run 127.0.0.1:8080 ./data
+```
+
+**3-node federated demo** (search across servers, cross-server
+transclusion):
+
+```bash
+git clone https://github.com/jonesd/xudanu.git && cd xudanu
+docker compose -f docker/docker-compose.yml up --build -d
+# Node 1: http://localhost:8081 · Node 2: :8082 · Node 3: :8083
+```
+
+### From source
 
 - **Rust** 1.56 or later (edition 2021). Latest stable recommended. Install via [rustup](https://rustup.rs):
   ```bash
@@ -116,21 +149,11 @@ This project is an ongoing evolution, not a static port.
   ```
 - **A browser** — Firefox, Safari, or Chrome.
 
-### 2. Clone and build
-
 ```bash
 git clone https://github.com/jonesd/xudanu.git
 cd xudanu
 cargo build --features server -p xudanu
-```
-
-This builds the `xudanu-server` binary at `./target/debug/xudanu-server`.
-
-### 3. Run the server
-
-**In-memory (no persistence, good for trying it out):**
-
-```bash
+# In-memory (no persistence, good for trying it out):
 ./target/debug/xudanu-server run 127.0.0.1:8080
 ```
 
