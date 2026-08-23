@@ -52,8 +52,8 @@ jobs:
             # v1.7.0 -> 1.7.0, 1.7, latest (on tag pushes)
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            # main branch -> edge
-            type=ref,event=branch
+            # main branch -> edge (explicit; type=ref would tag :main)
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
             # stable alias for latest release tag
             type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
           labels: |
