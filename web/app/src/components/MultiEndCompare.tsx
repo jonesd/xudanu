@@ -104,14 +104,10 @@ export function MultiEndCompare({
         for (const id of uniqueIds) {
           if (cancelled) return;
           const resp = await client.sendRequest("work_get_edition", { work_id: id });
-          // sendRequest resolves with frame.value = {type:'edition', value:{text}}
-          // (same shape extractValue handles elsewhere).
-          const val = (resp as { value?: unknown })?.value;
-          const inner = (val as { value?: unknown })?.value;
-          const text: string =
-            (inner as { text?: string })?.text
-            ?? (typeof inner === "string" ? inner : "")
-            ?? "";
+          // sendRequest resolves with frame.value = {type:"edition", value:{text}}
+          // so text is at resp.value.text — TWO levels total.
+          const val = (resp as { value?: { text?: string } })?.value;
+          const text: string = val?.text ?? "";
           texts.set(id, text);
         }
         const regionsByWork = new Map<number, { start: number; end: number; cidx: number }[]>();
