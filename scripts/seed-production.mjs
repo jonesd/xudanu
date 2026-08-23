@@ -36,7 +36,15 @@ function resolveDemoPassword() {
     if (pw) return pw;
   }
   const generated = randomBytes(24).toString("base64url");
-  writeFileSync(credFile, generated + "\n", { mode: 0o600 });
+  try {
+    writeFileSync(credFile, generated + "\n", { mode: 0o600, flag: "wx" });
+  } catch (e) {
+    if (e.code === "EEXIST") {
+      const existing = readFileSync(credFile, "utf8").trim();
+      if (existing) return existing;
+    }
+    throw e;
+  }
   try { chmodSync(credFile, 0o600); } catch { /* fs perm best-effort */ }
   console.log(`first run: generated demo credential -> ${credFile} (gitignored, 0600)`);
   return generated;
@@ -159,7 +167,8 @@ async function main() {
   console.log("connected");
 
   const sid = await client.val("session_connect");
-  console.log("session", client.rawSessionId || sid);
+  const safeSid = String(client.rawSessionId || sid).replace(/[^a-zA-Z0-9]/g, "");
+  console.log("session", safeSid);
   await client.send("session_login_public");
   try {
     await client.val("club_create_personal", {
@@ -223,7 +232,8 @@ async function main() {
   // The blob occupies one character position, shifting later text by 1 —
   // spans below account for it (computed against WELCOME_TEXT locally).
   const fs = await import("node:fs");
-  const imgBytes = new Uint8Array(fs.readFileSync("/tmp/xudanu-seed/hero.png"));
+  const heroPath = process.env.XUDANU_SEED_HERO || new URL("./seed-assets/hero.png", import.meta.url).pathname;
+  const imgBytes = new Uint8Array(fs.readFileSync(heroPath));
   const h1 = "# Welcome to Xudanu";
   const insertAt = WELCOME_TEXT.indexOf(h1) + h1.length + 1; // after heading + newline
   const uploadResp = await fetch(`${BASE}/api/blob/upload`, {
@@ -231,7 +241,6 @@ async function main() {
     headers: { "Content-Type": "image/png", "X-Xudanu-Session": client.rawSessionId || String(sid) },
     body: imgBytes,
   });
-  let imageInserted = false;
   if (uploadResp.ok) {
     const meta = await uploadResp.json();
     await client.send("element_insert", {
@@ -239,7 +248,6 @@ async function main() {
       position: insertAt,
       element: { type: "blob", blob_hash: meta.content_hash, blob_mime: meta.mime_type, blob_size: meta.byte_size, blob_width: meta.width, blob_height: meta.height },
     });
-    imageInserted = true;
     console.log(`hero image inserted at ${insertAt} (hash ${meta.content_hash})`);
   } else {
     console.warn("image upload failed:", uploadResp.status, await uploadResp.text());
