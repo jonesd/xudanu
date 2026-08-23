@@ -108,32 +108,55 @@ This project is an ongoing evolution, not a static port.
 
 ## Quick Start
 
-### Docker (recommended for self-hosting)
+The common scenarios, in the order people actually hit them:
+
+### Scenario 1 — Try it (2 minutes, nothing to install)
 
 ```bash
 curl -O https://raw.githubusercontent.com/jonesd/xudanu/main/docker-compose.single.yml
 docker compose -f docker-compose.single.yml up -d
 ```
 
-Open `http://localhost:8080` — that's your Xudanu server, with data
-persisted in a named volume. To stop: `docker compose -f
-docker-compose.single.yml down` (add `-v` to also delete the data).
+Open `http://localhost:8080`. Create a document, select some text,
+make a link. Data persists in a named volume — `docker compose -f
+docker-compose.single.yml down` to stop (`-v` also deletes the data).
 
-The image is `ghcr.io/jonesd/xudanu` — multi-arch (amd64 + arm64),
-rebuilt on every release. Tags: `latest`, `stable` (last release),
-`1.7` (major.minor), `edge` (tracks main).
-
-**Binary install** (no Docker): grab a release from
-[github.com/jonesd/xudanu/releases](https://github.com/jonesd/xudanu/releases) —
-static builds for Linux (musl, runs anywhere), macOS (Apple Silicon
-and Intel), and Windows. Then:
+No Docker? Grab a static binary from
+[releases](https://github.com/jonesd/xudanu/releases) — Linux (musl),
+macOS (Apple Silicon + Intel), Windows — and:
 
 ```bash
 ./xudanu-server run 127.0.0.1:8080 ./data
 ```
 
-**3-node federated demo** (search across servers, cross-server
-transclusion):
+### Scenario 2 — Your personal notes server (the 90% case)
+
+Same single-node setup as Scenario 1, run on your VPS/home server
+behind HTTPS. Point the compose at a persistent directory, put your
+domain in front with any reverse proxy (Caddy example):
+
+```
+yourdomain.com {
+    reverse_proxy localhost:8080
+}
+```
+
+Your notes, your machine, no cloud. Works offline; federation is
+opt-in and off by default.
+
+### Scenario 3 — Collaborative writing (team/lab/class)
+
+Still one server — Xudanu is multi-user by design. Share the URL;
+people create identities, write simultaneously (CRDT-based live
+editing), and every passage carries its author's signed provenance.
+Set `--edit-policy public-sandbox` for a wiki-style instance, or
+keep the default owner-only policy with per-work permissions.
+
+### Scenario 4 — Try federation (the demo, not the deployment)
+
+Three servers on one machine to see the network features — search
+across servers, pull a passage by reference from another node,
+watch it update when the source edits:
 
 ```bash
 git clone https://github.com/jonesd/xudanu.git && cd xudanu
@@ -141,30 +164,24 @@ docker compose -f docker/docker-compose.yml up --build -d
 # Node 1: http://localhost:8081 · Node 2: :8082 · Node 3: :8083
 ```
 
-### From source
+Real multi-server deployments use the same image on separate
+machines with `--peer <address>` and `--trusted-peer-key <key>` —
+see the [network guide](https://dgjones.info/xudanu/).
 
-- **Rust** 1.56 or later (edition 2021). Latest stable recommended. Install via [rustup](https://rustup.rs):
-  ```bash
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-  ```
-- **A browser** — Firefox, Safari, or Chrome.
+### Scenario 5 — From source (developers)
 
 ```bash
-git clone https://github.com/jonesd/xudanu.git
-cd xudanu
+git clone https://github.com/jonesd/xudanu.git && cd xudanu
 cargo build --features server -p xudanu
-# In-memory (no persistence, good for trying it out):
+# In-memory (no persistence):
 ./target/debug/xudanu-server run 127.0.0.1:8080
+# With persistent storage:
+./target/debug/xudanu-server init ./data
+./target/debug/xudanu-server run 127.0.0.1:8080 ./data
 ```
 
-**With persistent storage:**
-
-```bash
-./target/debug/xudanu-server init /tmp/xudanu-data
-./target/debug/xudanu-server run 127.0.0.1:8080 /tmp/xudanu-data --static-dir original-code/xanadugold/src-rust/static
-```
-
-Data is saved to `server.json` on graceful shutdown (Ctrl-C) and restored on next start.
+The Docker image (`ghcr.io/jonesd/xudanu`, multi-arch amd64+arm64)
+is rebuilt every release: `latest`, `stable`, `1.7`, `edge` (main).
 
 ### macOS Users
 
