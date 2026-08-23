@@ -136,6 +136,61 @@ npm run lint   # eslint
 Pre-push hook (`.git/hooks/pre-push`) runs 6 checks: cargo fmt, cargo test --lib,
 cargo test --test integration, tsc, vite build, vitest.
 
+## Releases (multi-platform)
+
+Release = tag push. The `Release` workflow (`.github/workflows/release.yml`)
+builds all platforms and attaches binaries to a GitHub Release. Full
+procedure, learned the hard way during the v1.7.0 five-fix saga:
+
+### Steps
+
+1. **Bump version** in THREE places: `Cargo.toml` (`version =`),
+   `web/app/package.json`, and a new `CHANGELOG.md` entry (workspace
+   root). They must agree.
+2. **Merge the feature branch to `main`** via PR (CI must be green:
+   Format, Clippy, Test, all three Builds).
+3. **Tag**: `git tag vX.Y.Z main && git push github vX.Y.Z` — the
+   tag push triggers the Release workflow automatically.
+4. **Create the Release object**: `gh release create vX.Y.Z --target
+   main --title ... --notes ...` (or let the workflow do it and edit
+   notes after). Binaries attach as each build job finishes.
+5. **Watch**: `gh run watch` or poll `gh run list --limit 1`. macOS
+   runner backlog can queue jobs 30+ min — queued ≠ failed.
+
+### Platform matrix (as of v1.7.0)
+
+| Target | Runner | Artifact | Notes |
+|---|---|---|---|
+| `aarch64-apple-darwin` | macos-latest | `*-aarch64-macos.tar.gz` | primary Mac (Apple Silicon) |
+| `x86_64-apple-darwin` | macos-latest | `*-x86_64-macos.tar.gz` | Intel Mac (Rosetta runs aarch64 fine) |
+| `x86_64-unknown-linux-musl` | ubuntu-latest | `*-x86_64-linux-musl.tar.gz` | static, runs anywhere |
+| `aarch64-unknown-linux-gnu` | ubuntu-latest | `*-aarch64-linux-gnu.tar.gz` | ARM Linux, glibc |
+| `x86_64-pc-windows-msvc` | windows-latest | `*-x86_64-windows.zip` | |
+
+### Hard-won platform gotchas (do not regress)
+
+- **ARM Linux**: MUST use `aarch64-unknown-linux-gnu` (glibc), NOT
+  musl — `aws-lc-sys` (via rustls) hard-requires a musl-named gcc
+  for musl targets and musl.cc mirrors 503 intermittently. GNU
+  cross-toolchain comes from Ubuntu: `apt-get install
+  gcc-aarch64-linux-gnu`.
+- **ARM Linux linker**: MUST be set via env vars, NOT `.cargo/
+  config.toml` — config files under the crate dir are unreliably
+  read when building with `--manifest-path` from the repo root.
+  The workflow exports `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER`
+  and `..._RUSTFLAGS="-C link-arg=-fuse-ld=bfd"` (bfd avoids the
+  rust-lld `--fix-cortex-a53-843419` flag clash).
+- **TOML in workflows**: heredocs inside YAML `run:` blocks write
+  INDENTED content — cargo TOML needs column-0. Use printf-per-line
+  or env vars instead.
+- **Deletions/re-tags**: to re-cut a release, cancel the run, delete
+  tag (`git push github :refs/tags/vX.Y.Z`) AND release (`gh release
+  delete`), re-tag, re-create. Forgetting the release delete leaves
+  an orphaned release object pointing at the old commit.
+- **Branch vs main**: development happens on feature branches; the
+  GitHub landing page shows `main`. If work seems "missing," check
+  the branch. Merge via PR so CI runs on the merge result too.
+
 ## Backend structure (`src/`)
 
 ```
