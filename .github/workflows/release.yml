@@ -157,11 +157,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
           mkdir -p original-code/xanadugold/src-rust/.cargo
-          cat > original-code/xanadugold/src-rust/.cargo/config.toml <<'CFG'
-          [target.aarch64-unknown-linux-gnu]
-          linker = "aarch64-linux-gnu-gcc"
-          rustflags = ["-C", "link-arg=-fuse-ld=bfd"]
-          CFG
+          printf '%s\n' \
+            '[target.aarch64-unknown-linux-gnu]' \
+            'linker = "aarch64-linux-gnu-gcc"' \
+            'rustflags = ["-C", "link-arg=-fuse-ld=bfd"]' \
+            > original-code/xanadugold/src-rust/.cargo/config.toml
 
       - name: Test
         if: matrix.run_test
