@@ -687,6 +687,8 @@ pub struct Carrier {
     pub element: RangeElement,
     #[cfg_attr(feature = "serde", serde(skip))]
     char_len_memo: std::sync::atomic::AtomicU32,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    byte_len_memo: std::sync::atomic::AtomicU32,
     #[cfg_attr(
         feature = "serde",
         serde(default, skip_serializing_if = "Option::is_none")
@@ -702,6 +704,10 @@ impl Clone for Carrier {
             provenance: self.provenance.clone(),
             char_len_memo: std::sync::atomic::AtomicU32::new(
                 self.char_len_memo
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            byte_len_memo: std::sync::atomic::AtomicU32::new(
+                self.byte_len_memo
                     .load(std::sync::atomic::Ordering::Relaxed),
             ),
         }
@@ -724,6 +730,7 @@ impl Carrier {
             element,
             provenance: None,
             char_len_memo: std::sync::atomic::AtomicU32::new(0),
+            byte_len_memo: std::sync::atomic::AtomicU32::new(0),
         }
     }
 
@@ -733,6 +740,7 @@ impl Carrier {
             element,
             provenance: None,
             char_len_memo: std::sync::atomic::AtomicU32::new(0),
+            byte_len_memo: std::sync::atomic::AtomicU32::new(0),
         }
     }
 
@@ -745,28 +753,39 @@ impl Carrier {
     pub fn set_element(&mut self, element: RangeElement) {
         self.char_len_memo
             .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.byte_len_memo
+            .store(0, std::sync::atomic::Ordering::Relaxed);
         self.element = element;
     }
 
     pub fn char_len(&self) -> usize {
-        // Memoized (FR-43 perf): chars().count() is O(text); this is
-        // called O(entries) times per delta op — quadratic on long
-        // docs. Memo invalidates naturally: clones copy the memo,
-        // and any element replacement builds fresh carriers. A stale
-        // memo is impossible via public API (element is only set at
-        // construction or via with_* builders that create new
-        // carriers through Clone + field update — clone copies memo
-        // AND element together).
-        let m = self
-            .char_len_memo
-            .load(std::sync::atomic::Ordering::Relaxed);
-        if m != 0 {
-            return (m - 1) as usize;
+        // Memoized (FR-43 perf) with a staleness guard: rebuild paths
+        // clone carriers then assign `.element =` directly (fr37_4d
+        // proved this happens), leaving a memo from the OLD element.
+        // Guard: for Text, trust the memo only when the current
+        // byte length matches the memo's recorded byte length.
+        // Non-Text kinds pay the count each time (rare, small).
+        if let RangeElement::Text { text } = &self.element {
+            let m = self
+                .char_len_memo
+                .load(std::sync::atomic::Ordering::Relaxed);
+            if m != 0
+                && self
+                    .byte_len_memo
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    == text.len() as u32
+            {
+                return (m - 1) as usize;
+            }
+            let n = text.chars().count();
+            self.char_len_memo
+                .store((n + 1) as u32, std::sync::atomic::Ordering::Relaxed);
+            self.byte_len_memo
+                .store(text.len() as u32, std::sync::atomic::Ordering::Relaxed);
+            n
+        } else {
+            self.element.char_len()
         }
-        let n = self.element.char_len();
-        self.char_len_memo
-            .store((n + 1) as u32, std::sync::atomic::Ordering::Relaxed);
-        n
     }
 }
 
