@@ -151,32 +151,13 @@ jobs:
       - name: Install aarch64 musl cross-compilation tools
         if: matrix.target == 'aarch64-unknown-linux-musl'
         run: |
-          # musl.cc is unreliable (intermittent 503s break releases).
-          # Primary: rust-embedded's musl cross toolchains on GitHub;
-          # fallback: musl.cc with retries.
-          set -e
-          mkdir -p /tmp/aarch64-musl
-          fetch() {
-            url="$1"
-            for i in 1 2 3; do
-              if curl -fsSL --retry 3 --retry-delay 5 "$url" -o /tmp/aarch64-musl-cross.tgz; then
-                return 0
-              fi
-              echo "attempt $i failed for $url; backing off"
-              sleep $((i * 10))
-            done
-            return 1
-          }
-          if fetch "https://github.com/musl-cc/musl.cc/releases/download/20231126-1/aarch64-linux-musl-cross.tgz" \
-            || fetch "https://more.musl.cc/10/x86_64-linux-musl/aarch64-linux-musl-cross.tgz" \
-            || fetch "https://musl.cc/aarch64-linux-musl-cross.tgz"; then
-            tar xzf /tmp/aarch64-musl-cross.tgz -C /tmp
-            mkdir -p original-code/xanadugold/src-rust/.cargo
-            printf '[target.aarch64-unknown-linux-musl]\nlinker = "/tmp/aarch64-linux-musl-cross/bin/aarch64-linux-musl-gcc"\n' > original-code/xanadugold/src-rust/.cargo/config.toml
-          else
-            echo "all musl cross-toolchain sources failed"
-            exit 1
-          fi
+          # musl.cc mirrors are unreliable (intermittent 503s broke
+          # the v1.7.0 release run). Use Ubuntu's packaged GNU
+          # cross-toolchain — no external downloads at all.
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          mkdir -p original-code/xanadugold/src-rust/.cargo
+          printf '[target.aarch64-unknown-linux-musl]\nlinker = "aarch64-linux-gnu-gcc"\n' > original-code/xanadugold/src-rust/.cargo/config.toml
 
       - name: Test
         if: matrix.run_test
