@@ -227,7 +227,12 @@ Go to **http://127.0.0.1:8080** — you'll see the document editor.
 
 ### 5. (Optional) Enable LLM features
 
-Xudanu supports AI-powered features: document summarization, writing feedback, title suggestions, and auto-tagging. These use a local LLM via [Ollama](https://ollama.ai) — no data leaves your machine.
+**Everything above works without any AI components.** LLM features
+are entirely opt-in: document summarization, writing feedback, title
+suggestions, and auto-tagging. When enabled, they use a local LLM
+via [Ollama](https://ollama.ai) — no API keys, no cloud accounts,
+no data leaves your machine. If Ollama isn't running, Xudanu simply
+disables these features; the core system is unaffected.
 
 **Install Ollama:**
 
