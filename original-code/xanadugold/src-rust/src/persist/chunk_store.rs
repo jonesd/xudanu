@@ -362,17 +362,21 @@ impl ChunkStore {
         let archive_dir = self.base_dir.join("archive");
         std::fs::create_dir_all(&archive_dir).map_err(|e| ChunkError::Io(e.to_string()))?;
         let dst = archive_dir.join(hash_to_hex(hash));
+        let stamp = archive_dir.join(format!("{}.gen", hash_to_hex(hash)));
         if dst.exists() {
             // Already archived (e.g. re-orphaned after restore) — just
             // remove the live copy; the stamp refreshes below.
             let _ = std::fs::remove_file(&src);
         } else {
+            // Stamp BEFORE rename: a crash after stamp but before
+            // rename leaves the live chunk intact and the stale stamp
+            // harmless (re-run re-stamps). A crash AFTER rename but
+            // before the stamp would strand an archive entry with no
+            // stamp — reap treats stamp-less entries as never-expiring
+            // (safety default), so no premature deletion either way.
+            std::fs::write(&stamp, b"0").map_err(|e| ChunkError::Io(e.to_string()))?;
             std::fs::rename(&src, &dst).map_err(|e| ChunkError::Io(e.to_string()))?;
         }
-        // Stamp with the archive generation so the grace horizon is
-        // enforceable across restarts. Stamp file: <hex>.gen
-        let stamp = archive_dir.join(format!("{}.gen", hash_to_hex(hash)));
-        std::fs::write(&stamp, b"0").map_err(|e| ChunkError::Io(e.to_string()))?;
         {
             let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
             cache.entries.remove(hash);
@@ -425,6 +429,12 @@ impl ChunkStore {
                 let Ok(archived_gen) = stamp_str.trim().parse::<u64>() else {
                     continue;
                 };
+                // Stale-clock guard: if the current generation is
+                // behind the stamp (restore-from-backup, replay
+                // skew), the horizon is meaningless — never reap.
+                if current_gen < archived_gen {
+                    continue;
+                }
                 if current_gen.saturating_sub(archived_gen) >= grace_generations {
                     let data_path = archive_dir.join(hex);
                     let _ = std::fs::remove_file(&data_path);

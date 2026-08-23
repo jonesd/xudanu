@@ -29738,6 +29738,135 @@ mod tests {
     }
 
     #[test]
+    fn gc_archive_crash_window_stampless_entry_never_reaped() {
+        // Simulate a crash between rename and stamp: an archive entry
+        // with NO .gen file. Reap must skip it forever — never a
+        // premature hard-delete.
+        let dir = std::env::temp_dir().join(format!(
+            "xudanu_gc_stampless_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = crate::persist::chunk_store::ChunkStore::open(&dir).unwrap();
+        let data = b"stampless survivor".to_vec();
+        let hash = store.write_chunk(&data).unwrap();
+        // Archive normally, then delete the stamp to simulate the crash window.
+        assert!(store.move_chunk_to_archive(&hash).unwrap());
+        let archive_dir = dir.join("archive");
+        let stamp = archive_dir.join(format!(
+            "{}.gen",
+            crate::persist::chunk_store::hash_to_hex(&hash)
+        ));
+        std::fs::remove_file(&stamp).unwrap();
+
+        // Reap at any horizon: nothing may go.
+        assert_eq!(store.reap_expired_archive(u64::MAX / 2, 1).unwrap(), 0);
+        assert!(
+            archive_dir
+                .join(crate::persist::chunk_store::hash_to_hex(&hash))
+                .exists(),
+            "stamp-less archive entry must survive any horizon"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gc_archive_stale_clock_never_reaps() {
+        // Restore-from-backup scenario: current_gen behind the stamp.
+        // The horizon is meaningless — nothing may be reaped.
+        let dir = std::env::temp_dir().join(format!(
+            "xudanu_gc_stale_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = crate::persist::chunk_store::ChunkStore::open(&dir).unwrap();
+        let hash = store.write_chunk(b"stale clock").unwrap();
+        store.move_chunk_to_archive(&hash).unwrap();
+        let archive_dir = dir.join("archive");
+        // Stamp claims gen 500; the server clock says 100.
+        std::fs::write(
+            archive_dir.join(format!(
+                "{}.gen",
+                crate::persist::chunk_store::hash_to_hex(&hash)
+            )),
+            b"500",
+        )
+        .unwrap();
+
+        assert_eq!(
+            store.reap_expired_archive(100, 50).unwrap(),
+            0,
+            "stale clock must never reap"
+        );
+        assert!(archive_dir
+            .join(crate::persist::chunk_store::hash_to_hex(&hash))
+            .exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gc_archive_operator_recovery_full_round_trip() {
+        // The operator drill: server running, content edited, GC
+        // archives a chunk (bug or policy), operator restores it,
+        // the work reads identically after restore.
+        let (mut server, sid) = setup_logged_in_server();
+        let dir = std::env::temp_dir().join(format!(
+            "xudanu_gc_drill_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        server.init_data_dir(&dir, None).unwrap();
+        let wid = server
+            .create_work(sid, Edition::from_text("recovery drill: original content"))
+            .unwrap();
+        server.checkpoint_to_store().unwrap();
+
+        // Grab the work's CURRENT root chunk hash (what a future
+        // revision would orphan), archive it as if a revision had
+        // displaced it, then restore and read.
+        let chunk_store = server.chunk_store.as_ref().unwrap().clone();
+        let ws = server.works.get(&wid).unwrap();
+        let root_hash = ws
+            .chunk_ref
+            .as_ref()
+            .map(|r| r.current_root.root_hash)
+            .expect("checkpointed work must have a chunk ref");
+
+        assert!(chunk_store.move_chunk_to_archive(&root_hash).unwrap());
+        // Live read now fails (chunk gone) — simulate the loss.
+        assert!(chunk_store.read_chunk(&root_hash).is_err());
+        // Operator: restore.
+        assert!(chunk_store.restore_archived_chunk(&root_hash).unwrap());
+        let back = chunk_store
+            .read_chunk(&root_hash)
+            .expect("restored readable");
+        assert!(!back.is_empty());
+        // And the server still serves the work from its in-memory
+        // state (the archive never touched the live edition).
+        let text = server.work_text(wid).unwrap_or_default();
+        assert!(
+            text.contains("recovery drill"),
+            "work content unchanged by archive+restore"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn gc_full_path_archives_orphans_preserves_referenced() {
         // End-to-end through gc_orphaned_chunks: a live work's chunks
         // stay; a write-then-orphan chunk lands in the archive, not
