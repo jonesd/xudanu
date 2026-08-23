@@ -56,6 +56,9 @@ jobs:
             type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
             # stable alias for latest release tag
             type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # latest alias for main builds until first release tag
+            # triggers this workflow (README/compose reference :latest)
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
           labels: |
             org.opencontainers.image.title=Xudanu
             org.opencontainers.image.description=Collaborative hypertext documents with transclusion by reference — working Xanadu
