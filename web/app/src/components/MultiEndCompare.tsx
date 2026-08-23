@@ -23,14 +23,22 @@ function highlightComplement(
     t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c));
   let html = "";
   let pos = 0;
+  // Shared: greyed + struck-through + faint red wash = "identical to
+  // the others — skip this". Unique: full-contrast text with a green
+  // left bar = "this is THIS work's contribution". Colorblind-safe:
+  // two encodings (color + strike/bar) per state.
   for (const r of sorted) {
     if (r.end <= pos) continue;
     const start = Math.max(r.start, pos);
-    if (start > pos) html += esc(text.slice(pos, start));
-    html += `<span style="opacity:0.35;background:rgba(139,148,158,0.15)">${esc(text.slice(start, r.end))}</span>`;
+    if (start > pos) {
+      html += `<span style="box-shadow:inset 3px 0 0 #3fb950;padding-left:6px">${esc(text.slice(pos, start))}</span>`;
+    }
+    html += `<span style="opacity:0.45;text-decoration:line-through;text-decoration-color:#f85149;background:rgba(248,81,73,0.08)">${esc(text.slice(start, r.end))}</span>`;
     pos = r.end;
   }
-  if (pos < text.length) html += esc(text.slice(pos));
+  if (pos < text.length) {
+    html += `<span style="box-shadow:inset 3px 0 0 #3fb950;padding-left:6px">${esc(text.slice(pos))}</span>`;
+  }
   return html;
 }
 
@@ -216,6 +224,11 @@ export function MultiEndCompare({
                 {m === "shared" ? "Shared passages" : "What differs"}
               </button>
             ))}
+            <span style={{ fontSize: 10, color: "#8b949e", marginLeft: 8, alignSelf: "center" }}>
+              {viewMode === "shared"
+                ? "coloured = shared with the matching colour's work"
+                : "green bar = unique to this work · struck-through grey = shared (identical in the others)"}
+            </span>
           </div>
         )}
         {!loading && columns.length >= 2 && (
