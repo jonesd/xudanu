@@ -105,10 +105,13 @@ export function MultiEndCompare({
           if (cancelled) return;
           const resp = await client.sendRequest("work_get_edition", { work_id: id });
           const val = (resp as { value?: unknown }).value;
+          const inner = (val as { value?: unknown })?.value;
           const text =
-            typeof val === "string"
-              ? val
-              : ((val as { value?: unknown })?.value as string) ?? "";
+            typeof inner === "string"
+              ? inner
+              : typeof val === "string"
+                ? val
+                : ((inner as { text?: string })?.text ?? "");
           texts.set(id, text);
         }
         const regionsByWork = new Map<number, { start: number; end: number; cidx: number }[]>();
