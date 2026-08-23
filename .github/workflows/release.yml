@@ -56,7 +56,7 @@ jobs:
               {"target":"x86_64-unknown-linux-musl","os":"ubuntu-latest","artifact":"xudanu-'"$TAG"'-x86_64-linux-musl.tar.gz","run_test":true},
               {"target":"x86_64-apple-darwin","os":"macos-13","artifact":"xudanu-'"$TAG"'-x86_64-macos.tar.gz","run_test":true},
               {"target":"aarch64-apple-darwin","os":"macos-latest","artifact":"xudanu-'"$TAG"'-aarch64-macos.tar.gz","run_test":true},
-              {"target":"aarch64-unknown-linux-musl","os":"ubuntu-latest","artifact":"xudanu-'"$TAG"'-aarch64-linux-musl.tar.gz","run_test":false,"continue_on_error":true},
+              {"target":"aarch64-unknown-linux-gnu","os":"ubuntu-latest","artifact":"xudanu-'"$TAG"'-aarch64-linux-gnu.tar.gz","run_test":false,"continue_on_error":true},
               {"target":"x86_64-pc-windows-msvc","os":"windows-latest","artifact":"xudanu-'"$TAG"'-x86_64-windows.zip","run_test":true}
             ]'
           else
@@ -76,7 +76,7 @@ jobs:
               SEP=","
             fi
             if [ "${{ inputs.linux_arm }}" = "true" ]; then
-              MATRIX+="${SEP}{\"target\":\"aarch64-unknown-linux-musl\",\"os\":\"ubuntu-latest\",\"artifact\":\"xudanu-${TAG}-aarch64-linux-musl.tar.gz\",\"run_test\":false,\"continue_on_error\":true}"
+              MATRIX+="${SEP}{\"target\":\"aarch64-unknown-linux-gnu\",\"os\":\"ubuntu-latest\",\"artifact\":\"xudanu-${TAG}-aarch64-linux-gnu.tar.gz\",\"run_test\":false,\"continue_on_error\":true}"
               SEP=","
             fi
             if [ "${{ inputs.windows }}" = "true" ]; then
@@ -148,16 +148,16 @@ jobs:
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get install -y musl-tools
 
-      - name: Install aarch64 musl cross-compilation tools
-        if: matrix.target == 'aarch64-unknown-linux-musl'
+      - name: Install aarch64 cross-compilation tools
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
-          # musl.cc mirrors are unreliable (intermittent 503s broke
-          # the v1.7.0 release run). Use Ubuntu's packaged GNU
-          # cross-toolchain — no external downloads at all.
+          # musl.cc mirrors are flaky AND aws-lc-sys hard-requires a
+          # musl-named gcc for musl targets. glibc target instead:
+          # packaged GNU cross-toolchain, aws-lc happy, no downloads.
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
           mkdir -p original-code/xanadugold/src-rust/.cargo
-          printf '[target.aarch64-unknown-linux-musl]\nlinker = "aarch64-linux-gnu-gcc"\n' > original-code/xanadugold/src-rust/.cargo/config.toml
+          printf '[target.aarch64-unknown-linux-gnu]\nlinker = "aarch64-linux-gnu-gcc"\n' > original-code/xanadugold/src-rust/.cargo/config.toml
 
       - name: Test
         if: matrix.run_test
