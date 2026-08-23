@@ -104,14 +104,14 @@ export function MultiEndCompare({
         for (const id of uniqueIds) {
           if (cancelled) return;
           const resp = await client.sendRequest("work_get_edition", { work_id: id });
-          const val = (resp as { value?: unknown }).value;
+          // sendRequest resolves with frame.value = {type:'edition', value:{text}}
+          // (same shape extractValue handles elsewhere).
+          const val = (resp as { value?: unknown })?.value;
           const inner = (val as { value?: unknown })?.value;
-          const text =
-            typeof inner === "string"
-              ? inner
-              : typeof val === "string"
-                ? val
-                : ((inner as { text?: string })?.text ?? "");
+          const text: string =
+            (inner as { text?: string })?.text
+            ?? (typeof inner === "string" ? inner : "")
+            ?? "";
           texts.set(id, text);
         }
         const regionsByWork = new Map<number, { start: number; end: number; cidx: number }[]>();
