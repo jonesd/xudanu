@@ -110,7 +110,20 @@ This project is an ongoing evolution, not a static port.
 
 ## Quick Start
 
-The common scenarios, in the order people actually hit them:
+The common scenarios, in the order people actually hit them.
+
+**Before you start (all scenarios):**
+
+- **Docker running** — check with `docker info` in a terminal. If it
+  hangs or errors, start Docker Desktop (macOS/Windows) or the
+  `docker` service (Linux). If `docker info` hangs for more than ~10
+  seconds, the daemon is unresponsive: quit Docker Desktop completely
+  and relaunch it.
+- **Port 8080 free** — check with `lsof -i :8080` (macOS/Linux) or
+  `netstat -an | findstr 8080` (Windows). If something else is
+  listening, stop it or change the port mapping in the compose file
+  (left side of `"8080:8080"`).
+- That's it — no database, no API keys, no configuration files.
 
 ### Scenario 1 — Try it (2 minutes, nothing to install)
 
