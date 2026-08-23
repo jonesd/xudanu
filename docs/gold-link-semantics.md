@@ -144,3 +144,60 @@ description end (`FE_MYLINKDESCKEY`). No colored in-text underlines
 survive in the sources we have. Xudanu's in-text typed underlines
 are an original rendering in the spirit of the type system, not a
 reproduction.
+
+---
+
+## 6. Primary-source lineage (added 2026-08-23)
+
+The complete documented chain for Xudanu's link model, root to
+present:
+
+1. **1984 — Xanadu System Proposal** (Chip Morningstar, Xanadu
+   Operating Company; 2019 edition revised by Alberto González
+   Palomo, CC BY-SA 4.0):
+   sentido-labs.com/en/library/201904240732/Xanadu%20Hypertext%20Documents.html
+   The design of the original C backend under Unix: enfilade theory
+   (crums, wids, disps; retrieve/rearrange/append; cut and
+   three/four-cut algorithms), the granfilade/poomfilade/spanfilade
+   triad, tumblers and humbers, orgls/berts/virtual copies,
+   historical trace, and the "Future Directions" (§8) that became
+   the roadmap everything after it executed. Phoebe — "fe-be",
+   frontend-backend — is named here (§8f). This is the design
+   rationale for the code in `original-code/xanadugold/` and the
+   common ancestor of both the Green and Gold variants.
+
+2. **1988 — Udanax Green FeBe Protocol**: udanax.xanadu.com/green/febe/
+   The realization of §8f: the wire protocol for the simplified
+   Green variant — three-set links ("deliberately misnamed"),
+   backend-performs-edits, end-sets splitting to original
+   characters. The manual cited throughout §1 of this document.
+
+3. **1999 — open-source release** (X11 license): both variants,
+   including the Gold winfe (1993) examined in §5 above.
+
+4. **2026 — Xudanu**: FR-39/FR-40 implement the Green link model
+   (multi-ended links, type endsets, home documents, four-set
+   matching); `FR-40-conformance-matrix.md` tracks the claim-by-
+   claim alignment; the proposal's §8i (GC archive-first) and §8h
+   (superedit historical trace) are adopted as issues #142 and
+   candidates respectively.
+
+Heritage items from the 1984 proposal now tracked in Xudanu:
+
+- **§8i GC** → issue #142 (archive-first, full-reachability audit)
+- **§8h historical trace** — slow variant ships (revision history +
+  WAL replay); fast variant (superedit aggregation, "an enfilade
+  constructed from enfilades") is an FR-34 candidate
+- **§8l3b1 time as a retrieval dimension** — FR candidate
+- **§8l4/8l6 semi- vs fully-distributed** — FR-3 cluster is
+  squarely "semi-distributed"; the fully-distributed analysis
+  (locate non-local data, track who knows about local changes)
+  describes our cross-server receipts and tumblers problem exactly;
+  the Web of Indra analogy is the one-line description of the
+  federated docuverse
+- **Phoebe → FeBe → our WS ops**: the protocol-naming lineage;
+  FR-40's new ops continue the same evolution
+
+Quotation note: the 2019 edition is CC BY-SA 4.0 — quoting with
+attribution is clean; the original 1984 text is MIT per the
+editor's lifting of the "dire curse."
