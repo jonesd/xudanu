@@ -7,6 +7,33 @@ const PAIR_COLORS = [
   "#f0e442", "#e69f00", "#0072b2", "#d55e00",
 ];
 
+
+function highlightComplement(
+  text: string,
+  regions: { start: number; end: number }[],
+): string {
+  // "What differs" view: shared passages are dimmed/struck; the
+  // text UNIQUE to this work renders full-contrast. The difference
+  // is what's NOT colored.
+  if (!regions.length) {
+    return `<span>${text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c))}</span>`;
+  }
+  const sorted = [...regions].sort((a, b) => a.start - b.start);
+  const esc = (t: string) =>
+    t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c));
+  let html = "";
+  let pos = 0;
+  for (const r of sorted) {
+    if (r.end <= pos) continue;
+    const start = Math.max(r.start, pos);
+    if (start > pos) html += esc(text.slice(pos, start));
+    html += `<span style="opacity:0.35;background:rgba(139,148,158,0.15)">${esc(text.slice(start, r.end))}</span>`;
+    pos = r.end;
+  }
+  if (pos < text.length) html += esc(text.slice(pos));
+  return html;
+}
+
 interface MultiEndCompareProps {
   workIds: number[];
   works: WorkListEntry[];
@@ -47,6 +74,7 @@ export function MultiEndCompare({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addWorkId, setAddWorkId] = useState<number | "">("");
+  const [viewMode, setViewMode] = useState<"shared" | "unique">("shared");
 
   const uniqueIds = useMemo(() => {
     const seen = new Set<number>();
@@ -171,6 +199,27 @@ export function MultiEndCompare({
           </div>
         )}
         {!loading && columns.length >= 2 && (
+          <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+            {(["shared", "unique"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                className={`ws-link-filter-btn ${viewMode === m ? "active" : ""}`}
+                style={{
+                  fontSize: 11,
+                  padding: "2px 10px",
+                  background: viewMode === m ? "#58a6ff" : "transparent",
+                  color: viewMode === m ? "#fff" : "#8b949e",
+                  borderColor: viewMode === m ? "#58a6ff" : "#30363d",
+                }}
+                onClick={() => setViewMode(m)}
+              >
+                {m === "shared" ? "Shared passages" : "What differs"}
+              </button>
+            ))}
+          </div>
+        )}
+        {!loading && columns.length >= 2 && (
           <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(columns.length, 3)}, 1fr)`, gap: 8 }}>
             {columns.map((col) => (
               <div
@@ -195,7 +244,9 @@ export function MultiEndCompare({
                 <div
                   className="compare-hl"
                   dangerouslySetInnerHTML={{
-                    __html: highlightRegions(col.text, col.regions, "compare-hl"),
+                    __html: viewMode === "shared"
+                      ? highlightRegions(col.text, col.regions, "compare-hl")
+                      : highlightComplement(col.text, col.regions),
                   }}
                 />
               </div>
