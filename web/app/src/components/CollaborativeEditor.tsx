@@ -419,18 +419,10 @@ function drawOverlay(
     }
 
     const rangeRects = range.getClientRects();
-    for (const r of rangeRects) {
-      const x = r.left - rect.left;
-      const y = r.top - rect.top;
-      ctx.fillStyle = srcColor.bg;
-      ctx.fillRect(x, y, r.width, r.height);
-      ctx.save();
-      ctx.strokeStyle = srcColor.border;
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 2]);
-      ctx.strokeRect(x + 0.5, y + 0.5, r.width - 1, r.height - 1);
-      ctx.restore();
-    }
+    // CSS border-left + tint on .inline-transclusion handles the visual
+    // treatment. The canvas dashed rect + wash used to be the only marker;
+    // stacked on the CSS bar it read as doubled decoration (dotted outline
+    // + translucent overlay over the placed quote) — removed.
 
     // CSS border-left on .inline-transclusion handles the visual bar.
     // Canvas bar removed to avoid overlapping text.

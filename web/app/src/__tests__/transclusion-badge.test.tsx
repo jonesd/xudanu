@@ -75,3 +75,67 @@ describe("TransclusionBadge (FR-37 pinned quotations)", () => {
     expect(screen.queryByRole("button", { name: /pinned quote/i })).toBeNull();
   });
 });
+
+describe("TransclusionBadge (placement polish)", () => {
+  it("Append-to-end button calls onPlaceAtEnd", () => {
+    const onPlaceAtEnd = vi.fn();
+    render(
+      <TransclusionBadge
+        pending={mkPending()}
+        cursorPosition={null}
+        onPlace={vi.fn()}
+        onPlacePinned={vi.fn()}
+        onCancel={vi.fn()}
+        onPlaceAtEnd={onPlaceAtEnd}
+      />,
+    );
+    const btn = screen.getByRole("button", { name: /append to end/i });
+    expect(btn).toBeTruthy();
+    fireEvent.click(btn);
+    expect(onPlaceAtEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("Place-in picker lists other works, excludes the source, and switches on click", () => {
+    const onSwitchWork = vi.fn();
+    render(
+      <TransclusionBadge
+        pending={mkPending()}
+        cursorPosition={null}
+        onPlace={vi.fn()}
+        onPlacePinned={vi.fn()}
+        onCancel={vi.fn()}
+        onSwitchWork={onSwitchWork}
+        recentWorks={[
+          { work_id: 42, title: "Source Doc" },
+          { work_id: 7, title: "Target Doc" },
+          { work_id: 9, title: "Another Doc" },
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /place in/i }));
+    const items = screen.getAllByRole("menu", { hidden: true }).flatMap((m) =>
+      Array.from(m.querySelectorAll("button")),
+    );
+    const titles = items.map((b) => b.textContent);
+    expect(titles).toContain("Target Doc");
+    expect(titles).toContain("Another Doc");
+    expect(titles).not.toContain("Source Doc");
+    fireEvent.click(screen.getByRole("button", { name: "Target Doc" }));
+    expect(onSwitchWork).toHaveBeenCalledWith(7);
+  });
+
+  it("hides the picker when no other works exist", () => {
+    render(
+      <TransclusionBadge
+        pending={mkPending()}
+        cursorPosition={null}
+        onPlace={vi.fn()}
+        onPlacePinned={vi.fn()}
+        onCancel={vi.fn()}
+        onSwitchWork={vi.fn()}
+        recentWorks={[{ work_id: 42, title: "Source Doc" }]}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /place in/i })).toBeNull();
+  });
+});

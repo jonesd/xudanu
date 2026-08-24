@@ -2522,6 +2522,68 @@ body {
   background: #b2dfdb;
 }
 
+.transclusion-badge-picker-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.transclusion-badge-switch {
+  background: none;
+  border: 1px solid #80cbc4;
+  color: #00695c;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.transclusion-badge-switch:hover {
+  background: #b2dfdb;
+}
+
+.transclusion-badge-picker {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  min-width: 240px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #b2dfdb;
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
+  padding: 6px;
+}
+
+.transclusion-badge-picker-title {
+  font-size: 11px;
+  color: #888;
+  padding: 4px 8px 6px;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 4px;
+}
+
+.transclusion-badge-picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transclusion-badge-picker-item:hover {
+  background: #e0f2f1;
+}
+
 .link-list-item {
   display: flex;
   align-items: center;

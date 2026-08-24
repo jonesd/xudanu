@@ -552,13 +552,26 @@ export function WorkspaceShell() {
   // Periodic work list refresh — picks up new works from other tabs/sessions
   useEffect(() => {
     if (!connected || !fetchWorkList) return;
-    const interval = setInterval(async () => {
+    const refresh = async () => {
       try {
         const entries = await fetchWorkList();
         setWorks(entries);
       } catch { /* network error — will retry */ }
-    }, 30000);
-    return () => clearInterval(interval);
+    };
+    const interval = setInterval(refresh, 30000);
+    // Refocus/visible: the 30s interval is the floor, not the ceiling —
+    // switching back to the tab (the common "I just made a doc elsewhere"
+    // moment) should show fresh state immediately.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [connected, fetchWorkList]);
 
   useEffect(() => {
@@ -1265,6 +1278,12 @@ export function WorkspaceShell() {
     },
     [workBeId, text, compound, transclusion, showToast]
   );
+
+  const handlePlaceTransclusionAtEnd = useCallback(() => {
+    // Explicit append: no cursor geometry needed — a blank line, then the
+    // quote. Covers the "no line available below the last content" case.
+    handlePlaceTransclusion(-1, "\n\n");
+  }, [handlePlaceTransclusion]);
 
   const handleNavigateToSource = useCallback(
     (workId: number, spanStart: number | null, spanEnd: number | null) => {
@@ -2187,9 +2206,20 @@ export function WorkspaceShell() {
               </div>
               {(() => {
                 const pinned = works.filter((w) => w.is_starred);
+                // Session-recency first (most recently selected/created in
+                // THIS tab), then server updated_at. The server timestamp
+                // alone is unreliable for just-created works and buries a
+                // new document the user needs at the top mid-flow (e.g.
+                // the transclusion place-in-another-document dance).
+                const sessionRecency = new Map(
+                  recentWorkIds.current.map((id, i) => [id, recentWorkIds.current.length - i]),
+                );
                 const recentUnpinned = works
                   .filter((w) => !w.is_starred)
                   .sort((a, b) => {
+                    const ra = sessionRecency.get(a.work_id) ?? 0;
+                    const rb = sessionRecency.get(b.work_id) ?? 0;
+                    if (ra !== rb) return rb - ra;
                     const now = Math.floor(Date.now() / 1000);
                     return (b.updated_at ?? now) - (a.updated_at ?? now);
                   })
@@ -3227,6 +3257,9 @@ export function WorkspaceShell() {
                     onPlace={handlePlaceTransclusion}
                     onPlacePinned={handlePlacePinnedTransclusion}
                     onCancel={transclusion.clearPending}
+                    onSwitchWork={selectWork}
+                    onPlaceAtEnd={handlePlaceTransclusionAtEnd}
+                    recentWorks={works.map((w) => ({ work_id: w.work_id, title: w.title }))}
                   />
                 )}
                 {remoteViewOverlay}
