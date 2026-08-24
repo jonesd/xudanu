@@ -25,6 +25,7 @@ interface CompoundBuilderProps {
   onPlaceTransclusion: (sourceWorkId: number, sourceWorkTitle: string, start: number, end: number, text: string) => void;
   onReloadCompound: () => void;
   onFetchSourceText?: (workId: number) => Promise<string | null>;
+  onRemoveSpan?: (sourceWorkId: number, charStart: number, charEnd: number) => Promise<boolean>;
 }
 
 interface SourceDoc {
@@ -96,6 +97,7 @@ export function CompoundBuilder({
   onClose,
   onPlaceTransclusion,
   onReloadCompound,
+  onRemoveSpan,
   onFetchSourceText,
 }: CompoundBuilderProps) {
   void onFetchSourceText;
@@ -325,7 +327,7 @@ export function CompoundBuilder({
   }, [works]);
 
   const structure = useMemo(() => {
-    const items: Array<{ type: "original" | "transclusion"; label: string; preview: string; changed?: boolean; origin?: string; sectionNum?: number; duplicate?: boolean }> = [];
+    const items: Array<{ type: "original" | "transclusion"; label: string; preview: string; changed?: boolean; origin?: string; sectionNum?: number; duplicate?: boolean; span?: SpanRangePayload }> = [];
     if (compoundSpanRanges.length === 0) {
       items.push(
       centerText.trim()
@@ -350,7 +352,7 @@ export function CompoundBuilder({
       const rangeKey = `${span.source_work_id}:${span.char_start}:${span.char_end}`;
       const duplicate = seenRanges.has(rangeKey);
       seenRanges.add(rangeKey);
-      items.push({ type: "transclusion", label: title, preview, changed: span.source_changed, origin, sectionNum: transclusionNum, duplicate });
+      items.push({ type: "transclusion", label: title, preview, changed: span.source_changed, origin, sectionNum: transclusionNum, duplicate, span });
       pos = Math.max(pos, span.flat_end);
     }
     if (pos < centerText.length) {
@@ -645,6 +647,21 @@ export function CompoundBuilder({
                 </div>
                 {item.origin && <div className="cb-structure-origin" title={item.origin}>{item.origin}</div>}
                 <div className="cb-structure-preview">{item.preview}</div>
+                {item.type === "transclusion" && item.span && onRemoveSpan && (
+                  <button
+                    type="button"
+                    className="cb-structure-remove"
+                    title="Remove this quoted passage (the source document is untouched)"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const span = item.span!;
+                      const ok = await onRemoveSpan(span.source_work_id, span.char_start, span.char_end);
+                      if (ok) onReloadCompound();
+                    }}
+                  >
+                    &times; remove
+                  </button>
+                )}
               </div>
             ))}
           </div>

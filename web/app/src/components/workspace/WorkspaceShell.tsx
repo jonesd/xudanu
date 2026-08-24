@@ -4790,6 +4790,7 @@ export function WorkspaceShell() {
             });
           }}
           onReloadCompound={() => compound.reload()}
+          onRemoveSpan={compound.removeTransclusion}
         />
       )}
       {showMerge && workBeId !== null && (
