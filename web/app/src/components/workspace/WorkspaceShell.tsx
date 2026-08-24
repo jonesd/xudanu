@@ -2986,6 +2986,7 @@ export function WorkspaceShell() {
                       </button>
                       <button
                         type="button"
+                        className="ws-sel-btn note"
                         onClick={handleCreateAnnotation}
                         disabled={!canEdit}
                         title={canEdit
