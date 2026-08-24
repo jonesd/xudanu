@@ -99,7 +99,7 @@ export function CompoundBuilder({
             const val = resp as Record<string, unknown>;
             const inner = (val && "value" in val) ? val.value as Record<string, unknown> : val;
             const text = (inner?.text as string) || "";
-            return [w.work_id, text.slice(0, 200)] as const;
+            return [w.work_id, text.slice(0, 500)] as const;
           } catch {
             return null;
           }
