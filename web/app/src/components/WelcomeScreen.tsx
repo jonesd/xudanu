@@ -96,7 +96,7 @@ export function WelcomeScreen({
         </div>
       )}
       <div style={{ marginTop: 32, fontSize: 11, color: "var(--text-dim)", textAlign: "center", maxWidth: 400 }}>
-        <strong>Xudanu v1.6.0 — from Gold, toward the docuverse</strong>
+        <strong>Xudanu v{__APP_VERSION__} — from Gold, toward the docuverse</strong>
         <div style={{ marginTop: 4, fontSize: 10 }}>
           Independent open-source project (Apache 2.0). Not affiliated with Project Xanadu&trade; or the Udanax team.
         </div>
