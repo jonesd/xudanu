@@ -14,6 +14,7 @@ interface WorkspaceTopBarProps {
   onOpenSearch: () => void;
   onOpenIdentity: () => void;
   onOpenAdmin: () => void;
+  onHome: () => void;
   isAdmin: boolean;
   onCreateWork: () => void;
   themeMode: ThemeMode;
@@ -55,6 +56,7 @@ export function WorkspaceTopBar({
   onOpenSearch,
   onOpenIdentity,
   onOpenAdmin,
+  onHome,
   isAdmin,
   onCreateWork,
   themeMode,
@@ -92,10 +94,10 @@ export function WorkspaceTopBar({
     <div className="ws-top-bar">
       <div
         className="ws-brand"
-        onClick={() => {
-          window.history.pushState({}, "", "/");
-          window.dispatchEvent(new PopStateEvent("popstate"));
-        }}
+        onClick={onHome}
+        title="Back to the welcome page"
+        role="button"
+        aria-label="Xudanu home"
       >
         <span className="ws-brand-text">
           Xuda<span className="ws-brand-nu">nu</span>

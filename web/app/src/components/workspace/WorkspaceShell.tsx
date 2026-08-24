@@ -2064,6 +2064,14 @@ export function WorkspaceShell() {
         identityColor={identityColor}
         activeNav={navTab}
         onNavChange={setNavTab}
+        onHome={() => {
+          setWorkBeId(null);
+          setImageEntries([]);
+          const url = new URL(window.location.href);
+          url.searchParams.delete("work");
+          url.searchParams.delete("demo");
+          window.history.replaceState({}, "", url.toString());
+        }}
         onOpenSearch={() => {
           setNavTab("library");
           setTimeout(() => {
