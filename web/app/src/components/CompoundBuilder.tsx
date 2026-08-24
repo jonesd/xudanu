@@ -43,41 +43,6 @@ const BRIDGE_COLORS = [
 
 import { escapeHtml } from "../utils/escape";
 
-function renderCompoundText(
-  text: string,
-  spans: SpanRangePayload[],
-  sourceTitles: Record<number, string>,
-  searchTerm?: string,
-): string {
-  if (spans.length === 0) {
-    return highlightSearch(escapeHtml(text), searchTerm ?? "");
-  }
-  const sorted = [...spans].sort((a, b) => a.flat_start - b.flat_start);
-  let html = "";
-  let pos = 0;
-  for (let i = 0; i < sorted.length; i++) {
-    const span = sorted[i];
-    const start = span.flat_start;
-    const end = Math.min(span.flat_end, text.length);
-    if (start < pos) continue;
-    if (start > pos) {
-      html += highlightSearch(escapeHtml(text.slice(pos, start)), searchTerm ?? "");
-    }
-    const title = sourceTitles[span.source_work_id] || `Work ${span.source_work_id.toString(16)}`;
-    const color = BRIDGE_COLORS[i % BRIDGE_COLORS.length];
-    const changedBadge = span.source_changed ? ' <span style="color:#d29922;font-size:10px;">&#x26A0;</span>' : "";
-    html += `<span class="cb-transclusion-span" style="background:${color}20;border-left:3px solid ${color};padding-left:4px;margin-left:-4px;" title="From: ${escapeHtml(title)}${span.source_changed ? ' (source changed)' : ''} — click to highlight source" data-span-idx="${i}">`;
-    html += escapeHtml(text.slice(start, end));
-    html += changedBadge;
-    html += `</span>`;
-    pos = Math.max(pos, end);
-  }
-  if (pos < text.length) {
-    html += highlightSearch(escapeHtml(text.slice(pos)), searchTerm ?? "");
-  }
-  return html;
-}
-
 function highlightSearch(html: string, term: string): string {
   if (!term || term.length < 2) return html;
   const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -92,8 +57,8 @@ export function CompoundBuilder({
   compoundSourceTitles,
   works,
   client,
-  identity,
-  authenticated,
+  identity: _identity,
+  authenticated: _authenticated,
   onClose,
   onPlaceTransclusion,
   onReloadCompound,
@@ -108,33 +73,8 @@ export function CompoundBuilder({
   const [sourceFilter, setSourceFilter] = useState("");
   const [sourceHighlight, setSourceHighlight] = useState(0);
   const [placementMode, setPlacementMode] = useState<"inline" | "block" | "auto">("auto");
-  const [sourcePanelW, setSourcePanelW] = useState(300);
-  const [structurePanelW, setStructurePanelW] = useState(260);
   const sourceTextRef = useRef<HTMLDivElement>(null);
 
-  // Panel resize: drag dividers between the three columns. The compound
-  // (essay) panel is flex:1 and absorbs whatever the two side panels give up.
-  const beginResize = useCallback((e: React.MouseEvent, which: "source" | "structure") => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = which === "source" ? sourcePanelW : structurePanelW;
-    const onMove = (ev: MouseEvent) => {
-      const delta = which === "source" ? ev.clientX - startX : startX - ev.clientX;
-      const w = Math.max(180, Math.min(520, startW + delta));
-      if (which === "source") setSourcePanelW(w);
-      else setStructurePanelW(w);
-    };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [sourcePanelW, structurePanelW]);
 
   useEffect(() => {
     onReloadCompound();
@@ -273,14 +213,6 @@ export function CompoundBuilder({
     setTimeout(() => onReloadCompound(), 500);
   }, [selectedText, activeSourceId, sources, onPlaceTransclusion, onReloadCompound]);
 
-  const handleTransclusionClick = useCallback((span: SpanRangePayload) => {
-    const workId = span.source_work_id;
-    if (!sources.some((s) => s.workId === workId)) {
-      void addSource(workId);
-    }
-    setActiveSourceId(workId);
-  }, [sources, addSource]);
-
   const handleEDLExport = useCallback(() => {
     const sorted = [...compoundSpanRanges].sort((a, b) => a.flat_start - b.flat_start);
     const entries: Array<Record<string, unknown>> = [];
@@ -406,32 +338,16 @@ export function CompoundBuilder({
     return { __html: html };
   }, [activeSource?.text, sourceSearch]);
 
-  // Same treatment for the essay/output panel: recomputing its innerHTML
-  // on every render (selection changes, include-button state, etc.)
-  // destroyed in-flight selections and caused visible flicker.
-  const compoundHtml = useMemo(
-    () => ({ __html: renderCompoundText(centerText, compoundSpanRanges, compoundSourceTitles) }),
-    [centerText, compoundSpanRanges, compoundSourceTitles],
-  );
   const transclusionCount = compoundSpanRanges.length;
-  const isEmpty = transclusionCount === 0 && sources.length === 0;
 
   return (
-    <div className="cb-overlay">
+    <div className="cb-dock">
       <div className="cb-header">
         <div className="cb-header-left">
-          <span className="cb-title">Compound Builder</span>
+          <span className="cb-title">Builder</span>
           <span className="cb-doc-title">{centerTitle}</span>
           {transclusionCount > 0 && (
             <span className="cb-count-badge">{transclusionCount} transclusion{transclusionCount !== 1 ? "s" : ""}</span>
-          )}
-          <span className={`cb-identity-badge ${authenticated ? "" : "anonymous"}`}>
-            {authenticated && identity ? identity.display_name : "Anonymous"}
-          </span>
-          {!authenticated && (
-            <button type="button" className="cb-btn-primary" onClick={onClose} title="Exit to log in">
-              Log in
-            </button>
           )}
         </div>
         <div className="cb-header-actions">
@@ -442,7 +358,7 @@ export function CompoundBuilder({
                 <button type="button" className={effectiveMode === "block" ? "active" : ""} onClick={() => setPlacementMode("block")} title="Place on its own line">Block</button>
               </div>
               <button type="button" className="cb-btn-primary" onClick={handleInclude}>
-                Include passage ({effectiveMode})
+                Include ({effectiveMode})
               </button>
             </>
           )}
@@ -450,10 +366,13 @@ export function CompoundBuilder({
           <button type="button" className="cb-btn-primary" onClick={onClose}>Done</button>
         </div>
       </div>
+      <div className="cb-dock-hint">
+        Write your own text in the document (left). Search, read, and quote sources here.
+      </div>
 
-      <div className="cb-body">
-        {/* Left: Source Pool */}
-        <div className="cb-source-panel" style={{ width: sourcePanelW }}>
+      <div className="cb-dock-body">
+        {/* Source pool + active source reader */}
+        <div className="cb-source-panel cb-dock-sources">
           <div className="cb-panel-header">Sources</div>
           <div className="cb-source-list">
             {sources.length === 0 && !sourceFilter && (
@@ -573,70 +492,28 @@ export function CompoundBuilder({
           )}
         </div>
 
-        {/* Center: Compound Document */}
-        <div
-          className="cb-panel-resizer"
-          onMouseDown={(e) => beginResize(e, "source")}
-          title="Drag to resize"
-        />
-        <div className="cb-compound-panel">
-          {isEmpty ? (
-            <div className="cb-welcome">
-              <h2>Build a document from transclusions</h2>
-              <ol>
-                <li><strong>Add a source</strong> — in the left panel, search for a document and click to add it</li>
-                <li><strong>Select text</strong> — highlight a passage in the source reader (left panel, below sources)</li>
-                <li><strong>Include passage</strong> — click the green button at the top to transclude it into this document</li>
-                <li><strong>Repeat</strong> — add more sources and build your compound document</li>
-              </ol>
-              <p className="cb-welcome-hint">
-                Transcluded content maintains its link to the source.
-                If the original is edited, you&apos;ll see a warning here.
-              </p>
-            </div>
-          ) : (
-            <div
-              className="cb-compound-doc"
-              onClick={(e) => {
-                const target = e.target as HTMLElement;
-                const idx = target?.getAttribute?.("data-span-idx");
-                if (idx !== null && idx !== undefined) {
-                  const sorted = [...compoundSpanRanges].sort((a, b) => a.flat_start - b.flat_start);
-                  const span = sorted[parseInt(idx, 10)];
-                  if (span) handleTransclusionClick(span);
-                }
-              }}
-            >
-              <div className="cb-compound-title">{centerTitle}</div>
-              <div
-                className="cb-compound-text"
-                dangerouslySetInnerHTML={compoundHtml}
-              />
-            </div>
-          )}
+        {/* Quoted passages (manifest) */}
+        <div className="cb-panel-resizer cb-dock-vresizer">
+          <span />
         </div>
-
-        {/* Right: Document Outline */}
-        <div
-          className="cb-panel-resizer"
-          onMouseDown={(e) => beginResize(e, "structure")}
-          title="Drag to resize"
-        />
-        <div className="cb-structure-panel" style={{ width: structurePanelW }}>
-          <div className="cb-panel-header">Outline</div>
-          <div className="cb-panel-sub">Quoted passages and your own text, in order</div>
+        <div className="cb-structure-panel cb-dock-structure">
+          <div className="cb-panel-header">Quoted passages</div>
+          <div className="cb-panel-sub">In document order — click to scroll, × to remove</div>
           <div className="cb-structure-list">
             {structure.map((item, i) => (
               <div
                 key={i}
                 className={`cb-structure-item ${item.type}`}
                 onClick={() => {
-                  const el = document.querySelector(".cb-compound-text");
-                  if (el) {
-                    const spans = el.querySelectorAll("[data-span-idx]");
-                    if (item.type === "transclusion" && spans[i]) {
-                      (spans[i] as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
-                    }
+                  // Scroll the quoted passage into view in the live
+                  // editor (left). Spans are ordered; jump by flat_start.
+                  if (item.type === "transclusion" && item.span) {
+                    window.history.replaceState(
+                      null,
+                      "",
+                      window.location.pathname + window.location.search + `#C${item.span.flat_start}`,
+                    );
+                    window.dispatchEvent(new HashChangeEvent("hashchange"));
                   }
                 }}
               >

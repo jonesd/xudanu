@@ -2820,6 +2820,55 @@
 }
 
 /* ── Compound Builder (FR-30) — theme-aware ── */
+/* Docked mode: the builder is a right-docked panel; the live document
+   editor stays visible and editable to its left. The old full-screen
+   overlay (cb-overlay) duplicated a read-only rendering of the essay
+   and could not be written in. */
+.cb-dock {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(560px, 46vw);
+  z-index: 90;
+  background: var(--bg, #1a1a24);
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border, #30363d);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.25);
+}
+.ws-mode-compose .ws-body {
+  grid-template-columns: 0 minmax(0, 1fr) 0;
+  padding-right: min(560px, 46vw);
+}
+.ws-mode-compose .ws-left-rail { display: none; }
+.ws-mode-compose .ws-right-panel { display: none; }
+.cb-dock-hint {
+  padding: 6px 14px;
+  font-size: 11px;
+  color: var(--text-muted, #8b949e);
+  background: var(--bg-surface, #22222e);
+  border-bottom: 1px solid var(--border, #30363d);
+  flex-shrink: 0;
+}
+.cb-dock-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.cb-dock-sources {
+  flex: 1 1 58%;
+  min-width: 0;
+  width: auto;
+  border-right: 1px solid var(--border, #30363d);
+}
+.cb-dock-structure {
+  flex: 1 1 42%;
+  min-width: 0;
+  width: auto;
+  border-left: none;
+}
+.cb-dock-vresizer { display: none; }
 .cb-overlay { position: fixed; inset: 0; z-index: 100; background: var(--bg, #1a1a24); display: flex; flex-direction: column; }
 .cb-header { display: flex; align-items: center; justify-content: space-between; padding: 0 16px; height: 48px; background: var(--bg-surface, #22222e); border-bottom: 1px solid var(--border, #30363d); flex-shrink: 0; }
 .cb-header-left { display: flex; align-items: center; gap: 12px; }
