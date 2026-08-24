@@ -225,12 +225,34 @@ export function WorkspaceShell() {
   const [showPerspective, setShowPerspective] = useState(false);
   const [showCompoundBuilder, setShowCompoundBuilder] = useState(false);
 
-  // Compose nav tab triggers Compound Builder
+  // Compose nav tab triggers Compound Builder. The shell document is
+  // created untitled on first compose; an explicit title keeps the
+  // auto-title extractor (which otherwise borrows concept-seed names
+  // like "Folksonomy" for empty works) out of the way.
   useEffect(() => {
     if (navTab === "compose") {
       if (workBeId === null && createWork) {
         createWork().then((id) => {
-          if (typeof id === "number") selectWork(id);
+          if (typeof id === "number") {
+            selectWork(id);
+            if (clientRef.current) {
+              clientRef.current
+                .sendRequest("work_set_title", {
+                  work_id: id,
+                  title: "Untitled composition",
+                })
+                .then(() => {
+                  setWorks((prev) =>
+                    prev.map((w) =>
+                      w.work_id === id
+                        ? { ...w, title: "Untitled composition" }
+                        : w,
+                    ),
+                  );
+                })
+                .catch(() => {});
+            }
+          }
         });
       }
       setShowCompoundBuilder(true);

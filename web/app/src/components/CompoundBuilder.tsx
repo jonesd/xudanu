@@ -138,6 +138,38 @@ export function CompoundBuilder({
     onReloadCompound();
   }, [onReloadCompound]);
 
+  // Content preview index: the source picker used to match titles/IDs
+  // only, so searching body text found nothing. Index the first ~200
+  // chars of each work once (lazily, first search keystroke) and match
+  // against them too.
+  const [contentIndex, setContentIndex] = useState<Record<number, string> | null>(null);
+  const contentIndexStarted = useRef(false);
+  const ensureContentIndex = useCallback(() => {
+    if (contentIndexStarted.current || !client) return;
+    contentIndexStarted.current = true;
+    (async () => {
+      const idx: Record<number, string> = {};
+      const targets = works.filter((w) => w.work_id !== centerWorkId).slice(0, 100);
+      const results = await Promise.all(
+        targets.map(async (w) => {
+          try {
+            const resp = await client.sendRequest("work_get_edition", { work_id: w.work_id });
+            const val = resp as Record<string, unknown>;
+            const inner = (val && "value" in val) ? val.value as Record<string, unknown> : val;
+            const text = (inner?.text as string) || "";
+            return [w.work_id, text.slice(0, 200)] as const;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      for (const r of results) {
+        if (r) idx[r[0]] = r[1];
+      }
+      setContentIndex(idx);
+    })();
+  }, [client, works, centerWorkId]);
+
   const addSource = useCallback(async (workId: number) => {
     if (sources.some((s) => s.workId === workId)) return;
     const work = works.find((w) => w.work_id === workId);
@@ -349,7 +381,9 @@ export function CompoundBuilder({
         if (!q) return true;
         const title = (w.title || "").toLowerCase();
         const hexId = `0x${w.work_id.toString(16)}`;
-        return title.includes(q) || hexId.includes(q) || w.work_id.toString().includes(q);
+        if (title.includes(q) || hexId.includes(q) || w.work_id.toString().includes(q)) return true;
+        const preview = (contentIndex?.[w.work_id] || "").toLowerCase();
+        return preview.includes(q);
       })
       .sort((a, b) => {
         const aIsSource = transclusionSourceIds.has(a.work_id) ? 1 : 0;
@@ -357,7 +391,7 @@ export function CompoundBuilder({
         if (aIsSource !== bIsSource) return bIsSource - aIsSource;
         return (b.updated_at ?? b.work_id) - (a.updated_at ?? a.work_id);
       });
-  }, [works, centerWorkId, sources, sourceFilter, transclusionSourceIds]);
+  }, [works, centerWorkId, sources, sourceFilter, transclusionSourceIds, contentIndex]);
   const activeSource = sources.find((s) => s.workId === activeSourceId);
 
   // Memoize source HTML so re-renders (from selectedText state change)
@@ -447,9 +481,10 @@ export function CompoundBuilder({
             <input
               type="text"
               className="cb-source-search"
-              placeholder="Search to add source..."
+              placeholder="Search titles or text…"
               value={sourceFilter}
-              onChange={(e) => { setSourceFilter(e.target.value); setSourceHighlight(0); }}
+              onFocus={ensureContentIndex}
+              onChange={(e) => { setSourceFilter(e.target.value); setSourceHighlight(0); ensureContentIndex(); }}
               onKeyDown={(e) => {
                 if (e.key === "ArrowDown") { e.preventDefault(); setSourceHighlight((h) => Math.min(h + 1, Math.min(otherWorks.length, 20) - 1)); }
                 else if (e.key === "ArrowUp") { e.preventDefault(); setSourceHighlight((h) => Math.max(h - 1, 0)); }
@@ -477,7 +512,11 @@ export function CompoundBuilder({
               </div>
             )}
             {sourceFilter && otherWorks.length === 0 && (
-              <div className="cb-add-source-no-results">No matching documents</div>
+              <div className="cb-add-source-no-results">
+                {contentIndex === null
+                  ? "Indexing documents for text search…"
+                  : "No matching documents"}
+              </div>
             )}
           </div>
           {/* Active source text */}
