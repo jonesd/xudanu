@@ -2207,12 +2207,10 @@ export function WorkspaceShell() {
               {(() => {
                 const pinned = works.filter((w) => w.is_starred);
                 // Session-recency first (most recently selected/created in
-                // THIS tab), then server updated_at. The server timestamp
-                // alone is unreliable for just-created works and buries a
-                // new document the user needs at the top mid-flow (e.g.
-                // the transclusion place-in-another-document dance).
+                // THIS tab), then server updated_at. The ref appends on
+                // selection, so array index IS recency: last = most recent.
                 const sessionRecency = new Map(
-                  recentWorkIds.current.map((id, i) => [id, recentWorkIds.current.length - i]),
+                  recentWorkIds.current.map((id, i) => [id, i]),
                 );
                 const recentUnpinned = works
                   .filter((w) => !w.is_starred)
