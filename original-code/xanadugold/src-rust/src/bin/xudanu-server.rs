@@ -68,6 +68,9 @@ fn usage() {
     eprintln!("  rebuild-manifest <dir>   Rebuild manifest from chunks");
     eprintln!("  verify-security-log <dir> Verify security log chain integrity");
     eprintln!("  preflight <data-dir>     Check data dir is safe to start (no port binding)");
+    eprintln!("  recover <data-dir> [--list|--rollback <hash>|--unarchive]");
+    eprintln!("                           Inspect recoverable state or roll back to a");
+    eprintln!("                           previous root (run without the server running)");
     eprintln!();
     eprintln!("Run options:");
     eprintln!("  --static-dir <dir>       Serve frontend from directory instead of embedded HTML");
@@ -300,6 +303,134 @@ fn cmd_preflight(data_dir: &str) {
     }
 }
 
+fn cmd_recover(data_dir: &str, mode: &str, arg: Option<&str>) {
+    use xudanu::persist::chunk_store::ChunkStore;
+    use xudanu::persist::root_chunk;
+
+    let path = PathBuf::from(data_dir);
+    println!("xudanu-server {} recovery", env!("CARGO_PKG_VERSION"));
+    println!();
+
+    let store = match ChunkStore::open(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!(
+                "Error: cannot open chunk store at {}: {}",
+                path.display(),
+                e
+            );
+            std::process::exit(1);
+        }
+    };
+
+    match mode {
+        "--list" | "list" => {
+            let roots = match root_chunk::recover_list_roots(&path, &store) {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            println!("Known roots (newest first), from root_manifest.json:");
+            println!();
+            for (i, r) in roots.iter().enumerate() {
+                let label = if i == 0 {
+                    "current "
+                } else if i == 1 {
+                    "previous"
+                } else {
+                    "history "
+                };
+                if r.readable {
+                    println!(
+                        "  [{}] {}  seq {:>6}  works {:>3}  clubs {:>2}",
+                        label, r.hex, r.sequence, r.work_count, r.club_count
+                    );
+                } else {
+                    println!(
+                        "  [{}] {}  UNREADABLE: {}",
+                        label,
+                        r.hex,
+                        r.error.as_deref().unwrap_or("unknown error")
+                    );
+                }
+            }
+            println!();
+            let archived = store.archived_chunk_count();
+            if archived > 0 {
+                println!(
+                    "  Archive tier: {} archived chunk(s) on disk (past GC grace)",
+                    archived
+                );
+            }
+            println!("  Roll back with: xudanu-server recover <dir> --rollback <root-hash>");
+            println!("  Restore archived chunks with: xudanu-server recover <dir> --unarchive");
+        }
+        "--rollback" | "rollback" => {
+            let target = match arg {
+                Some(t) => t.to_string(),
+                None => {
+                    eprintln!("Usage: xudanu-server recover <data-dir> --rollback <root-hash>");
+                    eprintln!(
+                        "       Find candidate hashes with: xudanu-server recover <dir> --list"
+                    );
+                    std::process::exit(1);
+                }
+            };
+            match root_chunk::recover_rollback(&path, &store, &target, false) {
+                Ok(()) => println!(
+                    "Rolled back to root {}. Restart the server to load it.",
+                    &target[..16]
+                ),
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    eprintln!(
+                        "(Use --force-rollback to override the safety check if intentional.)"
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+        "--force-rollback" => {
+            let target = match arg {
+                Some(t) => t.to_string(),
+                None => {
+                    eprintln!(
+                        "Usage: xudanu-server recover <data-dir> --force-rollback <root-hash>"
+                    );
+                    std::process::exit(1);
+                }
+            };
+            match root_chunk::recover_rollback(&path, &store, &target, true) {
+                Ok(()) => println!(
+                    "Rolled back to root {} (forced). Restart the server to load it.",
+                    &target[..16]
+                ),
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        "--unarchive" | "unarchive" => {
+            let restored = store.restore_all_archived();
+            match restored {
+                Ok(n) => println!("Restored {} archived chunk(s) to the live store.", n),
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        other => {
+            eprintln!("Unknown recover mode: {}", other);
+            eprintln!("Modes: --list | --rollback <hash> | --force-rollback <hash> | --unarchive");
+            std::process::exit(1);
+        }
+    }
+}
+
 fn cmd_migrate_compound(data_dir: &str) {
     use xudanu::server::Server;
     let path = PathBuf::from(data_dir);
@@ -362,9 +493,12 @@ async fn main() {
                     }
                 })
             }),
-        "init" | "verify" | "rebuild-manifest" | "verify-security-log" | "preflight" => {
-            args.get(2).cloned()
-        }
+        "init"
+        | "verify"
+        | "rebuild-manifest"
+        | "verify-security-log"
+        | "preflight"
+        | "recover" => args.get(2).cloned(),
         _ => None,
     };
     init_tracing(data_dir_for_tracing.as_deref());
@@ -396,6 +530,12 @@ async fn main() {
         "preflight" => {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
             cmd_preflight(data_dir);
+        }
+        "recover" => {
+            let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
+            let mode = args.get(3).map(|s| s.as_str()).unwrap_or("--list");
+            let arg = args.get(4).map(|s| s.as_str());
+            cmd_recover(data_dir, mode, arg);
         }
         "migrate-compound" => {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");

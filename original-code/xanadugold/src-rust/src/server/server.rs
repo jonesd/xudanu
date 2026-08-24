@@ -695,6 +695,13 @@ pub struct Server {
     /// Standalone editions that failed to deserialize at restore; same
     /// preservation contract as quarantined_works.
     quarantined_editions: Vec<crate::persist::manifest::StandaloneEditionChunkRef>,
+    /// Work count (loaded + quarantined) at restore time, and updated
+    /// after every successful checkpoint. The checkpoint sanity gate
+    /// compares against this: refusing to overwrite a manifest that
+    /// references far more content than the in-memory state holds is
+    /// the last line of defense against promoting gutted in-memory
+    /// state to permanent on-disk truth (2026-08-24 incident).
+    last_persisted_work_count: usize,
     trusted_server_registry: Option<crate::crypto::server_identity::TrustedServerRegistry>,
     signed_introductions: Vec<SignedIntroduction>,
     security_tracker: CrossServerSecurityTracker,
@@ -1286,6 +1293,7 @@ impl Server {
             restore_errors: Vec::new(),
             quarantined_works: Vec::new(),
             quarantined_editions: Vec::new(),
+            last_persisted_work_count: 0,
             trusted_server_registry: None,
             signed_introductions: Vec::new(),
             cross_server_links: Vec::new(),
@@ -11305,6 +11313,8 @@ impl Server {
             );
         }
 
+        self.last_persisted_work_count = self.works.len() + self.quarantined_works.len();
+
         for se_ref in &manifest.standalone_editions {
             match crate::persist::edition_chunks::edition_from_chunks(
                 &se_ref.edition_ref,
@@ -20178,6 +20188,7 @@ pub(crate) mod persist_snapshot {
                 restore_errors: Vec::new(),
                 quarantined_works: Vec::new(),
                 quarantined_editions: Vec::new(),
+                last_persisted_work_count: 0,
                 trusted_server_registry: None,
                 signed_introductions: Vec::new(),
                 cross_server_links: Vec::new(),
@@ -20881,6 +20892,35 @@ pub(crate) mod persist_snapshot {
             }
             let start = std::time::Instant::now();
 
+            // Checkpoint sanity gate (2026-08-24 incident class): if the
+            // state we are about to persist references dramatically fewer
+            // works than the last good on-disk state, this checkpoint is
+            // almost certainly promoting gutted in-memory state (misparse,
+            // bug, partial load) to permanent truth. Refuse, loudly. An
+            // operator who really deleted that many works can clear the
+            // gate via admin action or XUDANU_ALLOW_LARGE_DROP=1.
+            {
+                let prospective = self.works.len() + self.quarantined_works.len();
+                let known = self.last_persisted_work_count;
+                if known >= 10 && prospective * 10 < known {
+                    let forced = std::env::var("XUDANU_ALLOW_LARGE_DROP").as_deref() == Ok("1");
+                    let msg = format!(
+                        "checkpoint sanity gate: refusing to persist {} works when last \
+                         checkpoint held {} — this looks like data loss, not editing. \
+                         The on-disk state is unchanged. Investigate (xudanu-server \
+                         recover <data-dir> --list), or set XUDANU_ALLOW_LARGE_DROP=1 \
+                         to force.",
+                        prospective, known
+                    );
+                    if forced {
+                        tracing::warn!("{} (XUDANU_ALLOW_LARGE_DROP=1 set: proceeding)", msg);
+                    } else {
+                        tracing::error!("{}", msg);
+                        return Err(std::io::Error::new(std::io::ErrorKind::Other, msg));
+                    }
+                }
+            }
+
             let chunk_store = self.chunk_store.as_ref().unwrap();
 
             let mut dirty_work_count = 0u64;
@@ -21373,6 +21413,7 @@ pub(crate) mod persist_snapshot {
 
             self.manifest_sequence = manifest.sequence;
 
+            self.last_persisted_work_count = self.works.len() + self.quarantined_works.len();
             self.dirty_clubs.clear();
             self.save_key_history();
 
@@ -31427,6 +31468,108 @@ mod tests {
                     .to_text()
                     == "victim"
             );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn checkpoint_sanity_gate_blocks_gutted_state() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_gate_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        // Build a server with 20 works and checkpoint it, so the on-disk
+        // state (and last_persisted_work_count) holds 20.
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            for i in 0..20 {
+                server
+                    .create_work(sid, Edition::from_text(&format!("work {}", i)))
+                    .unwrap();
+            }
+            server.checkpoint_to_store().unwrap();
+            assert_eq!(server.last_persisted_work_count, 20);
+        }
+
+        // Restore, then simulate gutted in-memory state (the 2026-08-24
+        // incident class: works vanish from memory but the server keeps
+        // running). The checkpoint must be refused.
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert_eq!(server.works.len(), 20);
+
+            let keep: Vec<BeId> = server.works.keys().copied().collect();
+            for id in keep.iter().skip(1) {
+                server.works.remove(id);
+            }
+            // 1 work vs last persisted 20: 1*10 < 20 → gate trips.
+            let err = server.checkpoint_to_store().unwrap_err().to_string();
+            assert!(err.contains("sanity gate"), "got: {}", err);
+
+            // On-disk state must be unchanged: restore again and verify.
+        }
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert_eq!(server.works.len(), 20, "gate prevented the gutted write");
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn checkpoint_gate_allows_normal_edits() {
+        // Deleting a few works (normal editing) must NOT trip the gate.
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_gate_ok_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let ids: Vec<BeId> = (0..20)
+                .map(|i| {
+                    server
+                        .create_work(sid, Edition::from_text(&format!("w{}", i)))
+                        .unwrap()
+                })
+                .collect();
+            server.checkpoint_to_store().unwrap();
+
+            // Delete 2 of 20 (10%): exactly at the threshold — allowed
+            // (gate trips only below 10%).
+            server.works.remove(&ids[0]);
+            server.works.remove(&ids[1]);
+            server.checkpoint_to_store().unwrap();
+            assert_eq!(server.last_persisted_work_count, 18);
+        }
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert_eq!(server.works.len(), 18);
         }
 
         let _ = std::fs::remove_dir_all(&data_dir);

@@ -401,6 +401,56 @@ impl ChunkStore {
         Ok(true)
     }
 
+    /// #142/recover: count chunks currently sitting in the archive tier.
+    pub fn archived_chunk_count(&self) -> usize {
+        let archive_dir = self.base_dir.join("archive");
+        let entries = match std::fs::read_dir(&archive_dir) {
+            Ok(e) => e,
+            Err(_) => return 0,
+        };
+        entries
+            .flatten()
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .map(|n| n.len() == 64 && !n.ends_with(".gen"))
+                    .unwrap_or(false)
+            })
+            .count()
+    }
+
+    /// recover --unarchive: restore every archived chunk to live storage.
+    /// Returns the number restored. Idempotent.
+    pub fn restore_all_archived(&self) -> Result<usize, ChunkError> {
+        let archive_dir = self.base_dir.join("archive");
+        if !archive_dir.exists() {
+            return Ok(0);
+        }
+        let entries = std::fs::read_dir(&archive_dir).map_err(|e| ChunkError::Io(e.to_string()))?;
+        let mut restored = 0usize;
+        for entry in entries.flatten() {
+            let name = match entry.file_name().into_string() {
+                Ok(n) => n,
+                Err(_) => continue,
+            };
+            if name.len() != 64 || name.ends_with(".gen") {
+                continue;
+            }
+            let hash = match hex::decode(&name) {
+                Ok(bytes) if bytes.len() == 32 => {
+                    let mut arr = [0u8; 32];
+                    arr.copy_from_slice(&bytes);
+                    arr
+                }
+                _ => continue,
+            };
+            if self.restore_archived_chunk(&hash)? {
+                restored += 1;
+            }
+        }
+        Ok(restored)
+    }
+
     /// #142: hard-delete archived chunks whose grace horizon
     /// (checkpoint generations) has elapsed. Returns count deleted.
     /// `current_gen` is the server's checkpoint sequence number.

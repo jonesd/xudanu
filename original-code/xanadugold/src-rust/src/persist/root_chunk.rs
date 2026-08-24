@@ -257,6 +257,13 @@ pub struct ServerRootChunk {
 
 // ── RootManifest (tiny bootstrap file) ───────────────────────────────────────
 
+/// How many previous roots the history ring retains. Each entry is a
+/// 64-char hex string in a JSON file of a few KB — cheap insurance
+/// against a bad checkpoint overwriting the only good root (2026-08-24
+/// incident: 93 works lost from the manifest for 4 hours; recovered
+/// only because `previous_root_hash` happened to hold the good root).
+pub const ROOT_HISTORY_DEPTH: usize = 24;
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RootManifest {
     pub current_root_hash: String,
@@ -265,7 +272,48 @@ pub struct RootManifest {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub previous_root_hash: Option<String>,
+    /// Older roots, newest-first. `previous_root_hash` is history[0]
+    /// conceptually; kept separate for backward compatibility with
+    /// binaries that only read/write previous_root_hash.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub root_history: Vec<String>,
     pub format_version: u32,
+}
+
+impl RootManifest {
+    /// Record a root transition: `new_current` becomes current, the old
+    /// current moves into history (deduplicated, newest-first, capped).
+    pub fn rotate_history(&mut self, new_current: String) {
+        if self.current_root_hash == new_current {
+            // No-op checkpoint rewrote the same root: nothing to rotate.
+            return;
+        }
+        let old = std::mem::replace(&mut self.current_root_hash, new_current);
+        self.previous_root_hash = Some(old.clone());
+        if self.root_history.first().map(|s| s.as_str()) != Some(old.as_str()) {
+            self.root_history.insert(0, old);
+        }
+        self.root_history.truncate(ROOT_HISTORY_DEPTH);
+    }
+
+    /// All known roots, newest-first: current, previous, then history.
+    /// Deduplicated in order.
+    pub fn all_roots(&self) -> Vec<String> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for h in std::iter::once(&self.current_root_hash)
+            .chain(self.previous_root_hash.iter())
+            .chain(self.root_history.iter())
+        {
+            if seen.insert(h.clone()) {
+                out.push(h.clone());
+            }
+        }
+        out
+    }
 }
 
 // ── Write / Read functions ──────────────────────────────────────────────────
@@ -571,20 +619,23 @@ pub fn checkpoint_write_root(
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
     let root_manifest_path = data_dir.join("root_manifest.json");
-    let previous_root_hash = if root_manifest_path.exists() {
-        match read_root_manifest(&root_manifest_path) {
-            Ok(prev) => prev.current_root_hash,
-            Err(_) => hash_to_hex(&root_hash),
-        }
+    let mut root_manifest = if root_manifest_path.exists() {
+        read_root_manifest(&root_manifest_path).unwrap_or_else(|_| RootManifest {
+            current_root_hash: hash_to_hex(&root_hash),
+            previous_root_hash: None,
+            root_history: Vec::new(),
+            format_version: ROOT_CHUNK_FORMAT_VERSION,
+        })
     } else {
-        hash_to_hex(&root_hash)
+        RootManifest {
+            current_root_hash: hash_to_hex(&root_hash),
+            previous_root_hash: None,
+            root_history: Vec::new(),
+            format_version: ROOT_CHUNK_FORMAT_VERSION,
+        }
     };
-
-    let root_manifest = RootManifest {
-        current_root_hash: hash_to_hex(&root_hash),
-        previous_root_hash: Some(previous_root_hash),
-        format_version: ROOT_CHUNK_FORMAT_VERSION,
-    };
+    root_manifest.format_version = ROOT_CHUNK_FORMAT_VERSION;
+    root_manifest.rotate_history(hash_to_hex(&root_hash));
 
     write_root_manifest(&root_manifest, &root_manifest_path)?;
 
@@ -1042,10 +1093,32 @@ pub fn collect_root_manifest_tree_hashes(
     let current = hex_to_hash(&rm.current_root_hash)?;
     refs.extend(collect_root_tree_hashes(&current, store)?);
 
-    if let Some(prev_hex) = rm.previous_root_hash {
-        if let Ok(prev) = hex_to_hash(&prev_hex) {
-            if prev != current && store.chunk_exists(&prev) {
-                refs.extend(collect_root_tree_hashes(&prev, store)?);
+    // Protect every root in the history ring — any of them may be the
+    // target of a future `recover --rollback`, so their trees must stay
+    // reachable. Walk failures on history entries are tolerated (older
+    // roots may reference archived chunks) but the previous root, like
+    // the current one, must walk cleanly.
+    for hex in rm.all_roots() {
+        if let Ok(h) = hex_to_hash(&hex) {
+            if h == current || !store.chunk_exists(&h) {
+                continue;
+            }
+            let is_previous = rm.previous_root_hash.as_deref() == Some(hex.as_str());
+            match collect_root_tree_hashes(&h, store) {
+                Ok(tree) => refs.extend(tree),
+                Err(e) => {
+                    if is_previous {
+                        return Err(RootChunkError::CorruptData(format!(
+                            "previous root tree walk failed: {}",
+                            e
+                        )));
+                    }
+                    tracing::warn!(
+                        "root-tree walk: history root {} walk failed: {} (left unprotected)",
+                        &hex[..16.min(hex.len())],
+                        e
+                    );
+                }
             }
         }
     }
@@ -1064,6 +1137,151 @@ fn hex_to_hash(hex: &str) -> Result<[u8; 32], RootChunkError> {
     let mut arr = [0u8; 32];
     arr.copy_from_slice(&bytes);
     Ok(arr)
+}
+
+// ── Recovery (xudanu-server recover) ─────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct RootSummary {
+    pub hex: String,
+    pub sequence: u64,
+    pub work_count: usize,
+    pub club_count: usize,
+    pub readable: bool,
+    pub error: Option<String>,
+}
+
+/// Summarize every root known to `root_manifest.json` (current, previous,
+/// history ring), newest-first, with work/club counts where readable.
+pub fn recover_list_roots(
+    data_dir: &std::path::Path,
+    store: &ChunkStore,
+) -> Result<Vec<RootSummary>, RootChunkError> {
+    let rm_path = data_dir.join("root_manifest.json");
+    let rm = read_root_manifest(&rm_path)
+        .map_err(|e| RootChunkError::CorruptData(format!("root_manifest.json: {}", e)))?;
+
+    let mut out = Vec::new();
+    for hex in rm.all_roots() {
+        let summary = match hex_to_hash(&hex) {
+            Ok(h) if store.chunk_exists(&h) => match read_root_chunk(&h, store) {
+                Ok(root) => {
+                    let work_count = match root.works_index_hash {
+                        Some(idx_hash) => read_works_index_chunk(&idx_hash, store)
+                            .map(|idx| idx.entries.len())
+                            .unwrap_or(0),
+                        None => 0,
+                    };
+                    let club_count = match root.clubs_index_hash {
+                        Some(idx_hash) => read_club_index_chunk(&idx_hash, store)
+                            .map(|idx| idx.entries.len())
+                            .unwrap_or(0),
+                        None => 0,
+                    };
+                    RootSummary {
+                        hex,
+                        sequence: root.sequence,
+                        work_count,
+                        club_count,
+                        readable: true,
+                        error: None,
+                    }
+                }
+                Err(e) => RootSummary {
+                    hex,
+                    sequence: 0,
+                    work_count: 0,
+                    club_count: 0,
+                    readable: false,
+                    error: Some(e.to_string()),
+                },
+            },
+            Ok(_) => RootSummary {
+                hex,
+                sequence: 0,
+                work_count: 0,
+                club_count: 0,
+                readable: false,
+                error: Some("chunk missing from store".to_string()),
+            },
+            Err(e) => RootSummary {
+                hex,
+                sequence: 0,
+                work_count: 0,
+                club_count: 0,
+                readable: false,
+                error: Some(e.to_string()),
+            },
+        };
+        out.push(summary);
+    }
+    Ok(out)
+}
+
+/// Roll the root manifest back to a specific historical root.
+///
+/// Safety: refuses unless the target root is (a) readable, and (b) holds at
+/// least as many works as the current root — rolling back must never
+/// silently discard content (the gutted-state signature). `force`
+/// overrides for an operator who knows better.
+pub fn recover_rollback(
+    data_dir: &std::path::Path,
+    store: &ChunkStore,
+    target_hex: &str,
+    force: bool,
+) -> Result<(), RootChunkError> {
+    let rm_path = data_dir.join("root_manifest.json");
+    let mut rm = read_root_manifest(&rm_path)
+        .map_err(|e| RootChunkError::CorruptData(format!("root_manifest.json: {}", e)))?;
+
+    if !rm.all_roots().iter().any(|r| r == target_hex) {
+        return Err(RootChunkError::CorruptData(format!(
+            "target root {} is not in root_manifest.json history",
+            &target_hex[..16.min(target_hex.len())]
+        )));
+    }
+
+    let target = hex_to_hash(target_hex)?;
+    if !store.chunk_exists(&target) {
+        return Err(RootChunkError::CorruptData(format!(
+            "target root chunk {} is missing from the store",
+            &target_hex[..16]
+        )));
+    }
+
+    let count_works = |hash: [u8; 32]| -> usize {
+        read_root_chunk(&hash, store)
+            .ok()
+            .and_then(|r| r.works_index_hash)
+            .and_then(|idx| read_works_index_chunk(&idx, store).ok())
+            .map(|idx| idx.entries.len())
+            .unwrap_or(0)
+    };
+
+    let current = hex_to_hash(&rm.current_root_hash)?;
+    let target_works = count_works(target);
+    let current_works = count_works(current);
+
+    if !force && target_works < current_works {
+        return Err(RootChunkError::CorruptData(format!(
+            "refusing rollback: target root holds {} works but current holds {} — \
+             rollback would lose content. Use --force if intentional.",
+            target_works, current_works
+        )));
+    }
+
+    let old_current = rm.current_root_hash.clone();
+    rm.rotate_history(target_hex.to_string());
+    // rotate_history put old_current at the front of history — correct.
+    write_root_manifest(&rm, &rm_path).map_err(|e| {
+        RootChunkError::CorruptData(format!("failed to write root_manifest.json: {}", e))
+    })?;
+    tracing::info!(
+        "rolled back root_manifest.json: current {} -> {} (old current preserved in history)",
+        &old_current[..16],
+        &target_hex[..16]
+    );
+    Ok(())
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -1463,6 +1681,7 @@ mod tests {
         let manifest = RootManifest {
             current_root_hash: "ab".repeat(32),
             previous_root_hash: Some("cd".repeat(32)),
+            root_history: Vec::new(),
             format_version: ROOT_CHUNK_FORMAT_VERSION,
         };
 
@@ -1486,6 +1705,7 @@ mod tests {
         let manifest = RootManifest {
             current_root_hash: "ef".repeat(32),
             previous_root_hash: None,
+            root_history: Vec::new(),
             format_version: ROOT_CHUNK_FORMAT_VERSION,
         };
 
@@ -1495,6 +1715,207 @@ mod tests {
 
         assert_eq!(restored.current_root_hash, "ef".repeat(32));
         assert!(restored.previous_root_hash.is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── Root history ring ─────────────────────────────────────────────
+
+    #[test]
+    fn root_history_rotate_and_cap() {
+        let mut rm = RootManifest {
+            current_root_hash: "aa".repeat(32),
+            previous_root_hash: None,
+            root_history: Vec::new(),
+            format_version: ROOT_CHUNK_FORMAT_VERSION,
+        };
+        // Rotate through more roots than the ring depth.
+        for i in 0..(ROOT_HISTORY_DEPTH + 5) {
+            let new_root = format!("{:02}", i).repeat(32);
+            rm.rotate_history(new_root);
+        }
+        assert_eq!(rm.root_history.len(), ROOT_HISTORY_DEPTH);
+        // All roots unique, newest-first.
+        let roots = rm.all_roots();
+        assert!(roots.len() >= ROOT_HISTORY_DEPTH);
+        let uniq: std::collections::HashSet<&String> = roots.iter().collect();
+        assert_eq!(uniq.len(), roots.len());
+        // The oldest roots fell off the ring.
+        assert!(!roots.contains(&"aa".repeat(32)));
+    }
+
+    #[test]
+    fn root_history_dedup_on_repeat_rotate() {
+        let mut rm = RootManifest {
+            current_root_hash: "11".repeat(32),
+            previous_root_hash: Some("22".repeat(32)),
+            root_history: vec!["22".repeat(32), "33".repeat(32)],
+            format_version: ROOT_CHUNK_FORMAT_VERSION,
+        };
+        // Re-writing the same current root (no-op checkpoint) changes
+        // nothing: previous and history are untouched.
+        rm.rotate_history("11".repeat(32));
+        assert_eq!(rm.root_history.len(), 2);
+        assert_eq!(rm.previous_root_hash, Some("22".repeat(32)));
+        assert_eq!(rm.current_root_hash, "11".repeat(32));
+    }
+
+    // ── recover: list + rollback ──────────────────────────────────────
+
+    fn write_two_roots(dir: &std::path::Path) -> (String, String) {
+        // Good root: 2 works. Gutted root: 0 works.
+        let store = ChunkStore::open(dir).unwrap();
+
+        let mk_work_entry = |be_id: u64| crate::persist::manifest::WorkEntry {
+            be_id,
+            work_ref: crate::persist::edition_chunks::WorkChunkRef {
+                be_id,
+                owner: None,
+                revision_count: 0,
+                current_root: crate::persist::edition_chunks::EditionChunkRef {
+                    root_hash: [0u8; 32],
+                    entry_count: 0,
+                },
+                history: Default::default(),
+                read_club: None,
+                edit_club: None,
+                sponsors: Vec::new(),
+                endorsements: Vec::new(),
+            },
+            is_source: false,
+            source_author_id: None,
+            source_edition_info: None,
+            content_start_line: None,
+            content_end_line: None,
+            source_fingerprint: None,
+            is_archived: false,
+            lifecycle_history: Vec::new(),
+            history_club: None,
+            kind: Default::default(),
+            license: Default::default(),
+            custom_title: None,
+        };
+        let _ = mk_work_entry;
+
+        // Write real root chunks: good root references a works index with
+        // 2 entries; gutted root references one with 0 entries.
+        let store = ChunkStore::open(dir).unwrap();
+        let write_root = |seq: u64, work_ids: &[u64]| -> String {
+            let idx = WorksIndexChunk {
+                format_version: ROOT_CHUNK_FORMAT_VERSION,
+                entries: work_ids
+                    .iter()
+                    .map(|&id| WorkIndexEntry {
+                        format_version: ROOT_CHUNK_FORMAT_VERSION,
+                        be_id: id,
+                        work_state_hash: [0u8; 32],
+                    })
+                    .collect(),
+            };
+            let idx_data = serialize_to_bytes(&idx).unwrap();
+            let idx_hash = store.write_chunk(&idx_data).unwrap();
+
+            let root = ServerRootChunk {
+                format_version: ROOT_CHUNK_FORMAT_VERSION,
+                sequence: seq,
+                checkpoint_at: format!("seq-{}", seq),
+                grand_map_id_counter: 1000,
+                session_counter: 0,
+                operation_counter: 0,
+                link_counter: 0,
+                works_index_hash: Some(idx_hash),
+                clubs_index_hash: None,
+                standalone_editions_hash: None,
+                links_hash: None,
+                link_type_registry: Vec::new(),
+                social_hash: None,
+                federation_hash: None,
+                annotations_hash: None,
+                blob_metas_hash: None,
+                content_address_hash: None,
+                historical_authors_hash: None,
+                fossil_snapshots_hash: None,
+                admin_hash: None,
+                key_history_hash: None,
+                system_clubs_hash: None,
+                reconcile_store_hash: None,
+            };
+            let root_hash = write_root_chunk(&root, &store).unwrap();
+            hash_to_hex(&root_hash)
+        };
+
+        let good_hex = write_root(1, &[100, 101]);
+        let gutted_hex = write_root(2, &[]);
+        (good_hex, gutted_hex)
+    }
+
+    #[test]
+    fn recover_list_and_rollback_refuses_content_loss() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let (good_hex, gutted_hex) = write_two_roots(&dir);
+
+        // Manifest points at the gutted root (the incident state).
+        let rm_path = dir.join("root_manifest.json");
+        let mut rm = RootManifest {
+            current_root_hash: gutted_hex.clone(),
+            previous_root_hash: Some(good_hex.clone()),
+            root_history: Vec::new(),
+            format_version: ROOT_CHUNK_FORMAT_VERSION,
+        };
+        write_root_manifest(&rm, &rm_path).unwrap();
+
+        let store = ChunkStore::open(&dir).unwrap();
+
+        // List sees both roots.
+        let roots = recover_list_roots(&dir, &store).unwrap();
+        assert!(roots.len() >= 2);
+        assert_eq!(roots[0].hex, gutted_hex);
+
+        // Rollback to the good root is allowed (more content, not less).
+        recover_rollback(&dir, &store, &good_hex, false).unwrap();
+        let after = read_root_manifest(&rm_path).unwrap();
+        assert_eq!(after.current_root_hash, good_hex);
+        assert_eq!(after.previous_root_hash, Some(gutted_hex.clone()));
+
+        // Rolling "back" to the gutted root (fewer works) must be refused.
+        let err = recover_rollback(&dir, &store, &gutted_hex, false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("refusing rollback"), "got: {}", err);
+
+        // ...unless forced.
+        recover_rollback(&dir, &store, &gutted_hex, true).unwrap();
+        let forced = read_root_manifest(&rm_path).unwrap();
+        assert_eq!(forced.current_root_hash, gutted_hex);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn recover_rollback_rejects_unknown_root() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let (good_hex, gutted_hex) = write_two_roots(&dir);
+        let rm_path = dir.join("root_manifest.json");
+        let rm = RootManifest {
+            current_root_hash: gutted_hex,
+            previous_root_hash: Some(good_hex),
+            root_history: Vec::new(),
+            format_version: ROOT_CHUNK_FORMAT_VERSION,
+        };
+        write_root_manifest(&rm, &rm_path).unwrap();
+
+        let store = ChunkStore::open(&dir).unwrap();
+        let stranger = "99".repeat(32);
+        let err = recover_rollback(&dir, &store, &stranger, true)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not in root_manifest.json"), "got: {}", err);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1600,6 +2021,7 @@ mod tests {
         let root_manifest = RootManifest {
             current_root_hash: "ff".repeat(32),
             previous_root_hash: Some(prev_hash_hex),
+            root_history: Vec::new(),
             format_version: ROOT_CHUNK_FORMAT_VERSION,
         };
 

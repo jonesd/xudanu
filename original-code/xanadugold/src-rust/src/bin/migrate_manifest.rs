@@ -320,6 +320,7 @@ fn migrate_manifest(
     let root_manifest = RootManifest {
         current_root_hash: hex::encode(root_hash),
         previous_root_hash: None,
+        root_history: Vec::new(),
         format_version: ROOT_CHUNK_FORMAT_VERSION,
     };
     root_chunk::write_root_manifest(&root_manifest, &data_dir.join("root_manifest.json"))?;
