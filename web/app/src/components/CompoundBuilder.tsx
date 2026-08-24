@@ -106,7 +106,33 @@ export function CompoundBuilder({
   const [sourceFilter, setSourceFilter] = useState("");
   const [sourceHighlight, setSourceHighlight] = useState(0);
   const [placementMode, setPlacementMode] = useState<"inline" | "block" | "auto">("auto");
+  const [sourcePanelW, setSourcePanelW] = useState(300);
+  const [structurePanelW, setStructurePanelW] = useState(260);
   const sourceTextRef = useRef<HTMLDivElement>(null);
+
+  // Panel resize: drag dividers between the three columns. The compound
+  // (essay) panel is flex:1 and absorbs whatever the two side panels give up.
+  const beginResize = useCallback((e: React.MouseEvent, which: "source" | "structure") => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = which === "source" ? sourcePanelW : structurePanelW;
+    const onMove = (ev: MouseEvent) => {
+      const delta = which === "source" ? ev.clientX - startX : startX - ev.clientX;
+      const w = Math.max(180, Math.min(520, startW + delta));
+      if (which === "source") setSourcePanelW(w);
+      else setStructurePanelW(w);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [sourcePanelW, structurePanelW]);
 
   useEffect(() => {
     onReloadCompound();
@@ -343,6 +369,14 @@ export function CompoundBuilder({
       : escapeHtml(activeSource.text);
     return { __html: html };
   }, [activeSource?.text, sourceSearch]);
+
+  // Same treatment for the essay/output panel: recomputing its innerHTML
+  // on every render (selection changes, include-button state, etc.)
+  // destroyed in-flight selections and caused visible flicker.
+  const compoundHtml = useMemo(
+    () => ({ __html: renderCompoundText(centerText, compoundSpanRanges, compoundSourceTitles) }),
+    [centerText, compoundSpanRanges, compoundSourceTitles],
+  );
   const transclusionCount = compoundSpanRanges.length;
   const isEmpty = transclusionCount === 0 && sources.length === 0;
 
@@ -383,7 +417,7 @@ export function CompoundBuilder({
 
       <div className="cb-body">
         {/* Left: Source Pool */}
-        <div className="cb-source-panel">
+        <div className="cb-source-panel" style={{ width: sourcePanelW }}>
           <div className="cb-panel-header">Sources</div>
           <div className="cb-source-list">
             {sources.length === 0 && !sourceFilter && (
@@ -499,6 +533,11 @@ export function CompoundBuilder({
         </div>
 
         {/* Center: Compound Document */}
+        <div
+          className="cb-panel-resizer"
+          onMouseDown={(e) => beginResize(e, "source")}
+          title="Drag to resize"
+        />
         <div className="cb-compound-panel">
           {isEmpty ? (
             <div className="cb-welcome">
@@ -530,14 +569,19 @@ export function CompoundBuilder({
               <div className="cb-compound-title">{centerTitle}</div>
               <div
                 className="cb-compound-text"
-                dangerouslySetInnerHTML={{ __html: renderCompoundText(centerText, compoundSpanRanges, compoundSourceTitles) }}
+                dangerouslySetInnerHTML={compoundHtml}
               />
             </div>
           )}
         </div>
 
         {/* Right: Document Outline */}
-        <div className="cb-structure-panel">
+        <div
+          className="cb-panel-resizer"
+          onMouseDown={(e) => beginResize(e, "structure")}
+          title="Drag to resize"
+        />
+        <div className="cb-structure-panel" style={{ width: structurePanelW }}>
           <div className="cb-panel-header">Outline</div>
           <div className="cb-panel-sub">Quoted passages and your own text, in order</div>
           <div className="cb-structure-list">
