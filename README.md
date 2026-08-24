@@ -374,6 +374,13 @@ To add or update documentation:
 
 xudanu is licensed under the **Apache License 2.0**.
 
+### Third-Party Font Licenses
+
+The bundled web fonts (Orbitron, Inter, JetBrains Mono, Source Serif 4) are
+redistributed under the SIL Open Font License 1.1 — see
+[`web/app/public/THIRD-PARTY-NOTICES.md`](web/app/public/THIRD-PARTY-NOTICES.md),
+which ships with every distribution.
+
 ### Upstream License
 
 Portions of this project are derived from **Udanax Gold (Xanadu 92.1)**, which was released under the **Xanadu X11 license** (a permissive license similar to MIT).
