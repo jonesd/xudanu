@@ -702,6 +702,9 @@ pub struct Server {
     /// the last line of defense against promoting gutted in-memory
     /// state to permanent on-disk truth (2026-08-24 incident).
     last_persisted_work_count: usize,
+    /// The seeded interactive demo work (public-read), set at data dir
+    /// init and restored with the manifest.
+    demo_work_id: Option<BeId>,
     trusted_server_registry: Option<crate::crypto::server_identity::TrustedServerRegistry>,
     signed_introductions: Vec<SignedIntroduction>,
     security_tracker: CrossServerSecurityTracker,
@@ -1294,6 +1297,7 @@ impl Server {
             quarantined_works: Vec::new(),
             quarantined_editions: Vec::new(),
             last_persisted_work_count: 0,
+            demo_work_id: None,
             trusted_server_registry: None,
             signed_introductions: Vec::new(),
             cross_server_links: Vec::new(),
@@ -10678,10 +10682,94 @@ impl Server {
             };
         self.wal = crate::persist::wal::WalLog::open(data_dir)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        self.seed_demo_work();
         self.checkpoint_to_store()?;
 
         tracing::info!("Initialized xudanu data directory: {}", data_dir.display());
         Ok(())
+    }
+
+    /// The interactive demo ("Try the Interactive Demo" on the welcome
+    /// page) must work for anonymous visitors — it is the conversion
+    /// path for strangers, so it can never depend on a logged-in
+    /// session. This seeds a published, public-read demo work at data
+    /// dir initialization; the frontend opens it read-only if present.
+    /// Existing data dirs are untouched (their demo may be created or
+    /// refreshed via the admin path).
+    fn seed_demo_work(&mut self) {
+        const DEMO_TITLE: &str = "Xudanu Interactive Demo";
+        let demo_text = [
+            "Welcome to Xudanu",
+            "",
+            "This demo document shows the key features of the system. It is",
+            "published and world-readable — no account needed to read it.",
+            "",
+            "Typed Links",
+            "Links connect passages with meaning: Comment, Reference,",
+            "Disagreement, Quotation, See Also. Open a document, select text,",
+            "and press Link to try it.",
+            "",
+            "Transclusion",
+            "Content can be quoted across documents by reference. When the",
+            "source is edited, every quotation updates. Select a passage and",
+            "press Transclude to carry it into another document.",
+            "",
+            "Provenance and Attribution",
+            "Every character carries cryptographic provenance. The colored",
+            "underlines show who wrote each passage.",
+            "",
+            "Comparison View",
+            "The comparison view shows shared passages between documents.",
+            "",
+            "Real-time Editing",
+            "Multiple users can edit the same document simultaneously.",
+            "Changes merge automatically using the O-tree CRDT.",
+            "",
+            "Cross-Server Networking",
+            "Documents on different servers can link to each other via",
+            "domain tumblers, with BLAKE3 hash verification.",
+        ]
+        .join("\n");
+
+        let edition = Edition::from_text(&demo_text);
+        let (be_id, elem) = self.grand_map.new_work_element(None);
+        self.grand_map.assign_new_id(elem);
+        let mut work = Work::new(be_id, edition);
+        work.set_owner(Some(self.system_clubs.admin_club));
+        work.set_read_club(Some(self.system_clubs.public_club));
+        let ws = WorkState {
+            work: work.clone(),
+            chunk_ref: None,
+            prev_chunk_history: None,
+            dirty_gen: 0,
+            grabber: None,
+            grabbed_at: None,
+            grab_waiters: Vec::new(),
+            last_revision_author: None,
+            revision_authors: std::collections::HashMap::new(),
+            revision_timestamps: std::collections::HashMap::new(),
+            status_detectors: DetectorList::new(),
+            revision_detectors: DetectorList::new(),
+            cached_title: DEMO_TITLE.to_string(),
+            is_source: false,
+            source_author_id: None,
+            source_edition_info: None,
+            imported_by: None,
+            content_start_line: None,
+            content_end_line: None,
+            source_fingerprint: None,
+            license_overlay_cache: None,
+        };
+        self.works.insert(be_id, ws);
+        self.demo_work_id = Some(be_id);
+        tracing::info!("Seeded demo work {:04x} (published, public-read)", be_id);
+    }
+
+    /// The work id of the seeded interactive demo, if this data dir has
+    /// one. Exposed via server info so the frontend's demo button opens
+    /// the demo read-only without any create permissions.
+    pub fn demo_work(&self) -> Option<BeId> {
+        self.demo_work_id
     }
 
     pub fn restore_from_data_dir(
@@ -20189,6 +20277,7 @@ pub(crate) mod persist_snapshot {
                 quarantined_works: Vec::new(),
                 quarantined_editions: Vec::new(),
                 last_persisted_work_count: 0,
+                demo_work_id: None,
                 trusted_server_registry: None,
                 signed_introductions: Vec::new(),
                 cross_server_links: Vec::new(),

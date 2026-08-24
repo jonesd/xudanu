@@ -863,7 +863,11 @@ export function WorkspaceShell() {
     prevSaveState.current = saveState;
   }, [saveState, showToast]);
 
-  // Handle ?demo=1 — create demo work on load
+  // Handle ?demo=1 / demo button — open the seeded demo document.
+  // The demo must work for anonymous visitors (it is the conversion path
+  // for strangers), so it OPENS the published demo work read-only when
+  // one exists; only if none exists does it fall back to creating one,
+  // which requires being signed in.
   const demoRan = useRef(false);
   useEffect(() => {
     if (demoRan.current) return;
@@ -876,50 +880,66 @@ export function WorkspaceShell() {
     const newUrl = newParams ? `/explore?${newParams}` : "/explore";
     window.history.replaceState({}, "", newUrl);
 
-    const demoText = [
-      "Welcome to Xudanu",
-      "",
-      "This interactive demo document shows the key features of the system.",
-      "Each concept below is connected to others through typed links.",
-      "",
-      "Typed Links",
-      "Typed links connect passages with coloured margin boxes.",
-      "Each type has a specific meaning: Comment, Reference, Disagreement, Quotation, See Also.",
-      "",
-      "Transclusion",
-      "Content can be reused across documents while maintaining its provenance.",
-      "When you transclude a passage, the original author is always credited.",
-      "",
-      "Provenance and Attribution",
-      "Every character carries cryptographic provenance via Ed25519 signatures.",
-      "",
-      "Comparison View",
-      "The comparison view shows shared passages between documents with bezier connections.",
-      "",
-      "Real-time Editing",
-      "Multiple users can edit the same document simultaneously.",
-      "Changes merge automatically using the O-tree CRDT without locks or conflicts.",
-      "",
-      "Cross-Server Networking",
-      "Documents on different servers can link to each other via domain tumblers.",
-      "BLAKE3 hash verification ensures content integrity across the network.",
-    ].join("\n");
-
+    const DEMO_TITLE = "Xudanu Interactive Demo";
     (async () => {
+      const client = clientRef.current;
+      if (!client) return;
       try {
-        const resp = await clientRef.current!.sendRequest("work_create", { edition: { text: demoText } });
+        // Prefer the seeded, published demo — readable by anyone.
+        const entries = await client.fetchWorkList();
+        const demo = Array.isArray(entries)
+          ? entries.find((w) => (w.title ?? "").trim() === DEMO_TITLE)
+          : undefined;
+        if (demo) {
+          selectWork(demo.work_id);
+          showToast("Opening the interactive demo");
+          return;
+        }
+      } catch { /* fall through to create */ }
+
+      // No seeded demo on this server: create one (requires identity).
+      const demoText = [
+        "Welcome to Xudanu",
+        "",
+        "This interactive demo document shows the key features of the system.",
+        "Each concept below is connected to others through typed links.",
+        "",
+        "Typed Links",
+        "Typed links connect passages with coloured margin boxes.",
+        "Each type has a specific meaning: Comment, Reference, Disagreement, Quotation, See Also.",
+        "",
+        "Transclusion",
+        "Content can be reused across documents while maintaining its provenance.",
+        "When you transclude a passage, the original author is always credited.",
+        "",
+        "Provenance and Attribution",
+        "Every character carries cryptographic provenance via Ed25519 signatures.",
+        "",
+        "Comparison View",
+        "The comparison view shows shared passages between documents with bezier connections.",
+        "",
+        "Real-time Editing",
+        "Multiple users can edit the same document simultaneously.",
+        "Changes merge automatically using the O-tree CRDT without locks or conflicts.",
+        "",
+        "Cross-Server Networking",
+        "Documents on different servers can link to each other via domain tumblers.",
+        "BLAKE3 hash verification ensures content integrity across the network.",
+      ].join("\n");
+      try {
+        const resp = await client.sendRequest("work_create", { edition: { text: demoText } });
         const val = resp as Record<string, unknown>;
         const inner = val.value as Record<string, unknown> | undefined;
         const id = (inner?.value as number) ?? (inner as unknown as number) ?? (val.value as number);
         if (typeof id === "number" && id > 0) {
-          try { await clientRef.current!.workPublish(id); } catch { /* no-op */ }
+          try { await client.workPublish(id); } catch { /* no-op */ }
           selectWork(id);
           showToast("Demo document created");
         } else {
-          showToast("Could not create demo — please sign in first");
+          showToast("Could not open the demo — please sign in first");
         }
       } catch {
-        showToast("Could not create demo — please sign in first");
+        showToast("Could not open the demo — please sign in first");
       }
     })();
   }, [connected, clientRef, selectWork, showToast, demoTrigger]);
