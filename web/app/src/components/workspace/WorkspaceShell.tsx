@@ -2067,6 +2067,9 @@ export function WorkspaceShell() {
         onHome={() => {
           setWorkBeId(null);
           setImageEntries([]);
+          // The WelcomeScreen renders only off the library tab — leave
+          // navTab alone there and the logo looks dead.
+          if (navTab === "library") setNavTab("explore");
           const url = new URL(window.location.href);
           url.searchParams.delete("work");
           url.searchParams.delete("demo");

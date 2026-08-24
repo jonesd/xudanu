@@ -88,7 +88,15 @@ export function TopBar({
 
   return (
     <div className="top-bar">
-      <div className="top-bar-brand" style={{ cursor: "pointer" }} onClick={() => { window.history.pushState({}, "", "/"); window.dispatchEvent(new PopStateEvent("popstate")); }}>
+      <div
+        className="top-bar-brand"
+        style={{ cursor: "pointer" }}
+        title="Back to the welcome page"
+        onClick={() => {
+          window.history.pushState({}, "", "/");
+          window.dispatchEvent(new PopStateEvent("popstate"));
+        }}
+      >
         <Logo size={18} />
         <span>xudanu</span>
       </div>
