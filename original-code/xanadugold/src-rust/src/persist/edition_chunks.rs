@@ -31,9 +31,13 @@ pub struct WorkChunkRef {
     pub endorsements: Vec<(u64, u64)>,
 }
 
+const EDITION_CHUNK_FORMAT_VERSION: u32 = 1;
+
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct EntryChunk {
+    #[cfg_attr(feature = "serde", serde(default))]
+    format_version: u32,
     entries: Vec<(i64, crate::edition::range_element::RangeElement)>,
     #[cfg_attr(feature = "serde", serde(default))]
     provenances: Vec<Option<crate::edition::provenance::ElementProvenance>>,
@@ -42,12 +46,16 @@ struct EntryChunk {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct ProvenanceChunk {
+    #[cfg_attr(feature = "serde", serde(default))]
+    format_version: u32,
     spans: Vec<SpanProvenance>,
 }
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct EditionRootChunk {
+    #[cfg_attr(feature = "serde", serde(default))]
+    format_version: u32,
     default: Option<crate::edition::range_element::RangeElement>,
     domain_start: Option<i64>,
     domain_infinite_above: bool,
@@ -55,6 +63,107 @@ struct EditionRootChunk {
     entry_chunk_hashes: Vec<[u8; 32]>,
     #[cfg_attr(feature = "serde", serde(default))]
     provenance_hash: Option<[u8; 32]>,
+}
+
+// Pre-versioning wire shapes (everything written before the format_version
+// field existed). Postcard has no schema evolution, so adding the field was
+// itself a format change: readers must fall back to these shapes when the
+// versioned parse fails, or every pre-versioning data dir reads as corrupt.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+struct EntryChunkLegacy {
+    entries: Vec<(i64, crate::edition::range_element::RangeElement)>,
+    provenances: Vec<Option<crate::edition::provenance::ElementProvenance>>,
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+struct ProvenanceChunkLegacy {
+    spans: Vec<SpanProvenance>,
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+struct EditionRootChunkLegacy {
+    default: Option<crate::edition::range_element::RangeElement>,
+    domain_start: Option<i64>,
+    domain_infinite_above: bool,
+    entry_count: u32,
+    entry_chunk_hashes: Vec<[u8; 32]>,
+    provenance_hash: Option<[u8; 32]>,
+}
+
+fn newer_format_error(chunk_kind: &str, found: u32) -> ChunkSerError {
+    ChunkSerError::Serialization(format!(
+        "{} chunk format_version {} is newer than supported {} — upgrade xudanu-server to open this data dir",
+        chunk_kind, found, EDITION_CHUNK_FORMAT_VERSION
+    ))
+}
+
+fn read_entry_chunk(bytes: &[u8]) -> Result<EntryChunk, ChunkSerError> {
+    let versioned = deserialize_from_bytes::<EntryChunk>(bytes);
+    if let Ok(chunk) = &versioned {
+        if chunk.format_version == EDITION_CHUNK_FORMAT_VERSION {
+            return Ok(chunk.clone());
+        }
+    }
+    if let Ok(legacy) = deserialize_from_bytes::<EntryChunkLegacy>(bytes) {
+        tracing::debug!("upgrading legacy entry chunk (pre format_version) in memory");
+        return Ok(EntryChunk {
+            format_version: EDITION_CHUNK_FORMAT_VERSION,
+            entries: legacy.entries,
+            provenances: legacy.provenances,
+        });
+    }
+    match versioned {
+        Ok(chunk) => Err(newer_format_error("entry", chunk.format_version)),
+        Err(e) => Err(e),
+    }
+}
+
+fn read_provenance_chunk(bytes: &[u8]) -> Result<ProvenanceChunk, ChunkSerError> {
+    let versioned = deserialize_from_bytes::<ProvenanceChunk>(bytes);
+    if let Ok(chunk) = &versioned {
+        if chunk.format_version == EDITION_CHUNK_FORMAT_VERSION {
+            return Ok(chunk.clone());
+        }
+    }
+    if let Ok(legacy) = deserialize_from_bytes::<ProvenanceChunkLegacy>(bytes) {
+        tracing::debug!("upgrading legacy provenance chunk (pre format_version) in memory");
+        return Ok(ProvenanceChunk {
+            format_version: EDITION_CHUNK_FORMAT_VERSION,
+            spans: legacy.spans,
+        });
+    }
+    match versioned {
+        Ok(chunk) => Err(newer_format_error("provenance", chunk.format_version)),
+        Err(e) => Err(e),
+    }
+}
+
+fn read_edition_root_chunk(bytes: &[u8]) -> Result<EditionRootChunk, ChunkSerError> {
+    let versioned = deserialize_from_bytes::<EditionRootChunk>(bytes);
+    if let Ok(chunk) = &versioned {
+        if chunk.format_version == EDITION_CHUNK_FORMAT_VERSION {
+            return Ok(chunk.clone());
+        }
+    }
+    if let Ok(legacy) = deserialize_from_bytes::<EditionRootChunkLegacy>(bytes) {
+        tracing::debug!("upgrading legacy edition root chunk (pre format_version) in memory");
+        return Ok(EditionRootChunk {
+            format_version: EDITION_CHUNK_FORMAT_VERSION,
+            default: legacy.default,
+            domain_start: legacy.domain_start,
+            domain_infinite_above: legacy.domain_infinite_above,
+            entry_count: legacy.entry_count,
+            entry_chunk_hashes: legacy.entry_chunk_hashes,
+            provenance_hash: legacy.provenance_hash,
+        });
+    }
+    match versioned {
+        Ok(chunk) => Err(newer_format_error("edition root", chunk.format_version)),
+        Err(e) => Err(e),
+    }
 }
 
 #[derive(Debug)]
@@ -138,6 +247,7 @@ pub fn edition_to_chunks_durable(
             vec![None; chunk_range.len()]
         };
         let entry_chunk = EntryChunk {
+            format_version: EDITION_CHUNK_FORMAT_VERSION,
             entries,
             provenances,
         };
@@ -150,6 +260,7 @@ pub fn edition_to_chunks_durable(
         None
     } else {
         let prov_chunk = ProvenanceChunk {
+            format_version: EDITION_CHUNK_FORMAT_VERSION,
             spans: snapshot.span_provenance,
         };
         let prov_data = serialize_to_bytes(&prov_chunk)?;
@@ -157,6 +268,7 @@ pub fn edition_to_chunks_durable(
     };
 
     let root_chunk = EditionRootChunk {
+        format_version: EDITION_CHUNK_FORMAT_VERSION,
         default: snapshot.default,
         domain_start: snapshot.domain_start,
         domain_infinite_above: snapshot.domain_infinite_above,
@@ -178,21 +290,28 @@ pub fn edition_from_chunks(
     store: &ChunkStore,
 ) -> Result<Edition, ChunkSerError> {
     let root_data = store.read_chunk(&chunk_ref.root_hash)?;
-    let root: EditionRootChunk = deserialize_from_bytes(&root_data)?;
+    let root = read_edition_root_chunk(&root_data)?;
 
     let mut all_entries = Vec::with_capacity(root.entry_count as usize);
     let mut all_provenances = Vec::with_capacity(root.entry_count as usize);
     for hash in &root.entry_chunk_hashes {
         let chunk_data = store.read_chunk(hash)?;
-        let entry_chunk: EntryChunk = deserialize_from_bytes(&chunk_data)?;
+        let entry_chunk = read_entry_chunk(&chunk_data)?;
         all_entries.extend(entry_chunk.entries);
         all_provenances.extend(entry_chunk.provenances);
+    }
+    if all_entries.len() != root.entry_count as usize {
+        return Err(ChunkSerError::Serialization(format!(
+            "entry count mismatch: root claims {} entries, chunks hold {}",
+            root.entry_count,
+            all_entries.len()
+        )));
     }
 
     let span_provenance = match root.provenance_hash {
         Some(hash) => match store.read_chunk(&hash) {
             Ok(data) => {
-                let prov_chunk: Result<ProvenanceChunk, _> = deserialize_from_bytes(&data);
+                let prov_chunk = read_provenance_chunk(&data);
                 match prov_chunk {
                     Ok(c) => c.spans,
                     Err(e) => {
@@ -559,6 +678,136 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    fn write_legacy_edition(edition: &Edition, store: &ChunkStore) -> EditionChunkRef {
+        let snapshot = EditionSnapshot::from_edition(edition);
+
+        let mut entry_chunk_hashes = Vec::new();
+        for chunk_range in (0..snapshot.entries.len())
+            .step_by(ENTRIES_PER_CHUNK)
+            .map(|start| {
+                let end = (start + ENTRIES_PER_CHUNK).min(snapshot.entries.len());
+                start..end
+            })
+        {
+            let entry_chunk = EntryChunkLegacy {
+                entries: snapshot.entries[chunk_range.clone()].to_vec(),
+                provenances: if snapshot.provenances.len() >= chunk_range.end {
+                    snapshot.provenances[chunk_range.clone()].to_vec()
+                } else {
+                    vec![None; chunk_range.len()]
+                },
+            };
+            let data = serialize_to_bytes(&entry_chunk).unwrap();
+            entry_chunk_hashes.push(store.write_chunk(&data).unwrap());
+        }
+
+        let root_chunk = EditionRootChunkLegacy {
+            default: snapshot.default,
+            domain_start: snapshot.domain_start,
+            domain_infinite_above: snapshot.domain_infinite_above,
+            entry_count: snapshot.entries.len() as u32,
+            entry_chunk_hashes,
+            provenance_hash: None,
+        };
+        let root_data = serialize_to_bytes(&root_chunk).unwrap();
+        let root_hash = store.write_chunk(&root_data).unwrap();
+
+        EditionChunkRef {
+            root_hash,
+            entry_count: snapshot.entries.len() as u32,
+        }
+    }
+
+    #[test]
+    fn legacy_chunks_still_load() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = ChunkStore::open(&dir).unwrap();
+
+        let edition = Edition::from_text("written before format_version existed");
+        let chunk_ref = write_legacy_edition(&edition, &store);
+
+        let restored = edition_from_chunks(&chunk_ref, &store).unwrap();
+        assert_eq!(restored.to_text(), "written before format_version existed");
+
+        let hashes = collect_edition_hashes(&chunk_ref, &store).unwrap();
+        assert!(hashes.contains(&chunk_ref.root_hash));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn legacy_and_versioned_chunks_coexist() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = ChunkStore::open(&dir).unwrap();
+
+        let legacy_ref = write_legacy_edition(&Edition::from_text("old format"), &store);
+        let new_ref = edition_to_chunks(&Edition::from_text("new format"), &store).unwrap();
+
+        assert_eq!(
+            edition_from_chunks(&legacy_ref, &store).unwrap().to_text(),
+            "old format"
+        );
+        assert_eq!(
+            edition_from_chunks(&new_ref, &store).unwrap().to_text(),
+            "new format"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn future_version_chunk_rejected() {
+        let bytes = serialize_to_bytes(&EntryChunk {
+            format_version: EDITION_CHUNK_FORMAT_VERSION + 1,
+            entries: Vec::new(),
+            provenances: Vec::new(),
+        })
+        .unwrap();
+
+        let err = read_entry_chunk(&bytes).unwrap_err().to_string();
+        assert!(err.contains("newer than supported"), "got: {}", err);
+    }
+
+    #[test]
+    fn entry_count_mismatch_rejected() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = ChunkStore::open(&dir).unwrap();
+
+        let entry_chunk = EntryChunk {
+            format_version: EDITION_CHUNK_FORMAT_VERSION,
+            entries: vec![(0, RangeElement::text("a"))],
+            provenances: vec![None],
+        };
+        let data = serialize_to_bytes(&entry_chunk).unwrap();
+        let entry_hash = store.write_chunk(&data).unwrap();
+
+        let root_chunk = EditionRootChunk {
+            format_version: EDITION_CHUNK_FORMAT_VERSION,
+            default: None,
+            domain_start: None,
+            domain_infinite_above: true,
+            entry_count: 5,
+            entry_chunk_hashes: vec![entry_hash],
+            provenance_hash: None,
+        };
+        let root_data = serialize_to_bytes(&root_chunk).unwrap();
+        let root_hash = store.write_chunk(&root_data).unwrap();
+
+        let chunk_ref = EditionChunkRef {
+            root_hash,
+            entry_count: 5,
+        };
+        let err = edition_from_chunks(&chunk_ref, &store)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("entry count mismatch"), "got: {}", err);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 pub fn collect_edition_hashes(
@@ -568,7 +817,7 @@ pub fn collect_edition_hashes(
     let mut hashes = HashSet::new();
     hashes.insert(chunk_ref.root_hash);
     let root_data = store.read_chunk(&chunk_ref.root_hash)?;
-    let root: EditionRootChunk = deserialize_from_bytes(&root_data)?;
+    let root = read_edition_root_chunk(&root_data)?;
     for h in &root.entry_chunk_hashes {
         hashes.insert(*h);
     }

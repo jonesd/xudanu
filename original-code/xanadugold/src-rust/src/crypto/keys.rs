@@ -618,6 +618,8 @@ pub struct SignedKeyRotationFile {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct KeyHistoryFile {
+    #[serde(default)]
+    pub format_version: u32,
     pub server_id: String,
     pub entries: Vec<KeyHistoryEntryFile>,
     pub rotation_proofs: Vec<SignedKeyRotationFile>,
@@ -627,6 +629,7 @@ pub struct KeyHistoryFile {
 impl KeyHistory {
     pub fn to_file_repr(&self) -> KeyHistoryFile {
         KeyHistoryFile {
+            format_version: 1,
             server_id: self.server_id.clone(),
             entries: self
                 .entries

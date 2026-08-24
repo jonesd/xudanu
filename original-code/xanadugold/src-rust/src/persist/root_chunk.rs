@@ -284,7 +284,23 @@ pub fn read_root_chunk(
     store: &ChunkStore,
 ) -> Result<ServerRootChunk, RootChunkError> {
     let data = store.read_chunk(hash)?;
-    deserialize_from_bytes(&data)
+    let chunk: ServerRootChunk = deserialize_from_bytes(&data)?;
+    // FR-44 S4: version guard — future formats must fail loudly (the
+    // migration path is FR-44's business, not silent acceptance).
+    if chunk.format_version > ROOT_CHUNK_FORMAT_VERSION {
+        return Err(RootChunkError::CorruptData(format!(
+            "root chunk format_version {} is newer than supported {} — upgrade xudanu-server to open this data dir",
+            chunk.format_version, ROOT_CHUNK_FORMAT_VERSION
+        )));
+    }
+    if chunk.format_version < ROOT_CHUNK_FORMAT_VERSION {
+        tracing::info!(
+            "root chunk format_version {} → {} (older; opens under current format)",
+            chunk.format_version,
+            ROOT_CHUNK_FORMAT_VERSION
+        );
+    }
+    Ok(chunk)
 }
 
 pub fn write_works_index_chunk(

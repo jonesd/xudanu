@@ -685,6 +685,16 @@ pub struct Server {
     /// data with incomplete in-memory state (data loss prevention).
     /// Cleared by an explicit admin action once the root cause is fixed.
     restore_errors: Vec<String>,
+    /// Works that failed to deserialize at restore. The manifest entry is
+    /// kept verbatim and re-emitted at every checkpoint, so the on-disk
+    /// reference (and the work itself) is never lost — it is retried on
+    /// the next start (e.g. after a binary upgrade fixes the parse).
+    /// "Skipping corrupt work" without this is a silent data-loss path
+    /// whenever the parse failure is spurious rather than real corruption.
+    quarantined_works: Vec<crate::persist::manifest::WorkEntry>,
+    /// Standalone editions that failed to deserialize at restore; same
+    /// preservation contract as quarantined_works.
+    quarantined_editions: Vec<crate::persist::manifest::StandaloneEditionChunkRef>,
     trusted_server_registry: Option<crate::crypto::server_identity::TrustedServerRegistry>,
     signed_introductions: Vec<SignedIntroduction>,
     security_tracker: CrossServerSecurityTracker,
@@ -1274,6 +1284,8 @@ impl Server {
             cached_signing_keys: HashMap::new(),
             wal: crate::persist::wal::WalLog::disabled(),
             restore_errors: Vec::new(),
+            quarantined_works: Vec::new(),
+            quarantined_editions: Vec::new(),
             trusted_server_registry: None,
             signed_introductions: Vec::new(),
             cross_server_links: Vec::new(),
@@ -11149,6 +11161,7 @@ impl Server {
 
         if let Some(ref kh) = manifest.key_history {
             let kh_file = crate::crypto::keys::KeyHistoryFile {
+                format_version: 1,
                 server_id: kh.server_id.clone(),
                 entries: kh.entries.clone(),
                 rotation_proofs: kh.rotation_proofs.clone(),
@@ -11270,13 +11283,26 @@ impl Server {
                 }
                 Err(e) => {
                     tracing::error!(
-                        "Skipping corrupt work {} (chunk error: {}). \
-                         Data for this document is lost.",
+                        "Work {} could not be loaded ({}). Entry quarantined: \
+                         preserved in the manifest, retried on next start. \
+                         Auto-checkpoint suppressed until fixed.",
                         work_entry.be_id,
                         e
                     );
+                    self.restore_errors
+                        .push(format!("work {}: {}", work_entry.be_id, e));
+                    self.quarantined_works.push(work_entry.clone());
                 }
             }
+        }
+
+        if !self.quarantined_works.is_empty() {
+            tracing::error!(
+                "{} work(s) quarantined after failed restore — entries are \
+                 preserved on disk; run `xudanu-server verify` or upgrade the \
+                 binary, then restart to retry loading them.",
+                self.quarantined_works.len()
+            );
         }
 
         for se_ref in &manifest.standalone_editions {
@@ -11291,10 +11317,15 @@ impl Server {
                 }
                 Err(e) => {
                     tracing::error!(
-                        "Skipping corrupt standalone edition {} (chunk error: {})",
+                        "Standalone edition {} could not be loaded ({}). \
+                         Entry quarantined: preserved in the manifest, \
+                         retried on next start.",
                         se_ref.be_id,
                         e
                     );
+                    self.restore_errors
+                        .push(format!("standalone edition {}: {}", se_ref.be_id, e));
+                    self.quarantined_editions.push(se_ref.clone());
                 }
             }
         }
@@ -20145,6 +20176,8 @@ pub(crate) mod persist_snapshot {
                 write_barrier: Arc::new(WriteBarrier::new()),
                 wal: crate::persist::wal::WalLog::disabled(),
                 restore_errors: Vec::new(),
+                quarantined_works: Vec::new(),
+                quarantined_editions: Vec::new(),
                 trusted_server_registry: None,
                 signed_introductions: Vec::new(),
                 cross_server_links: Vec::new(),
@@ -20934,6 +20967,17 @@ pub(crate) mod persist_snapshot {
                 self.club_refs.insert(club_ref.be_id, club_ref.clone());
             }
 
+            // Re-emit quarantined works verbatim: failed-to-load works stay
+            // referenced on disk so a fixed binary can retry them on the
+            // next start. Without this, a checkpoint after a spurious parse
+            // failure would drop the manifest reference and orphan the
+            // chunks — silent data loss.
+            for qw in &self.quarantined_works {
+                if !work_entries.iter().any(|e| e.be_id == qw.be_id) {
+                    work_entries.push(qw.clone());
+                }
+            }
+
             let mut dirty_edition_count = 0u64;
             let mut standalone_refs = Vec::new();
             for (id, edition) in &self.standalone_editions {
@@ -20953,6 +20997,13 @@ pub(crate) mod persist_snapshot {
                     edition_ref: ed_ref.clone(),
                 });
                 self.standalone_edition_refs.insert(*id, ed_ref);
+            }
+
+            // Same preservation contract as quarantined works above.
+            for qe in &self.quarantined_editions {
+                if !standalone_refs.iter().any(|r| r.be_id == qe.be_id) {
+                    standalone_refs.push(qe.clone());
+                }
             }
 
             let links: Vec<_> =
@@ -21210,6 +21261,7 @@ pub(crate) mod persist_snapshot {
             // ── Migrate large sections to chunks before writing manifest ──
             // Write social section (starred_works + trails + compound_editions) as a chunk
             let social = crate::persist::manifest::SocialSection {
+                format_version: 1,
                 starred_works: manifest.starred_works.clone(),
                 user_pins: self.user_pins.clone(),
                 trails: manifest.trails.clone(),
@@ -21369,6 +21421,42 @@ pub(crate) mod persist_snapshot {
                             );
                             return Ok(0);
                         }
+                    }
+                }
+            }
+            // Quarantined works must stay reachable: their chunks are the
+            // only copy of that content. A walk failure here (likely the
+            // same corruption that quarantined the work) aborts GC — the
+            // safe direction is no reclamation at all.
+            for qw in &self.quarantined_works {
+                match crate::persist::edition_chunks::collect_work_hashes(&qw.work_ref, chunk_store)
+                {
+                    Ok(hashes) => referenced.extend(hashes),
+                    Err(e) => {
+                        tracing::warn!(
+                            "GC: failed to collect quarantined work {} hashes ({}), \
+                             skipping GC to avoid deleting valid chunks",
+                            qw.be_id,
+                            e
+                        );
+                        return Ok(0);
+                    }
+                }
+            }
+            for qe in &self.quarantined_editions {
+                match crate::persist::edition_chunks::collect_edition_hashes(
+                    &qe.edition_ref,
+                    chunk_store,
+                ) {
+                    Ok(hashes) => referenced.extend(hashes),
+                    Err(e) => {
+                        tracing::warn!(
+                            "GC: failed to collect quarantined edition {} hashes ({}), \
+                             skipping GC to avoid deleting valid chunks",
+                            qe.be_id,
+                            e
+                        );
+                        return Ok(0);
                     }
                 }
             }
@@ -31244,6 +31332,101 @@ mod tests {
                 "hello world"
             );
             assert_ne!(server.manifest_slot, '\0', "slot should be restored");
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn corrupt_work_quarantined_and_preserved_through_checkpoint() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_quarantine_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let keeper_id;
+        let victim_id;
+        let victim_chunk_path;
+        let victim_original_bytes;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            keeper_id = server
+                .create_work(sid, Edition::from_text("keeper"))
+                .unwrap();
+            victim_id = server
+                .create_work(sid, Edition::from_text("victim"))
+                .unwrap();
+
+            server.checkpoint_to_store().unwrap();
+
+            let ws = server.works.get(&victim_id).unwrap();
+            let root_hash = ws.chunk_ref.as_ref().unwrap().current_root.root_hash;
+            let hex: String = root_hash.iter().map(|b| format!("{:02x}", b)).collect();
+            victim_chunk_path = data_dir
+                .join("chunks")
+                .join(&hex[..2])
+                .join(format!("{}.xchunk", hex));
+            victim_original_bytes = std::fs::read(&victim_chunk_path).unwrap();
+            std::fs::write(&victim_chunk_path, b"garbage-not-a-chunk").unwrap();
+        }
+
+        // Restore with the corrupt chunk: victim must be quarantined,
+        // NOT dropped, and auto-checkpoint must be suppressed.
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            assert_eq!(server.work_count(), 1, "only keeper loads");
+            assert!(server.works.contains_key(&keeper_id));
+            assert_eq!(server.quarantined_works.len(), 1);
+            assert_eq!(server.quarantined_works[0].be_id, victim_id);
+            assert!(server.has_restore_errors());
+            assert!(!server.auto_checkpoint(), "auto-checkpoint suppressed");
+
+            // An explicit checkpoint (e.g. the shutdown flush) must still
+            // preserve the quarantined entry in the on-disk manifest.
+            server.checkpoint_to_store().unwrap();
+        }
+
+        // Reload: the victim's manifest entry survived the checkpoint —
+        // it quarantines again rather than having vanished.
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert_eq!(server.work_count(), 1);
+            assert_eq!(server.quarantined_works.len(), 1);
+            assert_eq!(server.quarantined_works[0].be_id, victim_id);
+        }
+
+        // Fix the chunk (e.g. binary upgrade, backup restore): next start
+        // loads the victim normally and the quarantine clears.
+        {
+            std::fs::write(&victim_chunk_path, &victim_original_bytes).unwrap();
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert_eq!(server.work_count(), 2);
+            assert!(server.quarantined_works.is_empty());
+            assert!(
+                server
+                    .works
+                    .get(&victim_id)
+                    .unwrap()
+                    .work
+                    .current_edition()
+                    .to_text()
+                    == "victim"
+            );
         }
 
         let _ = std::fs::remove_dir_all(&data_dir);

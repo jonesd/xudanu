@@ -90,24 +90,9 @@ fn collect_edition_ref_hashes(
     hashes: &mut HashSet<[u8; 32]>,
 ) {
     hashes.insert(ed_ref.root_hash);
-    if let Ok(data) = store.read_chunk(&ed_ref.root_hash) {
-        if let Ok((_, payload)) = crate::persist::chunk_store::untag_chunk_data(&data) {
-            if let Ok(root) = postcard::from_bytes::<EditionRootChunkFull>(payload) {
-                for h in &root.entry_chunk_hashes {
-                    hashes.insert(*h);
-                }
-            }
-        }
+    if let Ok(children) = crate::persist::edition_chunks::collect_edition_hashes(ed_ref, store) {
+        hashes.extend(children);
     }
-}
-
-#[derive(serde::Deserialize)]
-struct EditionRootChunkFull {
-    default: Option<crate::edition::range_element::RangeElement>,
-    domain_start: Option<i64>,
-    domain_infinite_above: bool,
-    entry_count: u32,
-    entry_chunk_hashes: Vec<[u8; 32]>,
 }
 
 pub fn verify_store(data_dir: &Path) -> Result<VerifyReport, String> {

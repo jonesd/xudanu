@@ -989,6 +989,7 @@ pub struct PreflightReport {
     pub manifest_sequence: Option<u64>,
     pub checksum_ok: bool,
     pub checksum_schema_drift: bool,
+    pub root_chunk_version: Option<u32>,
     pub can_start: bool,
     pub warnings: Vec<String>,
     pub errors: Vec<String>,
@@ -1003,11 +1004,15 @@ impl std::fmt::Display for PreflightReport {
         }
         writeln!(
             f,
-            "  manifest version: {}",
+            "  manifest version: {} (current: {})",
             self.manifest_version
                 .map(|v| v.to_string())
-                .unwrap_or_else(|| "?".to_string())
+                .unwrap_or_else(|| "?".to_string()),
+            CURRENT_MANIFEST_VERSION
         )?;
+        if let Some(rv) = self.root_chunk_version {
+            writeln!(f, "  root chunk version: {}", rv)?;
+        }
         writeln!(
             f,
             "  manifest sequence: {}",
@@ -1047,6 +1052,7 @@ pub fn preflight_check(data_dir: &Path) -> PreflightReport {
         manifest_sequence: None,
         checksum_ok: false,
         checksum_schema_drift: false,
+        root_chunk_version: None,
         can_start: false,
         warnings: Vec::new(),
         errors: Vec::new(),
@@ -1120,6 +1126,19 @@ pub fn preflight_check(data_dir: &Path) -> PreflightReport {
             .errors
             .push("Manifest has no format_version field. File may be corrupt.".to_string());
         return report;
+    }
+
+    // FR-44 S4: root chunk version when root_manifest.json exists
+    let root_manifest = data_dir.join("root_manifest.json");
+    if root_manifest.exists() {
+        if let Ok(rm) = std::fs::read_to_string(&root_manifest) {
+            if let Ok(rv) = serde_json::from_str::<serde_json::Value>(&rm) {
+                report.root_chunk_version = rv
+                    .get("format_version")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32);
+            }
+        }
     }
 
     if stored_checksum.is_empty() {
@@ -1336,6 +1355,8 @@ pub fn read_section_chunk<T: serde::de::DeserializeOwned>(
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct SocialSection {
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub format_version: u32,
     pub starred_works: std::collections::HashMap<BeId, std::collections::HashSet<BeId>>,
     pub user_pins: std::collections::HashMap<BeId, std::collections::HashSet<String>>,
     pub trails: Vec<TrailManifestEntry>,
