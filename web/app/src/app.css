@@ -4549,11 +4549,15 @@ canvas._bridge {
   text-align: center;
 }
 .welcome-title {
-  font-family: 'Source Serif 4', Georgia, serif;
-  font-size: 28px;
+  font-family: 'Orbitron', 'Inter', sans-serif;
+  font-size: 34px;
   font-weight: 700;
-  color: var(--doc-text);
+  letter-spacing: 2px;
+  color: var(--text);
   margin-bottom: 8px;
+}
+.welcome-title-nu {
+  color: #e11d48;
 }
 .welcome-subtitle {
   font-size: 15px;

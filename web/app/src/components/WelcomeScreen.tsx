@@ -17,7 +17,9 @@ export function WelcomeScreen({
 }: WelcomeScreenProps) {
   return (
     <div className="welcome-screen">
-      <div className="welcome-title">xudanu</div>
+      <div className="welcome-title">
+        Xuda<span className="welcome-title-nu">nu</span>
+      </div>
       <div className="welcome-subtitle">
         A connected literature where every quotation maintains its bond to the original,
         where every reuse carries its full provenance.
