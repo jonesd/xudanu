@@ -27,6 +27,7 @@ import type { WorkKind } from "../../graph-scoring";
 import { KIND_ICON, KIND_COLOR, KIND_ICON_COLOR } from "../../graph-scoring";
 import { DataIntegrityBanner } from "../DataIntegrityBanner";
 import { WelcomeScreen } from "../WelcomeScreen";
+import { DocumentOutlinePanel } from "../DocumentOutline";
 import { ConnectionOverlay } from "../ConnectionOverlay";
 import { RelatedFooter } from "../RelatedFooter";
 import { SearchOverlay } from "../shell/SearchOverlay";
@@ -2161,11 +2162,24 @@ export function WorkspaceShell() {
                 onClose={() => setLeftRailHidden(true)}
                 embedded
               />
-            ) : (
+            ) : workBeId === null ? (
               <div className="ws-placeholder">
                 <div className="ws-placeholder-label">Document outline</div>
-                <div className="ws-placeholder-sublabel">Coming soon</div>
+                <div className="ws-placeholder-sublabel">Open a document to see its outline</div>
               </div>
+            ) : (
+              <DocumentOutlinePanel
+                text={getSourceText()}
+                activeCharPos={null}
+                onNavigate={(charPos) => {
+                  window.history.replaceState(
+                    null,
+                    "",
+                    window.location.pathname + window.location.search + `#C${charPos}`,
+                  );
+                  window.dispatchEvent(new HashChangeEvent("hashchange"));
+                }}
+              />
             )}
 
             {/* Related Concepts panel — below the graph */}

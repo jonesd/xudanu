@@ -2115,24 +2115,31 @@ export function CollaborativeEditor({
   }, []);
 
   useEffect(() => {
-    const hash = window.location.hash;
-    if (!hash || text.length === 0) return;
-    let charOffset = -1;
-    if (hash.startsWith("#L")) {
-      const line = parseInt(hash.slice(2), 10);
-      if (!isNaN(line) && line >= 0) {
-        charOffset = buffer.getCharOffset(line);
+    const consumeHash = () => {
+      const hash = window.location.hash;
+      if (!hash || text.length === 0) return;
+      let charOffset = -1;
+      if (hash.startsWith("#L")) {
+        const line = parseInt(hash.slice(2), 10);
+        if (!isNaN(line) && line >= 0) {
+          charOffset = buffer.getCharOffset(line);
+        }
+      } else if (hash.startsWith("#C")) {
+        const c = parseInt(hash.slice(2), 10);
+        if (!isNaN(c) && c >= 0) {
+          charOffset = c;
+        }
       }
-    } else if (hash.startsWith("#C")) {
-      const c = parseInt(hash.slice(2), 10);
-      if (!isNaN(c) && c >= 0) {
-        charOffset = c;
+      if (charOffset >= 0) {
+        setTimeout(() => jumpToCharOffset(charOffset), 100);
+        history.replaceState(null, "", window.location.pathname + window.location.search);
       }
-    }
-    if (charOffset >= 0) {
-      setTimeout(() => jumpToCharOffset(charOffset), 100);
-      history.replaceState(null, "", window.location.pathname + window.location.search);
-    }
+    };
+    consumeHash();
+    // Outline navigation reuses the #C hash; listen for live changes so
+    // repeated jumps work without a text change to re-trigger the effect.
+    window.addEventListener("hashchange", consumeHash);
+    return () => window.removeEventListener("hashchange", consumeHash);
   }, [text, buffer, jumpToCharOffset]);
 
   return (
