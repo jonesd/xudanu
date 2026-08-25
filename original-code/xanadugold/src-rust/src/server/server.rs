@@ -10717,7 +10717,6 @@ impl Server {
             };
         self.wal = crate::persist::wal::WalLog::open(data_dir)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        self.seed_demo_work();
         self.checkpoint_to_store()?;
 
         tracing::info!("Initialized xudanu data directory: {}", data_dir.display());
@@ -10731,7 +10730,7 @@ impl Server {
     /// dir initialization; the frontend opens it read-only if present.
     /// Existing data dirs are untouched (their demo may be created or
     /// refreshed via the admin path).
-    fn seed_demo_work(&mut self) {
+    pub fn seed_demo_work(&mut self) {
         const DEMO_TITLE: &str = "Xudanu Interactive Demo";
         let demo_text = [
             "Welcome to Xudanu",

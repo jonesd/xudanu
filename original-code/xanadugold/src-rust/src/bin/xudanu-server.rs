@@ -115,6 +115,15 @@ fn cmd_init(data_dir: &str, passphrase: Option<&[u8]>) {
     server
         .init_data_dir(&path, passphrase)
         .expect("failed to initialize data directory");
+    // Fresh deployments ship a published, public-read demo work so the
+    // welcome-page button works for anonymous visitors. Library callers
+    // (tests, programmatic init) get a clean dir.
+    server.seed_demo_work();
+    if let Err(e) = server.checkpoint_to_store() {
+        eprintln!("Warning: demo seed checkpoint failed: {}", e);
+    } else {
+        tracing::info!("Seeded interactive demo work (published, public-read)");
+    }
 }
 
 fn cmd_verify(data_dir: &str) {
