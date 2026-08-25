@@ -2033,6 +2033,24 @@ export function CollaborativeEditor({
     if (!el) return;
 
     const target = e.target as HTMLElement;
+
+    // Autolinks inside contenteditable never navigate natively (a click
+    // in an editable region means "place caret"). Open them explicitly —
+    // plain click in reading mode, and in editing mode too (the caret
+    // placement loss is acceptable; hover affordance signals clickability).
+    const anchor = target.closest("a.doc-autolink");
+    if (anchor) {
+      const href = anchor.getAttribute("href");
+      // Defense in depth: re-validate the scheme at open time. The
+      // generator only produces http(s), but if that ever regresses,
+      // this check keeps javascript:/data: schemes from executing.
+      if (href && /^https?:\/\//i.test(href)) {
+        e.preventDefault();
+        window.open(href, "_blank", "noopener,noreferrer");
+        return;
+      }
+    }
+
     const transclusionSpan = target.closest(".inline-transclusion");
     if (transclusionSpan && onNavigateToWork) {
       const sel = window.getSelection();
