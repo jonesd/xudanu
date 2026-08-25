@@ -39,3 +39,29 @@ describe("autolinkEscaped", () => {
     expect(autolinkEscaped("plain &amp; text")).toBe("plain &amp; text");
   });
 });
+
+describe("autolinkEscaped modes", () => {
+  const origin = "http://localhost:5173";
+
+  it("internal mode links same-origin URLs", () => {
+    const out = autolinkEscaped(escapeHtml("see http://localhost:5173/?work=0x3f4"), { mode: "internal", origin });
+    expect(out).toContain("doc-autolink-internal");
+    expect(out).toContain('href="http://localhost:5173/?work=0x3f4"');
+  });
+
+  it("internal mode leaves external URLs as plain text", () => {
+    const out = autolinkEscaped(escapeHtml("go to https://evil.example.com now"), { mode: "internal", origin });
+    expect(out).not.toContain("<a ");
+    expect(out).toContain("https://evil.example.com");
+  });
+
+  it("all mode links external", () => {
+    const out = autolinkEscaped(escapeHtml("https://example.com"), { mode: "all", origin });
+    expect(out).toContain('class="doc-autolink"');
+  });
+
+  it("default (no opts) behaves as all-mode for compatibility", () => {
+    const out = autolinkEscaped(escapeHtml("https://example.com"));
+    expect(out).toContain("<a ");
+  });
+});
