@@ -266,15 +266,19 @@ export function WorkspaceShell() {
   const [showSettings, setShowSettings] = useState(false);
   // FR-42/45 network toggle state — mirrored from /health (default off).
   const [networkEnabled, setNetworkEnabled] = useState(false);
+  const [externalLinksEnabled, setExternalLinksEnabled] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const readHealth = async () => {
       try {
         const r = await fetch("/health");
         if (!r.ok) return;
-        const j = (await r.json()) as { network_enabled?: boolean };
+        const j = (await r.json()) as { network_enabled?: boolean; external_links_enabled?: boolean };
         if (!cancelled && typeof j.network_enabled === "boolean") {
           setNetworkEnabled(j.network_enabled);
+        }
+        if (!cancelled && typeof j.external_links_enabled === "boolean") {
+          setExternalLinksEnabled(j.external_links_enabled);
         }
       } catch { /* offline — keep last known */ }
     };
@@ -3402,6 +3406,7 @@ export function WorkspaceShell() {
                   attributionSpans={resolvedAttributionSpans}
                   showAttributionColors={showProv}
                   editable={canEdit}
+                  externalLinksEnabled={externalLinksEnabled}
                   readingMode={editorMode === "reading"}
                   fontSize={14}
                   lineHeight={1.6}
@@ -4798,6 +4803,7 @@ export function WorkspaceShell() {
           onPrefsChange={setDocPrefs}
           onClose={() => setShowSettings(false)}
           networkEnabled={networkEnabled}
+          externalLinksEnabled={externalLinksEnabled}
           isAdmin={isAdmin}
           onSetNetworkEnabled={async (enabled) => {
             if (!clientRef.current) return;
@@ -4807,6 +4813,16 @@ export function WorkspaceShell() {
               showToast(enabled ? "Xudanu network enabled" : "Xudanu network disabled — single-player mode");
             } catch (e) {
               showToast(`Could not change network setting: ${e instanceof Error ? e.message : String(e)}`);
+            }
+          }}
+          onSetExternalLinksEnabled={async (enabled) => {
+            if (!clientRef.current) return;
+            try {
+              await clientRef.current.sendRequest("external_links_set_enabled", { enabled });
+              setExternalLinksEnabled(enabled);
+              showToast(enabled ? "External links enabled" : "External links disabled — only xudanu links are clickable");
+            } catch (e) {
+              showToast(`Could not change link setting: ${e instanceof Error ? e.message : String(e)}`);
             }
           }}
         />

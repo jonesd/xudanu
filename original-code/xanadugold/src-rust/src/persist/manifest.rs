@@ -227,6 +227,12 @@ pub struct AdminEntry {
     /// cross-server resolution, directory fetch). Default false.
     #[cfg_attr(feature = "serde", serde(default))]
     pub network_enabled: bool,
+    /// External-link policy: when false (default), the frontend renders
+    /// http(s) URLs in documents as plain text unless they point at this
+    /// server (those navigate in-app). Closes the external-navigation
+    /// escape hatch from document content; admin can enable.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub external_links_enabled: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1298,6 +1304,8 @@ pub fn create_empty_manifest(
             grants: Vec::new(),
 
             network_enabled: false,
+        
+            external_links_enabled: false,
         },
         reconcile_store: crate::server::federation::ReconcileStore::new(),
         reconcile_counter: 0,

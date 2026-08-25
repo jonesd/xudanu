@@ -32,11 +32,13 @@ interface DocumentSettingsProps {
   prefs: DocPreferences;
   onPrefsChange: (prefs: DocPreferences) => void;
   networkEnabled: boolean;
+  externalLinksEnabled: boolean;
   isAdmin: boolean;
   onSetNetworkEnabled: (enabled: boolean) => Promise<void>;
+  onSetExternalLinksEnabled: (enabled: boolean) => Promise<void>;
 }
 
-export function DocumentSettings({ visible, onClose, prefs, onPrefsChange, networkEnabled, isAdmin, onSetNetworkEnabled }: DocumentSettingsProps) {
+export function DocumentSettings({ visible, onClose, prefs, onPrefsChange, networkEnabled, externalLinksEnabled, isAdmin, onSetNetworkEnabled, onSetExternalLinksEnabled }: DocumentSettingsProps) {
   const [local, setLocal] = useState(prefs);
   const [netBusy, setNetBusy] = useState(false);
 
@@ -140,6 +142,31 @@ export function DocumentSettings({ visible, onClose, prefs, onPrefsChange, netwo
             </div>
             <div className={`settings-net-status ${networkEnabled ? "on" : "off"}`}>
               {networkEnabled ? "● Network: ON" : "● Network: OFF (single-player)"}
+            </div>
+          </div>
+
+          <div className="settings-section">
+            <h3>Links in documents</h3>
+            <div className="settings-row">
+              <div>
+                <span>Allow external web links</span>
+                <div className="settings-sub">
+                  {externalLinksEnabled
+                    ? "http(s) URLs in documents open in a new tab."
+                    : "Locked down (default): links to this server navigate in-app; external URLs stay plain text."}
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={externalLinksEnabled}
+                className={`settings-switch ${externalLinksEnabled ? "on" : ""}`}
+                disabled={!isAdmin}
+                title={isAdmin ? undefined : "Admin sign-in required"}
+                onClick={() => void onSetExternalLinksEnabled(!externalLinksEnabled)}
+              >
+                <span className="settings-switch-knob" />
+              </button>
             </div>
           </div>
         </div>

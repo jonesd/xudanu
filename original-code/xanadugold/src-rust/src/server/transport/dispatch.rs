@@ -3895,6 +3895,11 @@ fn dispatch_inner(
             let new_val = srv.set_network_enabled(session_id, enabled)?;
             Ok(ResponseValue::Boolean(new_val))
         }
+        #[cfg(feature = "serde")]
+        WireRequest::ExternalLinksSetEnabled { enabled } => {
+            let new_val = srv.set_external_links_enabled(session_id, enabled)?;
+            Ok(ResponseValue::Boolean(new_val))
+        }
 
         WireRequest::CrossServerResolve {
             tumbler,

@@ -3448,6 +3448,18 @@ impl JsonCodec {
                 })
             }
             #[cfg(feature = "serde")]
+            OperationCode::ExternalLinksSetEnabled => {
+                #[derive(Deserialize)]
+                struct Args {
+                    enabled: bool,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ExternalLinksSetEnabled {
+                    enabled: args.enabled,
+                })
+            }
+            #[cfg(feature = "serde")]
             OperationCode::CrossServerResolve => {
                 #[derive(Deserialize)]
                 struct Args {

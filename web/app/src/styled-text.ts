@@ -61,8 +61,19 @@ export function findUrls(text: string): Array<{ start: number; end: number; url:
   return out;
 }
 
-/** Wrap http(s) URLs in <a> tags within an HTML fragment (already-escaped text). */
-export function autolinkEscaped(escapedHtml: string): string {
+export type LinkMode = "all" | "internal";
+
+/** Wrap http(s) URLs in <a> tags within an HTML fragment (already-escaped
+ * text). mode "internal" (server default) links ONLY same-origin URLs —
+ * external URLs stay plain text, closing the external-navigation escape
+ * hatch; internal links carry a distinct class so clicks navigate
+ * in-app instead of opening a browser tab. */
+export function autolinkEscaped(
+  escapedHtml: string,
+  opts?: { mode?: LinkMode; origin?: string },
+): string {
+  const mode = opts?.mode ?? "all";
+  const origin = opts?.origin ?? (typeof window !== "undefined" ? window.location.origin : "");
   // Operate on the escaped string: URLs contain no <>&"' after escaping
   // (& became &amp; etc.), so match against the escaped forms.
   const re = /\b(https?:\/\/)([^\s&<]+(?:&amp;[^\s&<]*)*)/g;
@@ -72,7 +83,12 @@ export function autolinkEscaped(escapedHtml: string): string {
     while (/[.,;:!?)]$/.test(href)) href = href.slice(0, -1);
     const shown = url.slice(0, href.length);
     const tail = url.slice(href.length);
-    return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="doc-autolink">${shown}</a>${tail}`;
+    const internal = href.toLowerCase().startsWith(origin.toLowerCase() + "/");
+    if (mode === "internal" && !internal) {
+      return url; // external: leave as plain (escaped) text
+    }
+    const cls = internal ? "doc-autolink doc-autolink-internal" : "doc-autolink";
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="${cls}">${shown}</a>${tail}`;
   });
 }
 
@@ -84,9 +100,9 @@ interface Boundary {
 }
 
 // === ORIGINAL inline marks logic — untouched ===
-function buildInlineHtml(text: string, marks: StyleMark[]): string {
+function buildInlineHtml(text: string, marks: StyleMark[], linkOpts?: { mode?: LinkMode; origin?: string }): string {
   if (marks.length === 0 || text.length === 0) {
-    return autolinkEscaped(escapeHtml(text));
+    return autolinkEscaped(escapeHtml(text), linkOpts);
   }
 
   const clamped = marks
@@ -120,7 +136,7 @@ function buildInlineHtml(text: string, marks: StyleMark[]): string {
 
   for (const b of boundaries) {
     if (b.pos > pos) {
-      result += autolinkEscaped(escapeHtml(text.slice(pos, b.pos)));
+      result += autolinkEscaped(escapeHtml(text.slice(pos, b.pos)), linkOpts);
       pos = b.pos;
     }
     const tag = b.kind === "bold"
@@ -130,7 +146,7 @@ function buildInlineHtml(text: string, marks: StyleMark[]): string {
   }
 
   if (pos < text.length) {
-    result += autolinkEscaped(escapeHtml(text.slice(pos)));
+    result += autolinkEscaped(escapeHtml(text.slice(pos)), linkOpts);
   }
 
   return result;
@@ -158,7 +174,11 @@ function detectLineBlock(line: string): LineBlock {
   return { type: null, contentStart: 0 };
 }
 
-export function buildStyledText(text: string, marks: StyleMark[]): string {
+export function buildStyledText(
+  text: string,
+  marks: StyleMark[],
+  linkOpts?: { mode?: LinkMode; origin?: string },
+): string {
   if (text.length === 0) return "";
 
   const inlineMarks = marks.filter((m) => INLINE_KINDS.has(m.kind));
@@ -208,8 +228,8 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
           ...m,
           char_start: m.char_start - displayOffset,
           char_end: m.char_end - displayOffset,
-        })).filter((m) => m.char_end > 0 && m.char_start < displayText.length))
-      : autolinkEscaped(escapeHtml(displayText));
+        })).filter((m) => m.char_end > 0 && m.char_start < displayText.length), linkOpts)
+      : autolinkEscaped(escapeHtml(displayText), linkOpts);
 
     // Use inline spans — NOT block tags. Block tags break contentEditable Enter behavior.
     // All decorative/marker spans get contenteditable="false" so the cursor can't land

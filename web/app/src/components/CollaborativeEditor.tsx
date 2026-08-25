@@ -51,6 +51,9 @@ interface CollaborativeEditorProps {
   connected: boolean;
   attributionSpans: AttributionSpan[];
   editable: boolean;
+  /** Server policy: external http(s) links clickable. Internal
+   * (same-origin) work links are always live and navigate in-app. */
+  externalLinksEnabled?: boolean;
   readingMode?: boolean;
   contentStartLine?: number;
   contentEndLine?: number;
@@ -908,6 +911,7 @@ export function CollaborativeEditor({
   connected,
   attributionSpans,
   editable,
+  externalLinksEnabled = false,
   readingMode = false,
   contentStartLine,
   contentEndLine,
@@ -1047,6 +1051,14 @@ export function CollaborativeEditor({
 
   const buffer = useMemo(() => new TextBuffer(displayText), [displayText]);
 
+  const linkOpts = useMemo(
+    () => ({
+      mode: externalLinksEnabled ? ("all" as const) : ("internal" as const),
+      origin: window.location.origin,
+    }),
+    [externalLinksEnabled],
+  );
+
   const authorColorMap = useMemo(() => {
     const map = new Map<string, AuthorStyle>();
     for (const span of attributionSpans) {
@@ -1105,7 +1117,7 @@ export function CollaborativeEditor({
     lastMarksRef.current = combinedKey;
     const savedCursor = getCursorOffset(el);
     try {
-        const html = buildStyledText(displayText, styleMarks);
+        const html = buildStyledText(displayText, styleMarks, linkOpts);
         if (html && html.length > 0) {
           el.innerHTML = html;
         } else {
@@ -1184,7 +1196,7 @@ export function CollaborativeEditor({
             el.appendChild(document.createTextNode("\u200B"));
           }
         } else {
-          el.innerHTML = buildStyledText(displayText, []);
+          el.innerHTML = buildStyledText(displayText, [], linkOpts);
           if (displayText.endsWith("\n")) {
             el.appendChild(document.createTextNode("\u200B"));
           }
@@ -2040,13 +2052,25 @@ export function CollaborativeEditor({
     // placement loss is acceptable; hover affordance signals clickability).
     const anchor = target.closest("a.doc-autolink");
     if (anchor) {
-      const href = anchor.getAttribute("href");
-      // Defense in depth: re-validate the scheme at open time. The
-      // generator only produces http(s), but if that ever regresses,
-      // this check keeps javascript:/data: schemes from executing.
-      if (href && /^https?:\/\//i.test(href)) {
+      const href = anchor.getAttribute("href") || "";
+      // Internal work links navigate in-app — same surface as
+      // transclusion source links, no browser tab.
+      if (anchor.classList.contains("doc-autolink-internal")) {
+        const m = href.match(/[?&]work=0x([0-9a-f]+)/i);
+        if (m && onNavigateToWork) {
+          e.preventDefault();
+          onNavigateToWork(parseInt(m[1], 16));
+          return;
+        }
+      }
+      // External: only when the server policy allows, with the scheme
+      // re-validated at open time (defense in depth — the generator
+      // only produces http(s), but never trust generated markup).
+      if (/^https?:\/\//i.test(href)) {
         e.preventDefault();
-        window.open(href, "_blank", "noopener,noreferrer");
+        if (externalLinksEnabled) {
+          window.open(href, "_blank", "noopener,noreferrer");
+        }
         return;
       }
     }

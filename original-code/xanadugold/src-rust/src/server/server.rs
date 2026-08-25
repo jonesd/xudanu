@@ -711,6 +711,9 @@ pub struct Server {
     /// clear error, and the server directory stays local. Persisted in
     /// the manifest AdminEntry.
     network_enabled: bool,
+    /// External-link policy (default OFF): document URLs render as plain
+    /// text unless same-origin; admin may enable. Persisted in AdminEntry.
+    external_links_enabled: bool,
     trusted_server_registry: Option<crate::crypto::server_identity::TrustedServerRegistry>,
     signed_introductions: Vec<SignedIntroduction>,
     security_tracker: CrossServerSecurityTracker,
@@ -1305,6 +1308,7 @@ impl Server {
             last_persisted_work_count: 0,
             demo_work_id: None,
             network_enabled: false,
+            external_links_enabled: false,
             trusted_server_registry: None,
             signed_introductions: Vec::new(),
             cross_server_links: Vec::new(),
@@ -10567,6 +10571,26 @@ impl Server {
         self.network_enabled
     }
 
+    /// External-link policy toggle (admin-only). When disabled, the
+    /// frontend only links same-origin URLs; external ones stay text.
+    pub fn set_external_links_enabled(
+        &mut self,
+        session_id: SessionId,
+        enabled: bool,
+    ) -> Result<bool, ServerError> {
+        self.ensure_admin(session_id)?;
+        self.external_links_enabled = enabled;
+        tracing::info!(
+            "External document links {} by admin session",
+            if enabled { "ENABLED" } else { "DISABLED" }
+        );
+        Ok(enabled)
+    }
+
+    pub fn external_links_enabled(&self) -> bool {
+        self.external_links_enabled
+    }
+
     /// Startup-only variant of the toggle (operator CLI flag): no session,
     /// no admin check. Persists with the next checkpoint.
     pub fn set_network_enabled_startup(&mut self, enabled: bool) {
@@ -11322,6 +11346,7 @@ impl Server {
             self.admin.set_accepting_connections(true);
         }
         self.network_enabled = manifest.admin.network_enabled;
+        self.external_links_enabled = manifest.admin.external_links_enabled;
         tracing::info!(
             "Xudanu network (cross-server): {}",
             if self.network_enabled {
@@ -14580,6 +14605,7 @@ impl Server {
             "last_checkpoint_ago_secs": since_checkpoint,
             "server_id": self.server_keypair.identity_id().to_string(),
             "network_enabled": self.network_enabled,
+            "external_links_enabled": self.external_links_enabled,
             "chain_valid": chain_valid,
             "restore_errors": if has_restore_errors {
                 serde_json::Value::Array(
@@ -20336,6 +20362,7 @@ pub(crate) mod persist_snapshot {
                 last_persisted_work_count: 0,
                 demo_work_id: None,
                 network_enabled: false,
+                external_links_enabled: false,
                 trusted_server_registry: None,
                 signed_introductions: Vec::new(),
                 cross_server_links: Vec::new(),
@@ -20884,6 +20911,7 @@ pub(crate) mod persist_snapshot {
                     })
                     .collect(),
                 network_enabled: self.network_enabled,
+                external_links_enabled: self.external_links_enabled,
             };
 
             let federation_snapshot = self.federation.to_snapshot();
@@ -21307,6 +21335,7 @@ pub(crate) mod persist_snapshot {
                         })
                         .collect(),
                     network_enabled: self.network_enabled,
+                external_links_enabled: self.external_links_enabled,
                 },
                 reconcile_store: self.reconcile_store.clone(),
                 reconcile_counter: self.reconcile_counter,
@@ -24835,6 +24864,41 @@ mod tests {
             assert!(server.network_enabled(), "enabled state survives restart");
         }
 
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn external_links_default_off_admin_gated_persists() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_extlinks_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            assert!(!server.external_links_enabled());
+
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            assert!(server.set_external_links_enabled(sid, true).is_err());
+
+            server.grant_admin_authority(sid).unwrap();
+            server.set_external_links_enabled(sid, true).unwrap();
+            assert!(server.external_links_enabled());
+            server.checkpoint_to_store().unwrap();
+        }
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert!(server.external_links_enabled(), "persists across restart");
+        }
         let _ = std::fs::remove_dir_all(&data_dir);
     }
 

@@ -415,6 +415,7 @@ pub enum OperationCode {
     #[cfg(feature = "serde")]
     ServerDirectorySetTrust,
     NetworkSetEnabled,
+    ExternalLinksSetEnabled,
     #[cfg(feature = "serde")]
     CrossServerResolve,
     #[cfg(feature = "serde")]
@@ -809,6 +810,7 @@ impl OperationCode {
             0x0F0F => Some(OperationCode::BloomFilterGet),
             0x0F10 => Some(OperationCode::BloomFilterCheck),
             0x0F11 => Some(OperationCode::NetworkSetEnabled),
+            0x0F12 => Some(OperationCode::ExternalLinksSetEnabled),
 
             _ => None,
         }
@@ -1143,6 +1145,7 @@ impl OperationCode {
             OperationCode::BloomFilterGet => 0x0F0F,
             OperationCode::BloomFilterCheck => 0x0F10,
             OperationCode::NetworkSetEnabled => 0x0F11,
+            OperationCode::ExternalLinksSetEnabled => 0x0F12,
             #[cfg(feature = "serde")]
             OperationCode::FederationAttestationCreate => 0x0E02,
             #[cfg(feature = "serde")]
@@ -2269,6 +2272,10 @@ pub enum WireRequest {
     },
     #[cfg(feature = "serde")]
     NetworkSetEnabled {
+        enabled: bool,
+    },
+    #[cfg(feature = "serde")]
+    ExternalLinksSetEnabled {
         enabled: bool,
     },
     #[cfg(feature = "serde")]
