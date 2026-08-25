@@ -304,6 +304,7 @@ export function WorkspaceShell() {
     saveState,
     connected,
     authenticated,
+    accessDeniedWorkId,
     identity,
     isAdmin,
     setText,
@@ -2383,6 +2384,35 @@ export function WorkspaceShell() {
               >
                 Browse works
               </button>
+            </div>
+          ) : accessDeniedWorkId !== null && workBeId === accessDeniedWorkId ? (
+            <div className="ws-empty-doc">
+              <h2>You don&rsquo;t have access to this document</h2>
+              <p>
+                Work 0x{accessDeniedWorkId.toString(16)} is private. The owner has not
+                shared it with {identity ? "your identity" : "anonymous readers"}.
+              </p>
+              <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 12 }}>
+                {!identity && (
+                  <button
+                    className="ws-empty-create"
+                    onClick={() => setShowIdentity(true)}
+                  >
+                    Sign in
+                  </button>
+                )}
+                <button
+                  className="ws-empty-create"
+                  onClick={() => {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete("work");
+                    window.history.replaceState({}, "", url.toString());
+                    setWorkBeId(null);
+                  }}
+                >
+                  Browse works
+                </button>
+              </div>
             </div>
           ) : workBeId === null && navTab !== "library" ? (
             <WelcomeScreen

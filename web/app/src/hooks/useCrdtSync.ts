@@ -8,6 +8,10 @@ export interface CrdtSyncState {
   authenticated: boolean;
   reconnectAttempt: number;
   switchingWork: boolean;
+  /** Work id the server refused to open for this session (private work),
+   * or null. Surfaced so the UI can say "no access" instead of showing
+   * an empty, dead editor. */
+  accessDeniedWorkId: number | null;
   awareness: AwarenessState[];
   setText: (text: string) => void;
   setTextLocal: (text: string) => void;
@@ -59,6 +63,7 @@ export function useCrdtSync(
   const [text, setTextState] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [connected, setConnected] = useState(false);
+  const [accessDeniedWorkId, setAccessDeniedWorkId] = useState<number | null>(null);
   const [switchingWork, setSwitchingWork] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -109,6 +114,9 @@ export function useCrdtSync(
 
     const unsubText = client.onTextChange(setTextState);
     const unsubSave = client.onSaveStateChange(setSaveState);
+    const unsubDenied = client.onAccessDenied((deniedWorkId) => {
+      if (deniedWorkId === (workBeId ?? -1)) setAccessDeniedWorkId(deniedWorkId);
+    });
     const unsubConn = client.onConnectionChange((isConnected) => {
       if (isConnected) {
         if (disconnectTimerRef.current) {
@@ -168,6 +176,7 @@ export function useCrdtSync(
       clearInterval(reconnectPoll);
       unsubText();
       unsubSave();
+      unsubDenied();
       unsubConn();
       unsubConn2();
       unsubAware();
@@ -198,6 +207,7 @@ export function useCrdtSync(
   // Switch works — text loads first, everything else waits
   useEffect(() => {
     if (!connected || workBeId === null) return;
+    setAccessDeniedWorkId(null);
     setSwitchingWork(true);
     const client = clientRef.current;
     if (client) {
@@ -654,6 +664,7 @@ export function useCrdtSync(
 
   return {
     text, saveState, connected, authenticated, reconnectAttempt, switchingWork, awareness, setText, setTextLocal, sendCursor, sendSelection,
+    accessDeniedWorkId,
     contentMatches, watchEnabled, toggleWatch, clientRef,
     attributionSpans, attributionLogStatus, refreshAttribution,
     refreshAwareness,

@@ -518,6 +518,7 @@ export class CrdtSyncClient {
   private pending = new Map<number, ResponseHandler>();
   private text = "";
   private textListeners = new Set<(text: string) => void>();
+  private accessDeniedListeners = new Set<(workId: number) => void>();
   private awarenessListeners = new Set<(states: AwarenessState[]) => void>();
   private connectionListeners = new Set<(connected: boolean) => void>();
   private contentMatchListeners = new Set<(match: ContentMatch) => void>();
@@ -675,6 +676,11 @@ export class CrdtSyncClient {
   onTextChange(cb: (text: string) => void): () => void {
     this.textListeners.add(cb);
     return () => { this.textListeners.delete(cb); };
+  }
+
+  onAccessDenied(cb: (workId: number) => void): () => void {
+    this.accessDeniedListeners.add(cb);
+    return () => { this.accessDeniedListeners.delete(cb); };
   }
 
   onAwarenessChange(cb: (states: AwarenessState[]) => void): () => void {
@@ -2028,6 +2034,7 @@ export class CrdtSyncClient {
   async tryOpenWork(): Promise<void> {
     if (!this.workBeId || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     let loaded = false;
+    let accessDenied = false;
     if (!this.skipCrdt) {
       try {
         const openPromise = this.sendRequest("crdt_sync_open", {
@@ -2072,11 +2079,18 @@ export class CrdtSyncClient {
           }
           this.awarenessListeners.forEach((cb) => cb(Array.from(this.awarenessMap.values())));
         }).catch(() => {});
-      } catch {
+      } catch (e) {
+        // Distinguish "cannot access this work" from transient failures —
+        // the user must SEE the former (an empty dead editor reads as
+        // broken software).
+        const msg = e instanceof Error ? e.message.toLowerCase() : String(e).toLowerCase();
+        if (msg.includes("not authorized") || msg.includes("permission") || msg.includes("no access") || msg.includes("forbidden")) {
+          accessDenied = true;
+        }
         // CRDT open failed — fall through to edition fallback below
       }
     }
-    if (!loaded) {
+    if (!loaded && !accessDenied) {
       try {
         const edResp = await this.sendRequest("work_get_edition", {
           work_id: this.workBeId,
@@ -2089,9 +2103,15 @@ export class CrdtSyncClient {
           this.text = edText;
           this.textListeners.forEach((cb) => cb(this.text));
         }
-      } catch {
-        // Expected during identity transitions
+      } catch (e) {
+        const msg = e instanceof Error ? e.message.toLowerCase() : String(e).toLowerCase();
+        if (msg.includes("not authorized") || msg.includes("permission") || msg.includes("no access") || msg.includes("forbidden")) {
+          accessDenied = true;
+        }
       }
+    }
+    if (accessDenied) {
+      this.accessDeniedListeners.forEach((cb) => cb(this.workBeId));
     }
   }
 
