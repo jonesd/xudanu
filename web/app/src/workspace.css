@@ -2824,6 +2824,24 @@
    editor stays visible and editable to its left. The old full-screen
    overlay (cb-overlay) duplicated a read-only rendering of the essay
    and could not be written in. */
+/* ── Fullscreen multi-way compare ── */
+.mc-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  background: var(--bg, #1a1a24);
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px;
+  overflow: hidden;
+}
+.mc-fullscreen .ws-conn-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .cb-dock {
   position: fixed;
   top: 0;

@@ -49,6 +49,11 @@ interface MultiEndCompareProps {
   currentWorkId: number | null;
   onPickWork: (id: number) => void;
   onClose: () => void;
+  /** Full-window mode: roomier columns, no max-height, up to 4 works. */
+  fullscreen?: boolean;
+  onRemoveWork?: (id: number) => void;
+  /** Embedded mode: open the fullscreen comparison overlay. */
+  onExpand?: () => void;
 }
 
 interface Column {
@@ -76,6 +81,9 @@ export function MultiEndCompare({
   currentWorkId,
   onPickWork,
   onClose,
+  fullscreen = false,
+  onRemoveWork,
+  onExpand,
 }: MultiEndCompareProps) {
   const [columns, setColumns] = useState<Column[]>([]);
   const [pairLabels, setPairLabels] = useState<Map<string, string>>(new Map());
@@ -171,12 +179,26 @@ export function MultiEndCompare({
     (w) => !uniqueIds.includes(w.work_id) && w.work_id !== currentWorkId,
   );
 
+  const maxCols = fullscreen ? 4 : 3;
   return (
-    <div className="ws-connections-tab">
+    <div className={fullscreen ? "mc-fullscreen" : "ws-connections-tab"}>
       <div className="ws-conn-section">
         <div className="ws-conn-header" style={{ display: "flex", justifyContent: "space-between" }}>
           <span>Compare ({uniqueIds.length})</span>
-          <button className="ws-conn-delete" title="Back to connections" onClick={onClose}>×</button>
+          <span>
+            {!fullscreen && onExpand && (
+              <button
+                type="button"
+                className="ws-link-filter-btn"
+                style={{ fontSize: 10, padding: "1px 8px", marginRight: 6 }}
+                title="Open the full-window comparison — roomier columns for larger works"
+                onClick={onExpand}
+              >
+                ⤢ expand
+              </button>
+            )}
+            <button className="ws-conn-delete" title={fullscreen ? "Close comparison" : "Back to connections"} onClick={onClose}>×</button>
+          </span>
         </div>
         {uniqueIds.length < 2 && (
           <div className="ws-conn-empty">
@@ -232,7 +254,7 @@ export function MultiEndCompare({
           </div>
         )}
         {!loading && columns.length >= 2 && (
-          <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(columns.length, 3)}, 1fr)`, gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(columns.length, maxCols)}, 1fr)`, gap: 8, flex: fullscreen ? 1 : undefined, minHeight: fullscreen ? 0 : undefined }}>
             {columns.map((col) => (
               <div
                 key={col.workId}
@@ -241,20 +263,33 @@ export function MultiEndCompare({
                   borderRadius: 6,
                   padding: 8,
                   minHeight: 200,
-                  maxHeight: 420,
+                  maxHeight: fullscreen ? undefined : 420,
                   overflowY: "auto",
-                  fontSize: 12,
-                  lineHeight: 1.5,
+                  fontSize: fullscreen ? 14 : 12,
+                  lineHeight: 1.6,
+                  display: fullscreen ? "flex" : undefined,
+                  flexDirection: fullscreen ? "column" : undefined,
                 }}
               >
-                <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 11, color: "#8b949e" }}>
-                  {col.title}
-                  {col.regions.length === 0 && (
-                    <span style={{ color: "#484f58", marginLeft: 6 }}>(no shared passages)</span>
+                <div style={{ fontWeight: 600, marginBottom: 4, fontSize: fullscreen ? 13 : 11, color: "#8b949e", display: "flex", justifyContent: "space-between" }}>
+                  <span>
+                    {col.title}
+                    {col.regions.length === 0 && (
+                      <span style={{ color: "#484f58", marginLeft: 6 }}>(no shared passages)</span>
+                    )}
+                  </span>
+                  {fullscreen && onRemoveWork && (
+                    <button
+                      type="button"
+                      className="ws-conn-delete"
+                      title="Remove from comparison"
+                      onClick={() => onRemoveWork(col.workId)}
+                    >×</button>
                   )}
                 </div>
                 <div
                   className="compare-hl"
+                  style={fullscreen ? { flex: 1, minHeight: 0 } : undefined}
                   dangerouslySetInnerHTML={{
                     __html: viewMode === "shared"
                       ? highlightRegions(col.text, col.regions, "compare-hl")

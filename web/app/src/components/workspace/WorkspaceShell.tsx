@@ -211,6 +211,7 @@ export function WorkspaceShell() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeLinkTypes, setActiveLinkTypes] = useState<Set<number>>(new Set());
   const [multiCompareWorkIds, setMultiCompareWorkIds] = useState<number[]>([]);
+  const [compareFullscreen, setCompareFullscreen] = useState(false);
   // Provenance underlines are ON by default: the light floating
   // underline is subtle enough for reading, and authorship visibility
   // is the signature capability. localStorage still overrides for
@@ -4366,6 +4367,9 @@ export function WorkspaceShell() {
                 currentWorkId={workBeId}
                 onPickWork={(id) => setMultiCompareWorkIds((prev) => [...prev, id])}
                 onClose={() => setRightPanelTab("connections")}
+                fullscreen={compareFullscreen}
+                onRemoveWork={compareFullscreen ? (id) => setMultiCompareWorkIds((prev) => prev.filter((p) => p !== id)) : undefined}
+                onExpand={() => setCompareFullscreen(true)}
               />
             )}
             {rightPanelTab === "more" && (
@@ -4805,6 +4809,18 @@ export function WorkspaceShell() {
               showToast(`Could not change network setting: ${e instanceof Error ? e.message : String(e)}`);
             }
           }}
+        />
+      )}
+      {compareFullscreen && (
+        <MultiEndCompare
+          workIds={multiCompareWorkIds}
+          works={works}
+          clientRef={clientRef}
+          currentWorkId={workBeId}
+          onPickWork={(id) => setMultiCompareWorkIds((prev) => [...prev, id])}
+          onClose={() => setCompareFullscreen(false)}
+          fullscreen
+          onRemoveWork={(id) => setMultiCompareWorkIds((prev) => prev.filter((p) => p !== id))}
         />
       )}
       {showPerspective && workBeId !== null && (
