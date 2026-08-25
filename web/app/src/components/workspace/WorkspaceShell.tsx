@@ -263,6 +263,24 @@ export function WorkspaceShell() {
   }, [navTab]);
   const [showMerge, setShowMerge] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // FR-42/45 network toggle state — mirrored from /health (default off).
+  const [networkEnabled, setNetworkEnabled] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const readHealth = async () => {
+      try {
+        const r = await fetch("/health");
+        if (!r.ok) return;
+        const j = (await r.json()) as { network_enabled?: boolean };
+        if (!cancelled && typeof j.network_enabled === "boolean") {
+          setNetworkEnabled(j.network_enabled);
+        }
+      } catch { /* offline — keep last known */ }
+    };
+    readHealth();
+    const iv = setInterval(readHealth, 30000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, []);
   const [docPrefs, setDocPrefs] = useState<DocPreferences>(loadDocPreferences());
   const [importText, setImportText] = useState<string | undefined>(undefined);
 
@@ -4745,6 +4763,18 @@ export function WorkspaceShell() {
           prefs={docPrefs}
           onPrefsChange={setDocPrefs}
           onClose={() => setShowSettings(false)}
+          networkEnabled={networkEnabled}
+          isAdmin={isAdmin}
+          onSetNetworkEnabled={async (enabled) => {
+            if (!clientRef.current) return;
+            try {
+              await clientRef.current.sendRequest("network_set_enabled", { enabled });
+              setNetworkEnabled(enabled);
+              showToast(enabled ? "Xudanu network enabled" : "Xudanu network disabled — single-player mode");
+            } catch (e) {
+              showToast(`Could not change network setting: ${e instanceof Error ? e.message : String(e)}`);
+            }
+          }}
         />
       )}
       {showPerspective && workBeId !== null && (

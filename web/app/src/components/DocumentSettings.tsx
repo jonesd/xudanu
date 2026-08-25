@@ -31,10 +31,14 @@ interface DocumentSettingsProps {
   onClose: () => void;
   prefs: DocPreferences;
   onPrefsChange: (prefs: DocPreferences) => void;
+  networkEnabled: boolean;
+  isAdmin: boolean;
+  onSetNetworkEnabled: (enabled: boolean) => Promise<void>;
 }
 
-export function DocumentSettings({ visible, onClose, prefs, onPrefsChange }: DocumentSettingsProps) {
+export function DocumentSettings({ visible, onClose, prefs, onPrefsChange, networkEnabled, isAdmin, onSetNetworkEnabled }: DocumentSettingsProps) {
   const [local, setLocal] = useState(prefs);
+  const [netBusy, setNetBusy] = useState(false);
 
   useEffect(() => {
     setLocal(prefs);
@@ -102,6 +106,41 @@ export function DocumentSettings({ visible, onClose, prefs, onPrefsChange }: Doc
                 <option value="reading">Reading</option>
               </select>
             </label>
+          </div>
+
+          <div className="settings-section">
+            <h3>Xudanu network</h3>
+            <div className="settings-row">
+              <div>
+                <span>Connect to other servers</span>
+                <div className="settings-sub">
+                  {networkEnabled
+                    ? "Cross-server links, federation sync, and the server directory are active."
+                    : "Single-player mode (default): this server makes no outbound connections to other xudanu servers."}
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={networkEnabled}
+                className={`settings-switch ${networkEnabled ? "on" : ""}`}
+                disabled={!isAdmin || netBusy}
+                title={isAdmin ? undefined : "Admin sign-in required"}
+                onClick={async () => {
+                  setNetBusy(true);
+                  try {
+                    await onSetNetworkEnabled(!networkEnabled);
+                  } finally {
+                    setNetBusy(false);
+                  }
+                }}
+              >
+                <span className="settings-switch-knob" />
+              </button>
+            </div>
+            <div className={`settings-net-status ${networkEnabled ? "on" : "off"}`}>
+              {networkEnabled ? "● Network: ON" : "● Network: OFF (single-player)"}
+            </div>
           </div>
         </div>
       </div>

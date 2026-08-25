@@ -78,6 +78,7 @@ fn usage() {
     eprintln!("  --tls-key <path>         TLS private key PEM file");
     eprintln!("  --peer <addr>            Federation peer address (repeatable, e.g. ws://host:port/federation)");
     eprintln!("  --federation-mode <mode> Federation mode: closed (default) or open");
+    eprintln!("  --network <on|off>        Xudanu network toggle (default off = single-player;");
     eprintln!("  --trusted-peer-key <hex> Trusted peer Ed25519 verifying key (repeatable)");
     eprintln!("  --allowed-origin <url>   Allowed WebSocket origin (repeatable, e.g. https://example.com)");
     eprintln!(
@@ -550,6 +551,7 @@ async fn main() {
             let mut tls_key: Option<PathBuf> = None;
             let mut federation_peers: Vec<String> = Vec::new();
             let mut federation_mode = "closed".to_string();
+            let mut network_flag: Option<bool> = None;
             let mut trusted_peer_keys: Vec<String> = Vec::new();
             let mut allowed_origins: std::collections::HashSet<String> =
                 std::collections::HashSet::new();
@@ -623,6 +625,21 @@ async fn main() {
                         federation_mode = args.get(i).map(|s| s.to_string()).unwrap_or_else(|| {
                             eprintln!("Error: --federation-mode requires a value");
                             std::process::exit(1);
+                        });
+                    }
+                    "--network" => {
+                        i += 1;
+                        let v = args.get(i).map(|s| s.to_string()).unwrap_or_else(|| {
+                            eprintln!("Error: --network requires on|off");
+                            std::process::exit(1);
+                        });
+                        network_flag = Some(match v.as_str() {
+                            "on" | "true" | "1" => true,
+                            "off" | "false" | "0" => false,
+                            other => {
+                                eprintln!("Error: --network expects on|off, got '{}'", other);
+                                std::process::exit(1);
+                            }
                         });
                     }
                     "--trusted-peer-key" => {
@@ -869,6 +886,13 @@ async fn main() {
                          Pass --edit-policy public-sandbox for a wiki-style server.)"
                     );
                 }
+            }
+            if let Some(enabled) = network_flag {
+                server.set_network_enabled_startup(enabled);
+                tracing::info!(
+                    "Xudanu network (cross-server): {} (operator-set via --network; persisted)",
+                    if enabled { "ON" } else { "OFF" }
+                );
             }
             if let Some(pw) = &admin_passphrase {
                 match server.set_admin_passphrase(pw.as_bytes()) {

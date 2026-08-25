@@ -3375,6 +3375,56 @@ canvas._bridge {
   color: #333;
 }
 
+.settings-sub {
+  font-size: 11px;
+  color: #888;
+  margin-top: 2px;
+  max-width: 260px;
+  line-height: 1.4;
+}
+
+.settings-switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  border: 1px solid #ccc;
+  background: #ccc;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.settings-switch.on {
+  background: #238636;
+  border-color: #2ea043;
+}
+.settings-switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.settings-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s;
+}
+.settings-switch.on .settings-switch-knob {
+  left: 22px;
+}
+.settings-net-status {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.settings-net-status.on { color: #2ea043; }
+.settings-net-status.off { color: #888; }
+
 .modal-overlay {
   position: fixed;
   inset: 0;

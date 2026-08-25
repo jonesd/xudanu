@@ -848,6 +848,8 @@ pub fn read_root_as_manifest(
                         accepting_connections: false,
                         shutdown_requested: false,
                         grants: vec![],
+
+                        network_enabled: false,
                     },
                     false,
                     false,
@@ -864,6 +866,8 @@ pub fn read_root_as_manifest(
                     accepting_connections: false,
                     shutdown_requested: false,
                     grants: vec![],
+
+                    network_enabled: false,
                 },
                 false,
                 false,

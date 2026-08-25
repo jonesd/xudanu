@@ -414,6 +414,7 @@ pub enum OperationCode {
     ServerDirectoryRemove,
     #[cfg(feature = "serde")]
     ServerDirectorySetTrust,
+    NetworkSetEnabled,
     #[cfg(feature = "serde")]
     CrossServerResolve,
     #[cfg(feature = "serde")]
@@ -807,6 +808,7 @@ impl OperationCode {
             0x0F0E => Some(OperationCode::TumblerResolve),
             0x0F0F => Some(OperationCode::BloomFilterGet),
             0x0F10 => Some(OperationCode::BloomFilterCheck),
+            0x0F11 => Some(OperationCode::NetworkSetEnabled),
 
             _ => None,
         }
@@ -1140,6 +1142,7 @@ impl OperationCode {
             OperationCode::TumblerResolve => 0x0F0E,
             OperationCode::BloomFilterGet => 0x0F0F,
             OperationCode::BloomFilterCheck => 0x0F10,
+            OperationCode::NetworkSetEnabled => 0x0F11,
             #[cfg(feature = "serde")]
             OperationCode::FederationAttestationCreate => 0x0E02,
             #[cfg(feature = "serde")]
@@ -2263,6 +2266,10 @@ pub enum WireRequest {
     ServerDirectorySetTrust {
         server_id: String,
         trusted: bool,
+    },
+    #[cfg(feature = "serde")]
+    NetworkSetEnabled {
+        enabled: bool,
     },
     #[cfg(feature = "serde")]
     CrossServerResolve {

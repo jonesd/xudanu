@@ -90,6 +90,13 @@ pub async fn dial_and_maintain(peer_addr: String, state: SharedState, pool: Peer
     const MAX_BACKOFF_SECS: u64 = 30;
 
     loop {
+        // Network toggle: when single-player mode is on, idle instead of
+        // dialing. Checked every cycle so an admin can disable the network
+        // at runtime without restarting the server.
+        if !state.server.with_server_ref(|srv| srv.network_enabled()) {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            continue;
+        }
         match dial_peer(&peer_addr, &state).await {
             Ok((ws, peer_server_id, encrypt_cipher, decrypt_cipher)) => {
                 tracing::info!(

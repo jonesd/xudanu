@@ -222,6 +222,11 @@ pub struct AdminEntry {
     pub accepting_connections: bool,
     pub shutdown_requested: bool,
     pub grants: Vec<(BeId, i64, i64)>,
+    /// FR-42/45 network toggle: when false the server is single-player —
+    /// no outbound connections to other xudanu servers (federation dialer,
+    /// cross-server resolution, directory fetch). Default false.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub network_enabled: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1291,6 +1296,8 @@ pub fn create_empty_manifest(
             accepting_connections: true,
             shutdown_requested: false,
             grants: Vec::new(),
+
+            network_enabled: false,
         },
         reconcile_store: crate::server::federation::ReconcileStore::new(),
         reconcile_counter: 0,

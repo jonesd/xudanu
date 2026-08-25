@@ -705,6 +705,12 @@ pub struct Server {
     /// The seeded interactive demo work (public-read), set at data dir
     /// init and restored with the manifest.
     demo_work_id: Option<BeId>,
+    /// Network toggle (default OFF = single-player). When false, all
+    /// outbound connections to other xudanu servers are refused: the
+    /// federation dialer idles, cross-server resolve/fetch return a
+    /// clear error, and the server directory stays local. Persisted in
+    /// the manifest AdminEntry.
+    network_enabled: bool,
     trusted_server_registry: Option<crate::crypto::server_identity::TrustedServerRegistry>,
     signed_introductions: Vec<SignedIntroduction>,
     security_tracker: CrossServerSecurityTracker,
@@ -1298,6 +1304,7 @@ impl Server {
             quarantined_editions: Vec::new(),
             last_persisted_work_count: 0,
             demo_work_id: None,
+            network_enabled: false,
             trusted_server_registry: None,
             signed_introductions: Vec::new(),
             cross_server_links: Vec::new(),
@@ -10538,6 +10545,34 @@ impl Server {
         Ok(())
     }
 
+    /// Network toggle (admin-only): enable/disable outbound connections
+    /// to other xudanu servers. Persisted in the manifest on next
+    /// checkpoint. Disabling idles the federation dialer and refuses
+    /// cross-server resolution — the server becomes single-player.
+    pub fn set_network_enabled(
+        &mut self,
+        session_id: SessionId,
+        enabled: bool,
+    ) -> Result<bool, ServerError> {
+        self.ensure_admin(session_id)?;
+        self.network_enabled = enabled;
+        tracing::info!(
+            "Xudanu network (cross-server) {} by admin session",
+            if enabled { "ENABLED" } else { "DISABLED" }
+        );
+        Ok(enabled)
+    }
+
+    pub fn network_enabled(&self) -> bool {
+        self.network_enabled
+    }
+
+    /// Startup-only variant of the toggle (operator CLI flag): no session,
+    /// no admin check. Persists with the next checkpoint.
+    pub fn set_network_enabled_startup(&mut self, enabled: bool) {
+        self.network_enabled = enabled;
+    }
+
     pub fn admin_accept_connections(
         &mut self,
         session_id: SessionId,
@@ -11274,6 +11309,15 @@ impl Server {
         if manifest.admin.shutdown_requested {
             self.admin.request_shutdown();
         }
+        self.network_enabled = manifest.admin.network_enabled;
+        tracing::info!(
+            "Xudanu network (cross-server): {}",
+            if self.network_enabled {
+                "ENABLED"
+            } else {
+                "disabled (single-player)"
+            }
+        );
         for (club_id, start, end) in &manifest.admin.grants {
             self.admin
                 .grant(*club_id, crate::edition::XnRegion::interval(*start, *end));
@@ -14523,6 +14567,7 @@ impl Server {
             "operations": ops,
             "last_checkpoint_ago_secs": since_checkpoint,
             "server_id": self.server_keypair.identity_id().to_string(),
+            "network_enabled": self.network_enabled,
             "chain_valid": chain_valid,
             "restore_errors": if has_restore_errors {
                 serde_json::Value::Array(
@@ -20278,6 +20323,7 @@ pub(crate) mod persist_snapshot {
                 quarantined_editions: Vec::new(),
                 last_persisted_work_count: 0,
                 demo_work_id: None,
+                network_enabled: false,
                 trusted_server_registry: None,
                 signed_introductions: Vec::new(),
                 cross_server_links: Vec::new(),
@@ -20825,6 +20871,7 @@ pub(crate) mod persist_snapshot {
                         (g.club_id, start, end)
                     })
                     .collect(),
+                network_enabled: self.network_enabled,
             };
 
             let federation_snapshot = self.federation.to_snapshot();
@@ -21247,6 +21294,7 @@ pub(crate) mod persist_snapshot {
                             (g.club_id, start, end)
                         })
                         .collect(),
+                    network_enabled: self.network_enabled,
                 },
                 reconcile_store: self.reconcile_store.clone(),
                 reconcile_counter: self.reconcile_counter,
@@ -24713,6 +24761,69 @@ mod tests {
                 "new works should have a read_club (owner club)"
             );
         }
+    }
+
+    #[test]
+    fn network_toggle_default_off_admin_gated_persists() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_net_toggle_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            // Default: single-player.
+            assert!(!server.network_enabled());
+
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            // Non-admin cannot toggle.
+            assert!(server.set_network_enabled(sid, true).is_err());
+            assert!(!server.network_enabled());
+
+            // Admin can.
+            server.grant_admin_authority(sid).unwrap();
+            server.set_network_enabled(sid, true).unwrap();
+            assert!(server.network_enabled());
+
+            // Cross-server resolve now permitted (no peers configured, so
+            // it will fail with a network error — but NOT the disabled
+            // error). We only assert the disabled-gate text when off.
+            server.set_network_enabled(sid, false).unwrap();
+            assert!(!server.network_enabled());
+
+            server.checkpoint_to_store().unwrap();
+        }
+        // Persisted across restart, and default-off on fresh dirs.
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert!(!server.network_enabled(), "persisted state restored");
+
+            let sid = server.connect();
+            // incorporate_authority merges into the session's key master,
+            // which only exists after login — same pattern as the other
+            // admin tests.
+            server.login_public(sid).unwrap();
+            server.grant_admin_authority(sid).unwrap();
+            server.set_network_enabled(sid, true).unwrap();
+            server.checkpoint_to_store().unwrap();
+        }
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert!(server.network_enabled(), "enabled state survives restart");
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 
     #[test]

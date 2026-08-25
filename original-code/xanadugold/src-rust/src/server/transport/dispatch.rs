@@ -3890,11 +3890,22 @@ fn dispatch_inner(
             })
         }
         #[cfg(feature = "serde")]
+        #[cfg(feature = "serde")]
+        WireRequest::NetworkSetEnabled { enabled } => {
+            let new_val = srv.set_network_enabled(session_id, enabled)?;
+            Ok(ResponseValue::Boolean(new_val))
+        }
+
         WireRequest::CrossServerResolve {
             tumbler,
             content_hash_hex,
         } => {
             srv.ensure_session(session_id)?;
+            if !srv.network_enabled() {
+                return Err(crate::server::ServerError::Unauthorized(
+                    "Xudanu network is disabled on this server (single-player mode). Enable it in Settings to connect to other servers.".to_string(),
+                ));
+            }
             let hash_bytes = match crate::crypto::keys::hex_decode(&content_hash_hex) {
                 Ok(b) if b.len() == 32 => {
                     let mut arr = [0u8; 32];
