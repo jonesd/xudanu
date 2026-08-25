@@ -1452,6 +1452,25 @@ impl Server {
         self.edit_policy
     }
 
+    /// FR-45 P2: admin-gated runtime edit-policy change (persisted in
+    /// the manifest AdminEntry on next checkpoint; the CLI flag remains
+    /// the set-at-boot path).
+    pub fn set_edit_policy_admin(
+        &mut self,
+        session_id: SessionId,
+        policy: EditPolicy,
+    ) -> Result<(), ServerError> {
+        self.ensure_admin(session_id)?;
+        self.set_edit_policy(policy);
+        tracing::info!(
+            target: "xudanu::security",
+            event = "SECURITY:edit_policy_set",
+            "Edit policy set to {} by admin session",
+            policy.as_str()
+        );
+        Ok(())
+    }
+
     pub fn set_edit_policy(&mut self, policy: EditPolicy) {
         tracing::info!(
             policy = policy.as_str(),
@@ -11415,6 +11434,14 @@ impl Server {
         }
         self.network_enabled = manifest.admin.network_enabled;
         self.external_links_enabled = manifest.admin.external_links_enabled;
+        match manifest.admin.edit_policy.as_str() {
+            "public-sandbox" => {
+                self.set_edit_policy(EditPolicy::PublicSandbox);
+            }
+            _ => {
+                self.set_edit_policy(EditPolicy::OwnerOnly);
+            }
+        }
         tracing::info!(
             "Xudanu network (cross-server): {}",
             if self.network_enabled {
@@ -14674,6 +14701,7 @@ impl Server {
             "server_id": self.server_keypair.identity_id().to_string(),
             "network_enabled": self.network_enabled,
             "external_links_enabled": self.external_links_enabled,
+            "edit_policy": self.edit_policy().as_str(),
             "chain_valid": chain_valid,
             "restore_errors": if has_restore_errors {
                 serde_json::Value::Array(
@@ -20980,6 +21008,7 @@ pub(crate) mod persist_snapshot {
                     .collect(),
                 network_enabled: self.network_enabled,
                 external_links_enabled: self.external_links_enabled,
+                edit_policy: self.edit_policy().as_str().to_string(),
             };
 
             let federation_snapshot = self.federation.to_snapshot();
@@ -21404,6 +21433,7 @@ pub(crate) mod persist_snapshot {
                         .collect(),
                     network_enabled: self.network_enabled,
                 external_links_enabled: self.external_links_enabled,
+                edit_policy: self.edit_policy().as_str().to_string(),
                 },
                 reconcile_store: self.reconcile_store.clone(),
                 reconcile_counter: self.reconcile_counter,
@@ -25042,6 +25072,54 @@ mod tests {
             .unwrap_or(0);
         assert!(live >= 1, "chunk shards exist for GC grace");
 
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn edit_policy_admin_set_persists_across_restart() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_edpol_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            // Programmatic dirs default PublicSandbox (test convenience);
+            // production boots explicitly set owner-only.
+            assert_eq!(server.edit_policy(), EditPolicy::PublicSandbox);
+
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            // Non-admin cannot change policy.
+            assert!(
+                server
+                    .set_edit_policy_admin(sid, EditPolicy::OwnerOnly)
+                    .is_err()
+            );
+
+            server.grant_admin_authority(sid).unwrap();
+            server
+                .set_edit_policy_admin(sid, EditPolicy::OwnerOnly)
+                .unwrap();
+            assert_eq!(server.edit_policy(), EditPolicy::OwnerOnly);
+            server.checkpoint_to_store().unwrap();
+        }
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert_eq!(
+                server.edit_policy(),
+                EditPolicy::OwnerOnly,
+                "edit policy persists across restart"
+            );
+        }
         let _ = std::fs::remove_dir_all(&data_dir);
     }
 

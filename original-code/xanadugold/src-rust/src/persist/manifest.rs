@@ -233,6 +233,10 @@ pub struct AdminEntry {
     /// escape hatch from document content; admin can enable.
     #[cfg_attr(feature = "serde", serde(default))]
     pub external_links_enabled: bool,
+    /// FR-45 P2: edit policy as persisted state ("owner-only" default,
+    /// "public-sandbox"). Previously CLI-set-at-boot only.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub edit_policy: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1306,6 +1310,8 @@ pub fn create_empty_manifest(
             network_enabled: false,
         
             external_links_enabled: false,
+        
+            edit_policy: String::new(),
         },
         reconcile_store: crate::server::federation::ReconcileStore::new(),
         reconcile_counter: 0,

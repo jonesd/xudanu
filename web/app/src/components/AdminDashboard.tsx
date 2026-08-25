@@ -12,6 +12,9 @@ interface AdminDashboardProps {
 interface HealthData {
   status: string;
   server_id: string;
+  network_enabled?: boolean;
+  external_links_enabled?: boolean;
+  edit_policy?: string;
   operations: number;
   works: number;
   clubs: number;
@@ -71,7 +74,7 @@ function CheckAlert({ condition, message }: { condition: boolean; message: strin
   );
 }
 
-type AdminTab = "overview" | "content";
+type AdminTab = "overview" | "content" | "policy";
 
 export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWork }: AdminDashboardProps) {
   const [health, setHealth] = useState<HealthData | null>(null);
@@ -79,6 +82,25 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const degradedCount = useRef(0);
   const [tab, setTab] = useState<AdminTab>("overview");
+
+  // ── Policy (FR-45 P2) ──
+  const [policyBusy, setPolicyBusy] = useState<string | null>(null);
+  const [policyMsg, setPolicyMsg] = useState<string | null>(null);
+
+  const runPolicy = useCallback(async (key: string, action: () => Promise<void>, done: string) => {
+    setPolicyBusy(key);
+    setPolicyMsg(null);
+    try {
+      await action();
+      setPolicyMsg(done);
+      // refresh health (it carries the policy fields)
+      fetch("/health").then((r) => r.json()).then((d) => setHealth(d)).catch(() => {});
+    } catch (e) {
+      setPolicyMsg(`Failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setPolicyBusy(null);
+    }
+  }, []);
 
   // ── Content moderation (FR-45 P1) ──
   const [contentFilter, setContentFilter] = useState("");
@@ -192,7 +214,7 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
       </div>
 
       <div style={{ display: "flex", gap: "4px", padding: "0 20px", background: "#161b22", borderBottom: "1px solid #30363d", flexShrink: 0 }}>
-        {(["overview", "content"] as const).map((t) => (
+        {(["overview", "content", "policy"] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -210,7 +232,7 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
               marginTop: 6,
             }}
           >
-            {t === "overview" ? "Overview" : "Content"}
+            {t === "overview" ? "Overview" : t === "content" ? "Content" : "Policy"}
           </button>
         ))}
       </div>
@@ -300,6 +322,92 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
           </div>
         </div>
       </div>
+
+      {tab === "policy" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
+          <div style={{ maxWidth: 800, margin: "0 auto" }}>
+            {!isAdmin && (
+              <div style={{ padding: "12px 16px", background: "rgba(210,153,34,0.08)", border: "1px solid rgba(210,153,34,0.3)", borderRadius: "8px", color: "#d29922", fontSize: "13px", marginBottom: 16 }}>
+                Admin sign-in required — policies are read-only.
+              </div>
+            )}
+            {policyMsg && (
+              <div style={{ padding: "10px 14px", marginBottom: 12, background: "rgba(88,166,255,0.08)", border: "1px solid rgba(88,166,255,0.3)", borderRadius: "6px", fontSize: 13, color: "#58a6ff" }}>
+                {policyMsg}
+              </div>
+            )}
+
+            <div style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: "8px", padding: 16, marginBottom: 14 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3", marginBottom: 4 }}>Edit policy</div>
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 12 }}>
+                Who may create and edit works. {health?.edit_policy === "public-sandbox"
+                  ? "Public-sandbox: any visitor can create and edit (wiki-style)."
+                  : "Owner-only (production default): only signed-in identities with rights."}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  disabled={!isAdmin || policyBusy !== null || health?.edit_policy === "owner-only"}
+                  onClick={() => void runPolicy("edit",
+                    () => client!.sendRequest("admin_edit_policy_set", { policy: "owner-only" }).then(() => {}),
+                    "Edit policy: owner-only")}
+                  style={{ background: health?.edit_policy === "owner-only" ? "#238636" : "#21262d", border: "1px solid #30363d", color: health?.edit_policy === "owner-only" ? "#fff" : "#c9d1d9", borderRadius: "4px", padding: "6px 14px", fontSize: 13, cursor: "pointer" }}
+                >
+                  Owner-only {health?.edit_policy === "owner-only" && "✓"}
+                </button>
+                <button
+                  type="button"
+                  disabled={!isAdmin || policyBusy !== null || health?.edit_policy === "public-sandbox"}
+                  onClick={() => void runPolicy("edit",
+                    () => client!.sendRequest("admin_edit_policy_set", { policy: "public-sandbox" }).then(() => {}),
+                    "Edit policy: public-sandbox")}
+                  style={{ background: health?.edit_policy === "public-sandbox" ? "#238636" : "#21262d", border: "1px solid #30363d", color: health?.edit_policy === "public-sandbox" ? "#fff" : "#c9d1d9", borderRadius: "4px", padding: "6px 14px", fontSize: 13, cursor: "pointer" }}
+                >
+                  Public sandbox {health?.edit_policy === "public-sandbox" && "✓"}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: "8px", padding: 16, marginBottom: 14 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3", marginBottom: 4 }}>Xudanu network (cross-server)</div>
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 12 }}>
+                {health?.network_enabled
+                  ? "Cross-server links, federation sync, and the server directory are active."
+                  : "Single-player (default): no outbound connections to other xudanu servers."}
+              </div>
+              <button
+                type="button"
+                disabled={!isAdmin || policyBusy !== null}
+                onClick={() => void runPolicy("net",
+                  () => client!.sendRequest("network_set_enabled", { enabled: !health?.network_enabled }).then(() => {}),
+                  health?.network_enabled ? "Network disabled — single-player" : "Network enabled")}
+                style={{ background: health?.network_enabled ? "#238636" : "#21262d", border: `1px solid ${health?.network_enabled ? "#2ea043" : "#30363d"}`, color: "#fff", borderRadius: "4px", padding: "6px 14px", fontSize: 13, cursor: "pointer" }}
+              >
+                {health?.network_enabled ? "ON — click to disable" : "OFF — click to enable"}
+              </button>
+            </div>
+
+            <div style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: "8px", padding: 16 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3", marginBottom: 4 }}>External links in documents</div>
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 12 }}>
+                {health?.external_links_enabled
+                  ? "http(s) URLs in documents open in a new tab."
+                  : "Locked down (default): links to this server navigate in-app; external URLs stay plain text."}
+              </div>
+              <button
+                type="button"
+                disabled={!isAdmin || policyBusy !== null}
+                onClick={() => void runPolicy("links",
+                  () => client!.sendRequest("external_links_set_enabled", { enabled: !health?.external_links_enabled }).then(() => {}),
+                  health?.external_links_enabled ? "External links disabled" : "External links enabled")}
+                style={{ background: health?.external_links_enabled ? "#238636" : "#21262d", border: `1px solid ${health?.external_links_enabled ? "#2ea043" : "#30363d"}`, color: "#fff", borderRadius: "4px", padding: "6px 14px", fontSize: 13, cursor: "pointer" }}
+              >
+                {health?.external_links_enabled ? "ON — click to disable" : "OFF — click to enable"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {tab === "content" && (
         <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>

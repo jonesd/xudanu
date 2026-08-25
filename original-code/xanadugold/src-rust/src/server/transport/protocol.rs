@@ -417,6 +417,7 @@ pub enum OperationCode {
     NetworkSetEnabled,
     ExternalLinksSetEnabled,
     WorkAdminDelete,
+    AdminEditPolicySet,
     #[cfg(feature = "serde")]
     CrossServerResolve,
     #[cfg(feature = "serde")]
@@ -813,6 +814,7 @@ impl OperationCode {
             0x0F11 => Some(OperationCode::NetworkSetEnabled),
             0x0F12 => Some(OperationCode::ExternalLinksSetEnabled),
             0x0F13 => Some(OperationCode::WorkAdminDelete),
+            0x0F14 => Some(OperationCode::AdminEditPolicySet),
 
             _ => None,
         }
@@ -1149,6 +1151,7 @@ impl OperationCode {
             OperationCode::NetworkSetEnabled => 0x0F11,
             OperationCode::ExternalLinksSetEnabled => 0x0F12,
             OperationCode::WorkAdminDelete => 0x0F13,
+            OperationCode::AdminEditPolicySet => 0x0F14,
             #[cfg(feature = "serde")]
             OperationCode::FederationAttestationCreate => 0x0E02,
             #[cfg(feature = "serde")]
@@ -2284,6 +2287,10 @@ pub enum WireRequest {
     #[cfg(feature = "serde")]
     WorkAdminDelete {
         work_id: BeId,
+    },
+    #[cfg(feature = "serde")]
+    AdminEditPolicySet {
+        policy: String,
     },
     #[cfg(feature = "serde")]
     CrossServerResolve {

@@ -852,7 +852,9 @@ pub fn read_root_as_manifest(
                         network_enabled: false,
                     
                         external_links_enabled: false,
-                    },
+                    
+            edit_policy: String::new(),
+        },
                     false,
                     false,
                     vec![],
@@ -872,7 +874,9 @@ pub fn read_root_as_manifest(
                     network_enabled: false,
                 
                         external_links_enabled: false,
-                    },
+                    
+            edit_policy: String::new(),
+        },
                 false,
                 false,
                 vec![],

@@ -3909,6 +3909,21 @@ fn dispatch_inner(
             srv.work_delete_admin(session_id, work_id)?;
             Ok(ResponseValue::Void)
         }
+        #[cfg(feature = "serde")]
+        WireRequest::AdminEditPolicySet { policy } => {
+            let parsed = match policy.as_str() {
+                "owner-only" => crate::server::EditPolicy::OwnerOnly,
+                "public-sandbox" => crate::server::EditPolicy::PublicSandbox,
+                other => {
+                    return Err(crate::server::ServerError::InvalidArgument(format!(
+                        "unknown edit policy: {}",
+                        other
+                    )))
+                }
+            };
+            srv.set_edit_policy_admin(session_id, parsed)?;
+            Ok(ResponseValue::Void)
+        }
 
         WireRequest::CrossServerResolve {
             tumbler,
