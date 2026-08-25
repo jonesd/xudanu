@@ -3,7 +3,8 @@ import type { AttributionSpan, TransclusionMarker, AnnotationEntry, SpanRangePay
 import type { PendingTransclusion } from "../hooks/useTransclusion";
 import { authorColor } from "../author-color";
 import { TextBuffer } from "../api/text_buffer";
-import { extractStyleMarks, buildStyledText, getCursorOffset, setCaretModel } from "../styled-text";
+import { extractStyleMarks, buildStyledText, getCursorOffset, setCaretModel, findUrls } from "../styled-text";
+
 import {
   getTextContent,
   getEditableText,
@@ -1089,14 +1090,19 @@ export function CollaborativeEditor({
     // native typing/Enter must NOT rebuild (innerHTML rebuild raced
     // the caret and killed input mid-list).
     const marksKey = styleMarks.map((m) => `${m.kind}:${m.char_start}:${m.char_end}`).join("|");
-    if (marksKey === lastMarksRef.current) {
+    // URL presence participates in the key: a freshly typed/pasted URL
+    // (native insertion, plain text node) must trigger one rebuild so it
+    // renders as a live link — without rebuilding on every keystroke.
+    const urlKey = findUrls(displayText).map((u) => `${u.start}:${u.end}`).join("|");
+    const combinedKey = `${marksKey}#${urlKey}`;
+    if (combinedKey === lastMarksRef.current) {
       // DOM already contains the typed text (native insertion) —
       // leave it and the caret alone.
       if (el.textContent.replace(/\u200B/g, "").length >= displayText.replace(/\u200B/g, "").length - 2) {
         return;
       }
     }
-    lastMarksRef.current = marksKey;
+    lastMarksRef.current = combinedKey;
     const savedCursor = getCursorOffset(el);
     try {
         const html = buildStyledText(displayText, styleMarks);

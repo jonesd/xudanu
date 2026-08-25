@@ -36,6 +36,46 @@ export function findMarkInRange(
 
 import { escapeHtml } from "./utils/escape";
 
+// Render-time URL autolinking: URLs are self-describing text, so they are
+// detected at display time — no stored annotations, no migration, and
+// every existing/pasted document links up instantly. Links open in a new
+// tab; the editor's contenteditable="false" spans keep the caret out.
+const URL_RE = /\bhttps?:\/\/[^\s<>"')\]]+/g;
+
+export function findUrls(text: string): Array<{ start: number; end: number; url: string }> {
+  const out: Array<{ start: number; end: number; url: string }> = [];
+  URL_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = URL_RE.exec(text)) !== null) {
+    // Trim trailing punctuation commonly glued to pasted URLs.
+    let url = m[0];
+    let end = m.index + url.length;
+    while (/[.,;:!?)]$/.test(url)) {
+      url = url.slice(0, -1);
+      end -= 1;
+    }
+    if (url.length > "https://".length) {
+      out.push({ start: m.index, end, url });
+    }
+  }
+  return out;
+}
+
+/** Wrap http(s) URLs in <a> tags within an HTML fragment (already-escaped text). */
+export function autolinkEscaped(escapedHtml: string): string {
+  // Operate on the escaped string: URLs contain no <>&"' after escaping
+  // (& became &amp; etc.), so match against the escaped forms.
+  const re = /\b(https?:\/\/)([^\s&<]+(?:&amp;[^\s&<]*)*)/g;
+  return escapedHtml.replace(re, (_whole, scheme, rest) => {
+    let url = scheme + rest;
+    let href = url;
+    while (/[.,;:!?)]$/.test(href)) href = href.slice(0, -1);
+    const shown = url.slice(0, href.length);
+    const tail = url.slice(href.length);
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="doc-autolink">${shown}</a>${tail}`;
+  });
+}
+
 interface Boundary {
   pos: number;
   type: "open" | "close";
@@ -46,7 +86,7 @@ interface Boundary {
 // === ORIGINAL inline marks logic — untouched ===
 function buildInlineHtml(text: string, marks: StyleMark[]): string {
   if (marks.length === 0 || text.length === 0) {
-    return escapeHtml(text);
+    return autolinkEscaped(escapeHtml(text));
   }
 
   const clamped = marks
@@ -80,7 +120,7 @@ function buildInlineHtml(text: string, marks: StyleMark[]): string {
 
   for (const b of boundaries) {
     if (b.pos > pos) {
-      result += escapeHtml(text.slice(pos, b.pos));
+      result += autolinkEscaped(escapeHtml(text.slice(pos, b.pos)));
       pos = b.pos;
     }
     const tag = b.kind === "bold"
@@ -90,7 +130,7 @@ function buildInlineHtml(text: string, marks: StyleMark[]): string {
   }
 
   if (pos < text.length) {
-    result += escapeHtml(text.slice(pos));
+    result += autolinkEscaped(escapeHtml(text.slice(pos)));
   }
 
   return result;
@@ -169,7 +209,7 @@ export function buildStyledText(text: string, marks: StyleMark[]): string {
           char_start: m.char_start - displayOffset,
           char_end: m.char_end - displayOffset,
         })).filter((m) => m.char_end > 0 && m.char_start < displayText.length))
-      : escapeHtml(displayText);
+      : autolinkEscaped(escapeHtml(displayText));
 
     // Use inline spans — NOT block tags. Block tags break contentEditable Enter behavior.
     // All decorative/marker spans get contenteditable="false" so the cursor can't land

@@ -2824,6 +2824,25 @@
    editor stays visible and editable to its left. The old full-screen
    overlay (cb-overlay) duplicated a read-only rendering of the essay
    and could not be written in. */
+/* ── Render-time URL autolinks ── */
+.ws-doc-surface .doc-autolink,
+.doc-autolink {
+  color: var(--blue, #58a6ff);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.ws-doc-surface.editing .doc-autolink {
+  /* Links are clickable in reading mode; in editing mode plain clicks
+     place the caret (modifier-click opens) so editing near links stays
+     natural. */
+  cursor: text;
+}
+.ws-doc-surface.editing .doc-autolink:hover {
+  background: rgba(88, 166, 255, 0.12);
+  cursor: pointer;
+}
+
 /* ── Fullscreen multi-way compare ── */
 .mc-fullscreen {
   position: fixed;
