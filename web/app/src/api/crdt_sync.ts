@@ -584,9 +584,17 @@ export class CrdtSyncClient {
     const wsUrl = `${this.url}?format=json&version=${PROTOCOL_VERSION}`;
 
     fetch("/csrf-token")
-      .then((r) => r.ok ? r.json() : Promise.reject(new Error("csrf disabled")))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("csrf disabled"))))
       .then((d) => {
-        if (gen !== this.generation) return;
+        if (gen !== this.generation) {
+          // A disconnect() bumped the generation mid-fetch: this client
+          // is dead. Clear the guard so a future connect() (should this
+          // client be reused) isn't locked out forever — the historical
+          // bug: leaving connecting=true here stranded every later
+          // connect at the guard, while orphan timers kept firing.
+          this.connecting = false;
+          return;
+        }
         if (d.csrf_token) {
           this.openWs(wsUrl + "&csrf_token=" + encodeURIComponent(d.csrf_token));
         } else {
@@ -594,7 +602,10 @@ export class CrdtSyncClient {
         }
       })
       .catch(() => {
-        if (gen !== this.generation) return;
+        if (gen !== this.generation) {
+          this.connecting = false;
+          return;
+        }
         this.openWs(wsUrl);
       });
   }
@@ -2358,6 +2369,12 @@ export class CrdtSyncClient {
 
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return;
+    // Never self-resurrect: if disconnect() ran, this client is dead —
+    // the owning hook will build a fresh one. connect() flips disposed
+    // back to false, so an orphan timer here would silently dual-run
+    // two clients against one page (observed as a ~1s connect/kill
+    // loop after editor switches).
+    if (this.disposed) return;
     let delay: number;
     if (this.reconnectAttempts < 3) {
       delay = [200, 500, 1000][this.reconnectAttempts];
