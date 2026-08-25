@@ -226,6 +226,10 @@ export function useCrdtSync(
   // failed during the anonymous window)
   useEffect(() => {
     if (!connected || !authenticated || workBeId === null || switchingWork) return;
+    // Late-auth: a denial shown during the anonymous window is stale the
+    // moment identity arrives — clear it so the retry's result (success or
+    // a fresh denial) renders without the old message sticking.
+    setAccessDeniedWorkId(null);
     clientRef.current?.switchWork(workBeId);
   }, [authenticated, connected, workBeId, switchingWork]);
 

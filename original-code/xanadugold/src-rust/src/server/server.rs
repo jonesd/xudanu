@@ -11308,6 +11308,19 @@ impl Server {
         if manifest.admin.shutdown_requested {
             self.admin.request_shutdown();
         }
+        // Boot invariant: a freshly started server accepts connections.
+        // Persisted shutdown/accepting state describes the PREVIOUS
+        // process's death (SIGTERM checkpoint) — restoring it verbatim
+        // left restarted servers rejecting every session with
+        // not_accepting_connections and no way to admin in over the
+        // (rejected) WebSocket (2026-08-25 outage).
+        if !self.admin.is_accepting_connections() {
+            tracing::warn!(
+                "restored admin state had accepting_connections=false — \
+                 overriding to true on boot (a running server must accept)"
+            );
+            self.admin.set_accepting_connections(true);
+        }
         self.network_enabled = manifest.admin.network_enabled;
         tracing::info!(
             "Xudanu network (cross-server): {}",
