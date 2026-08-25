@@ -1355,6 +1355,7 @@ fn dispatch_inner(
                             owner,
                             revision_count,
                             is_grabbed,
+                            char_count: 0,
                             title,
                             read_club,
                             is_source,
@@ -1618,6 +1619,7 @@ fn dispatch_inner(
                         owner: ws.work().owner(),
                         revision_count: ws.work().revision_count(),
                         is_grabbed: ws.grabber().is_some(),
+                        char_count: ws.work().current_edition().to_text().len() as u64,
                         title: ws.cached_title().to_string(),
                         read_club,
                         is_source: ws.is_source(),
@@ -1662,6 +1664,7 @@ fn dispatch_inner(
                         owner,
                         revision_count,
                         is_grabbed,
+                        char_count: 0,
                         title: String::new(),
                         read_club,
                         is_source: false,
@@ -3701,6 +3704,7 @@ fn dispatch_inner(
                             owner,
                             revision_count,
                             is_grabbed,
+                            char_count: 0,
                             title,
                             read_club,
                             is_source: true,
@@ -3899,6 +3903,11 @@ fn dispatch_inner(
         WireRequest::ExternalLinksSetEnabled { enabled } => {
             let new_val = srv.set_external_links_enabled(session_id, enabled)?;
             Ok(ResponseValue::Boolean(new_val))
+        }
+        #[cfg(feature = "serde")]
+        WireRequest::WorkAdminDelete { work_id } => {
+            srv.work_delete_admin(session_id, work_id)?;
+            Ok(ResponseValue::Void)
         }
 
         WireRequest::CrossServerResolve {
@@ -4368,6 +4377,7 @@ fn dispatch_inner_read(
                             owner,
                             revision_count,
                             is_grabbed,
+                            char_count: 0,
                             title,
                             read_club,
                             is_source,
@@ -4561,6 +4571,7 @@ fn dispatch_inner_read(
                         owner: ws.work().owner(),
                         revision_count: ws.work().revision_count(),
                         is_grabbed: ws.grabber().is_some(),
+                        char_count: ws.work().current_edition().to_text().len() as u64,
                         title: ws.cached_title().to_string(),
                         read_club,
                         is_source: ws.is_source(),
@@ -4605,6 +4616,7 @@ fn dispatch_inner_read(
                         owner,
                         revision_count,
                         is_grabbed,
+                        char_count: 0,
                         title: String::new(),
                         read_club,
                         is_source: false,

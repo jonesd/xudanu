@@ -4533,7 +4533,13 @@ export function WorkspaceShell() {
       )}
 
       <div style={{ display: showAdmin ? "block" : "none" }}>
-        <AdminDashboard onClose={() => setShowAdmin(false)} />
+        <AdminDashboard
+          onClose={() => setShowAdmin(false)}
+          client={connected ? clientRef.current : null}
+          isAdmin={isAdmin}
+          works={works}
+          onNavigateToWork={(id) => { setShowAdmin(false); selectWork(id); }}
+        />
       </div>
 
       {transclusion.pendingLink && (

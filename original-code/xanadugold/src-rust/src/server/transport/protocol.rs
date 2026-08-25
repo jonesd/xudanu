@@ -416,6 +416,7 @@ pub enum OperationCode {
     ServerDirectorySetTrust,
     NetworkSetEnabled,
     ExternalLinksSetEnabled,
+    WorkAdminDelete,
     #[cfg(feature = "serde")]
     CrossServerResolve,
     #[cfg(feature = "serde")]
@@ -811,6 +812,7 @@ impl OperationCode {
             0x0F10 => Some(OperationCode::BloomFilterCheck),
             0x0F11 => Some(OperationCode::NetworkSetEnabled),
             0x0F12 => Some(OperationCode::ExternalLinksSetEnabled),
+            0x0F13 => Some(OperationCode::WorkAdminDelete),
 
             _ => None,
         }
@@ -1146,6 +1148,7 @@ impl OperationCode {
             OperationCode::BloomFilterCheck => 0x0F10,
             OperationCode::NetworkSetEnabled => 0x0F11,
             OperationCode::ExternalLinksSetEnabled => 0x0F12,
+            OperationCode::WorkAdminDelete => 0x0F13,
             #[cfg(feature = "serde")]
             OperationCode::FederationAttestationCreate => 0x0E02,
             #[cfg(feature = "serde")]
@@ -2279,6 +2282,10 @@ pub enum WireRequest {
         enabled: bool,
     },
     #[cfg(feature = "serde")]
+    WorkAdminDelete {
+        work_id: BeId,
+    },
+    #[cfg(feature = "serde")]
     CrossServerResolve {
         tumbler: String,
         content_hash_hex: String,
@@ -3298,6 +3305,8 @@ pub struct WorkListEntry {
     pub owner: Option<BeId>,
     pub revision_count: u64,
     pub is_grabbed: bool,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub char_count: u64,
     #[cfg_attr(
         feature = "serde",
         serde(default, skip_serializing_if = "String::is_empty")

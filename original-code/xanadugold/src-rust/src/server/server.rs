@@ -3827,6 +3827,11 @@ impl Server {
 
     // === Work operations ===
 
+    /// FR-45 P1: per-revision text ceiling. No legitimate document is
+    /// close (~500k words); exists to bound abuse on public-sandbox
+    /// deployments (the 10MB-paste scenario). Sibling of MAX_BLOB_SIZE.
+    pub const MAX_TEXT_LEN: usize = 1024 * 1024;
+
     pub fn create_work(
         &mut self,
         session_id: SessionId,
@@ -3837,6 +3842,13 @@ impl Server {
             self.consequence_tracker.begin_operation(),
         );
         self.ensure_logged_in(session_id)?;
+        if edition.to_text().len() > Self::MAX_TEXT_LEN {
+            return Err(ServerError::InvalidArgument(format!(
+                "document too large: {} bytes (max {} bytes per revision)",
+                edition.to_text().len(),
+                Self::MAX_TEXT_LEN
+            )));
+        }
         const MAX_WORK_COUNT: usize = 100_000;
         if self.work_count() >= MAX_WORK_COUNT {
             return Err(ServerError::InvalidArgument(format!(
@@ -3957,6 +3969,13 @@ impl Server {
         mut edition: Edition,
         author_club: Option<BeId>,
     ) -> Result<u64, ServerError> {
+        if edition.to_text().len() > Self::MAX_TEXT_LEN {
+            return Err(ServerError::InvalidArgument(format!(
+                "document too large: {} bytes (max {} bytes per revision)",
+                edition.to_text().len(),
+                Self::MAX_TEXT_LEN
+            )));
+        }
         let _guard = OperationGuard::new(
             self.consequence_tracker.clone(),
             self.consequence_tracker.begin_operation(),
@@ -6450,6 +6469,54 @@ impl Server {
     /// Archive (soft-delete) a work. Archived works are hidden from the default
     /// work list but are never destroyed; they can be unarchived. The transition
     /// is recorded in the work's lifecycle history. Requires edit authority.
+    /// FR-45 P1: admin hard-delete. Archive semantics first (lifecycle
+    /// history recorded), then drop from the works map so the next
+    /// checkpoint no longer references it; chunk reclamation is left
+    /// to the GC's archive-tier grace (#142 rules stay load-bearing).
+    /// Never deletes chunks directly.
+    pub fn work_delete_admin(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+    ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(
+            self.consequence_tracker.clone(),
+            self.consequence_tracker.begin_operation(),
+        );
+        self.ensure_admin(session_id)?;
+        if !self.works.contains_key(&work_be_id) {
+            return Err(ServerError::WorkNotFound(work_be_id));
+        }
+        let actor = self.resolve_author_club(session_id).unwrap_or(0);
+        let ts = Self::current_timestamp_secs();
+        if let Some(ws) = self.works.get_mut(&work_be_id) {
+            ws.work.admin_delete(actor, ts);
+        }
+        // Drop links pointing at this work so the link map stays
+        // consistent with the works map.
+        let affected_links: Vec<BeId> = self
+            .work_to_links
+            .get(&work_be_id)
+            .cloned()
+            .unwrap_or_default();
+        for link_id in affected_links {
+            self.links.remove(&link_id);
+            if let Some(v) = self.work_to_links.get_mut(&link_id) {
+                v.retain(|id| *id != work_be_id && *id != link_id);
+            }
+        }
+        self.work_to_links.remove(&work_be_id);
+        self.works.remove(&work_be_id);
+        tracing::info!(
+            target: "xudanu::security",
+            event = "SECURITY:work_admin_deleted",
+            "Admin deleted work {:04x} (chunks left to GC grace)",
+            work_be_id
+        );
+        self.auto_checkpoint();
+        Ok(())
+    }
+
     pub fn work_archive(
         &mut self,
         session_id: SessionId,
@@ -6762,6 +6829,7 @@ impl Server {
                     kind: match e.kind {
                         crate::edition::work::LifecycleEventKind::Archived => "archived",
                         crate::edition::work::LifecycleEventKind::Unarchived => "unarchived",
+                        crate::edition::work::LifecycleEventKind::AdminDeleted => "admin_deleted",
                     }
                     .to_string(),
                     actor_club: e.actor_club,
@@ -24899,6 +24967,81 @@ mod tests {
             server.restore_from_data_dir(&data_dir, None).unwrap();
             assert!(server.external_links_enabled(), "persists across restart");
         }
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn text_cap_rejects_oversized_create_and_revise() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let big = "x".repeat(Server::MAX_TEXT_LEN + 1);
+        let err = server
+            .create_work(sid, Edition::from_text(&big))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("too large"), "got: {}", err);
+
+        // In-bounds create works, and revise of an oversized text fails too.
+        let w = server
+            .create_work(sid, Edition::from_text("small"))
+            .unwrap();
+        server.work_grab(sid, w).unwrap();
+        let err2 = server
+            .work_revise(sid, w, Edition::from_text(&big))
+            .unwrap_err()
+            .to_string();
+        assert!(err2.contains("too large"), "got: {}", err2);
+    }
+
+    #[test]
+    fn admin_delete_removes_work_gates_on_admin_leaves_recoverable_chunks() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_admdel_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let victim = server
+                .create_work(sid, Edition::from_text("to be deleted"))
+                .unwrap();
+            server.checkpoint_to_store().unwrap();
+
+            // Non-admin cannot delete.
+            assert!(server.work_delete_admin(sid, victim).is_err());
+
+            server.grant_admin_authority(sid).unwrap();
+            server.work_delete_admin(sid, victim).unwrap();
+            assert!(!server.works.contains_key(&victim));
+
+            // Links to the victim are gone too (none existed here; the
+            // invariant matters for works with links).
+            server.checkpoint_to_store().unwrap();
+        }
+        {
+            // After restart the work is absent from the manifest...
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert!(!server.works.contains_key(&0u64)); // sanity: map alive
+        }
+        // ...and the chunks are still on disk (GC grace, not direct delete).
+        let chunks_dir = data_dir.join("chunks");
+        let live: usize = std::fs::read_dir(&chunks_dir)
+            .map(|d| d.count())
+            .unwrap_or(0);
+        assert!(live >= 1, "chunk shards exist for GC grace");
+
         let _ = std::fs::remove_dir_all(&data_dir);
     }
 

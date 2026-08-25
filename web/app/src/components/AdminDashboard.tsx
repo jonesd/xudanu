@@ -1,4 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import type { CrdtSyncClient, WorkListEntry } from "../api/crdt_sync";
+
+interface AdminDashboardProps {
+  onClose: () => void;
+  client: CrdtSyncClient | null;
+  isAdmin: boolean;
+  works: WorkListEntry[];
+  onNavigateToWork: (workId: number) => void;
+}
 
 interface HealthData {
   status: string;
@@ -12,10 +21,6 @@ interface HealthData {
   sessions: number;
   grabbed_works: number;
   last_checkpoint_ago_secs: number;
-}
-
-interface AdminDashboardProps {
-  onClose: () => void;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -66,11 +71,57 @@ function CheckAlert({ condition, message }: { condition: boolean; message: strin
   );
 }
 
-export function AdminDashboard({ onClose }: AdminDashboardProps) {
+type AdminTab = "overview" | "content";
+
+export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWork }: AdminDashboardProps) {
   const [health, setHealth] = useState<HealthData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const degradedCount = useRef(0);
+  const [tab, setTab] = useState<AdminTab>("overview");
+
+  // ── Content moderation (FR-45 P1) ──
+  const [contentFilter, setContentFilter] = useState("");
+  const [busyWork, setBusyWork] = useState<number | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [deleteText, setDeleteText] = useState("");
+  const [contentMsg, setContentMsg] = useState<string | null>(null);
+
+  const filteredWorks = useMemo(() => {
+    const q = contentFilter.trim().toLowerCase();
+    return [...works]
+      .sort((a, b) => (b.char_count ?? 0) - (a.char_count ?? 0))
+      .filter((w) => {
+        if (!q) return true;
+        const t = (w.title || "").toLowerCase();
+        const hex = `0x${w.work_id.toString(16)}`;
+        return t.includes(q) || hex.includes(q) || String(w.work_id).includes(q);
+      });
+  }, [works, contentFilter]);
+
+  const runWorkAction = useCallback(async (workId: number, action: "archive" | "unarchive" | "delete") => {
+    if (!client) return;
+    setBusyWork(workId);
+    setContentMsg(null);
+    try {
+      if (action === "delete") {
+        await client.sendRequest("work_admin_delete", { work_id: workId });
+        setContentMsg(`Deleted work 0x${workId.toString(16)} (chunks recoverable via GC grace)`);
+        setDeleteConfirm(null);
+        setDeleteText("");
+      } else if (action === "archive") {
+        await client.workArchive(workId);
+        setContentMsg(`Archived work 0x${workId.toString(16)}`);
+      } else {
+        await client.workUnarchive(workId);
+        setContentMsg(`Restored work 0x${workId.toString(16)}`);
+      }
+    } catch (e) {
+      setContentMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusyWork(null);
+    }
+  }, [client]);
 
   const fetchHealth = useCallback(async () => {
     try {
@@ -140,7 +191,31 @@ export function AdminDashboard({ onClose }: AdminDashboardProps) {
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
+      <div style={{ display: "flex", gap: "4px", padding: "0 20px", background: "#161b22", borderBottom: "1px solid #30363d", flexShrink: 0 }}>
+        {(["overview", "content"] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            style={{
+              background: tab === t ? "#0d1117" : "transparent",
+              color: tab === t ? "#e6edf3" : "#8b949e",
+              border: "1px solid #30363d",
+              borderBottom: tab === t ? "1px solid #0d1117" : "1px solid #30363d",
+              borderRadius: "6px 6px 0 0",
+              padding: "6px 16px",
+              cursor: "pointer",
+              fontSize: "13px",
+              fontWeight: tab === t ? 600 : 400,
+              marginTop: 6,
+            }}
+          >
+            {t === "overview" ? "Overview" : "Content"}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px", display: tab === "overview" ? "block" : "none" }}>
         {error && (
           <div style={{
             padding: "16px", background: "rgba(248,81,73,0.06)", border: "1px solid rgba(248,81,73,0.2)",
@@ -225,6 +300,124 @@ export function AdminDashboard({ onClose }: AdminDashboardProps) {
           </div>
         </div>
       </div>
+
+      {tab === "content" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
+          <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
+            {!isAdmin && (
+              <div style={{ padding: "12px 16px", background: "rgba(210,153,34,0.08)", border: "1px solid rgba(210,153,34,0.3)", borderRadius: "8px", color: "#d29922", fontSize: "13px", marginBottom: 16 }}>
+                Admin sign-in required for actions — list is read-only.
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14 }}>
+              <input
+                type="search"
+                placeholder="Filter by title or id…"
+                value={contentFilter}
+                onChange={(e) => setContentFilter(e.target.value)}
+                style={{ flex: 1, background: "#161b22", border: "1px solid #30363d", borderRadius: "6px", color: "#e6edf3", padding: "8px 12px", fontSize: 13 }}
+              />
+              <span style={{ color: "#8b949e", fontSize: 12 }}>
+                {filteredWorks.length} of {works.length} works · sorted by size
+              </span>
+            </div>
+            {contentMsg && (
+              <div style={{ padding: "10px 14px", marginBottom: 12, background: "rgba(88,166,255,0.08)", border: "1px solid rgba(88,166,255,0.3)", borderRadius: "6px", fontSize: 13, color: "#58a6ff" }}>
+                {contentMsg}
+              </div>
+            )}
+            <div style={{ display: "grid", gap: 6 }}>
+              {filteredWorks.map((w) => {
+                const hex = `0x${w.work_id.toString(16)}`;
+                return (
+                  <div key={w.work_id} style={{ display: "flex", alignItems: "center", gap: 12, background: "#161b22", border: "1px solid #21262d", borderRadius: "8px", padding: "10px 14px" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                        <span
+                          style={{ color: "#58a6ff", cursor: "pointer", fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                          onClick={() => onNavigateToWork(w.work_id)}
+                          title="Open this work"
+                        >
+                          {w.title?.trim() || "Untitled"}
+                        </span>
+                        <code style={{ color: "#8b949e", fontSize: 11 }}>{hex}</code>
+                        {w.is_starred && <span title="Pinned" style={{ fontSize: 11 }}>★</span>}
+                      </div>
+                      <div style={{ color: "#8b949e", fontSize: 11, marginTop: 2 }}>
+                        {(w.char_count ?? 0).toLocaleString()} chars · v{w.revision_count}
+                        {w.updated_at ? ` · updated ${new Date(w.updated_at * 1000).toISOString().slice(0, 10)}` : ""}
+                        {w.owner ? ` · owner club ${w.owner}` : " · no owner"}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      {deleteConfirm === w.work_id ? (
+                        <>
+                          <input
+                            autoFocus
+                            type="text"
+                            placeholder={`type ${hex} to confirm`}
+                            value={deleteText}
+                            onChange={(e) => setDeleteText(e.target.value)}
+                            style={{ width: 160, background: "#0d1117", border: "1px solid #f85149", borderRadius: "4px", color: "#e6edf3", padding: "4px 8px", fontSize: 12 }}
+                          />
+                          <button
+                            type="button"
+                            disabled={deleteText.trim().toLowerCase() !== hex || busyWork === w.work_id}
+                            onClick={() => void runWorkAction(w.work_id, "delete")}
+                            style={{ background: "#da3633", border: "1px solid #f85149", color: "#fff", borderRadius: "4px", padding: "4px 10px", fontSize: 12, cursor: "pointer" }}
+                          >
+                            DELETE
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setDeleteConfirm(null); setDeleteText(""); }}
+                            style={{ background: "#21262d", border: "1px solid #30363d", color: "#c9d1d9", borderRadius: "4px", padding: "4px 10px", fontSize: 12, cursor: "pointer" }}
+                          >
+                            cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            disabled={!isAdmin || busyWork === w.work_id}
+                            onClick={() => void runWorkAction(w.work_id, "archive")}
+                            style={{ background: "#21262d", border: "1px solid #30363d", color: "#d29922", borderRadius: "4px", padding: "4px 10px", fontSize: 12, cursor: "pointer", opacity: isAdmin ? 1 : 0.4 }}
+                            title="Archive (soft delete, restorable)"
+                          >
+                            archive
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!isAdmin || busyWork === w.work_id}
+                            onClick={() => void runWorkAction(w.work_id, "unarchive")}
+                            style={{ background: "#21262d", border: "1px solid #30363d", color: "#3fb950", borderRadius: "4px", padding: "4px 10px", fontSize: 12, cursor: "pointer", opacity: isAdmin ? 1 : 0.4 }}
+                            title="Restore from archive"
+                          >
+                            restore
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!isAdmin}
+                            onClick={() => { setDeleteConfirm(w.work_id); setDeleteText(""); }}
+                            style={{ background: "#21262d", border: "1px solid rgba(248,81,73,0.4)", color: "#f85149", borderRadius: "4px", padding: "4px 10px", fontSize: 12, cursor: "pointer", opacity: isAdmin ? 1 : 0.4 }}
+                            title="Hard delete (typed confirmation; chunks recoverable via GC grace)"
+                          >
+                            delete
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {filteredWorks.length === 0 && (
+                <div style={{ color: "#8b949e", fontSize: 13, padding: 24, textAlign: "center" }}>No works match.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

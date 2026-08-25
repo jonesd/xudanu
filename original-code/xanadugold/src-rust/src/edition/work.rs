@@ -174,6 +174,11 @@ impl std::fmt::Display for LicenseClass {
 pub enum LifecycleEventKind {
     Archived,
     Unarchived,
+    /// FR-45: admin hard-delete. The work is removed from the works map;
+    /// this event lives on in the (already-checkpointed) lifecycle
+    /// history of prior manifest generations — an audit trail of the
+    /// deletion itself.
+    AdminDeleted,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -298,6 +303,17 @@ impl Work {
         self.is_archived = false;
         self.lifecycle_history.push(WorkLifecycleEvent {
             kind: LifecycleEventKind::Unarchived,
+            actor_club,
+            timestamp,
+        });
+    }
+
+    /// FR-45: mark for admin hard-delete (records the event; the works
+    /// map removal happens server-side, chunks go to GC grace).
+    pub fn admin_delete(&mut self, actor_club: BeId, timestamp: u64) {
+        self.is_archived = true;
+        self.lifecycle_history.push(WorkLifecycleEvent {
+            kind: LifecycleEventKind::AdminDeleted,
             actor_club,
             timestamp,
         });

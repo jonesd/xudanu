@@ -389,6 +389,7 @@ export interface WorkListEntry {
   owner: number | null;
   revision_count: number;
   is_grabbed: boolean;
+  char_count?: number;
   title: string;
   read_club: number | null;
   is_source?: boolean;
