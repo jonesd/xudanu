@@ -12,6 +12,10 @@ interface AdminDashboardProps {
 interface HealthData {
   status: string;
   server_id: string;
+  dirty_works?: number;
+  dirty_clubs?: number;
+  data_dir_bytes?: number;
+  disk_free_bytes?: number | null;
   network_enabled?: boolean;
   external_links_enabled?: boolean;
   edit_policy?: string;
@@ -248,7 +252,23 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
     return () => clearInterval(interval);
   }, [fetchHealth]);
 
-  const checkpointWarning = health ? health.last_checkpoint_ago_secs > 300 : false;
+  // A stale checkpoint is only a problem when something is unpersisted:
+  // dirty works/clubs exist that a crash would lose. A quiet read-only
+  // server correctly skips zero-dirty checkpoints — "idle", not "stuck".
+  const dirtyCount = (health?.dirty_works ?? 0) + (health?.dirty_clubs ?? 0);
+  const fmtBytes = (n: number | null | undefined): string => {
+    if (n == null) return "—";
+    if (n < 1024) return `${n} B`;
+    const units = ["KB", "MB", "GB", "TB"];
+    let v = n / 1024, i = 0;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    return `${v.toFixed(v >= 10 ? 0 : 1)} ${units[i]}`;
+  };
+  // Disk-low thresholds: warn < 5 GB or < 10% free; critical < 1 GB.
+  const freeBytes = health?.disk_free_bytes ?? null;
+  const diskLow = freeBytes != null && (freeBytes < 5 * 1024 ** 3 || freeBytes < (health?.data_dir_bytes ?? 0) * 2);
+  const checkpointOverdue = health ? health.last_checkpoint_ago_secs > 300 : false;
+  const checkpointWarning = checkpointOverdue && dirtyCount > 0;
   const statusWarning = health ? health.status !== "ok" : false;
 
   const metrics = [
@@ -260,6 +280,8 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
     { label: "Active Sessions", value: health?.sessions ?? "—", warning: (health?.sessions ?? 0) > 40 },
     { label: "Grabbed Works", value: health?.grabbed_works ?? "—" },
     { label: "Operations", value: health?.operations ?? "—" },
+    { label: "Content Size", value: health?.data_dir_bytes != null ? fmtBytes(health.data_dir_bytes) : "—", },
+    { label: "Disk Free", value: freeBytes != null ? fmtBytes(freeBytes) : "—", warning: diskLow },
   ];
 
   return (
@@ -330,13 +352,16 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
 
         <div style={{ maxWidth: "960px", margin: "0 auto" }}>
           {checkpointWarning && (
-            <CheckAlert condition={checkpointWarning} message={`Last checkpoint was ${Math.round((health?.last_checkpoint_ago_secs ?? 0) / 60)} minutes ago — checkpoint may be stuck`} />
+            <CheckAlert condition={checkpointWarning} message={`Last checkpoint was ${Math.round((health?.last_checkpoint_ago_secs ?? 0) / 60)} minutes ago with ${dirtyCount} unpersisted change(s) — edits exist only in memory; checkpoint may be stuck`} />
           )}
           {statusWarning && (
             <CheckAlert condition={statusWarning} message={`Server status: ${health?.status} — degraded or error state`} />
           )}
           {(health?.sessions ?? 0) > 40 && (
             <CheckAlert condition={(health?.sessions ?? 0) > 40} message={`High session count: ${health?.sessions} (max recommended: 40)`} />
+          )}
+          {diskLow && (
+            <CheckAlert condition={diskLow} message={`Low disk space: ${fmtBytes(freeBytes)} free — checkpoints and writes will fail when the disk fills; free space or move the data dir`} />
           )}
 
           <h3 style={{ color: "#8b949e", fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "12px", marginTop: "8px" }}>
@@ -363,6 +388,9 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
               <div style={{ fontSize: "11px", color: "#8b949e", marginBottom: "4px" }}>Last Checkpoint</div>
               <span style={{ fontSize: "14px", color: checkpointWarning ? "#f85149" : "#3fb950" }}>
                 {health ? `${health.last_checkpoint_ago_secs}s ago` : "—"}
+                {health && dirtyCount === 0 && checkpointOverdue && (
+                  <span style={{ color: "#8b949e", fontSize: 11 }}> (idle — nothing dirty)</span>
+                )}
               </span>
             </div>
             <div>
@@ -379,8 +407,12 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
           <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "32px" }}>
             <HealthCheck label="Server responding" ok={!!health} />
             <HealthCheck label="Status: ok" ok={health?.status === "ok"} />
-            <HealthCheck label="Checkpoint recent (< 5 min)" ok={(health?.last_checkpoint_ago_secs ?? 999) < 300} />
+            <HealthCheck
+              label={dirtyCount > 0 ? `Checkpoint overdue with ${dirtyCount} unpersisted change(s)` : "All changes persisted (checkpoint idle is normal)"}
+              ok={dirtyCount === 0}
+            />
             <HealthCheck label="Sessions under limit (< 40)" ok={(health?.sessions ?? 0) < 40} />
+            <HealthCheck label={`Disk space adequate${freeBytes != null ? ` (${fmtBytes(freeBytes)} free)` : ""}`} ok={!diskLow} />
             <HealthCheck label="Works present" ok={(health?.works ?? 0) > 0} />
             <HealthCheck label="Links present" ok={(health?.links ?? 0) > 0} />
           </div>

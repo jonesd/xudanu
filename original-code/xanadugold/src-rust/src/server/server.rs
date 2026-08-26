@@ -14826,6 +14826,35 @@ impl Server {
             .collect()
     }
 
+    /// FR-45 ops metrics: total bytes under the data dir (chunks,
+    /// blobs, manifests, logs) — what a backup would carry and how the
+    /// store has grown. Walks the tree; cheap enough for a 5s poll at
+    /// current scale, cached by the caller's cadence.
+    pub fn data_dir_bytes(&self) -> u64 {
+        fn dir_size(p: &std::path::Path) -> u64 {
+            let mut total = 0u64;
+            if let Ok(rd) = std::fs::read_dir(p) {
+                for e in rd.flatten() {
+                    let path = e.path();
+                    match std::fs::metadata(&path) {
+                        Ok(m) if m.is_file() => total += m.len(),
+                        Ok(_) if path.is_dir() => total += dir_size(&path),
+                        _ => {}
+                    }
+                }
+            }
+            total
+        }
+        self.data_dir.as_ref().map(|d| dir_size(d)).unwrap_or(0)
+    }
+
+    /// FR-45 ops metrics: free bytes on the filesystem holding the
+    /// data dir (fs4 statvfs wrapper; None where unsupported).
+    pub fn disk_free_bytes(&self) -> Option<u64> {
+        let dir = self.data_dir.as_ref()?;
+        fs4::available_space(dir).ok()
+    }
+
     pub fn blob_count(&self) -> usize {
         self.blob_store.stats().total_blobs as usize
     }
@@ -14859,6 +14888,14 @@ impl Server {
         serde_json::json!({
             "status": status,
             "works": self.works.len(),
+            "dirty_works": self
+                .works
+                .values()
+                .filter(|ws| ws.chunk_ref.is_none())
+                .count(),
+            "dirty_clubs": self.dirty_clubs.len(),
+            "data_dir_bytes": self.data_dir_bytes(),
+            "disk_free_bytes": self.disk_free_bytes(),
             "clubs": self.clubs.len(),
             "links": self.link_count(),
             "editions": self.standalone_editions.len(),
@@ -25391,6 +25428,54 @@ mod tests {
         // Unknown club errors on grant.
         let ghost = 987_654u64;
         assert!(server.admin_grant_admin(admin_sid, ghost).is_err());
+    }
+
+    #[test]
+    fn health_reports_dirty_counts_across_checkpoint() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_dirty_health_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            let h: serde_json::Value = serde_json::from_str(&server.health_json()).unwrap();
+            assert_eq!(h["dirty_works"].as_u64(), Some(0), "fresh server clean");
+
+            server
+                .create_work(sid, Edition::from_text("dirty probe"))
+                .unwrap();
+            let h: serde_json::Value = serde_json::from_str(&server.health_json()).unwrap();
+            assert_eq!(h["dirty_works"].as_u64(), Some(1), "new work is dirty");
+
+            server.checkpoint_to_store().unwrap();
+            let h: serde_json::Value = serde_json::from_str(&server.health_json()).unwrap();
+            assert_eq!(h["dirty_works"].as_u64(), Some(0), "clean after checkpoint");
+            assert_eq!(h["works"].as_u64(), Some(1));
+
+            // FR-45 ops metrics: content size counts the data dir;
+            // disk free is present and plausible on unix.
+            assert!(
+                h["data_dir_bytes"].as_u64().unwrap_or(0) > 0,
+                "data dir has bytes"
+            );
+            #[cfg(unix)]
+            assert!(
+                h["disk_free_bytes"].as_u64().unwrap_or(0) > 0,
+                "disk free reported"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 
     #[test]
