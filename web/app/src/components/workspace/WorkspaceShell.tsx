@@ -28,6 +28,7 @@ import { KIND_ICON, KIND_COLOR, KIND_ICON_COLOR } from "../../graph-scoring";
 import { DataIntegrityBanner } from "../DataIntegrityBanner";
 import { WelcomeScreen } from "../WelcomeScreen";
 import { DocumentOutlinePanel } from "../DocumentOutline";
+import { useIsTablet } from "../../hooks/useMediaQuery";
 import { ConnectionOverlay } from "../ConnectionOverlay";
 import { RelatedFooter } from "../RelatedFooter";
 import { SearchOverlay } from "../shell/SearchOverlay";
@@ -126,6 +127,11 @@ export function WorkspaceShell() {
   });
   const [leftRailMode, setLeftRailMode] = useState<LeftRailMode>("graph");
   const [leftRailHidden, setLeftRailHidden] = useState(false);
+  // Tablet/phone: panels are overlay drawers. Which drawer (if any) is
+  // open — null, "left", or "right". One at a time; the desktop layout
+  // ignores this (panels inline as always).
+  const isTablet = useIsTablet();
+  const [openDrawer, setOpenDrawer] = useState<"left" | "right" | null>(null);
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("provenance");
   const [remoteView, setRemoteView] = useState<{
     title: string; text: string; originServerName: string;
@@ -2181,7 +2187,10 @@ export function WorkspaceShell() {
 
       <div className="ws-body">
         {/* Left rail */}
-        <aside className={`ws-left-rail ${leftRailHidden ? "hidden" : ""}`}>
+        <aside
+          className={`ws-left-rail ${leftRailHidden ? "hidden" : ""} ${isTablet && openDrawer === "left" ? "drawer-open" : ""}`}
+          data-drawer="left"
+        >
           <div className="ws-rail-toggle">
             <button
               className={leftRailMode === "graph" ? "active" : ""}
@@ -2197,6 +2206,15 @@ export function WorkspaceShell() {
             >
               Outline
             </button>
+            {isTablet && (
+              <button
+                className="ws-drawer-close"
+                onClick={() => setOpenDrawer(null)}
+                title="Close panel"
+              >
+                ×
+              </button>
+            )}
           </div>
           <div className="ws-rail-content">
             {leftRailMode === "graph" ? (
@@ -3804,7 +3822,10 @@ export function WorkspaceShell() {
         </main>
 
         {/* Right panel */}
-        <aside className={`ws-right-panel ${rightPanelHidden ? "hidden" : ""}`}>
+        <aside
+          className={`ws-right-panel ${rightPanelHidden ? "hidden" : ""} ${isTablet && openDrawer === "right" ? "drawer-open" : ""}`}
+          data-drawer="right"
+        >
           <div className="ws-tabs">
             {([
               ["provenance", "Attribution"],
@@ -3823,6 +3844,15 @@ export function WorkspaceShell() {
                 {label}
               </button>
             ))}
+            {isTablet && (
+              <button
+                className="ws-drawer-close"
+                onClick={() => setOpenDrawer(null)}
+                title="Close panel"
+              >
+                ×
+              </button>
+            )}
           </div>
           <div className="ws-tab-content">
             {rightPanelTab === "provenance" && (
@@ -4445,24 +4475,47 @@ export function WorkspaceShell() {
 
       {/* Bottom lens row — hidden until at least one lens ships real content */}
 
-      {/* Floating "show panel" buttons when hidden */}
-      {leftRailHidden && (
-        <button
-          className="ws-float-show ws-float-left"
-          onClick={() => setLeftRailHidden(false)}
-          title="Show left panel"
-        >
-          ›
-        </button>
-      )}
-      {rightPanelHidden && (
-        <button
-          className="ws-float-show ws-float-right"
-          onClick={() => setRightPanelHidden(false)}
-          title="Show right panel"
-        >
-          ‹
-        </button>
+      {/* Floating "show panel" buttons when hidden (desktop) and the
+          drawer openers (tablet/phone: panels are overlays, the float
+          buttons are the always-present way in). */}
+      {isTablet ? (
+        <>
+          <button
+            className="ws-float-show ws-float-left"
+            onClick={() => setOpenDrawer(openDrawer === "left" ? null : "left")}
+            title={openDrawer === "left" ? "Close panels" : "Graph / Outline"}
+          >
+            {openDrawer === "left" ? "‹" : "›"}
+          </button>
+          <button
+            className="ws-float-show ws-float-right"
+            onClick={() => setOpenDrawer(openDrawer === "right" ? null : "right")}
+            title={openDrawer === "right" ? "Close panels" : "Connections / Attribution"}
+          >
+            {openDrawer === "right" ? "›" : "‹"}
+          </button>
+        </>
+      ) : (
+        <>
+          {leftRailHidden && (
+            <button
+              className="ws-float-show ws-float-left"
+              onClick={() => setLeftRailHidden(false)}
+              title="Show left panel"
+            >
+              ›
+            </button>
+          )}
+          {rightPanelHidden && (
+            <button
+              className="ws-float-show ws-float-right"
+              onClick={() => setRightPanelHidden(false)}
+              title="Show right panel"
+            >
+              ‹
+            </button>
+          )}
+        </>
       )}
 
       {/* Identity modal — reuse existing IdentityPanel + modal styling */}
@@ -4898,6 +4951,13 @@ export function WorkspaceShell() {
           works={works}
           onClose={() => setShowMerge(false)}
           onMerged={(newWorkId) => { setShowMerge(false); selectWork(newWorkId); }}
+        />
+      )}
+      {isTablet && openDrawer !== null && (
+        <div
+          className="ws-drawer-backdrop"
+          onClick={() => setOpenDrawer(null)}
+          aria-hidden="true"
         />
       )}
       <ConnectionOverlay connected={connected} reconnectAttempt={reconnectAttempt} />

@@ -1686,24 +1686,71 @@
 }
 
 /* ── Responsive: tablet ── */
+/* ── Responsive: tablet/phone drawers ──
+   Panels become overlay drawers: closed (translated off-canvas) by
+   default, .drawer-open slides them in. One at a time is enforced in
+   the shell state; the backdrop closes on tap. */
+.ws-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 49;
+}
+.ws-drawer-close {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 8px;
+  cursor: pointer;
+  margin-left: auto;
+}
+.ws-drawer-close:hover {
+  background: var(--bg-surface);
+}
+
 @media (max-width: 1023px) {
   .ws-body {
     grid-template-columns: 0 1fr 0;
   }
   .ws-left-rail,
   .ws-right-panel {
-    position: absolute;
+    position: fixed;
     top: 48px;
-    bottom: 28px;
-    width: 280px;
+    bottom: 0;
+    width: min(320px, 86vw);
     z-index: 50;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+    transition: transform 0.22s ease;
   }
-  .ws-left-rail { left: 0; }
-  .ws-right-panel { right: 0; }
+  .ws-left-rail {
+    left: 0;
+    transform: translateX(-100%);
+  }
+  .ws-right-panel {
+    right: 0;
+    transform: translateX(100%);
+  }
   .ws-left-rail.hidden,
   .ws-right-panel.hidden {
     display: none;
+  }
+  .ws-left-rail.drawer-open,
+  .ws-right-panel.drawer-open {
+    transform: translateX(0);
+  }
+  /* Floating drawer buttons: always visible on touch layouts. */
+  .ws-float-show {
+    opacity: 1;
+    padding: 10px 7px;
+    font-size: 15px;
+  }
+  /* Tab rows wrap; the close button keeps its place. */
+  .ws-tabs {
+    flex-wrap: wrap;
+    row-gap: 2px;
   }
 }
 
@@ -1715,6 +1762,46 @@
   .ws-nav-tab {
     padding: 6px 8px;
     font-size: 12px;
+  }
+  /* Selection toolbar: wrap instead of overflow. */
+  .ws-selection-toolbar,
+  .ws-format-bar {
+    flex-wrap: wrap;
+    max-width: calc(100vw - 16px);
+    row-gap: 4px;
+  }
+  .ws-sel-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  /* Compound builder dock: full-width stacked panel instead of the
+     560px side dock that doesn't fit a phone. */
+  .cb-dock {
+    width: 100vw;
+    top: auto;
+    bottom: 0;
+    max-height: 72vh;
+    border-left: none;
+    border-top: 1px solid var(--border, #30363d);
+  }
+  .ws-mode-compose .ws-body {
+    padding-right: 0;
+    padding-bottom: 0;
+  }
+  .cb-dock-body {
+    flex-direction: column;
+  }
+  .cb-dock-sources,
+  .cb-dock-structure {
+    flex: 1 1 auto;
+    min-height: 120px;
+    max-height: 40vh;
+    border-right: none;
+    border-top: 1px solid var(--border, #30363d);
+  }
+  /* Editor readable measure on phones. */
+  .ws-doc-scroll {
+    padding: 12px;
   }
   .ws-doc-header {
     padding: 8px 16px;
