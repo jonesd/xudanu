@@ -275,6 +275,11 @@ Vite proxy config (`vite.config.ts`): `/api`, `/xudanu` (WS), `/csrf-token`,
 - Rust: keep new code under the `server` feature-gated modules if it needs
   tokio/axum/crypto; the library must still build with `default = []`.
 - No emoji or extraneous comments in source.
+- Terminology: "xanalogical" (lowercase, adjective) for the general
+  class of systems (Nelson's own coinage — like "hypertext"); "Xanadu"
+  only as the proper noun for Ted Nelson's specific project and its
+  artifacts (Project Xanadu, Xanadu 92.1, trademark disclaimer). See
+  XCP repo terminology note.
 - Match existing style: `tracing::` for logging, postcard for binary wire
   formats, serde_json for human-facing manifests.
 - Test passwords: use the fn-return pattern (`fn test_x_credential() -> &'static [u8] { b"..." }`),
