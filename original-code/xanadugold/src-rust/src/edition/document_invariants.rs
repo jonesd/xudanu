@@ -18,7 +18,11 @@ use crate::edition::Edition;
 /// Hard caps a single edition may not exceed at the trust boundary.
 /// Larger documents are structurally suspect (resource exhaustion)
 /// regardless of content.
-pub const MAX_ENTRIES: usize = 1_000_000;
+/// FR-45 composition: the 1MB per-revision text cap (MAX_TEXT_LEN) can
+/// produce up to ~1M single-char entries per MB (4-byte UTF-8 worst case
+/// halves that). 2M keeps the entry cap from firing before the
+/// size-based cap for any legitimate at-cap document.
+pub const MAX_ENTRIES: usize = 2_000_000;
 pub const MAX_SPANS: usize = 100_000;
 pub const MAX_TEXT_CHARS: usize = 50_000_000;
 pub const MAX_TEXT_ENTRY_CHARS: usize = 1_000_000;

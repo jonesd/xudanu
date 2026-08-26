@@ -655,6 +655,10 @@ impl JsonCodec {
             OperationCode::ConnectionPinsGet,
             #[cfg(feature = "serde")]
             OperationCode::ServerDirectoryList,
+            #[cfg(feature = "serde")]
+            OperationCode::AdminAuditTail,
+            #[cfg(feature = "serde")]
+            OperationCode::AdminClubsList,
         ];
         if no_payload_ops.contains(&op) {
             return match op {
@@ -699,7 +703,21 @@ impl JsonCodec {
                 OperationCode::ConnectionPinsGet => Ok(WireRequest::ConnectionPinsGet),
                 #[cfg(feature = "serde")]
                 OperationCode::ServerDirectoryList => Ok(WireRequest::ServerDirectoryList),
-                _ => unreachable!(),
+                #[cfg(feature = "serde")]
+                OperationCode::AdminAuditTail => Ok(WireRequest::AdminAuditTail),
+                #[cfg(feature = "serde")]
+                OperationCode::AdminClubsList => Ok(WireRequest::AdminClubsList),
+                // SECURITY: list/match drift must degrade to a protocol
+                // error, never panic. A reachable unreachable!() here is
+                // a remote DoS (found 2026-08-25: admin_clubs_list hung
+                // the WS handler).
+                _ => {
+                    return Err(FrameParseError::PayloadDecode(format!(
+                        "op {:?} listed as payload-less but has no decode arm",
+                        op
+                    ))
+                    .into())
+                }
             };
         }
 
