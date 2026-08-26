@@ -342,9 +342,63 @@ Vite proxy config (`vite.config.ts`): `/api`, `/xudanu` (WS), `/csrf-token`,
 - **Roger Gregory** (original Xanadu / Udanax Gold team, working with Ted
   Nelson). Roger is the foremost expert on the original Xanadu implementation.
   He is working to bring the old Xanadu/Udanax-Gold variant back up. We have
-  a developing collaborative relationship with him. **Getting structural
-  transclusion right is important for this relationship** — it is the most
-  distinctive Xanadu feature and the one Roger would evaluate first-hand.
+  had limited direct interaction (see Contact History below). **Getting
+  structural transclusion right is important to any re-engagement** — it is
+  the most distinctive Xanadu feature and the one Roger would evaluate
+  first-hand.
+
+- **Andrew Pam** (Xanadu Australia; andrew@xanadu.net / xanni; maintains
+  aus.xanadu.com including the canonical people page). He was the FIRST
+  person from the Xanadu world to respond to us. Archivist-historian of
+  that community.
+
+- **Shane Isbell** (sisbell; outside the Xanadu org). Author of
+  xanadu-spec (formal spec from Nelson's design + Gregory's green code)
+  and udanax-test-harness (modernized Green: builds, 263 golden scenarios
+  pass, Python FEBE client). His harness is what made the XCP-Green
+  gateway possible. Follows us on GitHub; quiet-contacted via his
+  xanadu-spec issue. Independent ally, not org-affiliated.
+
+- **Shawn Rutledge** (ec1oud; outside the Xanadu org). Qt Quick
+  maintainer (Oslo), authored "nettebook" (a hypertext notebook); IPFS/
+  addressing/permanence interests. Starred Xudanu unprompted. Represents
+  the independent-convergence audience (people outside the lineage
+  arriving at xanalogical ideas on their own; same category as rfinz
+  of the xu60 project, whom we contacted via a GitHub intro issue).
+
+### Contact History with Project Xanadu (do not lose this)
+
+1. **Initial contact (~Aug 2026):** Andrew Pam was the first responder
+   when we pointed the Xanadu world at the repo. For a couple of days we
+   worked directly with Roger Gregory, plus a couple of chats with Pam —
+   the only direct interaction with Project Xanadu people to date.
+2. **The closing:** after a brief few minutes of visible messages/emails
+   from several Xanadu people, communication was cut off from our side.
+   The organization closed ranks. Best assessment: they realized Xudanu
+   was ahead of them in getting Gold (or Gold-like) running again, and
+   chose distance.
+3. **Standing read:** door closed deliberately; re-engagement should
+   come with an accomplishment they can evaluate on their own terms,
+   not a claim. The XCP-Green gateway (1999 Green backend running,
+   conformance-verified, connected via an open protocol) is that class
+   of evidence — Roger's story most of all (his code lineage).
+   Sequencing principle if we re-engage: **Roger first** (his story),
+   the network does the rest; Pam hears it through their channels or a
+   quiet later note. Trademark disclaimer and credit placement
+   (sisbell's harness, XCP open standard, Xudanu as one implementation)
+   matter to avoid "using OUR code" framing.
+
+### Canonical Xanadu roster (for reference/FR-46 attestors)
+
+The people page at https://www.aus.xanadu.com/people.html (maintained by
+Pam) is the primary source for the historical roster: original dev team
+(Ted Nelson, Roger Gregory, Mark Miller, Stuart Greene, Roland King,
+Eric Hill, Eric Dean Tribble, Ravi Pandya), current Xanadu Operating
+Company (Nelson, Gregory, Kathleen Diohep, H. Keith Henson, Chris
+Peterson), current Project Xanadu TEAM (Nelson, Ed Harter, Andrew Pam,
+Marlene Mallicoat). NOTE: "fromrcousins" directory in enkiv2/udanax-green
+(the archived Green copy) — donor identity unverified; do NOT attribute
+to Roger without evidence.
 
 - Xudanu imported some open-source Udanax Gold code but has built significant
   functionality that is architecturally different from Xanadu (custom O-tree
