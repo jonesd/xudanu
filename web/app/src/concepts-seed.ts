@@ -21,7 +21,7 @@ export const SEED_CONCEPTS: SeedConcept[] = [
   { name: "Intertwingularity", description: "Ted Nelson's term for the idea that all subjects are inherently interconnected and cannot be neatly divided into discrete disciplines." },
   { name: "Stretchtext", description: "A form of hypertext where clicking expands or contracts text in place, revealing or hiding detail without navigating away." },
   { name: "Microcontent", description: "Small, self-contained units of content — headlines, titles, snippets — that can be reused and remixed." },
-  { name: "Tumbler", description: "A structured, permanent address for a document or passage in the Xanadu docuverse." },
+  { name: "Tumbler", description: "A structured, permanent address for a document or passage in the xanalogical docuverse." },
 
   // ── Modern PKM (Roam/Obsidian/Notion) ──
   { name: "Bidirectional Links", description: "Links that work in both directions — when A links to B, B automatically knows about A." },
