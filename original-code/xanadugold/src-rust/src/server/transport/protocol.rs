@@ -420,6 +420,9 @@ pub enum OperationCode {
     AdminEditPolicySet,
     AdminSessionKick,
     AdminAuditTail,
+    AdminClubsList,
+    AdminGrantAdmin,
+    AdminRevokeAdmin,
     #[cfg(feature = "serde")]
     CrossServerResolve,
     #[cfg(feature = "serde")]
@@ -819,6 +822,9 @@ impl OperationCode {
             0x0F14 => Some(OperationCode::AdminEditPolicySet),
             0x0F15 => Some(OperationCode::AdminSessionKick),
             0x0F16 => Some(OperationCode::AdminAuditTail),
+            0x0F17 => Some(OperationCode::AdminClubsList),
+            0x0F18 => Some(OperationCode::AdminGrantAdmin),
+            0x0F19 => Some(OperationCode::AdminRevokeAdmin),
 
             _ => None,
         }
@@ -1158,6 +1164,9 @@ impl OperationCode {
             OperationCode::AdminEditPolicySet => 0x0F14,
             OperationCode::AdminSessionKick => 0x0F15,
             OperationCode::AdminAuditTail => 0x0F16,
+            OperationCode::AdminClubsList => 0x0F17,
+            OperationCode::AdminGrantAdmin => 0x0F18,
+            OperationCode::AdminRevokeAdmin => 0x0F19,
             #[cfg(feature = "serde")]
             OperationCode::FederationAttestationCreate => 0x0E02,
             #[cfg(feature = "serde")]
@@ -2304,6 +2313,15 @@ pub enum WireRequest {
     },
     #[cfg(feature = "serde")]
     AdminAuditTail,
+    #[cfg(feature = "serde")]
+    AdminGrantAdmin {
+        club_id: BeId,
+    },
+    #[cfg(feature = "serde")]
+    AdminRevokeAdmin {
+        club_id: BeId,
+    },
+    AdminClubsList,
     #[cfg(feature = "serde")]
     CrossServerResolve {
         tumbler: String,
@@ -4490,6 +4508,18 @@ pub struct OverlayPayload {
     pub base_hash: u64,
     pub operations: Vec<ImageOp>,
     pub mime_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminClubPayload {
+    pub be_id: BeId,
+    pub name: Option<String>,
+    pub display_name: Option<String>,
+    pub is_personal: bool,
+    pub is_verified: bool,
+    pub member_count: u64,
+    pub works_owned: u64,
+    pub is_system: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

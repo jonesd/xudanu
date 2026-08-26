@@ -3915,6 +3915,34 @@ fn dispatch_inner(
             Ok(ResponseValue::Void)
         }
         #[cfg(feature = "serde")]
+        WireRequest::AdminClubsList => {
+            let clubs = srv.admin_clubs_list(session_id)?;
+            let payloads: Vec<super::protocol::AdminClubPayload> = clubs
+                .into_iter()
+                .map(|c| super::protocol::AdminClubPayload {
+                    be_id: c.be_id,
+                    name: c.name,
+                    display_name: c.display_name,
+                    is_personal: c.is_personal,
+                    is_verified: c.is_verified,
+                    member_count: c.member_count,
+                    works_owned: c.works_owned,
+                    is_system: c.is_system,
+                })
+                .collect();
+            Ok(ResponseValue::Json(serde_json::json!({ "clubs": payloads })))
+        }
+        #[cfg(feature = "serde")]
+        WireRequest::AdminGrantAdmin { club_id } => {
+            srv.admin_grant_admin(session_id, club_id)?;
+            Ok(ResponseValue::Void)
+        }
+        #[cfg(feature = "serde")]
+        WireRequest::AdminRevokeAdmin { club_id } => {
+            srv.admin_revoke_admin(session_id, club_id)?;
+            Ok(ResponseValue::Void)
+        }
+        #[cfg(feature = "serde")]
         WireRequest::AdminAuditTail => {
             let (lines, valid) = srv.admin_audit_tail(session_id)?;
             let arr: Vec<serde_json::Value> = lines

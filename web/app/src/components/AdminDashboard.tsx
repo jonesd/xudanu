@@ -74,7 +74,7 @@ function CheckAlert({ condition, message }: { condition: boolean; message: strin
   );
 }
 
-type AdminTab = "overview" | "content" | "policy" | "sessions" | "audit";
+type AdminTab = "overview" | "content" | "policy" | "sessions" | "audit" | "identities";
 
 export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWork }: AdminDashboardProps) {
   const [health, setHealth] = useState<HealthData | null>(null);
@@ -82,6 +82,37 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const degradedCount = useRef(0);
   const [tab, setTab] = useState<AdminTab>("overview");
+
+  // ── Identities (FR-45 P4) ──
+  interface ClubRow { be_id: number; name: string | null; display_name: string | null; is_personal: boolean; is_verified: boolean; member_count: number; works_owned: number; is_system: boolean; }
+  const [clubs, setClubs] = useState<ClubRow[]>([]);
+  const [clubsMsg, setClubsMsg] = useState<string | null>(null);
+  const [grantConfirm, setGrantConfirm] = useState<number | null>(null);
+
+  const loadClubs = useCallback(async () => {
+    if (!client) return;
+    try {
+      const resp = await client.sendRequest("admin_clubs_list");
+      const val = (resp as { value?: unknown }).value ?? resp;
+      const inner = (val as { value?: unknown }).value ?? val;
+      const d = inner as { clubs?: ClubRow[] };
+      setClubs(d.clubs ?? []);
+    } catch {
+      setClubsMsg("Could not load identities (admin sign-in required)");
+    }
+  }, [client]);
+
+  const grantAdmin = useCallback(async (clubId: number, grant: boolean) => {
+    if (!client) return;
+    setClubsMsg(null);
+    try {
+      await client.sendRequest(grant ? "admin_grant_admin" : "admin_revoke_admin", { club_id: clubId });
+      setClubsMsg(grant ? `Admin authority granted to club 0x${clubId.toString(16)}` : `Admin authority revoked from 0x${clubId.toString(16)}`);
+      setGrantConfirm(null);
+    } catch (e) {
+      setClubsMsg(`Failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [client]);
 
   // ── Sessions & Audit (FR-45 P3) ──
   interface SessionRow { session_id: number; is_logged_in: boolean; authority_clubs: number[]; initial_login?: boolean; grabbed_work_count?: number; }
@@ -261,7 +292,7 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
       </div>
 
       <div style={{ display: "flex", gap: "4px", padding: "0 20px", background: "#161b22", borderBottom: "1px solid #30363d", flexShrink: 0 }}>
-        {(["overview", "content", "policy", "sessions", "audit"] as const).map((t) => (
+        {(["overview", "content", "policy", "sessions", "audit", "identities"] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -279,7 +310,7 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
               marginTop: 6,
             }}
           >
-            {t === "overview" ? "Overview" : t === "content" ? "Content" : t === "policy" ? "Policy" : t === "sessions" ? "Sessions" : "Audit"}
+            {t === "overview" ? "Overview" : t === "content" ? "Content" : t === "policy" ? "Policy" : t === "sessions" ? "Sessions" : t === "audit" ? "Audit" : "Identities"}
           </button>
         ))}
       </div>
@@ -513,6 +544,81 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
             </div>
             <div style={{ color: "#484f58", fontSize: 11, marginTop: 8 }}>
               Read-only view. Authoritative full verification: <code>xudanu-server verify-security-log &lt;data-dir&gt;</code>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === "identities" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
+          <div style={{ maxWidth: 900, margin: "0 auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <span style={{ color: "#8b949e", fontSize: 13 }}>
+                {clubs.length} identit{clubs.length === 1 ? "y" : "ies"} · sorted by works owned
+              </span>
+              <button type="button" onClick={() => void loadClubs()} style={{ background: "#21262d", border: "1px solid #30363d", color: "#c9d1d9", borderRadius: "4px", padding: "4px 12px", cursor: "pointer", fontSize: 12 }}>
+                Refresh
+              </button>
+            </div>
+            {clubsMsg && (
+              <div style={{ padding: "10px 14px", marginBottom: 12, background: "rgba(88,166,255,0.08)", border: "1px solid rgba(88,166,255,0.3)", borderRadius: "6px", fontSize: 13, color: "#58a6ff" }}>{clubsMsg}</div>
+            )}
+            <div style={{ display: "grid", gap: 6 }}>
+              {clubs.map((c) => {
+                const label = c.display_name || c.name || `Club 0x${c.be_id.toString(16)}`;
+                return (
+                  <div key={c.be_id} style={{ display: "flex", alignItems: "center", gap: 12, background: "#161b22", border: "1px solid #21262d", borderRadius: "8px", padding: "10px 14px", opacity: c.is_system ? 0.6 : 1 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: "#e6edf3" }}>{label}</span>
+                        <code style={{ color: "#8b949e", fontSize: 11 }}>0x{c.be_id.toString(16)}</code>
+                        {c.is_system && <span style={{ fontSize: 10, color: "#484f58" }}>system</span>}
+                        {c.is_verified && <span title="Verified" style={{ fontSize: 11, color: "#3fb950" }}>✓</span>}
+                      </div>
+                      <div style={{ color: "#8b949e", fontSize: 11, marginTop: 2 }}>
+                        {c.member_count.toLocaleString()} member{c.member_count === 1 ? "" : "s"} · {c.works_owned.toLocaleString()} work{c.works_owned === 1 ? "" : "s"}
+                        {c.is_personal ? " · personal identity" : ""}
+                      </div>
+                    </div>
+                    {!c.is_system && (
+                      grantConfirm === c.be_id ? (
+                        <>
+                          <button type="button" onClick={() => void grantAdmin(c.be_id, true)} style={{ background: "#da3633", border: "1px solid #f85149", color: "#fff", borderRadius: "4px", padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>
+                            GRANT ADMIN
+                          </button>
+                          <button type="button" onClick={() => setGrantConfirm(null)} style={{ background: "#21262d", border: "1px solid #30363d", color: "#c9d1d9", borderRadius: "4px", padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>
+                            cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            disabled={!isAdmin}
+                            onClick={() => setGrantConfirm(c.be_id)}
+                            style={{ background: "#21262d", border: "1px solid rgba(210,153,34,0.4)", color: "#d29922", borderRadius: "4px", padding: "4px 10px", fontSize: 12, cursor: "pointer", opacity: isAdmin ? 1 : 0.4 }}
+                            title="Grant admin authority to this identity's sessions"
+                          >
+                            grant admin
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!isAdmin}
+                            onClick={() => void grantAdmin(c.be_id, false)}
+                            style={{ background: "#21262d", border: "1px solid #30363d", color: "#8b949e", borderRadius: "4px", padding: "4px 10px", fontSize: 12, cursor: "pointer", opacity: isAdmin ? 1 : 0.4 }}
+                            title="Revoke admin authority"
+                          >
+                            revoke
+                          </button>
+                        </>
+                      )
+                    )}
+                  </div>
+                );
+              })}
+              {clubs.length === 0 && (
+                <div style={{ color: "#8b949e", fontSize: 13, padding: 24, textAlign: "center" }}>No identities loaded — click Refresh (admin sign-in required).</div>
+              )}
             </div>
           </div>
         </div>

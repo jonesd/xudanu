@@ -612,6 +612,18 @@ impl EditPolicy {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct AdminClubInfo {
+    pub be_id: BeId,
+    pub name: Option<String>,
+    pub display_name: Option<String>,
+    pub is_personal: bool,
+    pub is_verified: bool,
+    pub member_count: u64,
+    pub works_owned: u64,
+    pub is_system: bool,
+}
+
 pub struct Server {
     pub(crate) grand_map: GrandMap,
     pub(crate) sessions: HashMap<SessionId, Session>,
@@ -10621,6 +10633,10 @@ impl Server {
             || session.has_authority(self.system_clubs.access_club)
         {
             Ok(())
+        } else if self.admin.has_grant_for_any(&session.authority_clubs()) {
+            // FR-45 P4: club-wide admin grants (full-region) confer
+            // admin authority on any session holding that club.
+            Ok(())
         } else {
             Err(ServerError::AdminRequired)
         }
@@ -10802,6 +10818,78 @@ impl Server {
     pub fn admin_shutdown(&mut self, session_id: SessionId) -> Result<(), ServerError> {
         self.ensure_admin(session_id)?;
         self.admin.request_shutdown();
+        Ok(())
+    }
+
+    /// FR-45 P4: admin directory of identities (clubs). Includes the
+    /// system clubs so the operator sees the full picture; personal
+    /// (user) clubs are the interesting rows.
+    pub fn admin_clubs_list(
+        &self,
+        session_id: SessionId,
+    ) -> Result<Vec<AdminClubInfo>, ServerError> {
+        self.ensure_admin(session_id)?;
+        let mut out: Vec<AdminClubInfo> = self
+            .clubs
+            .values()
+            .map(|c| AdminClubInfo {
+                be_id: c.be_id(),
+                name: c.name().map(|s| s.to_string()),
+                display_name: c.display_name().map(|s| s.to_string()),
+                is_personal: c.is_personal(),
+                is_verified: c.is_verified(),
+                member_count: c.members().len() as u64,
+                works_owned: self
+                    .works
+                    .values()
+                    .filter(|ws| ws.work.owner() == Some(c.be_id()))
+                    .count() as u64,
+                is_system: self.system_clubs.public_club == c.be_id()
+                    || self.system_clubs.admin_club == c.be_id()
+                    || self.system_clubs.access_club == c.be_id()
+                    || self.system_clubs.empty_club == c.be_id(),
+            })
+            .collect();
+        out.sort_by(|a, b| b.works_owned.cmp(&a.works_owned).then(a.be_id.cmp(&b.be_id)));
+        Ok(out)
+    }
+
+    /// FR-45 P4: grant admin authority to a club's sessions (admin-gated;
+    /// logged). Sessions of that club gain ensure_admin passage.
+    pub fn admin_grant_admin(
+        &mut self,
+        session_id: SessionId,
+        club_id: BeId,
+    ) -> Result<(), ServerError> {
+        self.ensure_admin(session_id)?;
+        if !self.clubs.contains_key(&club_id) {
+            return Err(ServerError::ClubNotFound(club_id));
+        }
+        let region = crate::edition::XnRegion::full();
+        self.admin.grant(club_id, region);
+        tracing::info!(
+            target: "xudanu::security",
+            event = "SECURITY:admin_authority_granted",
+            "Admin authority granted to club {:04x}",
+            club_id
+        );
+        Ok(())
+    }
+
+    /// FR-45 P4: revoke a club's admin grant.
+    pub fn admin_revoke_admin(
+        &mut self,
+        session_id: SessionId,
+        club_id: BeId,
+    ) -> Result<(), ServerError> {
+        self.ensure_admin(session_id)?;
+        self.admin.revoke_grant(club_id);
+        tracing::info!(
+            target: "xudanu::security",
+            event = "SECURITY:admin_authority_revoked",
+            "Admin authority revoked from club {:04x}",
+            club_id
+        );
         Ok(())
     }
 
@@ -25249,6 +25337,43 @@ mod tests {
         assert!(server.admin_audit_tail(pleb).is_err());
 
         let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn admin_clubs_list_and_grant_revoke_admin() {
+        let mut server = Server::new();
+        let admin_sid = server.connect();
+        server.login_public(admin_sid).unwrap();
+        server.grant_admin_authority(admin_sid).unwrap();
+
+        // A user identity exists.
+        let (alice, alice_sid) = ac_create_user(&mut server, "alice", b"alice-pw-123");
+        server
+            .create_work(alice_sid, Edition::from_text("alice doc"))
+            .unwrap();
+
+        // Non-admin cannot list.
+        assert!(server.admin_clubs_list(alice_sid).is_err());
+
+        // Admin lists: sees alice with 1 work, plus system clubs.
+        let clubs = server.admin_clubs_list(admin_sid).unwrap();
+        let alice_row = clubs.iter().find(|c| c.be_id == alice).unwrap();
+        assert_eq!(alice_row.works_owned, 1);
+        assert!(alice_row.is_personal);
+        assert!(clubs.iter().any(|c| c.is_system));
+
+        // Grant admin to alice's club: alice's session passes ensure_admin.
+        server.admin_grant_admin(admin_sid, alice).unwrap();
+        assert!(server.ensure_admin(alice_sid).is_ok());
+
+        // Alice can now use an admin op; revoke takes it away again.
+        let _ = server.admin_active_sessions(alice_sid).unwrap();
+        server.admin_revoke_admin(admin_sid, alice).unwrap();
+        assert!(server.ensure_admin(alice_sid).is_err());
+
+        // Unknown club errors on grant.
+        let ghost = 987_654u64;
+        assert!(server.admin_grant_admin(admin_sid, ghost).is_err());
     }
 
     #[test]

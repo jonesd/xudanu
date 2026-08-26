@@ -79,6 +79,12 @@ impl AdminState {
         self.id_grants.len() != len_before
     }
 
+    pub fn has_grant_for_any(&self, clubs: &std::collections::HashSet<BeId>) -> bool {
+        self.id_grants
+            .iter()
+            .any(|g| clubs.contains(&g.club_id) && g.region.is_full())
+    }
+
     pub fn grants(&self) -> &[IdGrant] {
         &self.id_grants
     }

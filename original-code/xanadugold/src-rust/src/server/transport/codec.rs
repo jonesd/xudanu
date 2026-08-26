@@ -3498,6 +3498,32 @@ impl JsonCodec {
             #[cfg(feature = "serde")]
             OperationCode::AdminAuditTail => Ok(WireRequest::AdminAuditTail),
             #[cfg(feature = "serde")]
+            OperationCode::AdminClubsList => Ok(WireRequest::AdminClubsList),
+            #[cfg(feature = "serde")]
+            OperationCode::AdminGrantAdmin => {
+                #[derive(Deserialize)]
+                struct Args {
+                    club_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AdminGrantAdmin {
+                    club_id: args.club_id,
+                })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::AdminRevokeAdmin => {
+                #[derive(Deserialize)]
+                struct Args {
+                    club_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AdminRevokeAdmin {
+                    club_id: args.club_id,
+                })
+            }
+            #[cfg(feature = "serde")]
             OperationCode::CrossServerResolve => {
                 #[derive(Deserialize)]
                 struct Args {
