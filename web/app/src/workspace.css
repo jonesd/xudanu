@@ -3072,3 +3072,133 @@
 .cb-structure-footer { padding: 8px 12px; border-top: 1px solid var(--border, #30363d); color: var(--text-muted, #6e7681); font-size: 10px; }
 .cb-transclusion-span { cursor: pointer; transition: filter 0.15s; }
 .cb-transclusion-span:hover { filter: brightness(1.1); }
+
+
+/* ── Mobile shell (phase 2, <768px) ──────────────────────────────
+   Bottom nav + bottom sheet: document-first, thumb-reachable. The
+   side drawers from phase 1 remain for tablet; on phone the right
+   panel's content lives in the sheet and the left rail is reachable
+   via the top-bar Graph/Outline state through the sheet tabs. */
+
+.ws-bottom-nav {
+  display: none;
+}
+.ws-bottom-sheet {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  /* Top bar: logo + identity + theme only — nav moves to the bottom. */
+  .ws-nav {
+    display: none;
+  }
+  .ws-search-trigger {
+    display: none;
+  }
+
+  /* Bottom nav: fixed, safe-area aware, blurred surface. */
+  .ws-bottom-nav {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    background: color-mix(in srgb, var(--bg-surface, #22222e) 88%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid var(--border, #30363d);
+    padding: 4px 8px calc(4px + env(safe-area-inset-bottom, 0px));
+  }
+  .ws-bottom-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    background: none;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 4px;
+    color: var(--text-muted, #8b949e);
+    cursor: pointer;
+    min-height: 48px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .ws-bottom-nav-item.active {
+    color: #58a6ff;
+  }
+  .ws-bottom-nav-item.active .ws-bottom-nav-label {
+    font-weight: 600;
+  }
+  .ws-bottom-nav-label {
+    font-size: 10px;
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* Bottom sheet: slides up over the nav, drag-grab to close. */
+  .ws-bottom-sheet {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 61;
+    max-height: 70vh;
+    background: var(--bg-surface, #22222e);
+    border-top: 1px solid var(--border, #30363d);
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4);
+    transform: translateY(105%);
+    transition: transform 0.26s ease;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .ws-bottom-sheet.open {
+    transform: translateY(0);
+  }
+  .ws-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 59;
+    background: rgba(0, 0, 0, 0.45);
+  }
+  .ws-sheet-grab {
+    flex-shrink: 0;
+    width: 40px;
+    height: 5px;
+    border-radius: 3px;
+    background: var(--text-dim, #484f58);
+    margin: 8px auto 4px;
+    cursor: pointer;
+  }
+  .ws-sheet-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 12px 16px;
+  }
+  .ws-sheet-body .ws-tabs {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  /* Body sits above the bottom nav. */
+  .ws-body {
+    padding-bottom: 68px;
+  }
+  /* Phase-1 side drawers: phone uses the sheet instead — hide floats. */
+  .ws-float-show.ws-float-left,
+  .ws-float-show.ws-float-right {
+    display: none;
+  }
+
+  /* Reading-first typography: 16px floor prevents iOS focus-zoom. */
+  .ws-doc-surface,
+  .collaborative-editor {
+    font-size: 16px;
+  }
+  .ws-doc-surface .doc-autolink {
+    padding: 2px 0;
+  }
+}

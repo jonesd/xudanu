@@ -28,7 +28,8 @@ import { KIND_ICON, KIND_COLOR, KIND_ICON_COLOR } from "../../graph-scoring";
 import { DataIntegrityBanner } from "../DataIntegrityBanner";
 import { WelcomeScreen } from "../WelcomeScreen";
 import { DocumentOutlinePanel } from "../DocumentOutline";
-import { useIsTablet } from "../../hooks/useMediaQuery";
+import { useIsTablet, useIsPhone } from "../../hooks/useMediaQuery";
+import { MobileBottomNav } from "./MobileBottomNav";
 import { ConnectionOverlay } from "../ConnectionOverlay";
 import { RelatedFooter } from "../RelatedFooter";
 import { SearchOverlay } from "../shell/SearchOverlay";
@@ -131,7 +132,11 @@ export function WorkspaceShell() {
   // open — null, "left", or "right". One at a time; the desktop layout
   // ignores this (panels inline as always).
   const isTablet = useIsTablet();
+  const isPhone = useIsPhone();
   const [openDrawer, setOpenDrawer] = useState<"left" | "right" | null>(null);
+  // Phone shell: the right panel renders as a bottom sheet opened from
+  // the bottom nav's Panels button. Independent of tablet drawers.
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("provenance");
   const [remoteView, setRemoteView] = useState<{
     title: string; text: string; originServerName: string;
@@ -4959,6 +4964,47 @@ export function WorkspaceShell() {
           onClick={() => setOpenDrawer(null)}
           aria-hidden="true"
         />
+      )}
+
+      {isPhone && (
+        <>
+          {sheetOpen && (
+            <div
+              className="ws-sheet-backdrop"
+              onClick={() => setSheetOpen(false)}
+              aria-hidden="true"
+            />
+          )}
+          <div className={`ws-bottom-sheet ${sheetOpen ? "open" : ""}`} role="dialog" aria-label="Panels">
+            <div className="ws-sheet-grab" onClick={() => setSheetOpen(false)} title="Close" />
+            <div className="ws-sheet-body">
+              <div className="ws-tabs">
+                {([
+                  ["provenance", "Attribution"],
+                  ["connections", "Links"],
+                  ["trails", "Trails"],
+                  ["timeline", "History"],
+                  ["compare", "Compare"],
+                  ["more", "More"],
+                ] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    className={`ws-tab ${rightPanelTab === id ? "active" : ""}`}
+                    onClick={() => setRightPanelTab(id)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <MobileBottomNav
+            activeNav={navTab}
+            onNavChange={setNavTab}
+            onOpenPanels={() => setSheetOpen((v) => !v)}
+            panelsOpen={sheetOpen}
+          />
+        </>
       )}
       <ConnectionOverlay connected={connected} reconnectAttempt={reconnectAttempt} />
     </div>

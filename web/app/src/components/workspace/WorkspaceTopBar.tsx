@@ -3,7 +3,7 @@ import "../../workspace.css";
 import { PALETTES } from "../../theme";
 import type { ThemeMode, ThemePalette } from "../../theme";
 
-type WorkspaceNavTab = "explore" | "library" | "compose";
+export type WorkspaceNavTab = "explore" | "library" | "compose";
 
 interface WorkspaceTopBarProps {
   connected: boolean;
@@ -238,4 +238,4 @@ export function WorkspaceTopBar({
   );
 }
 
-export type { WorkspaceNavTab };
+
