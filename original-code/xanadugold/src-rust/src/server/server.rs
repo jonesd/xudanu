@@ -18168,6 +18168,13 @@ impl Server {
     }
 
     pub fn set_federation_config(&mut self, config: crate::server::federation::FederationConfig) {
+        // Configuring federation IS opting into the network: an operator
+        // (or test) wiring peers must not also flip the single-player
+        // toggle — that combination silently idled the dialer (regression
+        // caught by federation_activation_content_replication, 2026-08-25).
+        if config.enabled {
+            self.network_enabled = true;
+        }
         self.federation = crate::server::federation::FederationState::new(config);
     }
 
