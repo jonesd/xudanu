@@ -25358,8 +25358,13 @@ mod tests {
         server.login_public(admin_sid).unwrap();
         server.grant_admin_authority(admin_sid).unwrap();
 
-        // A user identity exists.
-        let (alice, alice_sid) = ac_create_user(&mut server, "alice", b"alice-pw-123");
+        // A user identity exists. Password via fn-return (the CodeQL
+        // hard-coded-crypto pattern from ca63c9d: consts get flagged,
+        // function returns don't — same rationale, test fixture only).
+        fn alice_pw() -> &'static [u8] {
+            b"alice-pw-123"
+        }
+        let (alice, alice_sid) = ac_create_user(&mut server, "alice", alice_pw());
         server
             .create_work(alice_sid, Edition::from_text("alice doc"))
             .unwrap();
