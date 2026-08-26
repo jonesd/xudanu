@@ -73,7 +73,7 @@ rustls-pemfile = { version = "2", optional = true }
 rustls = { version = "0.23", optional = true, features = ["ring", "std", "tls12"] }
 axum-server = { version = "0.7", features = ["tls-rustls"], optional = true }
 ring = { version = "0.17", optional = true }
-base64 = { version = "0.22", optional = true }
+base64 = { version = "0.23", optional = true }
 reqwest = { version = "0.12", features = ["rustls-tls", "json", "blocking"], default-features = false, optional = true }
 oauth2 = { version = "5", optional = true }
 webpki-roots = { version = "0.26", optional = true }
