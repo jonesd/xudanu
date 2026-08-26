@@ -3930,7 +3930,9 @@ fn dispatch_inner(
                     is_system: c.is_system,
                 })
                 .collect();
-            Ok(ResponseValue::Json(serde_json::json!({ "clubs": payloads })))
+            Ok(ResponseValue::Json(
+                serde_json::json!({ "clubs": payloads }),
+            ))
         }
         #[cfg(feature = "serde")]
         WireRequest::AdminGrantAdmin { club_id } => {
@@ -3945,10 +3947,8 @@ fn dispatch_inner(
         #[cfg(feature = "serde")]
         WireRequest::AdminAuditTail => {
             let (lines, valid) = srv.admin_audit_tail(session_id)?;
-            let arr: Vec<serde_json::Value> = lines
-                .into_iter()
-                .map(serde_json::Value::String)
-                .collect();
+            let arr: Vec<serde_json::Value> =
+                lines.into_iter().map(serde_json::Value::String).collect();
             Ok(ResponseValue::Json(serde_json::json!({
                 "lines": arr,
                 "chain_valid": valid,

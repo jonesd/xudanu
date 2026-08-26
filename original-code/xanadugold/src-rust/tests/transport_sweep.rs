@@ -18,11 +18,11 @@
 
 use futures_util::{SinkExt, StreamExt};
 use std::net::SocketAddr;
-use tokio_tungstenite::tungstenite::Message;
-use xudanu::server::transport::{build_router, AppState, OperationCode, PROTOCOL_VERSION};
-use xudanu::server::transport::audit::{SecurityConfig, SecurityMonitor, TracingAuditLog};
-use xudanu::server::Server;
 use std::sync::Arc;
+use tokio_tungstenite::tungstenite::Message;
+use xudanu::server::transport::audit::{SecurityConfig, SecurityMonitor, TracingAuditLog};
+use xudanu::server::transport::{build_router, AppState, OperationCode, PROTOCOL_VERSION};
+use xudanu::server::Server;
 
 const ADMIN_PASSWORD: &[u8] = b"admin12345";
 
@@ -73,11 +73,16 @@ type SplitSender = futures_util::stream::SplitSink<WsStream, Message>;
 type SplitReceiver = futures_util::stream::SplitStream<WsStream>;
 
 async fn admin_ws(addr: &SocketAddr) -> (SplitSender, SplitReceiver) {
-    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     let msg = r.next().await.unwrap().unwrap();
-    assert!(matches!(&msg, Message::Text(t) if serde_json::from_str::<serde_json::Value>(t).unwrap()["type"] == "handshake"));
+    assert!(
+        matches!(&msg, Message::Text(t) if serde_json::from_str::<serde_json::Value>(t).unwrap()["type"] == "handshake")
+    );
 
     let mut next_id = 1u16;
     macro_rules! req {
@@ -104,11 +109,20 @@ async fn admin_ws(addr: &SocketAddr) -> (SplitSender, SplitReceiver) {
     // session_connect
     let v = req!("session_connect", None::<serde_json::Value>);
     assert_eq!(v["type"], "response", "connect: {:?}", v);
-    let club = req!("club_id_by_name", Some(serde_json::json!({"name": "admin"})));
+    let club = req!(
+        "club_id_by_name",
+        Some(serde_json::json!({"name": "admin"}))
+    );
     let club_id = club["value"]["value"].as_u64().unwrap();
-    let v = req!("session_login", Some(serde_json::json!({"club_id": club_id})));
+    let v = req!(
+        "session_login",
+        Some(serde_json::json!({"club_id": club_id}))
+    );
     assert_eq!(v["type"], "response", "login: {:?}", v);
-    let v = req!("session_authenticate", Some(serde_json::json!({"credential": password_credential(ADMIN_PASSWORD)})));
+    let v = req!(
+        "session_authenticate",
+        Some(serde_json::json!({"credential": password_credential(ADMIN_PASSWORD)}))
+    );
     assert_eq!(v["type"], "response", "auth: {:?}", v);
     (s, r)
 }
@@ -164,10 +178,10 @@ fn op_code_serde_name_roundtrip() {
 /// disconnects the caller, shuts down the server, spawns waits, or
 /// blocks on external network).
 const SKIP: &[&str] = &[
-    "session_disconnect",   // kills our own sweep connection
-    "admin_shutdown",       // bricks the test server
-    "work_grab_waiters",    // registered wait paths need live grabbers
-    "session_login",        // re-login mid-sweep scrambles auth state
+    "session_disconnect", // kills our own sweep connection
+    "admin_shutdown",     // bricks the test server
+    "work_grab_waiters",  // registered wait paths need live grabbers
+    "session_login",      // re-login mid-sweep scrambles auth state
     "session_login_by_name",
     "session_authenticate",
     "session_login_public", // strips admin authority mid-sweep
@@ -196,7 +210,9 @@ async fn wire_sweep_every_op_executes() {
             "op": op,
             "payload": {},
         });
-        s.send(Message::Text(frame.to_string().into())).await.unwrap();
+        s.send(Message::Text(frame.to_string().into()))
+            .await
+            .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
         let resp = tokio::time::timeout(std::time::Duration::from_secs(10), r.next()).await;
         match resp {
@@ -218,8 +234,15 @@ async fn wire_sweep_every_op_executes() {
             other => panic!("op {} timed out/errored: {:?}", op, other.is_ok()),
         }
     }
-    eprintln!("sweep: {} dispatched, {} codec-rejected", dispatched, decode_rejected);
-    assert!(dispatched > 25, "expected the no-payload ops to dispatch, got {}", dispatched);
+    eprintln!(
+        "sweep: {} dispatched, {} codec-rejected",
+        dispatched, decode_rejected
+    );
+    assert!(
+        dispatched > 25,
+        "expected the no-payload ops to dispatch, got {}",
+        dispatched
+    );
 }
 
 /// Minimal-payload drive for high-value read ops whose dispatch arms
@@ -234,8 +257,14 @@ async fn wire_sweep_read_ops_with_minimal_payloads() {
         "v": PROTOCOL_VERSION, "type": "request", "id": 1, "op": "work_create",
         "payload": {"edition": {"text": "sweep target doc"}},
     });
-    s.send(Message::Text(frame.to_string().into())).await.unwrap();
-    let resp = tokio::time::timeout(std::time::Duration::from_secs(10), r.next()).await.unwrap().unwrap().unwrap();
+    s.send(Message::Text(frame.to_string().into()))
+        .await
+        .unwrap();
+    let resp = tokio::time::timeout(std::time::Duration::from_secs(10), r.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
     let v: serde_json::Value = match &resp {
         Message::Text(t) => serde_json::from_str(t).unwrap(),
         Message::Binary(b) => serde_json::from_slice(b).unwrap(),
@@ -250,16 +279,34 @@ async fn wire_sweep_read_ops_with_minimal_payloads() {
         ("work_grabber", serde_json::json!({"work_id": work_id})),
         ("work_can_read", serde_json::json!({"work_id": work_id})),
         ("work_can_revise", serde_json::json!({"work_id": work_id})),
-        ("work_revisions_list", serde_json::json!({"work_id": work_id})),
-        ("work_text_at_revision", serde_json::json!({"work_id": work_id, "revision": 0})),
+        (
+            "work_revisions_list",
+            serde_json::json!({"work_id": work_id}),
+        ),
+        (
+            "work_text_at_revision",
+            serde_json::json!({"work_id": work_id, "revision": 0}),
+        ),
         ("work_blob_list", serde_json::json!({"work_id": work_id})),
-        ("work_get_read_club", serde_json::json!({"work_id": work_id})),
-        ("work_get_edit_club", serde_json::json!({"work_id": work_id})),
+        (
+            "work_get_read_club",
+            serde_json::json!({"work_id": work_id}),
+        ),
+        (
+            "work_get_edit_club",
+            serde_json::json!({"work_id": work_id}),
+        ),
         ("work_is_source", serde_json::json!({"work_id": work_id})),
         ("work_kind_get", serde_json::json!({"work_id": work_id})),
         ("work_license_get", serde_json::json!({"work_id": work_id})),
-        ("work_version_timeline", serde_json::json!({"work_id": work_id})),
-        ("link_list_for_work", serde_json::json!({"work_id": work_id})),
+        (
+            "work_version_timeline",
+            serde_json::json!({"work_id": work_id}),
+        ),
+        (
+            "link_list_for_work",
+            serde_json::json!({"work_id": work_id}),
+        ),
         ("work_backlinks", serde_json::json!({"work_id": work_id})),
         ("annotation_list", serde_json::json!({"work_id": work_id})),
         ("work_outline", serde_json::json!({"work_id": work_id})),
@@ -304,7 +351,9 @@ async fn wire_sweep_read_ops_with_minimal_payloads() {
         let frame = serde_json::json!({
             "v": PROTOCOL_VERSION, "type": "request", "id": id, "op": op, "payload": payload,
         });
-        s.send(Message::Text(frame.to_string().into())).await.unwrap();
+        s.send(Message::Text(frame.to_string().into()))
+            .await
+            .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
         let resp = tokio::time::timeout(std::time::Duration::from_secs(10), r.next())
             .await
@@ -325,7 +374,11 @@ async fn wire_sweep_read_ops_with_minimal_payloads() {
         if v["type"] != "error" || v["code"] != "protocol_error" {
             ok_or_domain_err += 1;
         } else {
-            eprintln!("NOT-DISPATCHED {}: {}", op, v["message"].as_str().unwrap_or("?"));
+            eprintln!(
+                "NOT-DISPATCHED {}: {}",
+                op,
+                v["message"].as_str().unwrap_or("?")
+            );
         }
     }
     assert!(
@@ -642,6 +695,3 @@ fn op_name_list() -> Vec<String> {
     .map(|s| s.to_string())
     .collect()
 }
-
-
-

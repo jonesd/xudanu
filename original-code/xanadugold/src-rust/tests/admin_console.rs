@@ -71,7 +71,10 @@ type SplitSender = futures_util::stream::SplitSink<WsStream, Message>;
 type SplitReceiver = futures_util::stream::SplitStream<WsStream>;
 
 async fn connect_with_handshake(addr: &SocketAddr) -> (SplitSender, SplitReceiver) {
-    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (s, mut r) = stream.split();
     let msg = r.next().await.unwrap().unwrap();
@@ -92,11 +95,14 @@ async fn req(
     op: &str,
     payload: Option<serde_json::Value>,
 ) -> serde_json::Value {
-    let mut frame = serde_json::json!({"v": PROTOCOL_VERSION, "type": "request", "id": id, "op": op});
+    let mut frame =
+        serde_json::json!({"v": PROTOCOL_VERSION, "type": "request", "id": id, "op": op});
     if let Some(p) = payload {
         frame["payload"] = p;
     }
-    s.send(Message::Text(frame.to_string().into())).await.unwrap();
+    s.send(Message::Text(frame.to_string().into()))
+        .await
+        .unwrap();
     let msg = r.next().await.unwrap().unwrap();
     match msg {
         Message::Text(t) => serde_json::from_str(&t).unwrap(),
@@ -148,12 +154,7 @@ async fn admin_session(addr: &SocketAddr) -> (SplitSender, SplitReceiver, u64) {
     (s, r, sid)
 }
 
-async fn create_work(
-    s: &mut SplitSender,
-    r: &mut SplitReceiver,
-    id: &mut u16,
-    text: &str,
-) -> u64 {
+async fn create_work(s: &mut SplitSender, r: &mut SplitReceiver, id: &mut u16, text: &str) -> u64 {
     *id += 1;
     let resp = req(
         s,
@@ -171,7 +172,10 @@ fn is_ok(resp: &serde_json::Value) -> bool {
 }
 
 fn err_msg(resp: &serde_json::Value) -> String {
-    resp["message"].as_str().unwrap_or("(no message)").to_string()
+    resp["message"]
+        .as_str()
+        .unwrap_or("(no message)")
+        .to_string()
 }
 
 // ─── P1: content moderation ─────────────────────────────────────────
@@ -187,29 +191,77 @@ async fn admin_content_moderation_over_wire() {
     let w2 = create_work(&mut ps, &mut pr, &mut id, "moderation target two").await;
 
     // work_list carries char_count.
-    let list = req(&mut ps, &mut pr, 20, "work_list", Some(serde_json::json!({}))).await;
+    let list = req(
+        &mut ps,
+        &mut pr,
+        20,
+        "work_list",
+        Some(serde_json::json!({})),
+    )
+    .await;
     let entries = list["value"]["value"]["entries"].as_array().unwrap();
-    let e1 = entries.iter().find(|e| e["work_id"].as_u64() == Some(w1)).unwrap();
-    assert_eq!(e1["char_count"].as_u64(), Some("moderation target one".len() as u64));
+    let e1 = entries
+        .iter()
+        .find(|e| e["work_id"].as_u64() == Some(w1))
+        .unwrap();
+    assert_eq!(
+        e1["char_count"].as_u64(),
+        Some("moderation target one".len() as u64)
+    );
 
     // Pleb cannot admin-delete.
-    let resp = req(&mut ps, &mut pr, 21, "work_admin_delete", Some(serde_json::json!({"work_id": w2}))).await;
+    let resp = req(
+        &mut ps,
+        &mut pr,
+        21,
+        "work_admin_delete",
+        Some(serde_json::json!({"work_id": w2})),
+    )
+    .await;
     assert!(resp["type"] == "error", "pleb delete must fail: {:?}", resp);
 
     // Admin deletes w2; it leaves the list.
     let (mut as_, mut ar, _admin) = admin_session(&srv.addr).await;
-    let resp = req(&mut as_, &mut ar, 30, "work_admin_delete", Some(serde_json::json!({"work_id": w2}))).await;
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        30,
+        "work_admin_delete",
+        Some(serde_json::json!({"work_id": w2})),
+    )
+    .await;
     assert!(is_ok(&resp), "admin delete: {}", err_msg(&resp));
 
-    let list = req(&mut ps, &mut pr, 22, "work_list", Some(serde_json::json!({}))).await;
+    let list = req(
+        &mut ps,
+        &mut pr,
+        22,
+        "work_list",
+        Some(serde_json::json!({})),
+    )
+    .await;
     let entries = list["value"]["value"]["entries"].as_array().unwrap();
     assert!(entries.iter().any(|e| e["work_id"].as_u64() == Some(w1)));
     assert!(!entries.iter().any(|e| e["work_id"].as_u64() == Some(w2)));
 
     // Admin archives w1; it leaves the live list too (restorable).
-    let resp = req(&mut as_, &mut ar, 31, "work_archive", Some(serde_json::json!({"work_id": w1}))).await;
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        31,
+        "work_archive",
+        Some(serde_json::json!({"work_id": w1})),
+    )
+    .await;
     assert!(is_ok(&resp), "archive: {}", err_msg(&resp));
-    let list = req(&mut ps, &mut pr, 23, "work_list", Some(serde_json::json!({}))).await;
+    let list = req(
+        &mut ps,
+        &mut pr,
+        23,
+        "work_list",
+        Some(serde_json::json!({})),
+    )
+    .await;
     let entries = list["value"]["value"]["entries"].as_array().unwrap();
     assert!(!entries.iter().any(|e| e["work_id"].as_u64() == Some(w1)));
 }
@@ -228,7 +280,11 @@ async fn text_cap_enforced_over_wire() {
     )
     .await;
     assert!(resp["type"] == "error", "oversized create must fail");
-    assert!(err_msg(&resp).contains("too large"), "got: {}", err_msg(&resp));
+    assert!(
+        err_msg(&resp).contains("too large"),
+        "got: {}",
+        err_msg(&resp)
+    );
 }
 
 // ─── P2: policy over the wire ───────────────────────────────────────
@@ -239,26 +295,82 @@ async fn admin_policy_over_wire() {
     let (mut as_, mut ar, _admin) = admin_session(&srv.addr).await;
 
     // Edit policy round-trip.
-    let resp = req(&mut as_, &mut ar, 1, "admin_edit_policy_set", Some(serde_json::json!({"policy": "public-sandbox"}))).await;
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        1,
+        "admin_edit_policy_set",
+        Some(serde_json::json!({"policy": "public-sandbox"})),
+    )
+    .await;
     assert!(is_ok(&resp), "policy set: {}", err_msg(&resp));
-    let resp = req(&mut as_, &mut ar, 2, "admin_edit_policy_set", Some(serde_json::json!({"policy": "owner-only"}))).await;
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        2,
+        "admin_edit_policy_set",
+        Some(serde_json::json!({"policy": "owner-only"})),
+    )
+    .await;
     assert!(is_ok(&resp));
-    let resp = req(&mut as_, &mut ar, 3, "admin_edit_policy_set", Some(serde_json::json!({"policy": "nonsense"}))).await;
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        3,
+        "admin_edit_policy_set",
+        Some(serde_json::json!({"policy": "nonsense"})),
+    )
+    .await;
     assert!(resp["type"] == "error", "bad policy must fail");
 
     // Network + external links toggles.
-    let resp = req(&mut as_, &mut ar, 4, "network_set_enabled", Some(serde_json::json!({"enabled": true}))).await;
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        4,
+        "network_set_enabled",
+        Some(serde_json::json!({"enabled": true})),
+    )
+    .await;
     assert!(is_ok(&resp), "network: {}", err_msg(&resp));
-    let resp = req(&mut as_, &mut ar, 5, "external_links_set_enabled", Some(serde_json::json!({"enabled": true}))).await;
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        5,
+        "external_links_set_enabled",
+        Some(serde_json::json!({"enabled": true})),
+    )
+    .await;
     assert!(is_ok(&resp), "links: {}", err_msg(&resp));
 
     // Toggle back off to leave clean state.
-    req(&mut as_, &mut ar, 6, "network_set_enabled", Some(serde_json::json!({"enabled": false}))).await;
-    req(&mut as_, &mut ar, 7, "external_links_set_enabled", Some(serde_json::json!({"enabled": false}))).await;
+    req(
+        &mut as_,
+        &mut ar,
+        6,
+        "network_set_enabled",
+        Some(serde_json::json!({"enabled": false})),
+    )
+    .await;
+    req(
+        &mut as_,
+        &mut ar,
+        7,
+        "external_links_set_enabled",
+        Some(serde_json::json!({"enabled": false})),
+    )
+    .await;
 
     // Pleb cannot set policy.
     let (mut ps, mut pr, _) = pleb_session(&srv.addr).await;
-    let resp = req(&mut ps, &mut pr, 1, "admin_edit_policy_set", Some(serde_json::json!({"policy": "public-sandbox"}))).await;
+    let resp = req(
+        &mut ps,
+        &mut pr,
+        1,
+        "admin_edit_policy_set",
+        Some(serde_json::json!({"policy": "public-sandbox"})),
+    )
+    .await;
     assert!(resp["type"] == "error", "pleb policy must fail");
 }
 
@@ -280,16 +392,33 @@ async fn admin_sessions_and_audit_over_wire() {
     // Sessions list includes both parties.
     let resp = req(&mut as_, &mut ar, 1, "admin_active_sessions", None).await;
     assert!(is_ok(&resp), "sessions: {}", err_msg(&resp));
-    let val = resp["value"]["value"].as_array().cloned().unwrap_or_default();
+    let val = resp["value"]["value"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     assert!(val.len() >= 2, "expected >=2 sessions, got {}", val.len());
 
     // Cannot kick self.
-    let resp = req(&mut as_, &mut ar, 2, "admin_session_kick", Some(serde_json::json!({"session_id": admin_sid}))).await;
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        2,
+        "admin_session_kick",
+        Some(serde_json::json!({"session_id": admin_sid})),
+    )
+    .await;
     assert!(resp["type"] == "error", "self-kick must fail");
 
     // Kick the pleb; the server drops the socket — the next read on
     // that stream errors or closes (either is the kicked outcome).
-    let resp = req(&mut as_, &mut ar, 3, "admin_session_kick", Some(serde_json::json!({"session_id": pleb_sid}))).await;
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        3,
+        "admin_session_kick",
+        Some(serde_json::json!({"session_id": pleb_sid})),
+    )
+    .await;
     assert!(is_ok(&resp), "kick: {}", err_msg(&resp));
     // Server breaks the WS loop on next message from the dead session:
     // the client sees a Close frame or EOF. Guard with a timeout so a
@@ -331,21 +460,38 @@ async fn admin_identities_over_wire() {
 
     // Pleb creates a personal identity via club_create_personal.
     let (mut ps, mut pr, _) = pleb_session(&srv.addr).await;
-    let resp = req(&mut ps, &mut pr, 1, "club_create_personal", Some(serde_json::json!({"name": "wireuser", "display_name": "Wire User"}))).await;
+    let resp = req(
+        &mut ps,
+        &mut pr,
+        1,
+        "club_create_personal",
+        Some(serde_json::json!({"name": "wireuser", "display_name": "Wire User"})),
+    )
+    .await;
     eprintln!("CK: club resp {:?}", resp);
     let pleb_club = resp["value"]["value"].as_u64().unwrap_or(0);
 
     let (mut as_, mut ar, _admin) = admin_session(&srv.addr).await;
 
     // Probe A: known-good write-path op (kick a ghost -> error response).
-    let resp = req(&mut as_, &mut ar, 90, "admin_session_kick", Some(serde_json::json!({"session_id": 987654321}))).await;
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        90,
+        "admin_session_kick",
+        Some(serde_json::json!({"session_id": 987654321})),
+    )
+    .await;
     eprintln!("CK: probeA {:?}", resp["type"]);
 
     // Directory lists clubs including the new identity.
     let resp = req(&mut as_, &mut ar, 1, "admin_clubs_list", None).await;
     eprintln!("CK: clubs resp {:?}", resp["type"]);
     assert!(is_ok(&resp), "clubs list: {}", err_msg(&resp));
-    let clubs = resp["value"]["value"]["clubs"].as_array().cloned().unwrap_or_default();
+    let clubs = resp["value"]["value"]["clubs"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     assert!(
         clubs.iter().any(|c| c["be_id"].as_u64() == Some(pleb_club)),
         "personal club {} must appear in directory",
@@ -355,14 +501,35 @@ async fn admin_identities_over_wire() {
 
     // Grant admin to the pleb club; a fresh session of that club passes
     // admin gating; revoke removes it.
-    let resp = req(&mut as_, &mut ar, 2, "admin_grant_admin", Some(serde_json::json!({"club_id": pleb_club}))).await;
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        2,
+        "admin_grant_admin",
+        Some(serde_json::json!({"club_id": pleb_club})),
+    )
+    .await;
     assert!(is_ok(&resp), "grant: {}", err_msg(&resp));
 
-    let resp = req(&mut as_, &mut ar, 3, "admin_revoke_admin", Some(serde_json::json!({"club_id": pleb_club}))).await;
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        3,
+        "admin_revoke_admin",
+        Some(serde_json::json!({"club_id": pleb_club})),
+    )
+    .await;
     assert!(is_ok(&resp), "revoke: {}", err_msg(&resp));
 
     // Unknown club errors.
-    let resp = req(&mut as_, &mut ar, 4, "admin_grant_admin", Some(serde_json::json!({"club_id": 987654}))).await;
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        4,
+        "admin_grant_admin",
+        Some(serde_json::json!({"club_id": 987654})),
+    )
+    .await;
     assert!(resp["type"] == "error");
 
     // Pleb cannot list the directory.

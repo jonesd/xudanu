@@ -1308,9 +1308,9 @@ pub fn create_empty_manifest(
             grants: Vec::new(),
 
             network_enabled: false,
-        
+
             external_links_enabled: false,
-        
+
             edit_policy: String::new(),
         },
         reconcile_store: crate::server::federation::ReconcileStore::new(),

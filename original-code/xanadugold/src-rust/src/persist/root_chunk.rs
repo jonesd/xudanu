@@ -850,11 +850,11 @@ pub fn read_root_as_manifest(
                         grants: vec![],
 
                         network_enabled: false,
-                    
+
                         external_links_enabled: false,
-                    
-            edit_policy: String::new(),
-        },
+
+                        edit_policy: String::new(),
+                    },
                     false,
                     false,
                     vec![],
@@ -872,11 +872,11 @@ pub fn read_root_as_manifest(
                     grants: vec![],
 
                     network_enabled: false,
-                
-                        external_links_enabled: false,
-                    
-            edit_policy: String::new(),
-        },
+
+                    external_links_enabled: false,
+
+                    edit_policy: String::new(),
+                },
                 false,
                 false,
                 vec![],

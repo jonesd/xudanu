@@ -10776,7 +10776,10 @@ impl Server {
         let seed = std::fs::read_to_string(dir.join("security.log.seed"))
             .map(|s| s.trim().to_string())
             .unwrap_or_default();
-        let chain_valid = crate::server::transport::chained_log::ChainedLogWriter::<std::io::Sink>::verify_log(&content, &seed)
+        let chain_valid =
+            crate::server::transport::chained_log::ChainedLogWriter::<std::io::Sink>::verify_log(
+                &content, &seed,
+            )
             .is_ok();
 
         let tail: Vec<String> = content
@@ -10850,7 +10853,11 @@ impl Server {
                     || self.system_clubs.empty_club == c.be_id(),
             })
             .collect();
-        out.sort_by(|a, b| b.works_owned.cmp(&a.works_owned).then(a.be_id.cmp(&b.be_id)));
+        out.sort_by(|a, b| {
+            b.works_owned
+                .cmp(&a.works_owned)
+                .then(a.be_id.cmp(&b.be_id))
+        });
         Ok(out)
     }
 
@@ -21601,8 +21608,8 @@ pub(crate) mod persist_snapshot {
                         })
                         .collect(),
                     network_enabled: self.network_enabled,
-                external_links_enabled: self.external_links_enabled,
-                edit_policy: self.edit_policy().as_str().to_string(),
+                    external_links_enabled: self.external_links_enabled,
+                    edit_policy: self.edit_policy().as_str().to_string(),
                 },
                 reconcile_store: self.reconcile_store.clone(),
                 reconcile_counter: self.reconcile_counter,
@@ -25267,11 +25274,9 @@ mod tests {
             let sid = server.connect();
             server.login_public(sid).unwrap();
             // Non-admin cannot change policy.
-            assert!(
-                server
-                    .set_edit_policy_admin(sid, EditPolicy::OwnerOnly)
-                    .is_err()
-            );
+            assert!(server
+                .set_edit_policy_admin(sid, EditPolicy::OwnerOnly)
+                .is_err());
 
             server.grant_admin_authority(sid).unwrap();
             server
