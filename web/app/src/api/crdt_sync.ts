@@ -1800,6 +1800,12 @@ export class CrdtSyncClient {
       this.currentIdentity = { club_id: clubId, display_name: name, verifying_key: val.verifying_key, clubs };
     }
 
+    // Identity changed on a live connection: admin authority is
+    // identity-scoped, so the cached flag from the previous login is
+    // stale (observed: admin -> normal-user sign-in kept the Admin
+    // button visible). Re-probe.
+    this.checkAdminStatus().catch(() => {});
+
     if (this.crdtReady && this.workBeId) {
       try {
         await this.sendRequest("crdt_register_author", { work_id: this.workBeId });

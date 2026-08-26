@@ -604,6 +604,9 @@ export function useCrdtSync(
     setAuthenticated(false);
     setIdentity(null);
     setCanEdit(false);
+    // Authority dies with the session — never let a stale admin flag
+    // survive sign-out (the reconnect re-probes, this covers the gap).
+    setIsAdmin(false);
     try {
       localStorage.removeItem("xudanu_session_ticket");
       localStorage.removeItem("xudanu_identity_cache");
