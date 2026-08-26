@@ -6,6 +6,8 @@ export interface CrdtSyncState {
   saveState: SaveState;
   connected: boolean;
   authenticated: boolean;
+  /** Current document is served from the offline mirror (read-only). */
+  offlineReading: boolean;
   reconnectAttempt: number;
   switchingWork: boolean;
   /** Work id the server refused to open for this session (private work),
@@ -63,6 +65,7 @@ export function useCrdtSync(
   const [text, setTextState] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [connected, setConnected] = useState(false);
+  const [offlineReading, setOfflineReading] = useState(false);
   const [accessDeniedWorkId, setAccessDeniedWorkId] = useState<number | null>(null);
   const [switchingWork, setSwitchingWork] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
@@ -118,6 +121,7 @@ export function useCrdtSync(
       if (deniedWorkId === (workBeId ?? -1)) setAccessDeniedWorkId(deniedWorkId);
     });
     const unsubConn = client.onConnectionChange((isConnected) => {
+      setOfflineReading(client.offlineReading);
       if (isConnected) {
         if (disconnectTimerRef.current) {
           clearTimeout(disconnectTimerRef.current);
@@ -671,6 +675,7 @@ export function useCrdtSync(
 
   return {
     text, saveState, connected, authenticated, reconnectAttempt, switchingWork, awareness, setText, setTextLocal, sendCursor, sendSelection,
+    offlineReading,
     accessDeniedWorkId,
     contentMatches, watchEnabled, toggleWatch, clientRef,
     attributionSpans, attributionLogStatus, refreshAttribution,

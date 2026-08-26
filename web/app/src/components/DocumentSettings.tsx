@@ -1,4 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import {
+  cacheStats,
+  getCacheLimitMb,
+  setCacheLimitMb,
+  MIN_CACHE_LIMIT_MB,
+  MAX_CACHE_LIMIT_MB,
+  type CacheStats,
+} from "../offline-cache";
 
 export interface DocPreferences {
   fontSize: number;
@@ -41,6 +49,21 @@ interface DocumentSettingsProps {
 export function DocumentSettings({ visible, onClose, prefs, onPrefsChange, networkEnabled, externalLinksEnabled, isAdmin, onSetNetworkEnabled, onSetExternalLinksEnabled }: DocumentSettingsProps) {
   const [local, setLocal] = useState(prefs);
   const [netBusy, setNetBusy] = useState(false);
+  const [cacheLimit, setCacheLimit] = useState(getCacheLimitMb());
+  const [stats, setStats] = useState<CacheStats | null>(null);
+
+  const refreshStats = useCallback(() => {
+    cacheStats().then(setStats).catch(() => setStats(null));
+  }, []);
+
+  useEffect(() => {
+    if (visible) refreshStats();
+  }, [visible, refreshStats]);
+
+  const fmtMB = (bytes: number) => {
+    const mb = bytes / (1024 * 1024);
+    return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
+  };
 
   useEffect(() => {
     setLocal(prefs);
@@ -167,6 +190,40 @@ export function DocumentSettings({ visible, onClose, prefs, onPrefsChange, netwo
               >
                 <span className="settings-switch-knob" />
               </button>
+            </div>
+          </div>
+          <div className="settings-section">
+            <h3>Offline reading</h3>
+            <div className="settings-row">
+              <div>
+                <span>Cache size</span>
+                <div className="settings-sub">
+                  {stats
+                    ? `${stats.documents} document(s) cached (${stats.starred} starred) using ${fmtMB(stats.totalBytes)}`
+                    : "Recently read documents are kept for offline reading; starred works are always kept."}
+                  {stats?.overBudget && " — over budget (starred set exceeds the limit)"}
+                </div>
+              </div>
+              <span className="settings-range-value">{cacheLimit} MB</span>
+            </div>
+            <input
+              type="range"
+              min={MIN_CACHE_LIMIT_MB}
+              max={MAX_CACHE_LIMIT_MB}
+              step={10}
+              value={cacheLimit}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setCacheLimit(v);
+                setCacheLimitMb(v);
+                refreshStats();
+              }}
+              style={{ width: "100%" }}
+              aria-label="Offline cache size in megabytes"
+            />
+            <div className="settings-sub" style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{MIN_CACHE_LIMIT_MB} MB</span>
+              <span>{MAX_CACHE_LIMIT_MB} MB</span>
             </div>
           </div>
         </div>

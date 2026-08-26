@@ -1,3 +1,9 @@
+import {
+  cacheDocument,
+  getCachedDocument,
+  setCachedStarred,
+} from "../offline-cache";
+
 const PROTOCOL_VERSION = 2;
 
 export interface AwarenessState {
@@ -565,6 +571,10 @@ export class CrdtSyncClient {
   private crdtOpenedThisConnection = false;
   currentIdentity: WhoAmIEntry | null = null;
   private isAdmin = false;
+  /** Set when the current text came from the offline mirror. */
+  offlineReading = false;
+  private openWorkTitle = "";
+  private currentStarred = false;
   private skipCrdt = false;
 
   constructor(url: string, workBeId: number) {
@@ -1048,9 +1058,19 @@ export class CrdtSyncClient {
   async fetchWorkList(): Promise<WorkListEntry[]> {
     const resp = await this.sendRequest("work_list", { limit: 1000 });
     const val = extractValue(resp);
-    if (Array.isArray(val)) return val as WorkListEntry[];
-    const rec = val as Record<string, unknown>;
-    return (rec.entries as WorkListEntry[]) || (rec.work_list as WorkListEntry[]) || (rec.value as WorkListEntry[]) || [];
+    const list: WorkListEntry[] = Array.isArray(val)
+      ? (val as WorkListEntry[])
+      : ((val as Record<string, unknown>).entries as WorkListEntry[])
+        || ((val as Record<string, unknown>).work_list as WorkListEntry[])
+        || ((val as Record<string, unknown>).value as WorkListEntry[])
+        || [];
+    // Feed the offline mirror's star pinning + title for the open work.
+    const mine = list.find((w) => w.work_id === this.workBeId);
+    if (mine) {
+      this.openWorkTitle = mine.title || "";
+      this.currentStarred = !!mine.is_starred;
+    }
+    return list;
   }
 
   async linkCreate(
@@ -1400,10 +1420,14 @@ export class CrdtSyncClient {
 
   async workStar(workId: number): Promise<void> {
     await this.sendRequest("work_star", { work_id: workId });
+    if (workId === this.workBeId) this.currentStarred = true;
+    setCachedStarred(workId, true).catch(() => {});
   }
 
   async workUnstar(workId: number): Promise<void> {
     await this.sendRequest("work_unstar", { work_id: workId });
+    if (workId === this.workBeId) this.currentStarred = false;
+    setCachedStarred(workId, false).catch(() => {});
   }
 
   async connectionPinSet(key: string): Promise<void> {
@@ -2060,6 +2084,14 @@ export class CrdtSyncClient {
 
         if (wasInitialOpen) {
           this.text = (inner.current_text as string) || "";
+          // Offline mirror: every successful read is a cache candidate
+          // (starred pinning + LRU budget handled inside).
+          cacheDocument({
+            work_id: this.workBeId,
+            title: this.openWorkTitle || "",
+            text: this.text,
+            starred: this.currentStarred,
+          }).catch(() => {});
         }
 
         this.crdtReady = true;
@@ -2109,6 +2141,12 @@ export class CrdtSyncClient {
             || "";
           this.text = edText;
           this.textListeners.forEach((cb) => cb(this.text));
+          cacheDocument({
+            work_id: this.workBeId,
+            title: this.openWorkTitle || "",
+            text: edText,
+            starred: this.currentStarred,
+          }).catch(() => {});
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message.toLowerCase() : String(e).toLowerCase();
@@ -2119,6 +2157,17 @@ export class CrdtSyncClient {
     }
     if (accessDenied) {
       this.accessDeniedListeners.forEach((cb) => cb(this.workBeId));
+      return;
+    }
+    // Offline: the wire is down and no in-memory text loaded — serve
+    // the cached mirror read-only, marked so the UI can say so.
+    if (!loaded && !this.connected) {
+      const cached = await getCachedDocument(this.workBeId);
+      if (cached) {
+        this.text = cached.text;
+        this.offlineReading = true;
+        this.textListeners.forEach((cb) => cb(this.text));
+      }
     }
   }
 

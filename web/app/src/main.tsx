@@ -25,3 +25,14 @@ import "./app.css";
 createRoot(document.getElementById("root")!).render(
   <App />,
 );
+
+// PWA: register the service worker (app-shell offline; document content
+// is mirrored in IndexedDB by offline-cache.ts). Debug builds too — the
+// SW is small and correctness matters everywhere.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {
+      /* offline shell is best-effort */
+    });
+  });
+}

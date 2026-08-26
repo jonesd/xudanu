@@ -3202,3 +3202,21 @@
     padding: 2px 0;
   }
 }
+
+/* Offline reading banner */
+.ws-offline-banner {
+  position: fixed;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 70;
+  background: rgba(210, 153, 34, 0.15);
+  border: 1px solid rgba(210, 153, 34, 0.4);
+  color: #d29922;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-family: 'Inter', sans-serif;
+  max-width: min(92vw, 480px);
+  text-align: center;
+}

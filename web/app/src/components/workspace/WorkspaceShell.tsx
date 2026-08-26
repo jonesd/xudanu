@@ -320,6 +320,7 @@ export function WorkspaceShell() {
     saveState,
     connected,
     authenticated,
+    offlineReading,
     accessDeniedWorkId,
     identity,
     isAdmin,
@@ -2136,6 +2137,11 @@ export function WorkspaceShell() {
   return (
     <div className={`ws-shell ${activeCssClass} ${navTab === "compose" ? "ws-mode-compose" : ""} ${navTab === "library" ? "ws-mode-library" : ""}`}>
       <DataIntegrityBanner />
+      {offlineReading && (
+        <div className="ws-offline-banner" role="status">
+          Offline — showing your cached copy of this document. Edits will sync when you reconnect.
+        </div>
+      )}
       <WorkspaceTopBar
         connected={connected}
         identityName={identityName}
