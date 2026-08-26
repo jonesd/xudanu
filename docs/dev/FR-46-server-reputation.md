@@ -84,6 +84,12 @@ with hop distance; (3) the realistic network is small-world (dozens of
 servers) where plain weighted aggregation over signed observations is
 cheap and manipulation-resistant long before clever math is needed.
 
+## Companion
+
+FR-47 (adversarial scenarios) is this FR's red-team harness: the
+personas there define "correctly interpreted" for every signal the
+layers above produce. Build FR-47 Tier 1 before FR-46 layer 2.
+
 ## Open questions (for the real design pass)
 
 - Observation exchange cadence and message size budgets on the
