@@ -418,6 +418,8 @@ pub enum OperationCode {
     ExternalLinksSetEnabled,
     WorkAdminDelete,
     AdminEditPolicySet,
+    AdminSessionKick,
+    AdminAuditTail,
     #[cfg(feature = "serde")]
     CrossServerResolve,
     #[cfg(feature = "serde")]
@@ -815,6 +817,8 @@ impl OperationCode {
             0x0F12 => Some(OperationCode::ExternalLinksSetEnabled),
             0x0F13 => Some(OperationCode::WorkAdminDelete),
             0x0F14 => Some(OperationCode::AdminEditPolicySet),
+            0x0F15 => Some(OperationCode::AdminSessionKick),
+            0x0F16 => Some(OperationCode::AdminAuditTail),
 
             _ => None,
         }
@@ -1152,6 +1156,8 @@ impl OperationCode {
             OperationCode::ExternalLinksSetEnabled => 0x0F12,
             OperationCode::WorkAdminDelete => 0x0F13,
             OperationCode::AdminEditPolicySet => 0x0F14,
+            OperationCode::AdminSessionKick => 0x0F15,
+            OperationCode::AdminAuditTail => 0x0F16,
             #[cfg(feature = "serde")]
             OperationCode::FederationAttestationCreate => 0x0E02,
             #[cfg(feature = "serde")]
@@ -2293,6 +2299,12 @@ pub enum WireRequest {
         policy: String,
     },
     #[cfg(feature = "serde")]
+    AdminSessionKick {
+        session_id: u64,
+    },
+    #[cfg(feature = "serde")]
+    AdminAuditTail,
+    #[cfg(feature = "serde")]
     CrossServerResolve {
         tumbler: String,
         content_hash_hex: String,
@@ -2559,6 +2571,7 @@ pub enum ResponseValue {
     Humber(u64),
     Boolean(bool),
     String(String),
+    Json(serde_json::Value),
     Ticket {
         clubs: Vec<BeId>,
         ticket: Vec<u8>,

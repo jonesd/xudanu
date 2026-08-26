@@ -3910,6 +3910,23 @@ fn dispatch_inner(
             Ok(ResponseValue::Void)
         }
         #[cfg(feature = "serde")]
+        WireRequest::AdminSessionKick { session_id: target } => {
+            srv.admin_session_kick(session_id, crate::server::session::SessionId::new(target))?;
+            Ok(ResponseValue::Void)
+        }
+        #[cfg(feature = "serde")]
+        WireRequest::AdminAuditTail => {
+            let (lines, valid) = srv.admin_audit_tail(session_id)?;
+            let arr: Vec<serde_json::Value> = lines
+                .into_iter()
+                .map(serde_json::Value::String)
+                .collect();
+            Ok(ResponseValue::Json(serde_json::json!({
+                "lines": arr,
+                "chain_valid": valid,
+            })))
+        }
+        #[cfg(feature = "serde")]
         WireRequest::AdminEditPolicySet { policy } => {
             let parsed = match policy.as_str() {
                 "owner-only" => crate::server::EditPolicy::OwnerOnly,

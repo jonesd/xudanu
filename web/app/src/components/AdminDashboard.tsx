@@ -74,7 +74,7 @@ function CheckAlert({ condition, message }: { condition: boolean; message: strin
   );
 }
 
-type AdminTab = "overview" | "content" | "policy";
+type AdminTab = "overview" | "content" | "policy" | "sessions" | "audit";
 
 export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWork }: AdminDashboardProps) {
   const [health, setHealth] = useState<HealthData | null>(null);
@@ -82,6 +82,53 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const degradedCount = useRef(0);
   const [tab, setTab] = useState<AdminTab>("overview");
+
+  // ── Sessions & Audit (FR-45 P3) ──
+  interface SessionRow { session_id: number; is_logged_in: boolean; authority_clubs: number[]; initial_login?: boolean; grabbed_work_count?: number; }
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [sessionsMsg, setSessionsMsg] = useState<string | null>(null);
+  const [audit, setAudit] = useState<{ lines: string[]; chain_valid: boolean } | null>(null);
+  const [auditBusy, setAuditBusy] = useState(false);
+
+  const loadSessions = useCallback(async () => {
+    if (!client) return;
+    try {
+      const resp = await client.sendRequest("admin_active_sessions");
+      const val = (resp as { value?: unknown }).value ?? resp;
+      const inner = (val as { value?: unknown }).value ?? val;
+      setSessions(Array.isArray(inner) ? (inner as SessionRow[]) : []);
+    } catch {
+      setSessionsMsg("Could not load sessions (admin sign-in required)");
+    }
+  }, [client]);
+
+  const kickSession = useCallback(async (sid: number) => {
+    if (!client) return;
+    setSessionsMsg(null);
+    try {
+      await client.sendRequest("admin_session_kick", { session_id: sid });
+      setSessionsMsg(`Kicked session ${sid}`);
+      void loadSessions();
+    } catch (e) {
+      setSessionsMsg(`Kick failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [client, loadSessions]);
+
+  const loadAudit = useCallback(async () => {
+    if (!client) return;
+    setAuditBusy(true);
+    try {
+      const resp = await client.sendRequest("admin_audit_tail");
+      const val = (resp as { value?: unknown }).value ?? resp;
+      const inner = (val as { value?: unknown }).value ?? val;
+      const d = inner as { lines?: string[]; chain_valid?: boolean };
+      setAudit({ lines: d.lines ?? [], chain_valid: !!d.chain_valid });
+    } catch {
+      setAudit(null);
+    } finally {
+      setAuditBusy(false);
+    }
+  }, [client]);
 
   // ── Policy (FR-45 P2) ──
   const [policyBusy, setPolicyBusy] = useState<string | null>(null);
@@ -214,7 +261,7 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
       </div>
 
       <div style={{ display: "flex", gap: "4px", padding: "0 20px", background: "#161b22", borderBottom: "1px solid #30363d", flexShrink: 0 }}>
-        {(["overview", "content", "policy"] as const).map((t) => (
+        {(["overview", "content", "policy", "sessions", "audit"] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -232,7 +279,7 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
               marginTop: 6,
             }}
           >
-            {t === "overview" ? "Overview" : t === "content" ? "Content" : "Policy"}
+            {t === "overview" ? "Overview" : t === "content" ? "Content" : t === "policy" ? "Policy" : t === "sessions" ? "Sessions" : "Audit"}
           </button>
         ))}
       </div>
@@ -404,6 +451,68 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
               >
                 {health?.external_links_enabled ? "ON — click to disable" : "OFF — click to enable"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === "sessions" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
+          <div style={{ maxWidth: 900, margin: "0 auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <span style={{ color: "#8b949e", fontSize: 13 }}>{sessions.length} active session(s)</span>
+              <button type="button" onClick={() => void loadSessions()} style={{ background: "#21262d", border: "1px solid #30363d", color: "#c9d1d9", borderRadius: "4px", padding: "4px 12px", cursor: "pointer", fontSize: 12 }}>
+                Refresh
+              </button>
+            </div>
+            {sessionsMsg && (
+              <div style={{ padding: "10px 14px", marginBottom: 12, background: "rgba(88,166,255,0.08)", border: "1px solid rgba(88,166,255,0.3)", borderRadius: "6px", fontSize: 13, color: "#58a6ff" }}>{sessionsMsg}</div>
+            )}
+            <div style={{ display: "grid", gap: 6 }}>
+              {sessions.map((srow) => (
+                <div key={srow.session_id} style={{ display: "flex", alignItems: "center", gap: 12, background: "#161b22", border: "1px solid #21262d", borderRadius: "8px", padding: "10px 14px" }}>
+                  <code style={{ color: "#8b949e", fontSize: 11 }}>{srow.session_id}</code>
+                  <span style={{ flex: 1, fontSize: 13, color: srow.is_logged_in ? "#3fb950" : "#8b949e" }}>
+                    {srow.is_logged_in ? "signed in" : "anonymous"}
+                    {srow.authority_clubs?.length ? ` · authority: ${srow.authority_clubs.join(", ")}` : ""}
+                    {srow.grabbed_work_count ? ` · editing ${srow.grabbed_work_count} work(s)` : ""}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!isAdmin}
+                    onClick={() => void kickSession(srow.session_id)}
+                    style={{ background: "#21262d", border: "1px solid rgba(248,81,73,0.4)", color: "#f85149", borderRadius: "4px", padding: "4px 10px", fontSize: 12, cursor: "pointer", opacity: isAdmin ? 1 : 0.4 }}
+                    title="Disconnect this session"
+                  >
+                    kick
+                  </button>
+                </div>
+              ))}
+              {sessions.length === 0 && (
+                <div style={{ color: "#8b949e", fontSize: 13, padding: 24, textAlign: "center" }}>No sessions loaded — click Refresh (admin sign-in required).</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === "audit" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
+          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: audit ? (audit.chain_valid ? "#3fb950" : "#f85149") : "#484f58" }} />
+                {audit ? (audit.chain_valid ? "Chain valid (last 200 lines)" : "CHAIN INVALID — tampering suspected") : "Not loaded"}
+              </span>
+              <button type="button" disabled={auditBusy} onClick={() => void loadAudit()} style={{ background: "#21262d", border: "1px solid #30363d", color: "#c9d1d9", borderRadius: "4px", padding: "4px 12px", cursor: "pointer", fontSize: 12 }}>
+                {auditBusy ? "Loading…" : "Load / refresh"}
+              </button>
+            </div>
+            <div style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: "8px", padding: 14, fontFamily: "JetBrains Mono, monospace", fontSize: 11, lineHeight: 1.6, color: "#c9d1d9", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+              {audit ? audit.lines.join("\n") || "(empty log)" : "Click Load to read the security log tail (admin only, read-only)."}
+            </div>
+            <div style={{ color: "#484f58", fontSize: 11, marginTop: 8 }}>
+              Read-only view. Authoritative full verification: <code>xudanu-server verify-security-log &lt;data-dir&gt;</code>
             </div>
           </div>
         </div>
