@@ -536,3 +536,39 @@ async fn admin_identities_over_wire() {
     let resp = req(&mut ps, &mut pr, 5, "admin_clubs_list", None).await;
     assert!(resp["type"] == "error");
 }
+
+// ─── P5: network status + probe over the wire ──────────────────────
+
+#[tokio::test]
+async fn admin_network_status_and_probe_over_wire() {
+    let srv = TestServer::start().await;
+
+    // Pleb refused.
+    let (mut ps, mut pr, _) = pleb_session(&srv.addr).await;
+    let resp = req(&mut ps, &mut pr, 1, "admin_network_status", None).await;
+    assert!(resp["type"] == "error");
+
+    let (mut as_, mut ar, _admin) = admin_session(&srv.addr).await;
+
+    // Status: single-player defaults, empty directory.
+    let resp = req(&mut as_, &mut ar, 1, "admin_network_status", None).await;
+    assert!(is_ok(&resp), "status: {}", err_msg(&resp));
+    let inner = &resp["value"]["value"];
+    assert_eq!(inner["network_enabled"].as_bool(), Some(false));
+    assert_eq!(inner["servers"].as_array().map(|a| a.len()), Some(0));
+
+    // Probe of an unknown server: clean error, no hang.
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        2,
+        "admin_server_probe",
+        Some(serde_json::json!({"server_key": "999999"})),
+    )
+    .await;
+    assert!(
+        resp["type"] == "error",
+        "unknown probe must error: {:?}",
+        resp
+    );
+}

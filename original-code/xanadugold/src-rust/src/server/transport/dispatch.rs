@@ -3945,6 +3945,16 @@ fn dispatch_inner(
             Ok(ResponseValue::Void)
         }
         #[cfg(feature = "serde")]
+        WireRequest::AdminNetworkStatus => {
+            let status = srv.admin_network_status(session_id)?;
+            Ok(ResponseValue::Json(status))
+        }
+        #[cfg(feature = "serde")]
+        WireRequest::AdminServerProbe { server_key } => {
+            let probe = srv.admin_server_probe(session_id, server_key.as_str())?;
+            Ok(ResponseValue::Json(probe))
+        }
+        #[cfg(feature = "serde")]
         WireRequest::AdminAuditTail => {
             let (lines, valid) = srv.admin_audit_tail(session_id)?;
             let arr: Vec<serde_json::Value> =

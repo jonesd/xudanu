@@ -423,6 +423,8 @@ pub enum OperationCode {
     AdminClubsList,
     AdminGrantAdmin,
     AdminRevokeAdmin,
+    AdminNetworkStatus,
+    AdminServerProbe,
     #[cfg(feature = "serde")]
     CrossServerResolve,
     #[cfg(feature = "serde")]
@@ -825,6 +827,8 @@ impl OperationCode {
             0x0F17 => Some(OperationCode::AdminClubsList),
             0x0F18 => Some(OperationCode::AdminGrantAdmin),
             0x0F19 => Some(OperationCode::AdminRevokeAdmin),
+            0x0F1A => Some(OperationCode::AdminNetworkStatus),
+            0x0F1B => Some(OperationCode::AdminServerProbe),
 
             _ => None,
         }
@@ -1167,6 +1171,8 @@ impl OperationCode {
             OperationCode::AdminClubsList => 0x0F17,
             OperationCode::AdminGrantAdmin => 0x0F18,
             OperationCode::AdminRevokeAdmin => 0x0F19,
+            OperationCode::AdminNetworkStatus => 0x0F1A,
+            OperationCode::AdminServerProbe => 0x0F1B,
             #[cfg(feature = "serde")]
             OperationCode::FederationAttestationCreate => 0x0E02,
             #[cfg(feature = "serde")]
@@ -2320,6 +2326,12 @@ pub enum WireRequest {
     #[cfg(feature = "serde")]
     AdminRevokeAdmin {
         club_id: BeId,
+    },
+    #[cfg(feature = "serde")]
+    AdminNetworkStatus,
+    #[cfg(feature = "serde")]
+    AdminServerProbe {
+        server_key: String,
     },
     AdminClubsList,
     #[cfg(feature = "serde")]

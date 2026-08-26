@@ -78,7 +78,7 @@ function CheckAlert({ condition, message }: { condition: boolean; message: strin
   );
 }
 
-type AdminTab = "overview" | "content" | "policy" | "sessions" | "audit" | "identities";
+type AdminTab = "overview" | "content" | "policy" | "sessions" | "audit" | "identities" | "network";
 
 export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWork }: AdminDashboardProps) {
   const [health, setHealth] = useState<HealthData | null>(null);
@@ -86,6 +86,49 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const degradedCount = useRef(0);
   const [tab, setTab] = useState<AdminTab>("overview");
+
+  // ── Network (FR-45 P5): trust-but-verify view of other servers ──
+  interface NetServer {
+    key: string; server_id: number; name: string; address: string; port: number | null;
+    trusted: boolean; quarantined: boolean; pinned_key: string | null;
+    first_seen: number | null; last_seen: number | null;
+    successful_resolutions: number; last_success: number | null;
+    last_failure: number | null; consecutive_failures: number; sig_failures: number;
+  }
+  interface NetStatus { network_enabled: boolean; federation_enabled: boolean; trusted_count: number; servers: NetServer[]; }
+  interface ProbeResult { server_key: string; ok: boolean; latency_ms?: number; claimed_health?: Record<string, unknown>; error?: string; }
+  const [netStatus, setNetStatus] = useState<NetStatus | null>(null);
+  const [netMsg, setNetMsg] = useState<string | null>(null);
+  const [probes, setProbes] = useState<Map<string, ProbeResult>>(new Map());
+  const [probeBusy, setProbeBusy] = useState<string | null>(null);
+
+  const loadNetwork = useCallback(async () => {
+    if (!client) return;
+    try {
+      const resp = await client.sendRequest("admin_network_status");
+      const val = (resp as { value?: unknown }).value ?? resp;
+      const inner = (val as { value?: unknown }).value ?? val;
+      setNetStatus(inner as NetStatus);
+      setNetMsg(null);
+    } catch {
+      setNetMsg("Could not load network status (admin sign-in required)");
+    }
+  }, [client]);
+
+  const probeServer = useCallback(async (key: string) => {
+    if (!client) return;
+    setProbeBusy(key);
+    try {
+      const resp = await client.sendRequest("admin_server_probe", { server_key: key });
+      const val = (resp as { value?: unknown }).value ?? resp;
+      const inner = (val as { value?: unknown }).value ?? val;
+      setProbes((prev) => new Map(prev).set(key, inner as ProbeResult));
+    } catch (e) {
+      setProbes((prev) => new Map(prev).set(key, { server_key: key, ok: false, error: String(e) }));
+    } finally {
+      setProbeBusy(null);
+    }
+  }, [client]);
 
   // ── Identities (FR-45 P4) ──
   interface ClubRow { be_id: number; name: string | null; display_name: string | null; is_personal: boolean; is_verified: boolean; member_count: number; works_owned: number; is_system: boolean; }
@@ -314,7 +357,7 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
       </div>
 
       <div style={{ display: "flex", gap: "4px", padding: "0 20px", background: "#161b22", borderBottom: "1px solid #30363d", flexShrink: 0 }}>
-        {(["overview", "content", "policy", "sessions", "audit", "identities"] as const).map((t) => (
+        {(["overview", "content", "policy", "sessions", "audit", "identities", "network"] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -332,7 +375,7 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
               marginTop: 6,
             }}
           >
-            {t === "overview" ? "Overview" : t === "content" ? "Content" : t === "policy" ? "Policy" : t === "sessions" ? "Sessions" : t === "audit" ? "Audit" : "Identities"}
+            {t === "overview" ? "Overview" : t === "content" ? "Content" : t === "policy" ? "Policy" : t === "sessions" ? "Sessions" : t === "audit" ? "Audit" : t === "identities" ? "Identities" : "Network"}
           </button>
         ))}
       </div>
@@ -650,6 +693,90 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
               })}
               {clubs.length === 0 && (
                 <div style={{ color: "#8b949e", fontSize: 13, padding: 24, textAlign: "center" }}>No identities loaded — click Refresh (admin sign-in required).</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === "network" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
+          <div style={{ maxWidth: 1000, margin: "0 auto" }}>
+            {netStatus && !netStatus.network_enabled && (
+              <div style={{ padding: "14px 16px", background: "rgba(210,153,34,0.08)", border: "1px solid rgba(210,153,34,0.3)", borderRadius: "8px", color: "#d29922", fontSize: 13, marginBottom: 16 }}>
+                Xudanu network is disabled (single-player). Nothing is being fetched from other servers.{" "}
+                <button type="button" onClick={() => setTab("policy")} style={{ background: "none", border: "none", color: "#58a6ff", cursor: "pointer", fontSize: 13, textDecoration: "underline", padding: 0 }}>
+                  Enable in Policy
+                </button>
+              </div>
+            )}
+            {netMsg && <div style={{ padding: "10px 14px", marginBottom: 12, background: "rgba(248,81,73,0.08)", border: "1px solid rgba(248,81,73,0.3)", borderRadius: "6px", fontSize: 13, color: "#f85149" }}>{netMsg}</div>}
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <span style={{ color: "#8b949e", fontSize: 13 }}>
+                {netStatus ? `${netStatus.servers.length} server(s) known · ${netStatus.trusted_count} trusted` : "—"}
+              </span>
+              <button type="button" onClick={() => void loadNetwork()} style={{ background: "#21262d", border: "1px solid #30363d", color: "#c9d1d9", borderRadius: "4px", padding: "4px 12px", cursor: "pointer", fontSize: 12 }}>
+                Refresh
+              </button>
+            </div>
+
+            <div style={{ fontSize: 11, color: "#484f58", marginBottom: 10 }}>
+              Identity is verified cryptographically; legitimacy accumulates through evidence. Remote health is the server&apos;s <em>claim</em> — your counters are ground truth.
+            </div>
+
+            <div style={{ display: "grid", gap: 8 }}>
+              {(netStatus?.servers ?? []).map((sv) => {
+                const probe = probes.get(sv.key);
+                return (
+                  <div key={sv.key} style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: "8px", padding: "12px 14px", opacity: sv.quarantined ? 0.6 : 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span title={sv.trusted ? "Trusted (admin-pinned)" : "Known — not trusted"} style={{ fontSize: 13 }}>
+                        {sv.quarantined ? "⛔" : sv.trusted ? "🛡️" : "⚪"}
+                      </span>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: "#e6edf3", flex: 1 }}>{sv.name || `Server ${sv.server_id}`}</span>
+                      <code style={{ color: "#8b949e", fontSize: 11 }}>{sv.address}{sv.port ? `:${sv.port}` : ""}</code>
+                      <button
+                        type="button"
+                        disabled={!isAdmin || probeBusy === sv.key}
+                        onClick={() => void probeServer(sv.key)}
+                        title={sv.trusted ? "Fetch this server's claimed health" : "Diagnose: fetch claimed health (look before you trust)"}
+                        style={{ background: "#21262d", border: "1px solid #30363d", color: "#58a6ff", borderRadius: "4px", padding: "3px 10px", fontSize: 12, cursor: "pointer", opacity: isAdmin ? 1 : 0.4 }}
+                      >
+                        {probeBusy === sv.key ? "probing…" : "probe"}
+                      </button>
+                    </div>
+                    <div style={{ color: "#8b949e", fontSize: 11, marginTop: 4, display: "flex", gap: 12, flexWrap: "wrap" }}>
+                      <span title="Successful content resolutions we have verified by hash">{sv.successful_resolutions} verified fetches</span>
+                      {sv.consecutive_failures > 0 && <span style={{ color: "#f85149" }}>{sv.consecutive_failures} consecutive failures</span>}
+                      {sv.sig_failures > 0 && <span style={{ color: "#f85149" }} title="Signature verification failures — possible impersonation">{sv.sig_failures} sig failures</span>}
+                      {sv.last_seen && <span>seen {new Date(sv.last_seen * 1000).toISOString().slice(0, 16).replace("T", " ")}</span>}
+                      {sv.first_seen && <span title="Directory entry age — reputation accrues with time">known since {new Date(sv.first_seen * 1000).toISOString().slice(0, 10)}</span>}
+                    </div>
+                    {probe && (
+                      <div style={{ marginTop: 8, padding: "8px 10px", background: "#0d1117", border: "1px solid #21262d", borderRadius: "6px", fontSize: 11, fontFamily: "JetBrains Mono, monospace", color: probe.ok ? "#c9d1d9" : "#f85149" }}>
+                        {probe.ok ? (
+                          <>
+                            <span style={{ color: "#3fb950" }}>reachable</span> in {probe.latency_ms}ms — claimed:{" "}
+                            works {String((probe.claimed_health as { works?: number } | undefined)?.works ?? "?")},
+                            sessions {String((probe.claimed_health as { sessions?: number } | undefined)?.sessions ?? "?")},
+                            status {String((probe.claimed_health as { status?: string } | undefined)?.status ?? "?")}
+                          </>
+                        ) : (
+                          <>probe failed: {probe.error}</>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {netStatus && netStatus.servers.length === 0 && (
+                <div style={{ color: "#8b949e", fontSize: 13, padding: 24, textAlign: "center" }}>
+                  No servers in the directory. Add servers (Servers tab in the right panel) once the network is enabled.
+                </div>
+              )}
+              {!netStatus && (
+                <div style={{ color: "#8b949e", fontSize: 13, padding: 24, textAlign: "center" }}>Click Refresh (admin sign-in required).</div>
               )}
             </div>
           </div>

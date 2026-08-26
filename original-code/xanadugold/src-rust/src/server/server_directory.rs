@@ -60,6 +60,11 @@ impl ServerDirectory {
         self.servers.remove(&server_id.to_string()).is_some()
     }
 
+    /// Stable map key (the HashMap key: server_id as string).
+    pub fn get_by_key(&self, key: &str) -> Option<&DirectoryEntry> {
+        self.servers.get(key)
+    }
+
     pub fn get(&self, server_id: u64) -> Option<&DirectoryEntry> {
         self.servers.get(&server_id.to_string())
     }

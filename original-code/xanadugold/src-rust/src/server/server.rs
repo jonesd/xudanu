@@ -457,6 +457,10 @@ impl CrossServerSecurityTracker {
         self.sig_failures.remove(&server_id);
     }
 
+    pub fn sig_failure_count(&self, server_id: u64) -> u32 {
+        self.sig_failures.get(&server_id).copied().unwrap_or(0)
+    }
+
     pub fn record_sig_failure(&mut self, server_id: u64) -> SecurityAlert {
         let count = self.sig_failures.entry(server_id).or_insert(0);
         *count += 1;
@@ -10827,6 +10831,97 @@ impl Server {
     /// FR-45 P4: admin directory of identities (clubs). Includes the
     /// system clubs so the operator sees the full picture; personal
     /// (user) clubs are the interesting rows.
+    /// FR-45 P5: aggregate network status for the admin console.
+    /// First-party data only: directory entries (with trust tiers and
+    /// our own resolution counters) plus our security-tracker counts.
+    /// Remote health is NEVER included here — that arrives only via
+    /// explicit admin_server_probe, labeled as claimed.
+    pub fn admin_network_status(
+        &self,
+        session_id: SessionId,
+    ) -> Result<serde_json::Value, ServerError> {
+        self.ensure_admin(session_id)?;
+        let servers: Vec<serde_json::Value> = self
+            .server_directory
+            .list()
+            .into_iter()
+            .map(|e| {
+                serde_json::json!({
+                    "key": e.server_id.to_string(),
+                    "server_id": e.server_id,
+                    "name": e.name,
+                    "address": e.address,
+                    "port": e.port,
+                    "trusted": e.trusted,
+                    "quarantined": e.quarantined,
+                    "pinned_key": e.pinned_key,
+                    "first_seen": e.first_seen,
+                    "last_seen": e.last_seen,
+                    "successful_resolutions": e.successful_resolutions,
+                    "last_success": e.last_success,
+                    "last_failure": e.last_failure,
+                    "consecutive_failures": e.consecutive_failures,
+                    "sig_failures": self.security_tracker.sig_failure_count(e.server_id),
+                })
+            })
+            .collect();
+        Ok(serde_json::json!({
+            "network_enabled": self.network_enabled,
+            "federation_enabled": self.federation.is_enabled(),
+            "trusted_count": self.server_directory.trusted_servers().len(),
+            "servers": servers,
+        }))
+    }
+
+    /// FR-45 P5: deliberate health probe of ONE directory server.
+    /// Trust-but-verify: the returned health is the remote's CLAIM —
+    /// labeled as such by the UI; our counters remain ground truth.
+    /// Trusted servers may be probed routinely; untrusted only by
+    /// explicit admin diagnosis (same op — the tab gates the UX).
+    /// Transport reuses the SSRF-guarded http_get_json.
+    pub fn admin_server_probe(
+        &self,
+        session_id: SessionId,
+        server_key: &str,
+    ) -> Result<serde_json::Value, ServerError> {
+        self.ensure_admin(session_id)?;
+        let entry = self
+            .server_directory
+            .get_by_key(server_key)
+            .cloned()
+            .ok_or_else(|| ServerError::NotFound(format!("unknown server: {}", server_key)))?;
+        let port = entry.port.unwrap_or(80);
+        let url = format!(
+            "{}://{}:{}/health",
+            if entry.supports_https == Some(true) {
+                "https"
+            } else {
+                "http"
+            },
+            entry.address,
+            port
+        );
+        let started = std::time::Instant::now();
+        match http_get_json(&url, 8) {
+            Ok(body) => {
+                let claimed: serde_json::Value = serde_json::from_str(&body).unwrap_or(
+                    serde_json::json!({"raw": body.chars().take(200).collect::<String>()}),
+                );
+                Ok(serde_json::json!({
+                    "server_key": server_key,
+                    "ok": true,
+                    "latency_ms": started.elapsed().as_millis() as u64,
+                    "claimed_health": claimed,
+                }))
+            }
+            Err(e) => Ok(serde_json::json!({
+                "server_key": server_key,
+                "ok": false,
+                "error": e,
+            })),
+        }
+    }
+
     pub fn admin_clubs_list(
         &self,
         session_id: SessionId,
