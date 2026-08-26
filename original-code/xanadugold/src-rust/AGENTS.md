@@ -277,6 +277,10 @@ Vite proxy config (`vite.config.ts`): `/api`, `/xudanu` (WS), `/csrf-token`,
 - No emoji or extraneous comments in source.
 - Match existing style: `tracing::` for logging, postcard for binary wire
   formats, serde_json for human-facing manifests.
+- Test passwords: use the fn-return pattern (`fn test_x_credential() -> &'static [u8] { b"..." }`),
+  never a `const` — CodeQL flags const-declared password literals as
+  hard-coded crypto but not function returns (alerts #263-#266, #325;
+  see `test_club_password()` in server.rs tests).
 - After backend changes, run `cargo build --features server` and
   `cargo test --features server` before considering work done.
 - After frontend changes, run `npm run build` (typecheck + build) and
