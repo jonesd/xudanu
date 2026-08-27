@@ -3412,6 +3412,9 @@ export function WorkspaceShell() {
                 )}
                 {remoteViewOverlay}
                 <div className="ws-phone-reader">{text || "Loading…"}</div>
+                  <div style={{ position: "fixed", top: 55, left: "50%", transform: "translateX(-50%)", zIndex: 999, background: "#ff0", color: "#000", padding: "4px 12px", borderRadius: 4, fontSize: 14, fontWeight: 700, fontFamily: "monospace" }}>
+                    TEXT: {text ? text.length + " chars" : "EMPTY"} | WORK: {workBeId !== null ? "0x" + workBeId.toString(16) : "none"}
+                  </div>
                 {useMDE ? (
                   <EasyMDEEditor
                     text={text}
