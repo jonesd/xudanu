@@ -24,6 +24,22 @@
   </head>
   <body>
     <div id="root"></div>
+    <div id="ios-debug" style="position:fixed;top:50px;left:0;right:0;background:#ff0;color:#000;padding:8px;text-align:center;z-index:99999;font-family:monospace;font-size:14px;font-weight:bold">
+      JS: WAITING...
+    </div>
+    <script>
+      setTimeout(function() {
+        var d = document.getElementById("ios-debug");
+        if (d) {
+          d.textContent = "JS OK " + new Date().toISOString().slice(11, 19);
+          setTimeout(function() {
+            var el = document.querySelector(".ws-phone-reader");
+            var txt = el ? el.textContent || "" : "";
+            d.textContent = "JS OK | reader: " + (el ? "YES len=" + txt.length : "NO") + " | root: " + (document.querySelector("#root").children.length > 0 ? "YES" : "EMPTY");
+          }, 5000);
+        }
+      }, 2000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
