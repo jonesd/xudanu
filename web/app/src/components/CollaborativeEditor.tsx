@@ -1209,6 +1209,23 @@ export function CollaborativeEditor({
     }
     if (hasInlineBlobs) insertInlineImages(el, blobEntries);
     lastText.current = displayText;
+
+    // iOS Safari repaint fix: contenteditable can have text in the DOM
+    // but not paint it until forced. translateZ(0) triggers a GPU layer
+    // composite; the transform is removed on the next frame so the
+    // editor stays interactive (observed on real iPhone via xudanu.com:
+    // text present in DOM, invisible on device).
+    if ("ontouchstart" in window && el) {
+      requestAnimationFrame(() => {
+        if (!editorRef.current) return;
+        editorRef.current.style.transform = "translateZ(0)";
+        requestAnimationFrame(() => {
+          if (editorRef.current) {
+            editorRef.current.style.transform = "";
+          }
+        });
+      });
+    }
   }, [displayText, inlineResolvedText, hasInlineTransclusions, hasInlineBlobs, compoundSpanRanges, compoundSourceTitles, blobEntries]);
 
   useEffect(() => {

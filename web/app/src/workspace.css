@@ -3227,3 +3227,25 @@
 .ws-phone-panel p {
   line-height: 1.5;
 }
+/* Phone reading mode: plain text view replaces the contenteditable editor
+   (iOS Safari contenteditable rendering bug — text present in DOM but
+   invisible on device). When the user taps Write to edit, the editor
+   shows; for reading, the plain div is reliable. */
+.ws-phone-reader {
+  padding: 16px;
+  font-size: 16px;
+  line-height: 1.7;
+  font-family: 'Source Serif 4', Georgia, serif;
+  color: #000;
+  background: #fff;
+  white-space: pre-wrap;
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+@media (max-width: 767px) {
+  /* Hide the contenteditable when the phone reader is showing */
+  .ws-doc-surface:not(.editing) .collaborative-editor {
+    display: none !important;
+  }
+}

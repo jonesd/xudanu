@@ -3411,6 +3411,9 @@ export function WorkspaceShell() {
                   />
                 )}
                 {remoteViewOverlay}
+                {isPhone && (
+                  <div className="ws-phone-reader">{text || "Loading…"}</div>
+                )}
                 {useMDE ? (
                   <EasyMDEEditor
                     text={text}
