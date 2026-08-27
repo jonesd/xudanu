@@ -2419,7 +2419,7 @@ export function WorkspaceShell() {
                 Browse works
               </button>
             </div>
-          ) : accessDeniedWorkId !== null && workBeId === accessDeniedWorkId ? (
+          ) : accessDeniedWorkId !== null && workBeId === accessDeniedWorkId && !(isPhone && text) ? (
             <div className="ws-empty-doc">
               <h2>You don&rsquo;t have access to this document</h2>
               <p>
