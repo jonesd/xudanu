@@ -3220,3 +3220,10 @@
   max-width: min(92vw, 480px);
   text-align: center;
 }
+.ws-sheet-content {
+  padding: 8px 0;
+  min-height: 120px;
+}
+.ws-phone-panel p {
+  line-height: 1.5;
+}

@@ -5002,6 +5002,52 @@ export function WorkspaceShell() {
                   </button>
                 ))}
               </div>
+              <div className="ws-sheet-content">
+                {rightPanelTab === "provenance" && (
+                  <div className="ws-phone-panel">
+                    <p style={{ color: "var(--text-muted)", fontSize: 12, padding: "12px 0" }}>
+                      Attribution shows who wrote each passage (colored underlines in the document).
+                      Open a document with multiple authors to see the full breakdown.
+                    </p>
+                  </div>
+                )}
+                {rightPanelTab === "connections" && (
+                  <div className="ws-phone-panel">
+                    <p style={{ color: "var(--text-muted)", fontSize: 12, padding: "12px 0" }}>
+                      Links show typed connections: comments, references, disagreements, quotations.
+                      Select text in any document and tap Link to create one.
+                    </p>
+                  </div>
+                )}
+                {rightPanelTab === "trails" && (
+                  <div className="ws-phone-panel">
+                    <p style={{ color: "var(--text-muted)", fontSize: 12, padding: "12px 0" }}>
+                      Trails are curated reading paths through connected documents.
+                    </p>
+                  </div>
+                )}
+                {rightPanelTab === "timeline" && (
+                  <div className="ws-phone-panel">
+                    <p style={{ color: "var(--text-muted)", fontSize: 12, padding: "12px 0" }}>
+                      History shows the full revision timeline of the current document.
+                    </p>
+                  </div>
+                )}
+                {rightPanelTab === "compare" && (
+                  <div className="ws-phone-panel">
+                    <p style={{ color: "var(--text-muted)", fontSize: 12, padding: "12px 0" }}>
+                      Compare shows shared passages between documents. Open two works with common content to compare them.
+                    </p>
+                  </div>
+                )}
+                {rightPanelTab === "more" && (
+                  <div className="ws-phone-panel">
+                    <p style={{ color: "var(--text-muted)", fontSize: 12, padding: "12px 0" }}>
+                      Additional panels available on desktop: perspective view, document map, search.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <MobileBottomNav

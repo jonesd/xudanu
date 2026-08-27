@@ -2129,7 +2129,7 @@ export class CrdtSyncClient {
         // CRDT open failed — fall through to edition fallback below
       }
     }
-    if (!loaded && !accessDenied) {
+    if (!loaded) {
       try {
         const edResp = await this.sendRequest("work_get_edition", {
           work_id: this.workBeId,
@@ -2155,7 +2155,7 @@ export class CrdtSyncClient {
         }
       }
     }
-    if (accessDenied) {
+    if (accessDenied && !loaded) {
       this.accessDeniedListeners.forEach((cb) => cb(this.workBeId));
       return;
     }
