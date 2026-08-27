@@ -2141,6 +2141,12 @@ export class CrdtSyncClient {
             || "";
           this.text = edText;
           this.textListeners.forEach((cb) => cb(this.text));
+          // Edition loaded: the work IS readable (public). Clear the
+          // accessDenied flag so the denied-screen doesn't fire after
+          // the fallback already succeeded.
+          if (edText || (edVal as Record<string, unknown>).text !== undefined) {
+            accessDenied = false;
+          }
           cacheDocument({
             work_id: this.workBeId,
             title: this.openWorkTitle || "",
