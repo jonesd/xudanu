@@ -7,8 +7,8 @@
      be stale-served. Document content offline is handled by the
      IndexedDB mirror in offline-cache.ts, NOT by this SW. */
 
-const SHELL_CACHE = "xudanu-shell-v1";
-const RUNTIME_CACHE = "xudanu-runtime-v1";
+const SHELL_CACHE = "xudanu-shell-v2";
+const RUNTIME_CACHE = "xudanu-runtime-v2";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
