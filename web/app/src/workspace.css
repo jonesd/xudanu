@@ -3231,24 +3231,30 @@
    (iOS Safari contenteditable rendering bug — text present in DOM but
    invisible on device). When the user taps Write to edit, the editor
    shows; for reading, the plain div is reliable. */
-/* Phone reader: hidden on desktop, visible on phone. Rendered always
-   in the DOM so it's reliable — CSS media queries (not JS) decide. */
+/* Phone reader: hidden on desktop, visible on phone with explicit
+   fixed positioning — no flexbox dependencies (iOS Safari was not
+   giving the div visual space despite display:block). */
 .ws-phone-reader {
   display: none;
-  padding: 16px;
-  font-size: 16px;
-  line-height: 1.7;
-  font-family: 'Source Serif 4', Georgia, serif;
-  color: #000;
-  background: #fff;
-  white-space: pre-wrap;
-  flex: 1;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
 }
 @media (max-width: 767px) {
   .ws-phone-reader {
-    display: block;
+    display: block !important;
+    position: fixed !important;
+    top: 50px !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 65px !important;
+    padding: 16px;
+    font-size: 16px;
+    line-height: 1.7;
+    font-family: 'Source Serif 4', Georgia, serif;
+    color: #000;
+    background: #fff;
+    white-space: pre-wrap;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    z-index: 10;
   }
   .ws-doc-surface .collaborative-editor {
     display: none !important;
