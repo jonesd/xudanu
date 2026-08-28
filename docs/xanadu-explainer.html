@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Xudanu — What people said killed Project Xanadu</title>
+<meta name="description" content="Four reasons people said the 1960 Xanadu design was dead on arrival — and what happened when we built it anyway.">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,sans-serif;background:#0a0a0f;color:#c9c9d4;line-height:1.7}
+article{max-width:720px;margin:0 auto;padding:64px 24px 96px}
+h1{font-size:36px;font-weight:800;letter-spacing:-0.5px;line-height:1.2;margin-bottom:12px;background:linear-gradient(135deg,#58a6ff 0%,#a371f7 50%,#d29922 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.subtitle{font-size:16px;color:#888;font-weight:300;margin-bottom:40px}
+h2{font-size:22px;font-weight:700;color:#e6e6ee;margin:48px 0 12px;letter-spacing:-0.3px}
+p{margin-bottom:16px;font-size:15px}
+.disclaimer{border-left:3px solid #d29922;padding:14px 18px;background:rgba(210,153,34,0.05);border-radius:0 8px 8px 0;font-size:13px;color:#999;margin:32px 0}
+.objection{background:rgba(248,81,73,0.08);color:#f0a8a4;font-family:'JetBrains Mono',monospace;font-size:13px;padding:2px 10px;border-radius:4px}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+.cta{margin-top:48px;padding:24px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;text-align:center}
+.cta a{display:inline-block;margin:8px 12px;font-weight:600}
+footer{margin-top:64px;padding-top:24px;border-top:1px solid #1a1a24;font-size:12px;color:#555}
+.mono{font-family:'JetBrains Mono',monospace}
+@media (max-width:640px){h1{font-size:28px}article{padding:40px 16px 72px}}
+</style>
+</head>
+<body>
+<article>
+<h1>What people said killed Project Xanadu — and what happened when we built it anyway</h1>
+<div class="subtitle">Four objections, sixty years of hindsight, one running system.</div>
+
+<p>Every few months a thread appears asking what Project Xanadu was and why the Web won instead. The answers settle into a pattern — four reasons the 1960 design was &ldquo;DOA.&rdquo; They're reasonable reasons. They were mostly true in 1998. They are also, it turns out, all testable — because the model runs now. This piece is about what we learned building a working xanalogical system in 2026, one objection at a time.</p>
+
+<div class="disclaimer">Project Xanadu is Ted Nelson's project. This piece is about the ideas it proposed — transclusion, two-way links, unbreakable connections — which Nelson coined terms for and championed for decades. The work described here is independent, open-source (Apache 2.0), and not affiliated with or endorsed by Project Xanadu. It stands on the shoulders of the code the Udanax teams released openly in 1999, and on the modern tooling they never had.</div>
+
+<h2><span class="objection">Objection 1</span> &ldquo;It was never really implemented&rdquo;</h2>
+<p>Mostly fair, as history. The Xanadu teams never shipped to the public in their era. But &ldquo;never implemented&rdquo; stopped being true on August 23, 1999, when the surviving code was released openly: Green — the design developed from 1979 by the Swarthmore team through 1988 at the Xanadu Operating Company, released as Xanadu 88.1 — and Gold — Xanadu 92.1, developed from 1988 through 1995 at Udanax.com and, briefly, under Ted Nelson's own company (Memex, now Filoli). Real enfilades, real tumblers, working systems that simply predated the web-frontend era.</p>
+<p>That code is hard reading by modern standards; it took a later generation's tooling — test harnesses and languages alike — to make the model approachable again. And it stops being an obstacle today: our system, Xudanu, runs the model — quoting by reference, live transclusions that update when their sources edit, bidirectional links that survive edits to either end — in a Rust server with a browser frontend and a phone client. Not a paper. A URL you can type into.</p>
+
+<h2><span class="objection">Objection 2</span> &ldquo;Backlinks become spam — everyone who linked to the Bible gets listed&rdquo;</h2>
+<p>This is the strongest intuition-pump against two-way links, and it's a user-interface question, not an architecture one. The registry of inbound connections is per-document and scoped: you see what points at <em>this</em> passage, this document, this thread — filterable by link type, pinnable, and quiet by default. The &ldquo;billion backlinks&rdquo; case is a sorting problem with forty years of UI practice now available to solve it. In practice the problem is the opposite: backlinks are the feature people notice first. Quote a document; the author sees your quotation in context, from their side, forever.</p>
+
+<h2><span class="objection">Objection 3</span> &ldquo;Micropayments make it hostile — pay-spam everywhere&rdquo;</h2>
+<p>The original vision coupled transclusion to royalty plumbing, and the coupling scared people off. It was also unnecessary. Our hard design rule: the server never handles money. Rights travel as metadata — per-work licences, transcopyright-style permissions, warnings when a source forbids reuse — and settlement, if any, is somebody else's layer, plugged in at the edges. Provenance without a toll booth turns out to be the valuable half of the idea: every passage carries signed, chained authorship you can verify without trusting the server. That part works today, on a phone.</p>
+
+<h2><span class="objection">Objection 4</span> &ldquo;Over-thought — ordinary people couldn't use it&rdquo;</h2>
+<p>This one we respect the most, because it's the one the Web got spectacularly right: simple first. The lesson we took: the deep structure must be opt-in, not a prerequisite. Our system opens like a plain document editor — type, save, done. The xanalogical layer reveals itself progressively: colours under the text showing who wrote what; a quote that visibly updates when its source is edited; two-way connections discoverable when you go looking. Nobody has to understand tumblers to get value — any more than you need to understand TCP to send a link.</p>
+
+<h2>The comment that got it right</h2>
+<p>In one such thread, a reader cut past the noise to the real prize: links from passage to passage that <em>stay valid while both documents change over time.</em> Anyone who maintains a documentation set, a research corpus, or a regulation-bound archive knows link rot as a permanent tax. The Xanadu answer — addresses that survive edits, connections that migrate with their text — was dismissed as impossible-to-build complexity. It required solving document addressing, position migration, and per-span provenance together, which is why nothing attempted it. It is also, now, the part that works most reliably in our system: 3,200 backend tests hold that behaviour in place, and the demo server runs it continuously.</p>
+
+<h2>Where that leaves it</h2>
+<p>The honest summary of 60 years: the vision was right about <em>what</em> (durable connection between documents), early about provenance and rights, and wrong about how much the world would adopt at once. The Web built the adoption layer first and has been re-discovering the connection layer ever since — permalinks, DOIs, quote-tweets, embeds, canonical sources: each a partial re-implementation of something specified in 1960.</p>
+<p>We built the whole thing because partial versions kept winning: the ideas compose. A document you can quote by reference, that credits its authors cryptographically, whose links cannot break, and that anyone can self-host in one Docker container — that is a complete, small, testable answer to the question in that thread.</p>
+
+<div class="cta">
+<a href="https://xudanu.com">Try the live demo</a>
+<a href="https://github.com/jonesd/xudanu">Source (Apache 2.0)</a>
+<a href="https://github.com/jonesd/xudanu#readme">Self-hosting guide</a>
+</div>
+
+<footer>Xudanu is an independent, open-source project. Not affiliated with Project Xanadu™, the Xanadu Operating Company, or the Udanax team. Udanax Green (Xanadu 88.1) and Udanax Gold (Xanadu 92.1) were released openly on August 23, 1999 under the Xanadu X11 license.</footer>
+</article>
+</body>
+</html>
