@@ -3025,6 +3025,7 @@
     overflow-y: auto;
   }
   .cb-dock-structure { flex: none; border-left: none; }
+  .cb-source-panel { width: auto; }
 }
 .cb-overlay { position: fixed; inset: 0; z-index: 100; background: var(--bg, #1a1a24); display: flex; flex-direction: column; }
 .cb-header { display: flex; align-items: center; justify-content: space-between; padding: 0 16px; height: 48px; background: var(--bg-surface, #22222e); border-bottom: 1px solid var(--border, #30363d); flex-shrink: 0; }
