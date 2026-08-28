@@ -3271,25 +3271,30 @@
   display: none;
 }
 @media (max-width: 767px) {
+  /* Phone doc view: a work is open (ws-mode-doc on the shell). The doc
+     surface floats over the shell grid as a fixed overlay — same proven
+     geometry the plain-text reader used — with the real collaborative
+     editor visible inside. The retired reader overlay hid an editor
+     that was never broken: it was display:none on a 2px grid column. */
   .ws-phone-reader {
-    display: block !important;
-    position: fixed !important;
-    top: 50px !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 65px !important;
-    padding: 16px;
-    font-size: 16px;
-    line-height: 1.7;
-    font-family: 'Source Serif 4', Georgia, serif;
-    color: #000;
-    background: #fff;
-    white-space: pre-wrap;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    z-index: 10;
-  }
-  .ws-doc-surface .collaborative-editor {
     display: none !important;
+  }
+  .ws-mode-doc .ws-left-rail {
+    display: none;
+  }
+  .ws-mode-doc .ws-doc-surface {
+    position: fixed;
+    top: 50px;
+    left: 0;
+    right: 0;
+    bottom: 65px;
+    width: auto;
+    max-width: none;
+    z-index: 10;
+    border: none;
+  }
+  .ws-mode-doc .ws-doc-scroll {
+    padding: 16px;
+    -webkit-overflow-scrolling: touch;
   }
 }

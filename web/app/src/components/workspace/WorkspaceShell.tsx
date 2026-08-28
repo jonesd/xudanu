@@ -2136,7 +2136,7 @@ export function WorkspaceShell() {
   ) : null;
 
   return (
-    <div className={`ws-shell ${activeCssClass} ${navTab === "compose" ? "ws-mode-compose" : ""} ${navTab === "library" ? "ws-mode-library" : ""}`}>
+    <div className={`ws-shell ${activeCssClass} ${navTab === "compose" ? "ws-mode-compose" : ""} ${navTab === "library" ? "ws-mode-library" : ""} ${workBeId !== null ? "ws-mode-doc" : ""}`}>
       <DataIntegrityBanner />
       {offlineReading && (
         <div className="ws-offline-banner" role="status">
