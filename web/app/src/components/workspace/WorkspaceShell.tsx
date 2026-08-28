@@ -2135,6 +2135,618 @@ export function WorkspaceShell() {
               </div>
   ) : null;
 
+  const rightPanelBody = (
+    <>
+            {rightPanelTab === "provenance" && (
+              <div className="ws-provenance-full">
+                {/* Compact summary */}
+                <div className="ws-provenance-summary">
+                  <h4>Authorship</h4>
+                  {authorStats.length === 0 ? (
+                    <div className="ws-placeholder-sublabel">No attribution data</div>
+                  ) : (
+                    <ul className="ws-author-list">
+                      {authorStats.map((a) => (
+                        <li key={a.name} className="ws-author-row">
+                          <span className="ws-author-name">{a.name}</span>
+                          <span className="ws-author-bar">
+                            <span
+                              className="ws-author-bar-fill"
+                              style={{ width: `${Math.max(2, a.pct)}%`, background: authorColorPair(a.name).primary }}
+                            />
+                          </span>
+                          <span className="ws-author-pct">{a.pct.toFixed(0)}%</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {/* Full detailed attribution — security-critical view */}
+                <AttributionPanel
+                  spans={resolvedAttributionSpans}
+                  logStatus={attributionLogStatus}
+                  documentLength={text.length}
+                  visible={true}
+                  workId={workBeId ?? undefined}
+                />
+
+                <div className="ws-provenance-details">
+                  <h4>Details</h4>
+                  <dl className="ws-meta-list">
+                    <dt>Work ID</dt>
+                    <dd><code>{workIdDisplay}</code></dd>
+                    <dt>Persistent ID</dt>
+                    <dd><code>xan://{serverDomain}.{workIdDisplay}</code></dd>
+                    {workMeta?.publishedAt && (<><dt>Updated</dt><dd>{workMeta.publishedAt}</dd></>)}
+                  </dl>
+                </div>
+              </div>
+            )}
+            {rightPanelTab === "connections" && (
+              <div className="ws-connections-tab">
+                {canEdit && workBeId !== null && (
+                  <button
+                    className="ws-action-btn"
+                    style={{ width: "100%", marginBottom: 8, justifyContent: "center" }}
+                    onClick={() => {
+                      if (!selectionRange) {
+                        setSelectionRange({ start: 0, end: 0 });
+                      }
+                      handleOpenLinkCreator();
+                    }}
+                    title="Create a link to another document"
+                  >
+                    + Add Link
+                  </button>
+                )}
+                {/* Link type filter */}
+                {transclusion.links.length > 0 && (
+                  <div className="ws-link-filters">
+                    {DEFAULT_LINK_TYPES.map((t) => {
+                      const count = transclusion.links.filter((l) => (l.link_types || []).includes(t.type_id)).length;
+                      if (count === 0) return null;
+                      const active = activeLinkTypes.has(t.type_id);
+                      return (
+                        <button
+                          key={t.type_id}
+                          type="button"
+                          className={`ws-link-filter-btn ${active ? "active" : ""}`}
+                          style={active ? { background: t.color, borderColor: t.color } : { borderColor: t.color + "60", color: t.color }}
+                          onClick={() => setActiveLinkTypes((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(t.type_id)) next.delete(t.type_id);
+                            else next.add(t.type_id);
+                            return next;
+                          })}
+                          title={`${t.name} (${count})`}
+                        >
+                          {t.name} ({count})
+                        </button>
+                      );
+                    })}
+                    {activeLinkTypes.size > 0 && (
+                      <button
+                        type="button"
+                        className="ws-link-filter-clear"
+                        onClick={() => setActiveLinkTypes(new Set())}
+                      >
+                        clear
+                      </button>
+                    )}
+                  </div>
+                )}
+                {/* Outbound links */}
+                <div className="ws-conn-section">
+                  <div className="ws-conn-header">
+                    Links ({(() => {
+                      const filtered = activeLinkTypes.size === 0
+                        ? transclusion.links
+                        : transclusion.links.filter((l) => (l.link_types || []).some((t) => activeLinkTypes.has(t)));
+                      return filtered.length;
+                    })()})
+                  </div>
+                  {(() => {
+                    const filteredLinks = activeLinkTypes.size === 0
+                      ? transclusion.links
+                      : transclusion.links.filter((l) => (l.link_types || []).some((t) => activeLinkTypes.has(t)));
+                    return filteredLinks.length === 0 ? (
+                      <div className="ws-conn-empty">{transclusion.links.length === 0 ? 'No outbound links. Select text and click "Link" to create one.' : 'No links match the active filter.'}</div>
+                    ) : (
+                      filteredLinks.map((link) => {
+                      const isWebLink = (link.link_types || []).includes(6);
+                      const destUrl = link.destination_ref?.excerpt;
+                      const ends = linkEnds(link);
+                      const extraEnds = ends.filter((e) => e.name !== "origin" && e.name !== "destination" && e.workId !== null && e.workId !== workBeId);
+                      const multi = isMultiEnded(link);
+                      const destTitle = isWebLink && destUrl
+                        ? destUrl
+                        : (link.destination_title || `Work 0x${link.destination.toString(16)}`);
+                      const typeNames = (link.link_types || []).map(
+                        (tid) => DEFAULT_LINK_TYPES.find((t) => t.type_id === tid)?.name || `type ${tid}`
+                      );
+                      const notif = notifyStatus(link);
+                      const reload = () => {
+                        if (clientRef.current && workBeId !== null) {
+                          void loadLinks(clientRef.current, workBeId, works);
+                        }
+                      };
+                      return (
+                        <div
+                          key={link.link_id}
+                          className="ws-conn-item"
+                          onClick={() => !isWebLink && !multi && selectWork(link.destination)}
+                          title={isWebLink && destUrl ? destUrl : undefined}
+                        >
+                          <div className="ws-conn-title-row">
+                            <div className="ws-conn-title">
+                              {isWebLink ? "🔗 " : ""}{destTitle}
+                              {!isWebLink && (() => {
+                                const dl = licenseCache.get(link.destination);
+                                const di = dl ? LICENSES.find((l) => l.value === dl) : null;
+                                return di && dl !== "all-rights-reserved" ? <span className="ws-work-license-badge" title={di.label}>{di.short}</span> : null;
+                              })()}
+                              {link.home_document != null && link.home_document !== workBeId && (
+                                <span
+                                  style={{ fontSize: 10, marginLeft: 4, color: "#8b949e", cursor: "pointer" }}
+                                  title={`Link lives in ${works.find((w) => w.work_id === link.home_document)?.title || `work 0x${link.home_document?.toString(16)}`} (home document) — click to open`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (link.home_document != null) selectWork(link.home_document);
+                                  }}
+                                >
+                                  ⌂ home
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ display: "flex", gap: 4 }}>
+                              {multi && (
+                                <button
+                                  className="ws-conn-delete"
+                                  title="Compare all ends side by side"
+                                  style={{ color: "#58a6ff" }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setMultiCompareWorkIds(multiEndWorkIds(link).filter((id) => id !== null));
+                                    setRightPanelTab("compare");
+                                  }}
+                                >
+                                  ⇄
+                                </button>
+                              )}
+                              <button
+                                className="ws-conn-delete"
+                                title="Delete this link"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (confirm("Delete this link?")) {
+                                    clientRef.current?.linkDelete(link.link_id).then(reload);
+                                  }
+                                }}
+                              >×</button>
+                            </div>
+                          </div>
+                          {extraEnds.length > 0 && (
+                            <div style={{ fontSize: 11, color: "#8b949e", marginTop: 2 }}>
+                              {"+ "}
+                              {extraEnds.map((e, i) => {
+                                const w = works.find((x) => x.work_id === e.workId);
+                                return (
+                                  <span key={e.name}>
+                                    {i > 0 && " · "}
+                                    <span
+                                      style={{ color: "#58a6ff", cursor: "pointer" }}
+                                      title={e.excerpt ? `"${e.excerpt.slice(0, 120)}"` : undefined}
+                                      onClick={(ev) => {
+                                        ev.stopPropagation();
+                                        if (e.workId !== null) selectWork(e.workId);
+                                      }}
+                                    >
+                                      {e.name}: {w?.title || `work 0x${e.workId?.toString(16)}`}
+                                    </span>
+                                    <span
+                                      style={{ cursor: "pointer", marginLeft: 3 }}
+                                      title={`Remove end "${e.name}"`}
+                                      onClick={(ev) => {
+                                        ev.stopPropagation();
+                                        clientRef.current?.linkRemoveEnd(link.link_id, e.name).then(reload);
+                                      }}
+                                    >
+                                      ×
+                                    </span>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {typeNames.length > 0 && (
+                            <div className="ws-conn-types">
+                              {typeNames.map((tn, i) => {
+                                const lt = DEFAULT_LINK_TYPES.find((t) => t.name === tn);
+                                return (
+                                  <span
+                                    key={i}
+                                    className="ws-conn-type-badge"
+                                    style={lt ? { background: lt.color + "20", color: lt.color, borderColor: lt.color + "60" } : {}}
+                                  >
+                                    {tn}
+                                  </span>
+                                );
+                              })}
+                              {(link.type_ends ?? []).map(([tid, defWork], i) => {
+                                const t = DEFAULT_LINK_TYPES.find((x) => x.type_id === tid);
+                                if (!t) return null;
+                                return (
+                                  <span
+                                    key={`te-${i}`}
+                                    className="ws-conn-type-badge"
+                                    style={{ background: t.color + "10", color: t.color, borderColor: t.color + "30", cursor: "pointer", fontSize: 10 }}
+                                    title={`Type definition — click to open`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      selectWork(defWork);
+                                    }}
+                                  >
+                                    {t.name} ⎋
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {notif.kind !== "none" && (
+                            <div style={{ fontSize: 10, marginTop: 2, color: notif.kind === "accepted" ? "#3fb950" : "#f85149" }}>
+                              {notif.kind === "accepted" && "✓ remote server acknowledged"}
+                              {notif.kind === "rejected" && `⚠ remote rejected: ${notif.reason}`}
+                              {notif.kind === "error" && `⚠ ${notif.reason}`}
+                            </div>
+                          )}
+                          </div>
+                        );
+                      })
+                    );
+                  })()}
+                  </div>
+
+                  {/* Backlinks */}
+                <div className="ws-conn-section">
+                  <div className="ws-conn-header">
+                    Backlinks ({transclusion.backlinks.length})
+                  </div>
+                  {transclusion.backlinks.length === 0 ? (
+                    <div className="ws-conn-empty">No inbound links from other works.</div>
+                  ) : (
+                    transclusion.backlinks.map((bl, i) => {
+                      const lt = DEFAULT_LINK_TYPES.find((t) =>
+                        t.name.toLowerCase() === (bl.link_type || "").toLowerCase().replace(/[\s_]/g, "") ||
+                        t.name.toLowerCase().replace(/\s/g, "") === (bl.link_type || "").toLowerCase().replace(/[\s_]/g, "")
+                      );
+                      const typeLabel = lt ? lt.name : (bl.link_type || "link").replace(/hyperlink_/g, "").replace(/_/g, " ");
+                      return (
+                        <div
+                          key={i}
+                          className="ws-conn-item"
+                          onClick={() => selectWork(bl.source_work_id)}
+                        >
+                          <div className="ws-conn-title">
+                            {bl.title || `Work 0x${bl.source_work_id.toString(16)}`}
+                            {(() => {
+                              const sl = licenseCache.get(bl.source_work_id);
+                              const si = sl ? LICENSES.find((l) => l.value === sl) : null;
+                              return si && sl !== "all-rights-reserved" ? <span className="ws-work-license-badge" title={si.label}>{si.short}</span> : null;
+                            })()}
+                          </div>
+                          {bl.excerpt && <div className="ws-conn-excerpt">"{bl.excerpt.slice(0, 80)}{bl.excerpt.length > 80 ? "…" : ""}"</div>}
+                          <div className="ws-conn-types">
+                            <span
+                              className="ws-conn-type-badge"
+                              style={lt ? { background: lt.color + "20", color: lt.color, borderColor: lt.color + "60" } : {}}
+                            >
+                              {typeLabel}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Transclusions in this work */}
+                <div className="ws-conn-section">
+                  <div className="ws-conn-header">
+                    Transclusions ({compound.spanRanges.length})
+                  </div>
+                  {compound.spanRanges.length === 0 ? (
+                    <div className="ws-conn-empty">No transclusions in this work.</div>
+                  ) : (
+                    compound.spanRanges.map((sr, i) => {
+                      const sourceTitle = compound.sourceTitles[sr.source_work_id] || `Work 0x${sr.source_work_id.toString(16)}`;
+                      const srcLic = licenseCache.get(sr.source_work_id);
+                      const srcLicInfo = srcLic ? LICENSES.find((l) => l.value === srcLic) : null;
+                      const sourceWork = works.find((w) => w.work_id === sr.source_work_id);
+                      const origin = sourceWork?.is_source ? sourceWork.source_edition_info : null;
+                      return (
+                        <div
+                          key={i}
+                          className="ws-conn-item"
+                          style={{ cursor: "pointer" }}
+                          title={`From ${sourceTitle}${origin ? " · " + origin : ""} — click to highlight in document`}
+                          onClick={() => {
+                            setHighlightRange({ start: sr.flat_start, end: sr.flat_end });
+                            const el = document.querySelector(".editor-content") as HTMLElement | null;
+                            if (el) {
+                              el.scrollIntoView({ behavior: "smooth", block: "center" });
+                            }
+                            setTimeout(() => setHighlightRange(null), 4000);
+                          }}
+                        >
+                          <div className="ws-conn-title">
+                            ↗ {sourceTitle}
+                            {sr.source_changed && (
+                              <span style={{ color: "#d29922", fontSize: 11, marginLeft: 4 }} title="Source was edited after this transclusion was created">
+                                ⚠ changed
+                              </span>
+                            )}
+                            {srcLicInfo && srcLic !== "all-rights-reserved" && (
+                              <span className="ws-work-license-badge" title={srcLicInfo.label}>{srcLicInfo.short}</span>
+                            )}
+                          </div>
+                          {origin && (
+                            <div style={{ fontSize: 10, color: "#d29922", fontStyle: "italic", margin: "1px 0" }}>
+                              {origin}
+                            </div>
+                          )}
+                          {sr.resolved_content && (
+                            <div className="ws-conn-excerpt" style={{ fontStyle: "italic", color: "#6e7681" }}>
+                              {sr.resolved_content.length > 80
+                                ? sr.resolved_content.slice(0, 80) + "\u2026"
+                                : sr.resolved_content}
+                            </div>
+                          )}
+                          <div className="ws-conn-excerpt">
+                            [{sr.char_start}:{sr.char_end}]
+                          </div>
+                          {canEdit && (
+                            <button
+                              className="ws-conn-delete"
+                              title="Remove this transclusion"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm("Remove this transclusion?")) {
+                                  compound.removeTransclusion(sr.source_work_id, sr.char_start, sr.char_end).then((ok) => {
+                                    if (ok) showToast("Transclusion removed");
+                                  });
+                                }
+                              }}
+                              style={{
+                                position: "absolute", top: 4, right: 4,
+                                background: "none", border: "none", cursor: "pointer",
+                                color: "var(--text-dim)", fontSize: 14, padding: 4,
+                              }}
+                            >
+                              {"\u2715"}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+            {rightPanelTab === "trails" && (
+              <div className="ws-trails-tab">
+                <div className="ws-trails-tab-header">
+                  <span>Trails through this work</span>
+                  <button
+                    className="ws-trails-manage-btn"
+                    onClick={() => setShowTrailsPanel(true)}
+                    title="Manage all trails"
+                  >
+                    Manage
+                  </button>
+                </div>
+                {trailsLoading ? (
+                  <div className="ws-placeholder"><div className="ws-placeholder-label">Loading…</div></div>
+                ) : trailsForWork.length === 0 ? (
+                  <div className="ws-placeholder">
+                    <div className="ws-placeholder-label">No trails yet</div>
+                    <div className="ws-placeholder-sublabel">Create one from selected text (+ Trail), or ask another server's user to publish theirs.</div>
+                  </div>
+                ) : (
+                  <ul className="ws-trail-list">
+                    {trailsForWork.map((t) => {
+                      const workStops = t.stops
+                        .map((s, i) => ({ ...s, index: i }))
+                        .filter((s) => s.work_id === workBeId);
+                      return (
+                        <li key={t.trail_id} className="ws-trail-card">
+                          <div className="ws-trail-card-title-row">
+                            <span className="ws-trail-card-title">{t.name}</span>
+                            {t.stops.length > 0 && (
+                              <button
+                                type="button"
+                                className="trail-start-btn"
+                                title={`Follow this trail from stop 1 (${t.stops.length} stops)`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startTrail(t.name, t.stops.map((s) => ({ work_id: s.work_id, note: s.note ?? null })));
+                                }}
+                              >{"\u25b6"} Start</button>
+                            )}
+                            {t.published ? (
+                              <span className="ws-trail-badge published" title="Published — double-click to unpublish" onDoubleClick={async (e) => {
+                                e.stopPropagation();
+                                if (!confirm("Unpublish this trail?")) return;
+                                try {
+                                  await clientRef.current?.trailUnpublish(t.trail_id);
+                                  await loadTrailsForWork();
+                                } catch (err) {
+                                  alert(`Unpublish failed: ${err instanceof Error ? err.message : String(err)}`);
+                                }
+                              }}>Published</span>
+                            ) : (
+                              <span className="ws-trail-badge draft" title="Click to publish" onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  await clientRef.current?.trailPublish(t.trail_id);
+                                  await loadTrailsForWork();
+                                } catch (err) {
+                                  alert(`Publish failed: ${err instanceof Error ? err.message : String(err)}`);
+                                }
+                              }}>Draft</span>
+                            )}
+                          </div>
+                          {t.introduction && (
+                            <div className="ws-trail-card-intro">{t.introduction}</div>
+                          )}
+                          <div className="ws-trail-card-meta">
+                            {t.stops.length} stops{workStops.length > 0 ? ` · ${workStops.length} on this work` : ""}
+                          </div>
+                          {workStops.length > 0 ? (
+                            <ul className="ws-trail-stops">
+                              {workStops.map((s) => (
+                                <li
+                                  key={s.index}
+                                  className="ws-trail-stop"
+                                  title={s.note || "No note"}
+                                >
+                                  <span className="ws-trail-stop-pos">
+                                    ¶{s.char_start != null ? `@${s.char_start}` : ""}
+                                  </span>
+                                  <span className="ws-trail-stop-note">
+                                    {s.note ? (s.note.length > 60 ? s.note.slice(0, 60) + "…" : s.note) : "(no note)"}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <ul className="ws-trail-stops">
+                              {t.stops.slice(0, 3).map((s, i) => (
+                                <li
+                                  key={i}
+                                  className="ws-trail-stop"
+                                  style={{ cursor: "pointer" }}
+                                  title={s.note || "Open this document"}
+                                  onClick={() => selectWork(s.work_id)}
+                                >
+                                  <span className="ws-trail-stop-pos">{i + 1}</span>
+                                  <span className="ws-trail-stop-note">
+                                    {(s.note || `Open stop ${i + 1}`).slice(0, 60)}
+                                    {(s.note?.length ?? 0) > 60 ? "…" : ""}
+                                  </span>
+                                </li>
+                              ))}
+                              {t.stops.length > 3 && (
+                                <li className="ws-trail-stop" style={{ cursor: "pointer", opacity: 0.7 }} onClick={() => setShowTrailsPanel(true)}>
+                                  <span className="ws-trail-stop-pos">…</span>
+                                  <span className="ws-trail-stop-note">{t.stops.length - 3} more stops</span>
+                                </li>
+                              )}
+                            </ul>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+             )}
+            {rightPanelTab === "timeline" && (
+              <div className="ws-timeline-tab">
+                <div className="ws-trails-tab-header">
+                  <span>Revision history</span>
+                </div>
+                <RevisionTimeline
+                  workId={workBeId}
+                  client={connected ? clientRef.current : null}
+                  onViewRevision={(revId, revText) => {
+                    setViewingRevision({ id: revId, text: revText });
+                  }}
+                />
+              </div>
+            )}
+            {rightPanelTab === "servers" && (
+              <ServerDirectoryPanel
+                client={connected ? clientRef.current : null}
+                connected={connected}
+                onNavigateToWork={(workId) => selectWork(workId)}
+                onViewRemoteWork={(data) => {
+                  setRemoteView(data);
+                  setRightPanelTab("provenance");
+                }}
+              />
+            )}
+            {rightPanelTab === "compare" && (
+              <MultiEndCompare
+                workIds={multiCompareWorkIds}
+                works={works}
+                clientRef={clientRef}
+                currentWorkId={workBeId}
+                onPickWork={(id) => setMultiCompareWorkIds((prev) => [...prev, id])}
+                onClose={() => setRightPanelTab("connections")}
+                fullscreen={compareFullscreen}
+                onRemoveWork={compareFullscreen ? (id) => setMultiCompareWorkIds((prev) => prev.filter((p) => p !== id)) : undefined}
+                onExpand={() => setCompareFullscreen(true)}
+              />
+            )}
+            {rightPanelTab === "more" && (
+              <div className="ws-more-tab">
+                {imageEntries.length > 0 && (
+                  <div className="ws-image-gallery">
+                    <div className="ws-conn-header">Images ({imageEntries.length})</div>
+                    {imageEntries.map((img) => (
+                      <div key={img.hash} className="ws-image-thumb" title={`${img.width || "?"}×${img.height || "?"}`}>
+                        {img.loading ? (
+                          <div className="ws-image-loading">Loading…</div>
+                        ) : img.url ? (
+                          <img
+                            src={img.url}
+                            alt=""
+                            style={{ maxWidth: "100%", borderRadius: "4px", cursor: "pointer" }}
+                            onClick={async () => {
+                              if (!clientRef.current) return;
+                              const fullBytes = await clientRef.current.blobGet(String(img.hash));
+                              const blob = new Blob([fullBytes as BlobPart], { type: img.mime });
+                              const url = URL.createObjectURL(blob);
+                              window.open(url, "_blank");
+                              setTimeout(() => URL.revokeObjectURL(url), 60000);
+                            }}
+                          />
+                        ) : (
+                          <div className="ws-image-error">Failed to load</div>
+                        )}
+                        <div className="ws-image-meta">
+                          {img.width && img.height ? `${img.width}×${img.height}` : "Unknown size"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  className="ws-more-tab-btn"
+                  onClick={() => {
+                    const textblob = new Blob([text], { type: "text/plain" });
+                    const url = URL.createObjectURL(textblob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `${workMeta?.title || "work"}.txt`;
+                    a.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                  }}
+                >
+                  Export as .txt
+                </button>
+                <button
+                  className="ws-more-tab-btn"
+                  onClick={() => window.open(`/?work=${workIdDisplay}`, "_blank")}
+                >
+                  Open in classic editor
+                </button>
+              </div>
+            )}
+    </>
+  );
+
   return (
     <div className={`ws-shell ${activeCssClass} ${navTab === "compose" ? "ws-mode-compose" : ""} ${navTab === "library" ? "ws-mode-library" : ""} ${workBeId !== null ? "ws-mode-doc" : ""}`}>
       <DataIntegrityBanner />
@@ -3867,613 +4479,7 @@ export function WorkspaceShell() {
             )}
           </div>
           <div className="ws-tab-content">
-            {rightPanelTab === "provenance" && (
-              <div className="ws-provenance-full">
-                {/* Compact summary */}
-                <div className="ws-provenance-summary">
-                  <h4>Authorship</h4>
-                  {authorStats.length === 0 ? (
-                    <div className="ws-placeholder-sublabel">No attribution data</div>
-                  ) : (
-                    <ul className="ws-author-list">
-                      {authorStats.map((a) => (
-                        <li key={a.name} className="ws-author-row">
-                          <span className="ws-author-name">{a.name}</span>
-                          <span className="ws-author-bar">
-                            <span
-                              className="ws-author-bar-fill"
-                              style={{ width: `${Math.max(2, a.pct)}%`, background: authorColorPair(a.name).primary }}
-                            />
-                          </span>
-                          <span className="ws-author-pct">{a.pct.toFixed(0)}%</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-
-                {/* Full detailed attribution — security-critical view */}
-                <AttributionPanel
-                  spans={resolvedAttributionSpans}
-                  logStatus={attributionLogStatus}
-                  documentLength={text.length}
-                  visible={true}
-                  workId={workBeId ?? undefined}
-                />
-
-                <div className="ws-provenance-details">
-                  <h4>Details</h4>
-                  <dl className="ws-meta-list">
-                    <dt>Work ID</dt>
-                    <dd><code>{workIdDisplay}</code></dd>
-                    <dt>Persistent ID</dt>
-                    <dd><code>xan://{serverDomain}.{workIdDisplay}</code></dd>
-                    {workMeta?.publishedAt && (<><dt>Updated</dt><dd>{workMeta.publishedAt}</dd></>)}
-                  </dl>
-                </div>
-              </div>
-            )}
-            {rightPanelTab === "connections" && (
-              <div className="ws-connections-tab">
-                {canEdit && workBeId !== null && (
-                  <button
-                    className="ws-action-btn"
-                    style={{ width: "100%", marginBottom: 8, justifyContent: "center" }}
-                    onClick={() => {
-                      if (!selectionRange) {
-                        setSelectionRange({ start: 0, end: 0 });
-                      }
-                      handleOpenLinkCreator();
-                    }}
-                    title="Create a link to another document"
-                  >
-                    + Add Link
-                  </button>
-                )}
-                {/* Link type filter */}
-                {transclusion.links.length > 0 && (
-                  <div className="ws-link-filters">
-                    {DEFAULT_LINK_TYPES.map((t) => {
-                      const count = transclusion.links.filter((l) => (l.link_types || []).includes(t.type_id)).length;
-                      if (count === 0) return null;
-                      const active = activeLinkTypes.has(t.type_id);
-                      return (
-                        <button
-                          key={t.type_id}
-                          type="button"
-                          className={`ws-link-filter-btn ${active ? "active" : ""}`}
-                          style={active ? { background: t.color, borderColor: t.color } : { borderColor: t.color + "60", color: t.color }}
-                          onClick={() => setActiveLinkTypes((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(t.type_id)) next.delete(t.type_id);
-                            else next.add(t.type_id);
-                            return next;
-                          })}
-                          title={`${t.name} (${count})`}
-                        >
-                          {t.name} ({count})
-                        </button>
-                      );
-                    })}
-                    {activeLinkTypes.size > 0 && (
-                      <button
-                        type="button"
-                        className="ws-link-filter-clear"
-                        onClick={() => setActiveLinkTypes(new Set())}
-                      >
-                        clear
-                      </button>
-                    )}
-                  </div>
-                )}
-                {/* Outbound links */}
-                <div className="ws-conn-section">
-                  <div className="ws-conn-header">
-                    Links ({(() => {
-                      const filtered = activeLinkTypes.size === 0
-                        ? transclusion.links
-                        : transclusion.links.filter((l) => (l.link_types || []).some((t) => activeLinkTypes.has(t)));
-                      return filtered.length;
-                    })()})
-                  </div>
-                  {(() => {
-                    const filteredLinks = activeLinkTypes.size === 0
-                      ? transclusion.links
-                      : transclusion.links.filter((l) => (l.link_types || []).some((t) => activeLinkTypes.has(t)));
-                    return filteredLinks.length === 0 ? (
-                      <div className="ws-conn-empty">{transclusion.links.length === 0 ? 'No outbound links. Select text and click "Link" to create one.' : 'No links match the active filter.'}</div>
-                    ) : (
-                      filteredLinks.map((link) => {
-                      const isWebLink = (link.link_types || []).includes(6);
-                      const destUrl = link.destination_ref?.excerpt;
-                      const ends = linkEnds(link);
-                      const extraEnds = ends.filter((e) => e.name !== "origin" && e.name !== "destination" && e.workId !== null && e.workId !== workBeId);
-                      const multi = isMultiEnded(link);
-                      const destTitle = isWebLink && destUrl
-                        ? destUrl
-                        : (link.destination_title || `Work 0x${link.destination.toString(16)}`);
-                      const typeNames = (link.link_types || []).map(
-                        (tid) => DEFAULT_LINK_TYPES.find((t) => t.type_id === tid)?.name || `type ${tid}`
-                      );
-                      const notif = notifyStatus(link);
-                      const reload = () => {
-                        if (clientRef.current && workBeId !== null) {
-                          void loadLinks(clientRef.current, workBeId, works);
-                        }
-                      };
-                      return (
-                        <div
-                          key={link.link_id}
-                          className="ws-conn-item"
-                          onClick={() => !isWebLink && !multi && selectWork(link.destination)}
-                          title={isWebLink && destUrl ? destUrl : undefined}
-                        >
-                          <div className="ws-conn-title-row">
-                            <div className="ws-conn-title">
-                              {isWebLink ? "🔗 " : ""}{destTitle}
-                              {!isWebLink && (() => {
-                                const dl = licenseCache.get(link.destination);
-                                const di = dl ? LICENSES.find((l) => l.value === dl) : null;
-                                return di && dl !== "all-rights-reserved" ? <span className="ws-work-license-badge" title={di.label}>{di.short}</span> : null;
-                              })()}
-                              {link.home_document != null && link.home_document !== workBeId && (
-                                <span
-                                  style={{ fontSize: 10, marginLeft: 4, color: "#8b949e", cursor: "pointer" }}
-                                  title={`Link lives in ${works.find((w) => w.work_id === link.home_document)?.title || `work 0x${link.home_document?.toString(16)}`} (home document) — click to open`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (link.home_document != null) selectWork(link.home_document);
-                                  }}
-                                >
-                                  ⌂ home
-                                </span>
-                              )}
-                            </div>
-                            <div style={{ display: "flex", gap: 4 }}>
-                              {multi && (
-                                <button
-                                  className="ws-conn-delete"
-                                  title="Compare all ends side by side"
-                                  style={{ color: "#58a6ff" }}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setMultiCompareWorkIds(multiEndWorkIds(link).filter((id) => id !== null));
-                                    setRightPanelTab("compare");
-                                  }}
-                                >
-                                  ⇄
-                                </button>
-                              )}
-                              <button
-                                className="ws-conn-delete"
-                                title="Delete this link"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (confirm("Delete this link?")) {
-                                    clientRef.current?.linkDelete(link.link_id).then(reload);
-                                  }
-                                }}
-                              >×</button>
-                            </div>
-                          </div>
-                          {extraEnds.length > 0 && (
-                            <div style={{ fontSize: 11, color: "#8b949e", marginTop: 2 }}>
-                              {"+ "}
-                              {extraEnds.map((e, i) => {
-                                const w = works.find((x) => x.work_id === e.workId);
-                                return (
-                                  <span key={e.name}>
-                                    {i > 0 && " · "}
-                                    <span
-                                      style={{ color: "#58a6ff", cursor: "pointer" }}
-                                      title={e.excerpt ? `"${e.excerpt.slice(0, 120)}"` : undefined}
-                                      onClick={(ev) => {
-                                        ev.stopPropagation();
-                                        if (e.workId !== null) selectWork(e.workId);
-                                      }}
-                                    >
-                                      {e.name}: {w?.title || `work 0x${e.workId?.toString(16)}`}
-                                    </span>
-                                    <span
-                                      style={{ cursor: "pointer", marginLeft: 3 }}
-                                      title={`Remove end "${e.name}"`}
-                                      onClick={(ev) => {
-                                        ev.stopPropagation();
-                                        clientRef.current?.linkRemoveEnd(link.link_id, e.name).then(reload);
-                                      }}
-                                    >
-                                      ×
-                                    </span>
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          )}
-                          {typeNames.length > 0 && (
-                            <div className="ws-conn-types">
-                              {typeNames.map((tn, i) => {
-                                const lt = DEFAULT_LINK_TYPES.find((t) => t.name === tn);
-                                return (
-                                  <span
-                                    key={i}
-                                    className="ws-conn-type-badge"
-                                    style={lt ? { background: lt.color + "20", color: lt.color, borderColor: lt.color + "60" } : {}}
-                                  >
-                                    {tn}
-                                  </span>
-                                );
-                              })}
-                              {(link.type_ends ?? []).map(([tid, defWork], i) => {
-                                const t = DEFAULT_LINK_TYPES.find((x) => x.type_id === tid);
-                                if (!t) return null;
-                                return (
-                                  <span
-                                    key={`te-${i}`}
-                                    className="ws-conn-type-badge"
-                                    style={{ background: t.color + "10", color: t.color, borderColor: t.color + "30", cursor: "pointer", fontSize: 10 }}
-                                    title={`Type definition — click to open`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      selectWork(defWork);
-                                    }}
-                                  >
-                                    {t.name} ⎋
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          )}
-                          {notif.kind !== "none" && (
-                            <div style={{ fontSize: 10, marginTop: 2, color: notif.kind === "accepted" ? "#3fb950" : "#f85149" }}>
-                              {notif.kind === "accepted" && "✓ remote server acknowledged"}
-                              {notif.kind === "rejected" && `⚠ remote rejected: ${notif.reason}`}
-                              {notif.kind === "error" && `⚠ ${notif.reason}`}
-                            </div>
-                          )}
-                          </div>
-                        );
-                      })
-                    );
-                  })()}
-                  </div>
-
-                  {/* Backlinks */}
-                <div className="ws-conn-section">
-                  <div className="ws-conn-header">
-                    Backlinks ({transclusion.backlinks.length})
-                  </div>
-                  {transclusion.backlinks.length === 0 ? (
-                    <div className="ws-conn-empty">No inbound links from other works.</div>
-                  ) : (
-                    transclusion.backlinks.map((bl, i) => {
-                      const lt = DEFAULT_LINK_TYPES.find((t) =>
-                        t.name.toLowerCase() === (bl.link_type || "").toLowerCase().replace(/[\s_]/g, "") ||
-                        t.name.toLowerCase().replace(/\s/g, "") === (bl.link_type || "").toLowerCase().replace(/[\s_]/g, "")
-                      );
-                      const typeLabel = lt ? lt.name : (bl.link_type || "link").replace(/hyperlink_/g, "").replace(/_/g, " ");
-                      return (
-                        <div
-                          key={i}
-                          className="ws-conn-item"
-                          onClick={() => selectWork(bl.source_work_id)}
-                        >
-                          <div className="ws-conn-title">
-                            {bl.title || `Work 0x${bl.source_work_id.toString(16)}`}
-                            {(() => {
-                              const sl = licenseCache.get(bl.source_work_id);
-                              const si = sl ? LICENSES.find((l) => l.value === sl) : null;
-                              return si && sl !== "all-rights-reserved" ? <span className="ws-work-license-badge" title={si.label}>{si.short}</span> : null;
-                            })()}
-                          </div>
-                          {bl.excerpt && <div className="ws-conn-excerpt">"{bl.excerpt.slice(0, 80)}{bl.excerpt.length > 80 ? "…" : ""}"</div>}
-                          <div className="ws-conn-types">
-                            <span
-                              className="ws-conn-type-badge"
-                              style={lt ? { background: lt.color + "20", color: lt.color, borderColor: lt.color + "60" } : {}}
-                            >
-                              {typeLabel}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-                {/* Transclusions in this work */}
-                <div className="ws-conn-section">
-                  <div className="ws-conn-header">
-                    Transclusions ({compound.spanRanges.length})
-                  </div>
-                  {compound.spanRanges.length === 0 ? (
-                    <div className="ws-conn-empty">No transclusions in this work.</div>
-                  ) : (
-                    compound.spanRanges.map((sr, i) => {
-                      const sourceTitle = compound.sourceTitles[sr.source_work_id] || `Work 0x${sr.source_work_id.toString(16)}`;
-                      const srcLic = licenseCache.get(sr.source_work_id);
-                      const srcLicInfo = srcLic ? LICENSES.find((l) => l.value === srcLic) : null;
-                      const sourceWork = works.find((w) => w.work_id === sr.source_work_id);
-                      const origin = sourceWork?.is_source ? sourceWork.source_edition_info : null;
-                      return (
-                        <div
-                          key={i}
-                          className="ws-conn-item"
-                          style={{ cursor: "pointer" }}
-                          title={`From ${sourceTitle}${origin ? " · " + origin : ""} — click to highlight in document`}
-                          onClick={() => {
-                            setHighlightRange({ start: sr.flat_start, end: sr.flat_end });
-                            const el = document.querySelector(".editor-content") as HTMLElement | null;
-                            if (el) {
-                              el.scrollIntoView({ behavior: "smooth", block: "center" });
-                            }
-                            setTimeout(() => setHighlightRange(null), 4000);
-                          }}
-                        >
-                          <div className="ws-conn-title">
-                            ↗ {sourceTitle}
-                            {sr.source_changed && (
-                              <span style={{ color: "#d29922", fontSize: 11, marginLeft: 4 }} title="Source was edited after this transclusion was created">
-                                ⚠ changed
-                              </span>
-                            )}
-                            {srcLicInfo && srcLic !== "all-rights-reserved" && (
-                              <span className="ws-work-license-badge" title={srcLicInfo.label}>{srcLicInfo.short}</span>
-                            )}
-                          </div>
-                          {origin && (
-                            <div style={{ fontSize: 10, color: "#d29922", fontStyle: "italic", margin: "1px 0" }}>
-                              {origin}
-                            </div>
-                          )}
-                          {sr.resolved_content && (
-                            <div className="ws-conn-excerpt" style={{ fontStyle: "italic", color: "#6e7681" }}>
-                              {sr.resolved_content.length > 80
-                                ? sr.resolved_content.slice(0, 80) + "\u2026"
-                                : sr.resolved_content}
-                            </div>
-                          )}
-                          <div className="ws-conn-excerpt">
-                            [{sr.char_start}:{sr.char_end}]
-                          </div>
-                          {canEdit && (
-                            <button
-                              className="ws-conn-delete"
-                              title="Remove this transclusion"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (confirm("Remove this transclusion?")) {
-                                  compound.removeTransclusion(sr.source_work_id, sr.char_start, sr.char_end).then((ok) => {
-                                    if (ok) showToast("Transclusion removed");
-                                  });
-                                }
-                              }}
-                              style={{
-                                position: "absolute", top: 4, right: 4,
-                                background: "none", border: "none", cursor: "pointer",
-                                color: "var(--text-dim)", fontSize: 14, padding: 4,
-                              }}
-                            >
-                              {"\u2715"}
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            )}
-            {rightPanelTab === "trails" && (
-              <div className="ws-trails-tab">
-                <div className="ws-trails-tab-header">
-                  <span>Trails through this work</span>
-                  <button
-                    className="ws-trails-manage-btn"
-                    onClick={() => setShowTrailsPanel(true)}
-                    title="Manage all trails"
-                  >
-                    Manage
-                  </button>
-                </div>
-                {trailsLoading ? (
-                  <div className="ws-placeholder"><div className="ws-placeholder-label">Loading…</div></div>
-                ) : trailsForWork.length === 0 ? (
-                  <div className="ws-placeholder">
-                    <div className="ws-placeholder-label">No trails yet</div>
-                    <div className="ws-placeholder-sublabel">Create one from selected text (+ Trail), or ask another server's user to publish theirs.</div>
-                  </div>
-                ) : (
-                  <ul className="ws-trail-list">
-                    {trailsForWork.map((t) => {
-                      const workStops = t.stops
-                        .map((s, i) => ({ ...s, index: i }))
-                        .filter((s) => s.work_id === workBeId);
-                      return (
-                        <li key={t.trail_id} className="ws-trail-card">
-                          <div className="ws-trail-card-title-row">
-                            <span className="ws-trail-card-title">{t.name}</span>
-                            {t.stops.length > 0 && (
-                              <button
-                                type="button"
-                                className="trail-start-btn"
-                                title={`Follow this trail from stop 1 (${t.stops.length} stops)`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  startTrail(t.name, t.stops.map((s) => ({ work_id: s.work_id, note: s.note ?? null })));
-                                }}
-                              >{"\u25b6"} Start</button>
-                            )}
-                            {t.published ? (
-                              <span className="ws-trail-badge published" title="Published — double-click to unpublish" onDoubleClick={async (e) => {
-                                e.stopPropagation();
-                                if (!confirm("Unpublish this trail?")) return;
-                                try {
-                                  await clientRef.current?.trailUnpublish(t.trail_id);
-                                  await loadTrailsForWork();
-                                } catch (err) {
-                                  alert(`Unpublish failed: ${err instanceof Error ? err.message : String(err)}`);
-                                }
-                              }}>Published</span>
-                            ) : (
-                              <span className="ws-trail-badge draft" title="Click to publish" onClick={async (e) => {
-                                e.stopPropagation();
-                                try {
-                                  await clientRef.current?.trailPublish(t.trail_id);
-                                  await loadTrailsForWork();
-                                } catch (err) {
-                                  alert(`Publish failed: ${err instanceof Error ? err.message : String(err)}`);
-                                }
-                              }}>Draft</span>
-                            )}
-                          </div>
-                          {t.introduction && (
-                            <div className="ws-trail-card-intro">{t.introduction}</div>
-                          )}
-                          <div className="ws-trail-card-meta">
-                            {t.stops.length} stops{workStops.length > 0 ? ` · ${workStops.length} on this work` : ""}
-                          </div>
-                          {workStops.length > 0 ? (
-                            <ul className="ws-trail-stops">
-                              {workStops.map((s) => (
-                                <li
-                                  key={s.index}
-                                  className="ws-trail-stop"
-                                  title={s.note || "No note"}
-                                >
-                                  <span className="ws-trail-stop-pos">
-                                    ¶{s.char_start != null ? `@${s.char_start}` : ""}
-                                  </span>
-                                  <span className="ws-trail-stop-note">
-                                    {s.note ? (s.note.length > 60 ? s.note.slice(0, 60) + "…" : s.note) : "(no note)"}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <ul className="ws-trail-stops">
-                              {t.stops.slice(0, 3).map((s, i) => (
-                                <li
-                                  key={i}
-                                  className="ws-trail-stop"
-                                  style={{ cursor: "pointer" }}
-                                  title={s.note || "Open this document"}
-                                  onClick={() => selectWork(s.work_id)}
-                                >
-                                  <span className="ws-trail-stop-pos">{i + 1}</span>
-                                  <span className="ws-trail-stop-note">
-                                    {(s.note || `Open stop ${i + 1}`).slice(0, 60)}
-                                    {(s.note?.length ?? 0) > 60 ? "…" : ""}
-                                  </span>
-                                </li>
-                              ))}
-                              {t.stops.length > 3 && (
-                                <li className="ws-trail-stop" style={{ cursor: "pointer", opacity: 0.7 }} onClick={() => setShowTrailsPanel(true)}>
-                                  <span className="ws-trail-stop-pos">…</span>
-                                  <span className="ws-trail-stop-note">{t.stops.length - 3} more stops</span>
-                                </li>
-                              )}
-                            </ul>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-             )}
-            {rightPanelTab === "timeline" && (
-              <div className="ws-timeline-tab">
-                <div className="ws-trails-tab-header">
-                  <span>Revision history</span>
-                </div>
-                <RevisionTimeline
-                  workId={workBeId}
-                  client={connected ? clientRef.current : null}
-                  onViewRevision={(revId, revText) => {
-                    setViewingRevision({ id: revId, text: revText });
-                  }}
-                />
-              </div>
-            )}
-            {rightPanelTab === "servers" && (
-              <ServerDirectoryPanel
-                client={connected ? clientRef.current : null}
-                connected={connected}
-                onNavigateToWork={(workId) => selectWork(workId)}
-                onViewRemoteWork={(data) => {
-                  setRemoteView(data);
-                  setRightPanelTab("provenance");
-                }}
-              />
-            )}
-            {rightPanelTab === "compare" && (
-              <MultiEndCompare
-                workIds={multiCompareWorkIds}
-                works={works}
-                clientRef={clientRef}
-                currentWorkId={workBeId}
-                onPickWork={(id) => setMultiCompareWorkIds((prev) => [...prev, id])}
-                onClose={() => setRightPanelTab("connections")}
-                fullscreen={compareFullscreen}
-                onRemoveWork={compareFullscreen ? (id) => setMultiCompareWorkIds((prev) => prev.filter((p) => p !== id)) : undefined}
-                onExpand={() => setCompareFullscreen(true)}
-              />
-            )}
-            {rightPanelTab === "more" && (
-              <div className="ws-more-tab">
-                {imageEntries.length > 0 && (
-                  <div className="ws-image-gallery">
-                    <div className="ws-conn-header">Images ({imageEntries.length})</div>
-                    {imageEntries.map((img) => (
-                      <div key={img.hash} className="ws-image-thumb" title={`${img.width || "?"}×${img.height || "?"}`}>
-                        {img.loading ? (
-                          <div className="ws-image-loading">Loading…</div>
-                        ) : img.url ? (
-                          <img
-                            src={img.url}
-                            alt=""
-                            style={{ maxWidth: "100%", borderRadius: "4px", cursor: "pointer" }}
-                            onClick={async () => {
-                              if (!clientRef.current) return;
-                              const fullBytes = await clientRef.current.blobGet(String(img.hash));
-                              const blob = new Blob([fullBytes as BlobPart], { type: img.mime });
-                              const url = URL.createObjectURL(blob);
-                              window.open(url, "_blank");
-                              setTimeout(() => URL.revokeObjectURL(url), 60000);
-                            }}
-                          />
-                        ) : (
-                          <div className="ws-image-error">Failed to load</div>
-                        )}
-                        <div className="ws-image-meta">
-                          {img.width && img.height ? `${img.width}×${img.height}` : "Unknown size"}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <button
-                  className="ws-more-tab-btn"
-                  onClick={() => {
-                    const textblob = new Blob([text], { type: "text/plain" });
-                    const url = URL.createObjectURL(textblob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `${workMeta?.title || "work"}.txt`;
-                    a.click();
-                    setTimeout(() => URL.revokeObjectURL(url), 1000);
-                  }}
-                >
-                  Export as .txt
-                </button>
-                <button
-                  className="ws-more-tab-btn"
-                  onClick={() => window.open(`/?work=${workIdDisplay}`, "_blank")}
-                >
-                  Open in classic editor
-                </button>
-              </div>
-            )}
+            {rightPanelBody}
           </div>
           <button
             className="ws-rail-collapse"
@@ -5003,52 +5009,7 @@ export function WorkspaceShell() {
                   </button>
                 ))}
               </div>
-              <div className="ws-sheet-content">
-                {rightPanelTab === "provenance" && (
-                  <div className="ws-phone-panel">
-                    <p style={{ color: "var(--text-muted)", fontSize: 12, padding: "12px 0" }}>
-                      Attribution shows who wrote each passage (colored underlines in the document).
-                      Open a document with multiple authors to see the full breakdown.
-                    </p>
-                  </div>
-                )}
-                {rightPanelTab === "connections" && (
-                  <div className="ws-phone-panel">
-                    <p style={{ color: "var(--text-muted)", fontSize: 12, padding: "12px 0" }}>
-                      Links show typed connections: comments, references, disagreements, quotations.
-                      Select text in any document and tap Link to create one.
-                    </p>
-                  </div>
-                )}
-                {rightPanelTab === "trails" && (
-                  <div className="ws-phone-panel">
-                    <p style={{ color: "var(--text-muted)", fontSize: 12, padding: "12px 0" }}>
-                      Trails are curated reading paths through connected documents.
-                    </p>
-                  </div>
-                )}
-                {rightPanelTab === "timeline" && (
-                  <div className="ws-phone-panel">
-                    <p style={{ color: "var(--text-muted)", fontSize: 12, padding: "12px 0" }}>
-                      History shows the full revision timeline of the current document.
-                    </p>
-                  </div>
-                )}
-                {rightPanelTab === "compare" && (
-                  <div className="ws-phone-panel">
-                    <p style={{ color: "var(--text-muted)", fontSize: 12, padding: "12px 0" }}>
-                      Compare shows shared passages between documents. Open two works with common content to compare them.
-                    </p>
-                  </div>
-                )}
-                {rightPanelTab === "more" && (
-                  <div className="ws-phone-panel">
-                    <p style={{ color: "var(--text-muted)", fontSize: 12, padding: "12px 0" }}>
-                      Additional panels available on desktop: perspective view, document map, search.
-                    </p>
-                  </div>
-                )}
-              </div>
+              <div className="ws-sheet-content">{rightPanelBody}</div>
             </div>
           </div>
           <MobileBottomNav

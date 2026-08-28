@@ -3259,8 +3259,11 @@
   text-align: center;
 }
 .ws-sheet-content {
-  padding: 8px 0;
+  padding: 12px;
   min-height: 120px;
+  max-height: 56vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .ws-phone-panel p {
   line-height: 1.5;
