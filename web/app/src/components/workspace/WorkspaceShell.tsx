@@ -244,7 +244,12 @@ export function WorkspaceShell() {
   // like "Folksonomy" for empty works) out of the way.
   useEffect(() => {
     if (navTab === "compose") {
-      if (workBeId === null && createWork) {
+      // Compose into the current document only when it is editable;
+      // opening someone else's (read-only) work and tapping Compose
+      // otherwise attaches the builder to a document that cannot
+      // accept inserts. In that case, start a fresh composition.
+      const shouldCreateNew = workBeId === null || !canEdit;
+      if (shouldCreateNew && createWork) {
         createWork().then((id) => {
           if (typeof id === "number") {
             selectWork(id);

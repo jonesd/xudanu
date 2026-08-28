@@ -377,8 +377,12 @@ export function CompoundBuilder({
           <div className="cb-source-list">
             {sources.length === 0 && !sourceFilter && (
               <div className="cb-source-empty">
-                No sources yet.
-                <br />Search below to start building.
+                <strong>No sources yet.</strong>
+                <br />
+                Search a document title below, open it in the reader,
+                <br />
+                select a passage, and tap <strong>Include</strong> to
+                quote it here by reference.
               </div>
             )}
             {sources.map((src, i) => {
