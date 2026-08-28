@@ -2723,13 +2723,12 @@ export function WorkspaceShell() {
                       setShowProv(next);
                       try { storageSet("xudanu_showProv", String(next)); } catch { /* no-op */ }
                     }}
-                    title={showProv
-                      ? "Provenance underlines ON — light colour strip under each passage shows its author. Click to hide."
-                      : "Show provenance — light authorship underline beneath each passage (colour-coded, verified signatures)"}
-                    style={showProv ? { background: "rgba(255, 196, 0, 0.15)", borderColor: "rgba(255, 196, 0, 0.4)" } : {}}
-                  >
-                    Prov
-                  </button>
+                     title={showProv
+                       ? "Provenance underlines ON — light colour strip under each passage shows its author. Click to hide."
+                       : "Show provenance — light authorship underline beneath each passage (colour-coded, verified signatures)"}
+                   >
+                     Prov
+                   </button>
                   {canEdit && (
                     <button
                       className={`ws-action-btn ${isPublished ? "active" : ""}`}
