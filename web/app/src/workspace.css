@@ -771,6 +771,13 @@
   flex: 1;
   min-width: 0;
 }
+.ws-title-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
 
 .ws-kind-picker-wrap {
   position: relative;
@@ -3000,7 +3007,10 @@
 .cb-dock-vresizer { display: none; }
 @media (max-width: 767px) {
   .cb-dock {
-    inset: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: calc(65px + env(safe-area-inset-bottom, 0px));
     width: 100%;
     z-index: 130;
     border-left: none;
@@ -3293,10 +3303,10 @@
   }
   .ws-mode-doc .ws-doc-surface {
     position: fixed;
-    top: 50px;
+    top: calc(50px + env(safe-area-inset-top, 0px));
     left: 0;
     right: 0;
-    bottom: 65px;
+    bottom: calc(65px + env(safe-area-inset-bottom, 0px));
     width: auto;
     max-width: none;
     z-index: 10;
@@ -3310,8 +3320,17 @@
      instead of squeezing the title to zero width. */
   .ws-mode-doc .ws-doc-header {
     padding: 8px 12px;
+    padding-top: calc(8px + env(safe-area-inset-top, 0px));
   }
   .ws-mode-doc .ws-doc-title-row {
     flex: 1 0 100%;
+  }
+  /* Popovers rendered inside the sheet anchor leftward — the desktop
+     right:0 anchoring pushes them off-screen in a full-width sheet. */
+  .ws-sheet-content .ws-more-menu,
+  .ws-sheet-content .ws-kind-menu,
+  .ws-sheet-content .ws-license-menu {
+    right: auto;
+    left: 0;
   }
 }

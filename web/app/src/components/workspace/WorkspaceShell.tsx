@@ -228,7 +228,7 @@ export function WorkspaceShell() {
   // underline is subtle enough for reading, and authorship visibility
   // is the signature capability. localStorage still overrides for
   // users who prefer clean text.
-  const [showProv, setShowProv] = useState(() => {
+  const [showProv] = useState(() => {
     try { return storageGet("xudanu_showProv") !== "false"; } catch { return true; }
   });
   const [showLinkDesc, setShowLinkDesc] = useState(() => {
@@ -3252,8 +3252,7 @@ export function WorkspaceShell() {
                   >
                     {workMeta?.title || `Work 0x${workBeId?.toString(16) ?? ""}`}
                   </span>
-                </div>
-                <div className="ws-doc-actions">
+                  <div className="ws-title-actions">
                   <div className="ws-license-picker-wrap">
                     <button
                       className="ws-action-btn"
@@ -3301,16 +3300,6 @@ export function WorkspaceShell() {
                       </div>
                     )}
                   </div>
-                  {transclusionCompliance === "compliant" && (
-                    <span className="ws-compliance-badge compliant" title="All transclusion sources permit reuse">
-                      ✓ Licensed
-                    </span>
-                  )}
-                  {transclusionCompliance === "warning" && (
-                    <span className="ws-compliance-badge warning" title="One or more transclusion sources are All Rights Reserved">
-                      ⚠ ARR source
-                    </span>
-                  )}
                   <button
                     className={`ws-action-btn ${followState.following ? "active" : ""}`}
                     title={followState.following ? "Unstar this work" : "Star this work (adds to your library)"}
@@ -3319,79 +3308,6 @@ export function WorkspaceShell() {
                   >
                     {followState.busy ? "…" : followState.following ? "★" : "☆"}
                   </button>
-                  {canEdit && (
-                    <button
-                      className={`ws-action-btn ${editorMode === "reading" ? "active" : ""}`}
-                      onClick={() => setEditorMode(editorMode === "authoring" ? "reading" : "authoring")}
-                      title={editorMode === "authoring" ? "Switch to reading mode (hides markers)" : "Switch to authoring mode (shows markers)"}
-                    >
-                      {editorMode === "authoring" ? "📖" : "✏️"}
-                    </button>
-                  )}
-                  <button
-                    className={`ws-action-btn ${showProv ? "active" : ""}`}
-                    onClick={() => {
-                      const next = !showProv;
-                      setShowProv(next);
-                      try { storageSet("xudanu_showProv", String(next)); } catch { /* no-op */ }
-                    }}
-                     title={showProv
-                       ? "Provenance underlines ON — light colour strip under each passage shows its author. Click to hide."
-                       : "Show provenance — light authorship underline beneath each passage (colour-coded, verified signatures)"}
-                   >
-                     Prov
-                   </button>
-                  {canEdit && (
-                    <button
-                      className={`ws-action-btn ${isPublished ? "active" : ""}`}
-                      style={isPublished ? { background: "rgba(63, 185, 80, 0.15)", borderColor: "rgba(63, 185, 80, 0.4)", color: "#3fb950" } : {}}
-                      title={isPublished ? "Public — anyone on this server can read this work. Click to make private." : "Private — only you can read this work. Click to publish."}
-                      onClick={async () => {
-                        if (isPublished) {
-                          if (!confirm("Make this work private? Other users will no longer see it.")) return;
-                          try {
-                            await clientRef.current?.sendRequest("work_set_read_club", { work_id: workBeId, club_id: 0 });
-                            setIsPublished(false);
-                            showToast("Work is now private");
-                          } catch { showToast("Failed to make private"); }
-                        } else {
-                          const pubClub = publicClubId || 1000;
-                          try {
-                            await clientRef.current?.sendRequest("work_set_read_club", { work_id: workBeId, club_id: pubClub });
-                            await clientRef.current?.sendRequest("work_set_edit_club", { work_id: workBeId, club_id: pubClub });
-                            setIsPublished(true);
-                            showToast("Work published — visible to all users on this server");
-                          } catch { showToast("Publish failed"); }
-                        }
-                      }}
-                    >
-                      {isPublished ? "🌍 Public" : "🔒 Private"}
-                    </button>
-                  )}
-                  {isFrozen && (
-                    <span
-                      className="ws-action-btn"
-                      style={{ color: "#58a6ff", cursor: "default", background: "rgba(88, 166, 255, 0.15)", borderColor: "rgba(88, 166, 255, 0.4)" }}
-                      title="Frozen — content is immutable (links and notes still welcome). Unfreeze from the ⋯ menu."
-                    >
-                      ❄
-                    </span>
-                  )}
-                  {canEdit && (
-                    <label className="ws-action-btn ws-image-upload-btn" title="Insert image">
-                      📷
-                      <input
-                        type="file"
-                        accept="image/png,image/jpeg,image/gif,image/webp,image/bmp"
-                        style={{ display: "none" }}
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) void handleImageUpload(f);
-                          e.target.value = "";
-                        }}
-                      />
-                    </label>
-                  )}
                   <div className="ws-more-wrap" ref={moreMenuRef}>
                     <button
                       className="ws-action-btn"
@@ -3543,6 +3459,79 @@ export function WorkspaceShell() {
                       </div>
                     )}
                   </div>
+                  </div>
+                </div>
+                <div className="ws-doc-actions">
+                  {transclusionCompliance === "compliant" && (
+                    <span className="ws-compliance-badge compliant" title="All transclusion sources permit reuse">
+                      ✓ Licensed
+                    </span>
+                  )}
+                  {transclusionCompliance === "warning" && (
+                    <span className="ws-compliance-badge warning" title="One or more transclusion sources are All Rights Reserved">
+                      ⚠ ARR source
+                    </span>
+                  )}
+                  {canEdit && (
+                    <button
+                      className={`ws-action-btn ${editorMode === "reading" ? "active" : ""}`}
+                      onClick={() => setEditorMode(editorMode === "authoring" ? "reading" : "authoring")}
+                      title={editorMode === "authoring" ? "Switch to reading mode (hides markers)" : "Switch to authoring mode (shows markers)"}
+                    >
+                      {editorMode === "authoring" ? "📖" : "✏️"}
+                    </button>
+                  )}
+                  {canEdit && (
+                    <button
+                      className={`ws-action-btn ${isPublished ? "active" : ""}`}
+                      style={isPublished ? { background: "rgba(63, 185, 80, 0.15)", borderColor: "rgba(63, 185, 80, 0.4)", color: "#3fb950" } : {}}
+                      title={isPublished ? "Public — anyone on this server can read this work. Click to make private." : "Private — only you can read this work. Click to publish."}
+                      onClick={async () => {
+                        if (isPublished) {
+                          if (!confirm("Make this work private? Other users will no longer see it.")) return;
+                          try {
+                            await clientRef.current?.sendRequest("work_set_read_club", { work_id: workBeId, club_id: 0 });
+                            setIsPublished(false);
+                            showToast("Work is now private");
+                          } catch { showToast("Failed to make private"); }
+                        } else {
+                          const pubClub = publicClubId || 1000;
+                          try {
+                            await clientRef.current?.sendRequest("work_set_read_club", { work_id: workBeId, club_id: pubClub });
+                            await clientRef.current?.sendRequest("work_set_edit_club", { work_id: workBeId, club_id: pubClub });
+                            setIsPublished(true);
+                            showToast("Work published — visible to all users on this server");
+                          } catch { showToast("Publish failed"); }
+                        }
+                      }}
+                    >
+                      {isPublished ? "🌍 Public" : "🔒 Private"}
+                    </button>
+                  )}
+                  {isFrozen && (
+                    <span
+                      className="ws-action-btn"
+                      style={{ color: "#58a6ff", cursor: "default", background: "rgba(88, 166, 255, 0.15)", borderColor: "rgba(88, 166, 255, 0.4)" }}
+                      title="Frozen — content is immutable (links and notes still welcome). Unfreeze from the ⋯ menu."
+                    >
+                      ❄
+                    </span>
+                  )}
+                  {canEdit && (
+                    <label className="ws-action-btn ws-image-upload-btn" title="Insert image">
+                      📷
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/gif,image/webp,image/bmp"
+                        style={{ display: "none" }}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) void handleImageUpload(f);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  )}
                 </div>
                 <div className="ws-doc-meta">
                   <span
