@@ -2753,7 +2753,7 @@ export function WorkspaceShell() {
   );
 
   return (
-    <div className={`ws-shell ${activeCssClass} ${navTab === "compose" ? "ws-mode-compose" : ""} ${navTab === "library" ? "ws-mode-library" : ""} ${workBeId !== null ? "ws-mode-doc" : ""}`}>
+    <div className={`ws-shell ${activeCssClass} ${navTab === "compose" ? "ws-mode-compose" : ""} ${navTab === "library" ? "ws-mode-library" : ""} ${workBeId !== null ? "ws-mode-doc" : ""} ${workBeId === null && navTab !== "library" ? "ws-mode-welcome" : ""}`}>
       <DataIntegrityBanner />
       {offlineReading && (
         <div className="ws-offline-banner" role="status">

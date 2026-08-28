@@ -70,7 +70,7 @@ export function WelcomeScreen({
       <div className="welcome-actions">
         <button
           className="welcome-btn"
-          style={{ borderColor: "var(--accent-blue)", color: "var(--accent-blue)" }}
+          style={{ borderColor: "var(--accent-blue)", color: "var(--accent-blue)", cursor: "pointer" }}
           onClick={onDemo}
         >
           {"\u25B6 Try the Interactive Demo"}
@@ -82,6 +82,16 @@ export function WelcomeScreen({
         >
           {"\u2756 Documentation"}
         </button>
+      </div>
+      <div style={{ marginTop: 12, fontSize: 12, textAlign: "center" }}>
+        <a
+          href="https://github.com/jonesd/xudanu"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: "var(--accent-blue)" }}
+        >
+          {"Source and self-hosting guide — github.com/jonesd/xudanu"}
+        </a>
       </div>
       {workCount > 0 && (
         <div className="welcome-hint" style={{ marginTop: 16 }}>

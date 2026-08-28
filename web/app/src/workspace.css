@@ -3321,6 +3321,15 @@
   .ws-mode-doc .ws-left-rail {
     display: none;
   }
+  /* Welcome screen (explore with no work open): the welcome lives in the
+     doc column, which the phone grid squashes — give it the full area. */
+  .ws-mode-welcome .ws-left-rail {
+    display: none;
+  }
+  .ws-mode-welcome .ws-body {
+    grid-template-columns: 0 minmax(0, 1fr) 0;
+    overflow-y: auto;
+  }
   .ws-mode-doc .ws-doc-surface {
     position: fixed;
     top: calc(50px + env(safe-area-inset-top, 0px));
