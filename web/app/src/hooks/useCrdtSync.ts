@@ -377,7 +377,21 @@ export function useCrdtSync(
     const epoch = ++attributionEpochRef.current;
     client
       .attributionQueryResolved(workBeId)
-      .then((spans) => { if (epoch === attributionEpochRef.current) setAttributionSpans(spans); })
+      .then((spans) => {
+        if (epoch !== attributionEpochRef.current) return;
+        if (spans.length === 0) {
+          // Resolved can be legitimately empty for a transclusion-free
+          // doc, but also silently empty if the server-side merge came up
+          // short. Fall back to the plain (own-coordinates) query rather
+          // than showing nothing.
+          client
+            .attributionQuery(workBeId)
+            .then((s) => { if (epoch === attributionEpochRef.current) setAttributionSpans(s); })
+            .catch(() => {});
+        } else {
+          setAttributionSpans(spans);
+        }
+      })
       .catch(() => {
         client.attributionQuery(workBeId)
           .then((spans) => { if (epoch === attributionEpochRef.current) setAttributionSpans(spans); })

@@ -2663,6 +2663,16 @@ fn dispatch_inner(
         }
         WireRequest::AttributionQueryResolved { work_id } => {
             srv.ensure_can_read(session_id, work_id)?;
+            // Same guard as the plain attribution_query arm: a work edited
+            // through the CRDT path may need materialization before its
+            // entries are readable. Without this, the resolved merge walks
+            // an empty entry list and silently drops every span.
+            if srv.crdt_needs_materialization(work_id) {
+                srv.crdt_materialize_any_session(work_id).map_err(|e| {
+                    tracing::warn!("attribution_query_resolved: materialize failed: {e}");
+                    crate::server::ServerError::Internal(e.to_string())
+                })?;
+            }
             let resolved = srv.resolve_inline_transclusions(work_id)?;
             for sr in &resolved.span_ranges {
                 srv.ensure_can_read(session_id, sr.source_work_id)?;
