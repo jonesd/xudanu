@@ -9,6 +9,22 @@ matrix.
 
 ---
 
+## 0. Code lineage (authoritative)
+
+Both trees were open-sourced **Monday, August 23, 1999** (Xanadu X11
+license):
+
+| Tree | Formerly | Development |
+|---|---|---|
+| **Udanax Green** | Xanadu 88.1 | 1979 (Swarthmore team) → 1988 (Udanax.com, then the Xanadu Operating Company / XOC) |
+| **Udanax Gold** | Xanadu 92.1 | 1988 → 1995 at Udanax.com; briefly at Memex (now Filoli) — in practice, Ted Nelson |
+
+Naming convention for public writing: **Green/88.1** and
+**Gold/92.1**. Xudanu draws its concepts from Gold; the XCP gateway
+demo runs Green (via sisbell's udanax-test-harness).
+
+---
+
 ## 1. The idea (1960–1984)
 
 Ted Nelson conceives hypertext in 1960: a single universal
