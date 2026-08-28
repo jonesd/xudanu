@@ -3042,6 +3042,25 @@
   .cb-dock-structure { flex: none; border-left: none; }
   .cb-source-panel { width: auto; }
   .cb-structure-panel { width: auto; }
+  /* Phone picker: in-flow list, touch-sized rows, no iOS focus-zoom. */
+  .cb-add-source-results {
+    position: static;
+    max-height: 40vh;
+    box-shadow: none;
+    border: none;
+    border-top: 1px solid var(--border, #30363d);
+  }
+  .cb-add-source-item {
+    padding: 12px 10px;
+    min-height: 44px;
+    font-size: 14px;
+  }
+  .cb-source-item { padding: 12px 8px; font-size: 14px; }
+  .cb-source-search,
+  .cb-search-input {
+    font-size: 16px;
+    padding: 8px 10px;
+  }
 }
 .cb-overlay { position: fixed; inset: 0; z-index: 100; background: var(--bg, #1a1a24); display: flex; flex-direction: column; }
 .cb-header { display: flex; align-items: center; justify-content: space-between; padding: 0 16px; height: 48px; background: var(--bg-surface, #22222e); border-bottom: 1px solid var(--border, #30363d); flex-shrink: 0; }
