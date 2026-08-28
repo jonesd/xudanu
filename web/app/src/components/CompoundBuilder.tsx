@@ -406,7 +406,7 @@ export function CompoundBuilder({
             <input
               type="text"
               className="cb-source-search"
-              placeholder="Search titles or text…"
+              placeholder="Search, or pick a document below…"
               value={sourceFilter}
               onFocus={ensureContentIndex}
               onChange={(e) => { setSourceFilter(e.target.value); setSourceHighlight(0); ensureContentIndex(); }}
@@ -417,7 +417,7 @@ export function CompoundBuilder({
                 else if (e.key === "Escape") { setSourceFilter(""); }
               }}
             />
-            {sourceFilter && otherWorks.length > 0 && (
+            {otherWorks.length > 0 && (
               <div className="cb-add-source-results">
                 {otherWorks.slice(0, 20).map((w, idx) => (
                   <div
@@ -433,7 +433,7 @@ export function CompoundBuilder({
                     <span className="cb-source-id">0x{w.work_id.toString(16)}</span>
                   </div>
                 ))}
-                {otherWorks.length > 20 && <div className="cb-add-source-more">+ {otherWorks.length - 20} more — refine search</div>}
+                {otherWorks.length > 20 && <div className="cb-add-source-more">+ {otherWorks.length - 20} more — search to refine</div>}
               </div>
             )}
             {sourceFilter && otherWorks.length === 0 && (
