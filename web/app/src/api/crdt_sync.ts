@@ -3,6 +3,7 @@ import {
   getCachedDocument,
   setCachedStarred,
 } from "../offline-cache";
+import { storageGet, storageSet, storageRemove } from "../safe-storage";
 
 const PROTOCOL_VERSION = 2;
 
@@ -1865,18 +1866,18 @@ export class CrdtSyncClient {
   /// handle identity verification. Don't call checkWhoAmI here (causes issues).
   async tryTicketAuth(): Promise<boolean> {
     try {
-      const b64 = localStorage.getItem("xudanu_session_ticket");
+      const b64 = storageGet("xudanu_session_ticket");
       if (!b64) return false;
       const binary = atob(b64);
       if (binary.length !== 112) {
-        localStorage.removeItem("xudanu_session_ticket");
+        storageRemove("xudanu_session_ticket");
         return false;
       }
       const arr = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
       const ok = await this.sessionTicketRedeem(arr);
       if (!ok) {
-        localStorage.removeItem("xudanu_session_ticket");
+        storageRemove("xudanu_session_ticket");
         return false;
       }
       // Rolling renewal — non-blocking
@@ -1884,7 +1885,7 @@ export class CrdtSyncClient {
         if (newTicket) {
           try {
             const b = btoa(String.fromCharCode(...newTicket));
-            localStorage.setItem("xudanu_session_ticket", b);
+            storageSet("xudanu_session_ticket", b);
           } catch { /* no-op */ }
         }
       }).catch(() => {});
@@ -1924,7 +1925,7 @@ export class CrdtSyncClient {
       if (newTicketArr && newTicketArr.length > 0) {
         const newTicket = new Uint8Array(newTicketArr);
         const b64 = btoa(String.fromCharCode(...newTicket));
-        try { localStorage.setItem("xudanu_session_ticket", b64); } catch { /* no-op */ }
+        try { storageSet("xudanu_session_ticket", b64); } catch { /* no-op */ }
       }
       return true;
     } catch {

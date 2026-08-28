@@ -1,3 +1,5 @@
+import { storageGet, storageSet } from "./safe-storage";
+
 export type ThemeMode = "light" | "dark";
 
 export interface ThemePalette {
@@ -93,11 +95,11 @@ const LIGHT_KEY = "xudanu_theme_light";
 const DARK_KEY = "xudanu_theme_dark";
 
 function safeGet(key: string): string | null {
-  try { return localStorage.getItem(key); } catch { return null; }
+  try { return storageGet(key); } catch { return null; }
 }
 
 function safeSet(key: string, value: string): void {
-  try { localStorage.setItem(key, value); } catch { /* no-op */ }
+  try { storageSet(key, value); } catch { /* no-op */ }
 }
 
 export function loadThemeState(): ThemeState {

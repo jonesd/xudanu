@@ -1,4 +1,5 @@
 import { useRef, useEffect, useCallback, useMemo, useState } from "react";
+import { storageGet, storageSet } from "../safe-storage";
 import type { AttributionSpan, TransclusionMarker, AnnotationEntry, SpanRangePayload, AwarenessState, ChangeHighlight, AgainHop } from "../api/crdt_sync";
 import type { PendingTransclusion } from "../hooks/useTransclusion";
 import { authorColor } from "../author-color";
@@ -975,7 +976,7 @@ export function CollaborativeEditor({
   const [authorTooltip, setAuthorTooltip] = useState<AuthorBarZone | null>(null);
   const [linkTypeFilter, setLinkTypeFilterState] = useState<Set<number> | null>(() => {
     try {
-      const saved = localStorage.getItem("xudanu_linkTypeFilter");
+      const saved = storageGet("xudanu_linkTypeFilter");
       if (saved === "all" || saved === null) return null;
       const arr = JSON.parse(saved);
       if (Array.isArray(arr)) return new Set(arr);
@@ -987,8 +988,8 @@ export function CollaborativeEditor({
     setLinkTypeFilterState((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
       try {
-        if (next === null) localStorage.setItem("xudanu_linkTypeFilter", "all");
-        else localStorage.setItem("xudanu_linkTypeFilter", JSON.stringify([...next]));
+        if (next === null) storageSet("xudanu_linkTypeFilter", "all");
+        else storageSet("xudanu_linkTypeFilter", JSON.stringify([...next]));
       } catch { /* no-op */ }
       return next;
     });

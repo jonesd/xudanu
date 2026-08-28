@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { storageGet, storageSet, storageRemove, storageClear } from "../../safe-storage";
 import type { ReactNode } from "react";
 import { useCrdtSync } from "../../hooks/useCrdtSync";
 import { useWorkStore } from "../../store/work-store";
@@ -116,7 +117,7 @@ export function WorkspaceShell() {
   const [navTab, setNavTab] = useState<WorkspaceNavTab>(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("clear") === "1") {
-      localStorage.clear();
+      storageClear();
       params.delete("clear");
       const url = window.location.pathname + (params.toString() ? "?" + params.toString() : "");
       window.history.replaceState({}, "", url);
@@ -148,7 +149,7 @@ export function WorkspaceShell() {
   const [workMeta, setWorkMeta] = useState<WorkMeta | null>(() => {
     if (workBeId === null) return null;
     try {
-      const cached = localStorage.getItem(`xudanu_meta_${workBeId}`);
+      const cached = storageGet(`xudanu_meta_${workBeId}`);
       if (cached) return JSON.parse(cached) as WorkMeta;
     } catch { /* no-op */ }
     return null;
@@ -228,10 +229,10 @@ export function WorkspaceShell() {
   // is the signature capability. localStorage still overrides for
   // users who prefer clean text.
   const [showProv, setShowProv] = useState(() => {
-    try { return localStorage.getItem("xudanu_showProv") !== "false"; } catch { return true; }
+    try { return storageGet("xudanu_showProv") !== "false"; } catch { return true; }
   });
   const [showLinkDesc, setShowLinkDesc] = useState(() => {
-    try { return localStorage.getItem("xudanu_showLinkDesc") !== "false"; }
+    try { return storageGet("xudanu_showLinkDesc") !== "false"; }
     catch { return true; }
   });
   const [showPerspective, setShowPerspective] = useState(false);
@@ -502,21 +503,21 @@ export function WorkspaceShell() {
   // Persisted so a refresh mid-tour resumes where the reader left off.
   const [followTrail, setFollowTrail] = useState<{ name: string; stops: Array<{ work_id: number; note?: string | null }> } | null>(() => {
     try {
-      const raw = localStorage.getItem("xudanu_follow_trail");
+      const raw = storageGet("xudanu_follow_trail");
       return raw ? JSON.parse(raw) : null;
     } catch { return null; }
   });
   const [followIndex, setFollowIndex] = useState<number>(() => {
-    try { return Number(localStorage.getItem("xudanu_follow_index") || 0); } catch { return 0; }
+    try { return Number(storageGet("xudanu_follow_index") || 0); } catch { return 0; }
   });
   useEffect(() => {
     try {
       if (followTrail) {
-        localStorage.setItem("xudanu_follow_trail", JSON.stringify(followTrail));
-        localStorage.setItem("xudanu_follow_index", String(followIndex));
+        storageSet("xudanu_follow_trail", JSON.stringify(followTrail));
+        storageSet("xudanu_follow_index", String(followIndex));
       } else {
-        localStorage.removeItem("xudanu_follow_trail");
-        localStorage.removeItem("xudanu_follow_index");
+        storageRemove("xudanu_follow_trail");
+        storageRemove("xudanu_follow_index");
       }
     } catch { /* no-op */ }
   }, [followTrail, followIndex]);
@@ -580,7 +581,7 @@ export function WorkspaceShell() {
             versionLabel: match.revision_count ? `v${match.revision_count}` : null,
           };
           setWorkMeta(meta);
-          try { localStorage.setItem(`xudanu_meta_${workBeId}`, JSON.stringify(meta)); } catch { /* no-op */ }
+          try { storageSet(`xudanu_meta_${workBeId}`, JSON.stringify(meta)); } catch { /* no-op */ }
           setFollowState((prev) => ({ ...prev, following: !!match.is_starred }));
           setIsPublished(!!match.read_club && match.read_club === publicClubId);
           setIsFrozen(!!match.is_source);
@@ -2626,7 +2627,7 @@ export function WorkspaceShell() {
                           setWorkMeta((prev) => {
                             const updated = prev ? { ...prev, title: newTitle.trim() } : prev;
                             if (updated && workBeId !== null) {
-                              try { localStorage.setItem(`xudanu_meta_${workBeId}`, JSON.stringify(updated)); } catch { /* no-op */ }
+                              try { storageSet(`xudanu_meta_${workBeId}`, JSON.stringify(updated)); } catch { /* no-op */ }
                             }
                             return updated;
                           });
@@ -2720,7 +2721,7 @@ export function WorkspaceShell() {
                     onClick={() => {
                       const next = !showProv;
                       setShowProv(next);
-                      try { localStorage.setItem("xudanu_showProv", String(next)); } catch { /* no-op */ }
+                      try { storageSet("xudanu_showProv", String(next)); } catch { /* no-op */ }
                     }}
                     title={showProv
                       ? "Provenance underlines ON — light colour strip under each passage shows its author. Click to hide."
@@ -2920,7 +2921,7 @@ export function WorkspaceShell() {
                           onClick={() => {
                             setShowLinkDesc((prev) => {
                               const next = !prev;
-                              try { localStorage.setItem("xudanu_showLinkDesc", String(next)); } catch { /* no-op */ }
+                              try { storageSet("xudanu_showLinkDesc", String(next)); } catch { /* no-op */ }
                               return next;
                             });
                             setMoreMenuOpen(false);

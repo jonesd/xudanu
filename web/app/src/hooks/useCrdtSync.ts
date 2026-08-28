@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { storageGet, storageSet, storageRemove } from "../safe-storage";
 import { CrdtSyncClient, type AwarenessState, type ContentMatch, type AttributionSpan, type AttributionLogStatus, type WhoAmIEntry, type WorkListEntry, type AnnotationEntry, type ChangeHighlight, type LlmUsageSummary, type SaveState } from "../api/crdt_sync";
 
 export interface CrdtSyncState {
@@ -79,7 +80,7 @@ export function useCrdtSync(
   const [attributionLogStatus, setAttributionLogStatus] = useState<AttributionLogStatus | null>(null);
   const [identity, setIdentity] = useState<WhoAmIEntry | null>(() => {
     try {
-      const cached = localStorage.getItem("xudanu_identity_cache");
+      const cached = storageGet("xudanu_identity_cache");
       if (cached) return JSON.parse(cached) as WhoAmIEntry;
     } catch { /* parse error */ }
     return null;
@@ -89,7 +90,7 @@ export function useCrdtSync(
   const [llmUsage, setLlmUsage] = useState<LlmUsageSummary | null>(null);
   const [publicClubId, setPublicClubId] = useState(0);
   const [authenticated, setAuthenticated] = useState(() => {
-    return !!localStorage.getItem("xudanu_session_ticket");
+    return !!storageGet("xudanu_session_ticket");
   });
   const [annotations, setAnnotations] = useState<AnnotationEntry[]>([]);
   const [connectionEpoch, setConnectionEpoch] = useState(0);
@@ -156,7 +157,7 @@ export function useCrdtSync(
     const unsubIdentity = client.onIdentityChange((id) => {
       setIdentity(id);
       if (id) setAuthenticated(true);
-      try { localStorage.setItem("xudanu_identity_cache", JSON.stringify(id)); } catch { /* no-op */ }
+      try { storageSet("xudanu_identity_cache", JSON.stringify(id)); } catch { /* no-op */ }
       setIsAdmin(client!.getIsAdmin());
       // Permissions are identity-scoped: signing in/out must re-check
       // canEdit for the currently open work, or the UI keeps stale
@@ -278,7 +279,7 @@ export function useCrdtSync(
       if (id) {
         setAuthenticated(true);
         setIdentity(id);
-        try { localStorage.setItem("xudanu_identity_cache", JSON.stringify(id)); } catch { /* no-op */ }
+        try { storageSet("xudanu_identity_cache", JSON.stringify(id)); } catch { /* no-op */ }
       } else {
         setAuthenticated(false);
       }
@@ -403,7 +404,7 @@ export function useCrdtSync(
       const body = await resp.json().catch(() => ({}));
       throw new Error(body.error || "login failed");
     }
-    try { localStorage.setItem("xudanu_login_club", clubName); } catch { /* no-op */ }
+    try { storageSet("xudanu_login_club", clubName); } catch { /* no-op */ }
     void password;
     const client = clientRef.current;
     if (client && client.isConnected()) {
@@ -417,7 +418,7 @@ export function useCrdtSync(
       if (ticket) {
         try {
           const b64 = btoa(String.fromCharCode(...ticket));
-          localStorage.setItem("xudanu_session_ticket", b64);
+          storageSet("xudanu_session_ticket", b64);
         } catch { /* no-op */ }
       }
     } catch (e) {
@@ -441,7 +442,7 @@ export function useCrdtSync(
       if (ticket) {
         try {
           const b64 = btoa(String.fromCharCode(...ticket));
-          localStorage.setItem("xudanu_session_ticket", b64);
+          storageSet("xudanu_session_ticket", b64);
         } catch { /* no-op */ }
       }
     } catch (e) {
@@ -612,9 +613,9 @@ export function useCrdtSync(
     // survive sign-out (the reconnect re-probes, this covers the gap).
     setIsAdmin(false);
     try {
-      localStorage.removeItem("xudanu_session_ticket");
-      localStorage.removeItem("xudanu_identity_cache");
-      localStorage.removeItem("xudanu_login_club");
+      storageRemove("xudanu_session_ticket");
+      storageRemove("xudanu_identity_cache");
+      storageRemove("xudanu_login_club");
     } catch { /* no-op */ }
     fetch("/auth/logout", { method: "POST" }).catch(() => {});
     const client = clientRef.current;

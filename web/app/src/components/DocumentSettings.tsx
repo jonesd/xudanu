@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { storageGet, storageSet } from "../safe-storage";
 import {
   cacheStats,
   getCacheLimitMb,
@@ -24,14 +25,14 @@ const DEFAULTS: DocPreferences = {
 
 export function loadDocPreferences(): DocPreferences {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = storageGet(STORAGE_KEY);
     if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
   } catch { /* parse error */ }
   return { ...DEFAULTS };
 }
 
 export function saveDocPreferences(prefs: DocPreferences) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+  storageSet(STORAGE_KEY, JSON.stringify(prefs));
 }
 
 interface DocumentSettingsProps {

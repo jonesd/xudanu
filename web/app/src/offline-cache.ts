@@ -10,6 +10,8 @@
 /// - Editing is never served from cache: offline mode is read-only
 ///   by design (offline CRDT queueing is a separate, larger project).
 
+import { storageGet, storageSet } from "./safe-storage";
+
 const DB_NAME = "xudanu-offline";
 const DB_VERSION = 1;
 const DOC_STORE = "docs";
@@ -38,7 +40,7 @@ let memoryLimitMb: number | null = null;
 export function getCacheLimitMb(): number {
   if (memoryLimitMb !== null) return memoryLimitMb;
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
+    const raw = storageGet(SETTINGS_KEY);
     const v = raw ? Number(raw) : DEFAULT_CACHE_LIMIT_MB;
     if (Number.isFinite(v) && v >= MIN_CACHE_LIMIT_MB && v <= MAX_CACHE_LIMIT_MB) {
       return v;
@@ -50,7 +52,7 @@ export function getCacheLimitMb(): number {
 export function setCacheLimitMb(mb: number): void {
   const clamped = Math.max(MIN_CACHE_LIMIT_MB, Math.min(MAX_CACHE_LIMIT_MB, Math.round(mb)));
   memoryLimitMb = clamped;
-  try { localStorage.setItem(SETTINGS_KEY, String(clamped)); } catch { /* memory only */ }
+  try { storageSet(SETTINGS_KEY, String(clamped)); } catch { /* memory only */ }
   // Eviction runs on next access; the limit is read fresh each time.
 }
 
