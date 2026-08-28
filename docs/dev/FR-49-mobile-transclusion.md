@@ -42,16 +42,17 @@ implementation of transclusion logic.
 
 ## Part A — Receiving (display)
 
-### A1. Phone marker styling (replace margin bars under 768px)
+### A1. Phone marker styling (audit + lane adaptation under 768px)
 
-Desktop: margin bars + colour coding per source document.
-Phone: **tinted background** (source colour, low alpha) + a compact
-**source chip** at the passage start (source-initial glyph or doc
-kind icon). Margin bars remain at tablet width and above.
-
-- Tint keeps full text width; the chip is tappable.
-- Overlapping/nested transclusions: stack tints (screen blend);
-  the chip shows the top-level source; the sheet (A2) lists all.
+Spike finding (2026-08-28): inline transclusions already render as
+tint + 3px left border + ↗ glyph — no width loss; A1 as originally
+imagined (replacing margin bars) is already true. What needs phone
+attention: the **link lane markers** (link-markers.ts lanes/pills)
+are the width-consuming element and the source of the reported
+phone overflow; they need a phone variant (collapsed density pills
+tappable → lane list in the sheet). The transclusion chip stays
+the ↗ glyph; colour the border by source document for parity with
+desktop attribution colours.
 
 ### A2. Tap → source sheet
 
