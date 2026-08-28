@@ -1071,6 +1071,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   min-width: 0;
+  color: var(--text);
 }
 .ws-doc-title-text:hover {
   color: var(--accent-blue) !important;
