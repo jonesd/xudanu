@@ -2993,6 +2993,39 @@
   border-left: none;
 }
 .cb-dock-vresizer { display: none; }
+@media (max-width: 767px) {
+  .cb-dock {
+    inset: 0;
+    width: 100%;
+    z-index: 130;
+    border-left: none;
+  }
+  .ws-mode-compose .ws-body {
+    grid-template-columns: 0 minmax(0, 1fr) 0;
+    padding-right: 0;
+  }
+  .cb-header {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 48px;
+    padding: 6px 10px;
+    row-gap: 6px;
+  }
+  .cb-doc-title { display: none; }
+  .cb-dock-hint { display: none; }
+  .cb-dock-body {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .cb-dock-sources {
+    flex: none;
+    border-right: none;
+    border-bottom: 1px solid var(--border, #30363d);
+    max-height: 45vh;
+    overflow-y: auto;
+  }
+  .cb-dock-structure { flex: none; border-left: none; }
+}
 .cb-overlay { position: fixed; inset: 0; z-index: 100; background: var(--bg, #1a1a24); display: flex; flex-direction: column; }
 .cb-header { display: flex; align-items: center; justify-content: space-between; padding: 0 16px; height: 48px; background: var(--bg-surface, #22222e); border-bottom: 1px solid var(--border, #30363d); flex-shrink: 0; }
 .cb-header-left { display: flex; align-items: center; gap: 12px; }
