@@ -3302,4 +3302,12 @@
     padding: 16px;
     -webkit-overflow-scrolling: touch;
   }
+  /* Title owns its first line on phone; action buttons wrap below
+     instead of squeezing the title to zero width. */
+  .ws-mode-doc .ws-doc-header {
+    padding: 8px 12px;
+  }
+  .ws-mode-doc .ws-doc-title-row {
+    flex: 1 0 100%;
+  }
 }
