@@ -1067,6 +1067,10 @@
 .ws-doc-title-text {
   letter-spacing: -0.3px;
   transition: color 0.12s;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 .ws-doc-title-text:hover {
   color: var(--accent-blue) !important;

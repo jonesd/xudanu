@@ -2617,7 +2617,7 @@ export function WorkspaceShell() {
                   </div>
                   <span
                     className="ws-doc-title-text"
-                    title="Click to rename"
+                    title={workMeta?.title || "Click to rename"}
                     onClick={async () => {
                       const current = workMeta?.title || `Work 0x${workBeId?.toString(16) ?? ""}`;
                       const newTitle = prompt("Document title:", current);
