@@ -30,7 +30,7 @@ session_connect → club_id_by_name → session_login → session_authenticate  
 
 | Op | Auth | Payload | Response value |
 |---|---|---|---|
-| `session_connect` | none | `—` | `{"type":"id","value":13575072539142736027}` |
+| `session_connect` | none | `—` | `{"type":"id","value":13575072539142736004}` |
 | `session_login_public` | none | `—` | `{"type":"id","value":1000}` |
 | `work_create` | logged_in | `{"edition":{"text":"Hello from the wire doc generator."}}` | `{}` |
 | `work_get_edition` | read | `—` | `{}` |
@@ -148,7 +148,7 @@ List known club names.
         1001
       ],
       [
-        "david@dgjones.info",
+        "<email>",
         1004
       ],
       [
@@ -157,7 +157,8 @@ List known club names.
       ],
       [
         "access",
-       
+        1002
+     
 ...
 ```
 

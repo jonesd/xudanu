@@ -227,6 +227,9 @@ async def connect_and_capture(server_url: str) -> dict:
                 resp = json.loads(response)
                 # Normalize volatile fields
                 resp = normalize(resp)
+                resp, warns = sanitize(resp)
+                for w in warns:
+                    print(f'  SANITIZED: {w}')
             except asyncio.TimeoutError:
                 resp = {"error": "TIMEOUT"}
             except Exception as e:
@@ -291,6 +294,35 @@ def compact_req(req: dict) -> str:
     if not payload:
         return "()  // no payload"
     return json.dumps(payload, indent=2)
+
+
+
+
+# Patterns that should never appear in committed docs.
+import re as _re
+SENSITIVE_PATTERNS = [
+    (_re.compile(r'[\w.+-]+@(?!example\.com)[\w.-]+\.[a-z]{2,}'), '<email>'),
+    (_re.compile(r'greetingsforalltime|admin12345|xudanu-demo-admin'), '<sanitized>'),
+    (_re.compile(r'[0-9a-f]{64,}'), '<hash>'),
+    (_re.compile(r'root@\d+\.\d+\.\d+\.\d+'), '<server>'),
+]
+
+def sanitize(obj):
+    """Recursively scrub sensitive values. Returns (obj, warnings)."""
+    warnings = []
+    def walk(o):
+        if isinstance(o, str):
+            for pat, replacement in SENSITIVE_PATTERNS:
+                if pat.search(o):
+                    warnings.append(o[:40])
+                    return replacement
+            return o
+        elif isinstance(o, dict):
+            return {k: walk(v) for k, v in o.items()}
+        elif isinstance(o, list):
+            return [walk(i) for i in o]
+        return o
+    return walk(obj), warnings
 
 
 def generate_markdown(results: dict) -> str:
