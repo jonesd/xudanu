@@ -6,6 +6,49 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.8.0] — 2026-08-29
+
+The mobile client release: the phone went from blank page to a full
+client, OAuth sign-in went live end-to-end, and the demo server got
+terms, an intro landing, and a working interactive demo.
+
+### Mobile (the headline)
+- **fix(mobile):** Safari with blocked storage (private mode, strict ITP) crashed React's first render on an unguarded `localStorage` read — blank page on iOS. All storage access now goes through guarded wrappers; blocked browsers degrade to session-only state. Found by driving real-device Safari via WebDriver.
+- **feat(mobile): the real collaborative editor on phone** — the plain-text reader overlay was retired; it had been papering over an editor that was CSS-hidden (display:none on a collapsed grid column), never actually broken. Attribution colours, markers, and touch editing all live.
+- **feat(mobile): real panels in the bottom sheet** — the sheet's tabs were static placeholder copy; they now render the full desktop panel body (607-line JSX extraction, single source). Sheet scrolls, 56vh cap.
+- **fix(mobile): compose builder** — full-screen sheet on phone (was a 179px sliver: `min(560px, 46vw)`), source picker in-flow with touch-sized rows, quoted-passages panel spans width, 16px inputs (no iOS focus-zoom), compose always lands on an editable document.
+- **feat(mobile): title line regroup** — ©/★/⋯ right-aligned beside the title; long titles ellipsize (one line, hover shows full).
+
+### Identity and sign-in
+- **feat: OAuth sign-in (GitHub + Google), adaptive UI** — `/health` advertises configured providers; the sign-in panel renders exactly those buttons. Credentials are the per-server toggle: `XUDANU_GITHUB_CLIENT_ID`/`_SECRET`, `XUDANU_GOOGLE_CLIENT_ID`/`_SECRET` env vars; absent = fully off, local in-app identities remain the default and are always available.
+- **fix: OAuth new-account creation was always rejected** — the callback session is born anonymous but club creation demanded a logged-in session (every WS client performs the public login first; the callback never did). Only pre-existing OAuth links could sign in. Public login now performed on the callback session. Regression test covers both sides.
+- Operator walkthrough: console steps for both providers, callback URLs, Testing/Publish modes, env wiring — [terms for operators](https://dgjones.info/xudanu/terms-for-operators.html).
+
+### Attribution
+- **fix: attribution panel empty for CRDT-edited works** — `attribution_query_resolved` did not materialize the edition before walking entries (the plain query arm does); works edited through the CRDT path returned zero spans while the ledger held every entry. Server: materialization guard mirrored; client: falls back to the plain query on empty. Diagnosed by wire-probe (server logged 245 entries; client panel showed 0).
+
+### Demo and landing
+- **feat: demo seeder creates the five typed links it describes** — fresh installs seeded the demo text but no link records; new self-hosters got a bare demo until links were hand-made. One link per built-in type between real passages; regression test.
+- **fix: welcome screen visible on first visit (phone)** — the welcome lives in the doc column, which the phone grid squashes to ~2px; first-time visitors saw an empty page. Now full-area with capability cards, demo/docs/GitHub/terms links.
+- **fix: PWA install** — malformed `apple-mobile-web-app-capable` meta (parsed as a fake element wrapping the app), real 180px touch icon regenerated from the SVG mark, terms link added.
+
+### Docs, terms, legal
+- **Terms of use for the demo server** + operator notes (content ownership, licence-to-operate grant naming transclusion and provenance display, "the server never handles money" by design, moderation, takedown contact, removal-on-request).
+- Explainer: [What people said killed Project Xanadu — and what happened when we built it anyway](https://dgjones.info/xudanu/xanadu-explainer.html), with the authoritative Green/88.1 and Gold/92.1 lineage (both released August 23, 1999).
+- FR-48 research checklist (tumbler alignment), FR-49 (mobile transclusion flow).
+
+### Fixes
+- Doc title unreadable in dark mode (inherited the paper's ink colour; now theme-aware `--text`).
+- Prov button unreadable in light mode (dropped the yellow inline override).
+- Builder header/menu geometry; identity modal scrolls (Sign Out was below the fold).
+
+### Known issues
+- Phone: link-lane markers overflow the viewport; kebab overflow menu for header actions pending (FR-49).
+- Attribution dispatch-level regression test owed (server-side guard is tested; wire-level not).
+- OAuth provider badge in the identity panel (which door you signed in with) pending.
+
+---
+
 ## [v1.7.0] — 2026-08-20
 
 ### FR-40: Green/Gold Link Constructs (heritage link model)
