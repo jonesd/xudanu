@@ -6,6 +6,15 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.8.1] — 2026-08-29
+
+Two layout fixes found within the hour of v1.8.0 shipping:
+
+- **fix: narrowed desktop window could squeeze the editor to zero width** — the doc column was `minmax(0,1fr)`; between ~768–1100px the side columns consumed the middle and the editor silently vanished. The column now floors at 320px; in the narrow band the right panel yields first (below ~1080px), then the left rail (below ~900px), both reopenable via their collapse controls.
+- **fix: search trigger wrapped to three lines when the top bar crowded** — long identity names (OAuth sign-in brings emails) squeezed the shrinkable search box and its placeholder wrapped, breaking the bar. Now `nowrap` + overflow hidden: it shrinks gracefully.
+
+---
+
 ## [v1.8.0] — 2026-08-29
 
 The mobile client release: the phone went from blank page to a full
