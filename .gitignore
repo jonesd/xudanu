@@ -59,3 +59,4 @@ scripts/.seed-credentials
 
 # Security scan output
 security-scan/
+node_modules/
