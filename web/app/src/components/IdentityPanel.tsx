@@ -14,6 +14,7 @@ interface IdentityPanelProps {
   onCreateIdentity: (displayName: string, password: string) => Promise<void>;
   onChangePassword?: (currentPassword: string, newPassword: string) => Promise<void>;
   onLogout: () => void;
+  oauthProviders?: { github: boolean; google: boolean };
   rosters?: Record<number, Roster>;
   llmEnabled?: boolean;
   llmUsage?: {
@@ -48,7 +49,7 @@ export function passwordStrength(pw: string): { score: number; label: string; co
   return { score, label: "Strong", color: "#27ae60" };
 }
 
-export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, onChangePassword, onLogout, rosters, llmEnabled, llmUsage }: IdentityPanelProps) {
+export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, onChangePassword, onLogout, oauthProviders, rosters, llmEnabled, llmUsage }: IdentityPanelProps) {
   const [mode, setMode] = useState<"closed" | "login" | "create">("closed");
   const [clubName, setClubName] = useState("");
   const [password, setPassword] = useState("");
@@ -387,6 +388,21 @@ export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, 
             <>No identity yet? <button type="button" className="identity-link" onClick={() => { setMode("create"); setError(null); setShowPassword(true); }}>Create one</button></>
           )}
         </p>
+        {(oauthProviders?.github || oauthProviders?.google) && (
+          <div className="identity-oauth" style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>or sign in with</div>
+            {oauthProviders?.github && (
+              <a href="/auth/github" className="identity-submit" style={{ display: "block", textAlign: "center", textDecoration: "none", boxSizing: "border-box" }}>
+                GitHub
+              </a>
+            )}
+            {oauthProviders?.google && (
+              <a href="/auth/google" className="identity-submit" style={{ display: "block", textAlign: "center", textDecoration: "none", boxSizing: "border-box" }}>
+                Google
+              </a>
+            )}
+          </div>
+        )}
       </form>
     </div>
   );

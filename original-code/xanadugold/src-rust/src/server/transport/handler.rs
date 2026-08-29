@@ -190,16 +190,31 @@ async fn index_handler(State(state): State<SharedState>) -> impl IntoResponse {
 }
 
 async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
-    let json = state.server.try_health_json().unwrap_or_else(|| {
+    let body = state.server.try_health_json().unwrap_or_else(|| {
         serde_json::json!({
             "status": "degraded",
             "operations": state.server.operation_count(),
         })
         .to_string()
     });
+    let mut value: serde_json::Value = serde_json::from_str(&body).unwrap_or_else(|_| {
+        serde_json::json!({
+            "status": "degraded",
+            "operations": state.server.operation_count(),
+        })
+    });
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert(
+            "oauth_providers".into(),
+            serde_json::json!({
+                "github": state.oauth_config.github_enabled(),
+                "google": state.oauth_config.google_enabled(),
+            }),
+        );
+    }
     (
         [(axum::http::header::CONTENT_TYPE, "application/json")],
-        json,
+        value.to_string(),
     )
 }
 

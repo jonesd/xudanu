@@ -284,18 +284,29 @@ export function WorkspaceShell() {
   // FR-42/45 network toggle state — mirrored from /health (default off).
   const [networkEnabled, setNetworkEnabled] = useState(false);
   const [externalLinksEnabled, setExternalLinksEnabled] = useState(false);
+  const [oauthProviders, setOauthProviders] = useState<{ github: boolean; google: boolean }>({ github: false, google: false });
   useEffect(() => {
     let cancelled = false;
     const readHealth = async () => {
       try {
         const r = await fetch("/health");
         if (!r.ok) return;
-        const j = (await r.json()) as { network_enabled?: boolean; external_links_enabled?: boolean };
+        const j = (await r.json()) as {
+          network_enabled?: boolean;
+          external_links_enabled?: boolean;
+          oauth_providers?: { github?: boolean; google?: boolean };
+        };
         if (!cancelled && typeof j.network_enabled === "boolean") {
           setNetworkEnabled(j.network_enabled);
         }
         if (!cancelled && typeof j.external_links_enabled === "boolean") {
           setExternalLinksEnabled(j.external_links_enabled);
+        }
+        if (!cancelled && j.oauth_providers) {
+          setOauthProviders({
+            github: j.oauth_providers.github === true,
+            google: j.oauth_providers.google === true,
+          });
         }
       } catch { /* offline — keep last known */ }
     };
@@ -4543,6 +4554,7 @@ export function WorkspaceShell() {
               onLogout={logout}
               llmEnabled={crdt.llmEnabled}
               llmUsage={crdt.llmUsage}
+              oauthProviders={oauthProviders}
             />
             <div style={{ textAlign: "right", marginTop: 12 }}>
               <button className="ws-anno-cancel" onClick={() => setShowIdentity(false)}>Close</button>
