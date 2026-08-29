@@ -141,8 +141,19 @@ edition state is the follow-up if the import case matters.
 |---|---|
 | Quadratic keystroke | FIXED (A+B): 11.6s → 634µs @ 16k |
 | Attribution O(N) | FIXED: 73ms → 21ms @ 256k |
-| Per-keystroke edition rebuilds/clones | OPEN — fix C (structural, O-tree-native) |
+| Per-keystroke edition rebuilds/clones | PART 1 SHIPPED: O(1) transclusion-migration skip (scales with work count). REMAINING — fix C pt 2: assemble_fast_result's full-Vec splice rebuild (~35% of keystroke per profile) + destructor churn (~14%) + late-function clones. Needs persistent/window-shared entry structure — a design change, not a patch |
 | Verification caching per edition state | OPEN — matters only for whole-doc spans |
+
+## Fix C part 1 (2026-08-29)
+
+Profile of the post-A+B keystroke: ~35% assembling the fast-path
+result (full entry-Vec rebuild of Arc clones), ~14% edition
+destructors (same churn on free), ~10% `migrate_inline_transclusions
+_for_delta` — which scanned EVERY entry of EVERY work per keystroke.
+Shipped the O(1) skip (has_transclusions flag in the edition cache).
+Effect scales with work count, not document size — the single-work
+bench fixture cannot show it; a multi-work fixture variant is owed to
+the harness.
 
 ## Phase 1 — micro-harness (Big-O curves)
 
