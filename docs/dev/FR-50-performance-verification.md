@@ -117,6 +117,33 @@ same_content remains the multi-session fallback.
 **Still open (finding 2):** attribution_query ~O(N) (73ms @ 256k,
 polled every 30s per open client). Next target.
 
+## Finding 2 fixed (2026-08-29)
+
+`attribution_query` read three O(N) paths per call — `all_entries()`
+cloned the entry Vec, a cumulative HashMap rebuilt, and each span's
+fingerprints were re-hashed from text. The edition's memoized cache
+(entries, char-starts) now also carries per-entry fingerprints, built
+once per edition state and carried across the CRDT fast-path splices;
+the query indexes the parallel slices by binary search.
+
+| N | attr-q before | attr-q after |
+|---|---|---|
+| 256k | 73 ms | 21 ms (3.5×) |
+
+Residual is per-query signature verification over the pathological
+single-whole-document span (imported content shape); real many-span
+documents verify small lists. Full verification-result caching per
+edition state is the follow-up if the import case matters.
+
+## All findings status
+
+| Finding | Status |
+|---|---|
+| Quadratic keystroke | FIXED (A+B): 11.6s → 634µs @ 16k |
+| Attribution O(N) | FIXED: 73ms → 21ms @ 256k |
+| Per-keystroke edition rebuilds/clones | OPEN — fix C (structural, O-tree-native) |
+| Verification caching per edition state | OPEN — matters only for whole-doc spans |
+
 ## Phase 1 — micro-harness (Big-O curves)
 
 A `xudanu-bench` binary (or `xudanu-robots bench` subcommand):
