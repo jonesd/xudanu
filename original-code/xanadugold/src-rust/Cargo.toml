@@ -113,3 +113,8 @@ required-features = ["server"]
 name = "dispatch_bench"
 harness = false
 required-features = ["server"]
+
+[[bin]]
+name = "xudanu-bench"
+required-features = ["server"]
+
