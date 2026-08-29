@@ -388,6 +388,12 @@ async fn handle_oauth_success(
         None => {
             let club_id = state.server.with_server(|srv| {
                 let session_id = srv.connect();
+                // The callback's session is born anonymous; every other
+                // identity-creation path runs over a WS session that has
+                // performed the public login first. Without this, club
+                // creation is rejected as not-authorized — the OAuth
+                // new-account path never worked (only pre-existing links).
+                let _ = srv.login_public(session_id);
                 srv.create_personal_club_from_oauth(session_id, display_name.to_string())
             });
             match club_id {
@@ -919,5 +925,26 @@ mod tests {
         assert!(location
             .contains("redirect_uri=https%3A%2F%2Ftest.example.com%2Fauth%2Fgoogle%2Fcallback"));
         assert!(location.contains("state="));
+    }
+
+    // ---- New-account creation path ----
+    // Regression: the callback session is born anonymous; club creation
+    // requires the public login first. This mirrors the old production
+    // failure ("Failed to create account: not authorized").
+
+    #[test]
+    fn oauth_club_creation_requires_public_login_on_fresh_session() {
+        let state = make_state(OAuthConfig::default());
+        let club = state.server.with_server(|srv| {
+            let sid = srv.connect();
+            assert!(
+                srv.create_personal_club_from_oauth(sid, "OAuth User".into())
+                    .is_err(),
+                "bare session must be rejected (not authorized)"
+            );
+            let _ = srv.login_public(sid);
+            srv.create_personal_club_from_oauth(sid, "OAuth User".into())
+        });
+        assert!(club.is_ok(), "public login must unlock oauth club creation");
     }
 }
