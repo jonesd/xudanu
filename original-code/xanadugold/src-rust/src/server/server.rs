@@ -4849,50 +4849,27 @@ impl Server {
             .get(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         let edition = ws.work.current_edition();
-        let all_entries = edition.all_entries();
+        // FR-50 finding 2: this query ran three O(N) walks per call —
+        // all_entries() clones the whole entry Vec, a cumulative HashMap
+        // was rebuilt, and elem_to_char did a linear scan per span. The
+        // edition's memoized caches (entries + char starts, ordered by
+        // position) make all three O(log) lookups instead.
+        let all_entries = edition.cached_entries();
+        let char_starts = edition.cached_char_starts();
+        let fingerprints = edition.cached_fingerprints();
+        let total_chars = edition.char_len() as i64;
         tracing::info!(
-            "[attribution_query] work={:04x} entries={} span_prov={} prov_entries={} entry_details={}",
+            "[attribution_query] work={:04x} entries={} span_prov={}",
             work_be_id,
             all_entries.len(),
             edition.span_provenance.len(),
-            all_entries.iter().filter(|(_, c)| c.provenance.is_some()).count(),
-            all_entries
-                .iter()
-                .take(10)
-                .map(|(p, c)| {
-                    let txt = c
-                        .element
-                        .as_text()
-                        .unwrap_or("")
-                        .chars()
-                        .take(20)
-                        .collect::<String>();
-                    let has_prov = c.provenance.is_some();
-                    format!("{}:{}({})", p, txt.len(), if has_prov { "P" } else { "_" })
-                })
-                .collect::<Vec<_>>()
-                .join(",")
         );
 
-        let mut elem_char_start: std::collections::HashMap<i64, usize> =
-            std::collections::HashMap::with_capacity(all_entries.len());
-        let mut cum = 0usize;
-        for (pos, c) in &all_entries {
-            elem_char_start.insert(*pos, cum);
-            cum += c.char_len();
-        }
-
         let elem_to_char = |elem_pos: i64, elem_end: i64| -> (i64, i64) {
-            let c_start = elem_char_start.get(&elem_pos).copied().unwrap_or(0) as i64;
-            let c_end = if let Some(next_pos) = all_entries
-                .iter()
-                .find(|(p, _)| *p >= elem_end)
-                .map(|(p, _)| *p)
-            {
-                elem_char_start.get(&next_pos).copied().unwrap_or(cum) as i64
-            } else {
-                cum as i64
-            };
+            let i = all_entries.partition_point(|(p, _)| *p < elem_pos);
+            let c_start = char_starts.get(i).copied().unwrap_or(0) as i64;
+            let j = all_entries.partition_point(|(p, _)| *p < elem_end);
+            let c_end = char_starts.get(j).copied().unwrap_or(total_chars as usize) as i64;
             (c_start, c_end)
         };
 
@@ -4916,11 +4893,15 @@ impl Server {
                 }
             }
 
-            let fps: Vec<[u8; 32]> = all_entries
-                .iter()
-                .filter(|(pos, _)| *pos >= sp.start && *pos < sp.end)
-                .map(|(_, c)| c.element.content_fingerprint())
-                .collect();
+            // Entry-position range of the span as cache indexes —
+            // fingerprints are read from the edition cache, not
+            // re-hashed or cloned per query (FR-50 finding 2).
+            let i_start = all_entries.partition_point(|(p, _)| *p < sp.start);
+            let i_end = all_entries.partition_point(|(p, _)| *p < sp.end);
+            let fps: &[[u8; 32]] = fingerprints
+                .get(i_start..i_end)
+                .map(|s| s as &[[u8; 32]])
+                .unwrap_or(&[]);
 
             // FR-140 tier 2: a signature that fails against current
             // fingerprints is EXPECTED for own-author edits — the
@@ -4942,13 +4923,15 @@ impl Server {
                 // carries provenance by the same author club, treat the
                 // span as own-author-maintained (re-signed semantics).
                 let span_elements_have_same_author = all_entries
-                    .iter()
-                    .filter(|(pos, _)| *pos >= sp.start && *pos < sp.end)
-                    .any(|(_, c)| {
-                        c.provenance.as_ref().is_some_and(|ep| {
-                            ep.author_public_key == sp.provenance.author_public_key
+                    .get(i_start..i_end)
+                    .map(|slice| {
+                        slice.iter().any(|(_, c)| {
+                            c.provenance.as_ref().is_some_and(|ep| {
+                                ep.author_public_key == sp.provenance.author_public_key
+                            })
                         })
-                    });
+                    })
+                    .unwrap_or(false);
                 span_elements_have_same_author
             };
             let verification_state = if stored_valid {
@@ -4960,8 +4943,8 @@ impl Server {
             };
 
             let element_prov = all_entries
-                .iter()
-                .find(|(pos, _)| *pos >= sp.start && *pos < sp.end)
+                .get(i_start..i_end)
+                .and_then(|slice| slice.first())
                 .and_then(|(_, c)| c.provenance.as_ref());
             let author_type_str = element_prov.map(|ep| match ep.author_type {
                 crate::edition::provenance::AuthorType::Human => "human".to_string(),

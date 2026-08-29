@@ -760,6 +760,7 @@ fn assemble_fast_result(
 
     let entries = edition.cached_entries();
     let starts = edition.cached_char_starts();
+    let fps = edition.cached_fingerprints();
     let n = entries.len();
     let m = hood.len();
     let prev = if i0 > 0 {
@@ -783,9 +784,11 @@ fn assemble_fast_result(
         };
         let mut new_entries: Vec<(i64, Arc<Carrier>)> = Vec::with_capacity(n);
         let mut new_starts: Vec<usize> = Vec::with_capacity(n);
+        let mut new_fps: Vec<[u8; 32]> = Vec::with_capacity(n);
         for k in 0..i0 {
             new_entries.push(entries[k].clone());
             new_starts.push(starts[k]);
+            new_fps.push(fps[k]);
         }
         let cursor = if i0 < n { starts[i0] } else { 0 };
         if i1 < n {
@@ -793,12 +796,17 @@ fn assemble_fast_result(
             for k in i1..n {
                 new_entries.push(entries[k].clone());
                 new_starts.push((starts[k] as i64 + shift) as usize);
+                new_fps.push(fps[k]);
             }
         }
         return Some(Edition {
             orgl,
             endorsements: edition.endorsements.clone(),
-            entries_cache: Arc::new(std::sync::OnceLock::from((new_entries, new_starts))),
+            entries_cache: Arc::new(std::sync::OnceLock::from((
+                new_entries,
+                new_starts,
+                new_fps,
+            ))),
             span_provenance: edition.span_provenance.clone(),
         });
     }
@@ -902,7 +910,7 @@ fn assemble_fast_result(
     let first_pos = mid.cached_entries().first()?.0;
     let last_pos = mid.cached_entries().last()?.0;
     let mut combined = mid.orgl.clone();
-    let mut carried_cache: Option<(Vec<(i64, Arc<Carrier>)>, Vec<usize>)> = None;
+    let mut carried_cache: Option<(Vec<(i64, Arc<Carrier>)>, Vec<usize>, Vec<[u8; 32]>)> = None;
 
     if !rebased {
         if w_start < i0 && w_start < n {
@@ -946,22 +954,26 @@ fn assemble_fast_result(
         // re-flattening the tree (O(n) pointer memcpy vs O(n) walk).
         // Suffix char starts shift by the neighborhood's net char delta.
         let mid_entries = mid.cached_entries().clone();
+        let mid_fps = mid.cached_fingerprints();
         let mut new_entries: Vec<(i64, Arc<Carrier>)> = Vec::with_capacity(n + mid_entries.len());
         let mut new_starts: Vec<usize> = Vec::with_capacity(n + mid_entries.len());
+        let mut new_fps: Vec<[u8; 32]> = Vec::with_capacity(n + mid_entries.len());
 
         let prefix_end = if w_start < i0 { w_start } else { i0 };
         for k in 0..prefix_end {
             new_entries.push(entries[k].clone());
             new_starts.push(starts[k]);
+            new_fps.push(fps[k]);
         }
         let mut cursor = if prefix_end < n {
             starts[prefix_end]
         } else {
             0
         };
-        for (pos, carrier) in &mid_entries {
+        for (k, (pos, carrier)) in mid_entries.iter().enumerate() {
             new_entries.push((*pos, carrier.clone()));
             new_starts.push(cursor);
+            new_fps.push(mid_fps[k]);
             cursor += carrier.char_len();
         }
         let suffix_start_idx = if w_end > i1 { w_end } else { i1 };
@@ -970,13 +982,14 @@ fn assemble_fast_result(
             for k in suffix_start_idx..n {
                 new_entries.push(entries[k].clone());
                 new_starts.push((starts[k] as i64 + shift) as usize);
+                new_fps.push(fps[k]);
             }
         }
-        carried_cache = Some((new_entries, new_starts));
+        carried_cache = Some((new_entries, new_starts, new_fps));
     }
 
     let entries_cache = match carried_cache {
-        Some((e, s)) => Arc::new(std::sync::OnceLock::from((e, s))),
+        Some((e, s, f)) => Arc::new(std::sync::OnceLock::from((e, s, f))),
         None => Arc::new(std::sync::OnceLock::new()),
     };
 

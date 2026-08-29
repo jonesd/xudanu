@@ -21,7 +21,7 @@ use super::xn_region::XnRegion;
 /// cumulative char-start of each entry (parallel arrays). Char starts
 /// enable binary-search char -> entry mapping for the tree-native
 /// delta path (PERF-PLAN Stage 5).
-pub(crate) type EntriesCache = (Vec<(i64, Arc<Carrier>)>, Vec<usize>);
+pub(crate) type EntriesCache = (Vec<(i64, Arc<Carrier>)>, Vec<usize>, Vec<[u8; 32]>);
 
 #[derive(Debug, Clone)]
 pub struct Edition {
@@ -142,19 +142,23 @@ impl PartialEq for Edition {
     }
 }
 impl Edition {
+    fn build_entries_cache(&self) -> EntriesCache {
+        let entries = self.orgl.all_entries();
+        let mut starts = Vec::with_capacity(entries.len());
+        let mut fingerprints = Vec::with_capacity(entries.len());
+        let mut cum = 0usize;
+        for (_, carrier) in &entries {
+            starts.push(cum);
+            cum += carrier.char_len();
+            fingerprints.push(carrier.element.content_fingerprint());
+        }
+        (entries, starts, fingerprints)
+    }
+
     pub fn cached_entries(&self) -> &Vec<(i64, Arc<Carrier>)> {
         &self
             .entries_cache
-            .get_or_init(|| {
-                let entries = self.orgl.all_entries();
-                let mut starts = Vec::with_capacity(entries.len());
-                let mut cum = 0usize;
-                for (_, carrier) in &entries {
-                    starts.push(cum);
-                    cum += carrier.char_len();
-                }
-                (entries, starts)
-            })
+            .get_or_init(|| self.build_entries_cache())
             .0
     }
 
@@ -163,17 +167,19 @@ impl Edition {
     pub fn cached_char_starts(&self) -> &[usize] {
         &self
             .entries_cache
-            .get_or_init(|| {
-                let entries = self.orgl.all_entries();
-                let mut starts = Vec::with_capacity(entries.len());
-                let mut cum = 0usize;
-                for (_, carrier) in &entries {
-                    starts.push(cum);
-                    cum += carrier.char_len();
-                }
-                (entries, starts)
-            })
+            .get_or_init(|| self.build_entries_cache())
             .1
+    }
+
+    /// Content fingerprint of each cached entry (parallel to
+    /// `cached_entries`). Each element hashes once per edition state —
+    /// hot paths (attribution verification) read instead of re-hashing
+    /// whole spans per query (FR-50 finding 2).
+    pub fn cached_fingerprints(&self) -> &[[u8; 32]] {
+        &self
+            .entries_cache
+            .get_or_init(|| self.build_entries_cache())
+            .2
     }
 
     /// Content equality ignoring entry positions: same number of
