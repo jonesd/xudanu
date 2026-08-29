@@ -761,6 +761,7 @@ fn assemble_fast_result(
     let entries = edition.cached_entries();
     let starts = edition.cached_char_starts();
     let fps = edition.cached_fingerprints();
+    let hood_has_t: bool = hood.iter().any(|(_, c)| c.element.is_transclusion());
     let n = entries.len();
     let m = hood.len();
     let prev = if i0 > 0 {
@@ -799,6 +800,7 @@ fn assemble_fast_result(
                 new_fps.push(fps[k]);
             }
         }
+        let has_t = edition.cached_has_transclusions() || hood_has_t;
         return Some(Edition {
             orgl,
             endorsements: edition.endorsements.clone(),
@@ -806,6 +808,7 @@ fn assemble_fast_result(
                 new_entries,
                 new_starts,
                 new_fps,
+                has_t,
             ))),
             span_provenance: edition.span_provenance.clone(),
         });
@@ -910,7 +913,8 @@ fn assemble_fast_result(
     let first_pos = mid.cached_entries().first()?.0;
     let last_pos = mid.cached_entries().last()?.0;
     let mut combined = mid.orgl.clone();
-    let mut carried_cache: Option<(Vec<(i64, Arc<Carrier>)>, Vec<usize>, Vec<[u8; 32]>)> = None;
+    let mut carried_cache: Option<(Vec<(i64, Arc<Carrier>)>, Vec<usize>, Vec<[u8; 32]>, bool)> =
+        None;
 
     if !rebased {
         if w_start < i0 && w_start < n {
@@ -985,11 +989,12 @@ fn assemble_fast_result(
                 new_fps.push(fps[k]);
             }
         }
-        carried_cache = Some((new_entries, new_starts, new_fps));
+        let has_t = edition.cached_has_transclusions() || hood_has_t;
+        carried_cache = Some((new_entries, new_starts, new_fps, has_t));
     }
 
     let entries_cache = match carried_cache {
-        Some((e, s, f)) => Arc::new(std::sync::OnceLock::from((e, s, f))),
+        Some((e, s, f, t)) => Arc::new(std::sync::OnceLock::from((e, s, f, t))),
         None => Arc::new(std::sync::OnceLock::new()),
     };
 

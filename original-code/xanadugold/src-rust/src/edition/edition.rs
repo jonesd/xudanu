@@ -21,7 +21,7 @@ use super::xn_region::XnRegion;
 /// cumulative char-start of each entry (parallel arrays). Char starts
 /// enable binary-search char -> entry mapping for the tree-native
 /// delta path (PERF-PLAN Stage 5).
-pub(crate) type EntriesCache = (Vec<(i64, Arc<Carrier>)>, Vec<usize>, Vec<[u8; 32]>);
+pub(crate) type EntriesCache = (Vec<(i64, Arc<Carrier>)>, Vec<usize>, Vec<[u8; 32]>, bool);
 
 #[derive(Debug, Clone)]
 pub struct Edition {
@@ -146,13 +146,17 @@ impl Edition {
         let entries = self.orgl.all_entries();
         let mut starts = Vec::with_capacity(entries.len());
         let mut fingerprints = Vec::with_capacity(entries.len());
+        let mut has_transclusions = false;
         let mut cum = 0usize;
         for (_, carrier) in &entries {
             starts.push(cum);
             cum += carrier.char_len();
             fingerprints.push(carrier.element.content_fingerprint());
+            if carrier.element.is_transclusion() {
+                has_transclusions = true;
+            }
         }
-        (entries, starts, fingerprints)
+        (entries, starts, fingerprints, has_transclusions)
     }
 
     pub fn cached_entries(&self) -> &Vec<(i64, Arc<Carrier>)> {
@@ -180,6 +184,16 @@ impl Edition {
             .entries_cache
             .get_or_init(|| self.build_entries_cache())
             .2
+    }
+
+    /// Whether this edition contains any inline transclusion element.
+    /// Computed in the same pass as the entry cache — lets hot paths
+    /// (per-keystroke transclusion migration) skip transclusion-free
+    /// works in O(1) instead of walking every entry (FR-50 fix C).
+    pub fn cached_has_transclusions(&self) -> bool {
+        self.entries_cache
+            .get_or_init(|| self.build_entries_cache())
+            .3
     }
 
     /// Content equality ignoring entry positions: same number of

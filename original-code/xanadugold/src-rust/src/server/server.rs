@@ -16466,15 +16466,16 @@ impl Server {
             })
             .collect();
 
+        // O(1) skip per work: transclusion-free editions (the
+        // overwhelming majority) never pay the entry scan — this pass
+        // runs on every keystroke (FR-50 fix C).
         let affected: Vec<BeId> = self
             .works
             .iter()
             .filter(|(_, ws)| {
-                ws.work()
-                    .current_edition()
-                    .cached_entries()
-                    .iter()
-                    .any(|(_, c)| {
+                let edition = ws.work().current_edition();
+                edition.cached_has_transclusions()
+                    && edition.cached_entries().iter().any(|(_, c)| {
                         if let RangeElement::Transclusion {
                             source_work_id: sid,
                             ..
