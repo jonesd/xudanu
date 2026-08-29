@@ -104,7 +104,7 @@ This project is an ongoing evolution, not a static port.
 
 ## Status
 
-**Developer Preview** — the system is functional and tested (2,500+ tests passing) but APIs and data formats may evolve. Snapshot migration ensures your data survives upgrades. Versioned wire protocol supports backward-compatible API changes.
+**Developer Preview** — the system is functional and tested (4,300+ tests passing) but APIs and data formats may evolve. Snapshot migration ensures your data survives upgrades. Versioned wire protocol supports backward-compatible API changes.
 
 **[Feature Status](original-code/xanadugold/src-rust/docs/feature-status.md)** — comprehensive tracking of all Xanadu, Udanax Gold, and Xudanu features with implementation status. Covers Nelson's 17 Rules, core data structures, wire protocol, frontend, security, federation, and Xudanu-exclusive additions (LLM integration, cryptographic provenance, CRDT collaborative editing).
 
@@ -192,6 +192,31 @@ people create identities, write simultaneously (CRDT-based live
 editing), and every passage carries its author's signed provenance.
 Set `--edit-policy public-sandbox` for a wiki-style instance, or
 keep the default owner-only policy with per-work permissions.
+
+### Sign-in: local identities, optionally GitHub/Google
+
+Identities are created in-app by default — a name and a password, no
+email, no external accounts. If you want externally accountable
+sign-in instead, enable GitHub and/or Google OAuth per provider by
+setting environment variables on the server:
+
+```
+XUDANU_GITHUB_CLIENT_ID=...      # GitHub → Settings → Developer settings → OAuth Apps
+XUDANU_GITHUB_CLIENT_SECRET=...
+XUDANU_GOOGLE_CLIENT_ID=...      # Google Cloud console → Auth Platform → Clients
+XUDANU_GOOGLE_CLIENT_SECRET=...
+```
+
+The app detects what your server has configured and shows exactly
+those buttons on the sign-in panel; the local identity path always
+remains. Callback URLs and the full walkthrough:
+[Terms for operators — identity models](https://dgjones.info/xudanu/terms-for-operators.html).
+
+### Mobile and offline
+
+The app works on phones (editing included) and installs as a PWA —
+Share → Add to Home Screen — running standalone with an offline
+reading cache. Android support is on the roadmap.
 
 ### Scenario 4 — Try federation (the demo, not the deployment)
 
