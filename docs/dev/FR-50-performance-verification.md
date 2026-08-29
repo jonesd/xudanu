@@ -59,6 +59,42 @@ Phase 0 verifies this table against the code and design docs — the
 table itself is the assertion baseline. Where docs and code
 disagree, that's a finding.
 
+## First findings (2026-08-29, harness rev 0, in-process release build, M-series Mac)
+
+| N | build µs | ins-mid µs | del-mid µs | attr-q µs |
+|---|---|---|---|---|
+| 1k | 6,351 | 47,860 | 50,364 | 411 |
+| 4k | 19,212 | 675,814 | 716,435 | 853 |
+| 16k | 54,534 | 11,634,572 | 11,075,968 | 4,828 |
+| 64k | 333,177 | (capped) | (capped) | 19,423 |
+| 256k | 1,264,083 | (capped) | (capped) | 78,611 |
+
+Empirical exponents: build ~1.0 (linear, expected); **insert/delete
+~2.0 (QUADRATIC — 11.6 s per single-character edit at 16k)**;
+attribution ~1.0 with a single span where O(spans) was expected.
+
+**Profile (sample, 16k insert):** hot path is
+`crdt_apply_text_delta → OtreeCrdtManager::apply_text_delta →
+try_migrate_span_multi → Mapping::of_region → XnRegion::union/intersect`
+with heavy per-element allocation. Root cause: **three whole-document
+operations per keystroke** — `same_content` comparison (otree_crdt.rs
+:1197), `build_merge_mapping` for span migration (:1203), and a second
+`build_merge_mapping` for `last_author_mapping` (:1224) — all O(N)+
+with fingerprint matching, for a one-character positional edit in the
+common solo-typist case.
+
+**Fix plan:** (A) positional fast-path — when base≡current and the
+delta is positional, the mapping is arithmetic (`Mapping::Simple`);
+compose `last_author_mapping` by shift instead of rebuild. Expected:
+keystroke → O(spans straddling the edit). (B) epoch/cache the
+same-content check. (C) the Gold-shaped endgame: spans hang off the
+O-tree nodes, edits update affected spans bottom-up with crums
+(FR-34's design). The bench is the regression test for all three.
+
+The capacity robots (FR-43) never caught this: their documents stayed
+small. Any future capacity claim must pair session count with
+document size.
+
 ## Phase 1 — micro-harness (Big-O curves)
 
 A `xudanu-bench` binary (or `xudanu-robots bench` subcommand):
