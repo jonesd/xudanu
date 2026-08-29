@@ -150,6 +150,12 @@ pub struct OtreeAnnotation {
 struct OtreeWorkDoc {
     current_edition: Edition,
     base_edition: Edition,
+    /// The session whose last apply produced current_edition with its
+    /// own session_base set to the same value. While true, that
+    /// session's base IS current by construction — the O(1) fast-path
+    /// guard for solo typing (FR-50 fix B). Any other write to
+    /// current_edition clears it.
+    current_origin: Option<SessionId>,
     session_bases: HashMap<SessionId, Edition>,
     pending_edition: Option<Edition>,
     narration_snapshot: Option<String>,
@@ -1096,6 +1102,7 @@ impl OtreeCrdtManager {
                     base_edition: edition.clone(),
                     current_edition: edition,
                     session_bases: HashMap::new(),
+                    current_origin: None,
                     pending_edition: None,
                     narration_snapshot: None,
                     subscribers: HashMap::new(),
@@ -1194,7 +1201,9 @@ impl OtreeCrdtManager {
         let base = &session_base;
         let current = &wd.current_edition;
 
-        let (merged, was_merged) = if base.same_content(current) {
+        let base_is_current =
+            wd.current_origin == Some(sender_session) || base.same_content(current);
+        let (merged, was_merged) = if base_is_current {
             // Content equality (position-tolerant): editions produced by
             // the bulk (dense) and tree-native (stable-position) delta
             // paths compare equal when content and segmentation match.
@@ -1278,6 +1287,7 @@ impl OtreeCrdtManager {
         };
 
         wd.current_edition = merged.clone();
+        wd.current_origin = Some(sender_session);
         wd.session_bases.insert(sender_session, merged);
         if !was_merged && expected_len > 0 {
             let actual_len = wd.current_edition.char_len();
@@ -1403,6 +1413,7 @@ impl OtreeCrdtManager {
             .docs
             .get_mut(&work_id)
             .ok_or(OtreeError::WorkNotFound(work_id))?;
+        wd.current_origin = None;
         wd.current_edition = append_text_with_llm_provenance(
             &wd.current_edition,
             text,
@@ -1689,6 +1700,7 @@ impl OtreeCrdtManager {
                 base_edition: edition.clone(),
                 current_edition: edition.clone(),
                 session_bases: HashMap::new(),
+                current_origin: None,
                 pending_edition: None,
                 narration_snapshot: None,
                 subscribers: HashMap::new(),
@@ -1880,6 +1892,7 @@ impl OtreeCrdtManager {
             .docs
             .get_mut(&work_id)
             .ok_or(OtreeError::WorkNotFound(work_id))?;
+        wd.current_origin = None;
         wd.current_edition = edition;
         wd.base_edition = wd.current_edition.clone();
         wd.pending_edition = None;
@@ -1938,6 +1951,7 @@ impl OtreeCrdtManager {
             }
         };
 
+        wd.current_origin = None;
         wd.current_edition = merged;
         *wd.cached_text.lock().unwrap_or_else(|e| e.into_inner()) = None;
         wd.last_change_timestamp = current_timestamp_secs();
@@ -2144,6 +2158,7 @@ impl OtreeCrdtManager {
     pub fn replace_edition(&mut self, work_id: BeId, edition: crate::edition::Edition) {
         if let Some(wd) = self.docs.get_mut(&work_id) {
             wd.current_edition = edition;
+            wd.current_origin = None;
             wd.cached_text
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
