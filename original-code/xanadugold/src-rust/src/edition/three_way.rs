@@ -3498,4 +3498,153 @@ mod tests {
         assert_ne!(c1, c3);
         println!("crum_comparison (1000 entries): {:?}", elapsed);
     }
+
+    // ---- FR-50 fix A: positional mapping must equal the fingerprint
+    // mapping it replaced, for every pure-positional delta shape ----
+
+    /// Exact-expectation tests for the positional mapping (the
+    /// fingerprint mapping is NOT a usable oracle: on real delta-path
+    /// edition pairs it has been observed mapping position 10 to 29
+    /// for a trivial insert-at-10 — anchor ambiguity in content
+    /// matching can mis-place spans wholesale. Pre-fix-A migration
+    /// inherited that hazard; the positional mapping is derived from
+    /// the ops and cannot drift. Each case pins exact survivors.)
+    #[cfg(feature = "server")]
+    fn maps_to(
+        base_len: i64,
+        ops: &[crate::server::transport::protocol::TextDeltaOp],
+        cases: &[(i64, Option<(i64, i64)>)],
+    ) {
+        let m = positional_delta_mapping(base_len, ops);
+        for &(pos, expect) in cases {
+            let got = m
+                .of_region(&XnRegion::interval(pos, pos + 1))
+                .simple_regions();
+            let got_opt = if got.is_empty() { None } else { Some(got[0]) };
+            assert_eq!(
+                got_opt, expect,
+                "pos {} maps to {:?}, want {:?}",
+                pos, got_opt, expect
+            );
+        }
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn fix_a_positional_mapping_exact_expectations() {
+        use crate::server::transport::protocol::TextDeltaOp as Op;
+        // Insert "XY" at 10 in a 72-char base
+        maps_to(
+            72,
+            &[Op::Retain { count: 10 }, Op::Insert { text: "XY".into() }],
+            &[
+                (0, Some((0, 1))),
+                (9, Some((9, 10))),
+                (10, Some((12, 13))),
+                (71, Some((73, 74))),
+            ],
+        );
+        // Delete 10..15
+        maps_to(
+            72,
+            &[Op::Retain { count: 10 }, Op::Delete { count: 5 }],
+            &[
+                (0, Some((0, 1))),
+                (9, Some((9, 10))),
+                (10, None),
+                (14, None),
+                (15, Some((10, 11))),
+                (16, Some((11, 12))),
+                (71, Some((66, 67))),
+            ],
+        );
+        // Insert at 0: everything shifts by len
+        maps_to(
+            72,
+            &[Op::Insert {
+                text: "start".into(),
+            }],
+            &[(0, Some((5, 6))), (71, Some((76, 77)))],
+        );
+        // Delete the first 6: everything shifts by -6
+        maps_to(
+            72,
+            &[Op::Delete { count: 6 }],
+            &[
+                (0, None),
+                (5, None),
+                (6, Some((0, 1))),
+                (71, Some((65, 66))),
+            ],
+        );
+        // Combined: retain 5, insert A, retain 3, delete 2
+        maps_to(
+            72,
+            &[
+                Op::Retain { count: 5 },
+                Op::Insert { text: "A".into() },
+                Op::Retain { count: 3 },
+                Op::Delete { count: 2 },
+            ],
+            &[
+                (0, Some((0, 1))),
+                (4, Some((4, 5))),
+                (5, Some((6, 7))),
+                (7, Some((8, 9))),
+                (8, None),
+                (9, None),
+                (10, Some((9, 10))),
+                (71, Some((70, 71))),
+            ],
+        );
+        // Tail insert and tail delete
+        maps_to(
+            72,
+            &[Op::Retain { count: 70 }, Op::Insert { text: "end".into() }],
+            &[(70, Some((73, 74)))],
+        );
+        maps_to(
+            72,
+            &[Op::Retain { count: 70 }, Op::Delete { count: 2 }],
+            &[(69, Some((69, 70))), (70, None), (71, None)],
+        );
+        // Empty ops: identity everywhere
+        maps_to(72, &[], &[(0, Some((0, 1))), (71, Some((71, 72)))]);
+        // Empty base: nothing to map
+        maps_to(
+            0,
+            &[Op::Insert {
+                text: "fresh".into(),
+            }],
+            &[],
+        );
+    }
+
+    /// Deletes that CROSS entry boundaries: the fingerprint mapping was
+    /// entry-granular (a partially-deleted entry mapped wholesale); the
+    /// positional mapping is char-granular — a deliberate refinement,
+    /// not a regression. Spans keep their surviving chars exactly.
+    #[cfg(feature = "server")]
+    #[test]
+    fn fix_a_positional_refines_entry_granular_deletes() {
+        use crate::server::transport::protocol::TextDeltaOp as Op;
+        let base = "alpha bravo charlie delta echo foxtrot golf hotel india juliet";
+        // Delete chars 10..15 (crosses "bravo "/"charlie " boundary).
+        let ops = [Op::Retain { count: 10 }, Op::Delete { count: 5 }];
+        let m = positional_delta_mapping(base.chars().count() as i64, &ops);
+        let maps = |pos: i64| {
+            m.of_region(&XnRegion::interval(pos, pos + 1))
+                .simple_regions()
+        };
+        // Chars 0..9 survive identically
+        assert_eq!(maps(0), vec![(0, 1)]);
+        assert_eq!(maps(9), vec![(9, 10)]);
+        // Chars 10..14 are deleted exactly
+        for p in 10..15 {
+            assert!(maps(p).is_empty(), "char {} should be deleted", p);
+        }
+        // Chars 15+ shift by exactly -5
+        assert_eq!(maps(15), vec![(10, 11)]);
+        assert_eq!(maps(16), vec![(11, 12)]);
+    }
 }

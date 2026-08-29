@@ -152,7 +152,12 @@ impl Edition {
             starts.push(cum);
             cum += carrier.char_len();
             fingerprints.push(carrier.element.content_fingerprint());
-            if carrier.element.is_transclusion() {
+            if carrier.element.is_transclusion()
+                || matches!(
+                    carrier.element,
+                    super::range_element::RangeElement::StructuralTransclusion { .. }
+                )
+            {
                 has_transclusions = true;
             }
         }

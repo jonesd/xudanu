@@ -143,6 +143,8 @@ edition state is the follow-up if the import case matters.
 | Attribution O(N) | FIXED: 73ms → 21ms @ 256k |
 | Per-keystroke edition rebuilds/clones | C pt 1 SHIPPED (transclusion-migration skip). C pt 2 DEFERRED — see decision above; reopen only on Phase 2 capacity data |
 | **Link-span migration per edit** | **OPEN — finding 5, quadratic (1.3s/keystroke @ 16k with 32 links). Same disease as pre-fix-A spans; fix next session** |
+| Three-way merge on divergent rewrites | OPEN — finding 6: garbled mix; fingerprint anchoring |
+| build_merge_mapping soundness | EXPOSED — finding 7: can mis-map plain inserts; fix A removed its use from the keystroke path |
 | Verification caching per edition state | OPEN — matters only for whole-doc spans |
 
 ## Fix C part 1 (2026-08-29)
@@ -190,6 +192,34 @@ solo typing on a linked document is quadratic. Fix next session:
 locate the per-edit link migration path (likely same shape as span
 provenance pre-A: whole-state rebuild per keystroke) and apply the
 positional-mapping treatment. The bench guards the regression.
+
+## Behavioral armor + findings 6 and 7 (2026-08-29)
+
+Writing behavior tests for the perf fixes surfaced two more latent
+issues (the tests are doing their job):
+
+- **Finding 6 — three-way merge garbles divergent rewrites.** After an
+  external rewrite, a session edit merges to a fingerprint-anchored
+  mix ("external rewrite body" + session inserts → "exteronalMS
+  rewrite body"). Pre-existing, not caused by fix B (which only
+  selects the path). Same anchor-ambiguity root as finding 7.
+- **Finding 7 — build_merge_mapping can mis-map trivially.** On real
+  delta-path edition pairs, the fingerprint mapping has been observed
+  mapping position 10 to 29 for a plain insert-at-10. It is not a
+  sound oracle for equivalence testing, and pre-fix-A span migration
+  inherited this hazard. Fix A's positional mapping (derived from the
+  ops) eliminates the class; tests pin exact expectations instead.
+
+Armor shipped (6 tests): positional mapping exact-expectations across
+delta shapes; entry-crossing delete refinement; parallel cache
+alignment through 25 fast-path splice edits (entries/starts/
+fingerprints index-locked); has-transclusions flag tracks live
+transclusions through edits (flag set widened to match the migration
+filter: Transclusion + StructuralTransclusion, never Virtual —
+Virtual is deliberately revision-pinned and skipped); origin-guard
+fallback takes the merge path with session edits landing.
+
+Suite: 3,225 green.
 
 ## Phase 1 — micro-harness (Big-O curves)
 

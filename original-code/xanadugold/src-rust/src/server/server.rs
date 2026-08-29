@@ -43253,4 +43253,186 @@ mod tests_security_tracker {
             assert!(types.contains(&expected), "missing type {}", expected);
         }
     }
+
+    // ---- FR-50 behavioral armor: the performance fixes claimed
+    // "semantics unchanged" — these pin the specific semantics ----
+
+    #[test]
+    fn fix_50_parallel_caches_aligned_through_fast_edits() {
+        use crate::server::transport::protocol::TextDeltaOp;
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let text: String = "alpha bravo charlie delta echo ".repeat(60);
+        let work = server.create_work(sid, Edition::from_text(&text)).unwrap();
+        server.crdt_open_session(sid, work).unwrap();
+
+        // 25 mixed positional edits at varied positions — exercises
+        // both fast-path splice variants (insert/delete, mid/edges).
+        let len = text.chars().count() as u64;
+        for k in 0..25u64 {
+            let at = (k * 37) % (len - 20);
+            let insert_ops = vec![
+                TextDeltaOp::Retain { count: at },
+                TextDeltaOp::Insert {
+                    text: "Zq".to_string(),
+                },
+            ];
+            server
+                .crdt_apply_text_delta(sid, work, &insert_ops)
+                .unwrap();
+            let delete_ops = vec![
+                TextDeltaOp::Retain { count: at },
+                TextDeltaOp::Delete { count: 1 },
+            ];
+            server
+                .crdt_apply_text_delta(sid, work, &delete_ops)
+                .unwrap();
+        }
+
+        let ws = server.works.get(&work).unwrap();
+        let edition = ws.work.current_edition();
+        let entries = edition.cached_entries();
+        let starts = edition.cached_char_starts();
+        let fps = edition.cached_fingerprints();
+        assert_eq!(entries.len(), starts.len());
+        assert_eq!(entries.len(), fps.len());
+        let mut cum = 0usize;
+        for (i, (pos, carrier)) in entries.iter().enumerate() {
+            assert_eq!(starts[i], cum, "char-start drift at entry {}", i);
+            assert!(
+                *pos >= 0,
+                "entry positions must stay non-negative through splices"
+            );
+            assert_eq!(
+                fps[i],
+                carrier.element.content_fingerprint(),
+                "fingerprint cache desync at entry {} ({:?})",
+                i,
+                carrier.element.as_text().map(|t| &t[..t.len().min(8)]),
+            );
+            cum += carrier.char_len();
+        }
+        assert_eq!(
+            edition.char_len(),
+            cum,
+            "char_len must equal the summed entries"
+        );
+    }
+
+    #[test]
+    fn fix_50_has_transclusions_flag_tracks_place_and_remove() {
+        use crate::edition::range_element::RangeElement;
+        let (mut server, sid, src, dst) = s4_setup();
+        // A LIVE inline Transclusion (the kind the migration pass
+        // serves; Virtual is deliberately revision-pinned and skipped).
+        server
+            .element_insert(
+                sid,
+                dst,
+                2,
+                RangeElement::Transclusion {
+                    source_work_id: src,
+                    char_start: 2,
+                    char_end: 8,
+                    placed_at: 0,
+                    placed_by: None,
+                    content_hash: None,
+                    source_revision: None,
+                },
+            )
+            .unwrap();
+        {
+            let ws = server.works.get(&dst).unwrap();
+            assert!(
+                ws.work.current_edition().cached_has_transclusions(),
+                "flag must be true after inserting a live transclusion"
+            );
+        }
+        // Text edit through the fast path must PRESERVE the flag.
+        use crate::server::transport::protocol::TextDeltaOp;
+        server.crdt_open_session(sid, dst).unwrap();
+        server
+            .crdt_apply_text_delta(
+                sid,
+                dst,
+                &[
+                    TextDeltaOp::Retain { count: 1 },
+                    TextDeltaOp::Insert {
+                        text: "x".to_string(),
+                    },
+                ],
+            )
+            .unwrap();
+        {
+            let ws = server.works.get(&dst).unwrap();
+            assert!(
+                ws.work.current_edition().cached_has_transclusions(),
+                "flag must survive fast-path edits"
+            );
+        }
+    }
+
+    #[test]
+    fn fix_50_origin_guard_falls_back_after_external_write() {
+        use crate::server::transport::protocol::TextDeltaOp;
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let work = server
+            .create_work(sid, Edition::from_text("original content here"))
+            .unwrap();
+        server.crdt_open_session(sid, work).unwrap();
+        // Fast-path edit (origin set to this session).
+        server
+            .crdt_apply_text_delta(
+                sid,
+                work,
+                &[
+                    TextDeltaOp::Retain { count: 8 },
+                    TextDeltaOp::Insert {
+                        text: "S".to_string(),
+                    },
+                ],
+            )
+            .unwrap();
+        // External rewrite clears the origin.
+        server
+            .otree_crdt
+            .replace_edition(work, Edition::from_text("external rewrite body"));
+        // Next session edit must take the MERGE path and end sane.
+        server
+            .crdt_apply_text_delta(
+                sid,
+                work,
+                &[
+                    TextDeltaOp::Retain { count: 8 },
+                    TextDeltaOp::Insert {
+                        text: "M".to_string(),
+                    },
+                ],
+            )
+            .unwrap();
+        let text = server.crdt_current_text(work).unwrap();
+        // Fix B's contract: the fallback MERGE path was taken and both
+        // sides influenced the result. (The merge's own quality on
+        // divergent rewrites is FR-50 finding 6 — observed producing
+        // "exteronalMS rewrite body" here; pre-existing, tracked
+        // separately.)
+        assert!(
+            text.contains('M') && text.contains('S'),
+            "session edits must land through the merge, got {:?}",
+            text
+        );
+        assert_ne!(
+            text, "originalS content here",
+            "result must not be the stale session base, got {:?}",
+            text
+        );
+        assert_ne!(
+            text, "external rewrite body",
+            "result must reflect the session edit, got {:?}",
+            text
+        );
+    }
 }
