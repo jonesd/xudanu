@@ -237,6 +237,82 @@ A `xudanu-bench` binary (or `xudanu-robots bench` subcommand):
   and CRDT materialization laziness (force materialize before
   timing, separately measure materialization itself).
 
+## The standing audit plan (2026-08-29, after findings 1–7)
+
+### Preamble: what this codebase is
+
+Xudanu fits more independent inventions into one application than
+almost any codebase: a CRDT, a three-way merge, cryptographic
+provenance, an enfilade document model, tumblers, a content-reuse
+index, compound resolution, federation, a wire protocol — each sound
+alone, composed at scale. **We should expect, permanently, to
+re-verify that we understand the code, that tests pin its behavior,
+and that composition has not degraded the characteristics any one
+layer was designed for.** One evening of measurement found seven
+findings; the audit has begun, not ended.
+
+### Where today's findings lived — and the suspicion rule
+
+Every finding lived in Xudanu-original code; where we kept Gold's
+architecture (space algebra, enfilade, crums) it held. But the
+deepest bugs sat exactly at the SEAMS — our code operating ON Gold
+structures (spans over editions, links over positions, queries over
+entries). **Suspicion ranking:**
+
+1. HIGHEST — Xudanu per-op handlers that touch Gold structures:
+   anything iterating `cached_entries()`, rebuilding editions,
+   walking spans/links per keystroke or per query
+2. HIGH — Xudanu-only machinery under composition load: merge,
+   CRDT convergence, materialization, provenance verification
+3. MEDIUM — Gold-inherited concepts reimplemented by us with
+   shortcuts (scans where Gold had indexes — backfollow, tumblers)
+4. LOWEST — Gold structures themselves, exercised as designed
+
+### The four bug shapes to grep for
+
+1. **Per-op work ∝ total state** — a per-keystroke/per-query handler
+   walking all entries, all links, all works (findings 1, 3, 5)
+2. **Re-derivation over memoization** — re-hashing/recomputing what a
+   cache or the ops already state (finding 2; fix A's lesson: the
+   delta ops ARE the mapping)
+3. **Whole-object rebuild where incremental exists** — clone/splice
+   entire editions per op (finding 4, deferred; Gold edited in place)
+4. **Heuristic where exact is available** — fingerprint content-
+   matching where arithmetic/index gives truth (findings 6, 7) —
+   these are CORRECTNESS hazards, worse than slow
+
+### Unmeasured paths — ranked checklist
+
+| # | Path | Suspected shape | Fixture needed |
+|---|---|---|---|
+| A1 | Annotation span migration per edit | finding-5 twin | annotations dimension |
+| A2 | backfollow register/unregister per link op | O(content) churn inside finding 5's loop | links fixture (exists) + profile |
+| A3 | `char_len()` O(entries) per call | shape 2 | freebie fix, then bench |
+| A4 | WAL fsync per append | latency floor, not scaling | timing row |
+| A5 | Checkpoint duration + blocking window | shape 3 at interval scale | checkpoint row (id lists exist) |
+| A6 | resolve_inline_transclusions per read | shape 1 over nesting | nesting-depth fixture |
+| A7 | provenance_ancestry + enrich per query | graph walk every 30s/client | multi-link fixture |
+| A8 | multi-work servers, any scan left | shape 1 | multi-work fixture (owed) |
+| A9 | Frontend: delta apply, editor re-render, overlay redraw at 100k+ | the new bottleneck | browser fixture |
+| A10 | same_content O(N) per multi-session keystroke | residual from fix B | multi-session fixture |
+
+### Standing governance (the rules that made today work)
+
+1. **Expected-O is part of the interface** — a perf regression in
+   order is a bug, blocked like a failing test; the bench runs per
+   release and the matrix diffs.
+2. **Profile before fixing; fix before shipping; fixture guards the
+   regression.** No blind patches, no unmeasured claims.
+3. **Every perf change ships behavioral armor** — tests pinning the
+   exact semantics touched (today's six are the template), because
+   "semantics unchanged" is a claim, not a fact, until pinned.
+4. **Every new dimension of suspicion gets a fixture dimension** —
+   the bug hides where the fixture doesn't look.
+5. **Heuristic-vs-exact findings are severity-correctness, not
+   severity-performance** (findings 6/7 outrank any µs).
+6. **At the seams (our code on Gold structures), write the test
+   first and expect the bug.**
+
 ## Phase 2 — capacity load (the cliff)
 
 Extend `xudanu-robots`:
