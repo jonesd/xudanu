@@ -22,11 +22,12 @@ use xudanu::edition::Edition;
 use xudanu::server::transport::protocol::TextDeltaOp;
 use xudanu::server::{Server, SessionId};
 
-const HARNESS_REV: &str = "1";
+const HARNESS_REV: &str = "2";
 const SEED_SENTENCE: &str = "alpha bravo charlie delta echo foxtrot golf hotel ";
 const SIZES: [usize; 5] = [1_000, 4_000, 16_000, 64_000, 256_000];
 const EDIT_PAIRS: usize = 20;
-const EDIT_MAX_N: usize = 256_000; // quadratic pre-fix-A; sizes now complete
+const EDIT_MAX_N: usize = 256_000;
+const LINKED_EDIT_MAX_N: usize = 16_000; // link migration still quadratic (finding 5)
 const ATTR_REPS: usize = 10;
 
 fn mean_us(samples: &[f64]) -> f64 {
@@ -47,6 +48,7 @@ struct Fixture {
     server: Server,
     sid: SessionId,
     work: u64,
+    text: String,
 }
 
 fn build(n: usize) -> Fixture {
@@ -60,7 +62,12 @@ fn build(n: usize) -> Fixture {
         .expect("create work");
     let _ = server.crdt_open_session(sid, work);
     let _ = server.crdt_current_text(work);
-    Fixture { server, sid, work }
+    Fixture {
+        server,
+        sid,
+        work,
+        text,
+    }
 }
 
 fn main() {
@@ -84,10 +91,48 @@ fn main() {
         let mut f = build(n);
         let build_us = t0.elapsed().as_secs_f64() * 1e6;
 
+        // Links-at-scale variant (FR-50 extrapolation: the quadratic
+        // class hides in dimensions the flat fixture never exercises).
+        // 32 typed links spread across the document, spans around the
+        // midpoints; measure the SAME single-char insert/delete.
+        let linked = n <= LINKED_EDIT_MAX_N;
+        let link_count = 32u64;
+        for k in 0..if linked { link_count } else { 0 } {
+            let a = ((n as u64) / link_count) * k + 8;
+            let b = ((n as u64) / link_count) * (k + 1) - 8;
+            let o = xudanu::edition::links::HyperRef::single(
+                Some(xudanu::edition::Edition::from_text(
+                    &f.text[a as usize..b as usize],
+                )),
+                Some(f.work),
+                None,
+                None,
+            )
+            .with_span(Some(a as i64), Some(b as i64));
+            let d = xudanu::edition::links::HyperRef::single(
+                Some(xudanu::edition::Edition::from_text(
+                    &f.text[a as usize..b as usize],
+                )),
+                Some(f.work),
+                None,
+                None,
+            )
+            .with_span(Some(a as i64), Some(b as i64));
+            let link = xudanu::edition::links::HyperLink::make(vec![(k % 5) + 1], o, d);
+            let _ = f
+                .server
+                .create_link_with_hyperlink_homed(f.sid, link, Some(f.work));
+        }
+        let _ = f.server.list_links_for_work(f.work);
+
         let mid = n / 2;
         let mut ins_samples = Vec::new();
         let mut del_samples = Vec::new();
-        for _ in 0..if n <= EDIT_MAX_N { EDIT_PAIRS } else { 0 } {
+        for _ in 0..if n <= EDIT_MAX_N && linked {
+            EDIT_PAIRS
+        } else {
+            0
+        } {
             let ops = vec![
                 TextDeltaOp::Retain { count: mid as u64 },
                 TextDeltaOp::Insert {

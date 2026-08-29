@@ -142,6 +142,7 @@ edition state is the follow-up if the import case matters.
 | Quadratic keystroke | FIXED (A+B): 11.6s → 634µs @ 16k |
 | Attribution O(N) | FIXED: 73ms → 21ms @ 256k |
 | Per-keystroke edition rebuilds/clones | C pt 1 SHIPPED (transclusion-migration skip). C pt 2 DEFERRED — see decision above; reopen only on Phase 2 capacity data |
+| **Link-span migration per edit** | **OPEN — finding 5, quadratic (1.3s/keystroke @ 16k with 32 links). Same disease as pre-fix-A spans; fix next session** |
 | Verification caching per edition state | OPEN — matters only for whole-doc spans |
 
 ## Fix C part 1 (2026-08-29)
@@ -168,6 +169,27 @@ deferred.
 REOPEN CONDITION: Phase 2's capacity ramp shows p95 degradation at
 realistic persona loads on large documents (>100k chars). The data
 makes the case or closes it — not intuition.
+
+## Finding 5: link-span migration is quadratic per keystroke (2026-08-29, harness rev 2)
+
+Extrapolation from the earlier findings — "per-op work proportional
+to total state, invisible in dimensions the fixture lacks" — pointed
+at links: the flat fixture had none. Rev 2 adds 32 typed links spread
+across the document:
+
+| N | keystroke unlinked | keystroke +32 links |
+|---|---|---|
+| 1k | 75 µs | 11–18 ms (150–240×) |
+| 4k | 234 µs | 107–193 ms |
+| 16k | 634 µs | **1.1–1.3 s** (exponent ~1.6–1.7) |
+| 64k+ | ~7 ms | unmeasurable |
+
+Every edit re-migrates/revalidates link spans at cost proportional to
+document size. This is the pre-fix-A disease in the link dimension —
+solo typing on a linked document is quadratic. Fix next session:
+locate the per-edit link migration path (likely same shape as span
+provenance pre-A: whole-state rebuild per keystroke) and apply the
+positional-mapping treatment. The bench guards the regression.
 
 ## Phase 1 — micro-harness (Big-O curves)
 
