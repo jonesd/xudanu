@@ -11172,6 +11172,65 @@ impl Server {
         self.works.insert(be_id, ws);
         self.demo_work_id = Some(be_id);
         tracing::info!("Seeded demo work {:04x} (published, public-read)", be_id);
+
+        // Typed links so the demo demonstrates what its text describes.
+        // One link per built-in type, spanning real passages (mirrors the
+        // hand-seeded set on the demo server).
+        let seed_session = self.connect();
+        let pairs: &[(u64, &str, &str)] = &[
+            (
+                1,
+                "Links connect passages with meaning",
+                "and press Link to try it.",
+            ),
+            (
+                2,
+                "Every character carries cryptographic provenance",
+                "underlines show who wrote each passage.",
+            ),
+            (
+                3,
+                "every quotation updates",
+                "Changes merge automatically using the O-tree CRDT.",
+            ),
+            (
+                4,
+                "The comparison view shows shared passages",
+                "Open a document, select text,",
+            ),
+            (
+                5,
+                "Documents on different servers can link to each other",
+                "BLAKE3 hash verification.",
+            ),
+        ];
+        for (t, a, b) in pairs {
+            let (Some(s1), Some(s2)) = (demo_text.find(a), demo_text.find(b)) else {
+                continue;
+            };
+            let (e1, e2) = (s1 + a.len(), s2 + b.len());
+            let chain = self.compute_provenance_chain(be_id);
+            let o = crate::edition::links::HyperRef::single(
+                Some(Edition::from_text(&demo_text[s1..e1])),
+                Some(be_id),
+                None,
+                None,
+            )
+            .with_span(Some(s1 as i64), Some(e1 as i64))
+            .with_provenance_chain(chain);
+            let d = crate::edition::links::HyperRef::single(
+                Some(Edition::from_text(&demo_text[s2..e2])),
+                Some(be_id),
+                None,
+                None,
+            )
+            .with_span(Some(s2 as i64), Some(e2 as i64));
+            let link = crate::edition::links::HyperLink::make(vec![*t], o, d);
+            if let Err(e) = self.create_link_with_hyperlink_homed(seed_session, link, Some(be_id)) {
+                tracing::warn!("demo link seed failed (type {}): {}", t, e);
+            }
+        }
+        self.disconnect(seed_session);
     }
 
     /// The work id of the seeded interactive demo, if this data dir has
@@ -43183,5 +43242,31 @@ mod tests_security_tracker {
             !text.contains("XXXX"),
             "source edits must never leak into pinned virtual transclusions"
         );
+    }
+
+    #[test]
+    fn seeded_demo_work_carries_all_five_link_types() {
+        let mut server = Server::new();
+        server.seed_demo_work();
+        let demo = server
+            .demo_work()
+            .expect("demo work must be seeded with typed links");
+        let links = server.list_links_for_work(demo);
+        assert!(
+            links.len() >= 5,
+            "demo should carry one link per built-in type, got {}",
+            links.len()
+        );
+        let mut types = std::collections::HashSet::new();
+        for (link_id, _, _) in &links {
+            if let Ok((_, _, link)) = server.get_link(*link_id) {
+                for t in link.link_types() {
+                    types.insert(*t);
+                }
+            }
+        }
+        for expected in 1..=5u64 {
+            assert!(types.contains(&expected), "missing type {}", expected);
+        }
     }
 }
