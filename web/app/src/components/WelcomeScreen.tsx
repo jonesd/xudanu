@@ -92,6 +92,15 @@ export function WelcomeScreen({
         >
           {"Source and self-hosting guide — github.com/jonesd/xudanu"}
         </a>
+        <span style={{ color: "var(--text-dim)" }}>{" · "}</span>
+        <a
+          href="https://dgjones.info/xudanu/terms.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: "var(--text-dim)" }}
+        >
+          {"Terms"}
+        </a>
       </div>
       {workCount > 0 && (
         <div className="welcome-hint" style={{ marginTop: 16 }}>

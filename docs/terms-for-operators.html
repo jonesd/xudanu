@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Xudanu — Terms for operators</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,sans-serif;background:#0a0a0f;color:#c9c9d4;line-height:1.7}
+article{max-width:680px;margin:0 auto;padding:56px 24px 80px}
+h1{font-size:28px;font-weight:700;color:#e6e6ee;margin-bottom:4px;letter-spacing:-0.3px}
+.updated{font-size:12px;color:#666;margin-bottom:32px}
+h2{font-size:17px;font-weight:600;color:#e6e6ee;margin:32px 0 8px}
+p,li{font-size:14px;margin-bottom:10px}
+ul{padding-left:20px;margin-bottom:12px}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+.code{font-family:'JetBrains Mono',monospace;font-size:12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:12px 16px;margin:12px 0}
+footer{margin-top:48px;padding-top:20px;border-top:1px solid #1a1a24;font-size:12px;color:#555}
+</style>
+</head>
+<body>
+<article>
+<h1>Running a public Xudanu server: terms to consider</h1>
+<div class="updated">Notes for operators. Not legal advice — adapt to your jurisdiction and situation.</div>
+
+<h2>Your server, your rules</h2>
+<p>The software ships without terms of use because it doesn't get to decide them — you do. If your server is private (you and a few collaborators), you may need nothing formal at all. If it is public, a short terms-of-use page is worth having before strangers arrive. The demo server's terms are one example: <a href="terms.html">xudanu.com terms of use</a>.</p>
+
+<h2>The three things every public server should state</h2>
+<ul>
+<li><strong>Content ownership and licence.</strong> Authors keep copyright; you need a grant to store, serve, transclude, and verify content — that grant is what makes the system's features lawful to operate.</li>
+<li><strong>Moderation rights.</strong> The operator may remove rule-breaking content and revoke access. Say so up front; the admin console and content policy settings exist to back it up.</li>
+<li><strong>No warranty, no availability promise</strong> — unless you intend to offer one.</li>
+</ul>
+
+<h2>Things worth stating that are specific to this system</h2>
+<ul>
+<li><strong>The server never handles money.</strong> This is a hard design rule of the protocol, not just a policy — fees and settlement live outside the system, if anywhere.</li>
+<li><strong>Per-work licences govern reuse</strong> (ARR / Transcopyright / CC-BY / CC-BY-SA / Public Domain). Transclusion compliance warnings are enforced by the client; your terms should point authors at setting licences deliberately.</li>
+<li><strong>Attribution is public by design.</strong> Authorship is cryptographically displayed. A privacy note that says so plainly is better than silence.</li>
+</ul>
+
+<h2>Your data, your responsibility</h2>
+<p>All data lives in your container volume or data directory — nothing leaves your machine, and the Xudanu project has no access to, control over, or responsibility for servers it does not operate. Back up your data directory; the snapshot format and backup/restore steps are in the documentation.</p>
+
+<h2>Defaults that help</h2>
+<div class="code">edit_policy: owner-only (set via admin console)
+network/external links: off by default
+content filter: on (1 MB text cap)</div>
+<p>Review these in the admin console before going public. The server directory, federation, and cross-server features are all opt-in — leave them off until you mean them.</p>
+
+<h2>Worth knowing</h2>
+<ul>
+<li><strong>The server keeps a tamper-evident security log</strong> (chained, hash-verified) of administrative and protocol events — not document content. Disclosing it in your terms is a trust feature, not a burden.</li>
+<li><strong>EU operators:</strong> identities are pseudonymous, but if people use your server, personal-data rules may apply to you — consider a short privacy note alongside your terms.</li>
+</ul>
+
+<footer>Xudanu is an independent, open-source project (Apache 2.0). Not affiliated with Project Xanadu™, the Xanadu Operating Company, or the Udanax team.</footer>
+</article>
+</body>
+</html>
