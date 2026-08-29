@@ -141,7 +141,7 @@ edition state is the follow-up if the import case matters.
 |---|---|
 | Quadratic keystroke | FIXED (A+B): 11.6s → 634µs @ 16k |
 | Attribution O(N) | FIXED: 73ms → 21ms @ 256k |
-| Per-keystroke edition rebuilds/clones | PART 1 SHIPPED: O(1) transclusion-migration skip (scales with work count). REMAINING — fix C pt 2: assemble_fast_result's full-Vec splice rebuild (~35% of keystroke per profile) + destructor churn (~14%) + late-function clones. Needs persistent/window-shared entry structure — a design change, not a patch |
+| Per-keystroke edition rebuilds/clones | C pt 1 SHIPPED (transclusion-migration skip). C pt 2 DEFERRED — see decision above; reopen only on Phase 2 capacity data |
 | Verification caching per edition state | OPEN — matters only for whole-doc spans |
 
 ## Fix C part 1 (2026-08-29)
@@ -154,6 +154,20 @@ Shipped the O(1) skip (has_transclusions flag in the edition cache).
 Effect scales with work count, not document size — the single-work
 bench fixture cannot show it; a multi-work fixture variant is owed to
 the harness.
+
+## Fix C pt 2 — DEFERRED (decision, 2026-08-29)
+
+Keystroke cost after A/B/C1: ~1ms @ 16k, ~27ms @ 256k (book-sized) —
+imperceptible for humans; large pastes are single deltas, not N
+keystrokes. C pt 2 (persistent/window-shared entry structure to kill
+the splice rebuild + clone churn, ~50% of remaining keystroke cost)
+touches every cached_entries consumer (~68 sites) for a gain nobody
+can feel at realistic document sizes. Complexity high, gain low:
+deferred.
+
+REOPEN CONDITION: Phase 2's capacity ramp shows p95 degradation at
+realistic persona loads on large documents (>100k chars). The data
+makes the case or closes it — not intuition.
 
 ## Phase 1 — micro-harness (Big-O curves)
 
