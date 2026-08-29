@@ -1198,9 +1198,13 @@ impl OtreeCrdtManager {
             // Content equality (position-tolerant): editions produced by
             // the bulk (dense) and tree-native (stable-position) delta
             // paths compare equal when content and segmentation match.
+            // The delta mapping is arithmetic here — the ops state it
+            // exactly — so skip the O(N) fingerprint build (FR-50 fix A).
             if !session_base.span_provenance.is_empty() {
-                let delta_mapping =
-                    crate::edition::three_way::build_merge_mapping(&session_base, &author_edition);
+                let delta_mapping = crate::edition::three_way::positional_delta_mapping(
+                    base.orgl.count() as i64,
+                    ops,
+                );
                 let migrated_sp = crate::edition::three_way::migrate_span_provenance_single(
                     &session_base.span_provenance,
                     &delta_mapping,
@@ -1221,10 +1225,21 @@ impl OtreeCrdtManager {
             }
         };
 
-        wd.last_author_mapping = Some(crate::edition::three_way::build_merge_mapping(
-            &wd.current_edition,
-            &merged,
-        ));
+        // In the fast path the mapping current→merged is exactly the
+        // positional delta mapping (current content == base); composing
+        // it costs O(ops) instead of another whole-document build.
+        let fast_mapping = if was_merged {
+            None
+        } else {
+            Some(crate::edition::three_way::positional_delta_mapping(
+                base.orgl.count() as i64,
+                ops,
+            ))
+        };
+        wd.last_author_mapping = Some(match fast_mapping {
+            Some(m) => m,
+            None => crate::edition::three_way::build_merge_mapping(&wd.current_edition, &merged),
+        });
 
         let mapping = wd.last_author_mapping.as_ref().unwrap();
         for ann in &mut wd.annotations {

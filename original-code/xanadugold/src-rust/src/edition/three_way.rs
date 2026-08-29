@@ -1250,6 +1250,58 @@ fn collect_range(
     entries[from..to].to_vec()
 }
 
+/// Exact positional mapping for a text delta, computed from the ops
+/// themselves in O(ops) — the arithmetic `build_merge_mapping`
+/// re-derives from content fingerprints at O(N). Valid whenever the
+/// "merged" edition is the base with exactly these ops applied (the
+/// solo-session fast path in the CRDT manager). Contiguous source
+/// runs keep a constant shift (zero-shift runs included, so spans
+/// crossing the edit map on both sides); deleted ranges map to
+/// nothing.
+#[cfg(feature = "server")]
+pub fn positional_delta_mapping(
+    base_len: i64,
+    ops: &[crate::server::transport::protocol::TextDeltaOp],
+) -> Mapping {
+    use crate::server::transport::protocol::TextDeltaOp;
+    let mut parts: Vec<Mapping> = Vec::new();
+    let mut src: i64 = 0;
+    let mut run_start: i64 = 0;
+    let mut shift: i64 = 0;
+
+    fn close_run(run_start: i64, end: i64, shift: i64, parts: &mut Vec<Mapping>) {
+        if end > run_start {
+            parts.push(Mapping::restricted(
+                shift,
+                XnRegion::interval(run_start, end),
+            ));
+        }
+    }
+
+    for op in ops {
+        match op {
+            TextDeltaOp::Retain { count } => {
+                src += *count as i64;
+            }
+            TextDeltaOp::Insert { text } => {
+                close_run(run_start, src, shift, &mut parts);
+                run_start = src;
+                shift += text.chars().count() as i64;
+            }
+            TextDeltaOp::Delete { count } => {
+                close_run(run_start, src, shift, &mut parts);
+                src += *count as i64;
+                run_start = src;
+                shift -= *count as i64;
+            }
+        }
+    }
+    if base_len > run_start {
+        close_run(run_start, base_len, shift, &mut parts);
+    }
+    Mapping::from_parts(parts)
+}
+
 pub fn build_merge_mapping(source: &Edition, merged: &Edition) -> Mapping {
     let started = std::time::Instant::now();
     let source_entries = source.cached_entries();
