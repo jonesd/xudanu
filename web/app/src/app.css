@@ -4699,6 +4699,8 @@ canvas._bridge {
   width: 90%;
   padding: 24px;
   gap: 0;
+  max-height: 80vh;
+  overflow-y: auto;
 }
 .identity-modal .identity-panel {
   display: flex;
