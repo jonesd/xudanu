@@ -60,6 +60,26 @@ content filter: on (1 MB text cap)</div>
 </ul>
 <p>The app detects what your server has configured (via <span style="font-family:'JetBrains Mono',monospace;font-size:12px">/health</span>) and shows exactly those buttons. Callback URLs: <span style="font-family:'JetBrains Mono',monospace;font-size:12px">https://your-host/auth/github/callback</span> and <span style="font-family:'JetBrains Mono',monospace;font-size:12px">https://your-host/auth/google/callback</span>. Setting credentials is the toggle — remove them and restart to disable.</p>
 
+<h3>Getting GitHub credentials (5 minutes)</h3>
+<ul>
+<li>GitHub → Settings → Developer settings → <strong>OAuth Apps</strong> → New OAuth App</li>
+<li>Name and homepage as you like; callback URL as above</li>
+<li>Register → copy the <strong>Client ID</strong>; click <strong>Generate a new client secret</strong> and copy it immediately (shown once; regenerating invalidates the old one)</li>
+<li>Leave wildcard matching, device flow, and token expiry unchecked</li>
+</ul>
+
+<h3>Getting Google credentials (10 minutes)</h3>
+<ul>
+<li>console.cloud.google.com → pick or create a project</li>
+<li>Search the console for <strong>Google Auth Platform</strong> → Get started: app name, logo, support email; audience <strong>External</strong></li>
+<li>Then <strong>Clients</strong> → Create client → type <strong>Web application</strong> → authorized redirect URI as above</li>
+<li>Copy the <strong>Client ID</strong> (ends <span style="font-family:'JetBrains Mono',monospace;font-size:12px">.apps.googleusercontent.com</span>) and <strong>Client Secret</strong> (starts <span style="font-family:'JetBrains Mono',monospace;font-size:12px">GOCSPX-</span> — don't confuse the two)</li>
+<li>The consent screen starts in <strong>Testing</strong> mode: only listed test users can sign in. When strangers should sign in, return to Audience → <strong>Publish app</strong> (basic profile scopes publish without review; users see an "unverified app" note they can click through)</li>
+</ul>
+
+<h3>Wiring it in</h3>
+<p>Set the four environment variables on the server process (Docker: an <span style="font-family:'JetBrains Mono',monospace;font-size:12px">env_file</span> beside your compose file works well) and restart. Verify with <span style="font-family:'JetBrains Mono',monospace;font-size:12px">/health</span> — it reports <span style="font-family:'JetBrains Mono',monospace;font-size:12px">oauth_providers</span> — and check the sign-in buttons appear. New users create an identity on first sign-in; the local in-app identity path remains available regardless.</p>
+
 <h2>Worth knowing</h2>
 <ul>
 <li><strong>The server keeps a tamper-evident security log</strong> (chained, hash-verified) of administrative and protocol events — not document content. Disclosing it in your terms is a trust feature, not a burden.</li>
