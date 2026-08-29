@@ -146,6 +146,8 @@
   gap: 8px;
   cursor: pointer;
   transition: border-color 0.15s;
+  overflow: hidden;
+  white-space: nowrap;
 }
 .ws-search-trigger:hover { border-color: var(--text-dim); }
 .ws-search-trigger kbd {
