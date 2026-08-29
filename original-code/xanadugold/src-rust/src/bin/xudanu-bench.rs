@@ -22,11 +22,11 @@ use xudanu::edition::Edition;
 use xudanu::server::transport::protocol::TextDeltaOp;
 use xudanu::server::{Server, SessionId};
 
-const HARNESS_REV: &str = "0";
+const HARNESS_REV: &str = "1";
 const SEED_SENTENCE: &str = "alpha bravo charlie delta echo foxtrot golf hotel ";
 const SIZES: [usize; 5] = [1_000, 4_000, 16_000, 64_000, 256_000];
 const EDIT_PAIRS: usize = 20;
-const EDIT_MAX_N: usize = 16_000; // ins/del measured quadratic; larger sizes never finish
+const EDIT_MAX_N: usize = 256_000; // quadratic pre-fix-A; sizes now complete
 const ATTR_REPS: usize = 10;
 
 fn mean_us(samples: &[f64]) -> f64 {

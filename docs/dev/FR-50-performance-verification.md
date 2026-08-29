@@ -95,6 +95,28 @@ The capacity robots (FR-43) never caught this: their documents stayed
 small. Any future capacity claim must pair session count with
 document size.
 
+## After fixes A + B (2026-08-29, harness rev 1)
+
+| N | ins-mid µs | del-mid µs | vs pre-fix A |
+|---|---|---|---|
+| 1k | 75 | 54 | 638× / 942× |
+| 4k | 234 | 135 | 2,890× / 5,310× |
+| 16k | 634 | 340 | 18,350× / 32,580× |
+| 64k | 5,558 | 3,986 | (was unmeasurable) |
+| 256k | 31,086 | 25,664 | (was unmeasurable) |
+
+Insert/delete exponent: 2.0 → ~1.0-1.3 (linear-ish; the residual is
+the per-keystroke edition rebuilds and whole-doc clones —
+apply_text_delta_to_edition, merged/pending clones — i.e. fix C
+territory: structural, not surgical). At 256k chars a keystroke now
+costs ~31ms — usable; pre-fix it extrapolated to ~48 minutes.
+
+Fix B (O(1) base-is-current origin marker) banked a further ~20%;
+same_content remains the multi-session fallback.
+
+**Still open (finding 2):** attribution_query ~O(N) (73ms @ 256k,
+polled every 30s per open client). Next target.
+
 ## Phase 1 — micro-harness (Big-O curves)
 
 A `xudanu-bench` binary (or `xudanu-robots bench` subcommand):
