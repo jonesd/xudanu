@@ -236,18 +236,48 @@
 .ws-body {
   grid-area: body;
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 320px;
+  grid-template-columns: 240px minmax(320px, 1fr) 320px;
   overflow: hidden;
   min-height: 0;
 }
 .ws-body:has(.ws-left-rail.hidden) {
-  grid-template-columns: 0 1fr 320px;
+  grid-template-columns: 0 minmax(320px, 1fr) 320px;
 }
 .ws-body:has(.ws-right-panel.hidden) {
-  grid-template-columns: 240px 1fr 0;
+  grid-template-columns: 240px minmax(320px, 1fr) 0;
 }
 .ws-body:has(.ws-left-rail.hidden):has(.ws-right-panel.hidden) {
-  grid-template-columns: 0 1fr 0;
+  grid-template-columns: 0 minmax(320px, 1fr) 0;
+}
+
+/* Narrow desktop (768–1080px): the editor must never be squeezed to
+   zero. The right panel yields first, then the left rail — both are
+   reopenable via their existing collapse controls. Below 768px the
+   phone shell takes over entirely. */
+@media (min-width: 768px) and (max-width: 1080px) {
+  .ws-body,
+  .ws-body:has(.ws-left-rail.hidden) {
+    grid-template-columns: 240px minmax(320px, 1fr) 0;
+  }
+  .ws-body:has(.ws-right-panel.hidden),
+  .ws-body:has(.ws-left-rail.hidden):has(.ws-right-panel.hidden) {
+    grid-template-columns: 0 minmax(320px, 1fr) 0;
+  }
+  .ws-right-panel:not(.hidden) {
+    display: none;
+  }
+  .ws-mode-compose .ws-body {
+    grid-template-columns: 0 minmax(320px, 1fr) 0;
+  }
+}
+@media (min-width: 768px) and (max-width: 900px) {
+  .ws-body,
+  .ws-body:has(.ws-right-panel.hidden) {
+    grid-template-columns: 0 minmax(320px, 1fr) 0;
+  }
+  .ws-left-rail:not(.hidden) {
+    display: none;
+  }
 }
 
 /* Compose mode: hide left rail by default, narrow right panel */
