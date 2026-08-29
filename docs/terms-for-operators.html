@@ -51,6 +51,15 @@ network/external links: off by default
 content filter: on (1 MB text cap)</div>
 <p>Review these in the admin console before going public. The server directory, federation, and cross-server features are all opt-in — leave them off until you mean them.</p>
 
+<h2>Identity models — your choice per server</h2>
+<p>Identities are created in-app by default: no email, no external accounts, pseudonymous by design. If you want externally accountable identities instead (or as well), enable OAuth sign-in — per provider, by setting credentials at startup:</p>
+<ul>
+<li><strong>In-app only (default)</strong> — set nothing. OAuth routes answer "not configured"; the sign-in buttons never appear.</li>
+<li><strong>GitHub</strong> — <span style="font-family:'JetBrains Mono',monospace;font-size:12px">XUDANU_GITHUB_CLIENT_ID</span> + <span style="font-family:'JetBrains Mono',monospace;font-size:12px">XUDANU_GITHUB_CLIENT_SECRET</span></li>
+<li><strong>Google</strong> — <span style="font-family:'JetBrains Mono',monospace;font-size:12px">XUDANU_GOOGLE_CLIENT_ID</span> + <span style="font-family:'JetBrains Mono',monospace;font-size:12px">XUDANU_GOOGLE_CLIENT_SECRET</span></li>
+</ul>
+<p>The app detects what your server has configured (via <span style="font-family:'JetBrains Mono',monospace;font-size:12px">/health</span>) and shows exactly those buttons. Callback URLs: <span style="font-family:'JetBrains Mono',monospace;font-size:12px">https://your-host/auth/github/callback</span> and <span style="font-family:'JetBrains Mono',monospace;font-size:12px">https://your-host/auth/google/callback</span>. Setting credentials is the toggle — remove them and restart to disable.</p>
+
 <h2>Worth knowing</h2>
 <ul>
 <li><strong>The server keeps a tamper-evident security log</strong> (chained, hash-verified) of administrative and protocol events — not document content. Disclosing it in your terms is a trust feature, not a burden.</li>

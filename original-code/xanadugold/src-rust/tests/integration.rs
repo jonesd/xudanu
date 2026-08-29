@@ -9199,6 +9199,41 @@ async fn health_endpoint_via_http() {
     assert_eq!(body["status"], "ok");
     assert!(body["works"].is_number());
     assert!(body["server_id"].is_string());
+    // OAuth providers advertised to the frontend: default server has
+    // none configured — both false, field always present.
+    assert!(body["oauth_providers"].is_object());
+    assert_eq!(body["oauth_providers"]["github"], false);
+    assert_eq!(body["oauth_providers"]["google"], false);
+}
+
+#[tokio::test]
+async fn health_reports_configured_oauth_providers() {
+    let server = Server::new();
+    let config = xudanu::server::transport::oauth::OAuthConfig {
+        github_client_id: Some("gh-id".into()),
+        github_client_secret: Some("gh-secret".into()),
+        google_client_id: None,
+        google_client_secret: None,
+        ..Default::default()
+    };
+    let state = AppState::new(server).with_oauth(config).shared();
+    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://{}/health", addr))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = serde_json::from_str(&resp.text().await.unwrap()).unwrap();
+    assert_eq!(body["oauth_providers"]["github"], true);
+    assert_eq!(body["oauth_providers"]["google"], false);
 }
 
 #[tokio::test]
