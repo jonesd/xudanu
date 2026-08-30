@@ -16,6 +16,23 @@
 //     middle position, 20 alternating pairs, doc returned to original
 //     after each pair.
 //   - Attribution: plain query (no range), 10 reps, full span set.
+//
+// RESULTS LEDGER (FR-50/FR-51 registry): every `run` appends one
+// JSONL record per scenario to docs/bench/results.jsonl (committed;
+// `--ledger PATH` overrides, `--no-emit` skips). Record schema:
+// ts/git/env(dev-mac|aws-official)/harness_rev/engine/variant/
+// scenario/ref_n/points/steps/max_exp/us_at_ref/proj_1m.
+//
+// XPI (blended index, computed by `report`): per engine+variant,
+// the geometric mean across scenarios of the PROJECTED 1M-CHAR COST
+//   proj_1m = mean(ins_us, del_us)@ref_n * (1e6/ref_n)^max(0, max_exp)
+// Flat curves project unchanged; non-flat ones extrapolate their
+// measured exponent — the complexity penalty is explicit. Lower is
+// better. Per-scenario numbers remain the regression surface; XPI
+// is the headline, never a substitute.
+//
+// Governance: official comparisons come from env=aws-official
+// records; dev-mac records are directional.
 
 use std::time::Instant;
 use xudanu::edition::Edition;
@@ -100,7 +117,7 @@ fn bench_nested_transclusion() {
             let elem = RangeElement::Transclusion {
                 source_work_id: below,
                 char_start: 0,
-                char_end: src_len as usize,
+                char_end: src_len,
                 placed_at: 0,
                 placed_by: None,
                 content_hash: None,
@@ -128,8 +145,377 @@ fn bench_nested_transclusion() {
     }
 }
 
+/// FR-51 Phase 2 gate: keystroke curve on the lattice substrate.
+/// Fixture contract (bump HARNESS_REV on change): same seed
+/// sentence; the document is TYPED as sequential 48-char chunk
+/// inserts (unit count scales with N — a one-block document would
+/// hide the live-set scan); 20 alternating single-char insert/delete
+/// pairs at the exact middle, doc restored after each pair.
+pub struct LatticeRow {
+    pub n: usize,
+    pub ins_us: f64,
+    pub del_us: f64,
+    pub ins_exp: f64,
+    pub del_exp: f64,
+}
+
+fn bench_lattice() -> Vec<LatticeRow> {
+    use xudanu::space::lattice::LatticeDoc;
+    use xudanu::space::lattice_sim::{apply_delta, LatOp};
+
+    let mut rows: Vec<LatticeRow> = Vec::new();
+    println!("\nFR-51: lattice keystroke curve (typed-chunk fixture)");
+    println!(
+        "{:>9} {:>12} {:>12}   exp ins/del",
+        "N", "ins-mid µs", "del-mid µs"
+    );
+    let mut prev: Option<(usize, [f64; 2])> = None;
+    for &n in SIZES.iter() {
+        let mut doc = LatticeDoc::new(1);
+        let chunks = n / SEED_SENTENCE.len();
+        let tail: String = SEED_SENTENCE
+            .chars()
+            .take(n % SEED_SENTENCE.len())
+            .collect();
+        for c in 0..chunks {
+            let ops = vec![
+                LatOp::Retain {
+                    count: (c * SEED_SENTENCE.len()) as u64,
+                },
+                LatOp::Insert {
+                    text: SEED_SENTENCE.to_string(),
+                },
+            ];
+            apply_delta(&mut doc, 1, &ops);
+        }
+        if !tail.is_empty() {
+            let ops = vec![
+                LatOp::Retain {
+                    count: (chunks * SEED_SENTENCE.len()) as u64,
+                },
+                LatOp::Insert { text: tail },
+            ];
+            apply_delta(&mut doc, 1, &ops);
+        }
+
+        let mid = n / 2;
+        let mut ins_samples = Vec::new();
+        let mut del_samples = Vec::new();
+        for _ in 0..EDIT_PAIRS {
+            let ops = vec![
+                LatOp::Retain { count: mid as u64 },
+                LatOp::Insert {
+                    text: "Z".to_string(),
+                },
+            ];
+            let t = Instant::now();
+            apply_delta(&mut doc, 1, &ops);
+            ins_samples.push(t.elapsed().as_secs_f64() * 1e6);
+
+            let ops = vec![
+                LatOp::Retain { count: mid as u64 },
+                LatOp::Delete { count: 1 },
+            ];
+            let t = Instant::now();
+            apply_delta(&mut doc, 1, &ops);
+            del_samples.push(t.elapsed().as_secs_f64() * 1e6);
+        }
+
+        let row = [mean_us(&ins_samples), mean_us(&del_samples)];
+        let label = match prev {
+            Some((pn, p)) => format!(
+                "   {:.2}/{:.2}",
+                exponent(pn, p[0], n, row[0]),
+                exponent(pn, p[1], n, row[1])
+            ),
+            None => "   (base)".to_string(),
+        };
+        println!("{:>9} {:>12.1} {:>12.1}{}", n, row[0], row[1], label);
+        rows.push(LatticeRow {
+            n,
+            ins_us: row[0],
+            del_us: row[1],
+            ins_exp: match prev {
+                Some((pn, p)) => exponent(pn, p[0], n, row[0]),
+                None => 0.0,
+            },
+            del_exp: match prev {
+                Some((pn, p)) => exponent(pn, p[1], n, row[1]),
+                None => 0.0,
+            },
+        });
+        prev = Some((n, row));
+    }
+    rows
+}
+
+fn now_unix() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn git_desc() -> String {
+    let out = std::process::Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .output();
+    let sha = match out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        _ => "unknown".into(),
+    };
+    let dirty = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .output()
+        .map(|o| o.status.success() && !o.stdout.is_empty())
+        .unwrap_or(false);
+    if dirty {
+        format!("{}-dirty", sha)
+    } else {
+        sha
+    }
+}
+
+fn default_ledger_path() -> String {
+    // Workspace docs/ (three levels above the crate root).
+    concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../docs/bench/results.jsonl"
+    )
+    .to_string()
+}
+
+/// Projected per-op cost at 1M chars: flat curves project unchanged,
+/// non-flat ones extrapolate their measured exponent.
+fn proj_1m(us_at_ref: f64, ref_n: usize, max_exp: f64) -> f64 {
+    if us_at_ref <= 0.0 || ref_n == 0 {
+        return 0.0;
+    }
+    let scale = (1_000_000.0f64 / ref_n as f64).powf(max_exp.max(0.0));
+    us_at_ref * scale
+}
+
+fn geomean(xs: &[f64]) -> f64 {
+    let pos: Vec<f64> = xs.iter().copied().filter(|v| *v > 0.0).collect();
+    if pos.is_empty() {
+        return 0.0;
+    }
+    (pos.iter().map(|v| v.ln()).sum::<f64>() / pos.len() as f64).exp()
+}
+
+fn emit_record(ledger: &str, record: serde_json::Value) {
+    let path = std::path::Path::new(ledger);
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        Ok(mut f) => {
+            use std::io::Write;
+            let _ = writeln!(f, "{}", record);
+        }
+        Err(e) => eprintln!("bench: ledger not writable ({}): {}", ledger, e),
+    }
+}
+
+fn lattice_record(rows: &[LatticeRow]) -> serde_json::Value {
+    let ref_row = rows.last();
+    let max_exp = rows
+        .iter()
+        .map(|r| r.ins_exp.max(r.del_exp))
+        .fold(0.0f64, f64::max);
+    let (ref_n, ins, del) = match ref_row {
+        Some(r) => (r.n, r.ins_us, r.del_us),
+        None => (0, 0.0, 0.0),
+    };
+    let mean_ref = (ins + del) / 2.0;
+    serde_json::json!({
+        "ts": now_unix(),
+        "source": "run",
+        "env": std::env::var("XUDANU_BENCH_ENV").unwrap_or_else(|_| "dev-mac".into()),
+        "host": std::env::var("XUDANU_BENCH_HOST").unwrap_or_else(|_| "dev".into()),
+        "git": git_desc(),
+        "xudanu": env!("CARGO_PKG_VERSION"),
+        "harness_rev": HARNESS_REV,
+        "engine": "lattice",
+        "variant": "liveindex",
+        "scenario": "keystroke-flat",
+        "ref_n": ref_n,
+        "points": rows.iter().map(|r| serde_json::json!({
+            "n": r.n, "ins_us": r.ins_us, "del_us": r.del_us
+        })).collect::<Vec<_>>(),
+        "steps": rows.iter().filter(|r| r.ins_exp != 0.0 || r.del_exp != 0.0).map(|r| serde_json::json!({
+            "to": r.n, "ins_exp": r.ins_exp, "del_exp": r.del_exp
+        })).collect::<Vec<_>>(),
+        "max_exp": max_exp,
+        "us_at_ref": {"ins": ins, "del": del},
+        "proj_1m": {"mean": proj_1m(mean_ref, ref_n, max_exp)},
+    })
+}
+
+/// Human time formatting: µs / ms / s.
+fn fmt_us(v: f64) -> String {
+    if v <= 0.0 {
+        return "-".into();
+    }
+    if v < 1000.0 {
+        format!("{:.1}µs", v)
+    } else if v < 1_000_000.0 {
+        format!("{:.1}ms", v / 1000.0)
+    } else {
+        format!("{:.2}s", v / 1_000_000.0)
+    }
+}
+
+/// Civil date from unix seconds (Howard Hinnant's civil_from_days).
+fn fmt_date(ts: u64) -> String {
+    let days = (ts / 86_400) as i64;
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{:04}-{:02}-{:02}", y, m, d)
+}
+
+fn run_report(ledger: &str) {
+    let text = match std::fs::read_to_string(ledger) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("bench: cannot read ledger {}: {}", ledger, e);
+            return;
+        }
+    };
+    let mut records: Vec<serde_json::Value> = text
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect();
+    records.sort_by_key(|r| r["ts"].as_u64().unwrap_or(0));
+    println!(
+        "xudanu-bench report — ledger {} ({} records)",
+        ledger,
+        records.len()
+    );
+
+    // Latest record per (engine, variant, scenario).
+    let mut latest: Vec<(String, String, String, &serde_json::Value)> = Vec::new();
+    for r in &records {
+        let key = (
+            r["engine"].as_str().unwrap_or("?").to_string(),
+            r["variant"].as_str().unwrap_or("?").to_string(),
+            r["scenario"].as_str().unwrap_or("?").to_string(),
+        );
+        match latest
+            .iter_mut()
+            .find(|(e, v, sc, _)| (&key.0, &key.1, &key.2) == (e, v, sc))
+        {
+            Some(slot) => slot.3 = r,
+            None => latest.push((key.0, key.1, key.2, r)),
+        }
+    }
+
+    println!("\nLATEST PER SCENARIO");
+    for (e, v, sc, r) in &latest {
+        let ts = r["ts"].as_u64().unwrap_or(0);
+        let ref_n = r["ref_n"].as_u64().unwrap_or(0);
+        let ins = r["us_at_ref"]["ins"].as_f64().unwrap_or(0.0);
+        let del = r["us_at_ref"]["del"].as_f64().unwrap_or(0.0);
+        let mx = r["max_exp"].as_f64().unwrap_or(0.0);
+        println!(
+            "  {:<18} {:<7} {:<13} ref={:<6} ins={:>10} del={:>10} max_exp={:.2}  ({} {})",
+            sc,
+            e,
+            v,
+            ref_n,
+            fmt_us(ins),
+            fmt_us(del),
+            mx,
+            fmt_date(ts),
+            r["source"].as_str().unwrap_or("?"),
+        );
+    }
+
+    println!("\nXPI (projected 1M-char cost, geomean across scenarios; lower is better)");
+    let mut groups: Vec<(String, String, Vec<f64>)> = Vec::new();
+    for (e, v, _, r) in &latest {
+        let p = r["proj_1m"]["mean"].as_f64().unwrap_or(0.0);
+        match groups.iter_mut().find(|(ge, gv, _)| ge == e && gv == v) {
+            Some(g) => g.2.push(p),
+            None => groups.push((e.clone(), v.clone(), vec![p])),
+        }
+    }
+    groups.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
+    for (e, v, ps) in &groups {
+        println!(
+            "  {:<8} {:<13} XPI={:>10}  ({} scenarios)",
+            e,
+            v,
+            fmt_us(geomean(ps)),
+            ps.len()
+        );
+    }
+
+    println!("\nTREND (chronological per engine/variant/scenario)");
+    let mut seen: Vec<(String, String, String)> = Vec::new();
+    for r in &records {
+        let key = (
+            r["engine"].as_str().unwrap_or("?").to_string(),
+            r["variant"].as_str().unwrap_or("?").to_string(),
+            r["scenario"].as_str().unwrap_or("?").to_string(),
+        );
+        if !seen.contains(&key) {
+            seen.push(key.clone());
+            let chain: Vec<String> = records
+                .iter()
+                .filter(|x| {
+                    x["engine"].as_str() == Some(key.0.as_str())
+                        && x["variant"].as_str() == Some(key.1.as_str())
+                        && x["scenario"].as_str() == Some(key.2.as_str())
+                })
+                .map(|x| fmt_us(x["proj_1m"]["mean"].as_f64().unwrap_or(0.0)))
+                .collect();
+            println!(
+                "  {:<8} {:<12} {:<16} {}",
+                key.0,
+                key.1,
+                key.2,
+                chain.join(" -> ")
+            );
+        }
+    }
+}
+
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "report") {
+        let ledger = args
+            .iter()
+            .position(|a| a == "--ledger")
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+            .unwrap_or_else(default_ledger_path);
+        run_report(&ledger);
+        return;
+    }
+    let no_emit = args.iter().any(|a| a == "--no-emit");
+    let ledger = args
+        .iter()
+        .position(|a| a == "--ledger")
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+        .unwrap_or_else(default_ledger_path);
+
     bench_nested_transclusion();
+    let lattice_rows = bench_lattice();
     println!(
         "xudanu-bench rev={} xudanu v{}",
         HARNESS_REV,
@@ -144,6 +530,7 @@ fn main() {
         "N", "build µs", "ins-mid µs", "del-mid µs", "attr-q µs"
     );
 
+    let mut otree_rows: Vec<(usize, [f64; 4])> = Vec::new();
     let mut prev: Option<(usize, [f64; 4])> = None;
     for &n in SIZES.iter() {
         let t0 = Instant::now();
@@ -246,6 +633,156 @@ fn main() {
             "{:>9} {:>12.1} {:>12.1} {:>12.1} {:>12.1}{}",
             n, row[0], row[1], row[2], row[3], label
         );
+        otree_rows.push((n, row));
         prev = Some((n, row));
+    }
+
+    if !no_emit {
+        let rec = lattice_record(&lattice_rows);
+        emit_record(&ledger, rec.clone());
+        // O-tree records: rev-2 samples ins/del only up to
+        // LINKED_EDIT_MAX_N — the keystroke record uses those sizes
+        // only; attribution is its own scenario at full range.
+        let ksampled: Vec<(usize, [f64; 4])> = otree_rows
+            .iter()
+            .copied()
+            .filter(|(n, r)| *n <= LINKED_EDIT_MAX_N && r[1] > 0.0)
+            .collect();
+        let (kref, krow) = ksampled.last().copied().unwrap_or((0, [0.0; 4]));
+        let ksteps: Vec<serde_json::Value> = ksampled
+            .windows(2)
+            .map(|w| {
+                let (n1, r1) = w[0];
+                let (n2, r2) = w[1];
+                serde_json::json!({
+                    "to": n2,
+                    "ins_exp": exponent(n1, r1[1], n2, r2[1]),
+                    "del_exp": exponent(n1, r1[2], n2, r2[2]),
+                })
+            })
+            .collect();
+        let kmax = ksteps
+            .iter()
+            .map(|st| {
+                st["ins_exp"]
+                    .as_f64()
+                    .unwrap_or(0.0)
+                    .max(st["del_exp"].as_f64().unwrap_or(0.0))
+            })
+            .fold(0.0f64, f64::max);
+        let kmean = (krow[1] + krow[2]) / 2.0;
+        let orec = serde_json::json!({
+            "ts": now_unix(),
+            "source": "run",
+            "env": std::env::var("XUDANU_BENCH_ENV").unwrap_or_else(|_| "dev-mac".into()),
+            "host": std::env::var("XUDANU_BENCH_HOST").unwrap_or_else(|_| "dev".into()),
+            "git": git_desc(),
+            "xudanu": env!("CARGO_PKG_VERSION"),
+            "harness_rev": HARNESS_REV,
+            "engine": "otree",
+            "variant": "posmap",
+            // Rev-2 samples edits only at n<=LINKED_EDIT_MAX_N with
+            // 32 links present — this IS the linked scenario.
+            "scenario": "keystroke-linked-32",
+            "ref_n": kref,
+            "points": ksampled.iter().map(|(n, r)| serde_json::json!({
+                "n": n, "ins_us": r[1], "del_us": r[2]
+            })).collect::<Vec<_>>(),
+            "steps": ksteps,
+            "max_exp": kmax,
+            "us_at_ref": {"ins": krow[1], "del": krow[2]},
+            "proj_1m": {"mean": proj_1m(kmean, kref, kmax)},
+        });
+        emit_record(&ledger, orec);
+
+        let (aref, _arow_max, arow) = otree_rows
+            .last()
+            .map(|(n, r)| (*n, r[0], *r))
+            .unwrap_or((0, 0.0, [0.0; 4]));
+        let asteps: Vec<serde_json::Value> = otree_rows
+            .windows(2)
+            .map(|w| {
+                let (n1, r1) = w[0];
+                let (n2, r2) = w[1];
+                serde_json::json!({
+                    "to": n2,
+                    "attr_exp": exponent(n1, r1[3], n2, r2[3]),
+                })
+            })
+            .collect();
+        let amax = asteps
+            .iter()
+            .filter_map(|st| st["attr_exp"].as_f64())
+            .fold(0.0f64, f64::max);
+        let arec = serde_json::json!({
+            "ts": now_unix(),
+            "source": "run",
+            "env": std::env::var("XUDANU_BENCH_ENV").unwrap_or_else(|_| "dev-mac".into()),
+            "host": std::env::var("XUDANU_BENCH_HOST").unwrap_or_else(|_| "dev".into()),
+            "git": git_desc(),
+            "xudanu": env!("CARGO_PKG_VERSION"),
+            "harness_rev": HARNESS_REV,
+            "engine": "otree",
+            "variant": "cachefp",
+            "scenario": "attr-q",
+            "ref_n": aref,
+            "points": otree_rows.iter().map(|(n, r)| serde_json::json!({
+                "n": n, "attr_us": r[3]
+            })).collect::<Vec<_>>(),
+            "steps": asteps,
+            "max_exp": amax,
+            "us_at_ref": {"ins": arow[3], "del": 0.0, "attr": arow[3]},
+            "proj_1m": {"mean": proj_1m(arow[3], aref, amax)},
+        });
+        emit_record(&ledger, arec);
+        println!(
+            "\nledger: 3 records appended to {} (git {})",
+            ledger,
+            git_desc()
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn projection_flat_stays_put() {
+        let p = proj_1m(2.0, 256_000, 0.1);
+        assert!((p - 2.0 * (1_000_000.0f64 / 256_000.0).powf(0.1)).abs() < 1e-9);
+        // Flat curves project (nearly) unchanged.
+        assert!(proj_1m(2.0, 256_000, 0.0) - 2.0 < 1e-9);
+    }
+
+    #[test]
+    fn projection_penalizes_exponents() {
+        // exp 1.0 at 256k ref: x(1M/256k) = x3.90625
+        let p = proj_1m(1000.0, 256_000, 1.0);
+        assert!((p - 3906.25).abs() < 1e-6);
+        // Negative exponents clamp to zero (no reward for noise).
+        assert_eq!(proj_1m(5.0, 1000, -0.5), 5.0);
+    }
+
+    #[test]
+    fn geomean_mixed() {
+        assert!((geomean(&[1.0, 100.0]) - 10.0).abs() < 1e-9);
+        assert_eq!(geomean(&[]), 0.0);
+        assert_eq!(geomean(&[0.0, 4.0]), 4.0);
+    }
+
+    #[test]
+    fn civil_dates() {
+        // 2026-08-30 00:00:00 UTC = 1788048000
+        assert_eq!(fmt_date(1788048000), "2026-08-30");
+        assert_eq!(fmt_date(0), "1970-01-01");
+    }
+
+    #[test]
+    fn human_units() {
+        assert_eq!(fmt_us(12.5), "12.5µs");
+        assert_eq!(fmt_us(2500.0), "2.5ms");
+        assert_eq!(fmt_us(1_160_000.0), "1.16s");
+        assert_eq!(fmt_us(0.0), "-");
     }
 }
