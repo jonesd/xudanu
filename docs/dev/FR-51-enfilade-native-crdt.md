@@ -68,6 +68,74 @@ in FR-34) is the natural language for expressing that rule.
    cross-server replication — does the substrate collapse FR-3's
    sync problem to chunk-diff exchange?
 
+## Phase 0 execution plan (2026-08-30)
+
+Three sessions, each with a committed artifact. The audit map is the
+question set — every Gold file is read asking "what answers finding
+N?" Nothing is read for heritage; everything is read for mechanism.
+
+### Session A — read the Gold source with the findings as questions
+
+| Gold piece (in-tree) | Read asking | Findings it should answer |
+|---|---|---|
+| `original-code/xanadugold/src/server/z` (the kernel) | How are node crums maintained bottom-up? How are tumblers allocated and widened on insert? | 1, 4 (locality; edit cost) |
+| `wrapperx.hxx` (`iDSpace` at :313, wrapper layer) | What exactly is the V-to-I mapping (poomfilade)? What does it cost to route a position to I-space? | The whole migration family (1, 5, 8, 8b) |
+| `src/image/st.dir/*.st` (`SequenceRegion`, `XuRealPos`, `XuReal`, `BeforeReal`, `IEEE32Pos`) | What is the Real/Sequence duality — the position/tumbler split — as the original frontend used it? | Lattice ordering; sequence.rs activation |
+| `urdit.cxx/hxx` | Backend entity/disk model: how are immutable units stored and addressed? | Element granularity; tombstone storage |
+
+Artifact: **mechanism-transfer table** — Gold mechanism ↔ our finding
+↔ what adopting it means ↔ cost. One row per answer found; blanks are
+findings Gold does NOT answer (those stay ours).
+
+### Session B — inventory our own pieces (what's already built)
+
+| Piece | State | Role in the substrate |
+|---|---|---|
+| `space/sequence.rs` (1248 lines) | dormant; FR-34 bridged to/from tumblers | Candidate native ordering for the lattice |
+| `edition/tumbler.rs` (`XudanuTumbler`, `DocumentArrangement`) | live, position↔tumbler both ways | The projection API consumers keep |
+| FR-34 subtree crums + chunk diff | live, tested | Unit identity and O(diff) sync |
+| `edition.rs` entries cache (entries/starts/fingerprints/flag) | live, armor-locked | The consumer-side view machinery |
+| `element_insert`/resolution (finding 9) | live, view-consistent pin fix pending | Transclusion identity unification point (crum-based) |
+| O-tree CRDT + bench op streams | live; bench records edit patterns | **The acceptance oracle**: record real op streams, replay through the lattice |
+
+Artifact: **readiness matrix** — ready / adaptable / missing, per
+substrate component. The missing column is Phase 1's worklist.
+
+### Session C — the lattice design note
+
+Decisions to make, in order (A+B feed each):
+
+1. **Element granularity** — per-character tumblers vs span-units.
+   Gold's z answers this for storage; our edit patterns (bench
+   streams) answer it for interactivity.
+2. **Ordering rule** — neighbor-anchoring (RGA-style) vs Sequence
+   algebra as native fractional order. If sequence.rs gives
+   deterministic order for concurrent inserts *without* extra
+   bookkeeping, that is the largest single simplification available.
+3. **Add/remove semantics** — tombstone-wins for text (matches
+   O-tree today); causal context via dotted version vectors; the
+   "delete of unseen insert" rule must be explicit.
+4. **Acceptance protocol** — the gate: recorded O-tree op streams
+   replayed through the lattice; rendered outcomes compared; every
+   divergence is either a lattice fix or a documented acceptable
+   difference. The FR-50 armor tests (six, growing) are the behavior
+   spec.
+5. **Edit-cost model under churn** — retype = mint+tombstone storms;
+   estimate address-space growth and GC story BEFORE building. Gold
+   never had interactive churn; this pressure is new and ours.
+
+Artifact: **the design note with verdict** — proceed to Phase 1, or
+close FR-51 with the recorded reason. Either outcome commits.
+
+### Standing rules (from the audit, now binding here)
+
+- Read Gold source before analysis of it (FR-48 checklist rule).
+- Every claim in the transfer table carries a file:line citation.
+- The acceptance oracle is op streams from the LIVE system, never
+  synthetic happy paths.
+- Nothing is rewritten during Phase 0 — reading, tables, and one
+  design note. Code stays on the finding-9 fix and the audit queue.
+
 ## Phasing (decision gates, not commitments)
 
 - **Phase 0 — research (1–2 sessions):** answer questions 1–3 on
