@@ -259,6 +259,12 @@ impl Edition {
     /// entry range — both depend only on this immutable edition, so
     /// they compute once (FR-50 #4: repeated attribution queries
     /// were O(N)-per-call with identical inputs).
+    #[cfg(not(feature = "server"))]
+    pub fn cached_span_signature_status(&self) -> Arc<Vec<u8>> {
+        Arc::new(vec![2u8; self.span_provenance.len()])
+    }
+
+    #[cfg(feature = "server")]
     pub fn cached_span_signature_status(&self) -> Arc<Vec<u8>> {
         let mut key: u64 = 1469598103934665603;
         for sp in &self.span_provenance {
@@ -298,6 +304,7 @@ impl Edition {
         statuses
     }
 
+    #[cfg(feature = "server")]
     fn compute_span_signature_statuses(&self) -> Vec<u8> {
         {
             const STORE_VERIFIED: u8 = 0;
@@ -2763,6 +2770,7 @@ mod tests {
     // FR-50 #4 armor: the memoized span signature statuses must
     // equal direct computation (stored-verified / author-maintained
     // / unsigned), and stay stable across repeated calls.
+    #[cfg(feature = "server")]
     #[test]
     fn span_status_memo_matches_direct() {
         let ed = Edition::from_text("shared text appears twice: shared text appears twice")
