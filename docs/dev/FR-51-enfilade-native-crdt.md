@@ -87,6 +87,32 @@ Artifact: **mechanism-transfer table** — Gold mechanism ↔ our finding
 ↔ what adopting it means ↔ cost. One row per answer found; blanks are
 findings Gold does NOT answer (those stay ours).
 
+### Session A results (2026-08-30, first pass — the z "file" is a
+concatenated index; the kernel is the server/*.cxx collection)
+
+**Mechanism-transfer table (opening rows):**
+
+| Gold mechanism | Citation | Answers | What it means for us |
+|---|---|---|---|
+| **IDSpace: distributed unique ID minting** — `newID()` "guaranteed different from every other newID... on any Server"; `newIDs(count)` bulk form; server-scoped allocation regions (`iDsFromServer`) | `idx.hxx:555-620` | Lattice element identity (FR-51 Q1) | Concurrent writers on different servers **cannot collide** — uniqueness without vector clocks, by space/counter allocation. Our server_id-prefixed tumblers already mirror this shape |
+| **ID : Position** — the immutable unit IS an address in a coordinate space | `idx.hxx:114` | Write-once addressing is real, not aspirational | Elements are positions; ordering comes from the space, not from a list |
+| **SequenceRegion: prefix regions** — "unions of intervals... or a match with all sequences **prefixed by some sequence up to some index**" | `st.dir/SequenceRegion.st` (category 'Xanadu-tumbler') | Lattice ordering (FR-51 Q2); the migration family | The hierarchical-prefix property IS the widening arithmetic. Our `xn_region.rs` is the port of the underlying XnRegion; `space/sequence.rs` is the Sequence algebra sitting dormant |
+| **Per-element triple crums, bottom-up** — every range element carries bert/sensor/history crums; `updateBCrumTo`; observer-parents chain upward; identity = `contentsHash ^ hCrum ^ sensorCrum ^ owner` | `z:102-121` (BeRangeElement), `brange1x.hxx` | Finding 9 (view-independent identity) | The crum-based transclusion identity we planned is literally Gold's element-identity pattern. The working StructuralTransclusion variant already matches it |
+| **Authority as ID regions** — `actualAuthority() → IDRegion`, `hasAuthority(ID)`, `incorporate(other)` | `nkernelx.hxx:357-420` | Federation/permissions join semantics | Authority merge is already region-join shaped in Gold — the lattice pattern appears here too, for permissions |
+| **`again()` — re-fetch protocol** | `nkernelx.hxx:488` | Our AgainHop (transclusion re-resolution) | Our again-hop machinery is the direct descendant; interop vocabulary confirmed |
+
+**Blanks (Gold does NOT answer — stays ours):**
+- The reconciliation rule for concurrent edits (single-writer design)
+- Churn economics under interactive retyping
+- Causal-context bookkeeping ("delete of unseen insert")
+
+**Initial confidence: HIGH for the substrate direction.** The three
+load-bearing mechanisms — unique minting, immutable positioning,
+prefix region algebra — all verified present with citations, plus the
+crum-identity pattern for finding 9's unification. The genuinely new
+work is confirmed to be exactly where FR-51 said it was: the lattice
+rule and churn economics. Nothing found so far closes the FR.
+
 ### Session B — inventory our own pieces (what's already built)
 
 | Piece | State | Role in the substrate |
