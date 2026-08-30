@@ -1470,21 +1470,46 @@ fn migrate_span_provenance(
     for span in a_spans {
         result.extend(try_migrate_span_multi(span, a_to_merged));
     }
+    let mut seen: std::collections::HashSet<(i64, i64, [u8; 32])> = result
+        .iter()
+        .map(|s| (s.start, s.end, s.provenance.author_public_key))
+        .collect();
     for span in b_spans {
         for migrated in try_migrate_span_multi(span, b_to_merged) {
-            let is_dup = result.iter().any(|existing| {
-                existing.start == migrated.start
-                    && existing.end == migrated.end
-                    && existing.provenance.author_public_key
-                        == migrated.provenance.author_public_key
-            });
-            if !is_dup {
+            let key = (
+                migrated.start,
+                migrated.end,
+                migrated.provenance.author_public_key,
+            );
+            if seen.insert(key) {
                 result.push(migrated);
             }
         }
     }
 
-    result
+    coalesce_spans(result)
+}
+
+/// Merge touching or overlapping fragments of the same author into
+/// their hull (FR-50 finding 10): span counts stay bounded by
+/// distinct author regions instead of fragmenting per merge.
+/// Fragments separated by a gap keep their separation — the gap is
+/// another author's insertion and must not be absorbed.
+fn coalesce_spans(mut spans: Vec<SpanProvenance>) -> Vec<SpanProvenance> {
+    spans.sort_by(|x, y| (x.start, x.end).cmp(&(y.start, y.end)));
+    let mut out: Vec<SpanProvenance> = Vec::with_capacity(spans.len());
+    for s in spans {
+        if let Some(last) = out.last_mut() {
+            if s.start <= last.end
+                && s.provenance.author_public_key == last.provenance.author_public_key
+            {
+                last.end = last.end.max(s.end);
+                continue;
+            }
+        }
+        out.push(s);
+    }
+    out
 }
 
 #[cfg(test)]

@@ -290,6 +290,77 @@ preservation). Suite 3,229.
 performance fix found correctness bugs the functional suite never
 saw. Rule 3 is now empirically load-bearing, not just doctrine.
 
+## Findings 10 and 11: the dual-engine capstone (2026-08-30, FR-51 P4 slice 2)
+
+The dual-write shadow's capstone bench (one process, one traffic
+stream, both engines; 16k doc, two strictly-interleaved sessions)
+produced two findings in one run:
+
+- **Finding 10 (merge-cost compounding, O-tree):** under strict
+  session alternation every op is a three_way_merge, and per-op cost
+  DOUBLES roughly every two ops — measured 236ms → 724ms → 1.6s →
+  4.3s → 6.5s → **14.8s at op 52** (stack:
+  `three_way_merge → migrate_span_provenance → Mapping::of_region →
+  XnRegion::intersect`, allocation-bound). Consecutive same-session
+  ops take the base_is_current fast path (15ms dip at op 51) — the
+  single-session matrix never sees this. Two active typists on one
+  document hit the full curve. The 30-op capped script in
+  xudanu-bench records it without the explosive tail.
+- **Finding 11 (F6 evidence):** on the same script the shadow
+  (lattice) rendered the EXACTLY correct length (16000 = base +20
+  inserts −20 deletes) while the O-tree's merged text contained
+  duplicated fragments (16103 chars, "bBravo"-class garbling) —
+  **the dual-write shadow caught F6 (merge garbling) red-handed as
+  an oracle.** Divergence is telemetry, not an assert, until F6 is
+  adjudicated: whether three_way/LWW garbles or the semantics
+  legitimately differ on unprobed concurrent classes, the shadow
+  result is length-arithmetic-exact.
+
+Cost side of the same bench: O-tree mean 62–74ms/op vs lattice
+shadow **80µs/op (~900×)** — and flat (the mirror rides the
+LiveIndex path). Both records are in the ledger under
+scenario `dual-engine-interleaved` (variants `threeway` vs
+`liveindex`).
+
+### Findings 10 and 11 — the fixes and the narrowing (later, 2026-08-30)
+
+**Finding 10 FIXED — span-provenance coalescing.** Root cause
+confirmed by instrumentation: `migrate_span_provenance` splits
+spans per merge and nothing ever re-merged them (span counts grew
+per merge; the 88-span explosion and the doubling cost curve).
+Fix: `coalesce_spans` merges touching/overlapping same-author
+fragments into their hull after migration (gap-separated fragments
+keep their separation — the gap is another author's insertion).
+Plus a HashSet dedup replacing the O(a×b) scan. Post-fix: 120
+interleaved ops, spans bounded at 2, worst op 112ms — FLAT through
+the previously explosive regime (was 14.8s at op 52). Armor:
+`f10_span_count_bounded_under_interleaved_merges` (also asserts
+length arithmetic per round — no duplication). The 120-op
+dual-engine script IS the regression guard.
+
+A tempting broader fix was tried and REVERTED: coalescing the
+per-char ENTRY representation at the CRDT boundary immediately
+duplicated content — the three-way machinery diffs at entry
+granularity, so per-char entries are the diff tokens (coarse
+entries cannot align; plausibly this exact mechanism is F6's
+garbling shape). The per-char entry tax remains a standing cost
+(fast-path ops ~11–15ms at 15k chars) — the principled fix is
+sub-entry diff (FR-34 chunk-level direction), recorded as future
+work, NOT blanket entry coalescing.
+
+**Finding 11 narrowed — F6 is NONDETERMINISTIC.** Same binary, 8
+processes: 3–5 of 8 runs garble, IDENTICALLY — always at round 8
+op 0, a single three_way_merge duplicating exactly 103 chars
+(16650 → 16753). Per-op length traces are bit-identical between
+passing and failing runs up to that op: the merge's inputs are
+identical and the outcome varies per process. Suspects (untested):
+per-session random Ed25519 keys baked into ElementProvenance, or
+op-timestamp phase. Repro committed as the ignored test
+`f6_shadow_enrolled_length_stay_exact` with the evidence in
+comments; next step is a captured-input replay loop to bracket
+inside three_way_merge vs upstream edition construction. The
+lattice shadow remains the exact oracle.
+
 ## Phase 1 — micro-harness (Big-O curves)
 
 A `xudanu-bench` binary (or `xudanu-robots bench` subcommand):

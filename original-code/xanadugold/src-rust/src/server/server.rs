@@ -8302,6 +8302,23 @@ impl Server {
             .map(|mw| mw.ops_applied())
     }
 
+    /// Debug: the CRDT doc's current edition text, bypassing the
+    /// cached_text path (divergence diagnosis).
+    pub fn debug_crdt_edition_text(&self, work_be_id: BeId) -> Option<String> {
+        self.otree_crdt
+            .current_edition(work_be_id)
+            .ok()
+            .map(|ed| ed.to_text())
+    }
+
+    /// Total nanoseconds the shadow spent mirroring (dual-engine
+    /// bench telemetry).
+    pub fn lattice_shadow_nanos(&self, work_be_id: BeId) -> Option<u128> {
+        self.lattice_shadows
+            .get(&work_be_id)
+            .map(|mw| mw.apply_nanos())
+    }
+
     /// Rollback: drop all shadows (the live path never depended on
     /// them).
     pub fn clear_lattice_shadows(&mut self) {
@@ -27035,6 +27052,145 @@ mod tests {
             .unwrap();
         shadow_check(&mut server, work, "late-join insert");
         assert!(server.crdt_current_text(work).unwrap().contains("MID*"));
+    }
+
+    // FR-50 finding 10 armor: under strictly-interleaved two-session
+    // traffic (every op a three-way merge), span-provenance must NOT
+    // fragment unboundedly (the compounding that made per-op merge
+    // cost double every ~2 ops — 14.8s/op at op 52 before the fix),
+    // and the text length must stay arithmetically exact (no merge
+    // duplication).
+    // F6 REPRO (nondeterministic — ignored to keep CI green).
+    // Same script as the F10 armor with the shadow enrolled.
+    // Evidence (2026-08-30, same binary, 8 processes): 3-5 of 8
+    // runs garble at round 8 op 0 — a single three_way_merge
+    // duplicates exactly 103 chars (16650 -> 16753). Traces are
+    // bit-identical up to that op across passing and failing runs,
+    // so the inputs to the merge are identical and the outcome
+    // varies per PROCESS (suspects: per-session random Ed25519
+    // keys baked into provenance, or op-timestamp phase). Run
+    // un-ignored in a loop to reproduce; the lattice shadow is the
+    // exact oracle (length arithmetic holds on its side).
+    #[ignore = "F6: nondeterministic merge duplication — see FR-50 finding 11"]
+    #[test]
+    fn f6_shadow_enrolled_length_stay_exact() {
+        use crate::server::transport::protocol::TextDeltaOp as Op;
+        let mut server = Server::new();
+        let s1 = server.connect();
+        let s2 = server.connect();
+        let _ = server.login_public(s1);
+        let _ = server.login_public(s2);
+        let text: String = "alpha bravo charlie delta echo foxtrot golf hotel ".repeat(333);
+        let n = text.chars().count();
+        let mid = n / 2;
+        let work = server
+            .create_work(s1, crate::edition::Edition::from_text(&text))
+            .unwrap();
+        server.crdt_open_session(s1, work).unwrap();
+        server.crdt_open_session(s2, work).unwrap();
+        server.enable_lattice_shadow();
+        server.enroll_lattice_shadow(s1, work).unwrap();
+        for k in 0..40u64 {
+            let at = (mid as u64 + k * 37) % (n as u64 - 40);
+            let steps: Vec<(crate::server::SessionId, Vec<Op>)> = vec![
+                (
+                    s1,
+                    vec![Op::Retain { count: at }, Op::Insert { text: "A".into() }],
+                ),
+                (
+                    s2,
+                    vec![
+                        Op::Retain {
+                            count: at.saturating_sub(20),
+                        },
+                        Op::Delete { count: 2 },
+                    ],
+                ),
+                (
+                    s2,
+                    vec![
+                        Op::Retain {
+                            count: (at + 5) % (n as u64 - 10),
+                        },
+                        Op::Insert { text: "B".into() },
+                    ],
+                ),
+            ];
+            for (sid, ops) in steps {
+                server.crdt_apply_text_delta(sid, work, &ops).unwrap();
+            }
+            let live = server.crdt_current_text(work).unwrap();
+            assert_eq!(
+                live.chars().count(),
+                n,
+                "round {}: live text length {} != {} (garbled)",
+                k,
+                live.chars().count(),
+                n
+            );
+        }
+    }
+
+    #[test]
+    fn f10_span_count_bounded_under_interleaved_merges() {
+        use crate::server::transport::protocol::TextDeltaOp as Op;
+        let mut server = Server::new();
+        let s1 = server.connect();
+        let s2 = server.connect();
+        let _ = server.login_public(s1);
+        let _ = server.login_public(s2);
+        let text: String = "alpha bravo charlie delta echo foxtrot golf hotel ".repeat(300);
+        let n = text.chars().count();
+        let mid = n / 2;
+        let work = server
+            .create_work(s1, crate::edition::Edition::from_text(&text))
+            .unwrap();
+        server.crdt_open_session(s1, work).unwrap();
+        server.crdt_open_session(s2, work).unwrap();
+        let mut max_spans = 0usize;
+        let mut slowest_us: u128 = 0;
+        for k in 0..40u64 {
+            let at = (mid as u64 + k * 37) % (n as u64 - 40);
+            let steps: Vec<(crate::server::SessionId, Vec<Op>)> = vec![
+                (
+                    s1,
+                    vec![Op::Retain { count: at }, Op::Insert { text: "A".into() }],
+                ),
+                (
+                    s2,
+                    vec![
+                        Op::Retain {
+                            count: at.saturating_sub(20),
+                        },
+                        Op::Delete { count: 2 },
+                    ],
+                ),
+                (
+                    s2,
+                    vec![
+                        Op::Retain {
+                            count: (at + 5) % (n as u64 - 10),
+                        },
+                        Op::Insert { text: "B".into() },
+                    ],
+                ),
+            ];
+            for (sid, ops) in steps {
+                let t = std::time::Instant::now();
+                server.crdt_apply_text_delta(sid, work, &ops).unwrap();
+                slowest_us = slowest_us.max(t.elapsed().as_micros());
+            }
+            let ed = server.otree_crdt.current_edition(work).unwrap();
+            max_spans = max_spans.max(ed.span_provenance.len());
+            let text_len = ed.to_text().chars().count();
+            // Each round is net zero: +1 A, -2 deleted, +1 B.
+            assert_eq!(text_len, n, "no merge duplication through round {}", k);
+        }
+        assert!(
+            max_spans <= 8,
+            "span provenance must stay bounded, got {}",
+            max_spans
+        );
     }
 
     #[test]
