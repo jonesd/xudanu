@@ -65,35 +65,36 @@ impl LatticeDoc {
     /// would not land below `next` (a dense gap), deepen one more
     /// level anchored on the common prefix instead.
     pub fn allocate_between(&self, prev: Option<&Sequence>, next: Option<&Sequence>) -> Sequence {
+        let less = |a: &Sequence, b: &Sequence| a.compare_to(b) == std::cmp::Ordering::Less;
         let candidate = match prev {
             Some(p) => p.append_pair(self.server as i64, self.counter as i64 + 1),
             None => Sequence::from_numbers(vec![1, self.server as i64, self.counter as i64 + 1]),
         };
         if let Some(n) = next {
-            if candidate.compare_to(n) != std::cmp::Ordering::Less {
-                // Dense gap: anchor inside prev's last level instead —
-                // [.., prev_last + 1, server, counter] under prev's
-                // parent, which sorts between prev and any extension
-                // of prev's next sibling only when prev_last + 1 stays
-                // below next's divergence; the assert below is the
-                // tripwire for shapes needing deeper handling.
-                if let Some(p) = prev {
-                    // Dense gap: prev ++ [0, server, counter] is
-                    // strictly interior — allocations never emit
-                    // zero-elements (server >= 1, counter >= 1), so
-                    // the 0-level sits below every extension of prev
-                    // and above prev itself. This is the widening
-                    // invariant: deepen, never renumber.
-                    let mut nums = p.numbers().to_vec();
-                    nums.push(0);
+            if !less(&candidate, n) {
+                // Dense gap — the widening invariant: deepen below the
+                // anchor with zero-prefixes until strictly below next.
+                // Zeros are never minted by allocation, so a 0-chain
+                // sorts below next's first nonzero element at that
+                // depth — the general interior rule; never renumber.
+                let anchor: Vec<i64> = match prev {
+                    Some(p) => p.numbers().to_vec(),
+                    None => vec![*n.numbers().first().unwrap_or(&1)],
+                };
+                let mut zeros = 0usize;
+                loop {
+                    let mut nums = anchor.clone();
+                    for _ in 0..zeros {
+                        nums.push(0);
+                    }
                     nums.push(self.server as i64);
                     nums.push(self.counter as i64 + 1);
-                    let deepened = Sequence::from_numbers(nums);
-                    debug_assert!(
-                        deepened.compare_to(n) == std::cmp::Ordering::Less,
-                        "allocation invariant: interior address must sort below next"
-                    );
-                    return deepened;
+                    let interior = Sequence::from_numbers(nums);
+                    if less(&interior, n) && prev.map(|p| less(p, &interior)).unwrap_or(true) {
+                        debug_assert!(zeros <= n.numbers().len() + 2, "interior depth runaway");
+                        return interior;
+                    }
+                    zeros += 1;
                 }
             }
         }
@@ -173,6 +174,72 @@ impl LatticeDoc {
         }
         self.tombstones.extend(other.tombstones.iter().cloned());
         self.counter = self.counter.max(other.counter_of(self.server));
+    }
+
+    /// Tombstone one unit by dot (the split operation's primitive).
+    pub fn tombstone_dot(&mut self, dot: Dot) {
+        let Some(unit) = self.units.get(&dot) else {
+            return;
+        };
+        let mut context = HashSet::new();
+        context.insert(dot);
+        self.tombstones.push(RegionTombstone {
+            region: SequenceRegion::singleton(unit.address.clone()),
+            context,
+        });
+    }
+
+    /// Public range delete (the simulator adapter's boundary form).
+    pub fn delete_range_public(&mut self, start: &Sequence, stop: &Sequence) {
+        self.delete_range(start, stop);
+    }
+
+    /// Delete from `start` to the end of the document.
+    pub fn delete_to_end(&mut self, start: &Sequence) {
+        let region = SequenceRegion::above(start.clone(), true);
+        let context: std::collections::HashSet<Dot> = self
+            .live()
+            .into_iter()
+            .filter(|u| region.contains_sequence(&u.address))
+            .map(|u| u.dot)
+            .collect();
+        if context.is_empty() {
+            return;
+        }
+        self.tombstones.push(RegionTombstone { region, context });
+    }
+
+    /// Nudge the counter (test scaffolding for deterministic dots
+    /// after cloning a shared base).
+    pub fn set_counter_hint(&mut self, minimum: u64) {
+        self.counter = self.counter.max(minimum);
+    }
+
+    /// Seed a pre-shared unit (bootstrap base for split-brain
+    /// replicas: same dot on both sides, merge is a no-op).
+    pub fn seed_shared_unit(
+        &mut self,
+        address: Sequence,
+        content: impl Into<String>,
+        author: u64,
+        dot: Dot,
+    ) {
+        self.counter = self.counter.max(dot.1);
+        self.units.insert(
+            dot,
+            LatticeUnit {
+                address,
+                content: content.into(),
+                author,
+                dot,
+            },
+        );
+    }
+
+    /// The address of a unit by dot (the adapter needs the REAL
+    /// addresses of freshly split parts, never stale bounds).
+    pub fn address_of(&self, dot: Dot) -> Option<&Sequence> {
+        self.units.get(&dot).map(|u| &u.address)
     }
 
     fn counter_of(&self, server: u64) -> u64 {
