@@ -675,6 +675,12 @@ pub struct Server {
     last_checkpoint_time: u64,
     checkpoint_in_flight: bool,
     pub(crate) otree_crdt: super::otree_crdt::OtreeCrdtManager,
+    /// FR-51 Phase 4: per-work lattice dual-write shadows. Empty and
+    /// inert unless enabled AND the work is enrolled — zero impact
+    /// on the default path. Shadows are ephemeral (rebuilt from the
+    /// live text at enrollment); rollback is dropping them.
+    pub(crate) lattice_shadows: HashMap<BeId, crate::space::lattice_multi::MultiWriter>,
+    lattice_shadow_enabled: bool,
     pub(crate) personal_club_count: usize,
     pub(crate) max_personal_clubs: usize,
     pub(crate) login_attempts: HashMap<BeId, crate::server::identity::ClubAttemptTracker>,
@@ -1298,6 +1304,8 @@ impl Server {
                 .as_secs(),
             checkpoint_in_flight: false,
             otree_crdt: super::otree_crdt::OtreeCrdtManager::new(3),
+            lattice_shadows: HashMap::new(),
+            lattice_shadow_enabled: false,
             personal_club_count: 0,
             max_personal_clubs: 10_000,
             login_attempts: HashMap::new(),
@@ -8141,6 +8149,13 @@ impl Server {
 
             self.register_crdt_author(session_id, work_be_id)?;
 
+            // FR-51 Phase 4: a session joining an enrolled work gets
+            // a lattice view of the current text — mirroring the
+            // O-tree seeding session_bases at open time.
+            if let Some(mw) = self.lattice_shadows.get_mut(&work_be_id) {
+                mw.open_session(session_id.as_u64());
+            }
+
             Ok(super::crdt_manager::SyncStartResult {
                 session_id: super::crdt_manager::SyncSessionId::from(result.session_id.as_u64()),
                 state_vector: Vec::new(),
@@ -8230,6 +8245,69 @@ impl Server {
             .map_err(|e| ServerError::Internal(e.to_string()))
     }
 
+    /// FR-51 Phase 4: enable the lattice dual-write shadow
+    /// (server flag; shadows still require per-work enrollment).
+    pub fn enable_lattice_shadow(&mut self) {
+        self.lattice_shadow_enabled = true;
+    }
+
+    pub fn lattice_shadow_enabled(&self) -> bool {
+        self.lattice_shadow_enabled
+    }
+
+    /// Enroll a work in dual-write: a lattice MultiWriter is seeded
+    /// from the CURRENT text and mirrors every subsequent text
+    /// delta. Ephemeral by design — restore/re-enroll rebuilds it;
+    /// rollback is `clear_lattice_shadows`.
+    pub fn enroll_lattice_shadow(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+    ) -> Result<(), ServerError> {
+        if !self.lattice_shadow_enabled {
+            return Err(ServerError::NotAuthorized);
+        }
+        self.ensure_session(session_id)?;
+        self.ensure_can_edit(session_id, work_be_id)?;
+        let text = if self.crdt_is_active(work_be_id) {
+            self.crdt_current_text(work_be_id)?
+        } else {
+            self.work_edition(work_be_id)?.to_text()
+        };
+        let mut mw = crate::space::lattice_multi::MultiWriter::new(&text);
+        // Mirror the O-tree's session_bases: every current subscriber's
+        // view = the text at enrollment (stale until their own op —
+        // NOT synced to current; that staleness is what makes
+        // concurrent deltas concurrent).
+        for sid in self.sessions.keys() {
+            if self.otree_crdt.is_subscriber(work_be_id, *sid) {
+                mw.open_session(sid.as_u64());
+            }
+        }
+        self.lattice_shadows.insert(work_be_id, mw);
+        Ok(())
+    }
+
+    /// The shadow's rendered text, if the work is enrolled.
+    pub fn lattice_shadow_text(&mut self, work_be_id: BeId) -> Option<String> {
+        self.lattice_shadows
+            .get_mut(&work_be_id)
+            .map(|mw| mw.text())
+    }
+
+    /// Deltas mirrored into the shadow since enrollment.
+    pub fn lattice_shadow_ops(&self, work_be_id: BeId) -> Option<usize> {
+        self.lattice_shadows
+            .get(&work_be_id)
+            .map(|mw| mw.ops_applied())
+    }
+
+    /// Rollback: drop all shadows (the live path never depended on
+    /// them).
+    pub fn clear_lattice_shadows(&mut self) {
+        self.lattice_shadows.clear();
+    }
+
     pub fn crdt_apply_text_delta(
         &mut self,
         session_id: SessionId,
@@ -8251,6 +8329,29 @@ impl Server {
             // spans must migrate here too (the legacy path calls this
             // in dispatch; the CRDT path previously skipped it).
             self.migrate_inline_transclusions_for_delta(work_be_id, ops);
+
+            // FR-51 Phase 4: mirror the same ops into the enrolled
+            // lattice shadow (per-session view, then sync — mirroring
+            // the O-tree's session_bases update). Best-effort: the
+            // shadow must never influence the live path.
+            if let Some(mw) = self.lattice_shadows.get_mut(&work_be_id) {
+                let lat: Vec<crate::space::lattice_sim::LatOp> = ops
+                    .iter()
+                    .map(|o| match o {
+                        crate::server::transport::protocol::TextDeltaOp::Retain { count } => {
+                            crate::space::lattice_sim::LatOp::Retain { count: *count }
+                        }
+                        crate::server::transport::protocol::TextDeltaOp::Insert { text } => {
+                            crate::space::lattice_sim::LatOp::Insert { text: text.clone() }
+                        }
+                        crate::server::transport::protocol::TextDeltaOp::Delete { count } => {
+                            crate::space::lattice_sim::LatOp::Delete { count: *count }
+                        }
+                    })
+                    .collect();
+                mw.apply(session_id.as_u64(), &lat);
+                mw.sync(session_id.as_u64());
+            }
 
             let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result
                 .relay_to
@@ -20815,6 +20916,8 @@ pub(crate) mod persist_snapshot {
                     .as_secs(),
                 checkpoint_in_flight: false,
                 otree_crdt: crate::server::otree_crdt::OtreeCrdtManager::new(3),
+                lattice_shadows: HashMap::new(),
+                lattice_shadow_enabled: false,
                 personal_club_count: 0,
                 max_personal_clubs: 10_000,
                 login_attempts: HashMap::new(),
@@ -26810,6 +26913,190 @@ mod tests {
         let member_sid = ac_login_as(&mut server, user_club, test_other_credential());
         let result = server.crdt_open_session(member_sid, work_id);
         assert!(result.is_ok(), "member should open CRDT session");
+    }
+
+    // FR-51 Phase 4 armor: the dual-write lattice shadow must track
+    // the O-tree's merged text EXACTLY after every delta, across
+    // sessions, deletes-vs-own-views, and clear/re-enroll cycles.
+    // Default-off: no enrollment, no shadow, unchanged behavior.
+
+    fn shadow_env(base: &str) -> (Server, SessionId, SessionId, u64) {
+        let mut server = Server::new();
+        let s1 = server.connect();
+        let s2 = server.connect();
+        server.login_public(s1).unwrap();
+        server.login_public(s2).unwrap();
+        let work = server.create_work(s1, Edition::from_text(base)).unwrap();
+        server.crdt_open_session(s1, work).unwrap();
+        server.crdt_open_session(s2, work).unwrap();
+        (server, s1, s2, work)
+    }
+
+    fn shadow_check(server: &mut Server, work: u64, step: &str) {
+        let shadow = server.lattice_shadow_text(work).unwrap();
+        let live = server.crdt_current_text(work).unwrap();
+        assert_eq!(
+            shadow, live,
+            "shadow divergence after {}: shadow={:?} live={:?}",
+            step, shadow, live
+        );
+    }
+
+    #[test]
+    fn lattice_shadow_tracks_otree_multi_session() {
+        use super::super::transport::protocol::TextDeltaOp as Op;
+        let (mut server, s1, s2, work) = shadow_env("0123456789");
+        server.enable_lattice_shadow();
+        server.enroll_lattice_shadow(s1, work).unwrap();
+        assert!(server.lattice_shadow_ops(work).unwrap() >= 0);
+
+        let d = |ops: &[Op]| ops.to_vec();
+        let steps: Vec<(SessionId, Vec<Op>, &str)> = vec![
+            (
+                s1,
+                d(&[
+                    Op::Retain { count: 3 },
+                    Op::Insert { text: "ONE".into() },
+                    Op::Retain { count: 7 },
+                ]),
+                "s1 inserts ONE@3",
+            ),
+            (
+                s2,
+                d(&[
+                    Op::Retain { count: 7 },
+                    Op::Insert { text: "TWO".into() },
+                    Op::Retain { count: 3 },
+                ]),
+                "s2 inserts TWO@7 (concurrent)",
+            ),
+            (
+                s1,
+                d(&[
+                    Op::Retain { count: 4 },
+                    Op::Delete { count: 2 },
+                    Op::Retain { count: 7 },
+                ]),
+                "s1 deletes NE vs own view",
+            ),
+            (
+                s2,
+                d(&[Op::Insert { text: "!".into() }, Op::Retain { count: 14 }]),
+                "s2 prefixes !",
+            ),
+            (
+                s1,
+                d(&[
+                    Op::Retain { count: 4 },
+                    Op::Delete { count: 4 },
+                    Op::Retain { count: 5 },
+                ]),
+                "s1 deletes 3456",
+            ),
+        ];
+        for (sid, ops, step) in steps {
+            server.crdt_apply_text_delta(sid, work, &ops).unwrap();
+            shadow_check(&mut server, work, step);
+        }
+        assert_eq!(
+            server.crdt_current_text(work).unwrap(),
+            "!012OTWO789",
+            "oracle sanity"
+        );
+        assert!(server.lattice_shadow_ops(work).unwrap() >= 5);
+    }
+
+    #[test]
+    fn lattice_shadow_late_session_join() {
+        use super::super::transport::protocol::TextDeltaOp as Op;
+        let (mut server, s1, _s2, work) = shadow_env("abcdefghij");
+        server.enable_lattice_shadow();
+        server.enroll_lattice_shadow(s1, work).unwrap();
+        server
+            .crdt_apply_text_delta(
+                s1,
+                work,
+                &[Op::Retain { count: 5 }, Op::Insert { text: "MID".into() }],
+            )
+            .unwrap();
+        shadow_check(&mut server, work, "pre-join edit");
+        // A session joining AFTER enrollment gets a view of the
+        // current text (mirroring the O-tree's open-time base) and
+        // tracks from there.
+        let s3 = server.connect();
+        server.login_public(s3).unwrap();
+        server.crdt_open_session(s3, work).unwrap();
+        server
+            .crdt_apply_text_delta(
+                s3,
+                work,
+                &[Op::Retain { count: 8 }, Op::Insert { text: "*".into() }],
+            )
+            .unwrap();
+        shadow_check(&mut server, work, "late-join insert");
+        assert!(server.crdt_current_text(work).unwrap().contains("MID*"));
+    }
+
+    #[test]
+    fn lattice_shadow_off_by_default() {
+        use super::super::transport::protocol::TextDeltaOp as Op;
+        let (mut server, s1, _s2, work) = shadow_env("hello");
+        // No enable, no enroll: shadows absent, edits unaffected.
+        assert!(!server.lattice_shadow_enabled());
+        assert!(server.lattice_shadow_text(work).is_none());
+        server
+            .crdt_apply_text_delta(
+                s1,
+                work,
+                &[
+                    Op::Retain { count: 5 },
+                    Op::Insert {
+                        text: " world".into(),
+                    },
+                ],
+            )
+            .unwrap();
+        assert_eq!(server.crdt_current_text(work).unwrap(), "hello world");
+        assert!(server.lattice_shadow_text(work).is_none());
+        // Enrollment is refused while disabled.
+        assert!(server.enroll_lattice_shadow(s1, work).is_err());
+    }
+
+    #[test]
+    fn lattice_shadow_rebuild_after_clear() {
+        use super::super::transport::protocol::TextDeltaOp as Op;
+        let (mut server, s1, _s2, work) = shadow_env("abcdef");
+        server.enable_lattice_shadow();
+        server.enroll_lattice_shadow(s1, work).unwrap();
+        server
+            .crdt_apply_text_delta(
+                s1,
+                work,
+                &[Op::Retain { count: 3 }, Op::Insert { text: "XYZ".into() }],
+            )
+            .unwrap();
+        shadow_check(&mut server, work, "pre-clear edit");
+        // Rollback: drop shadows; live path unaffected.
+        server.clear_lattice_shadows();
+        assert!(server.lattice_shadow_text(work).is_none());
+        server
+            .crdt_apply_text_delta(
+                s1,
+                work,
+                &[Op::Retain { count: 6 }, Op::Delete { count: 1 }],
+            )
+            .unwrap();
+        // Re-enroll rebuilds from the CURRENT text and keeps tracking.
+        server.enroll_lattice_shadow(s1, work).unwrap();
+        shadow_check(&mut server, work, "re-enroll baseline");
+        server
+            .crdt_apply_text_delta(
+                s1,
+                work,
+                &[Op::Retain { count: 1 }, Op::Insert { text: "-".into() }],
+            )
+            .unwrap();
+        shadow_check(&mut server, work, "post-re-enroll edit");
     }
 
     #[test]
