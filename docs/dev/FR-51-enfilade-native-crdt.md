@@ -496,6 +496,29 @@ admin/wire enrollment ops, persistence decision for the enrollment
 set, soak criteria (shadow-==-live continuously over N ops of real
 traffic shape), then the cutover decision per work.
 
+### P4 slice 2: run flag, wire ops, dual-engine capstone — DONE (2026-08-30)
+
+- **Run flag**: `--lattice-shadow` on `xudanu-server run` enables
+  shadow enrollment (logged at startup with the admin op code).
+- **Wire ops**: `LatticeShadowEnroll` (0x0353, admin-gated),
+  `LatticeShadowStatus` (0x0354, read-gated; JSON telemetry:
+  enrolled / ops_mirrored / matches_live), `LatticeShadowClear`
+  (0x0355, admin-gated). Codec round-trip + collision armor in
+  protocol.rs tests.
+- **Dual-engine capstone bench**: one process, one traffic stream,
+  both engines timed per op. Results (16k doc, 30 interleaved
+  two-session ops): O-tree mean 62–74µs→ms... — see FR-50 findings
+  10/11: O-tree per-op cost compounds under alternation (14.8s at
+  op 52 uncapped) while the lattice mirror stays flat at ~80µs/op
+  (~900×), and the shadow's output is length-arithmetic-exact where
+  the O-tree's merge garbles (F6 evidence). Ledger scenario:
+  `dual-engine-interleaved`.
+
+Findings 10/11 make the Phase-4 soak criterion sharper than
+"shadow == live": divergence may be the SHADOW being right. The
+cutover decision now has an oracle asymmetry to account for —
+record and adjudicate before any cutover.
+
 ## Phasing (decision gates, not commitments)
 
 - **Phase 0 — research (1–2 sessions):** answer questions 1–3 on

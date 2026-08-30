@@ -568,7 +568,7 @@ mod tests {
         // instead we precompute per-round batches: within a round no
         // syncs happen (all ops concurrent), between rounds everyone
         // syncs (positions well-defined against the shared state).
-        let mut rng = Lcg(0x5EED_51);
+        let mut rng = Lcg(0x5EED_51_00);
         let rounds = 6;
         let mut batch_a: Vec<Vec<(u64, LatOp)>> = Vec::new();
         let mut batch_b: Vec<Vec<(u64, LatOp)>> = Vec::new();

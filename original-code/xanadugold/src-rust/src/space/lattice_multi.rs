@@ -100,6 +100,7 @@ pub struct MultiWriter {
     authors: std::collections::HashMap<u64, u64>,
     next_author: u64,
     ops_applied: usize,
+    apply_ns: u128,
 }
 
 impl MultiWriter {
@@ -113,6 +114,7 @@ impl MultiWriter {
             authors: std::collections::HashMap::new(),
             next_author: 0,
             ops_applied: 0,
+            apply_ns: 0,
         }
     }
 
@@ -137,14 +139,26 @@ impl MultiWriter {
         self.ops_applied
     }
 
+    /// Total time spent applying deltas (dual-engine bench).
+    pub fn apply_nanos(&self) -> u128 {
+        self.apply_ns
+    }
+
     pub fn open_session(&mut self, author: u64) {
         self.dense(author);
         self.views.insert(author, self.doc.clone());
         self.counters.entry(author).or_insert(0);
     }
 
-    /// Apply a delta computed against the session's view.
+    /// Apply a delta computed against the session's view (timed for
+    /// the dual-engine bench telemetry).
     pub fn apply(&mut self, author: u64, ops: &[LatOp]) {
+        let t0 = std::time::Instant::now();
+        self.apply_inner(author, ops);
+        self.apply_ns += t0.elapsed().as_nanos();
+    }
+
+    fn apply_inner(&mut self, author: u64, ops: &[LatOp]) {
         let mut view = match self.views.remove(&author) {
             Some(v) => v,
             // Unknown author: treat as a fresh session synced to the

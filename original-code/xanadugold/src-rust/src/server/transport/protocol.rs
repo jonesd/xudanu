@@ -181,6 +181,9 @@ pub enum OperationCode {
     WorkStar,
     WorkSetSource,
     WebFetchSanitize,
+    LatticeShadowEnroll,
+    LatticeShadowStatus,
+    LatticeShadowClear,
     WorkUnstar,
     WorkIsStarred,
     ConnectionPinSet,
@@ -555,6 +558,9 @@ impl OperationCode {
             0x0335 => Some(OperationCode::WorkStar),
             0x0351 => Some(OperationCode::WorkSetSource),
             0x0352 => Some(OperationCode::WebFetchSanitize),
+            0x0353 => Some(OperationCode::LatticeShadowEnroll),
+            0x0354 => Some(OperationCode::LatticeShadowStatus),
+            0x0355 => Some(OperationCode::LatticeShadowClear),
             0x0336 => Some(OperationCode::WorkUnstar),
             0x0337 => Some(OperationCode::WorkIsStarred),
             0x0338 => Some(OperationCode::WorkGraph),
@@ -885,6 +891,9 @@ impl OperationCode {
             OperationCode::WorkStar => 0x0335,
             OperationCode::WorkSetSource => 0x0351,
             OperationCode::WebFetchSanitize => 0x0352,
+            OperationCode::LatticeShadowEnroll => 0x0353,
+            OperationCode::LatticeShadowStatus => 0x0354,
+            OperationCode::LatticeShadowClear => 0x0355,
             OperationCode::WorkUnstar => 0x0336,
             OperationCode::WorkIsStarred => 0x0337,
             OperationCode::WorkGraph => 0x0338,
@@ -1349,6 +1358,13 @@ pub enum WireRequest {
         )]
         title: Option<String>,
     },
+    LatticeShadowEnroll {
+        work_id: BeId,
+    },
+    LatticeShadowStatus {
+        work_id: BeId,
+    },
+    LatticeShadowClear {},
     WorkUnstar {
         work_id: BeId,
     },
@@ -4951,6 +4967,37 @@ impl std::fmt::Display for FrameParseError {
 }
 
 impl std::error::Error for FrameParseError {}
+
+#[cfg(test)]
+mod lattice_shadow_wire_tests {
+    use super::*;
+
+    #[test]
+    fn op_codes_round_trip() {
+        for code in [
+            OperationCode::LatticeShadowEnroll,
+            OperationCode::LatticeShadowStatus,
+            OperationCode::LatticeShadowClear,
+        ] {
+            let wire = code.to_u16();
+            let back = OperationCode::from_u16(wire).expect("decode");
+            assert_eq!(back, code, "wire code {:#06x} must round-trip", wire);
+        }
+    }
+
+    #[test]
+    fn shadow_codes_do_not_collide() {
+        // The three new codes must be unique among all decodes.
+        let targets = [
+            (0x0353u16, OperationCode::LatticeShadowEnroll),
+            (0x0354, OperationCode::LatticeShadowStatus),
+            (0x0355, OperationCode::LatticeShadowClear),
+        ];
+        for (wire, want) in targets {
+            assert_eq!(OperationCode::from_u16(wire), Some(want));
+        }
+    }
+}
 
 #[cfg(test)]
 mod fr37_wire_tests {

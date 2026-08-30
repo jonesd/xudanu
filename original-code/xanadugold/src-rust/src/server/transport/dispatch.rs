@@ -945,6 +945,29 @@ fn dispatch_inner(
             )?;
             Ok(ResponseValue::WebFetchSanitizeResult(result))
         }
+        WireRequest::LatticeShadowEnroll { work_id } => {
+            srv.ensure_admin(session_id)?;
+            srv.enroll_lattice_shadow(session_id, work_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::LatticeShadowStatus { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let ops = srv.lattice_shadow_ops(work_id);
+            let matches = match srv.lattice_shadow_text(work_id) {
+                Some(shadow) => Some(shadow == srv.crdt_current_text(work_id)?),
+                None => None,
+            };
+            Ok(ResponseValue::Json(serde_json::json!({
+                "enrolled": matches.is_some(),
+                "ops_mirrored": ops.unwrap_or(0),
+                "matches_live": matches,
+            })))
+        }
+        WireRequest::LatticeShadowClear {} => {
+            srv.ensure_admin(session_id)?;
+            srv.clear_lattice_shadows();
+            Ok(ResponseValue::Void)
+        }
         WireRequest::WorkSetTitle { work_id, title } => {
             srv.ensure_can_edit(session_id, work_id)?;
             srv.set_work_title(work_id, title);

@@ -85,6 +85,7 @@ fn usage() {
         "  --trusted-registry <path>  Trusted server registry file for attestation verification"
     );
     eprintln!("  --csrf-token             Require CSRF token for WebSocket connections");
+    eprintln!("  --lattice-shadow         Enable the FR-51 dual-write lattice shadow (admin enrolls works)");
     eprintln!("  --key-passphrase <pw>   Passphrase for encrypted server key file");
     eprintln!("                         (can also set XUDANU_KEY_PASSPHRASE env var)");
     eprintln!("  --github-client-id <id>      GitHub OAuth app client ID");
@@ -565,6 +566,7 @@ async fn main() {
             let mut allowed_origins: std::collections::HashSet<String> =
                 std::collections::HashSet::new();
             let mut csrf_enabled = false;
+            let mut lattice_shadow_enabled = false;
             let mut dev_mode = false;
             let mut key_passphrase: Option<String> = std::env::var("XUDANU_KEY_PASSPHRASE").ok();
             let mut github_client_id: Option<String> =
@@ -677,6 +679,9 @@ async fn main() {
                     }
                     "--csrf-token" => {
                         csrf_enabled = true;
+                    }
+                    "--lattice-shadow" => {
+                        lattice_shadow_enabled = true;
                     }
                     "--dev" => {
                         dev_mode = true;
@@ -861,6 +866,10 @@ async fn main() {
                 Server::new()
             };
 
+            if lattice_shadow_enabled {
+                server.enable_lattice_shadow();
+                tracing::info!("FR-51 lattice shadow enabled (enroll works via admin op 0x0353)");
+            }
             if let Some(ref name) = server_name {
                 server.set_server_name(name.clone());
                 tracing::info!("Server name: {}", name);

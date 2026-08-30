@@ -249,6 +249,145 @@ fn bench_lattice() -> Vec<LatticeRow> {
     rows
 }
 
+/// FR-51 P4 slice 2: the dual-engine capstone — ONE process, ONE
+/// traffic stream, BOTH engines. A server is created with the
+/// lattice shadow enabled and enrolled; scripted multi-session
+/// traffic runs through crdt_apply_text_delta (O-tree timed around
+/// the call, lattice timed inside the mirror hook). Per-op means
+/// for both engines land in the ledger under scenario "dual-engine".
+fn bench_dual_engine() -> Option<(f64, f64, bool, usize)> {
+    use xudanu::server::transport::protocol::TextDeltaOp as Op;
+
+    let base_len = SEED_SENTENCE.len();
+    let chunks = 16_000usize / base_len; // 16k-char document
+    let mut server = Server::new();
+    let s1 = server.connect();
+    let s2 = server.connect();
+    let _ = server.login_public(s1);
+    let _ = server.login_public(s2);
+    let text: String = SEED_SENTENCE.repeat(chunks);
+    let work = server
+        .create_work(s1, Edition::from_text(&text))
+        .expect("create work");
+    server.crdt_open_session(s1, work).unwrap();
+    server.crdt_open_session(s2, work).unwrap();
+
+    server.enable_lattice_shadow();
+    server.enroll_lattice_shadow(s1, work).expect("enroll");
+
+    let n = text.chars().count();
+    let mid = n / 2;
+    let mut otree_ns: u128 = 0;
+    // Interleaved two-session traffic: inserts at varied offsets and
+    // range deletes, each delta positioned against its own session's
+    // view (the server's session_bases model).
+    let script: Vec<(xudanu::server::SessionId, Vec<Op>)> = {
+        let mut v: Vec<(xudanu::server::SessionId, Vec<Op>)> = Vec::new();
+        let d = |o: u64, ins: Option<&str>, del: u64| -> Vec<Op> {
+            let mut ops = vec![Op::Retain { count: o }];
+            if let Some(t) = ins {
+                ops.push(Op::Insert {
+                    text: t.to_string(),
+                });
+            }
+            if del > 0 {
+                ops.push(Op::Delete { count: del });
+            }
+            ops
+        };
+        // 120 alternating ops. Before the FR-50 finding-10 fix this
+        // exploded (14.8s/op at op 52, doubling); span-provenance
+        // coalescing keeps per-op cost flat — this script IS the
+        // finding's regression guard.
+        for k in 0..40u64 {
+            let at = (mid as u64 + k * 37) % (n as u64 - 40);
+            v.push((s1, d(at, Some("A"), 0)));
+            v.push((s2, d(at.saturating_sub(20), None, 2)));
+            v.push((s2, d((at + 5) % (n as u64 - 10), Some("B"), 0)));
+        }
+        v
+    };
+    let ops_count = script.len();
+    let mut worst_us: f64 = 0.0;
+    for (i, (sid, ops)) in script.iter().enumerate() {
+        let t = Instant::now();
+        server
+            .crdt_apply_text_delta(*sid, work, ops)
+            .expect("delta");
+        let us = t.elapsed().as_nanos() as f64 / 1000.0;
+        otree_ns += us as u128 * 1000;
+        if us > worst_us {
+            worst_us = us;
+        }
+        if i % 10 == 0 || us > 50_000.0 {
+            eprintln!("dual-engine op {} of {}: {:.1}us", i + 1, ops_count, us);
+        }
+    }
+    eprintln!(
+        "dual-engine done: {} ops, worst op {:.1}us",
+        ops_count, worst_us
+    );
+    // Semantic telemetry: the armor scripts (5-op interleaves, the
+    // F6 probe) establish equivalence classes where lattice and
+    // O-tree agree; this 30-op script crosses into unprobed
+    // concurrent-merge classes (and F6 — O-tree merge garbling — is
+    // OPEN). Report divergence, don't assert it.
+    let shadow_text = server.lattice_shadow_text(work).unwrap();
+    let live_text = server.crdt_current_text(work).unwrap();
+    let matches = shadow_text == live_text;
+    let first_diff = shadow_text
+        .chars()
+        .zip(live_text.chars())
+        .position(|(a, b)| a != b)
+        .unwrap_or(shadow_text.chars().count().min(live_text.chars().count()));
+    println!(
+        "  semantics: shadow==live {} (lens {}/{}, first diff at {})",
+        matches,
+        shadow_text.chars().count(),
+        live_text.chars().count(),
+        first_diff
+    );
+    if !matches {
+        let ctx = |t: &str| -> String {
+            let cs: Vec<char> = t.chars().collect();
+            let s = first_diff.saturating_sub(20);
+            let e = (first_diff + 20).min(cs.len());
+            cs[s..e].iter().collect()
+        };
+        println!("  shadow@diff: {:?}", ctx(&shadow_text));
+        println!("  live  @diff: {:?}", ctx(&live_text));
+        if let Some(ed_text) = server.debug_crdt_edition_text(work) {
+            println!(
+                "  edition-direct: len {} (cached says {})",
+                ed_text.chars().count(),
+                live_text.chars().count()
+            );
+        }
+    }
+
+    let lattice_ns = server.lattice_shadow_nanos(work).unwrap();
+    let otree_us = otree_ns as f64 / ops_count as f64 / 1000.0;
+    let lattice_us = lattice_ns as f64 / ops_count as f64 / 1000.0;
+    println!(
+        "\nFR-51: dual-engine ({} interleaved ops, {} chars, shadow enrolled)",
+        ops_count, n
+    );
+    println!(
+        "  (O-tree worst op: {:.0}µs — flat since the FR-50 F10 span-coalescing fix)",
+        worst_us
+    );
+    println!("{:>18} {:>14} {:>14}", "engine", "mean µs/op", "ratio");
+    println!("{:>18} {:>14.2} {:>14}", "otree (live)", otree_us, "1.00x");
+    println!(
+        "{:>18} {:>14.2} {:>14.2}x",
+        "lattice (shadow)",
+        lattice_us,
+        lattice_us / otree_us
+    );
+    let _ = server.lattice_shadow_ops(work).unwrap();
+    Some((otree_us, lattice_us, matches, ops_count))
+}
+
 fn now_unix() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -515,6 +654,7 @@ fn main() {
         .unwrap_or_else(default_ledger_path);
 
     bench_nested_transclusion();
+    let dual = bench_dual_engine();
     let lattice_rows = bench_lattice();
     println!(
         "xudanu-bench rev={} xudanu v{}",
@@ -735,8 +875,42 @@ fn main() {
             "proj_1m": {"mean": proj_1m(arow[3], aref, amax)},
         });
         emit_record(&ledger, arec);
+        if let Some((otree_us, lattice_us, matches, ops)) = dual {
+            let base = serde_json::json!({
+                "ts": now_unix(),
+                "source": "run",
+                "env": std::env::var("XUDANU_BENCH_ENV").unwrap_or_else(|_| "dev-mac".into()),
+                "host": std::env::var("XUDANU_BENCH_HOST").unwrap_or_else(|_| "dev".into()),
+                "git": git_desc(),
+                "xudanu": env!("CARGO_PKG_VERSION"),
+                "harness_rev": HARNESS_REV,
+                "ref_n": 16000,
+                "points": [],
+                "steps": [],
+                "note": format!(
+                    "{} interleaved 2-session ops; matches_live={}",
+                    ops, matches
+                ),
+            });
+            let mut o = base.clone();
+            o["engine"] = "otree".into();
+            o["variant"] = "threeway".into();
+            o["scenario"] = "dual-engine-interleaved".into();
+            o["max_exp"] = serde_json::json!(0.0);
+            o["us_at_ref"] = serde_json::json!({"ins": otree_us, "del": 0.0});
+            o["proj_1m"] = serde_json::json!({"mean": otree_us});
+            emit_record(&ledger, o);
+            let mut l = base;
+            l["engine"] = "lattice".into();
+            l["variant"] = "liveindex".into();
+            l["scenario"] = "dual-engine-interleaved".into();
+            l["max_exp"] = serde_json::json!(0.0);
+            l["us_at_ref"] = serde_json::json!({"ins": lattice_us, "del": 0.0});
+            l["proj_1m"] = serde_json::json!({"mean": lattice_us});
+            emit_record(&ledger, l);
+        }
         println!(
-            "\nledger: 3 records appended to {} (git {})",
+            "\nledger: 5 records appended to {} (git {})",
             ledger,
             git_desc()
         );

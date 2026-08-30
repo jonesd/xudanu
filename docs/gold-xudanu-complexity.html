@@ -93,143 +93,169 @@ li{margin-bottom:4px}
 
 <table>
 <tr>
-  <th style="width:18%">Subsystem</th>
-  <th style="width:20%">Gold Approach</th>
-  <th style="width:20%">Xudanu Approach</th>
-  <th style="width:12%">Alignment</th>
-  <th style="width:10%">Gold Complexity</th>
-  <th style="width:10%">Xudanu Complexity</th>
-  <th style="width:10%">Verdict</th>
+  <th style="width:14%">Subsystem</th>
+  <th style="width:16%">Gold Approach</th>
+  <th style="width:17%">Xudanu Approach</th>
+  <th style="width:15%">Xudanu FR-51 Lattice (2026)</th>
+  <th style="width:9%">Alignment</th>
+  <th style="width:9%">Gold Complexity</th>
+  <th style="width:9%">Xudanu Complexity</th>
+  <th style="width:11%">Lattice Complexity</th>
 </tr>
 <tr>
   <td><strong>Core tree</strong></td>
   <td>Enfilade (Split/Loaf/Dsp nodes)</td>
   <td>OrglRoot (Leaf/Split/Dsp nodes)</td>
+  <td style="font-size:11px">Lattice substrate: span-units in a weight-balanced LiveIndex, root-relative Sequence addresses</td>
   <td><span class="aligned">Same shape</span></td>
   <td class="cx cx-same">O(log n)</td>
   <td class="cx cx-same">O(log n)</td>
-  <td>Equivalent</td>
+  <td class="cx cx-good">O(log L)</td>
 </tr>
 <tr>
   <td><strong>Splay</strong></td>
   <td>9-case rotation table</td>
   <td>SplayResult with split</td>
+  <td style="color:#484f58">&mdash;</td>
   <td><span class="aligned">Same concept</span></td>
   <td class="cx cx-same">O(log n)</td>
   <td class="cx cx-same">O(log n)</td>
-  <td>Equivalent</td>
+  <td class="cx" style="color:#484f58">&mdash;</td>
 </tr>
 <tr>
   <td><strong>Region algebra</strong></td>
   <td>XnRegion (sorted intervals)</td>
   <td>XnRegion (transition list)</td>
+  <td style="color:#484f58">&mdash;</td>
   <td><span class="aligned">Same model</span></td>
   <td class="cx cx-bad">O(n) contains*</td>
   <td class="cx cx-good">O(log n) contains</td>
-  <td>Xudanu faster</td>
+  <td class="cx" style="color:#484f58">&mdash;</td>
 </tr>
 <tr>
   <td><strong>Canopy filtering</strong></td>
   <td>Balanced binary canopy + flags + cache</td>
   <td>Balanced binary canopy + flags (no cache)</td>
+  <td style="color:#484f58">&mdash;</td>
   <td><span class="partial">Partial</span></td>
   <td class="cx cx-same">O(1) flag check</td>
   <td class="cx cx-same">O(1) flag check</td>
-  <td>Gold has cache</td>
+  <td class="cx" style="color:#484f58">&mdash;</td>
 </tr>
 <tr>
   <td><strong>Backfollow query</strong></td>
   <td>Persistent recorders + incremental</td>
   <td>On-demand index + DAG walk</td>
+  <td style="color:#484f58">&mdash;</td>
   <td><span class="diverged">Diverged</span></td>
   <td class="cx cx-ok">O(V+E) amortized</td>
   <td class="cx cx-ok">O(V+E) per query</td>
-  <td>Gold incremental</td>
+  <td class="cx" style="color:#484f58">&mdash;</td>
 </tr>
 <tr>
   <td><strong>Transclusion model</strong></td>
   <td>Structural (shared subtrees)</td>
   <td>Inline elements (references)</td>
+  <td style="color:#484f58">&mdash;</td>
   <td><span class="diverged">Diverged</span></td>
   <td class="cx cx-good">O(1) share</td>
   <td class="cx cx-same">O(d) resolve</td>
-  <td>Different trade-offs</td>
+  <td class="cx" style="color:#484f58">&mdash;</td>
 </tr>
 <tr>
   <td><strong>Version DAG</strong></td>
   <td>DagWood + TracePosition + cache</td>
   <td>DagWood + TracePosition + cache</td>
+  <td style="color:#484f58">&mdash;</td>
   <td><span class="aligned">Direct port</span></td>
   <td class="cx cx-same">O(h) compare</td>
   <td class="cx cx-same">O(h) compare</td>
-  <td>Equivalent</td>
+  <td class="cx" style="color:#484f58">&mdash;</td>
 </tr>
 <tr>
   <td><strong>Diff / merge</strong></td>
   <td>LCS (Miller-Myers O(ND))</td>
   <td>Fingerprint alignment + 3-way</td>
+  <td style="font-size:11px">Merge = set union of units + tombstones (commutative, idempotent); no three-way pass</td>
   <td><span class="diverged">Diverged</span></td>
   <td class="cx cx-bad">O(ND)</td>
   <td class="cx cx-good">O(n) fingerprint</td>
-  <td>Xudanu faster</td>
+  <td class="cx cx-good">O(L) bulk</td>
 </tr>
 <tr>
   <td><strong>Links</strong></td>
   <td>FeHyperLink multi-ended</td>
   <td>HyperLink multi-ended</td>
+  <td style="font-size:11px">Spans anchored to immutable addresses; migration code eliminated (F5/F8 class impossible)</td>
   <td><span class="aligned">Same model</span></td>
   <td class="cx cx-same">O(1) create</td>
   <td class="cx cx-same">O(1) create</td>
-  <td>Equivalent</td>
+  <td class="cx cx-good">O(log L)</td>
 </tr>
 <tr>
   <td><strong>Identity merge</strong></td>
   <td>makeIdentical + become</td>
   <td>make_range_identical</td>
+  <td style="color:#484f58">&mdash;</td>
   <td><span class="aligned">Same concept</span></td>
   <td class="cx cx-ok">O(n) redirect</td>
   <td class="cx cx-ok">O(n) redirect</td>
-  <td>Equivalent</td>
+  <td class="cx" style="color:#484f58">&mdash;</td>
 </tr>
 <tr>
   <td><strong>Search</strong></td>
   <td>Within-document scan</td>
   <td>Within-doc + global cross-work</td>
+  <td style="color:#484f58">&mdash;</td>
   <td><span class="aligned">Xudanu superset</span></td>
   <td class="cx cx-bad">O(n) scan</td>
   <td class="cx cx-bad">O(n) scan</td>
-  <td>Equivalent</td>
+  <td class="cx" style="color:#484f58">&mdash;</td>
 </tr>
 <tr>
   <td><strong>Storage</strong></td>
   <td>SnarfPacker + Urdi (versioned)</td>
   <td>Chunk store + WAL + manifest</td>
+  <td style="color:#484f58">&mdash;</td>
   <td><span class="diverged">Diverged</span></td>
   <td class="cx cx-same">O(1) write</td>
   <td class="cx cx-same">O(1) write</td>
-  <td>Different models</td>
+  <td class="cx" style="color:#484f58">&mdash;</td>
 </tr>
 <tr>
   <td><strong>Protocol</strong></td>
   <td>Custom binary (Recipe/Cookbook)</td>
   <td>Postcard + JSON over WS/HTTP</td>
+  <td style="font-size:11px">Shadow admin ops 0x0353&ndash;55 (enroll/status/clear)</td>
   <td><span class="diverged">Diverged</span></td>
   <td class="cx cx-same">O(n) serialize</td>
   <td class="cx cx-same">O(n) serialize</td>
-  <td>Equivalent cost</td>
+  <td class="cx cx-good">O(1)</td>
 </tr>
 <tr>
   <td><strong>Crypto</strong></td>
   <td>Pluggable Encrypter/Scrambler</td>
   <td>Ed25519 + BLAKE3 + ChaCha20 + Argon2</td>
+  <td style="color:#484f58">&mdash;</td>
   <td><span class="diverged">Xudanu superset</span></td>
   <td class="cx cx-ok">O(1) per op</td>
   <td class="cx cx-ok">O(1) per op</td>
-  <td>Xudanu stronger</td>
+  <td class="cx" style="color:#484f58">&mdash;</td>
+</tr>
+<tr>
+  <td><strong>Concurrent editing</strong></td>
+  <td>n/a (single-user system)</td>
+  <td>O-tree CRDT: three-way merge per concurrent op</td>
+  <td style="font-size:11px">Dual-write shadow: per-session views, author-minted dots, seen-set deletes</td>
+  <td><span class="aligned">&mdash;</span></td>
+  <td class="cx cx-bad">compounds*</td>
+  <td class="cx cx-bad">compounds*</td>
+  <td class="cx cx-good">~80&micro;s/op flat</td>
 </tr>
 </table>
 
-<p style="font-size:11px;color:#484f58">* Gold's IntegerRegion <code>hasMember</code> should be O(log n) binary search but is actually O(n) linear scan &mdash; the only explicit O() confession in the codebase: <em>"Currently many of the methods which could be doing an O(log) binary search (such as hasMember) are instead doing a linear search. This will be fixed if it turns out to be a problem in practice."</em></p>
+<p style="font-size:11px;color:#484f58">* Under strictly-interleaved two-session traffic the O-tree's per-op three-way merge cost compounds (doubling roughly every two ops; 14.8s/op measured at op 52 &mdash; FR-50 finding 10), while the FR-51 lattice shadow stays flat at ~80&micro;s/op (~900&times;) and produced the length-exact result where the merge garbled (finding 11, F6 evidence). Measured by the dual-engine bench; records in <code>docs/bench/results.jsonl</code>.
+* Gold's IntegerRegion <code>hasMember</code> should be O(log n) binary search but is actually O(n) linear scan &mdash; the only explicit O() confession in the codebase: <em>"Currently many of the methods which could be doing an O(log) binary search (such as hasMember) are instead doing a linear search. This will be fixed if it turns out to be a problem in practice."</em></p>
 
 <!-- ==================== CORE DATA STRUCTURE ==================== -->
 
@@ -987,18 +1013,72 @@ li{margin-bottom:4px}
 </tr>
 </table>
 
+<h2 id="s-fr51">FR-51: The Enfilade-Native Lattice (August 2026)</h2>
+
+<p>The 2026 FR-51 arc rebuilt Xudanu's editing core as a native enfilade descendant rather than an O-tree plus patches &mdash; and re-imported Gold's deepest invariants in the process:</p>
+
+<table>
+<tr>
+  <th style="width:22%">Mechanism</th>
+  <th style="width:40%">What it is</th>
+  <th style="width:18%">Gold lineage</th>
+  <th style="width:20%">Measured</th>
+</tr>
+<tr>
+  <td><strong>Span-units + root-relative addresses</strong></td>
+  <td>Immutable multi-char units; part addresses extend the root's Sequence address with [start, end]; fresh inserts key [root, offset, offset, author, counter]. Address = deterministic function of position, never of merge order.</td>
+  <td>Tumbler addressing; write-once identity</td>
+  <td class="cx cx-good">Bitwise state convergence</td>
+</tr>
+<tr>
+  <td><strong>LiveIndex</strong></td>
+  <td>Weight-balanced BST over addresses carrying subtree char totals &mdash; the enfilade core: offset&rarr;unit with prefix sums, neighbors, range walks in O(log L).</td>
+  <td>Enfilade subtree crums/counts</td>
+  <td class="cx cx-good">~2&micro;s keystroke, flat 1k&rarr;256k</td>
+</tr>
+<tr>
+  <td><strong>Seen-set deletes</strong></td>
+  <td>Deletes carry the deleter's causal context (dots + root ranges): concurrent unseen content survives; concurrently-derived parts trim against culls. OR-set rule over the Sequence region algebra.</td>
+  <td>Region tombstones</td>
+  <td class="cx cx-good">Agrees with O-tree on probed classes</td>
+</tr>
+<tr>
+  <td><strong>Dual-write shadow</strong></td>
+  <td>Runs inside the live server (default-off, per-work enrollment, ephemeral, rollback = drop). Mirrors every delta through per-session views &mdash; no three-way merge at all.</td>
+  <td>&mdash; (new capability)</td>
+  <td class="cx cx-good">~80&micro;s/op vs 62&ndash;74ms/op (O-tree, interleaved)</td>
+</tr>
+<tr>
+  <td><strong>Address-stable spans</strong></td>
+  <td>Live units never move: address, dot, and content are immutable under edits elsewhere. Span migration code does not exist to regress.</td>
+  <td>"Index, don't scan"</td>
+  <td class="cx cx-good">F5/F8 class structurally impossible</td>
+</tr>
+</table>
+
+<p>Keystroke curve before/after the LiveIndex (from the bench ledger, dev-mac, harness rev 2):</p>
+
+<table>
+<tr><th>N</th><th>lattice/hashmap-sort ins/del</th><th>lattice/liveindex ins/del</th><th>exp (after)</th></tr>
+<tr><td>1k</td><td>19.3&micro;s / 82.5&micro;s</td><td>~1.5&micro;s / ~2.5&micro;s</td><td class="cx cx-good">~0.1</td></tr>
+<tr><td>64k</td><td>643&micro;s / 2.5ms</td><td>~1.5&micro;s / ~3&micro;s</td><td class="cx cx-good">~0.1</td></tr>
+<tr><td>256k</td><td>3.6ms / 14.4ms</td><td>~2&micro;s / ~4&micro;s</td><td class="cx cx-good">~0.1 (flat)</td></tr>
+</table>
+
+<p>All records are append-only in <code>docs/bench/results.jsonl</code> (per-scenario, per-variant, dev-mac vs aws-official) with the XPI blended index; <code>xudanu-bench report</code> prints side-by-side comparisons and trends. Full design record: <code>docs/dev/FR-51-enfilade-native-crdt.md</code>; performance findings: <code>docs/dev/FR-50-performance-verification.md</code>.</p>
+
 <h3>Priority ranking</h3>
 
 <ol>
   <li><strong class="accent-amber">Canopy cache</strong> &mdash; already coded, just needs wiring. Low effort, immediate benefit for repeated queries.</li>
   <li><strong class="accent-blue">Differential revisions</strong> &mdash; moderate effort, big win for storage efficiency on long-lived documents.</li>
-  <li><strong class="accent-green">Intercomparison UI</strong> &mdash; algorithms exist (<code>shared_region</code>, <code>content_map_shared_to</code>), just needs frontend work.</li>
+  <li><strong class="accent-green">Intercomparison UI</strong> &mdash; <s>algorithms exist, just needs frontend work</s> <strong>SHIPPED</strong>: wire ops (<code>find_shared_regions</code>, <code>content_shared_region</code>) now feed <code>MultiEndCompare</code>, <code>ComparePanel</code>, and <code>ThreeWayDiffPanel</code>.</li>
   <li><strong class="accent-purple">Persistent incremental backfollow</strong> &mdash; high effort, but essential for docuverse-scale transclusion queries. Study Gold's <code>RecorderFossil</code> pattern.</li>
   <li><strong>Object stubbing</strong> &mdash; low priority until memory pressure becomes an issue.</li>
 </ol>
 
 <div class="footer">
-<p>Complexity estimates derived from code structure analysis, not formal proofs. Gold has exactly one explicit O() annotation in the entire codebase. Xudanu has none in the canopy/backfollow modules.</p>
+<p>Last updated August 2026 with the FR-51 enfilade-native lattice results (measured, ledger-backed). Complexity estimates derived from code structure analysis, not formal proofs. Gold has exactly one explicit O() annotation in the entire codebase. Xudanu has none in the canopy/backfollow modules.</p>
 <p>Xudanu is an independent, open-source project (Apache 2.0). Not affiliated with Ted Nelson, Project Xanadu&trade;, or the Udanax team.</p>
 </div>
 

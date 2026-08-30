@@ -1131,6 +1131,29 @@ impl JsonCodec {
                     title: args.title,
                 })
             }
+            OperationCode::LatticeShadowEnroll => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LatticeShadowEnroll {
+                    work_id: args.work_id,
+                })
+            }
+            OperationCode::LatticeShadowStatus => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LatticeShadowStatus {
+                    work_id: args.work_id,
+                })
+            }
+            OperationCode::LatticeShadowClear => Ok(WireRequest::LatticeShadowClear {}),
             OperationCode::WorkAutoTag => {
                 #[derive(Deserialize)]
                 struct Args {
