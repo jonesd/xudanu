@@ -43336,6 +43336,7 @@ mod tests_security_tracker {
         let len = text.chars().count() as u64;
         for k in 0..25u64 {
             let at = (k * 37) % (len - 20);
+            let _ = at;
             let insert_ops = vec![
                 TextDeltaOp::Retain { count: at },
                 TextDeltaOp::Insert {
@@ -43353,6 +43354,21 @@ mod tests_security_tracker {
                 .crdt_apply_text_delta(sid, work, &delete_ops)
                 .unwrap();
         }
+
+        // A3b armor: append-at-end insert — the carried start of the
+        // appended entry must be the previous total, not 0.
+        server
+            .crdt_apply_text_delta(
+                sid,
+                work,
+                &[
+                    TextDeltaOp::Retain { count: len },
+                    TextDeltaOp::Insert {
+                        text: "TAIL".to_string(),
+                    },
+                ],
+            )
+            .unwrap();
 
         let ws = server.works.get(&work).unwrap();
         let edition = ws.work.current_edition();
@@ -43657,5 +43673,131 @@ mod tests_security_tracker {
         );
         let (s, e) = link_span(&server, work);
         assert_eq!((s, e), (10, 20), "span grows by the inserted char");
+    }
+
+    // ---- FR-50 A1 armor: annotation spans migrate exactly through
+    // every delta shape (they ride last_author_mapping — post-fix-A
+    // the positional mapping; pre-fix-A they inherited finding 7's
+    // fingerprint mis-mapping). ----
+
+    fn ann_setup() -> (Server, SessionId, BeId) {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let text: String = "abcdefghijANNBODYklmnopqrstuvwxyz".to_string() + &"filler ".repeat(40);
+        let work = server.create_work(sid, Edition::from_text(&text)).unwrap();
+        server.crdt_open_session(sid, work).unwrap();
+        server
+            .otree_crdt
+            .annotation_create(work, 7, "note".into(), "n".into(), 10, 17, None, false)
+            .unwrap();
+        (server, sid, work)
+    }
+
+    fn ann_span(server: &Server, work: BeId) -> (usize, usize) {
+        let anns = server.otree_crdt.annotation_list(work).unwrap();
+        assert!(!anns.is_empty(), "annotation must survive");
+        (anns[0].char_start, anns[0].char_end)
+    }
+
+    #[test]
+    fn a1_annotation_insert_before_shifts_span() {
+        use crate::server::transport::protocol::TextDeltaOp;
+        let (mut server, sid, work) = ann_setup();
+        server
+            .crdt_apply_text_delta(
+                sid,
+                work,
+                &[
+                    TextDeltaOp::Retain { count: 2 },
+                    TextDeltaOp::Insert {
+                        text: "abc".to_string(),
+                    },
+                ],
+            )
+            .unwrap();
+        assert_eq!(ann_span(&server, work), (13, 20), "insert before shifts +3");
+    }
+
+    #[test]
+    fn a1_annotation_insert_inside_grows_span() {
+        use crate::server::transport::protocol::TextDeltaOp;
+        let (mut server, sid, work) = ann_setup();
+        server
+            .crdt_apply_text_delta(
+                sid,
+                work,
+                &[
+                    TextDeltaOp::Retain { count: 13 },
+                    TextDeltaOp::Insert {
+                        text: "Q".to_string(),
+                    },
+                ],
+            )
+            .unwrap();
+        assert_eq!(
+            ann_span(&server, work),
+            (10, 18),
+            "insert inside grows by 1"
+        );
+    }
+
+    #[test]
+    fn a1_annotation_insert_after_leaves_span() {
+        use crate::server::transport::protocol::TextDeltaOp;
+        let (mut server, sid, work) = ann_setup();
+        server
+            .crdt_apply_text_delta(
+                sid,
+                work,
+                &[
+                    TextDeltaOp::Retain { count: 100 },
+                    TextDeltaOp::Insert {
+                        text: "xy".to_string(),
+                    },
+                ],
+            )
+            .unwrap();
+        assert_eq!(ann_span(&server, work), (10, 17), "insert after: unchanged");
+    }
+
+    #[test]
+    fn a1_annotation_delete_covering_collapses() {
+        use crate::server::transport::protocol::TextDeltaOp;
+        let (mut server, sid, work) = ann_setup();
+        server
+            .crdt_apply_text_delta(
+                sid,
+                work,
+                &[
+                    TextDeltaOp::Retain { count: 8 },
+                    TextDeltaOp::Delete { count: 12 },
+                ],
+            )
+            .unwrap();
+        let (s, e) = ann_span(&server, work);
+        assert_eq!(s, e, "fully deleted annotation collapses to a point");
+    }
+
+    #[test]
+    fn a1_annotation_delete_partial_shrinks() {
+        use crate::server::transport::protocol::TextDeltaOp;
+        let (mut server, sid, work) = ann_setup();
+        // Delete [12, 16) — inside the span [10, 17): keeps [10,11) → (10, 11).
+        server
+            .crdt_apply_text_delta(
+                sid,
+                work,
+                &[
+                    TextDeltaOp::Retain { count: 12 },
+                    TextDeltaOp::Delete { count: 4 },
+                ],
+            )
+            .unwrap();
+        assert_eq!(
+            ann_span(&server, work),
+            (10, 13),
+            "partial delete: old 10,11 stay, old 16 migrates to 12 — hull (10,13)"
+        );
     }
 }

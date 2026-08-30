@@ -769,10 +769,15 @@ impl Edition {
     }
 
     pub fn char_len(&self) -> usize {
-        self.cached_entries()
-            .iter()
-            .map(|(_, c)| c.char_len())
-            .sum()
+        // O(1) from the cache tail: last cumulative start + last
+        // entry's length (FR-50 A3 — was O(entries) per call, and
+        // this is called per keystroke and per query).
+        let starts = self.cached_char_starts();
+        let entries = self.cached_entries();
+        match (starts.last(), entries.last()) {
+            (Some(&s), Some((_, c))) => s + c.char_len(),
+            _ => 0,
+        }
     }
 
     /// License classes covering a char span, computed from ground truth

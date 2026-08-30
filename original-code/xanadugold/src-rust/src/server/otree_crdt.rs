@@ -969,8 +969,14 @@ fn assemble_fast_result(
             new_starts.push(starts[k]);
             new_fps.push(fps[k]);
         }
+        // Append-at-end edits (prefix_end == n): the cursor is the
+        // TOTAL length, not 0 — starts[n] is out of bounds and the
+        // old else-branch gave appended entries start 0 (FR-50 A3b,
+        // exposed by the O(1) char_len tail read + matrix test).
         let mut cursor = if prefix_end < n {
             starts[prefix_end]
+        } else if n > 0 {
+            starts[n - 1] + entries[n - 1].1.char_len()
         } else {
             0
         };
@@ -1275,11 +1281,17 @@ impl OtreeCrdtManager {
             if new_region.is_empty() {
                 ann.char_start = ann.char_end;
             } else {
+                // The exact mapping can split a span's image at
+                // interior edits (inserts inside the annotation grow
+                // it; deletes punch holes). Taking only the first
+                // fragment dropped the rest — annotations must cover
+                // the full hull of surviving content (FR-50 A1,
+                // caught by armor).
                 let intervals = new_region.intervals();
-                if let Some(&(start, end)) = intervals.first() {
-                    ann.char_start = start.max(0) as usize;
-                    ann.char_end = end.max(0) as usize;
-                }
+                let start = intervals.first().map(|&(s, _)| s).unwrap_or(0);
+                let end = intervals.last().map(|&(_, e)| e).unwrap_or(0);
+                ann.char_start = start.max(0) as usize;
+                ann.char_end = end.max(0) as usize;
             }
         }
 
