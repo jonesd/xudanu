@@ -16606,12 +16606,55 @@ impl Server {
             .cloned()
             .unwrap_or_default();
 
+        // The char window this delta touches. Backfollow registration
+        // is content-keyed and position-independent: a delta that does
+        // not intersect a link end's span cannot change that link's
+        // registration, so the unregister/re-register churn is skipped
+        // for it (FR-50 finding 5: the churn was per-link-per-keystroke
+        // over every excerpt element).
+        let mut pos = 0usize;
+        let mut touches_lo = usize::MAX;
+        let mut touches_hi = 0usize;
+        for op in &delta_ops {
+            use crate::edition::compound::DeltaOp;
+            match op {
+                DeltaOp::Retain(count) => pos += count,
+                DeltaOp::Insert(_) => {
+                    touches_lo = touches_lo.min(pos);
+                    touches_hi = touches_hi.max(pos + 1);
+                }
+                DeltaOp::Delete(count) => {
+                    touches_lo = touches_lo.min(pos);
+                    touches_hi = touches_hi.max(pos + count);
+                    pos += count;
+                }
+            }
+        }
+        let window_is_empty = touches_lo == usize::MAX;
+
         for link_id in link_ids {
             let old_link = match self.links.get(&link_id) {
                 Some(ls) => ls.link.clone(),
                 None => continue,
             };
-            self.backfollow.unregister_link_content(&old_link, link_id);
+
+            let mut touches_link = false;
+            if !window_is_empty {
+                for hr in old_link.ends().values() {
+                    if hr.work_context() != Some(source_work_id) {
+                        continue;
+                    }
+                    if let (Some(start), Some(end)) = (hr.start_position(), hr.end_position()) {
+                        if start >= 0 && end >= 0 {
+                            let (s, e) = (start as usize, end as usize);
+                            if s < touches_hi && e > touches_lo {
+                                touches_link = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
 
             let ls = match self.links.get_mut(&link_id) {
                 Some(ls) => ls,
@@ -16635,8 +16678,14 @@ impl Server {
                     }
                 }
             }
-            ls.link = link.clone();
-            self.backfollow.register_link_content(&ls.link, link_id);
+
+            if touches_link {
+                self.backfollow.unregister_link_content(&old_link, link_id);
+                ls.link = link.clone();
+                self.backfollow.register_link_content(&ls.link, link_id);
+            } else {
+                ls.link = link;
+            }
         }
     }
 

@@ -227,6 +227,29 @@ impl TransclusionIndex {
         }
     }
 
+    /// Register a single element under its content key without
+    /// building a one-element Edition (the link-content hot path —
+    /// FR-50 finding 5: per-link per-keystroke registration used to
+    /// allocate an orgl per element).
+    pub fn register_element(&mut self, element: &RangeElement, owner: &RangeElement) {
+        let key = element_key(element);
+        self.content_to_editions
+            .entry(key)
+            .or_default()
+            .push((owner.clone(), true));
+    }
+
+    /// Remove a link's label entries from a content key WITHOUT
+    /// content equality: the label_id identifies the registrant.
+    pub fn remove_link_entries(&mut self, key: &str, link_id: u64) {
+        if let Some(vec) = self.content_to_editions.get_mut(key) {
+            vec.retain(|(elem, _)| !is_link_label_of(elem, link_id));
+            if vec.is_empty() {
+                self.content_to_editions.remove(key);
+            }
+        }
+    }
+
     pub fn register_edition(
         &mut self,
         edition: &Edition,
@@ -387,7 +410,17 @@ impl Default for TransclusionIndex {
     }
 }
 
-fn element_key(element: &RangeElement) -> String {
+/// A link's registration token: label(link_id, text("link")). Only
+/// link registration creates labels with link ids, so label_id alone
+/// identifies the registrant — no content comparison needed.
+fn is_link_label_of(elem: &RangeElement, link_id: u64) -> bool {
+    matches!(
+        elem,
+        RangeElement::Label { label_id, .. } if label_id.0 == link_id
+    )
+}
+
+pub fn element_key(element: &RangeElement) -> String {
     let fp = element.content_fingerprint();
     fp.iter().map(|b| format!("{:02x}", b)).collect()
 }

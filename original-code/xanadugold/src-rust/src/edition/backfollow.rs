@@ -135,6 +135,10 @@ pub struct BackfollowEngine {
     bert_canopy: BertCanopy,
     sensor_canopy: SensorCanopy,
     edition_metas: std::collections::HashMap<u64, EditionMeta>,
+    /// Content keys each link registered under — the bookkeeping that
+    /// makes unregister O(keys) instead of re-deriving registrations
+    /// by deep comparison over every excerpt element (FR-50 finding 5).
+    link_registrations: std::collections::HashMap<u64, Vec<String>>,
     fingerprint_to_works: std::collections::HashMap<[u8; 32], std::collections::HashSet<u64>>,
     fossil_by_fingerprint:
         std::collections::HashMap<[u8; 32], std::collections::HashSet<RecorderId>>,
@@ -161,6 +165,7 @@ impl BackfollowEngine {
             bert_canopy: BertCanopy::new(),
             sensor_canopy: SensorCanopy::new(),
             edition_metas: std::collections::HashMap::new(),
+            link_registrations: std::collections::HashMap::new(),
             fingerprint_to_works: std::collections::HashMap::new(),
             fossil_by_fingerprint: std::collections::HashMap::new(),
             dagwood: DagWood::new(),
@@ -957,14 +962,14 @@ impl BackfollowEngine {
     pub fn register_link_content(&mut self, link: &HyperLink, link_id: u64) {
         use super::wrapper::{HYPERLINK_TOKEN, HYPERREF_TOKEN};
         let content = link.all_referenced_content();
+        let link_elem = RangeElement::label(link_id, RangeElement::text("link"));
+        let mut keys = Vec::with_capacity(content.len());
         for element in &content {
-            let link_elem = RangeElement::label(link_id, RangeElement::text("link"));
-            self.transclusion_index.register_edition(
-                &Edition::from_one(0, element.clone()),
-                &link_elem,
-                None,
-            );
+            self.transclusion_index
+                .register_element(element, &link_elem);
+            keys.push(crate::edition::transclusion::element_key(element));
         }
+        self.link_registrations.insert(link_id, keys);
         let mut endorsements = vec![super::grandmap::Id::in_space(
             super::grandmap::IdSpaceId(WRAPPER_CLUB_ID),
             HYPERLINK_TOKEN as i64,
@@ -985,15 +990,15 @@ impl BackfollowEngine {
         self.edition_metas.insert(link_id, meta);
     }
 
-    pub fn unregister_link_content(&mut self, link: &HyperLink, link_id: u64) {
-        let content = link.all_referenced_content();
-        for element in content {
-            let link_elem = RangeElement::label(link_id, RangeElement::text("link"));
-            self.transclusion_index.unregister_edition(
-                &Edition::from_one(0, element),
-                &link_elem,
-                None,
-            );
+    pub fn unregister_link_content(&mut self, _link: &HyperLink, link_id: u64) {
+        // Registrations were recorded at register time; removal is by
+        // bookkeeping and label identity — no content re-derivation,
+        // no per-element Edition, no deep equality (FR-50 finding 5:
+        // this was O(excerpt) eq-scans per link per keystroke).
+        if let Some(keys) = self.link_registrations.remove(&link_id) {
+            for key in keys {
+                self.transclusion_index.remove_link_entries(&key, link_id);
+            }
         }
         self.edition_metas.remove(&link_id);
     }
