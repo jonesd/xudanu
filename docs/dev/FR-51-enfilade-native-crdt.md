@@ -127,6 +127,34 @@ rule and churn economics. Nothing found so far closes the FR.
 Artifact: **readiness matrix** — ready / adaptable / missing, per
 substrate component. The missing column is Phase 1's worklist.
 
+### Session B results (2026-08-30)
+
+**Readiness matrix:**
+
+| Component | State | Citation | Role in substrate |
+|---|---|---|---|
+| **Sequence algebra** | READY — complete & tested: `compare_to` (total order), `compare_prefix` (widening), `SequenceRegion.prefixed_by` (prefix regions — Gold's st.dir property), `SequenceDsp` (displacements), `from_dotted` (wire format) | `space/sequence.rs` (1,248 lines) | **Native lattice ordering** — the Session C hypothesis has its engine |
+| **Tumbler bridge** | READY — lossless both ways; `DocumentArrangement.to_tumbler(position)` / `from_tumbler` bidirectional | `edition/tumbler.rs:253-262, 325-360` | The projection API consumers keep |
+| **Gap-allocated stable positions** | LIVE — `DEFAULT_SPACING = 1<<16`, `allocate_between(prev,next)` — the O-tree fast path already inserts into gaps without renumbering | `space/position_allocator.rs:24-111` | **The interpolation point**: flat gap addresses and hierarchical tumblers are the same design family; concurrent neighbors allocate distinct addresses |
+| **Edition crums** | READY | `edition.rs:879` (`orgl.crum()`), FR-34 | Unit identity; finding-9 unification |
+| **Entries cache** | READY, armor-locked (this week) | `edition.rs` build_entries_cache | Consumer-side view |
+| **apply_edits tree path** | EXISTS with the code's own signpost: *"When tumbler positions arrive (Phase I), the renumbering step is eliminated, making this O(k log n)"* | `edition.rs:884-901` | The edit-substrate hook — FR-34's roadmap already pointed here |
+| **Full coordinate-space framework** | PRESENT — `real.rs` (RealSpace), `sequence.rs`, `arrangement.rs`, `cross.rs`/`cross_n.rs` (cross products), `filter.rs`, `order.rs`, `mapping.rs` — the port of Gold's CoordinateSpace hierarchy; the Real/Sequence duality from st.dir lives here | `space/` module | The algebra vocabulary already imported |
+| **Op-stream recorder/replayer** | MISSING — bench emits fixed patterns only | — | Acceptance oracle: record real streams, replay through lattice |
+| **Live-set + tombstone store** | MISSING | — | The substrate's state |
+| **Causal contexts (dotted vv)** | MISSING | — | "Delete of unseen insert" bookkeeping |
+
+**Confidence update: the substrate is more assembled than designed.**
+The Sequence algebra, the bridge, the allocator, and the crums are
+not prototypes — they are tested code, some of it load-bearing in
+production paths today. And `edition.rs:884`'s own comment shows the
+codebase was already pointed at tumbler positions as its next step.
+The missing column is exactly three items: the store, the contexts,
+and the recorder. Session C's ordering hypothesis strengthens
+correspondingly: `Sequence.compare_to` gives the total order,
+`prefixed_by` gives regions, gap allocation gives concurrent-neighbor
+minting — native ordering without RGA anchors looks plausible.
+
 ### Session C — the lattice design note
 
 Decisions to make, in order (A+B feed each):
