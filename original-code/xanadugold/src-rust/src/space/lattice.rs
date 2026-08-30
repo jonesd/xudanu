@@ -839,6 +839,21 @@ impl LatticeDoc {
         }
     }
 
+    /// Memory telemetry: (units, tombstones, total content bytes,
+    /// live content bytes).
+    pub fn memory_estimate(&self) -> (usize, usize, usize, usize) {
+        let mut total = 0usize;
+        let mut live = 0usize;
+        for u in self.units.values() {
+            let b = u.content.len();
+            total += b;
+            if self.index.contains_addr(&u.address) {
+                live += b;
+            }
+        }
+        (self.units.len(), self.tombstones.len(), total, live)
+    }
+
     /// Is the unit with this dot currently live?
     pub fn is_live(&self, dot: Dot) -> bool {
         self.units

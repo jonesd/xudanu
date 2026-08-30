@@ -399,6 +399,46 @@ O-tree. Deterministic repro: the dual-engine bench (first diff at
 ~mid-document, stable across runs). That adjudication is the
 remaining F6 work.
 
+## Improvement-list pass #3–#6 (2026-08-30, post-F6)
+
+- **#3 link-span loop (F5 remnant):** a stray DEBUG eprintln had
+  shipped in the per-link migration loop since the F5 window-guard
+  fix (32 prints per keystroke); removed. The per-end `with_end`
+  loop rebuilt the whole ends map per end (O(E²) clones) — replaced
+  by `HyperLink::with_ends_mapped` (one clone, one in-place pass).
+  Measured effect at 32 links is modest: the remaining per-op cost
+  is the per-char entry tax (F10's recorded future work), not the
+  link loop. The structural O(log+k) answer is the lattice's
+  address-stable spans — proven in the substrate, arrives with
+  cutover.
+- **#4 attribution query (FIXED, 10×/750×):** probe at 256k showed
+  one span (single-author hull) with ancestry trivial — the 16ms
+  was `verify_span_provenance` hashing the span's whole fingerprint
+  set (~8MB for a full-document span) on EVERY query, plus an O(N)
+  own-author fallback scan. Both depend only on the (immutable
+  except in-place signing) edition → memoized per edition, keyed by
+  a hash of the span set so in-place span signing invalidates
+  correctly (caught by the FR-140 armor: stored-verified spans must
+  stay signature_valid=true through the payload field). attr-q
+  mean 15.8ms → 1.6ms@256k (10 reps; cold rep pays the hash once),
+  warm query 16ms → 21µs. The cold-path O(N) remains — the FR-34
+  crum/Merkle verification is the flattening lever. Armor:
+  `span_status_memo_matches_direct`.
+- **#5 canopy cache (deferred, honestly):** the canopy layer is
+  fully DORMANT — `BertCanopy`/`SensorCanopy` have no production
+  callers (only `ent/htree`, itself unused). The cache is already
+  wired internally to `root_of`; "wiring the canopy cache" actually
+  means designing where permission/endorsement filtering enters the
+  query pipeline — a design task, not the low-effort item the
+  complexity page assumed. Noted there.
+- **#6 shadow memory (measured):** dual-engine bench now reports
+  shadow memory telemetry: 321 units / 160 tombstones / 619KB
+  content vs 16KB live text after 120 interleaved ops — ~39×
+  content overhead = retained CRDT history (~39 bytes/op; dead
+  parts kept for causal consistency). Live content is exact.
+  Compaction past a causal horizon is the future lever; this number
+  feeds the cutover decision.
+
 ## Phase 1 — micro-harness (Big-O curves)
 
 A `xudanu-bench` binary (or `xudanu-robots bench` subcommand):

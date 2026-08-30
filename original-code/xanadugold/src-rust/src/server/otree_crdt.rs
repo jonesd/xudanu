@@ -828,17 +828,17 @@ fn assemble_fast_result(
             }
         }
         let has_t = edition.cached_has_transclusions() || hood_has_t;
-        return Some(Edition {
+        return Some(Edition::from_parts_with_cache(
             orgl,
-            endorsements: edition.endorsements.clone(),
-            entries_cache: Arc::new(std::sync::OnceLock::from((
+            edition.endorsements.clone(),
+            Arc::new(std::sync::OnceLock::from((
                 new_entries,
                 new_starts,
                 new_fps,
                 has_t,
             ))),
-            span_provenance: edition.span_provenance.clone(),
-        });
+            edition.span_provenance.clone(),
+        ));
     }
 
     let mut positioned = hood;
@@ -1031,12 +1031,12 @@ fn assemble_fast_result(
         None => Arc::new(std::sync::OnceLock::new()),
     };
 
-    let mut result_edition = Edition {
-        orgl: combined,
-        endorsements: edition.endorsements.clone(),
+    let mut result_edition = Edition::from_parts_with_cache(
+        combined,
+        edition.endorsements.clone(),
         entries_cache,
-        span_provenance: edition.span_provenance.clone(),
-    };
+        edition.span_provenance.clone(),
+    );
 
     if SPLAY_AFTER_FAST_EDIT {
         // Splay the hot region around the edit point (PERF-PLAN S3).

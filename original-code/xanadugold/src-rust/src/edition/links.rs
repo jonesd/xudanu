@@ -909,6 +909,30 @@ impl HyperLink {
         &self.link_types
     }
 
+    /// Rebuild with each end mapped through `f` (None = keep as
+    /// is). One clone, in-place mutation — the per-end `with_end`
+    /// loop was O(E^2) map clones per link per delta (FR-50 F5
+    /// remnant).
+    pub fn with_ends_mapped<F: FnMut(&str, &HyperRef) -> Option<HyperRef>>(
+        &self,
+        mut f: F,
+    ) -> Self {
+        let mut ends = self.ends.clone();
+        for (name, hr) in ends.iter_mut() {
+            if name == LINK_TYPES_KEY {
+                continue;
+            }
+            let mapped = f(name, &*hr);
+            if let Some(new_hr) = mapped {
+                *hr = new_hr;
+            }
+        }
+        HyperLink {
+            ends,
+            link_types: self.link_types.clone(),
+        }
+    }
+
     pub fn with_end(&self, name: &str, link_end: HyperRef) -> Self {
         if name == LINK_TYPES_KEY {
             return self.clone();

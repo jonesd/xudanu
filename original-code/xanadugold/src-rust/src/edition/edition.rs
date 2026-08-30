@@ -30,6 +30,7 @@ pub struct Edition {
     #[allow(dead_code)]
     pub(crate) entries_cache: Arc<OnceLock<EntriesCache>>,
     pub(crate) span_provenance: Vec<SpanProvenance>,
+    span_status_cache: Arc<std::sync::Mutex<Option<(u64, Arc<Vec<u8>>)>>>,
 }
 
 impl Edition {
@@ -39,6 +40,24 @@ impl Edition {
             endorsements,
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+
+    /// Rebuild with a PRE-BUILT entries cache (the CRDT fast path
+    /// carries its cache across edits — rebuilding would be O(N)).
+    pub(crate) fn from_parts_with_cache(
+        orgl: OrglRoot,
+        endorsements: EndorsementSet,
+        entries_cache: Arc<OnceLock<EntriesCache>>,
+        span_provenance: Vec<SpanProvenance>,
+    ) -> Self {
+        Edition {
+            orgl,
+            endorsements,
+            entries_cache,
+            span_provenance,
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -52,6 +71,7 @@ impl Edition {
             endorsements,
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance,
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 }
@@ -226,6 +246,94 @@ impl Edition {
             endorsements: EndorsementSet::new(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+
+    /// Per-span signature status, memoized: true when the stored
+    /// signature verifies against current fingerprints, OR any
+    /// element in the span's entry range carries the same author
+    /// key (own-author maintained — FR-140 tier 2). Verification
+    /// hashes the span's whole fingerprint set (a full-document
+    /// span at 256k is ~8MB per query) and the fallback scans the
+    /// entry range — both depend only on this immutable edition, so
+    /// they compute once (FR-50 #4: repeated attribution queries
+    /// were O(N)-per-call with identical inputs).
+    pub fn cached_span_signature_status(&self) -> Arc<Vec<u8>> {
+        let mut key: u64 = 1469598103934665603;
+        for sp in &self.span_provenance {
+            for b in sp
+                .provenance
+                .author_public_key
+                .iter()
+                .chain(sp.provenance.signature.iter())
+                .chain(sp.provenance.server_id.iter())
+                .chain(sp.start.to_le_bytes().iter())
+                .chain(sp.end.to_le_bytes().iter())
+                .chain(sp.provenance.timestamp.to_le_bytes().iter())
+            {
+                key ^= *b as u64;
+                key = key.wrapping_mul(1099511628211);
+            }
+        }
+        {
+            let guard = self
+                .span_status_cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if let Some((k, v)) = guard.as_ref() {
+                if *k == key {
+                    return v.clone();
+                }
+            }
+        }
+        let statuses = Arc::new(self.compute_span_signature_statuses());
+        {
+            let mut guard = self
+                .span_status_cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            *guard = Some((key, statuses.clone()));
+        }
+        statuses
+    }
+
+    fn compute_span_signature_statuses(&self) -> Vec<u8> {
+        {
+            const STORE_VERIFIED: u8 = 0;
+            const AUTHOR_MAINTAINED: u8 = 1;
+            const UNSIGNED: u8 = 2;
+            let entries = self.cached_entries();
+            let fingerprints = self.cached_fingerprints();
+            self.span_provenance
+                .iter()
+                .map(|sp| {
+                    let i_start = entries.partition_point(|(p, _)| *p < sp.start);
+                    let i_end = entries.partition_point(|(p, _)| *p < sp.end);
+                    let fps: &[[u8; 32]] = fingerprints
+                        .get(i_start..i_end)
+                        .map(|s| s as &[[u8; 32]])
+                        .unwrap_or(&[]);
+                    if crate::edition::provenance::verify_span_provenance(&sp.provenance, fps) {
+                        return STORE_VERIFIED;
+                    }
+                    let same_author = entries
+                        .get(i_start..i_end)
+                        .map(|slice| {
+                            slice.iter().any(|(_, c)| {
+                                c.provenance.as_ref().is_some_and(|ep| {
+                                    ep.author_public_key == sp.provenance.author_public_key
+                                })
+                            })
+                        })
+                        .unwrap_or(false);
+                    if same_author {
+                        AUTHOR_MAINTAINED
+                    } else {
+                        UNSIGNED
+                    }
+                })
+                .collect()
         }
     }
 
@@ -236,6 +344,7 @@ impl Edition {
             endorsements: EndorsementSet::new(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -247,6 +356,7 @@ impl Edition {
                 endorsements: EndorsementSet::new(),
                 entries_cache: Arc::new(OnceLock::new()),
                 span_provenance: Vec::new(),
+                span_status_cache: Arc::new(std::sync::Mutex::new(None)),
             };
         }
         let mut orgl = OrglRoot::empty();
@@ -260,6 +370,7 @@ impl Edition {
             endorsements: EndorsementSet::new(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -287,6 +398,7 @@ impl Edition {
             endorsements: EndorsementSet::new(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -330,6 +442,7 @@ impl Edition {
             endorsements: EndorsementSet::new(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -345,6 +458,7 @@ impl Edition {
             endorsements: EndorsementSet::new(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -376,6 +490,7 @@ impl Edition {
             endorsements: EndorsementSet::new(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         })
     }
 
@@ -402,6 +517,7 @@ impl Edition {
             endorsements: EndorsementSet::new(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -422,6 +538,7 @@ impl Edition {
             endorsements: EndorsementSet::new(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -432,6 +549,7 @@ impl Edition {
             endorsements: EndorsementSet::new(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -535,6 +653,7 @@ impl Edition {
             endorsements: self.endorsements.clone(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -550,6 +669,7 @@ impl Edition {
             endorsements: EndorsementSet::new(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -559,6 +679,7 @@ impl Edition {
             endorsements: self.endorsements.clone(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -569,6 +690,7 @@ impl Edition {
             endorsements: self.endorsements.clone(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -592,6 +714,7 @@ impl Edition {
                 endorsements: EndorsementSet::new(),
                 entries_cache: Arc::new(OnceLock::new()),
                 span_provenance: Vec::new(),
+                span_status_cache: Arc::new(std::sync::Mutex::new(None)),
             }),
             Err(_) => {
                 let mut orgl = self.orgl.clone();
@@ -605,6 +728,7 @@ impl Edition {
                     endorsements: EndorsementSet::new(),
                     entries_cache: Arc::new(OnceLock::new()),
                     span_provenance: Vec::new(),
+                    span_status_cache: Arc::new(std::sync::Mutex::new(None)),
                 })
             }
         }
@@ -616,6 +740,7 @@ impl Edition {
             endorsements: self.endorsements.clone(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -625,6 +750,7 @@ impl Edition {
             endorsements: self.endorsements.clone(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -634,6 +760,7 @@ impl Edition {
             endorsements: self.endorsements.clone(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -662,6 +789,7 @@ impl Edition {
             endorsements: self.endorsements.clone(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -930,6 +1058,7 @@ impl Edition {
             endorsements: self.endorsements.clone(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: self.span_provenance.clone(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         };
         (edition, result)
     }
@@ -1245,6 +1374,7 @@ impl Edition {
             endorsements: EndorsementSet::new(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -1266,6 +1396,7 @@ impl Edition {
             endorsements: EndorsementSet::new(),
             entries_cache: Arc::new(OnceLock::new()),
             span_provenance: Vec::new(),
+            span_status_cache: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -2497,6 +2628,7 @@ mod tests {
                 endorsements: EndorsementSet::new(),
                 entries_cache: Arc::new(OnceLock::new()),
                 span_provenance: Vec::new(),
+                span_status_cache: Arc::new(std::sync::Mutex::new(None)),
             };
             let bulk_dur = start.elapsed();
             let bulk_count = bulk_edition.count();
@@ -2626,6 +2758,55 @@ mod tests {
         assert_eq!(RangeElement::edition(1).char_len(), 0);
         assert_eq!(RangeElement::placeholder(1).char_len(), 0);
         assert_eq!(RangeElement::blob(1, "image/png", 100).char_len(), 0);
+    }
+
+    // FR-50 #4 armor: the memoized span signature statuses must
+    // equal direct computation (stored-verified / author-maintained
+    // / unsigned), and stay stable across repeated calls.
+    #[test]
+    fn span_status_memo_matches_direct() {
+        let ed = Edition::from_text("shared text appears twice: shared text appears twice")
+            .with_span_provenance(vec![crate::edition::provenance::SpanProvenance {
+                start: 0,
+                end: 10,
+                provenance: crate::edition::provenance::Provenance {
+                    author_public_key: [7u8; 32],
+                    signature: [0u8; 64],
+                    timestamp: 1000,
+                    server_id: [0u8; 32],
+                },
+            }]);
+        let memo = ed.cached_span_signature_status().to_vec();
+        let memo2 = ed.cached_span_signature_status().to_vec();
+        assert_eq!(memo, memo2, "memo stable");
+        let entries = ed.cached_entries();
+        let fps_all = ed.cached_fingerprints();
+        let sp = &ed.span_provenance[0];
+        let i_start = entries.partition_point(|(p, _)| *p < sp.start);
+        let i_end = entries.partition_point(|(p, _)| *p < sp.end);
+        let fps: &[[u8; 32]] = fps_all
+            .get(i_start..i_end)
+            .map(|s| s as &[[u8; 32]])
+            .unwrap_or(&[]);
+        let direct_stored = crate::edition::provenance::verify_span_provenance(&sp.provenance, fps);
+        let direct_author = entries
+            .get(i_start..i_end)
+            .map(|sl| {
+                sl.iter().any(|(_, c)| {
+                    c.provenance
+                        .as_ref()
+                        .is_some_and(|ep| ep.author_public_key == sp.provenance.author_public_key)
+                })
+            })
+            .unwrap_or(false);
+        let expected = if direct_stored {
+            0
+        } else if direct_author {
+            1
+        } else {
+            2
+        };
+        assert_eq!(memo[0], expected, "memo equals direct computation");
     }
 
     #[test]

@@ -365,6 +365,18 @@ fn bench_dual_engine() -> Option<(f64, f64, bool, usize)> {
         }
     }
 
+    let (units, tombstones, content_bytes, live_bytes) =
+        server.lattice_shadow_memory(work).unwrap_or((0, 0, 0, 0));
+    let live_text_bytes = live_text.len();
+    println!(
+        "  shadow memory: units={} tombstones={} content={}B live={}B vs live text {}B ({:.1}x)",
+        units,
+        tombstones,
+        content_bytes,
+        live_bytes,
+        live_text_bytes,
+        content_bytes as f64 / live_text_bytes.max(1) as f64
+    );
     let lattice_ns = server.lattice_shadow_nanos(work).unwrap();
     let otree_us = otree_ns as f64 / ops_count as f64 / 1000.0;
     let lattice_us = lattice_ns as f64 / ops_count as f64 / 1000.0;

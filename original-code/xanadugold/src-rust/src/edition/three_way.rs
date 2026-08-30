@@ -1225,12 +1225,11 @@ fn assemble_merge_lww(
     }
 
     let region = XnRegion::interval(0, next_pos);
-    let merged = Edition {
-        orgl: super::orgl::OrglRoot::from_bulk_entries(merged_entries, None, region),
-        endorsements: base.endorsements().clone(),
-        entries_cache: Arc::new(std::sync::OnceLock::new()),
-        span_provenance: Vec::new(),
-    };
+    let merged = Edition::new_inner_with_provenance(
+        super::orgl::OrglRoot::from_bulk_entries(merged_entries, None, region),
+        base.endorsements().clone(),
+        Vec::new(),
+    );
 
     (merged, a_to_merged, b_to_merged)
 }

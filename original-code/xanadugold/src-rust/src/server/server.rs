@@ -4889,7 +4889,8 @@ impl Server {
         };
 
         let mut spans = Vec::new();
-        for sp in &edition.span_provenance {
+        let span_status = edition.cached_span_signature_status();
+        for (span_index, sp) in edition.span_provenance.iter().enumerate() {
             if let Some(s) = start {
                 if sp.end <= s {
                     continue;
@@ -4906,7 +4907,7 @@ impl Server {
             // re-hashed or cloned per query (FR-50 finding 2).
             let i_start = all_entries.partition_point(|(p, _)| *p < sp.start);
             let i_end = all_entries.partition_point(|(p, _)| *p < sp.end);
-            let fps: &[[u8; 32]] = fingerprints
+            let _fps: &[[u8; 32]] = fingerprints
                 .get(i_start..i_end)
                 .map(|s| s as &[[u8; 32]])
                 .unwrap_or(&[]);
@@ -4921,30 +4922,20 @@ impl Server {
             // author's and must not alarm as "unsigned". Stored-
             // signature verification remains the check for detached
             // historical content (no key available).
-            let stored_valid =
-                crate::edition::provenance::verify_span_provenance(&sp.provenance, &fps);
-            let signature_valid = if stored_valid {
-                true
-            } else {
-                // Same author still present? Element provenance inside
-                // the span names the key; if ANY element in the span
-                // carries provenance by the same author club, treat the
-                // span as own-author-maintained (re-signed semantics).
-                let span_elements_have_same_author = all_entries
-                    .get(i_start..i_end)
-                    .map(|slice| {
-                        slice.iter().any(|(_, c)| {
-                            c.provenance.as_ref().is_some_and(|ep| {
-                                ep.author_public_key == sp.provenance.author_public_key
-                            })
-                        })
-                    })
-                    .unwrap_or(false);
-                span_elements_have_same_author
-            };
+            // FR-50 #4: stored-signature verification hashes the
+            // span's whole fingerprint set (a full-document span at
+            // 256k is ~8MB) and the own-author fallback scans the
+            // entry range — both memoized per edition (inputs are
+            // immutable once stored). 0 = stored-verified,
+            // 1 = author-maintained (FR-140 tier 2), 2 = unsigned.
+            let status = span_status.get(span_index).copied().unwrap_or(2);
+            let stored_valid = status == 0;
+            let author_maintained = status == 1;
+            let signature_valid = stored_valid || author_maintained;
+            let _ = &_fps;
             let verification_state = if stored_valid {
                 Some("verified".to_string())
-            } else if signature_valid {
+            } else if author_maintained {
                 Some("author_maintained".to_string())
             } else {
                 Some("unsigned".to_string())
@@ -6330,16 +6321,11 @@ impl Server {
 
                 let n = new_entries.len();
                 let region = XnRegion::interval(0, n as i64);
-                edition = Edition {
-                    orgl: crate::edition::orgl::OrglRoot::from_bulk_entries(
-                        new_entries,
-                        None,
-                        region,
-                    ),
-                    endorsements: crate::edition::endorsement::EndorsementSet::new(),
-                    entries_cache: std::sync::Arc::new(std::sync::OnceLock::new()),
-                    span_provenance: vec![span_prov],
-                };
+                edition = crate::edition::Edition::new_inner_with_provenance(
+                    crate::edition::orgl::OrglRoot::from_bulk_entries(new_entries, None, region),
+                    crate::edition::endorsement::EndorsementSet::new(),
+                    vec![span_prov],
+                );
             }
         }
 
@@ -8309,6 +8295,14 @@ impl Server {
             .current_edition(work_be_id)
             .ok()
             .map(|ed| ed.to_text())
+    }
+
+    /// Shadow memory telemetry: (units, tombstones, content bytes,
+    /// live content bytes) — None if not enrolled.
+    pub fn lattice_shadow_memory(&self, work_be_id: BeId) -> Option<(usize, usize, usize, usize)> {
+        self.lattice_shadows
+            .get(&work_be_id)
+            .map(|mw| mw.memory_estimate())
     }
 
     /// Total nanoseconds the shadow spent mirroring (dual-engine
@@ -16758,10 +16752,11 @@ impl Server {
         let window_is_empty = touches_lo == usize::MAX;
 
         for link_id in link_ids {
-            let old_link = match self.links.get(&link_id) {
-                Some(ls) => ls.link.clone(),
+            let ls = match self.links.get_mut(&link_id) {
+                Some(ls) => ls,
                 None => continue,
             };
+            let old_link = ls.link.clone();
 
             let mut touches_link = false;
             if !window_is_empty {
@@ -16781,37 +16776,25 @@ impl Server {
                 }
             }
 
-            let ls = match self.links.get_mut(&link_id) {
-                Some(ls) => ls,
-                None => continue,
-            };
-            let mut link = ls.link.clone();
-            let end_names: Vec<String> = link.end_names().iter().map(|s| s.to_string()).collect();
-            for name in end_names {
-                if let Some(hr) = link.end_at(&name) {
-                    if hr.work_context() != Some(source_work_id) {
-                        continue;
-                    }
-                    if let (Some(start), Some(end)) = (hr.start_position(), hr.end_position()) {
-                        if start < 0 || end < 0 {
-                            continue;
-                        }
-                        let (new_start, new_end) =
-                            map_span_through_delta(start as usize, end as usize, &delta_ops);
-                        let new_hr = hr.with_span(Some(new_start as i64), Some(new_end as i64));
-                        link = link.with_end(&name, new_hr);
-                    }
+            // One clone, one in-place pass — the per-end with_end
+            // loop rebuilt the whole ends map per end (and a stray
+            // debug eprintln shipped in this loop from the F5 fix;
+            // both removed with the FR-50 F5-remnant pass).
+            let link = old_link.with_ends_mapped(|_name, hr| {
+                if hr.work_context() != Some(source_work_id) {
+                    return None;
                 }
-            }
+                let (Some(start), Some(end)) = (hr.start_position(), hr.end_position()) else {
+                    return None;
+                };
+                if start < 0 || end < 0 {
+                    return None;
+                }
+                let (new_start, new_end) =
+                    map_span_through_delta(start as usize, end as usize, &delta_ops);
+                Some(hr.with_span(Some(new_start as i64), Some(new_end as i64)))
+            });
 
-            eprintln!(
-                "DEBUG loop link_id={} touches={} left_span={:?}",
-                link_id,
-                touches_link,
-                old_link
-                    .left_end()
-                    .and_then(|h| h.start_position().zip(h.end_position()))
-            );
             if touches_link {
                 self.backfollow.unregister_link_content(&old_link, link_id);
                 ls.link = link.clone();
@@ -26965,7 +26948,7 @@ mod tests {
         let (mut server, s1, s2, work) = shadow_env("0123456789");
         server.enable_lattice_shadow();
         server.enroll_lattice_shadow(s1, work).unwrap();
-        assert!(server.lattice_shadow_ops(work).unwrap() >= 0);
+        assert!(server.lattice_shadow_ops(work).is_some());
 
         let d = |ops: &[Op]| ops.to_vec();
         let steps: Vec<(SessionId, Vec<Op>, &str)> = vec![

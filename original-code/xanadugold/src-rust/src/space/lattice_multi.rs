@@ -144,6 +144,12 @@ impl MultiWriter {
         self.apply_ns
     }
 
+    /// Memory telemetry: (units, tombstones, content bytes, live
+    /// content bytes) — the shadow is a second copy of the document.
+    pub fn memory_estimate(&self) -> (usize, usize, usize, usize) {
+        self.doc.memory_estimate()
+    }
+
     pub fn open_session(&mut self, author: u64) {
         self.dense(author);
         self.views.insert(author, self.doc.clone());
