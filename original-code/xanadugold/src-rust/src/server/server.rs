@@ -16600,11 +16600,18 @@ impl Server {
             })
             .collect();
 
-        let link_ids: Vec<BeId> = self
+        // A multi-ended link with several ends in the same work
+        // registers once per end; migrate each link exactly once
+        // (double migration double-shifted spans — latent until the
+        // finding-8 tail fix made mappings actually move; caught by
+        // the window-guard armor).
+        let mut link_ids: Vec<BeId> = self
             .work_to_links
             .get(&source_work_id)
             .cloned()
             .unwrap_or_default();
+        link_ids.sort_unstable();
+        link_ids.dedup();
 
         // The char window this delta touches. Backfollow registration
         // is content-keyed and position-independent: a delta that does
@@ -16679,6 +16686,14 @@ impl Server {
                 }
             }
 
+            eprintln!(
+                "DEBUG loop link_id={} touches={} left_span={:?}",
+                link_id,
+                touches_link,
+                old_link
+                    .left_end()
+                    .and_then(|h| h.start_position().zip(h.end_position()))
+            );
             if touches_link {
                 self.backfollow.unregister_link_content(&old_link, link_id);
                 ls.link = link.clone();
@@ -43483,5 +43498,164 @@ mod tests_security_tracker {
             "result must reflect the session edit, got {:?}",
             text
         );
+    }
+
+    // ---- FR-50 finding 5 armor: the delta-window guard ----
+    // Outside-the-span deltas migrate spans but MUST NOT touch
+    // content registrations; inside-the-span deltas refresh them.
+
+    fn link_label_count_for(server: &Server, probe: &str, link_id: u64) -> usize {
+        use crate::edition::transclusion::TransclusionQuery;
+        let probe = crate::edition::RangeElement::text(probe);
+        server
+            .backfollow
+            .transclusion_index()
+            .find_transcluders(&probe, &TransclusionQuery::all())
+            .iter()
+            .filter(|r| {
+                matches!(&r.element,
+                    crate::edition::RangeElement::Label { label_id, .. }
+                    if label_id.0 == link_id)
+            })
+            .count()
+    }
+
+    fn window_guard_setup() -> (Server, SessionId, BeId) {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let text: String = "abcdefghijLINKBODYklmnopqrstuvwxyz".to_string() + &"filler ".repeat(40);
+        let work = server.create_work(sid, Edition::from_text(&text)).unwrap();
+        // A link whose origin end spans the LINKBODY segment [10, 19).
+        let o = crate::edition::links::HyperRef::single(
+            Some(Edition::from_text("LINKBODY")),
+            Some(work),
+            None,
+            None,
+        )
+        .with_span(Some(10), Some(19));
+        let d = crate::edition::links::HyperRef::single(None, Some(work), None, None);
+        let link = crate::edition::links::HyperLink::make(vec![1], o, d);
+        server
+            .create_link_with_hyperlink_homed(sid, link, Some(work))
+            .unwrap();
+        (server, sid, work)
+    }
+
+    fn link_span(server: &Server, work: BeId) -> (i64, i64) {
+        let links = server.list_links_for_work(work);
+        assert!(!links.is_empty(), "link must exist");
+        let (lid, _, _) = links[0];
+        let (_, _, link) = server.get_link(lid).unwrap();
+        let hr = link.left_end().expect("left end");
+        (hr.start_position().unwrap(), hr.end_position().unwrap())
+    }
+
+    #[test]
+    fn window_guard_outside_delta_keeps_registrations_and_migrates_span() {
+        use crate::server::transport::protocol::TextDeltaOp;
+        let (mut server, sid, work) = window_guard_setup();
+        let before = link_label_count_for(&server, "L", 1);
+        assert!(before > 0, "link content registered at setup");
+
+        server.crdt_open_session(sid, work).unwrap();
+        // Insert 3 chars deep in the filler (position 150), far
+        // outside the link span [10, 19).
+        server
+            .crdt_apply_text_delta(
+                sid,
+                work,
+                &[
+                    TextDeltaOp::Retain { count: 150 },
+                    TextDeltaOp::Insert {
+                        text: "xyz".to_string(),
+                    },
+                ],
+            )
+            .unwrap();
+
+        let after = link_label_count_for(&server, "L", 1);
+        assert_eq!(
+            after, before,
+            "outside-window delta must not churn registrations"
+        );
+        // Span is AFTER the edit position: unchanged by the mapping.
+        let (s, e) = link_span(&server, work);
+        assert_eq!((s, e), (10, 19), "span after the edit must not move");
+    }
+
+    #[test]
+    fn window_guard_before_delta_migrates_span_keeps_registration() {
+        use crate::server::transport::protocol::TextDeltaOp;
+        let (mut server, sid, work) = window_guard_setup();
+        let before = link_label_count_for(&server, "L", 1);
+        assert!(before > 0);
+
+        server.crdt_open_session(sid, work).unwrap();
+        // Insert at position 2 — BEFORE the span: span must shift +3,
+        // registration preserved (window opens [2,3), disjoint from
+        // [10,19) — the guard skips churn, span still migrates).
+        server
+            .crdt_apply_text_delta(
+                sid,
+                work,
+                &[
+                    TextDeltaOp::Retain { count: 2 },
+                    TextDeltaOp::Insert {
+                        text: "abc".to_string(),
+                    },
+                ],
+            )
+            .unwrap();
+
+        eprintln!(
+            "DEBUG before-delta: links={:?} span={:?} reg_before={}",
+            server.list_links_for_work(work),
+            {
+                let l = server.list_links_for_work(work);
+                let (lid, _, _) = l[0];
+                let (_, _, hl) = server.get_link(lid).unwrap();
+                (
+                    hl.left_end().unwrap().start_position(),
+                    hl.left_end().unwrap().end_position(),
+                )
+            },
+            before
+        );
+        let (s, e) = link_span(&server, work);
+        assert_eq!((s, e), (13, 22), "span must shift by the insert length");
+        let after = link_label_count_for(&server, "L", 1);
+        assert_eq!(after, before, "registrations preserved through migration");
+    }
+
+    #[test]
+    fn window_guard_inside_delta_refreshes_registrations() {
+        use crate::server::transport::protocol::TextDeltaOp;
+        let (mut server, sid, work) = window_guard_setup();
+        assert!(link_label_count_for(&server, "L", 1) > 0);
+
+        server.crdt_open_session(sid, work).unwrap();
+        // Insert INSIDE the span [10, 19): the touched path runs —
+        // unregister then re-register. Registrations must survive
+        // the round-trip, not be lost.
+        server
+            .crdt_apply_text_delta(
+                sid,
+                work,
+                &[
+                    TextDeltaOp::Retain { count: 12 },
+                    TextDeltaOp::Insert {
+                        text: "Q".to_string(),
+                    },
+                ],
+            )
+            .unwrap();
+
+        assert!(
+            link_label_count_for(&server, "L", 1) > 0,
+            "registrations must survive the inside-window refresh"
+        );
+        let (s, e) = link_span(&server, work);
+        assert_eq!((s, e), (10, 20), "span grows by the inserted char");
     }
 }

@@ -1837,6 +1837,49 @@ mod tests {
         );
     }
 
+    /// FR-50 finding 5 armor: removal is by bookkeeping + label
+    /// identity, not content equality. Links sharing content keys
+    /// must not disturb each other's registrations.
+    #[test]
+    fn unregister_link_preserves_other_links_sharing_content() {
+        crate::edition::init_endorsement_flags();
+        use crate::edition::transclusion::TransclusionQuery;
+        let mut engine = BackfollowEngine::new();
+        let excerpt = Some(Edition::from_text("shared excerpt body"));
+        let o1 = HyperRef::single(excerpt.clone(), None, None, None);
+        let o2 = HyperRef::single(excerpt, None, None, None);
+        let d = HyperRef::single(None, None, None, None);
+        let link1 = HyperLink::make(vec![], o1, d.clone());
+        let link2 = HyperLink::make(vec![], o2, d);
+        engine.register_link_content(&link1, 101);
+        engine.register_link_content(&link2, 102);
+
+        // from_text segments one entry per character; probe a single char
+        // that appears in the excerpt — its content key holds one
+        // entry per registrant.
+        let probe = RangeElement::text("s");
+        let query = TransclusionQuery::all();
+        let label_count = |engine: &BackfollowEngine, id: u64| {
+            engine
+                .transclusion_index()
+                .find_transcluders(&probe, &query)
+                .iter()
+                .filter(|r| matches!(&r.element, RangeElement::Label { label_id, .. } if label_id.0 == id))
+                .count()
+        };
+        assert_eq!(label_count(&engine, 101), 1, "link 101 registered");
+        assert_eq!(label_count(&engine, 102), 1, "link 102 registered");
+
+        engine.unregister_link_content(&link1, 101);
+        assert_eq!(label_count(&engine, 101), 0, "link 101 entries removed");
+        assert_eq!(
+            label_count(&engine, 102),
+            1,
+            "link 102 must survive link 101's removal — shared keys, distinct labels"
+        );
+        assert!(engine.get_edition_meta(102).is_some());
+    }
+
     #[test]
     fn unregister_link_content_removes_meta() {
         crate::edition::init_endorsement_flags();

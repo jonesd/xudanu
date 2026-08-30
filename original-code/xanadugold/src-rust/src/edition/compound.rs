@@ -57,9 +57,16 @@ pub fn map_span_through_delta(
         }
     }
 
+    // The tail after the last op keeps the final displacement.
+    // Without this part, insert-only deltas (no trailing retain —
+    // the common client shape) collapsed to identity via the
+    // all-zero-offset shortcut and never shifted following spans
+    // (FR-50 finding 8, caught by the window-guard armor).
+    parts.push((pos, i64::MAX, displacement));
+
     // If there are no retained regions, algebra can't build a displacement.
     // Fall back to imperative logic which handles replace semantics.
-    if parts.is_empty() {
+    if parts.len() <= 1 && parts[0].2 == 0 {
         return map_span_through_delta_imperative(span_start, span_end, ops);
     }
 
