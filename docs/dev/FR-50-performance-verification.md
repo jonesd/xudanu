@@ -161,6 +161,31 @@ edition state is the follow-up if the import case matters.
 Fourth armor session in a row where writing the tests found real
 bugs: fragment-drop, tail-start. The method is the deliverable.
 
+## Finding 9 (A6): nested transclusion resolution silently collapses (2026-08-30)
+
+The A6 nesting fixture (chain of live Transclusion elements, depths
+1/4/16/32) exposed a CORRECTNESS bug in the flagship feature:
+
+`element_insert` pins placement integrity with a BLAKE3 hash of the
+source's RAW excerpt (server.rs ~15655) — and raw text renders nested
+transclusion elements as EMPTY. At resolve time, the source resolves
+RECURSIVELY (expanded view); the hash mismatches; FR-26's revision-
+retrieval path substitutes the pinned RAW slice with only an info
+log. **Result: any transclusion whose source itself contains a
+transclusion resolves to its placement-time raw text — nesting
+beyond depth 1 cannot work through the standard placement path.**
+The "32-level recursive resolution" feature is unreachable in
+practice. Single-level transclusions are unaffected (raw == resolved)
+— which is why every test and the demo shipped green.
+
+Fix direction (needs design care — FR-26 is a security feature):
+placement should hash the RESOLVED slice (recursive resolve at
+placement), or the pin must be view-marked and resolution
+view-aware. NOT hot-patched; next session opens with this.
+
+Severity: correctness, flagship feature, exactly the audit's named
+class — our modern addition (FR-26) breaking Gold-lineage resolution.
+
 | **Link-span migration per edit** | **OPEN — finding 5, quadratic (1.3s/keystroke @ 16k with 32 links). Same disease as pre-fix-A spans; fix next session** |
 | Three-way merge on divergent rewrites | OPEN — finding 6: garbled mix; fingerprint anchoring |
 | build_merge_mapping soundness | EXPOSED — finding 7: can mis-map plain inserts; fix A removed its use from the keystroke path |

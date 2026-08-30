@@ -70,7 +70,66 @@ fn build(n: usize) -> Fixture {
     }
 }
 
+/// A6 fixture: chain of D nested structural transclusions over
+/// sources of size C chars; measure resolve_inline_transclusions.
+fn bench_nested_transclusion() {
+    use xudanu::edition::range_element::RangeElement;
+    let depths: [usize; 4] = [1, 4, 16, 32];
+    let src_len = 2048usize;
+    println!(
+        "\nA6: nested transclusion resolution (sources {} chars)",
+        src_len
+    );
+    println!("{:>8} {:>14} {:>12}", "depth", "resolve µs", "text len");
+    let mut prev: Option<(usize, f64)> = None;
+    for &d in &depths {
+        let mut server = Server::new();
+        let sid = server.connect();
+        let _ = server.login_public(sid);
+        // Source at the bottom of the chain.
+        let text: String = SEED_SENTENCE.repeat(src_len / SEED_SENTENCE.len() + 1);
+        let text: String = text.chars().take(src_len).collect();
+        let bottom = server.create_work(sid, Edition::from_text(&text)).unwrap();
+        // Chain upward: each level transcludes the level below, full span.
+        let mut below = bottom;
+        for _ in 1..d {
+            let above_text = "wrapper ".repeat(4);
+            let above = server
+                .create_work(sid, Edition::from_text(&above_text))
+                .unwrap();
+            let elem = RangeElement::Transclusion {
+                source_work_id: below,
+                char_start: 0,
+                char_end: src_len as usize,
+                placed_at: 0,
+                placed_by: None,
+                content_hash: None,
+                source_revision: None,
+            };
+            server.element_insert(sid, above, 0, elem).unwrap();
+            below = above;
+        }
+        let t0 = Instant::now();
+        let result = server.resolve_inline_transclusions(below).unwrap();
+        let us = t0.elapsed().as_secs_f64() * 1e6;
+        let n = result.text.chars().count();
+        let label = match prev {
+            Some((pd, pt)) => format!(
+                "   d-exp {:.2}",
+                (us / pt).ln() / ((d as f64) / (pd as f64)).ln()
+            ),
+            None => "   (base)".to_string(),
+        };
+        println!(
+            "{:>8} {:>14.1} {:>12}{}  (finding 9: nested levels collapse to raw slices)",
+            d, us, n, label
+        );
+        prev = Some((d, us));
+    }
+}
+
 fn main() {
+    bench_nested_transclusion();
     println!(
         "xudanu-bench rev={} xudanu v{}",
         HARNESS_REV,
