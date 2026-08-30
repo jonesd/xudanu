@@ -142,6 +142,25 @@ edition state is the follow-up if the import case matters.
 | Quadratic keystroke | FIXED (A+B): 11.6s → 634µs @ 16k |
 | Attribution O(N) | FIXED: 73ms → 21ms @ 256k |
 | Per-keystroke edition rebuilds/clones | C pt 1 SHIPPED (transclusion-migration skip). C pt 2 DEFERRED — see decision above; reopen only on Phase 2 capacity data |
+## A1/A3/A3b cleared (2026-08-30)
+
+- **A1 annotations:** five armor tests; found the update loop took
+  `intervals.first()` only — the exact mapping's split images (insert
+  inside an annotation) DROPPED fragments; annotations shrank instead
+  of growing. Fixed to the full hull. (Annotations had silently
+  inherited finding 7's mis-mapping pre-fix-A; the positional mapping
+  made them precise, which exposed the fragment-drop.)
+- **A3 char_len:** O(entries) per call → O(1) from the cache tail.
+  attr-q 256k 21ms → 14ms; insert exponents sub-linear at scale.
+- **A3b carried-starts tail (found BY the O(1) read):** append-at-end
+  inserts hit the carry cursor's out-of-bounds else-branch — appended
+  entries got start 0 instead of the previous total. Pre-existing,
+  masked while nothing read the tail. Fixed; append-at-end shape in
+  the alignment armor.
+
+Fourth armor session in a row where writing the tests found real
+bugs: fragment-drop, tail-start. The method is the deliverable.
+
 | **Link-span migration per edit** | **OPEN — finding 5, quadratic (1.3s/keystroke @ 16k with 32 links). Same disease as pre-fix-A spans; fix next session** |
 | Three-way merge on divergent rewrites | OPEN — finding 6: garbled mix; fingerprint anchoring |
 | build_merge_mapping soundness | EXPOSED — finding 7: can mis-map plain inserts; fix A removed its use from the keystroke path |
@@ -310,9 +329,9 @@ entries). **Suspicion ranking:**
 
 | # | Path | Suspected shape | Fixture needed |
 |---|---|---|---|
-| A1 | Annotation span migration per edit | finding-5 twin | annotations dimension |
+| A1 | Annotation span migration | **DONE** — armor found fragment-drop; hull fix |
 | A2 | backfollow register/unregister per link op | O(content) churn inside finding 5's loop | links fixture (exists) + profile |
-| A3 | `char_len()` O(entries) per call | shape 2 | freebie fix, then bench |
+| A3 | `char_len()` | **DONE** — O(1); also exposed A3b |
 | A4 | WAL fsync per append | latency floor, not scaling | timing row |
 | A5 | Checkpoint duration + blocking window | shape 3 at interval scale | checkpoint row (id lists exist) |
 | A6 | resolve_inline_transclusions per read | shape 1 over nesting | nesting-depth fixture |
