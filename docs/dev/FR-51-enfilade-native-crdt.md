@@ -269,6 +269,233 @@ substrate shows flat curves, and finding-classes 1/4/5/6 are
 structurally impossible (the migration code does not exist to
 regress).
 
+## Phase 1 log
+
+### P1-0: substrate + simulator — PASSED (prior session)
+
+`space/lattice.rs` (LatticeDoc: span-units, deepening allocation,
+region tombstones, union merge) and `space/lattice_sim.rs`
+(positional-delta adapter, JSONL op streams, two-replica harness).
+`acceptance_single_session_matches_otree` reproduced the O-tree text
+exactly on a scripted stream.
+
+### P1-1: deterministic lineage — CLOSED (2026-08-30)
+
+Problem: concurrent splits of the same unit duplicated content —
+parts re-inserted with replica-local identity, so merge kept both
+histories ("01201234X7896789").
+
+Two rules fixed it, and the fix IS the design:
+
+1. **Splits are context-only.** `tombstone_dot` records the causal
+   context ("I saw this unit, replaced by parts") but NO cull — a
+   split deletes no content. Recording a full-range cull killed the
+   re-inserted parts (their lineage points at the split parent).
+   Culls belong to deletes only, and the adapter splits at delete
+   boundaries first, so delete culls exactly cover the deleted chars.
+2. **Lineage is ROOT-ANCHORED.** A part's dot is derived from the
+   ORIGINAL root unit's dot plus the part's char range in ROOT
+   coordinates (`split_unit` walks through intermediate parts), never
+   from an intermediate part's derived dot. Two replicas splitting
+   the same root at different points produce parts whose ranges are
+   comparable: identical sub-ranges mint identical dots (merge
+   coalesces them) and a deleter's culls trim concurrently-derived
+   parts to the surviving remainder (`normalize`, run inside
+   `render`, fixpoint, deterministic from merged state).
+
+`sim_concurrent_delete_vs_insert_range_semantics` un-ignored and
+passing: concurrent delete-of-4 + insert-X on one shared unit
+converges to 7 chars with X surviving, both delivery orders. Full
+lib suite 3,247 green.
+
+### P1-2: root-relative addressing + multi-session acceptance — PASSED (2026-08-30)
+
+Writing the two-session acceptance test exposed two structural
+gaps, both fixed by the same principle: **the address must be a
+deterministic function of POSITION, never of which replica merged
+first.**
+
+1. **Overlapping live parts duplicated content.** Two replicas
+   splitting the same root at different offsets (concurrent interior
+   inserts, no delete) left overlapping live parts. `normalize` gained
+   a refinement pass: overlapping parts of one root are killed and
+   re-inserted as the common refinement (union of cut points);
+   identical sub-ranges mint identical derived dots and coalesce. A
+   part is only killed when the other's boundary falls strictly
+   inside it — killing a part whose whole range survives would
+   self-kill the re-insert (same dot, same address).
+2. **Local allocation leaked merge order into addresses.** Part and
+   insert addresses came from `allocate_between` (doc-local
+   server/counter). Now parts extend the ROOT's address with
+   `[start, end]`, and fresh inserts record an anchor (root dot,
+   offset) from the split boundary and address themselves
+   `[root.., offset, server, counter]`. Merged states converge
+   bitwise, and concurrent-insert interleaving is deterministic
+   (position, then server, then counter) — matching the O-tree's
+   placement in the acceptance scenario.
+
+Also fixed en route: edge splits (at 0 or at len) are no-ops — the
+surviving part IS the unit, and tombstoning it self-killed the
+identical re-insert (this corrupted single-session acceptance when
+an insert landed exactly at a unit boundary).
+
+`acceptance_multi_session_matches_otree`: two server sessions with
+concurrent interior inserts + a follow-up insert vs a diverged view;
+the O-tree's three-way-merged text ("!012ONE3456TWO789") is
+reproduced EXACTLY by per-session stream replay on independent
+lattice replicas, in both delivery orders. The P1-1 concurrent test
+tightened to the exact string "012X789". Full lib suite 3,248 green.
+
+Open notes: sequential inserts at the same boundary from different
+servers order by server id (documented, deterministic); delete-range
+against a unit whose boundary falls mid-unit still culls the whole
+unit — the adapter contract is split-first (the sim honors it).
+
+### P2: flat-curve gate — PASSED (2026-08-30)
+
+Bench first (governance rule 1): a typed-chunk fixture (unit count
+scales with N — a one-block document would hide the live-set scan)
+measured keystroke cost in `xudanu-bench` at N = 1k..256k. Pre-fix:
+ins/del exponents 1.24/1.25 at 256k (3.6ms / 14.4ms per keystroke) —
+`split_at`/`split_unit` materialized and sorted the whole live set
+per operation. The gate failed.
+
+Fix: the live set gained an order-statistic index (`mod index` in
+lattice.rs) — a weight-balanced BST keyed by address carrying
+subtree char totals: the enfilade core. Offset → unit (with prefix
+sum), address neighbors, range collection, and in-order walk are all
+O(log L). All mutations flow through the chokepoints (insert/seed →
+upsert; tombstone/delete → remove; merge → rebuild via tombstone
+scan). `is_dead` is index membership; `live()` is an index walk.
+
+Post-fix: exponents ≈ 0 (noise band −0.55..0.14 across all steps),
+ins ≈ 2µs, del ≈ 4.5µs at every N through 256k — ~1,500–3,000× at
+the top size, and flat.
+
+Two index bugs found by the suite en route (both classic, both
+worth remembering): the upsert path changed a node's length without
+recomputing its subtree totals (stale totals → wrong prefix sums);
+and `find_by_offset` failed to rebase the offset when descending
+into a right subtree (compared a global offset against a local
+span). Armor for the second: the acceptance tests catch it
+immediately (offset underflow / wrong unit split).
+
+Structural-impossibility armor added: `edits_elsewhere_never_move_
+addresses` — a live unit's address, dot, and content are immutable
+under an edit storm elsewhere in the document. Spans anchored to
+addresses need no migration code, so the F5/F8 class (quadratic
+link-span migration, spans never migrated on insert-only deltas)
+cannot exist on this substrate by construction.
+
+Full lib suite 3,249 green. Next: Phase 3 — multi-writer views on
+one document through the real server path, then the migration
+decision (per-work dual-write).
+
+### P3: multi-writer views — PASSED (2026-08-30)
+
+`MultiWriter` (lattice_sim.rs): the lattice serving concurrent
+sessions the way the O-tree server does — per-session VIEWS (last-
+known state), deltas positioned against the owning session's view,
+no three-way merge. Mechanism:
+
+- Inserts mint dots from the session's author id + per-session
+  counter; the address suffix IS the dot, so concurrent inserts at
+  one anchor converge to the same interleaving regardless of
+  delivery order.
+- Deletes carry the session's SEEN-SET (live dots + root ranges
+  between the boundary addresses) as causal context: concurrent
+  unseen content survives (OR-set rule); concurrently-derived parts
+  trim against the culls. Correct even when the shared doc split
+  those units differently — culls carry the intent, dots the
+  context.
+- View-side splits mirror deterministically into the shared doc
+  (same root ranges mint the same part dots).
+
+Phase 3 armor found two real bugs — both ordering-class, both in
+the seam the armor was written for:
+
+1. **Straddle ordering**: an insert anchored at (root, o) sorted
+   AFTER a live part (s, e) with s < o < e — the part sorts by its
+   start and swallows the insert whole. The shared doc's refinement
+   didn't include the boundary because `mirror_split` found the
+   *root* already dead (split elsewhere) and skipped. Fix:
+   `ensure_root_boundary` — probe-pred the covering part by address
+   and split it before inserting. The invariant: no live part
+   straddles an insert's anchor offset.
+2. **Key-space collision**: insert suffix (offset, author, counter)
+   vs part (start, end) misorders when author > end (author ids are
+   unbounded, range ends are ≤ N). Fix: doubled offset — inserts key
+   as [root.., o, o, author, counter], strictly between parts ending
+   at o and parts starting at o.
+
+Armor (all green):
+- `multi_writer_interleaved_matches_otree` — two sessions,
+  insert/insert/delete-vs-own-view/sync/insert; EXACT match with
+  the O-tree server's merged text.
+- `multi_writer_concurrent_delete_vs_insert_semantics` — the
+  F6-territory probe: delete-range vs concurrent insert INSIDE the
+  range. Lattice "012X789"; O-tree probed in BOTH delivery orders —
+  also "012X789". The models AGREE on this interaction class; no
+  divergence to record.
+- `multi_writer_three_sessions_delivery_order_independent` — six
+  inserts across three writers, two delivery orders, identical text.
+- `multi_writer_chaos_converges_across_delivery_orders` — fixed-seed
+  pseudo-random insert/delete/sync script, two delivery orders,
+  convergence.
+
+Bench unchanged (flat, exponents ≤ 0.10). Full lib suite 3,253
+green. Remaining: Phase 4 — migration (per-work dual-write, then
+cutover, with rollback).
+
+### P4 slice 1: dual-write shadow — LIVE (2026-08-30)
+
+The lattice now runs inside the real server, mirroring production
+edit traffic. Default-off, inert unless enabled AND enrolled:
+
+- `MultiWriter` promoted from the simulator to
+  `space/lattice_multi.rs` (production import path; `LatOp` moved
+  with it, re-exported by lattice_sim).
+- Server: `enable_lattice_shadow()` (flag), per-work
+  `enroll_lattice_shadow()` (seeds from the CURRENT text),
+  `lattice_shadow_text/ops` (telemetry), `clear_lattice_shadows()`
+  (rollback). The `crdt_apply_text_delta` chokepoint mirrors every
+  delta into enrolled shadows: apply-then-sync per session,
+  mirroring the O-tree's `session_bases` update. Late-joining
+  sessions get a view at `crdt_open_session` time (mirroring the
+  O-tree's open-time base seeding).
+- Shadows are EPHEMERAL: no persistence, no wire changes, no
+  influence on the live path. Restore/re-enroll rebuilds from live
+  text. Rollback is dropping them — nothing else to undo.
+
+Armor (4 tests, server.rs): `lattice_shadow_tracks_otree_multi_
+session` asserts shadow text == `crdt_current_text` after EVERY
+delta across five interleaved steps (concurrent inserts,
+delete-vs-own-view, prefix insert, range delete);
+`lattice_shadow_off_by_default`; `lattice_shadow_rebuild_after_
+clear`; `lattice_shadow_late_session_join`.
+
+The armor caught two real mirror bugs before they could ship:
+
+1. **View-staleness semantics.** Unknown-author views fell back to
+   the CURRENT shared state — but the O-tree keeps a session's base
+   STALE until its own next op. That staleness is what makes
+   concurrent deltas concurrent: with the fallback, s2's
+   "retain 7" indexed a merged view and landed 4 chars off. Fix:
+   views are created at enrollment/open, never sync-on-first-apply.
+2. **Random session ids in addresses.** Session ids are opaque
+   random u64s; cast into address numbers they go negative, and
+   ordering by them is noise (a later session sorted BEFORE an
+   earlier insert at the same anchor). Fix: MultiWriter maps
+   sessions to dense join-order author ids for dots and addresses.
+
+Full lib suite 3,257 green; clippy/fmt clean; lattice bench
+unchanged (the shadow rides the same flat path).
+
+P4 slice 2 (next): `--lattice-shadow` run flag in xudanu-server,
+admin/wire enrollment ops, persistence decision for the enrollment
+set, soak criteria (shadow-==-live continuously over N ops of real
+traffic shape), then the cutover decision per work.
+
 ## Phasing (decision gates, not commitments)
 
 - **Phase 0 — research (1–2 sessions):** answer questions 1–3 on

@@ -414,6 +414,38 @@ Extend `xudanu-robots`:
 - Optional CI smoke: one small-N run of the micro-harness with
   generous thresholds, so gross regressions surface in PRs.
 
+## Results ledger (2026-08-30)
+
+The registry this FR kept asking for now exists:
+`docs/bench/results.jsonl` — append-only, committed, one JSONL
+record per scenario per run (`xudanu-bench` appends automatically;
+`xudanu-bench report` prints side-by-side engine/variant
+comparisons, trends, and the XPI). Seeded with the recorded
+findings-history (F1/F2/F5 pre/post-fix) and the FR-51 lattice
+pre/post-LiveIndex runs, so look-back starts populated rather than
+at zero.
+
+- **Record**: ts/git/env/harness_rev/engine/variant/scenario/ref_n/
+  points/steps/max_exp/us_at_ref/proj_1m. `env` distinguishes
+  dev-mac (directional) from aws-official (governance comparisons).
+- **XPI** (blended index): per engine+variant, geometric mean
+  across scenarios of the projected 1M-char cost
+  `mean(ins,del)@ref_n × (1M/ref_n)^max(0, max_exp)` — flat curves
+  project unchanged, non-flat extrapolate their measured exponent.
+  The penalty is explicit; per-scenario rows remain the regression
+  surface, XPI is the headline.
+- **Variants are the trade-off axis**: the same engine appears
+  under multiple variants (otree/fingerprint vs posmap; lattice/
+  hashmap-sort vs liveindex) — the ledger is how "which way of
+  using the Gold infrastructure pays off where" gets decided with
+  numbers instead of intuition.
+- Harness contract unchanged (rev 2); scenario labels follow what
+  rev-2 actually measures (otree edits at n≤16k run WITH 32 links —
+  recorded as keystroke-linked-32, not keystroke-flat).
+- Planned (P4 slice 2): the dual-engine run — one process, one
+  traffic stream, O-tree and lattice shadow both timed per op;
+  official numbers on the AWS instance.
+
 ## Success criteria
 
 - Every row of the mechanism table has a measured curve and a
