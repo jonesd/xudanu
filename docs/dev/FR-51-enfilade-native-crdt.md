@@ -190,6 +190,85 @@ close FR-51 with the recorded reason. Either outcome commits.
 - Nothing is rewritten during Phase 0 — reading, tables, and one
   design note. Code stays on the finding-9 fix and the audit queue.
 
+### Session C results — the lattice design note (2026-08-30)
+
+**Decision 1 — Element granularity: span-units, split-on-interior-edit.**
+Units are ephemeral spans, not per-character tumblers. An insert of
+"hello" is ONE unit; an edit inside it splits it. This matches Gold
+(the enfilade stores ranges) and our O-tree (the neighborhood splice
+IS split-on-interior-edit). Churn: retyping does not mint per-char
+addresses; a keystroke extends or splits a small number of units.
+Bounded by amortized coalescing (Decision 5).
+
+**Decision 2 — Ordering: Sequence-native via deepening allocation.
+No RGA anchors.** Each unit's address is a Sequence allocated in the
+gap between its neighbors (the live `allocate_between` family). When
+a gap exhausts, new units go one level DEEPER (.5.3.10 →
+.5.3.10.0.1) — never renumbered. Concurrent inserts from different
+servers mint in the same gap at server-scoped deeper addresses
+(`from_numeric(server_id, ...)` — Gold's `iDsFromServer` allocation
+pattern, Session A). **The address IS the total order**
+(`Sequence.compare_to`); no anchors, no timestamps, no tiebreak
+rules. This is Gold's widening invariant, applied to concurrency.
+
+**Decision 3 — Deletes: region-tombstones with causal context.**
+A delete names a RANGE (a SequenceRegion) plus its causal context —
+it tombstones every unit in the region KNOWN to the deleter.
+Unseen concurrent inserts survive (the OR-set pattern, generalized
+to regions via `SequenceRegion.intersect` — the algebra exists and
+is tested). Later inserts into a deleted range are untouched (their
+addresses postdate the context). No "delete of unseen insert"
+ambiguity: the context resolves it mechanically. Per-author
+precedence is preserved structurally — every unit carries its author
+(placed_by, Gold's pattern), so attribution/permissions ride the
+units.
+
+**Decision 4 — Acceptance protocol.**
+The oracle: record op streams from the LIVE O-tree (bench patterns
++ the six armor scenarios + multi-session flows), emit as JSONL,
+replay through a lattice simulator with SHUFFLED delivery across two
+replicas, render, compare. Exact-text match for merge-compatible
+streams; every divergence is either a lattice fix or a documented
+acceptable difference. The armor tests are the behavior spec.
+
+**Decision 5 — Churn economics: amortized coalescing.**
+Adjacent, causally-compatible units merge on quiescence (the FR-34
+"inline coalesce" item is this, already listed). Steady-state live
+set ≈ O(content), not O(edits). Address depth grows only at
+contention points (never exhausts — hierarchical). Phase 1 spike
+MEASURES mint rate; the gate holds if a typing burst's live-set
+growth is sublinear in keystrokes.
+
+**Q3 (projection API) — answered by Session B:** consumers keep
+positions; `DocumentArrangement` is the bidirectional API; spans,
+links, and annotations anchor TUMBLERS — the migration family
+(findings 1/5/8/8b) becomes structurally impossible, not guarded.
+
+**Q5 (federation dividend):** replica sync = crum-diff over the
+unit set (FR-34 infrastructure); op streams are a client of the same
+state, not a separate protocol.
+
+## VERDICT: PROCEED TO PHASE 1
+
+The lattice is designed from existing, tested pieces: Sequence
+ordering (B), deepening allocation (B: allocator live), region
+tombstones over the region algebra (B: `prefixed_by`/`intersect`
+tested), unit identity by crum + author (A: Gold's triple-crum
+pattern; B: FR-34 crums live). No mechanism requires invention; the
+assembly requires proof. Phase 1 worklist (the three missing pieces
+from Session B, in order):
+
+1. **Unit store + live-set + region-tombstones** over the Sequence
+   algebra (the substrate's state — pure data structure, no I/O)
+2. **Op-stream recorder** on the O-tree (JSONL emit; the oracle)
+3. **Lattice simulator** (replays streams, shuffles delivery,
+   renders) — then the acceptance run
+
+Success criterion from FR-51 unchanged: the FR-50 matrix on the
+substrate shows flat curves, and finding-classes 1/4/5/6 are
+structurally impossible (the migration code does not exist to
+regress).
+
 ## Phasing (decision gates, not commitments)
 
 - **Phase 0 — research (1–2 sessions):** answer questions 1–3 on
