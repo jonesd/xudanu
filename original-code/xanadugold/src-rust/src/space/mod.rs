@@ -3,6 +3,7 @@ mod cross;
 mod cross_n;
 mod filter;
 pub mod integer;
+pub mod lattice;
 pub mod mapping;
 mod order;
 pub mod position_allocator;

@@ -95,6 +95,15 @@ impl Sequence {
         self.numbers.len()
     }
 
+    /// Extend with two path elements — the lattice's collision-free
+    /// concurrent allocation shape (FR-51 Phase 1).
+    pub fn append_pair(&self, a: i64, b: i64) -> Self {
+        let mut nums = self.numbers.to_vec();
+        nums.push(a);
+        nums.push(b);
+        Sequence::from_numbers(nums)
+    }
+
     pub fn shifted(&self, offset: i64) -> Self {
         Sequence {
             shift: self.shift + offset,
