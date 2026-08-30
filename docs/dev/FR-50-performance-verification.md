@@ -221,6 +221,31 @@ fallback takes the merge path with session edits landing.
 
 Suite: 3,225 green.
 
+## Findings 8 and 8b: link spans never migrated on insert-only deltas (2026-08-30)
+
+Written per rule 3 (armor for the finding-5 window guard), the tests
+immediately exposed two latent CORRECTNESS bugs in span migration —
+the heuristic-vs-exact class, severity-correctness:
+
+- **Finding 8:** `map_span_through_delta` built its mapping from
+  retained parts only. Insert-only deltas — `[Retain(k), Insert]`
+  with no trailing retain, the common client shape — had all-zero
+  retained offsets, hit the identity shortcut, and mapped every span
+  to itself. **Links after a plain insert never shifted.** Fixed:
+  the tail beyond the last op carries the final displacement.
+- **Finding 8b:** multi-ended links homed to a single work appear
+  once per end in `work_to_links`; the migration loop processed them
+  twice — double-shifting spans the moment 8 was fixed (the two bugs
+  masked each other). Fixed: dedupe.
+
+Both shipped with the four armor tests that caught them (outside/
+before/inside window behavior + shared-content unregister
+preservation). Suite 3,229.
+
+**The pattern, third occurrence:** writing the armor for a
+performance fix found correctness bugs the functional suite never
+saw. Rule 3 is now empirically load-bearing, not just doctrine.
+
 ## Phase 1 — micro-harness (Big-O curves)
 
 A `xudanu-bench` binary (or `xudanu-robots bench` subcommand):
