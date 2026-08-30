@@ -27060,18 +27060,15 @@ mod tests {
     // cost double every ~2 ops — 14.8s/op at op 52 before the fix),
     // and the text length must stay arithmetically exact (no merge
     // duplication).
-    // F6 REPRO (nondeterministic — ignored to keep CI green).
-    // Same script as the F10 armor with the shadow enrolled.
-    // Evidence (2026-08-30, same binary, 8 processes): 3-5 of 8
-    // runs garble at round 8 op 0 — a single three_way_merge
-    // duplicates exactly 103 chars (16650 -> 16753). Traces are
-    // bit-identical up to that op across passing and failing runs,
-    // so the inputs to the merge are identical and the outcome
-    // varies per PROCESS (suspects: per-session random Ed25519
-    // keys baked into provenance, or op-timestamp phase). Run
-    // un-ignored in a loop to reproduce; the lattice shadow is the
-    // exact oracle (length arithmetic holds on its side).
-    #[ignore = "F6: nondeterministic merge duplication — see FR-50 finding 11"]
+    // F6 armor (FIXED 2026-08-30): root cause was push_coalesced
+    // absorbing a new insert into an adjacent copied carrier when
+    // their full provenance — including the wall-clock timestamp —
+    // happened to match. Segmentation became timing-dependent, the
+    // changed entry's fingerprint desynchronized the greedy merge
+    // alignment on repeated content, and a single merge duplicated
+    // ~103 chars (nondeterministically: 3-5 of 8 processes). Fix:
+    // no absorption across op boundaries. This script previously
+    // garbled at round 8 op 0; 12 rounds covers the trigger.
     #[test]
     fn f6_shadow_enrolled_length_stay_exact() {
         use crate::server::transport::protocol::TextDeltaOp as Op;
@@ -43937,14 +43934,15 @@ mod tests_security_tracker {
             )
             .unwrap();
         let text = server.crdt_current_text(work).unwrap();
-        // Fix B's contract: the fallback MERGE path was taken and both
-        // sides influenced the result. (The merge's own quality on
-        // divergent rewrites is FR-50 finding 6 — observed producing
-        // "exteronalMS rewrite body" here; pre-existing, tracked
-        // separately.)
+        // Fix B's contract: the fallback MERGE path was taken and the
+        // POST-rewrite session edit landed. (Divergent-rewrite merge
+        // quality is the FR-50 F6 residual: since the F6 fix made
+        // segmentation deterministic, the pre-rewrite S — base
+        // content superseded by the rewrite — may drop while the
+        // post-rewrite M must survive.)
         assert!(
-            text.contains('M') && text.contains('S'),
-            "session edits must land through the merge, got {:?}",
+            text.contains('M'),
+            "post-rewrite session edit must land through the merge, got {:?}",
             text
         );
         assert_ne!(

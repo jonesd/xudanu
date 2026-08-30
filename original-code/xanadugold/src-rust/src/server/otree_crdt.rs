@@ -295,37 +295,68 @@ fn split_text_carrier(carrier: &Carrier, start: usize, end: usize) -> Option<Car
     }
 }
 
-fn push_coalesced(entries: &mut Vec<(i64, Arc<Carrier>)>, pos: &mut i64, carrier: Carrier) {
-    if *pos > 0 {
-        if let Some(last) = entries.last_mut() {
-            if last.0 + 1 == *pos
-                && last.1.provenance == carrier.provenance
-                && last.1.label == carrier.label
-            {
-                if let (
-                    RangeElement::Text { text: last_text },
-                    RangeElement::Text { text: new_text },
-                ) = (&last.1.element, &carrier.element)
-                {
-                    let combined = format!("{}{}", last_text, new_text);
-                    let mut merged = Carrier::new(RangeElement::text(combined));
-                    merged.label = carrier.label.clone();
-                    merged.provenance = carrier.provenance.clone();
-                    last.1 = Arc::new(merged);
-                    return;
+/// Output builder for delta application. Absorption (merging an
+/// insert into the preceding entry) is allowed ONLY into entries
+/// CREATED by the current op — never into copied base carriers.
+/// FR-50 finding 6/11: absorbing into a copied carrier when their
+/// full provenance (including the wall-clock timestamp) happened to
+/// match made segmentation timing-dependent — the same script
+/// produced different editions per process, and the changed
+/// entry's fingerprint desynchronized the merge alignment into
+/// content duplication. It also rewrote the original carrier's
+/// provenance to the new op's timestamp (attribution skew).
+/// Within-op absorption is deterministic (one provenance per apply
+/// call) and preserved.
+struct OutBuilder {
+    entries: Vec<(i64, Arc<Carrier>)>,
+    pos: i64,
+    /// Entries from this index on were created by the current op.
+    created_from: usize,
+}
+
+impl OutBuilder {
+    fn new() -> Self {
+        OutBuilder {
+            entries: Vec::new(),
+            pos: 0,
+            created_from: 0,
+        }
+    }
+
+    fn push_copied(&mut self, carrier: Carrier) {
+        self.entries.push((self.pos, Arc::new(carrier)));
+        self.pos += 1;
+        self.created_from = self.entries.len();
+    }
+
+    fn push_created(&mut self, carrier: Carrier) {
+        if self.entries.len() > self.created_from {
+            if let Some(last) = self.entries.last_mut() {
+                if last.1.provenance == carrier.provenance && last.1.label == carrier.label {
+                    if let (
+                        RangeElement::Text { text: last_text },
+                        RangeElement::Text { text: new_text },
+                    ) = (&last.1.element, &carrier.element)
+                    {
+                        let combined = format!("{}{}", last_text, new_text);
+                        let mut merged = Carrier::new(RangeElement::text(combined));
+                        merged.label = carrier.label.clone();
+                        merged.provenance = carrier.provenance.clone();
+                        last.1 = Arc::new(merged);
+                        return;
+                    }
                 }
             }
         }
+        self.entries.push((self.pos, Arc::new(carrier)));
+        self.pos += 1;
     }
-    entries.push((*pos, Arc::new(carrier)));
-    *pos += 1;
 }
 
 fn flush_batched_insert_coalesced(
     pending: &mut String,
     prov: &Option<ElementProvenance>,
-    entries: &mut Vec<(i64, Arc<Carrier>)>,
-    pos: &mut i64,
+    out: &mut OutBuilder,
 ) {
     if pending.is_empty() {
         return;
@@ -340,7 +371,7 @@ fn flush_batched_insert_coalesced(
                 Some(p) => carrier.with_provenance(p.clone()),
                 None => carrier,
             };
-            push_coalesced(entries, pos, carrier);
+            out.push_created(carrier);
             start = i + ch.len_utf8();
         }
     }
@@ -351,7 +382,7 @@ fn flush_batched_insert_coalesced(
             Some(p) => carrier.with_provenance(p.clone()),
             None => carrier,
         };
-        push_coalesced(entries, pos, carrier);
+        out.push_created(carrier);
     }
 }
 
@@ -406,9 +437,8 @@ fn walk_clamped(
     ops: &[TextDeltaOp],
     start_char: usize,
     prov: &Option<ElementProvenance>,
-    out: &mut Vec<(i64, Arc<Carrier>)>,
+    out: &mut OutBuilder,
 ) -> (usize, usize, i64) {
-    let mut local_pos = 0i64;
     let mut old_char_pos = start_char;
     let mut current_entry_idx = 0usize;
     let mut pending_insert = String::new();
@@ -416,7 +446,7 @@ fn walk_clamped(
     for op in ops {
         match op {
             TextDeltaOp::Retain { count } => {
-                flush_batched_insert_coalesced(&mut pending_insert, prov, out, &mut local_pos);
+                flush_batched_insert_coalesced(&mut pending_insert, prov, out);
                 let target_char_pos = old_char_pos + *count as usize;
 
                 while old_char_pos < target_char_pos {
@@ -428,8 +458,7 @@ fn walk_clamped(
                     let entry_len = entry.1.char_len();
 
                     if entry_len == 0 {
-                        out.push((local_pos, entry.1.clone()));
-                        local_pos += 1;
+                        out.push_copied((*entry.1).clone());
                         current_entry_idx += 1;
                         continue;
                     }
@@ -440,11 +469,11 @@ fn walk_clamped(
                     let take = remaining.min(available);
 
                     if within == 0 && take == entry_len {
-                        push_coalesced(out, &mut local_pos, (*entry.1).clone());
+                        out.push_copied((*entry.1).clone());
                     } else if let Some(carrier) =
                         split_text_carrier(&entry.1, within, within + take)
                     {
-                        push_coalesced(out, &mut local_pos, carrier);
+                        out.push_copied(carrier);
                     }
 
                     old_char_pos += take;
@@ -454,7 +483,7 @@ fn walk_clamped(
                 }
             }
             TextDeltaOp::Delete { count } => {
-                flush_batched_insert_coalesced(&mut pending_insert, prov, out, &mut local_pos);
+                flush_batched_insert_coalesced(&mut pending_insert, prov, out);
                 let target_char_pos = old_char_pos + *count as usize;
                 while old_char_pos < target_char_pos {
                     if current_entry_idx >= entries.len() {
@@ -482,7 +511,7 @@ fn walk_clamped(
         }
     }
 
-    flush_batched_insert_coalesced(&mut pending_insert, prov, out, &mut local_pos);
+    flush_batched_insert_coalesced(&mut pending_insert, prov, out);
 
     // Ops exhausted mid-entry: emit the remainder of the partially
     // consumed entry (historical trailing-split behavior).
@@ -495,13 +524,13 @@ fn walk_clamped(
                 within,
                 entries[current_entry_idx].1.char_len(),
             ) {
-                push_coalesced(out, &mut local_pos, carrier);
+                out.push_copied(carrier);
             }
             current_entry_idx += 1;
         }
     }
 
-    (current_entry_idx, old_char_pos, local_pos)
+    (current_entry_idx, old_char_pos, out.pos)
 }
 
 /// The historical flatten-walk-rebuild path. Still the fallback for
@@ -515,20 +544,18 @@ fn apply_text_delta_to_edition_bulk(
     let old_entries = edition.cached_entries().clone();
     let starts = edition.cached_char_starts().to_vec();
 
-    let mut new_entries: Vec<(i64, Arc<Carrier>)> =
-        Vec::with_capacity(old_entries.len() + ops.len());
+    let mut out = OutBuilder::new();
 
-    let (consumed, _, mut local_pos) =
-        walk_clamped(&old_entries, &starts, ops, 0, prov, &mut new_entries);
+    let (consumed, _, _) = walk_clamped(&old_entries, &starts, ops, 0, prov, &mut out);
 
     // Suffix: remaining entries copied verbatim, continuing the dense
-    // numbering and coalescing.
+    // numbering. Copied carriers never absorb (FR-50 F6/F11).
     for entry in &old_entries[consumed.min(old_entries.len())..] {
-        push_coalesced(&mut new_entries, &mut local_pos, (*entry.1).clone());
+        out.push_copied((*entry.1).clone());
     }
 
     let result = {
-        let ed = Edition::from_entries(new_entries);
+        let ed = Edition::from_entries(out.entries);
         tracing::debug!(
             "[apply_delta] bulk path: old_entries={} result_entries={} ops={} elapsed_ms={:.3}",
             old_entries.len(),
@@ -722,7 +749,7 @@ fn try_apply_delta_fast(
     // Walk the neighborhood only, starting at its first entry.
     let hood_entries = &entries[i0.min(n)..i1.max(i0).min(n)];
     let hood_starts = &starts[i0.min(n)..i1.max(i0).min(n)];
-    let mut hood: Vec<(i64, Arc<Carrier>)> = Vec::with_capacity(touched + ops.len());
+    let mut hood = OutBuilder::new();
     walk_clamped(
         hood_entries,
         hood_starts,
@@ -731,11 +758,11 @@ fn try_apply_delta_fast(
         prov,
         &mut hood,
     );
-    if hood.len() > touched + ops.len() * 4 + 64 {
+    if hood.entries.len() > touched + ops.len() * 4 + 64 {
         return None;
     }
 
-    assemble_fast_result(edition, i0.min(n), i1.min(n), hood)
+    assemble_fast_result(edition, i0.min(n), i1.min(n), hood.entries)
 }
 
 /// Assign stable positions to the replacement neighborhood and assemble
@@ -1362,6 +1389,24 @@ impl OtreeCrdtManager {
         let text = wd.current_edition.to_text();
         *wd.cached_text.lock().unwrap_or_else(|e| e.into_inner()) = Some(text.clone());
         Ok(text)
+    }
+
+    /// Debug: a session's current base edition (F6 bracket).
+    pub fn debug_session_base(&self, work_id: BeId, session_id: SessionId) -> Option<Edition> {
+        self.docs
+            .get(&work_id)
+            .and_then(|wd| wd.session_bases.get(&session_id).cloned())
+    }
+
+    /// Debug: a session's registered author identity (F6 bracket).
+    pub fn debug_author_key(
+        &self,
+        work_id: BeId,
+        session_id: SessionId,
+    ) -> Option<OtreeAuthorIdentity> {
+        self.docs
+            .get(&work_id)
+            .and_then(|wd| wd.author_keys.get(&session_id).cloned())
     }
 
     pub fn current_edition(&self, work_id: BeId) -> Result<Edition, OtreeError> {
@@ -3462,9 +3507,21 @@ mod tests {
         assert!(text.contains("[edited by A]"), "A's edit must survive");
         assert!(text.contains("[edited by B]"), "B's edit must survive");
         assert!(text.contains("[edited by C]"), "C's edit must survive");
+        // B retains (line2_start + 8) — exactly between "Line two"
+        // and its period; C likewise on line three. The merged
+        // placement now honors the op offsets exactly (previously
+        // the merge approximated past the period).
         assert!(text.contains("Line one."), "line 1 preserved");
-        assert!(text.contains("Line two."), "line 2 preserved");
-        assert!(text.contains("Line three."), "line 3 preserved");
+        assert!(
+            text.contains("Line two [edited by B]."),
+            "line 2 at op offset: {:?}",
+            text
+        );
+        assert!(
+            text.contains("Line three [edited by C]."),
+            "line 3 at op offset: {:?}",
+            text
+        );
     }
 
     #[test]

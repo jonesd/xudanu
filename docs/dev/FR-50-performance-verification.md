@@ -361,6 +361,44 @@ comments; next step is a captured-input replay loop to bracket
 inside three_way_merge vs upstream edition construction. The
 lattice shadow remains the exact oracle.
 
+**Finding 11 ROOT CAUSE FOUND and the duplication FIXED (same day).**
+The capture-and-replay bracket settled it: `three_way_merge` itself
+is deterministic (200× identical per process); what varied was the
+AUTHOR EDITION — `push_coalesced` absorbed a session's insert into
+an adjacent COPIED base carrier whenever their full provenance —
+including the wall-clock timestamp — compared equal. Same second:
+absorbed (entry fingerprint changes → the greedy fingerprint-cursor
+alignment desynchronizes on repeated content → ~103-char
+duplication). Different second: separate entry, clean merge. The
+same script produced different editions per process — that was the
+entire nondeterminism.
+
+Fix: `OutBuilder` — absorption is allowed ONLY into entries created
+by the current op (one provenance per apply call: deterministic),
+never into copied base carriers (which also fixes a silent
+attribution skew: absorption rewrote the original carrier's
+provenance to the new op's timestamp). 10/10 bracket runs now
+produce bit-identical editions and clean merges; armor
+`f6_shadow_enrolled_length_stay_exact` un-ignored (12 rounds).
+
+Two test contracts updated to the deterministic behavior:
+`test_three_users_concurrent_edits` (the merged placement now
+honors op offsets exactly — B's insert lands between "two" and its
+period, per the retain count — where the old merge approximated
+past it) and `fix_50_origin_guard_falls_back_after_external_write`
+(the pre-rewrite S, base content superseded by a divergent rewrite,
+may drop; the post-rewrite M must survive).
+
+**F6 residual (open):** on long interleaved scripts the shadow and
+the O-tree are now both length-exact but still diverge in the
+PLACEMENT of concurrent inserts around disjoint edit ranges
+(shadow: root-anchored by construction; O-tree: placed by the
+fingerprint-alignment mapping). For disjoint concurrent edits the
+transform is unambiguous — one engine misplaces; suspect the
+O-tree. Deterministic repro: the dual-engine bench (first diff at
+~mid-document, stable across runs). That adjudication is the
+remaining F6 work.
+
 ## Phase 1 — micro-harness (Big-O curves)
 
 A `xudanu-bench` binary (or `xudanu-robots bench` subcommand):
