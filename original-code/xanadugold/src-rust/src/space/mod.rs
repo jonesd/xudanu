@@ -6,6 +6,7 @@ pub mod integer;
 pub mod lattice;
 pub mod lattice_multi;
 pub mod lattice_sim;
+pub mod lattice_sync;
 pub mod mapping;
 mod order;
 pub mod position_allocator;

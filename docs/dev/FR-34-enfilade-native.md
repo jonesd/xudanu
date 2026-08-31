@@ -98,6 +98,7 @@ provenance, federation, web platform).
 | Bloom filter federation | **Active** (33 tests) | N/A (trust-based) |
 | Subtree crums on the lattice LiveIndex | **Active** (2026-08-31): BLAKE3 over (leaf identity, child crums), maintained by fix() through rotations; canonical sorted rebuild makes equality EXACT; crum-diff descent prunes identical bulk; `pull_from` is the targeted-sync primitive; `MultiWriter::sync_with` reconciles independent instances bidirectionally | OCs on every node |
 | Crum-based targeted sync | **Active**: diff → only-other dots + tombstones payload; convergence armor (crum + text) in lattice tests | Gold's crum-compare sync, minus the wire format |
+| Crum anti-entropy protocol | **Active** (2026-08-31): `space/lattice_sync.rs` — wire-agnostic crum exchange (idle rounds free), targeted pull payloads, bounded rounds. Armor: convergence both directions, payload proportionality (<10% of full state for a small edit on 192k), idempotent re-round free | Gold's crum-compare sync, protocol layer done; transport adoption pending |
 | Crum fast paths in the merge pipeline | **Active** (2026-08-31): `same_content` O(1) on identical trees; `build_merge_mapping` returns Simple identity on crum-equal inputs (the merge arms' a->a / b->b clone mappings were a full O(N) fingerprint walk producing N sub-mappings); `LatticeDoc::merge` skips the rebuild when nothing was unioned (idempotent gossip delivery) | OC comparison discipline |
 
 

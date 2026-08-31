@@ -166,6 +166,39 @@ impl MultiWriter {
         self.apply_ns
     }
 
+    /// One-directional crum diff: dots LIVE in `other` that self
+    /// lacks (the anti-entropy pull list).
+    pub fn diff_against(&mut self, other: &mut MultiWriter) -> Vec<Dot> {
+        // Dots live in `other` that self lacks: self's diff view of
+        // other (only_other).
+        self.doc.diff_public(&mut other.doc)
+    }
+
+    /// Pull specific units (plus all tombstones) from `other` —
+    /// the anti-entropy apply step.
+    pub fn pull_units_from(&mut self, other: &MultiWriter, dots: &[Dot]) {
+        self.doc.pull_from(&other.doc, dots);
+    }
+
+    /// Estimated wire bytes for the given unit dots (content +
+    /// per-unit overhead) — payload accounting for anti-entropy.
+    pub fn units_bytes_for(&self, dots: &[Dot]) -> usize {
+        self.doc.units_bytes_for(dots)
+    }
+
+    /// Estimated bytes of the FULL state (all units + tombstones) —
+    /// the proportionality baseline.
+    pub fn full_state_bytes(&self) -> usize {
+        self.doc.full_state_bytes()
+    }
+
+    /// Adopt another instance's entire state (test scaffolding for
+    /// setting up divergent replicas sharing history).
+    pub fn import_state_from(&mut self, other: &MultiWriter) {
+        let all = other.doc.all_live_dots_public();
+        self.doc.pull_from(&other.doc, &all);
+    }
+
     /// FR-34 federation reconcile: bidirectional crum-diff sync —
     /// each side pulls exactly the units it lacks plus the other's
     /// tombstones. Converges both replicas (canonical crums equal).

@@ -1095,6 +1095,37 @@ impl LatticeDoc {
         self.rebuild_index();
     }
 
+    /// Dots live in `other` and not in self (public diff list).
+    pub fn diff_public(&mut self, other: &mut LatticeDoc) -> Vec<Dot> {
+        self.crum_diff(other).only_other
+    }
+
+    /// All live dots (state-transfer helper).
+    pub fn all_live_dots_public(&self) -> Vec<Dot> {
+        self.live().iter().map(|u| u.dot).collect()
+    }
+
+    /// Estimated wire bytes for specific unit dots.
+    pub fn units_bytes_for(&self, dots: &[Dot]) -> usize {
+        dots.iter()
+            .map(|d| {
+                self.units
+                    .get(d)
+                    .map(|u| u.content.len() + 96)
+                    .unwrap_or(96)
+            })
+            .sum()
+    }
+
+    /// Estimated full-state bytes (all units + tombstones).
+    pub fn full_state_bytes(&self) -> usize {
+        self.units
+            .values()
+            .map(|u| u.content.len() + 96)
+            .sum::<usize>()
+            + self.tombstones.len() * 64
+    }
+
     /// Memory telemetry: (units, tombstones, total content bytes,
     /// live content bytes).
     pub fn memory_estimate(&self) -> (usize, usize, usize, usize) {
