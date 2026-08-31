@@ -1322,6 +1322,30 @@ impl OrglRoot {
         }
     }
 
+    /// FR-34 recorders: visit carriers whose content differs between
+    /// two editions — parallel subtree descent pruning equal crums,
+    /// so identical bulk costs O(1). `visit(carrier, true)` = only
+    /// in self (removed); `(carrier, false)` = only in other
+    /// (added). Dsp offsets don't affect content identity.
+    pub fn crum_diff_visit(
+        &self,
+        other: &OrglRoot,
+        visit: &mut dyn FnMut(&super::range_element::Carrier, bool),
+    ) {
+        match (&self.inner, &other.inner) {
+            (OrglInner::Empty, OrglInner::Empty) => {}
+            (OrglInner::Empty, OrglInner::Actual { loaf, .. }) => {
+                visit_loaf_all(loaf, visit, false);
+            }
+            (OrglInner::Actual { loaf, .. }, OrglInner::Empty) => {
+                visit_loaf_all(loaf, visit, true);
+            }
+            (OrglInner::Actual { loaf: a, .. }, OrglInner::Actual { loaf: b, .. }) => {
+                visit_loaf_pair(a, b, visit)
+            }
+        }
+    }
+
     pub fn crum(&self) -> Option<Crum> {
         match &self.inner {
             OrglInner::Empty => None,
@@ -2448,5 +2472,94 @@ mod tests {
             prop_assert_eq!(back, Some(position), "roundtrip must recover position");
             prop_assert!(arr.owns_tumbler(&tumbler), "arrangement must own the tumbler");
         }
+    }
+}
+
+fn visit_loaf_all(
+    loaf: &Loaf,
+    visit: &mut dyn FnMut(&super::range_element::Carrier, bool),
+    removed: bool,
+) {
+    match loaf {
+        Loaf::Leaf { entries, .. } => {
+            for (_, c) in entries {
+                visit(c, removed);
+            }
+        }
+        Loaf::Split {
+            in_child,
+            out_child,
+            ..
+        } => {
+            visit_loaf_all(in_child, visit, removed);
+            visit_loaf_all(out_child, visit, removed);
+        }
+        Loaf::Dsp { child, .. } => visit_loaf_all(child, visit, removed),
+    }
+}
+
+fn visit_loaf_pair(
+    a: &Loaf,
+    b: &Loaf,
+    visit: &mut dyn FnMut(&super::range_element::Carrier, bool),
+) {
+    if a.compute_crum() == b.compute_crum() {
+        return;
+    }
+    match (a, b) {
+        (Loaf::Leaf { entries: ea, .. }, Loaf::Leaf { entries: eb, .. }) => {
+            // Common prefix/suffix trim by content fingerprint: the
+            // visitor feeds content-keyed indexes, so matched pairs
+            // cancel exactly. Single-leaf editions (from_text) get
+            // proportional visits without subtree structure.
+            let fa = |i: usize| ea[i].1.element.content_fingerprint();
+            let fb = |i: usize| eb[i].1.element.content_fingerprint();
+            let mut pre = 0usize;
+            while pre < ea.len() && pre < eb.len() && fa(pre) == fb(pre) {
+                pre += 1;
+            }
+            let mut suf = 0usize;
+            while suf < ea.len().saturating_sub(pre)
+                && suf < eb.len().saturating_sub(pre)
+                && fa(ea.len() - 1 - suf) == fb(eb.len() - 1 - suf)
+            {
+                suf += 1;
+            }
+            for (_, c) in &ea[pre..ea.len() - suf] {
+                visit(c, true);
+            }
+            for (_, c) in &eb[pre..eb.len() - suf] {
+                visit(c, false);
+            }
+        }
+        (Loaf::Split { .. }, Loaf::Leaf { entries, .. }) => {
+            visit_loaf_all(a, visit, true);
+            for (_, c) in entries {
+                visit(c, false);
+            }
+        }
+        (Loaf::Leaf { entries, .. }, Loaf::Split { .. }) => {
+            for (_, c) in entries {
+                visit(c, true);
+            }
+            visit_loaf_all(b, visit, false);
+        }
+        (
+            Loaf::Split {
+                in_child: ai,
+                out_child: ao,
+                ..
+            },
+            Loaf::Split {
+                in_child: bi,
+                out_child: bo,
+                ..
+            },
+        ) => {
+            visit_loaf_pair(ai, bi, visit);
+            visit_loaf_pair(ao, bo, visit);
+        }
+        (Loaf::Dsp { child, .. }, _) => visit_loaf_pair(child, b, visit),
+        (_, Loaf::Dsp { child, .. }) => visit_loaf_pair(a, child, visit),
     }
 }

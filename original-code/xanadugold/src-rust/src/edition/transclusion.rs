@@ -268,6 +268,42 @@ impl TransclusionIndex {
         }
     }
 
+    /// Recorder path: add `count` entries under one key (count-based
+    /// incremental updates — crum-diff deltas carry occurrence
+    /// counts, not per-entry pushes).
+    pub fn add_counted(&mut self, key: &str, owner: &RangeElement, count: usize) {
+        let vec = self.content_to_editions.entry(key.to_string()).or_default();
+        for _ in 0..count {
+            vec.push((owner.clone(), true));
+        }
+    }
+
+    /// Recorder path: remove up to `count` entries matching owner
+    /// under one key (count-based; keeps remaining owners intact).
+    pub fn remove_counted(&mut self, key: &str, owner: &RangeElement, count: usize) {
+        if count == 0 {
+            return;
+        }
+        if let Some(vec) = self.content_to_editions.get_mut(key) {
+            let mut left = count;
+            let mut i = 0;
+            while i < vec.len() {
+                if left == 0 {
+                    break;
+                }
+                if vec[i].0 == *owner {
+                    vec.remove(i);
+                    left -= 1;
+                } else {
+                    i += 1;
+                }
+            }
+            if vec.is_empty() {
+                self.content_to_editions.remove(key);
+            }
+        }
+    }
+
     pub fn register_work(&mut self, edition: &Edition, work_element: &RangeElement) {
         let entries = edition.fetch_all();
         for (_pos, carrier) in &entries {

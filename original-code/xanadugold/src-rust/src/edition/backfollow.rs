@@ -274,29 +274,11 @@ impl BackfollowEngine {
         old_edition: &Edition,
         new_work: &Work,
     ) {
-        let old_elem = RangeElement::work(work_id);
-        self.transclusion_index
-            .unregister_work(old_edition, &old_elem);
-        for (_, carrier) in old_edition.all_entries() {
-            let fp = carrier.element.content_fingerprint();
-            if let Some(set) = self.fingerprint_to_works.get_mut(&fp) {
-                set.remove(&work_id);
-                if set.is_empty() {
-                    self.fingerprint_to_works.remove(&fp);
-                }
-            }
-        }
+        // FR-34 recorders: the index churn is crum-guided and
+        // incremental (only differing subtrees); the metadata below
+        // (crums, dagwood, assertions) is unchanged.
+        self.update_work_incremental(work_id, old_edition, new_work);
         let new_edition = new_work.current_edition();
-        let work_elem = RangeElement::work(work_id);
-        self.transclusion_index
-            .register_work(&new_edition, &work_elem);
-        for (_, carrier) in new_edition.all_entries() {
-            let fp = carrier.element.content_fingerprint();
-            self.fingerprint_to_works
-                .entry(fp)
-                .or_default()
-                .insert(work_id);
-        }
 
         let parent_tp = self
             .edition_metas
@@ -355,6 +337,82 @@ impl BackfollowEngine {
     }
 
     pub fn update_work(&mut self, work_id: u64, old_edition: &Edition, new_work: &Work) {
+        self.update_work_incremental(work_id, old_edition, new_work);
+    }
+
+    /// FR-34 recorders: crum-guided incremental update — parallel
+    /// orgl descent prunes identical subtrees (equal crums), so a
+    /// small edit churns only the differing entries' keys. Both
+    /// indexes get count-based deltas; the full unregister/register
+    /// walk (O(N) per edit, quadratic retains) only runs at restore.
+    pub fn update_work_incremental(
+        &mut self,
+        work_id: u64,
+        old_edition: &Edition,
+        new_work: &Work,
+    ) {
+        use std::collections::HashMap;
+        let new_edition = new_work.current_edition();
+
+        // Count (element_key, fingerprint) occurrences per side over
+        // ONLY the differing subtrees; equal crums cancel wholesale.
+        let mut old_keys: HashMap<String, usize> = HashMap::new();
+        let mut new_keys: HashMap<String, usize> = HashMap::new();
+        let mut old_fps: HashMap<[u8; 32], usize> = HashMap::new();
+        let mut new_fps: HashMap<[u8; 32], usize> = HashMap::new();
+        old_edition
+            .orgl
+            .crum_diff_visit(&new_edition.orgl, &mut |carrier, removed| {
+                let key = super::transclusion::element_key(&carrier.element);
+                let fp = carrier.element.content_fingerprint();
+                if removed {
+                    *old_keys.entry(key).or_default() += 1;
+                    *old_fps.entry(fp).or_default() += 1;
+                } else {
+                    *new_keys.entry(key).or_default() += 1;
+                    *new_fps.entry(fp).or_default() += 1;
+                }
+            });
+
+        let work_elem = RangeElement::work(work_id);
+        let mut keys: Vec<&String> = old_keys.keys().chain(new_keys.keys()).collect();
+        keys.sort();
+        keys.dedup();
+        for key in keys {
+            let oc = old_keys.get(key).copied().unwrap_or(0);
+            let nc = new_keys.get(key).copied().unwrap_or(0);
+            if oc > nc {
+                self.transclusion_index
+                    .remove_counted(key, &work_elem, oc - nc);
+            } else if nc > oc {
+                self.transclusion_index
+                    .add_counted(key, &work_elem, nc - oc);
+            }
+        }
+
+        let mut fps: Vec<&[u8; 32]> = old_fps.keys().chain(new_fps.keys()).collect();
+        fps.sort();
+        fps.dedup();
+        for fp in fps {
+            let oc = old_fps.get(fp).copied().unwrap_or(0);
+            let nc = new_fps.get(fp).copied().unwrap_or(0);
+            if oc > 0 && nc == 0 {
+                if let Some(set) = self.fingerprint_to_works.get_mut(fp) {
+                    set.remove(&work_id);
+                    if set.is_empty() {
+                        self.fingerprint_to_works.remove(fp);
+                    }
+                }
+            } else if oc == 0 && nc > 0 {
+                self.fingerprint_to_works
+                    .entry(*fp)
+                    .or_default()
+                    .insert(work_id);
+            }
+        }
+    }
+
+    pub fn update_work_full(&mut self, work_id: u64, old_edition: &Edition, new_work: &Work) {
         let old_elem = RangeElement::work(work_id);
         self.transclusion_index
             .unregister_work(old_edition, &old_elem);
@@ -1141,6 +1199,127 @@ pub fn edition_to_assertions(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Recorder perf guard: one small edit on a 15k-char per-char
+    // edition must update the indexes cheaply (was O(N) walk with
+    // quadratic retains). Release-gated, generous bound.
+    #[test]
+    fn recorder_update_cost_guard() {
+        let base: String = "recorder guard text ".repeat(750);
+        let mut work = Work::new(1, Edition::from_text(&base));
+        let mut engine = BackfollowEngine::new();
+        engine.register_work_with_prop(
+            &work,
+            1,
+            None,
+            BackfollowEngine::make_work_prop(&work, None, None),
+        );
+        let old = work.current_edition().clone();
+        let mut chars: Vec<char> = base.chars().collect();
+        let mid = chars.len() / 2;
+        chars.splice(mid..mid + 1, "!".chars());
+        let revised: String = chars.into_iter().collect();
+        work.revise(Edition::from_text(&revised));
+        let t = std::time::Instant::now();
+        engine.update_work_incremental(1, &old, &work);
+        let us = t.elapsed().as_micros();
+        eprintln!(
+            "recorder update: {}us for one edit on {} chars",
+            us,
+            base.chars().count()
+        );
+        #[cfg(not(debug_assertions))]
+        assert!(
+            us < 20_000,
+            "recorder update regression: {}us (bound 20000us)",
+            us
+        );
+    }
+
+    // FR-34 recorder armor: the crum-guided incremental update must
+    // leave the indexes EXACTLY as full unregister+register would —
+    // across insert-only, delete-heavy, and repeated edits.
+    #[test]
+    fn incremental_update_matches_full_reregistration() {
+        use crate::edition::Work;
+        fn engine_after_edits(incremental: bool, edits: &[&str]) -> (BackfollowEngine, u64) {
+            let mut engine = BackfollowEngine::new();
+            let mut work = Work::new(1, Edition::from_text(edits[0]));
+            engine.register_work_with_prop(
+                &work,
+                1,
+                None,
+                BackfollowEngine::make_work_prop(&work, None, None),
+            );
+            for text in &edits[1..] {
+                let old = work.current_edition().clone();
+                work.revise(Edition::from_text(text));
+                if incremental {
+                    engine.update_work_incremental(1, &old, &work);
+                } else {
+                    engine.update_work_full(1, &old, &work);
+                }
+            }
+            (engine, 1)
+        }
+        for edits in [
+            vec!["hello world", "hello worlds"],
+            vec!["aaaa bbbb cccc", "aaaa cccc", "aaaa cccc dddd"],
+            vec!["one", "two", "three", "thre"],
+            vec!["x", "x"],
+        ] {
+            let (inc, w1) = engine_after_edits(true, &edits);
+            let (full, w2) = engine_after_edits(false, &edits);
+            let q = WorkQuery::all();
+            for probe in [
+                "a", "b", "c", "d", "e", "h", "l", "o", "n", "r", "t", "w", "x", "s",
+            ] {
+                let r1 = inc.find_works_for_content(&RangeElement::text(probe.to_string()), &q);
+                let r2 = full.find_works_for_content(&RangeElement::text(probe.to_string()), &q);
+                assert_eq!(r1, r2, "probe {:?} for edits {:?}", probe, edits);
+            }
+            for probe_fp in [
+                RangeElement::text(String::from("a")).content_fingerprint(),
+                RangeElement::text(String::from("o")).content_fingerprint(),
+                RangeElement::text(String::from("q")).content_fingerprint(),
+            ] {
+                let r1 = inc.find_works_by_fingerprint(&probe_fp);
+                let r2 = full.find_works_by_fingerprint(&probe_fp);
+                assert_eq!(r1, r2, "fp probe for edits {:?}", edits);
+            }
+            assert_eq!(w1, w2);
+        }
+    }
+
+    // The visitor must prune: a small edit on a fragmented doc
+    // visits a small fraction of entries.
+    #[test]
+    fn crum_diff_visit_prunes_on_small_edit() {
+        let base: String = "the quick brown fox ".repeat(200);
+        let old = Edition::from_text(&base);
+        let mut chars: Vec<char> = base.chars().collect();
+        let mid = chars.len() / 2;
+        chars.splice(mid..mid + 3, "XYZ".chars());
+        let new_text: String = chars.into_iter().collect();
+        let new = Edition::from_text(&new_text);
+        let mut visited_removed = 0usize;
+        let mut visited_added = 0usize;
+        old.orgl.crum_diff_visit(&new.orgl, &mut |_c, removed| {
+            if removed {
+                visited_removed += 1;
+            } else {
+                visited_added += 1;
+            }
+        });
+        let total = base.chars().count();
+        assert!(visited_added > 0, "the edit must register");
+        assert!(
+            visited_removed + visited_added < total / 2,
+            "visited {} of {} — identical bulk must be pruned",
+            visited_removed + visited_added,
+            total
+        );
+    }
     use crate::edition::grandmap::Id;
     use crate::edition::links::HyperRef;
     use crate::edition::props::PUBLIC_CLUB_FLAG;
