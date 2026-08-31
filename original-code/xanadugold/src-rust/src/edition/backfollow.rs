@@ -1223,9 +1223,21 @@ mod tests {
         let t = std::time::Instant::now();
         engine.update_work_incremental(1, &old, &work);
         let us = t.elapsed().as_micros();
+        let mut engine_full = BackfollowEngine::new();
+        let base_work = Work::new(1, Edition::from_text(&base));
+        engine_full.register_work_with_prop(
+            &base_work,
+            1,
+            None,
+            BackfollowEngine::make_work_prop(&base_work, None, None),
+        );
+        let tf = std::time::Instant::now();
+        engine_full.update_work_full(1, &old, &work);
+        let usf = tf.elapsed().as_micros();
         eprintln!(
-            "recorder update: {}us for one edit on {} chars",
+            "recorder update: incremental {}us vs full {}us for one edit on {} chars",
             us,
+            usf,
             base.chars().count()
         );
         #[cfg(not(debug_assertions))]
