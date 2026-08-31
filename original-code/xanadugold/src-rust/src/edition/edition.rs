@@ -227,6 +227,17 @@ impl Edition {
     /// and tree-native (stable position) delta paths compare equal when
     /// their content and segmentation match.
     pub fn same_content(&self, other: &Edition) -> bool {
+        // FR-34 crum fast path: identical trees compare equal in
+        // O(1) (both crums are cached on the orgl). Unequal crums
+        // may still be equal-content-different-shape — fall through
+        // to the exact entrywise compare.
+        if let (Some(ca), Some(cb)) = (self.orgl.crum(), other.orgl.crum()) {
+            if ca == cb {
+                return true;
+            }
+        } else if self.orgl.crum().is_none() && other.orgl.crum().is_none() {
+            return true;
+        }
         if self.orgl.count() != other.orgl.count() {
             return false;
         }
@@ -2771,6 +2782,35 @@ mod tests {
     // equal direct computation (stored-verified / author-maintained
     // / unsigned), and stay stable across repeated calls.
     #[cfg(feature = "server")]
+    // FR-34 crum fast paths: same_content O(1) on identical trees;
+    // build_merge_mapping identity without the fingerprint walk.
+    #[test]
+    fn same_content_crum_fast_path_exact() {
+        let a = Edition::from_text("alpha bravo charlie");
+        let b = a.clone();
+        // Identical trees: crums equal, fast path returns true.
+        assert_eq!(a.orgl.crum(), b.orgl.crum());
+        assert!(a.same_content(&b));
+        // Different content: false either way.
+        let c = Edition::from_text("alpha bravo charliX");
+        assert!(!a.same_content(&c));
+        // Same text, different segmentation: same_content is
+        // segmentation-sensitive BY DESIGN (it gates the CRDT fast
+        // path) — the crums differ and the fallback entrywise
+        // compare must also reject the mismatched shapes.
+        let per_char = Edition::from_text("hello world");
+        let batched = per_char.coalesce();
+        assert_ne!(
+            per_char.orgl.crum(),
+            batched.orgl.crum(),
+            "coalescing changes the tree"
+        );
+        assert!(
+            !per_char.same_content(&batched),
+            "segmentation mismatch must not compare equal"
+        );
+    }
+
     #[test]
     fn span_status_memo_matches_direct() {
         let ed = Edition::from_text("shared text appears twice: shared text appears twice")

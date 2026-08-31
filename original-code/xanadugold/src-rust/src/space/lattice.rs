@@ -882,11 +882,21 @@ impl LatticeDoc {
     /// idempotent) and union of tombstones. Order-independent by
     /// construction.
     pub fn merge(&mut self, other: &LatticeDoc) {
+        let mut added = 0usize;
         for (dot, unit) in &other.units {
-            self.units.entry(*dot).or_insert_with(|| unit.clone());
+            if !self.units.contains_key(dot) {
+                self.units.insert(*dot, unit.clone());
+                added += 1;
+            }
         }
+        let t_before = self.tombstones.len();
         self.tombstones.extend(other.tombstones.iter().cloned());
         self.counter = self.counter.max(other.counter_of(self.server));
+        // FR-34: nothing unioned in — the index is already correct
+        // (idempotent re-delivery is the common case in gossip).
+        if added == 0 && self.tombstones.len() == t_before {
+            return;
+        }
         self.rebuild_index();
     }
 
@@ -1488,6 +1498,21 @@ mod tests {
 
     // FR-34 subtree crums: exact equality, chunk-level diff with
     // pruning evidence, and targeted sync convergence.
+
+    #[test]
+    fn merge_idempotent_delivery_preserves_crum() {
+        // FR-34 merge no-op skip: re-delivering the same state is
+        // the common gossip case — the crum and index are untouched.
+        let mut a = seeded_doc(1, 50);
+        let snapshot = a.clone();
+        let crum_before = a.canonical_crum();
+        a.merge(&snapshot);
+        assert_eq!(
+            a.canonical_crum(),
+            crum_before,
+            "self-merge must be a no-op"
+        );
+    }
 
     fn seeded_doc(server: u64, chunks: usize) -> LatticeDoc {
         let mut doc = LatticeDoc::new(server);

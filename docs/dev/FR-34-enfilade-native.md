@@ -98,6 +98,26 @@ provenance, federation, web platform).
 | Bloom filter federation | **Active** (33 tests) | N/A (trust-based) |
 | Subtree crums on the lattice LiveIndex | **Active** (2026-08-31): BLAKE3 over (leaf identity, child crums), maintained by fix() through rotations; canonical sorted rebuild makes equality EXACT; crum-diff descent prunes identical bulk; `pull_from` is the targeted-sync primitive; `MultiWriter::sync_with` reconciles independent instances bidirectionally | OCs on every node |
 | Crum-based targeted sync | **Active**: diff → only-other dots + tombstones payload; convergence armor (crum + text) in lattice tests | Gold's crum-compare sync, minus the wire format |
+| Crum fast paths in the merge pipeline | **Active** (2026-08-31): `same_content` O(1) on identical trees; `build_merge_mapping` returns Simple identity on crum-equal inputs (the merge arms' a->a / b->b clone mappings were a full O(N) fingerprint walk producing N sub-mappings); `LatticeDoc::merge` skips the rebuild when nothing was unioned (idempotent gossip delivery) | OC comparison discipline |
+
+
+### Crum fast-path notes (2026-08-31, second pass)
+
+- `same_content` crum equality is a SOUND fast path (identical
+  trees ⇒ identical content) but inequality is NOT a fast false —
+  equal-content-different-segmentation falls through to the exact
+  entrywise compare. same_content is segmentation-sensitive BY
+  DESIGN (it gates the CRDT fast path); the armor pins that.
+- The mapping identity fast path matters more than the walk it
+  skips: the fingerprint path built N `Mapping::restricted` parts
+  that were O(N) to EVALUATE downstream; `Simple` is O(1) both
+  ways. Dual-engine O-tree mean dropped 49 → 43ms/op.
+- Remaining hot-path O(N) (per-char entry tax): the CRDT fast path
+  rebuilds the full entries/starts/fps cache vectors per op
+  (prefix/suffix Arc clones). Sub-entry diff / cache slicing is the
+  next lever — the delicate part is build_merge_mapping's greedy
+  duplicate matching being order-dependent (H1/F6 lessons);
+  subtree-local alignment must preserve global duplicate order.
 
 ### Crum implementation notes (2026-08-31)
 

@@ -1301,8 +1301,31 @@ pub fn positional_delta_mapping(
     Mapping::from_parts(parts)
 }
 
+fn source_entries_len(source: &Edition) -> i64 {
+    // Entry-count bound: positions in the fingerprint space run
+    // 0..len; crum-equal trees have identical lengths.
+    source.cached_entries().len() as i64
+}
+
 pub fn build_merge_mapping(source: &Edition, merged: &Edition) -> Mapping {
     let started = std::time::Instant::now();
+
+    // FR-34 crum fast path: identical trees get an identity mapping
+    // without the fingerprint walk. This is the hot case on the
+    // merge arms that clone one side (only_a maps b->b, only_b maps
+    // a->a) — previously a full O(N) entry walk per merge produced
+    // N restricted sub-mappings that were themselves O(N) to
+    // evaluate; Simple identity is O(1) both ways.
+    if let (Some(ca), Some(cb)) = (source.orgl.crum(), merged.orgl.crum()) {
+        if ca == cb {
+            let n = source_entries_len(source);
+            return Mapping::Simple {
+                offset: 0,
+                region: XnRegion::interval(0, n),
+            };
+        }
+    }
+
     let source_entries = source.cached_entries();
     let merged_entries = merged.cached_entries();
 
@@ -1517,6 +1540,29 @@ mod tests {
     use crate::edition::provenance::{AuthorType, ElementProvenance};
     use crate::edition::{Provenance, RangeElement};
     use proptest::prelude::*;
+
+    #[test]
+    fn merge_mapping_identity_fast_path_matches() {
+        // source vs its own clone: the crum fast path must return an
+        // identity mapping equivalent to the fingerprint walk —
+        // every entry position maps to itself.
+        let source = text_edition("the quick brown fox");
+        let merged = source.clone();
+        let m = build_merge_mapping(&source, &merged);
+        let n = source.cached_entries().len() as i64;
+        for p in 0..n {
+            assert_eq!(
+                m.of(p),
+                Some(p),
+                "identity fast path must map every position to itself"
+            );
+        }
+        // A genuinely differing merged side falls back to the
+        // fingerprint walk (no identity).
+        let other = text_edition("the quick red fox");
+        let m2 = build_merge_mapping(&source, &other);
+        assert!(m2.of(0).is_some(), "fingerprint path still applies");
+    }
 
     fn text_edition(s: &str) -> Edition {
         Edition::from_text(s)
