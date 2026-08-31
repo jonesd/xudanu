@@ -310,11 +310,12 @@ impl BackfollowEngine {
         parent_work_id: u64,
         old_edition: &Edition,
         new_work: &Work,
-    ) {
+    ) -> WorkIndexDelta {
         // FR-34 recorders: the index churn is crum-guided and
         // incremental (only differing subtrees); the metadata below
-        // (crums, dagwood, assertions) is unchanged.
-        self.update_work_incremental(work_id, old_edition, new_work);
+        // (crums, dagwood, assertions) is unchanged. Returns the
+        // journalable delta.
+        let delta = self.update_work_delta(work_id, old_edition, new_work);
         let new_edition = new_work.current_edition();
 
         let parent_tp = self
@@ -371,6 +372,7 @@ impl BackfollowEngine {
         self.parent_of.insert(work_id, vec![parent_work_id]);
         self.edition_metas.insert(work_id, meta);
         self.bridge_edition_to_assertions(work_id, new_work.current_edition(), tp);
+        delta
     }
 
     pub fn update_work(&mut self, work_id: u64, old_edition: &Edition, new_work: &Work) {
@@ -1296,6 +1298,16 @@ impl BackfollowEngine {
                 self.link_registrations.remove(link_id);
             }
             RecorderJournalEntry::WorkAdded { work_id } => {
+                // Idempotence: the snapshot may already index this
+                // work (checkpoint raced a create). Re-registering
+                // would duplicate content-key entries.
+                let already = self
+                    .fingerprint_to_works
+                    .values()
+                    .any(|set| set.contains(work_id));
+                if already {
+                    return;
+                }
                 if let Some(work) = work_for(*work_id) {
                     self.register_work_with_prop(
                         &work,

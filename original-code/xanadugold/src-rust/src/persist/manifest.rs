@@ -502,6 +502,10 @@ pub struct Manifest {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub fossil_snapshots_hash: Option<[u8; 32]>,
+    #[serde(default)]
+    pub backfollow_snapshot_hash: Option<[u8; 32]>,
+    #[serde(default)]
+    pub recorder_journal_hash: Option<[u8; 32]>,
 
     // ── v4: social ──
     // Migrated to chunk storage.
@@ -1329,6 +1333,8 @@ pub fn create_empty_manifest(
         historical_authors_chunk_hash: None,
         annotations_hash: None,
         fossil_snapshots_hash: None,
+        backfollow_snapshot_hash: None,
+        recorder_journal_hash: None,
         starred_works: std::collections::HashMap::new(),
         trails: Vec::new(),
         trail_counter: 10_000,

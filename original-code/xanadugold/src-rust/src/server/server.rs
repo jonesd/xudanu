@@ -655,6 +655,11 @@ pub struct Server {
     link_type_registry: HashMap<u64, crate::persist::manifest::LinkTypeRegistryEntry>,
     cross_server_backlinks: Vec<CrossServerBacklink>,
     backfollow: BackfollowEngine,
+    /// FR-34 recorders Phase B: index deltas since the last
+    /// checkpoint — persisted beside the snapshot, replayed on
+    /// restore. Cleared when a checkpoint completes (the snapshot
+    /// supersedes).
+    recorder_journal: Vec<crate::edition::backfollow::RecorderJournalEntry>,
     content_address: ContentAddressIndex,
     blob_store: BlobStore,
     pub allow_loopback_cross_server: bool,
@@ -1107,6 +1112,8 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         checksum: String::new(),
         sequence: payload.manifest_sequence + 1,
         manifest_slot: next_slot,
+        backfollow_snapshot_hash: None,
+        recorder_journal_hash: None,
         grand_map_id_counter: payload.grand_map_id_counter,
         session_counter: payload.session_counter,
         operation_counter: payload.operation_counter,
@@ -1278,6 +1285,7 @@ impl Server {
             link_type_registry: HashMap::new(),
             cross_server_backlinks: Vec::new(),
             backfollow: BackfollowEngine::new(),
+            recorder_journal: Vec::new(),
             content_address: ContentAddressIndex::new(1_000_000),
             blob_store: BlobStore::in_memory(),
             allow_loopback_cross_server: false,
@@ -3982,6 +3990,8 @@ impl Server {
         let prop = BackfollowEngine::make_work_prop(&self.works[&be_id].work, read_club, edit_club);
         self.backfollow
             .register_work_with_prop(&self.works[&be_id].work, be_id, None, prop);
+        self.recorder_journal
+            .push(crate::edition::backfollow::RecorderJournalEntry::WorkAdded { work_id: be_id });
         // Newly created works may share content with already-watched documents,
         // so planted recorders must be checked here just as they are in revise_work.
         self.trigger_planted_recorders(be_id);
@@ -4200,8 +4210,16 @@ impl Server {
         let new_work = ws.work.clone();
         self.content_address
             .intern_edition_elements(&updated_edition);
-        self.backfollow
-            .update_work_with_parent(work_be_id, work_be_id, &old_edition, &new_work);
+        let delta = self.backfollow.update_work_with_parent(
+            work_be_id,
+            work_be_id,
+            &old_edition,
+            &new_work,
+        );
+        self.recorder_journal
+            .push(crate::edition::backfollow::RecorderJournalEntry::Delta(
+                delta,
+            ));
         self.trigger_planted_recorders(work_be_id);
         if needs_span_migration {
             let text_delta_ops: Vec<crate::server::transport::protocol::TextDeltaOp> = text_delta
@@ -12181,14 +12199,75 @@ impl Server {
             self.grand_map.set_id_counter(max_id + 1);
         }
 
-        for (wid, ws) in &self.works {
-            let prop = BackfollowEngine::make_work_prop(
-                &ws.work,
-                ws.work.read_club(),
-                ws.work.edit_club(),
-            );
-            self.backfollow
-                .register_work_with_prop(&ws.work, *wid, None, prop);
+        // FR-34 recorders Phase B restore fast path: if a backfollow
+        // snapshot (+ journal) was persisted, import it and rebuild
+        // only metadata (O(works)); the entry-index walks are
+        // skipped wholesale. Fallback on any miss: the full
+        // re-registration below.
+        let mut restored_from_snapshot = false;
+        if let Some(hash) = manifest.backfollow_snapshot_hash {
+            if let Some(ref cs) = self.chunk_store {
+                let loaded: Option<(
+                    crate::edition::backfollow::BackfollowSnapshot,
+                    Vec<crate::edition::backfollow::RecorderJournalEntry>,
+                )> = cs.read_chunk(&hash).ok().and_then(|data| {
+                    crate::persist::chunk_store::untag_chunk_data(&data)
+                        .ok()
+                        .filter(|(fmt, _)| *fmt == crate::persist::chunk_store::CHUNK_FORMAT_JSON)
+                        .and_then(|(_, p)| serde_json::from_slice(p).ok())
+                        .map(|snap| {
+                            let journal = manifest
+                                .recorder_journal_hash
+                                .and_then(|jh| cs.read_chunk(&jh).ok())
+                                .and_then(|d| {
+                                    crate::persist::chunk_store::untag_chunk_data(&d)
+                                        .ok()
+                                        .map(|(f, p)| (f, p.to_vec()))
+                                })
+                                .and_then(|(f, p)| {
+                                    if f == crate::persist::chunk_store::CHUNK_FORMAT_JSON {
+                                        serde_json::from_slice(&p).ok()
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or_default();
+                            (snap, journal)
+                        })
+                });
+                if let Some((snap, journal)) = loaded {
+                    self.backfollow.import_index_snapshot(&snap);
+                    for (wid, ws) in &self.works {
+                        self.backfollow.register_work_meta_only(*wid, &ws.work);
+                    }
+                    let works: HashMap<BeId, crate::edition::Work> = self
+                        .works
+                        .iter()
+                        .map(|(wid, ws)| (*wid, ws.work.clone()))
+                        .collect();
+                    let entry_count = journal.len();
+                    for entry in &journal {
+                        self.backfollow
+                            .replay_journal_entry(entry, &|id| works.get(&id).cloned());
+                    }
+                    restored_from_snapshot = true;
+                    tracing::info!(
+                        "[restore] backfollow snapshot imported ({} journal entries replayed)",
+                        entry_count
+                    );
+                }
+            }
+        }
+        if !restored_from_snapshot {
+            for (wid, ws) in &self.works {
+                let prop = BackfollowEngine::make_work_prop(
+                    &ws.work,
+                    ws.work.read_club(),
+                    ws.work.edit_club(),
+                );
+                self.backfollow
+                    .register_work_with_prop(&ws.work, *wid, None, prop);
+            }
         }
 
         for (se_id, edition) in &self.standalone_editions {
@@ -12635,6 +12714,9 @@ impl Server {
     /// Marks a background checkpoint as complete and updates the timestamp.
     pub fn checkpoint_completed(&mut self) {
         self.checkpoint_in_flight = false;
+        // The snapshot written by this checkpoint supersedes the
+        // journal (FR-34 recorders Phase B).
+        self.recorder_journal.clear();
         self.last_checkpoint_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -17999,8 +18081,13 @@ impl Server {
         ws.work.revise(updated.clone());
         ws.mark_dirty();
         let new_work = ws.work.clone();
-        self.backfollow
-            .update_work_with_parent(work_id, work_id, &old_edition, &new_work);
+        let delta =
+            self.backfollow
+                .update_work_with_parent(work_id, work_id, &old_edition, &new_work);
+        self.recorder_journal
+            .push(crate::edition::backfollow::RecorderJournalEntry::Delta(
+                delta,
+            ));
         self.reconcile_record_local_revision(work_id, &updated, Self::current_timestamp_secs());
         Ok(updated)
     }
@@ -21089,6 +21176,7 @@ pub(crate) mod persist_snapshot {
                     .collect(),
                 cross_server_backlinks: Vec::new(),
                 backfollow: BackfollowEngine::new(),
+                recorder_journal: Vec::new(),
                 content_address,
                 blob_store: BlobStore::in_memory(),
                 allow_loopback_cross_server: false,
@@ -22240,6 +22328,37 @@ pub(crate) mod persist_snapshot {
                             .write_chunk(&tagged)
                             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                         Some(hash)
+                    }
+                },
+                backfollow_snapshot_hash: {
+                    let snap = self.backfollow.export_index_snapshot();
+                    let data = serde_json::to_vec(&snap)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    let tagged = crate::persist::chunk_store::tag_chunk_data(
+                        crate::persist::chunk_store::CHUNK_FORMAT_JSON,
+                        &data,
+                    );
+                    Some(
+                        chunk_store
+                            .write_chunk(&tagged)
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
+                    )
+                },
+                recorder_journal_hash: {
+                    if self.recorder_journal.is_empty() {
+                        None
+                    } else {
+                        let data = serde_json::to_vec(&self.recorder_journal)
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                        let tagged = crate::persist::chunk_store::tag_chunk_data(
+                            crate::persist::chunk_store::CHUNK_FORMAT_JSON,
+                            &data,
+                        );
+                        Some(
+                            chunk_store
+                                .write_chunk(&tagged)
+                                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
+                        )
                     }
                 },
                 starred_works: {
@@ -37932,6 +38051,76 @@ mod tests {
 
     #[test]
     #[cfg(feature = "server")]
+    // FR-34 recorders Phase B end-to-end: works + edits ->
+    // checkpoint (writes snapshot+journal) -> restore -> backfollow
+    // queries identical to a fresh full rebuild.
+    #[test]
+    fn recorder_snapshot_restore_matches_full_rebuild() {
+        let dir = std::env::temp_dir().join(format!(
+            "xudanu_rec_ckpt_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // Reference: server that never checkpoints (journal grows,
+        // queries evaluated live).
+        let mut server = Server::new();
+        server.init_data_dir(&dir, None).unwrap();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let w1 = server
+            .create_work(sid, Edition::from_text("alpha content here"))
+            .unwrap();
+        let w2 = server
+            .create_work(sid, Edition::from_text("beta content there"))
+            .unwrap();
+        // Edits through the journal-capturing path.
+        server.work_grab(sid, w1).unwrap();
+        server
+            .work_revise(sid, w1, Edition::from_text("alpha content revised"))
+            .unwrap();
+        server.work_release(sid, w1).unwrap();
+
+        // Reference queries before checkpoint.
+        let probe = |srv: &Server, ch: char| -> Vec<u64> {
+            let fp = RangeElement::text(String::from(ch)).content_fingerprint();
+            let mut v = srv.backfollow.find_works_by_fingerprint(&fp);
+            v.sort_unstable();
+            v
+        };
+        let ref_a = probe(&server, 'a');
+        let ref_r = probe(&server, 'r');
+        let ref_b = probe(&server, 'b');
+
+        // Checkpoint + full stop + restore from the data dir.
+        let payload = server.checkpoint_prepare().unwrap();
+        let result = super::checkpoint_persist(payload).unwrap();
+        server.checkpoint_commit(result).unwrap();
+        drop(server);
+        let mut restored = Server::new();
+        restored.restore_from_data_dir(&dir, None).unwrap();
+
+        assert_eq!(
+            probe(&restored, 'a'),
+            ref_a,
+            "snapshot restore preserves fingerprint queries"
+        );
+        assert_eq!(
+            probe(&restored, 'r'),
+            ref_r,
+            "post-checkpoint journal replay covers edits"
+        );
+        assert_eq!(probe(&restored, 'b'), ref_b);
+        let _ = w2;
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     fn fr26_transclusion_hash_survives_checkpoint_restore() {
         let dir = std::env::temp_dir().join(format!("xudanu_fr26_ckpt_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

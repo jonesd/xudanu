@@ -306,6 +306,8 @@ fn migrate_manifest(
         content_address_hash: m.content_address_chunk_hash,
         historical_authors_hash: m.historical_authors_chunk_hash,
         fossil_snapshots_hash: m.fossil_snapshots_hash,
+        backfollow_snapshot_hash: None,
+        recorder_journal_hash: None,
         admin_hash,
         key_history_hash: None,
         system_clubs_hash,
