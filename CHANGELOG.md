@@ -6,6 +6,33 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.9.0] — 2026-08-30
+
+The performance-and-correctness release, driven by the FR-50
+verification audit and the FR-51 enfilade-native lattice: two
+long-standing CRDT bugs fixed, attribution queries 10x faster, and
+the new dual-write lattice shadow running inside the server (default
+off). Every number below is measured and lives in the committed
+bench ledger (`docs/bench/results.jsonl`; `xudanu-bench report`).
+
+### Correctness
+- **fix: nondeterministic merge duplication (FR-50 F6)** — a session's insert could be silently absorbed into an adjacent copied carrier whenever their full provenance (including the wall-clock timestamp) compared equal. Segmentation became timing-dependent: the same edit script produced different documents per server process, and on repeated content a single merge duplicated ~100 chars (observed 3-5 garbles in 8 runs). Absorption now happens only within one op (deterministic); copied carriers keep their identity and provenance (also fixes a silent attribution-timestamp skew). Merged placements now honor op offsets exactly.
+- **fix: merge-cost compounding under interleaved sessions (FR-50 F10)** — span-provenance fragmented per merge and never re-merged; per-op merge cost doubled roughly every two ops (14.8s/op measured at op 52). Same-author touching fragments now coalesce to their hull: 120 interleaved ops run flat (worst 112ms).
+- **fix: link spans never migrated on insert-only deltas; annotation hull drops (F8/F8b/A1, audit)** — included from the earlier audit pass.
+
+### Performance (all measured, ledger-backed)
+- **attribution queries: 15.8ms → 1.6ms @256k** (10-rep mean); warm queries 16ms → 21µs. Signature verification hashed the whole span's fingerprint set per query; now memoized per edition (invalidates correctly on re-signing).
+- **link-span migration loop: O(E²) map clones → single pass**; also removed a stray debug print that had shipped in the hot loop.
+- **lattice substrate: flat keystrokes** (~2µs insert / ~4µs delete at every size 1k-256k) via a weight-balanced order-statistic index.
+
+### New: FR-51 dual-write lattice shadow (default off)
+- The enfilade-native lattice CRDT now runs inside the server as a per-work shadow: `--lattice-shadow` run flag, admin wire ops (enroll 0x0353 / status 0x0354 / clear 0x0355). Shadows are ephemeral and rollback is dropping them. On interleaved two-session traffic the shadow mirrors at **~73µs/op vs 49ms/op** for the live engine (~670x) while producing length-exact results — it is now the correctness oracle for the CRDT (it caught F6 above). Memory telemetry included (~39x retained history after 120 concurrent ops; compaction is the known lever).
+
+### Tooling
+- **bench results ledger** — every run appends JSONL records (per scenario, per engine variant, dev-mac/aws-official); `xudanu-bench report` prints side-by-side comparisons, trends, and the XPI blended index. Seeded with the findings history (F1/F2/F5/F10 pre/post).
+
+---
+
 ## [v1.8.1] — 2026-08-29
 
 Two layout fixes found within the hour of v1.8.0 shipping:
