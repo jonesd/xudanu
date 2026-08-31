@@ -1126,6 +1126,62 @@ impl LatticeDoc {
             + self.tombstones.len() * 64
     }
 
+    /// Wire/apply helpers (lattice_wire): read units and tombstones,
+    /// insert wire-decoded units, push wire-decoded tombstones.
+    pub fn debug_unit(&self, dot: &Dot) -> Option<&LatticeUnit> {
+        self.units.get(dot)
+    }
+
+    pub fn debug_tombstones(&self) -> &[RegionTombstone] {
+        &self.tombstones
+    }
+
+    pub fn debug_insert_unit(
+        &mut self,
+        address: Sequence,
+        content: String,
+        author: u64,
+        dot: Dot,
+        lineage: Option<(Dot, usize, usize)>,
+        anchor: Option<(Dot, usize)>,
+    ) {
+        let len = content.chars().count();
+        self.units.insert(
+            dot,
+            LatticeUnit {
+                address,
+                content,
+                author,
+                dot,
+                lineage,
+                anchor,
+            },
+        );
+        self.index.upsert(
+            &self.units[&dot].address.clone(),
+            dot,
+            len,
+            content_crum(&self.units[&dot].content),
+        );
+    }
+
+    pub fn debug_push_tombstone(
+        &mut self,
+        region: SequenceRegion,
+        context: HashSet<Dot>,
+        culls: Vec<(Dot, usize, usize)>,
+    ) {
+        self.tombstones.push(RegionTombstone {
+            region,
+            context,
+            culls,
+        });
+    }
+
+    pub fn debug_rebuild(&mut self) {
+        self.rebuild_index();
+    }
+
     /// Memory telemetry: (units, tombstones, total content bytes,
     /// live content bytes).
     pub fn memory_estimate(&self) -> (usize, usize, usize, usize) {

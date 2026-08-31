@@ -214,6 +214,18 @@ impl MultiWriter {
         self.doc.canonical_crum()
     }
 
+    /// Debug: clone of the shared doc (wire tests).
+    pub fn debug_doc_clone(&self) -> LatticeDoc {
+        self.doc.clone()
+    }
+
+    /// Adopt a reconciled doc as the shared state (wire tests —
+    /// views are dropped; sessions re-sync on next apply).
+    pub fn adopt_doc(&mut self, doc: LatticeDoc) {
+        self.doc = doc;
+        self.views.clear();
+    }
+
     /// Debug: the shared doc's live dot set.
     pub fn debug_live_dots(&self) -> Vec<(u64, u64)> {
         self.doc.live().iter().map(|u| u.dot).collect()

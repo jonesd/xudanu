@@ -525,6 +525,43 @@ impl SequenceRegion {
         }
     }
 
+    /// Read-only transition edges (wire serialization of regions —
+    /// lattice tombstone regions are interval/above/singleton
+    /// shapes, round-tripped via those constructors).
+    pub fn edge_descriptors(&self) -> (bool, Vec<(Vec<i64>, bool)>) {
+        (
+            self.starts_inside,
+            self.transitions
+                .iter()
+                .map(|e| (e.sequence.numbers().to_vec(), e.inclusive))
+                .collect(),
+        )
+    }
+
+    /// Reconstruct from edge descriptors (the shapes our tombstones
+    /// use: interval [a,b) — two edges inclusive/exclusive; above a —
+    /// one inclusive edge; empty — none).
+    pub fn from_edge_descriptors(
+        starts_inside: bool,
+        edges: &[(Vec<i64>, bool)],
+    ) -> Option<SequenceRegion> {
+        if starts_inside {
+            return None;
+        }
+        match edges {
+            [] => Some(SequenceRegion::empty()),
+            [(a, true)] => Some(SequenceRegion::above(
+                Sequence::from_numbers(a.clone()),
+                true,
+            )),
+            [(a, true), (b, false)] => Some(SequenceRegion::interval(
+                Sequence::from_numbers(a.clone()),
+                Sequence::from_numbers(b.clone()),
+            )),
+            _ => None,
+        }
+    }
+
     pub fn contains_sequence(&self, seq: &Sequence) -> bool {
         if let Some(pf) = &self.prefix_filter {
             let matches = seq.compare_prefix(&pf.sequence, pf.limit) == Ordering::Equal;
