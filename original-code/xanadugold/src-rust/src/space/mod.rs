@@ -7,6 +7,7 @@ pub mod lattice;
 pub mod lattice_multi;
 pub mod lattice_sim;
 pub mod lattice_sync;
+#[cfg(feature = "serde")]
 pub mod lattice_wire;
 pub mod mapping;
 mod order;
