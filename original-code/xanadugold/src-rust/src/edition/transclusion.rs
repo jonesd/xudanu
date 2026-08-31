@@ -304,6 +304,15 @@ impl TransclusionIndex {
         }
     }
 
+    /// Snapshot accessors (FR-34 recorders Phase B).
+    pub fn content_map(&self) -> &std::collections::HashMap<String, Vec<(RangeElement, bool)>> {
+        &self.content_to_editions
+    }
+
+    pub fn import_content_map(&mut self, map: Vec<(String, Vec<(RangeElement, bool)>)>) {
+        self.content_to_editions = map.into_iter().collect();
+    }
+
     pub fn register_work(&mut self, edition: &Edition, work_element: &RangeElement) {
         let entries = edition.fetch_all();
         for (_pos, carrier) in &entries {

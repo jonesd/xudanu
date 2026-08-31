@@ -130,6 +130,43 @@ impl HPart for EditionMeta {
     }
 }
 
+/// One work-update's index delta — the journalable unit (content-
+/// independent: replay needs no editions). FR-34 recorders Phase B.
+#[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct WorkIndexDelta {
+    pub work_id: u64,
+    /// element key -> count change (positive add, negative remove)
+    pub keys: Vec<(String, i64)>,
+    /// fingerprints whose presence flipped (true = added)
+    pub presence: Vec<([u8; 32], bool)>,
+}
+
+/// Snapshot of the plain-data recorder indexes (checkpoint-time).
+/// Metadata (canopy crums, dagwood, metas) rebuilds from work
+/// records at restore in O(works) — not journaled.
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct BackfollowSnapshot {
+    pub format: u32,
+    pub content_keys: Vec<(String, Vec<(RangeElement, bool)>)>,
+    pub fingerprint_to_works: Vec<([u8; 32], Vec<u64>)>,
+    pub link_registrations: Vec<(u64, Vec<String>)>,
+    pub next_span_id: u64,
+}
+
+/// Journal entries between checkpoints (content-free except
+/// WorkAdded, which replays from the restored work's content).
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum RecorderJournalEntry {
+    Delta(WorkIndexDelta),
+    LinkRegister { link_id: u64, keys: Vec<String> },
+    LinkUnregister { link_id: u64, keys: Vec<String> },
+    WorkAdded { work_id: u64 },
+    WorkRemoved { work_id: u64 },
+}
+
 pub struct BackfollowEngine {
     transclusion_index: TransclusionIndex,
     bert_canopy: BertCanopy,
@@ -351,6 +388,17 @@ impl BackfollowEngine {
         old_edition: &Edition,
         new_work: &Work,
     ) {
+        self.update_work_delta(work_id, old_edition, new_work);
+    }
+
+    /// The recorder core: compute the crum-guided delta, apply it,
+    /// and return it (the journalable unit).
+    pub fn update_work_delta(
+        &mut self,
+        work_id: u64,
+        old_edition: &Edition,
+        new_work: &Work,
+    ) -> WorkIndexDelta {
         use std::collections::HashMap;
         let new_edition = new_work.current_edition();
 
@@ -378,9 +426,9 @@ impl BackfollowEngine {
         let mut keys: Vec<&String> = old_keys.keys().chain(new_keys.keys()).collect();
         keys.sort();
         keys.dedup();
-        for key in keys {
-            let oc = old_keys.get(key).copied().unwrap_or(0);
-            let nc = new_keys.get(key).copied().unwrap_or(0);
+        for key in &keys {
+            let oc = old_keys.get(*key).copied().unwrap_or(0);
+            let nc = new_keys.get(*key).copied().unwrap_or(0);
             if oc > nc {
                 self.transclusion_index
                     .remove_counted(key, &work_elem, oc - nc);
@@ -393,6 +441,11 @@ impl BackfollowEngine {
         let mut fps: Vec<&[u8; 32]> = old_fps.keys().chain(new_fps.keys()).collect();
         fps.sort();
         fps.dedup();
+        let mut delta = WorkIndexDelta {
+            work_id,
+            keys: Vec::new(),
+            presence: Vec::new(),
+        };
         for fp in fps {
             let oc = old_fps.get(fp).copied().unwrap_or(0);
             let nc = new_fps.get(fp).copied().unwrap_or(0);
@@ -403,13 +456,25 @@ impl BackfollowEngine {
                         self.fingerprint_to_works.remove(fp);
                     }
                 }
+                delta.presence.push((*fp, false));
             } else if oc == 0 && nc > 0 {
                 self.fingerprint_to_works
                     .entry(*fp)
                     .or_default()
                     .insert(work_id);
+                delta.presence.push((*fp, true));
             }
         }
+        for key in &keys {
+            let oc = old_keys.get(*key).copied().unwrap_or(0);
+            let nc = new_keys.get(*key).copied().unwrap_or(0);
+            if nc > oc {
+                delta.keys.push(((*key).clone(), (nc - oc) as i64));
+            } else if oc > nc {
+                delta.keys.push(((*key).clone(), -((oc - nc) as i64)));
+            }
+        }
+        delta
     }
 
     pub fn update_work_full(&mut self, work_id: u64, old_edition: &Edition, new_work: &Work) {
@@ -1116,6 +1181,135 @@ impl BackfollowEngine {
         }
         result
     }
+
+    /// FR-34 recorders Phase B: export the plain-data index state
+    /// (checkpoint-time snapshot). Metadata (canopy crums, dagwood,
+    /// metas) is NOT included — it rebuilds from work records in
+    /// O(works) at restore.
+    pub fn export_index_snapshot(&self) -> BackfollowSnapshot {
+        BackfollowSnapshot {
+            format: 1,
+            content_keys: self
+                .transclusion_index
+                .content_map()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            fingerprint_to_works: self
+                .fingerprint_to_works
+                .iter()
+                .map(|(fp, set)| (*fp, set.iter().copied().collect()))
+                .collect(),
+            link_registrations: self
+                .link_registrations
+                .iter()
+                .map(|(id, ks)| (*id, ks.clone()))
+                .collect(),
+            next_span_id: self.next_span_id,
+        }
+    }
+
+    /// Import a snapshot into a FRESH engine (restore fast path).
+    /// Caller then rebuilds metadata (register_work_meta_only per
+    /// work) and replays journal entries.
+    pub fn import_index_snapshot(&mut self, snap: &BackfollowSnapshot) {
+        if snap.format != 1 {
+            return;
+        }
+        self.transclusion_index
+            .import_content_map(snap.content_keys.clone());
+        self.fingerprint_to_works = snap
+            .fingerprint_to_works
+            .iter()
+            .map(|(fp, works)| {
+                let mut set = std::collections::HashSet::new();
+                set.extend(works.iter().copied());
+                (*fp, set)
+            })
+            .collect();
+        self.link_registrations = snap
+            .link_registrations
+            .iter()
+            .map(|(id, ks)| (*id, ks.clone()))
+            .collect();
+        self.next_span_id = snap.next_span_id;
+    }
+
+    /// Rebuild a work's METADATA (crums, dagwood) without
+    /// entry-index walks — O(1) per work at restore after the
+    /// snapshot import. The plain indexes came from the snapshot.
+    pub fn register_work_meta_only(&mut self, work_id: u64, work: &Work) {
+        let prop = Self::make_work_prop(work, work.read_club(), work.edit_club());
+        let flags = prop.flags();
+        let bert_crum = self.bert_canopy.make_crum(flags);
+        let sensor_crum = self.sensor_canopy.make_crum(0);
+        let tp = self.dagwood.new_position();
+        let h_crum = Arc::new(Mutex::new(HUpperCrumData::new(
+            tp,
+            bert_crum.clone(),
+            self.bert_canopy.clone(),
+        )));
+        let mut meta = EditionMeta::new(work_id, bert_crum, sensor_crum, prop);
+        meta.set_h_crum(h_crum);
+        meta.set_trace_position(tp);
+        self.edition_metas.insert(work_id, meta);
+    }
+
+    /// Replay one journal entry (restore fast path). Content-free
+    /// except WorkAdded/WorkRemoved, which consult the restored
+    /// work via `work_for`.
+    pub fn replay_journal_entry(
+        &mut self,
+        entry: &RecorderJournalEntry,
+        work_for: &dyn Fn(u64) -> Option<Work>,
+    ) {
+        match entry {
+            RecorderJournalEntry::Delta(d) => {
+                let work_elem = RangeElement::work(d.work_id);
+                for (key, count) in &d.keys {
+                    if *count > 0 {
+                        self.transclusion_index
+                            .add_counted(key, &work_elem, *count as usize);
+                    } else if *count < 0 {
+                        self.transclusion_index
+                            .remove_counted(key, &work_elem, (-*count) as usize);
+                    }
+                }
+                for (fp, added) in &d.presence {
+                    if *added {
+                        self.fingerprint_to_works
+                            .entry(*fp)
+                            .or_default()
+                            .insert(d.work_id);
+                    } else if let Some(set) = self.fingerprint_to_works.get_mut(fp) {
+                        set.remove(&d.work_id);
+                        if set.is_empty() {
+                            self.fingerprint_to_works.remove(fp);
+                        }
+                    }
+                }
+            }
+            RecorderJournalEntry::LinkRegister { link_id, keys } => {
+                self.link_registrations.insert(*link_id, keys.clone());
+            }
+            RecorderJournalEntry::LinkUnregister { link_id, .. } => {
+                self.link_registrations.remove(link_id);
+            }
+            RecorderJournalEntry::WorkAdded { work_id } => {
+                if let Some(work) = work_for(*work_id) {
+                    self.register_work_with_prop(
+                        &work,
+                        *work_id,
+                        None,
+                        Self::make_work_prop(&work, work.read_club(), work.edit_club()),
+                    );
+                }
+            }
+            RecorderJournalEntry::WorkRemoved { work_id } => {
+                self.link_registrations.remove(work_id);
+            }
+        }
+    }
 }
 
 impl Default for BackfollowEngine {
@@ -1199,6 +1393,103 @@ pub fn edition_to_assertions(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // FR-34 recorders Phase B armor: checkpoint snapshot + journal
+    // replay must reproduce exactly what a full rebuild produces.
+    #[test]
+    fn snapshot_and_journal_replay_match_full_rebuild() {
+        // Reference engine: register + edit everything live.
+        let mut full = BackfollowEngine::new();
+        // Snapshot engine: register at "checkpoint", then journal.
+        let mut snap_engine = BackfollowEngine::new();
+
+        let mut work = Work::new(1, Edition::from_text("shared opening text here"));
+        for eng in [&mut full, &mut snap_engine] {
+            eng.register_work_with_prop(
+                &work,
+                1,
+                None,
+                BackfollowEngine::make_work_prop(&work, None, None),
+            );
+        }
+
+        // CHECKPOINT: export the snapshot; journal subsequent edits.
+        let snapshot = snap_engine.export_index_snapshot();
+        let mut journal: Vec<RecorderJournalEntry> = Vec::new();
+        for text in [
+            "shared opening text here with more",
+            "shared opening text with less",
+            "entirely different content now",
+            "entirely different content now plus",
+        ] {
+            let old = work.current_edition().clone();
+            work.revise(Edition::from_text(text));
+            // Reference: full incremental path.
+            full.update_work_incremental(1, &old, &work);
+            // Journaled: same path, delta captured.
+            let d = snap_engine.update_work_delta(1, &old, &work);
+            journal.push(RecorderJournalEntry::Delta(d));
+        }
+
+        // RESTORE: fresh engine <- snapshot <- metadata <- journal.
+        let mut restored = BackfollowEngine::new();
+        restored.import_index_snapshot(&snapshot);
+        restored.register_work_meta_only(1, &work);
+        for entry in &journal {
+            restored.replay_journal_entry(entry, &|_| None);
+        }
+
+        // Equivalence: queries and fingerprint lookups agree.
+        let q = WorkQuery::all();
+        let work_final = work.clone();
+        for probe in ["s", "h", "a", "e", "w", "i", "t", "n", "o", "p", "l", "x"] {
+            let r1 = full.find_works_for_content(&RangeElement::text(String::from(probe)), &q);
+            let r2 = restored.find_works_for_content(&RangeElement::text(String::from(probe)), &q);
+            assert_eq!(r1, r2, "probe {:?} diverged", probe);
+            let fp = RangeElement::text(String::from(probe)).content_fingerprint();
+            assert_eq!(
+                full.find_works_by_fingerprint(&fp),
+                restored.find_works_by_fingerprint(&fp),
+                "fp probe {:?} diverged",
+                probe
+            );
+        }
+        // A second work added post-checkpoint replays via work_for.
+        let mut w2 = Work::new(2, Edition::from_text("second work xyz"));
+        let _ = &mut w2;
+        restored.replay_journal_entry(&RecorderJournalEntry::WorkAdded { work_id: 2 }, &|id| {
+            if id == 2 {
+                Some(w2.clone())
+            } else {
+                None
+            }
+        });
+        let r = restored.find_works_for_content(&RangeElement::text(String::from("z")), &q);
+        assert!(r.contains(&2), "WorkAdded replay registers content");
+    }
+
+    #[test]
+    fn snapshot_survives_serialization_round_trip() {
+        #[cfg(feature = "serde")]
+        {
+            let mut engine = BackfollowEngine::new();
+            let work = Work::new(1, Edition::from_text("serialize me"));
+            engine.register_work_with_prop(
+                &work,
+                1,
+                None,
+                BackfollowEngine::make_work_prop(&work, None, None),
+            );
+            let snap = engine.export_index_snapshot();
+            let bytes = postcard::to_allocvec(&snap).expect("encode");
+            let back: BackfollowSnapshot = postcard::from_bytes(&bytes).expect("decode");
+            let mut restored = BackfollowEngine::new();
+            restored.import_index_snapshot(&back);
+            let q = WorkQuery::all();
+            let r = restored.find_works_for_content(&RangeElement::text(String::from("s")), &q);
+            assert!(r.contains(&1), "snapshot survives postcard round trip");
+        }
+    }
 
     // Recorder perf guard: one small edit on a 15k-char per-char
     // edition must update the indexes cheaply (was O(N) walk with
