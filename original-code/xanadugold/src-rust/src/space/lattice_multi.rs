@@ -92,6 +92,10 @@ pub fn split_at(doc: &mut LatticeDoc, offset: u64) -> Boundary {
 /// root ranges mint the same part dots). `sync` delivers the shared
 /// state to a session's view.
 pub struct MultiWriter {
+    /// 0 = single-instance (plain dense ids); non-zero = federation
+    /// namespace folded into dots so cross-instance sync cannot
+    /// collide.
+    namespace: u64,
     doc: LatticeDoc,
     views: std::collections::HashMap<u64, LatticeDoc>,
     counters: std::collections::HashMap<u64, u64>,
@@ -105,9 +109,16 @@ pub struct MultiWriter {
 
 impl MultiWriter {
     pub fn new(base: &str) -> Self {
+        Self::with_namespace(base, 0)
+    }
+
+    /// Federation constructor: distinct namespaces keep dots unique
+    /// across independent instances that will sync via crum diff.
+    pub fn with_namespace(base: &str, namespace: u64) -> Self {
         let mut doc = LatticeDoc::new(0);
         doc.seed_shared_unit(Sequence::from_numbers(vec![1, 9, 1]), base, 9, (9, 1));
         MultiWriter {
+            namespace,
             doc,
             views: std::collections::HashMap::new(),
             counters: std::collections::HashMap::new(),
@@ -118,7 +129,10 @@ impl MultiWriter {
         }
     }
 
-    /// Dense author id for a session (join order).
+    /// Dense author id for a session (join order). Federation note:
+    /// dots must be globally unique — replicas in DIFFERENT
+    /// MultiWriter instances (different servers) must use distinct
+    /// namespaces (`with_namespace`), or their dense ids collide.
     fn dense(&mut self, session: u64) -> u64 {
         if let Some(d) = self.authors.get(&session) {
             return *d;
@@ -127,6 +141,14 @@ impl MultiWriter {
         let d = self.next_author;
         self.authors.insert(session, d);
         d
+    }
+
+    fn dense_dot(&self, dense: u64, counter: u64) -> Dot {
+        if self.namespace == 0 {
+            (dense, counter)
+        } else {
+            (self.namespace * 1_000_000_000 + dense, counter)
+        }
     }
 
     /// Debug: the shared doc's in-order (address numbers, dot, len).
@@ -142,6 +164,43 @@ impl MultiWriter {
     /// Total time spent applying deltas (dual-engine bench).
     pub fn apply_nanos(&self) -> u128 {
         self.apply_ns
+    }
+
+    /// FR-34 federation reconcile: bidirectional crum-diff sync —
+    /// each side pulls exactly the units it lacks plus the other's
+    /// tombstones. Converges both replicas (canonical crums equal).
+    pub fn sync_with(&mut self, other: &mut MultiWriter) {
+        let d1 = other.doc.crum_diff(&mut self.doc);
+        other.doc.pull_from(&self.doc, &d1.only_other);
+        let d2 = self.doc.crum_diff(&mut other.doc);
+        self.doc.pull_from(&other.doc, &d2.only_other);
+    }
+
+    /// Canonical crum of the shared document (exact live-set hash).
+    pub fn shared_crum(&mut self) -> Option<[u8; 32]> {
+        self.doc.canonical_crum()
+    }
+
+    /// Debug: the shared doc's live dot set.
+    pub fn debug_live_dots(&self) -> Vec<(u64, u64)> {
+        self.doc.live().iter().map(|u| u.dot).collect()
+    }
+
+    /// Debug: canonical live descriptors (address, dot, len) as the
+    /// crum sees them, sorted by address.
+    pub fn debug_live_descriptors(&mut self) -> Vec<(Vec<i64>, (u64, u64), usize)> {
+        self.doc.rebuild_index();
+        self.doc
+            .live()
+            .iter()
+            .map(|u| {
+                (
+                    u.address.numbers().to_vec(),
+                    u.dot,
+                    u.content.chars().count(),
+                )
+            })
+            .collect()
     }
 
     /// Memory telemetry: (units, tombstones, content bytes, live
@@ -189,9 +248,14 @@ impl MultiWriter {
                         self.doc.ensure_root_boundary(rd, o);
                     }
                     let dense = self.dense(author);
+                    let ns = self.namespace;
                     let counter = self.counters.get_mut(&author).unwrap();
                     *counter += 1;
-                    let dot = (dense, *counter);
+                    let dot = if ns == 0 {
+                        (dense, *counter)
+                    } else {
+                        (ns * 1_000_000_000 + dense, *counter)
+                    };
                     let (prev, next) = b.prev_next();
                     self.doc.insert_at_with_dot(
                         prev.cloned().as_ref(),

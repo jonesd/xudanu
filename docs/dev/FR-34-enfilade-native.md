@@ -96,6 +96,27 @@ provenance, federation, web platform).
 | Arrangement | Dormant | Transclusion mapping |
 | Structural transclusion | **Active** (cached_content) | Tree references |
 | Bloom filter federation | **Active** (33 tests) | N/A (trust-based) |
+| Subtree crums on the lattice LiveIndex | **Active** (2026-08-31): BLAKE3 over (leaf identity, child crums), maintained by fix() through rotations; canonical sorted rebuild makes equality EXACT; crum-diff descent prunes identical bulk; `pull_from` is the targeted-sync primitive; `MultiWriter::sync_with` reconciles independent instances bidirectionally | OCs on every node |
+| Crum-based targeted sync | **Active**: diff → only-other dots + tombstones payload; convergence armor (crum + text) in lattice tests | Gold's crum-compare sync, minus the wire format |
+
+### Crum implementation notes (2026-08-31)
+
+Two load-bearing facts learned building crum-diff:
+
+1. **Canonical rebuild is the soundness precondition.** `rebuild_index`
+   inserts in HashMap order — shape was nondeterministic, so crum
+   equality was meaningless. Sorting entries by address before
+   upserting makes same-live-set ⇒ same-shape ⇒ same-crum EXACT,
+   and the diff descent well-founded.
+2. **Every index node is a unit** (treap-style): leaf-only collection
+   silently dropped internal nodes' units — the diff under-reported
+   by exactly the internal-node count. `collect_all` walks every
+   node.
+3. **Federation namespaces**: dense author ids restart per
+   MultiWriter instance — two instances syncing cross-instance
+   collided dots ((1,1) minted by both with different addresses).
+   `MultiWriter::with_namespace` folds a namespace into dots; the
+   integration test syncs two independent instances bidirectionally.
 
 ## Roadmap: Approaching Gold
 

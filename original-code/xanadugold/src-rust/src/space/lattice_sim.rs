@@ -622,6 +622,66 @@ mod tests {
         assert!(a.chars().count() <= 10 + 3 * rounds * 3);
     }
 
+    // FR-34 integration: two INDEPENDENT multi-writer instances
+    // (separate servers, concurrent sessions) reconcile via crum
+    // diff — each pulls exactly the units the other has that it
+    // lacks, plus tombstones. Both converge: canonical crums equal,
+    // rendered text equal, and the models agree end to end.
+    #[test]
+    fn multi_writer_replicas_sync_via_crum_diff() {
+        let base = "the quick brown fox jumps over the lazy dog ";
+        let mut east = MultiWriter::with_namespace(base, 1);
+        let mut west = MultiWriter::with_namespace(base, 2);
+        east.open_session(1);
+        east.open_session(2);
+        west.open_session(3);
+        west.open_session(4);
+
+        // Concurrent divergent histories.
+        for k in 0..10u64 {
+            let at = 20 + k * 13;
+            east.apply(
+                1,
+                &[
+                    LatOp::Retain { count: at },
+                    LatOp::Insert { text: "E".into() },
+                ],
+            );
+            east.apply(
+                2,
+                &[LatOp::Retain { count: at + 5 }, LatOp::Delete { count: 3 }],
+            );
+            west.apply(
+                3,
+                &[
+                    LatOp::Retain { count: at + 2 },
+                    LatOp::Insert { text: "W".into() },
+                ],
+            );
+            west.apply(
+                4,
+                &[LatOp::Retain { count: at + 8 }, LatOp::Delete { count: 2 }],
+            );
+        }
+
+        // Reconcile both directions via crum diff (FR-34): each
+        // side pulls exactly the units it lacks plus tombstones.
+        east.sync_with(&mut west);
+
+        // Convergence: identical canonical crums and rendered text.
+        assert_eq!(
+            east.shared_crum(),
+            west.shared_crum(),
+            "bidirectional crum-diff sync must converge"
+        );
+        assert_eq!(east.text(), west.text());
+        // And the merged result keeps every side's edits: counts of
+        // E and W markers survive.
+        let text = east.text();
+        assert_eq!(text.matches('E').count(), 10, "all east inserts survive");
+        assert_eq!(text.matches('W').count(), 10, "all west inserts survive");
+    }
+
     #[test]
     fn opstream_jsonl_roundtrip_shape() {
         let ev = OpEvent {

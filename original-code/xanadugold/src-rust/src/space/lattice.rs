@@ -35,6 +35,15 @@ mod index {
         addr: Sequence,
         dot: Dot,
         len: usize,
+        /// The unit's content crum (BLAKE3 of content bytes) — leaf
+        /// identity for subtree hashing.
+        cfp: [u8; 32],
+        /// Subtree crum (FR-34): BLAKE3 over this node's leaf crum
+        /// and both child subtree crums. Maintained by fix() —
+        /// rotations preserve it. Equality between two
+        /// deterministically-rebuilt indexes is EXACT: same live unit
+        /// set ⇒ identical shape ⇒ identical crums.
+        crum: [u8; 32],
         l: Option<usize>,
         r: Option<usize>,
         w: usize,
@@ -61,10 +70,51 @@ mod index {
             n.map(|i| self.nodes[i].total).unwrap_or(0)
         }
 
+        fn leaf_crum(addr: &Sequence, dot: &Dot, len: usize, cfp: &[u8; 32]) -> [u8; 32] {
+            let mut h = blake3::Hasher::new();
+            h.update(b"xl-leaf");
+            for n in addr.numbers() {
+                h.update(&n.to_le_bytes());
+            }
+            h.update(&dot.0.to_le_bytes());
+            h.update(&dot.1.to_le_bytes());
+            h.update(&(len as u64).to_le_bytes());
+            h.update(cfp);
+            *h.finalize().as_bytes()
+        }
+
         fn fix(&mut self, i: usize) {
             self.nodes[i].w = 1 + self.w(self.nodes[i].l) + self.w(self.nodes[i].r);
             self.nodes[i].total =
                 self.nodes[i].len + self.total(self.nodes[i].l) + self.total(self.nodes[i].r);
+            let leaf = Self::leaf_crum(
+                &self.nodes[i].addr,
+                &self.nodes[i].dot,
+                self.nodes[i].len,
+                &self.nodes[i].cfp,
+            );
+            let mut h = blake3::Hasher::new();
+            h.update(b"xl-node");
+            h.update(&leaf);
+            let lc = self.nodes[i].l.map(|l| self.nodes[l].crum);
+            let rc = self.nodes[i].r.map(|r| self.nodes[r].crum);
+            match lc {
+                Some(ref c) => {
+                    h.update(c);
+                }
+                None => {
+                    h.update(b"xl-empty");
+                }
+            }
+            match rc {
+                Some(ref c) => {
+                    h.update(c);
+                }
+                None => {
+                    h.update(b"xl-empty");
+                }
+            }
+            self.nodes[i].crum = *h.finalize().as_bytes();
         }
 
         fn rot_l(&mut self, x: usize) -> usize {
@@ -104,11 +154,20 @@ mod index {
             i
         }
 
-        fn alloc(&mut self, addr: Sequence, dot: Dot, len: usize) -> usize {
+        fn alloc(&mut self, addr: Sequence, dot: Dot, len: usize, cfp: [u8; 32]) -> usize {
+            let leaf = Self::leaf_crum(&addr, &dot, len, &cfp);
+            let mut h = blake3::Hasher::new();
+            h.update(b"xl-node");
+            h.update(&leaf);
+            h.update(b"xl-empty");
+            h.update(b"xl-empty");
+            let crum = *h.finalize().as_bytes();
             let node = Node {
                 addr,
                 dot,
                 len,
+                cfp,
+                crum,
                 l: None,
                 r: None,
                 w: 1,
@@ -123,22 +182,30 @@ mod index {
             }
         }
 
-        fn insert_rec(&mut self, i: Option<usize>, addr: Sequence, dot: Dot, len: usize) -> usize {
+        fn insert_rec(
+            &mut self,
+            i: Option<usize>,
+            addr: Sequence,
+            dot: Dot,
+            len: usize,
+            cfp: [u8; 32],
+        ) -> usize {
             match i {
-                None => self.alloc(addr, dot, len),
+                None => self.alloc(addr, dot, len, cfp),
                 Some(i) => {
                     match addr.compare_to(&self.nodes[i].addr) {
                         Ordering::Less => {
-                            let c = self.insert_rec(self.nodes[i].l, addr, dot, len);
+                            let c = self.insert_rec(self.nodes[i].l, addr, dot, len, cfp);
                             self.nodes[i].l = Some(c);
                         }
                         Ordering::Greater => {
-                            let c = self.insert_rec(self.nodes[i].r, addr, dot, len);
+                            let c = self.insert_rec(self.nodes[i].r, addr, dot, len, cfp);
                             self.nodes[i].r = Some(c);
                         }
                         Ordering::Equal => {
                             self.nodes[i].dot = dot;
                             self.nodes[i].len = len;
+                            self.nodes[i].cfp = cfp;
                             self.fix(i);
                             return i;
                         }
@@ -209,9 +276,34 @@ mod index {
             }
         }
 
-        pub fn upsert(&mut self, addr: &Sequence, dot: Dot, len: usize) {
-            let root = self.insert_rec(self.root, addr.clone(), dot, len);
+        pub fn upsert(&mut self, addr: &Sequence, dot: Dot, len: usize, cfp: [u8; 32]) {
+            let root = self.insert_rec(self.root, addr.clone(), dot, len, cfp);
             self.root = Some(root);
+        }
+
+        /// O(1) subtree crum of the whole live set (None if empty).
+        pub fn root_crum(&self) -> Option<[u8; 32]> {
+            self.root.map(|r| self.nodes[r].crum)
+        }
+
+        pub(crate) fn root_node(&self) -> Option<usize> {
+            self.root
+        }
+
+        pub(crate) fn node_crum(&self, i: usize) -> [u8; 32] {
+            self.nodes[i].crum
+        }
+
+        pub(crate) fn node_dot(&self, i: usize) -> Dot {
+            self.nodes[i].dot
+        }
+
+        pub(crate) fn node_children(&self, i: usize) -> (Option<usize>, Option<usize>) {
+            (self.nodes[i].l, self.nodes[i].r)
+        }
+
+        pub(crate) fn is_leaf(&self, i: usize) -> bool {
+            self.nodes[i].l.is_none() && self.nodes[i].r.is_none()
         }
 
         pub fn remove_addr(&mut self, addr: &Sequence) -> bool {
@@ -422,6 +514,87 @@ pub struct RegionTombstone {
     pub culls: Vec<(Dot, usize, usize)>,
 }
 
+/// BLAKE3 content crum for a unit (FR-34 leaf identity).
+pub fn content_crum(content: &str) -> [u8; 32] {
+    let mut h = blake3::Hasher::new();
+    h.update(b"xl-cfp");
+    h.update(content.as_bytes());
+    *h.finalize().as_bytes()
+}
+
+/// Result of a crum diff between two docs: live-unit dots present
+/// only on each side, plus descent statistics (chunk-level-diff
+/// evidence).
+#[derive(Debug, Default, Clone)]
+pub struct CrumDiff {
+    pub only_self: Vec<Dot>,
+    pub only_other: Vec<Dot>,
+    pub same: bool,
+    /// Nodes examined during the descent (pruning evidence).
+    pub visited: usize,
+    /// Subtrees pruned because their crums matched.
+    pub pruned: usize,
+}
+
+fn diff_rec(
+    a: &index::LiveIndex,
+    ai: Option<usize>,
+    b: &index::LiveIndex,
+    bi: Option<usize>,
+    out: &mut CrumDiff,
+) {
+    match (ai, bi) {
+        (None, None) => {}
+        (Some(x), None) => {
+            out.visited += 1;
+            collect_all(a, x, &mut out.only_self);
+        }
+        (None, Some(y)) => {
+            out.visited += 1;
+            collect_all(b, y, &mut out.only_other);
+        }
+        (Some(x), Some(y)) => {
+            out.visited += 1;
+            if a.node_crum(x) == b.node_crum(y) {
+                out.pruned += 1;
+                return;
+            }
+            let ac = a.node_children(x);
+            let bc = b.node_children(y);
+            if ac == (None, None) && bc == (None, None) {
+                if a.node_dot(x) != b.node_dot(y) {
+                    out.only_self.push(a.node_dot(x));
+                    out.only_other.push(b.node_dot(y));
+                }
+                return;
+            }
+            // Own units first (nodes are units; addresses may pair
+            // differently across shapes — set subtraction cleans
+            // shared dots afterwards).
+            if a.node_dot(x) != b.node_dot(y) {
+                out.only_self.push(a.node_dot(x));
+                out.only_other.push(b.node_dot(y));
+            }
+            diff_rec(a, ac.0, b, bc.0, out);
+            diff_rec(a, ac.1, b, bc.1, out);
+        }
+    }
+}
+
+/// Collect EVERY node's dot in the subtree — the index is
+/// unit-per-node, so internal nodes are live units too and must not
+/// be dropped by leaf-only collection.
+fn collect_all(idx: &index::LiveIndex, i: usize, out: &mut Vec<Dot>) {
+    let (l, r) = idx.node_children(i);
+    if let Some(l) = l {
+        collect_all(idx, l, out);
+    }
+    out.push(idx.node_dot(i));
+    if let Some(r) = r {
+        collect_all(idx, r, out);
+    }
+}
+
 fn content_len_of(u: &LatticeUnit) -> usize {
     u.content.chars().count()
 }
@@ -571,8 +744,13 @@ impl LatticeDoc {
                 anchor,
             },
         );
-        self.index
-            .upsert(&address, dot, content_len_of(&self.units[&dot]));
+        let u = &self.units[&dot];
+        self.index.upsert(
+            &address,
+            dot,
+            u.content.chars().count(),
+            content_crum(&u.content),
+        );
         dot
     }
 
@@ -597,7 +775,7 @@ impl LatticeDoc {
             .any(|t| t.context.contains(&unit.dot) && t.region.contains_sequence(&unit.address))
     }
 
-    fn rebuild_index(&mut self) {
+    pub(crate) fn rebuild_index(&mut self) {
         self.index.clear();
         let entries: Vec<(Sequence, Dot, usize)> = self
             .units
@@ -605,8 +783,18 @@ impl LatticeDoc {
             .filter(|u| !self.dead_by_scan(u))
             .map(|u| (u.address.clone(), u.dot, u.content.chars().count()))
             .collect();
+        // Canonical shape: insert in address order so the same live
+        // unit set always produces the identical tree (crum equality
+        // is exact; diff descent is well-founded).
+        let mut entries = entries;
+        entries.sort_by(|a, b| a.0.compare_to(&b.0));
         for (addr, dot, len) in entries {
-            self.index.upsert(&addr, dot, len);
+            let cfp = self
+                .units
+                .get(&dot)
+                .map(|u| content_crum(&u.content))
+                .unwrap_or([0u8; 32]);
+            self.index.upsert(&addr, dot, len, cfp);
         }
     }
 
@@ -839,6 +1027,64 @@ impl LatticeDoc {
         }
     }
 
+    /// Canonical crum (FR-34): rebuild the index deterministically
+    /// (sorted insertion — same live unit set ⇒ identical shape),
+    /// then O(1) root crum. EXACT equality: two docs with the same
+    /// live unit set have equal canonical crums.
+    pub fn canonical_crum(&mut self) -> Option<[u8; 32]> {
+        self.rebuild_index();
+        self.index.root_crum()
+    }
+
+    /// Live-set crum without rebuilding (structural, O(1)).
+    pub fn root_crum(&self) -> Option<[u8; 32]> {
+        self.index.root_crum()
+    }
+
+    /// FR-34 crum diff: compare two (canonically rebuilt) docs by
+    /// parallel descent — subtrees with equal crums are pruned;
+    /// only genuinely differing leaf dots are reported. `visited`
+    /// counts nodes examined: with local differences on a large doc
+    /// this is O(log + D), the chunk-level-diff property.
+    pub fn crum_diff(&mut self, other: &mut LatticeDoc) -> CrumDiff {
+        self.rebuild_index();
+        other.rebuild_index();
+        let mut diff = CrumDiff::default();
+        diff_rec(
+            &self.index,
+            self.index.root_node(),
+            &other.index,
+            other.index.root_node(),
+            &mut diff,
+        );
+        // Shape misalignment can pair subtrees covering different
+        // ranges; collected sides may overlap. Set-subtract shared
+        // dots so only genuine one-sided units remain (pruned crums
+        // never reach collection, so identical bulk stays excluded).
+        let self_set: std::collections::HashSet<Dot> = diff.only_self.drain(..).collect();
+        let other_set: std::collections::HashSet<Dot> = diff.only_other.drain(..).collect();
+        diff.only_other = other_set.difference(&self_set).copied().collect();
+        diff.only_self = self_set.difference(&other_set).copied().collect();
+        diff.same = diff.only_self.is_empty() && diff.only_other.is_empty();
+        diff
+    }
+
+    /// Targeted sync (FR-34): pull the units identified by a crum
+    /// diff plus ALL of the other's tombstones (tombstones are the
+    /// delete intent — small, and required for cull correctness).
+    /// Union semantics keep convergence: the full merge is the
+    /// limit of targeted pulls.
+    pub fn pull_from(&mut self, other: &LatticeDoc, dots: &[Dot]) {
+        for d in dots {
+            if let Some(u) = other.units.get(d) {
+                self.units.entry(*d).or_insert_with(|| u.clone());
+            }
+        }
+        self.tombstones.extend(other.tombstones.iter().cloned());
+        self.counter = self.counter.max(other.counter_of(self.server));
+        self.rebuild_index();
+    }
+
     /// Memory telemetry: (units, tombstones, total content bytes,
     /// live content bytes).
     pub fn memory_estimate(&self) -> (usize, usize, usize, usize) {
@@ -918,8 +1164,13 @@ impl LatticeDoc {
                 anchor: None,
             },
         );
-        self.index
-            .upsert(&address, dot, content_len_of(&self.units[&dot]));
+        let u = &self.units[&dot];
+        self.index.upsert(
+            &address,
+            dot,
+            u.content.chars().count(),
+            content_crum(&u.content),
+        );
     }
 
     /// Deterministic split-part dot: derived from (parent, range) so
@@ -968,8 +1219,13 @@ impl LatticeDoc {
                 anchor: None,
             },
         );
-        self.index
-            .upsert(&address, dot, content_len_of(&self.units[&dot]));
+        let u = &self.units[&dot];
+        self.index.upsert(
+            &address,
+            dot,
+            u.content.chars().count(),
+            content_crum(&u.content),
+        );
         dot
     }
 
@@ -1228,6 +1484,148 @@ mod tests {
         let first_addr = all[0].address.clone();
         d.insert_between(Some(&first_addr), None, "world", 1);
         assert_eq!(d.render(), "hello world");
+    }
+
+    // FR-34 subtree crums: exact equality, chunk-level diff with
+    // pruning evidence, and targeted sync convergence.
+
+    fn seeded_doc(server: u64, chunks: usize) -> LatticeDoc {
+        let mut doc = LatticeDoc::new(server);
+        let root = Sequence::from_numbers(vec![1, 9, 1]);
+        doc.seed_shared_unit(root, &"0123456789".repeat(chunks), 9, (9, 1));
+        doc
+    }
+
+    #[test]
+    fn canonical_crum_exact_for_identical_live_sets() {
+        use crate::space::lattice_sim::{apply_delta, LatOp};
+        // Two docs reaching the same live set by different histories
+        // (direct build vs merge) must have equal canonical crums.
+        let mut a = seeded_doc(1, 100);
+        let mut c = LatticeDoc::new(3);
+        c.merge(&a);
+        assert_eq!(
+            a.canonical_crum(),
+            c.canonical_crum(),
+            "same live set => identical canonical crum"
+        );
+        // A real edit changes the crum.
+        let mut d = seeded_doc(4, 100);
+        apply_delta(
+            &mut d,
+            4,
+            &[
+                LatOp::Retain { count: 50 },
+                LatOp::Delete { count: 10 },
+                LatOp::Retain { count: 940 },
+            ],
+        );
+        assert_ne!(
+            a.canonical_crum(),
+            d.canonical_crum(),
+            "different live set => different crum"
+        );
+    }
+
+    #[test]
+    fn crum_diff_prunes_on_local_difference() {
+        use crate::space::lattice_sim::{apply_delta, LatOp};
+        // 200k-char doc built from typed chunks (thousands of units)
+        // vs a copy with one small edit: the diff must prune the
+        // identical bulk.
+        let build = |server: u64| -> LatticeDoc {
+            let mut doc = LatticeDoc::new(server);
+            let root = Sequence::from_numbers(vec![1, 9, 1]);
+            let text = "0123456789".repeat(20000);
+            doc.seed_shared_unit(root, &text, 9, (9, 1));
+            // Fragment into parts so the index has real structure.
+            for k in 0..200u64 {
+                apply_delta(
+                    &mut doc,
+                    server,
+                    &[
+                        LatOp::Retain { count: k * 500 },
+                        LatOp::Insert { text: "|".into() },
+                    ],
+                );
+            }
+            doc
+        };
+        let mut a = build(1);
+        let mut b = build(1);
+        // One small local edit on b.
+        apply_delta(
+            &mut b,
+            1,
+            &[LatOp::Retain { count: 100_000 }, LatOp::Delete { count: 5 }],
+        );
+        let total_units = a.live().len().max(b.live().len());
+        let diff = a.crum_diff(&mut b);
+        assert!(!diff.same, "one delete must register");
+        assert!(
+            diff.pruned >= 1,
+            "identical bulk must be pruned (pruned={})",
+            diff.pruned
+        );
+        assert!(
+            diff.visited < total_units,
+            "visited {} of {} — diff must not scan everything",
+            diff.visited,
+            total_units
+        );
+    }
+
+    #[test]
+    fn crum_diff_reports_empty_for_equal_docs() {
+        let mut a = seeded_doc(1, 50);
+        let mut b = seeded_doc(1, 50);
+        let diff = a.crum_diff(&mut b);
+        assert!(diff.same);
+        assert!(diff.only_self.is_empty() && diff.only_other.is_empty());
+        assert_eq!(a.canonical_crum(), b.canonical_crum());
+    }
+
+    #[test]
+    fn sync_via_crum_diff_converges() {
+        use crate::space::lattice_sim::{apply_delta, LatOp};
+        // Functional: replica A accumulates edits; B is stale. B
+        // diffs, pulls A's differing units + tombstones, and both
+        // converge (crum AND text).
+        let mut a = seeded_doc(1, 300);
+        // A applies a scripted history: splits, inserts, deletes.
+        for k in 0..12u64 {
+            let at = 500 + k * 700;
+            apply_delta(
+                &mut a,
+                1,
+                &[
+                    LatOp::Retain { count: at },
+                    LatOp::Insert { text: "X".into() },
+                ],
+            );
+            apply_delta(
+                &mut a,
+                1,
+                &[
+                    LatOp::Retain { count: at + 200 },
+                    LatOp::Delete { count: 40 },
+                ],
+            );
+        }
+
+        let mut b = seeded_doc(1, 300);
+        let diff = b.crum_diff(&mut a);
+        assert!(!diff.same, "A's history must register");
+        let payload: Vec<(u64, u64)> = diff.only_other.clone();
+        b.pull_from(&a, &payload);
+
+        // Converged: identical canonical crums and identical text.
+        assert_eq!(
+            b.canonical_crum(),
+            a.canonical_crum(),
+            "targeted pull must converge the live set"
+        );
+        assert_eq!(b.render(), a.render(), "rendered text converges");
     }
 
     #[test]
