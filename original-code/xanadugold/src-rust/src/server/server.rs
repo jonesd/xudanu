@@ -27310,6 +27310,48 @@ mod tests {
         }
     }
 
+    // Fast-path regression canary: consecutive same-session ops
+    // (base_is_current) at 15k chars. Baseline 710µs/op after the
+    // same_content crum fast path (was 11-15ms before it — the
+    // per-char entrywise compare). Release-gated with 7x headroom:
+    // catches order-of-magnitude regressions without CI flakiness.
+    #[test]
+    fn fastpath_keystroke_cost_guard() {
+        use crate::server::transport::protocol::TextDeltaOp as Op;
+        let mut server = Server::new();
+        let sid = server.connect();
+        let _ = server.login_public(sid);
+        let text: String = "alpha bravo charlie delta echo foxtrot golf hotel ".repeat(300);
+        let n = text.chars().count();
+        let work = server
+            .create_work(sid, crate::edition::Edition::from_text(&text))
+            .unwrap();
+        server.crdt_open_session(sid, work).unwrap();
+        let mid = n / 2;
+        const OPS: usize = 50;
+        let mut total_us: u128 = 0;
+        for k in 0..OPS {
+            let ops = vec![
+                Op::Retain {
+                    count: (mid + k % 7) as u64,
+                },
+                Op::Insert { text: "z".into() },
+            ];
+            let t = std::time::Instant::now();
+            server.crdt_apply_text_delta(sid, work, &ops).unwrap();
+            total_us += t.elapsed().as_micros();
+        }
+        let mean_us = total_us / OPS as u128;
+        eprintln!("fastpath guard: mean {}us/op on {} chars", mean_us, n);
+        #[cfg(not(debug_assertions))]
+        assert!(
+            mean_us < 5_000,
+            "fast-path regression: mean {}us/op (baseline 710us, bound 5000us) \
+             — check same_content/build_merge_mapping crum fast paths",
+            mean_us
+        );
+    }
+
     #[test]
     fn f10_span_count_bounded_under_interleaved_merges() {
         use crate::server::transport::protocol::TextDeltaOp as Op;
