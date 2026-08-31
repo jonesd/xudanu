@@ -8249,6 +8249,82 @@ impl Server {
             .map_err(|e| ServerError::Internal(e.to_string()))
     }
 
+    /// FR-34 crum-path notarization: bind a quoted range to a
+    /// server-signed commitment (range crum + root crum + excerpt
+    /// hash). Proves WHAT was quoted without shipping the document
+    /// (excerpt hash) and THAT it was in the work at this state
+    /// (range crum recomputes against the edition).
+    pub fn notarize_range(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+        char_start: usize,
+        char_end: usize,
+    ) -> Result<crate::edition::notarize::RangeNotarization, ServerError> {
+        self.ensure_session(session_id)?;
+        self.ensure_can_read(session_id, work_be_id)?;
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+        let edition = ws.work.current_edition();
+        let range_crum = crate::edition::notarize::range_crum(&edition, char_start, char_end)
+            .ok_or_else(|| ServerError::InvalidArgument("empty or inverted range".into()))?;
+        let root_crum = edition
+            .crum()
+            .ok_or_else(|| ServerError::Internal("edition has no crum".into()))?;
+        let text = edition.to_text();
+        let chars: Vec<char> = text.chars().collect();
+        let s = char_start.min(chars.len());
+        let e = char_end.min(chars.len());
+        if s >= e {
+            return Err(ServerError::InvalidArgument("empty range".into()));
+        }
+        let excerpt: String = chars[s..e].iter().collect();
+        let excerpt_hash = crate::edition::notarize::excerpt_hash(&excerpt);
+        let timestamp = Self::current_timestamp_secs();
+        let mut n = crate::edition::notarize::RangeNotarization {
+            work_id: work_be_id,
+            char_start: s,
+            char_end: e,
+            range_crum,
+            root_crum,
+            excerpt_hash,
+            signature: [0u8; 64],
+            timestamp,
+        };
+        let payload = crate::edition::notarize::notarization_payload(&n);
+        let sig = crate::crypto::sign::sign_bytes(&self.server_keypair.signing_key, &payload);
+        n.signature = sig.to_bytes();
+        tracing::info!(
+            target: "xudanu::security",
+            work_id = work_be_id,
+            range = ?(s, e),
+            event = "SECURITY:notarize_range",
+            "range notarized"
+        );
+        Ok(n)
+    }
+
+    /// Verify a notarization against this server's state: signature
+    /// by this server, and the range crum still recomputing (the
+    /// content is present and unchanged).
+    pub fn verify_notarization(
+        &self,
+        n: &crate::edition::notarize::RangeNotarization,
+    ) -> Result<bool, ServerError> {
+        let vk = self.server_keypair.signing_key.verifying_key();
+        if !n.verify_signature(&vk) {
+            return Ok(false);
+        }
+        let ws = self
+            .works
+            .get(&n.work_id)
+            .ok_or(ServerError::WorkNotFound(n.work_id))?;
+        let edition = ws.work.current_edition();
+        Ok(n.verify_against_edition(&edition))
+    }
+
     /// FR-51 Phase 4: enable the lattice dual-write shadow
     /// (server flag; shadows still require per-work enrollment).
     pub fn enable_lattice_shadow(&mut self) {
@@ -38051,6 +38127,64 @@ mod tests {
 
     #[test]
     #[cfg(feature = "server")]
+    // FR-34 notarization armor: quote -> notarize -> verify the
+    // excerpt (privacy: no document needed), verify the signature,
+    // verify against the live edition; tamper and drift both fail.
+    #[test]
+    fn notarization_lifecycle() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let work = server
+            .create_work(sid, Edition::from_text("the quoted passage stands here"))
+            .unwrap();
+
+        let n = server.notarize_range(sid, work, 4, 18).unwrap();
+        // WHAT was quoted: "quoted passage".
+        assert!(n.verify_excerpt("quoted passage"), "excerpt verifies");
+        assert!(!n.verify_excerpt("tampered passage"), "tamper fails");
+        // THAT it was there: against the live edition.
+        assert!(server.verify_notarization(&n).unwrap(), "live verify");
+
+        // Drift: edit inside the range -> range crum changes.
+        let author_club = server.resolve_author_club(sid);
+        server
+            .revise_work(
+                work,
+                sid,
+                Edition::from_text("the altered passage stands here"),
+                author_club,
+            )
+            .unwrap();
+        assert!(
+            !server.verify_notarization(&n).unwrap(),
+            "edited range must invalidate"
+        );
+        // But the excerpt proof and signature still hold (what WAS
+        // quoted remains provable — historical attestation).
+        assert!(n.verify_excerpt("quoted passage"));
+        let vk = server.server_keypair.signing_key.verifying_key();
+        assert!(n.verify_signature(&vk), "signature is historical truth");
+    }
+
+    #[test]
+    fn notarization_rejects_empty_and_foreign_signature() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let work = server
+            .create_work(sid, Edition::from_text("content"))
+            .unwrap();
+        assert!(server.notarize_range(sid, work, 0, 0).is_err());
+        assert!(server.notarize_range(sid, work, 5, 2).is_err());
+
+        let n = server.notarize_range(sid, work, 0, 7).unwrap();
+        // A different server's key cannot verify.
+        let other = crate::crypto::keys::ServerKeyPair::generate("other");
+        let ovk = other.signing_key.verifying_key();
+        assert!(!n.verify_signature(&ovk), "foreign key rejected");
+    }
+
     // FR-34 recorders Phase B end-to-end: works + edits ->
     // checkpoint (writes snapshot+journal) -> restore -> backfollow
     // queries identical to a fresh full rebuild.

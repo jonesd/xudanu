@@ -20,6 +20,7 @@ pub mod label;
 pub mod license_overlay;
 pub mod links;
 pub mod mapping;
+pub mod notarize;
 pub mod orgl;
 #[cfg(feature = "serde")]
 // Depends on crate::persist (server feature): edition snapshots are
