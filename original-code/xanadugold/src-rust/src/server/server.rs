@@ -16082,6 +16082,7 @@ impl Server {
         // pass per element ever) before rendering.
         self.materialize_virtual_elements(work_id)?;
         let mut cache: HashMap<BeId, String> = HashMap::new();
+        let mut raw_cache: HashMap<BeId, String> = HashMap::new();
         let mut stack: Vec<BeId> = Vec::new();
         let mut span_ranges = Vec::new();
         let mut source_titles = HashMap::new();
@@ -16089,6 +16090,7 @@ impl Server {
         let result = self.resolve_inline_recursive(
             work_id,
             &mut cache,
+            &mut raw_cache,
             &mut stack,
             &mut span_ranges,
             &mut source_titles,
@@ -16198,10 +16200,181 @@ impl Server {
 
     const INLINE_MAX_DEPTH: usize = 1000;
 
+    /// F9: resolve a RAW char range of a source work with nesting —
+    /// text characters overlapping the range plus fully-resolved
+    /// transclusion elements whose raw (zero-width) positions fall
+    /// inside it. Verification pins are over RAW text; display uses
+    /// this walk so nested sources resolve in place instead of
+    /// collapsing to raw slices.
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_raw_range_with_nesting(
+        &self,
+        src_id: BeId,
+        cs: usize,
+        ce: usize,
+        cache: &mut HashMap<BeId, String>,
+        raw_cache: &mut HashMap<BeId, String>,
+        stack: &mut Vec<BeId>,
+        span_ranges: &mut Vec<crate::edition::compound::SpanRange>,
+        source_titles: &mut HashMap<BeId, String>,
+        transcluded_blobs: &mut Vec<TransclusionBlobRef>,
+        depth: usize,
+    ) -> Result<String, ServerError> {
+        if depth >= Self::INLINE_MAX_DEPTH {
+            tracing::warn!(
+                "[transclusion] depth limit {} in raw-range resolve for {:04x}",
+                Self::INLINE_MAX_DEPTH,
+                src_id
+            );
+            return Ok(String::new());
+        }
+        if stack.contains(&src_id) {
+            // Cycle: the original whole-work resolver returned the
+            // work's raw text on re-entry (self-transclusion
+            // semantics) — match it here, slicing the requested
+            // range from the raw text.
+            let ws = self
+                .works
+                .get(&src_id)
+                .ok_or(ServerError::WorkNotFound(src_id))?;
+            let raw = ws.work().current_edition().to_text();
+            let chars: Vec<char> = raw.chars().collect();
+            let s = cs.min(chars.len());
+            let e = ce.min(chars.len());
+            let content: String = if s < e {
+                chars[s..e].iter().collect()
+            } else {
+                String::new()
+            };
+            tracing::warn!(
+                "[transclusion] cycle at {:04x} — raw range [{}..{}) = {} chars",
+                src_id,
+                cs,
+                ce,
+                content.chars().count()
+            );
+            return Ok(content);
+        }
+        stack.push(src_id);
+        let result = self.resolve_raw_range_with_nesting_inner(
+            src_id,
+            cs,
+            ce,
+            cache,
+            raw_cache,
+            stack,
+            span_ranges,
+            source_titles,
+            transcluded_blobs,
+            depth,
+        );
+        stack.pop();
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_raw_range_with_nesting_inner(
+        &self,
+        src_id: BeId,
+        cs: usize,
+        ce: usize,
+        cache: &mut HashMap<BeId, String>,
+        raw_cache: &mut HashMap<BeId, String>,
+        stack: &mut Vec<BeId>,
+        span_ranges: &mut Vec<crate::edition::compound::SpanRange>,
+        source_titles: &mut HashMap<BeId, String>,
+        transcluded_blobs: &mut Vec<TransclusionBlobRef>,
+        depth: usize,
+    ) -> Result<String, ServerError> {
+        let raw = if let Some(t) = raw_cache.get(&src_id) {
+            t.clone()
+        } else {
+            let t = self.work_text(src_id)?;
+            raw_cache.insert(src_id, t.clone());
+            t
+        };
+        let src_entries = self
+            .works
+            .get(&src_id)
+            .map(|ws| ws.work().current_edition().cached_entries().clone())
+            .unwrap_or_default();
+
+        let mut out = String::new();
+        let mut raw_pos = 0usize;
+        let mut flat = 0usize;
+        for (_, carrier) in &src_entries {
+            match &carrier.element {
+                crate::edition::RangeElement::Text { text } => {
+                    let len = text.chars().count();
+                    let s = cs.saturating_sub(raw_pos).min(len);
+                    let e = ce.saturating_sub(raw_pos).min(len);
+                    if s < e {
+                        let chars: Vec<char> = text.chars().collect();
+                        out.push_str(&chars[s..e].iter().collect::<String>());
+                        flat += e - s;
+                    }
+                    raw_pos += len;
+                }
+                crate::edition::RangeElement::Transclusion {
+                    source_work_id,
+                    char_start,
+                    char_end,
+                    placed_at,
+                    placed_by,
+                    content_hash: nested_hash,
+                    source_revision: nested_rev,
+                } => {
+                    if raw_pos >= cs && raw_pos < ce {
+                        let nested = self.resolve_raw_range_with_nesting(
+                            *source_work_id,
+                            *char_start as usize,
+                            *char_end as usize,
+                            cache,
+                            raw_cache,
+                            stack,
+                            span_ranges,
+                            source_titles,
+                            transcluded_blobs,
+                            depth + 1,
+                        )?;
+                        let nested_len = nested.chars().count();
+                        span_ranges.push(crate::edition::compound::SpanRange {
+                            source_work_id: *source_work_id,
+                            char_start: *char_start,
+                            char_end: *char_end,
+                            flat_start: flat,
+                            flat_end: flat + nested_len,
+                            content_len: nested_len,
+                            otree_position: 0,
+                            resolved_content: nested.clone(),
+                            placed_at: *placed_at,
+                            placed_by: *placed_by,
+                            source_changed: false,
+                        });
+                        let _ = (nested_hash, nested_rev);
+                        out.push_str(&nested);
+                        flat += nested_len;
+                    }
+                    // Zero-width in raw coordinates either way.
+                }
+                _ => {
+                    let len = carrier.char_len();
+                    if len > 0 {
+                        let s = cs.saturating_sub(raw_pos).min(len);
+                        let e = ce.saturating_sub(raw_pos).min(len);
+                        raw_pos += e;
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+
     fn resolve_inline_recursive(
         &self,
         work_id: BeId,
         cache: &mut HashMap<BeId, String>,
+        raw_cache: &mut HashMap<BeId, String>,
         stack: &mut Vec<BeId>,
         span_ranges: &mut Vec<crate::edition::compound::SpanRange>,
         source_titles: &mut HashMap<BeId, String>,
@@ -16395,61 +16568,87 @@ impl Server {
                 let p_at = *placed_at;
                 let p_by = *placed_by;
 
-                // FR-26 Phase 3: Try blob snapshot first if source work is gone
-                // or if we have a stored hash (immutable content retrieval)
-                let src_text = if let Some(hash) = stored_hash {
-                    if self.works.get(&src_id).is_none() {
-                        // Source deleted — try blob snapshot
-                        if let Ok(blob_data) = self.blob_store.retrieve(hash) {
-                            tracing::info!(
-                                "[FR-26] retrieved transclusion from blob snapshot {} — source {:x} deleted",
-                                hex::encode(hash), src_id
-                            );
-                            String::from_utf8_lossy(&blob_data).to_string()
-                        } else {
-                            // No blob — source truly gone
-                            tracing::warn!(
-                                "[FR-26] source {:x} deleted and no blob snapshot available",
-                                src_id
-                            );
-                            continue;
+                // FR-26 Phase 3: if the source work is gone, fall back
+                // to the immutable blob snapshot (raw, no nesting).
+                // Live sources resolve through the F9 raw-range walk
+                // below — the whole-source recursion that used to run
+                // here duplicated span ranges and hashed the resolved
+                // view.
+                if stored_hash.is_some() && self.works.get(&src_id).is_none() {
+                    let hash = stored_hash.unwrap();
+                    if let Ok(blob_data) = self.blob_store.retrieve(&hash) {
+                        tracing::info!(
+                            "[FR-26] retrieved transclusion from blob snapshot {} — source {:x} deleted",
+                            hex::encode(hash), src_id
+                        );
+                        let content = String::from_utf8_lossy(&blob_data).to_string();
+                        let content_len = content.chars().count();
+                        span_ranges.push(crate::edition::compound::SpanRange {
+                            source_work_id: src_id,
+                            char_start: c_start,
+                            char_end: c_end,
+                            flat_start: text_offset,
+                            flat_end: text_offset + content_len,
+                            content_len,
+                            otree_position: crdt_offset,
+                            resolved_content: content.clone(),
+                            placed_at: p_at,
+                            placed_by: p_by,
+                            source_changed: false,
+                        });
+                        if !source_titles.contains_key(&src_id) {
+                            if let Some(title) = self.compound_source_title(src_id) {
+                                source_titles.insert(src_id, title);
+                            }
                         }
-                    } else {
-                        // Source exists — resolve normally
-                        self.resolve_inline_recursive(
-                            src_id,
-                            cache,
-                            stack,
-                            span_ranges,
-                            source_titles,
-                            transcluded_blobs,
-                            depth + 1,
-                        )?
+                        resolved_text.push_str(&content);
+                        text_offset += content_len;
+                        continue;
                     }
-                } else {
-                    // No hash — legacy transclusion, resolve normally
-                    self.resolve_inline_recursive(
-                        src_id,
-                        cache,
-                        stack,
-                        span_ranges,
-                        source_titles,
-                        transcluded_blobs,
-                        depth + 1,
-                    )?
-                };
+                    tracing::warn!(
+                        "[FR-26] source {:x} deleted and no blob snapshot available",
+                        src_id
+                    );
+                    continue;
+                }
 
-                let src_chars: Vec<char> = src_text.chars().collect();
-                let start = c_start.min(src_chars.len());
-                let end = c_end.min(src_chars.len());
-                let content: String = src_chars[start..end].iter().collect();
+                // F9 fix: the pin is over the source's RAW text (set
+                // at placement), so verification compares the CURRENT
+                // raw excerpt — never the resolved view, which
+                // legitimately differs for nested sources. Display
+                // content resolves nesting in place via the raw-range
+                // walk.
+                let raw_src = if let Some(t) = raw_cache.get(&src_id) {
+                    t.clone()
+                } else {
+                    let t = self.work_text(src_id)?;
+                    raw_cache.insert(src_id, t.clone());
+                    t
+                };
+                let raw_chars: Vec<char> = raw_src.chars().collect();
+                let r_start = (c_start as usize).min(raw_chars.len());
+                let r_end_clamped = (c_end as usize).min(raw_chars.len());
+                let raw_excerpt: String = raw_chars[r_start..r_end_clamped].iter().collect();
+
+                let content: String = self.resolve_raw_range_with_nesting(
+                    src_id,
+                    c_start as usize,
+                    c_end as usize,
+                    cache,
+                    raw_cache,
+                    stack,
+                    span_ranges,
+                    source_titles,
+                    transcluded_blobs,
+                    depth + 1,
+                )?;
                 let content_len = content.chars().count();
 
-                // Verify content hash if stored (FR-26)
+                // Verify content hash if stored (FR-26): raw vs raw.
                 let mut hash_verified = true;
                 let mut source_changed = false;
                 if let Some(expected_hash) = stored_hash {
-                    let actual_hash = blake3::hash(content.as_bytes());
+                    let actual_hash = blake3::hash(raw_excerpt.as_bytes());
                     if actual_hash.as_bytes() != &expected_hash[..] {
                         source_changed = true;
                         hash_verified = false;
@@ -37525,6 +37724,91 @@ mod tests {
 
     #[test]
     #[cfg(feature = "server")]
+    // F9 armor: NESTED transclusions must resolve fully — the
+    // placement pin is over the source's RAW text, but resolution
+    // verified a slice of the RESOLVED view; any source with its own
+    // transclusions false-positived as "edited" and the FR-26
+    // fallback collapsed the nesting to a raw slice. Fix: verify
+    // raw-vs-raw; display = the raw range's contents with contained
+    // transclusion elements resolved in place.
+    #[test]
+    fn f9_nested_transclusion_resolves_fully() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        // C: leaf content.
+        let c = server
+            .create_work(sid, Edition::from_text("CHARLIE-CORE"))
+            .unwrap();
+        // B: text + a transclusion of C (B's raw text is
+        // "wrapped:  fin" — the C element is zero-width in raw).
+        let b = server
+            .create_work(sid, Edition::from_text("wrapped:  fin"))
+            .unwrap();
+        server
+            .element_insert(sid, b, 8, RangeElement::transclusion(c, 0, 12))
+            .unwrap();
+        // A: transcludes all of B.
+        let a = server.create_work(sid, Edition::empty()).unwrap();
+        server
+            .element_insert(sid, a, 0, RangeElement::transclusion(b, 0, 14))
+            .unwrap();
+
+        let resolved = server.resolve_inline_transclusions(a).unwrap();
+        assert!(
+            resolved.text.contains("CHARLIE-CORE"),
+            "nested source content must resolve through, got {:?}",
+            resolved.text
+        );
+        // No false drift: B's range was never edited.
+        let b_range = resolved
+            .span_ranges
+            .iter()
+            .find(|r| r.source_work_id == b)
+            .expect("span range for B");
+        assert!(
+            !b_range.source_changed,
+            "unedited nested source must not flag drift"
+        );
+    }
+
+    #[test]
+    fn f9_true_drift_still_detected_on_nested_source() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let c = server
+            .create_work(sid, Edition::from_text("CHARLIE-CORE"))
+            .unwrap();
+        let b = server
+            .create_work(sid, Edition::from_text("wrapped:  fin"))
+            .unwrap();
+        server
+            .element_insert(sid, b, 8, RangeElement::transclusion(c, 0, 12))
+            .unwrap();
+        let a = server.create_work(sid, Edition::empty()).unwrap();
+        server
+            .element_insert(sid, a, 0, RangeElement::transclusion(b, 0, 14))
+            .unwrap();
+
+        // Edit B INSIDE the transcluded range (raw coords 0..14).
+        let author_club = server.resolve_author_club(sid);
+        server
+            .revise_work(b, sid, Edition::from_text("WRAPPED:  fin"), author_club)
+            .unwrap();
+
+        let resolved = server.resolve_inline_transclusions(a).unwrap();
+        // FR-26 semantics: true drift shows the PINNED content — the
+        // edit must NOT bleed through.
+        assert!(
+            resolved.text.contains("wrapped:") && !resolved.text.contains("WRAPPED:"),
+            "drifted edit must not bleed through; got {:?}",
+            resolved.text
+        );
+    }
+
     fn fr26_transclusion_hash_mismatch_detected_on_source_edit() {
         let mut server = Server::new();
         let sid = server.connect();

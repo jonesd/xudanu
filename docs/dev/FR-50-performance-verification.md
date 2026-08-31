@@ -399,6 +399,33 @@ O-tree. Deterministic repro: the dual-engine bench (first diff at
 ~mid-document, stable across runs). That adjudication is the
 remaining F6 work.
 
+## Finding 9 FIXED — nested transclusion resolution (2026-08-31)
+
+Root cause confirmed in code: placement pins BLAKE3 over the source's
+RAW text, but resolution verified a slice of the RESOLVED view — any
+source with its own transclusions false-positived as "edited" and the
+FR-26 revision fallback collapsed the nesting to a raw slice (single
+level worked because raw == resolved there).
+
+Fix (verification-side only — pins, placement, persistence, and
+migration all unchanged, old pins are raw-hashes and stay valid):
+
+- Verification compares the source's CURRENT raw excerpt against the
+  pin — like-with-like. Drift now fires only on genuine range edits.
+- Display resolves nesting IN PLACE: a raw-range walk over the
+  source's entries (text chars overlapping the range + fully-resolved
+  transclusion elements whose zero-width raw positions fall inside
+  it). The old whole-source recursion duplicated span ranges and
+  hashed the wrong view; it remains only for the deleted-source blob
+  snapshot path.
+- Cycle semantics preserved (self-transclusion resolves its own raw
+  range, matching the historical whole-work resolver).
+
+Armor: f9_nested_transclusion_resolves_fully (3-level chain reaches
+the origin, no false drift) and f9_true_drift_still_detected (an edit
+inside the range shows the PINNED content, never bleeds through).
+Transclusion suite: 126 green.
+
 ## Improvement-list pass #3–#6 (2026-08-30, post-F6)
 
 - **#3 link-span loop (F5 remnant):** a stray DEBUG eprintln had
