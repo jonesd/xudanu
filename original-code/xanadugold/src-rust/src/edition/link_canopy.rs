@@ -142,20 +142,37 @@ struct Node {
 /// per-link checks (to-spec pairing, home, author) the caller
 /// already runs. The canopy may over-return (conservative
 /// pruning); it never under-returns.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug)]
 pub struct LinkCanopy {
     nodes: Vec<Node>,
-    /// Visited-subtree counter for the pruning stats (test/demo).
-    pub visited_subtrees: usize,
-    pub visited_entries: usize,
+    /// Visited counters for pruning stats (test/demo) — Cell so
+    /// queries borrow &self (no per-query clone at the call site).
+    pub visited_subtrees: std::sync::atomic::AtomicUsize,
+    pub visited_entries: std::sync::atomic::AtomicUsize,
+}
+
+impl Clone for LinkCanopy {
+    fn clone(&self) -> Self {
+        LinkCanopy {
+            nodes: self.nodes.clone(),
+            visited_subtrees: std::sync::atomic::AtomicUsize::new(0),
+            visited_entries: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+}
+
+impl Default for LinkCanopy {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LinkCanopy {
     pub fn new() -> Self {
         let mut c = LinkCanopy {
             nodes: Vec::new(),
-            visited_subtrees: 0,
-            visited_entries: 0,
+            visited_subtrees: std::sync::atomic::AtomicUsize::new(0),
+            visited_entries: std::sync::atomic::AtomicUsize::new(0),
         };
         c.nodes.push(Node {
             lo: 0,
@@ -346,12 +363,14 @@ impl LinkCanopy {
     /// (work, entry) pairs — conservative superset of true
     /// matches. Records pruning stats in visited_*.
     pub fn query(
-        &mut self,
+        &self,
         works: Option<&[u64]>,
         type_bits: &TypeBits,
     ) -> Vec<(u64, AttachmentEntry)> {
-        self.visited_subtrees = 0;
-        self.visited_entries = 0;
+        self.visited_subtrees
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.visited_entries
+            .store(0, std::sync::atomic::Ordering::Relaxed);
         let mut out = Vec::new();
         let bits = *type_bits;
         self.query_at(self.root(), works, &bits, &mut out);
@@ -359,7 +378,7 @@ impl LinkCanopy {
     }
 
     fn query_at(
-        &mut self,
+        &self,
         idx: usize,
         works: Option<&[u64]>,
         bits: &TypeBits,
@@ -376,7 +395,8 @@ impl LinkCanopy {
         if !bits.is_empty() && !node.bits.intersects(bits) {
             return;
         }
-        self.visited_subtrees += 1;
+        self.visited_subtrees
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if node.leaf.is_some() {
             for (w, leaf) in &node.leaf_map {
                 if let Some(ws) = works {
@@ -387,7 +407,8 @@ impl LinkCanopy {
                 if !bits.is_empty() && !leaf.bits.intersects(bits) {
                     continue;
                 }
-                self.visited_entries += leaf.entries.len();
+                self.visited_entries
+                    .fetch_add(leaf.entries.len(), std::sync::atomic::Ordering::Relaxed);
                 for e in &leaf.entries {
                     out.push((*w, e.clone()));
                 }
@@ -542,7 +563,7 @@ mod tests {
         // A rare-type query must visit far fewer entries than the
         // total (200). With lazy splits the halves partition.
         let q = c.query(None, &r.bits_for(&[8]));
-        let visited = c.visited_entries;
+        let visited = c.visited_entries.load(std::sync::atomic::Ordering::Relaxed);
         assert_eq!(q.len(), 4); // works 0, 50, 100, 150
         assert!(
             visited < 200,

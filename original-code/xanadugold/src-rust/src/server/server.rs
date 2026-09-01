@@ -14030,13 +14030,19 @@ impl Server {
                 None // nothing to prune — the honest full scan
             }
         };
+        // Inverted loop: iterate the PRUNED candidates (or all
+        // links when nothing can prune) — never O(L) iteration
+        // plus per-link lookups when the canopy already pruned.
+        let ids: Vec<BeId> = match candidate_ids {
+            Some(cands) => cands,
+            None => self.links.keys().copied().collect(),
+        };
         let mut results = Vec::new();
-        for (&link_id, ls) in &self.links {
-            if let Some(cands) = &candidate_ids {
-                if !cands.binary_search(&link_id).is_ok() {
-                    continue;
-                }
-            }
+        for link_id in ids {
+            let ls = match self.links.get(&link_id) {
+                Some(ls) => ls,
+                None => continue,
+            };
             if self.link_hidden_by_home_archive(link_id) {
                 continue;
             }
@@ -46168,5 +46174,131 @@ mod tests_security_tracker {
 
             let _ = std::fs::remove_dir_all(&data_dir);
         }
+    }
+}
+
+#[cfg(test)]
+mod link_canopy_bench {
+    use super::*;
+
+    fn setup() -> (Server, SessionId) {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        (server, sid)
+    }
+
+    /// Ignored-by-default benchmark: run with
+    /// `cargo test --features server --lib link_canopy_bench -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_canopy_vs_scan() {
+        use crate::server::transport::protocol::LinkEndpointSpecPayload as Spec;
+        let (mut server, sid) = setup();
+        let mut works = Vec::new();
+        for i in 0..150u64 {
+            works.push(
+                server
+                    .create_work(sid, Edition::from_text(&format!("w{}", i)))
+                    .unwrap(),
+            );
+        }
+        // 3000 links, types 1-4 common, type 5 rare (2%).
+        for k in 0..3000u64 {
+            let a = works[(k as usize) % works.len()];
+            let b = works[((k * 13 + 7) as usize) % works.len()];
+            let t = if k % 50 == 0 { 5u64 } else { (k % 4) + 1 };
+            server
+                .create_link_with_hyperlink(
+                    sid,
+                    crate::edition::links::HyperLink::make(
+                        vec![t],
+                        HyperRef::single(None, Some(a), None, None),
+                        HyperRef::single(None, Some(b), None, None),
+                    ),
+                )
+                .unwrap();
+        }
+        // Empty-result query (works[3] has no type-5 attachments)
+        // AND matching query (works[0] is the k=0 type-5 origin).
+        let from_empty = Spec {
+            work_ids: vec![works[3]],
+            author: None,
+        };
+        let from_hit = Spec {
+            work_ids: vec![works[0]],
+            author: None,
+        };
+
+        let measure = |from: &Spec, label: &str| {
+            let _ = server
+                .link_query(sid, from, &Spec::any(), &[5], &Spec::any())
+                .unwrap();
+            let _ = server
+                .link_query_scan(sid, from, &Spec::any(), &[5], &Spec::any())
+                .unwrap();
+            let reps = 200;
+            let t0 = std::time::Instant::now();
+            for _ in 0..reps {
+                let _ = server
+                    .link_query(sid, from, &Spec::any(), &[5], &Spec::any())
+                    .unwrap();
+            }
+            let canopy_ms = t0.elapsed().as_secs_f64() * 1000.0 / reps as f64;
+            let t1 = std::time::Instant::now();
+            for _ in 0..reps {
+                let _ = server
+                    .link_query_scan(sid, from, &Spec::any(), &[5], &Spec::any())
+                    .unwrap();
+            }
+            let scan_ms = t1.elapsed().as_secs_f64() * 1000.0 / reps as f64;
+            println!(
+                "bench {}: canopy={:.3}ms scan={:.3}ms speedup={:.1}x",
+                label,
+                canopy_ms,
+                scan_ms,
+                scan_ms / canopy_ms
+            );
+        };
+        measure(&from_empty, "empty-result");
+        measure(&from_hit, "matching");
+        let from = from_empty;
+
+        // Isolate: pure canopy descent vs the full query path.
+        let mut slots_b = server.type_slots.clone();
+        let bits = slots_b.bits_for(&[5]);
+        let t2 = std::time::Instant::now();
+        for _ in 0..200 {
+            let _ = server.link_canopy.query(Some(&[works[3]]), &bits);
+        }
+        println!(
+            "bench: pure canopy descent = {:.3}ms/call",
+            t2.elapsed().as_secs_f64() * 1000.0 / 200.0
+        );
+        let t3 = std::time::Instant::now();
+        for _ in 0..200 {
+            server.ensure_session(sid).unwrap();
+        }
+        println!(
+            "bench: ensure_session = {:.3}ms/call",
+            t3.elapsed().as_secs_f64() * 1000.0 / 200.0
+        );
+
+        // Structure-level pruning: entries visited by the descent.
+        let mut slots = server.type_slots.clone();
+        let bits = slots.bits_for(&[5]);
+        let hits = server.link_canopy.query(Some(&[works[3]]), &bits);
+        let visited = server
+            .link_canopy
+            .visited_entries
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        let _ = hits;
+        println!(
+            "bench: structure visited_entries={} of {} total ({:.1}%)",
+            visited,
+            server.link_canopy.total_entries(),
+            100.0 * visited as f64 / server.link_canopy.total_entries() as f64
+        );
     }
 }
