@@ -376,6 +376,80 @@ to where you were):
    row, or the bottom bar; preserves an easy return path. This
    is transpointing's reason to exist — but it is a JUMP.
 
+## Implementation plan for Stories 6-7 (2026-08-31)
+
+Surface survey done: 74 `ends`-accessor call sites in server.rs,
+12 in links.rs, 4 in dispatch; `LinkEntry.named_ends:
+Vec<(String, HyperRefPayload)>` persistence; `LinkPayload`
+mirrors it on the wire; link BeIds come from `link_counter`
+(0-based) and works from GrandMap (1000-based) — the ranges
+overlap, so Story 7 needs a TYPE-level discriminator, not a
+namespace unification.
+
+### S6-P1 Core model (links.rs)
+
+- `ends: HashMap<String, HyperRef>` → `HashMap<String,
+  Vec<HyperRef>>` (the end-set). Compiler drives the consumer
+  fixes; new accessors: `attachments_at(name) -> &[HyperRef]`,
+  `attachment_count(name)`, and `end_at(name)` kept as
+  first-attachment for mechanical-churn reduction.
+- Constructor rules: an end must have ≥1 attachment (Gold's
+  check: every non-type key holds a ref); removing the last
+  attachment removes the end (B principle 6).
+- Armor: singleton-migration identity, empty-end rejection,
+  nesting-shaped data compiles (Vec members; nested end-sets are
+  a later wire concern, the model permits).
+
+### S6-P2 Persistence (manifest + WAL)
+
+- `LinkEntry` gains `end_sets: Vec<(String, Vec<HyperRefPayload>)>`
+  (serde default, additive); `named_ends` loads as singletons and
+  merges; writes emit `end_sets` when any end has >1 attachment,
+  `named_ends` shape unchanged otherwise (old readers unaffected,
+  old manifests restore cleanly).
+- WAL: extend the link ops replay for attachment add/remove.
+- Armor: checkpoint/restore round-trip with multi-span ends;
+  old-manifest restore == singleton ends (the identity property).
+
+### S6-P3 Server ops + migration + queries
+
+- `with_ends_mapped` → per-attachment mapping (span migration
+  covers EVERY attachment in EVERY end); backlinks and
+  link_query match ANY attachment of an end (Green's matching
+  semantics).
+- New ops: `link_end_add_attachment` / `link_end_remove_attachment`
+  (0x0709/0x070A), same permission model as link_add_end.
+- Armor: backlink equivalence (a multi-span end vs N two-ended
+  links lists the same works), migration-moves-every-attachment
+  property test, integration test through the WS dispatch.
+
+### S6-P4 Wire + frontend
+
+- `LinkPayload.end_sets`; Connections renders one row per link
+  with member chips (cluster); LinkCreator gather mode (select →
+  "add to this end" → repeat → "complete end"); B.1 identity
+  rendering (colour = link, glyph = member, hover = descriptor +
+  "passage 1 of N"); B.2 tier 1 surfaces (gutter badge, bottom
+  bar) driven from link data, not marker DOM. Split view stays
+  Story 5 (navigation tier).
+
+### S7 Link attachments (after S6)
+
+- `HyperRefKind::LinkAttachment { link_id }` — the type-level
+  discriminator (BeId ranges overlap by measurement above);
+  cycle check at create/add (a link may not transitively end at
+  itself); comment-on-link flow = attachLink pattern (link +
+  fresh note work).
+- Armor: cycle rejection tests, backlinks surface link-attached
+  links in the attached link's row, wire round-trip.
+
+### Gates (every phase)
+
+cargo build (default + server + wasm), cargo test --features
+server --lib + integration, clippy --all-targets, fmt; frontend
+npm run build + test for P4. Each phase lands as its own commit
+with its armor in the same commit.
+
 ## Non-goals
 
 - Executable type-behaviors (Green's presentation programs) —
