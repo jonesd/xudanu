@@ -394,6 +394,11 @@ export interface TransclusionMarker {
    * navigate and land on the span). */
   sourceSpanStart?: number | null;
   sourceSpanEnd?: number | null;
+  /** FR-40 S6/L1 (B.1): when this marker is one member of a
+   * gathered end-set, its 1-based position and the end's total —
+   * "passage i of N". Present only for gathered members. */
+  endSetIndex?: number;
+  endSetTotal?: number;
 }
 
 export interface WorkListEntry {

@@ -147,3 +147,84 @@ describe("FR-4.5 density threshold", () => {
     expect(clusters[0].indices.length).toBeGreaterThanOrEqual(DENSITY_THRESHOLD);
   });
 });
+
+// ---- FR-40 S6/L1: gathered end-set marker resolution ----
+
+import { localEndSetMembers, refSpan } from "../link-markers";
+import type { LinkEntry } from "../api/crdt_sync";
+
+function mkLink(overrides: Partial<LinkEntry> = {}): LinkEntry {
+  return {
+    link_id: 7,
+    origin: 0x10,
+    destination: 0x20,
+    origin_ref: null,
+    destination_ref: null,
+    ...overrides,
+  };
+}
+
+const ref = (work: number, start: number, end: number) => ({
+  kind: "single" as const,
+  work_context: work,
+  original_context: null,
+  excerpt: null,
+  start_position: start,
+  end_position: end,
+});
+
+describe("localEndSetMembers", () => {
+  it("returns this work's members of the local end with 1-based indices", () => {
+    const link = mkLink({
+      end_sets: [
+        ["LeftEnd", [ref(0x10, 0, 6), ref(0x10, 40, 44), ref(0x30, 0, 5)]],
+      ],
+    });
+    const members = localEndSetMembers(link, 0x10);
+    expect(members).toHaveLength(2);
+    expect(members[0].index).toBe(1);
+    expect(members[0].total).toBe(3);
+    expect(members[1].index).toBe(2);
+    expect(refSpan(members[1].ref)).toEqual({ start: 40, end: 44 });
+  });
+
+  it("uses RightEnd when viewing the destination work", () => {
+    const link = mkLink({
+      end_sets: [
+        ["RightEnd", [ref(0x20, 0, 4), ref(0x21, 0, 4)]],
+      ],
+    });
+    const members = localEndSetMembers(link, 0x20);
+    expect(members).toHaveLength(1);
+    expect(members[0].index).toBe(1);
+    expect(members[0].total).toBe(2);
+  });
+
+  it("empty when the end-set's members are all elsewhere", () => {
+    const link = mkLink({
+      end_sets: [["LeftEnd", [ref(0x30, 0, 4), ref(0x31, 0, 4)]]],
+    });
+    expect(localEndSetMembers(link, 0x10)).toEqual([]);
+  });
+
+  it("singleton end_sets are not gathered ends", () => {
+    const link = mkLink({ end_sets: [["LeftEnd", [ref(0x10, 0, 4)]]] });
+    expect(localEndSetMembers(link, 0x10)).toEqual([]);
+  });
+
+  it("no end_sets yields no members", () => {
+    expect(localEndSetMembers(mkLink(), 0x10)).toEqual([]);
+  });
+});
+
+describe("refSpan", () => {
+  it("valid positions become a span", () => {
+    expect(refSpan(ref(1, 3, 9))).toEqual({ start: 3, end: 9 });
+  });
+
+  it("null for absent or invalid positions", () => {
+    expect(refSpan(null)).toBeNull();
+    expect(refSpan({ start_position: null, end_position: null })).toBeNull();
+    expect(refSpan({ start_position: 5, end_position: 2 })).toBeNull();
+  });
+});

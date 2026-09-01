@@ -2358,6 +2358,11 @@ export function CollaborativeEditor({
                     ? `Compound — transcluded from`
                     : hoveredMarker.direction === "outgoing" ? "Transcluded to" : "Transcluded from"}
               </div>
+              {hoveredMarker.endSetTotal != null && hoveredMarker.endSetTotal > 1 && (
+                <div className="marker-tooltip-endset" style={{ fontSize: 11, color: "#7ee787", marginTop: 2 }}>
+                  {"\u25E6"} gathered passage {hoveredMarker.endSetIndex ?? "?"} of {hoveredMarker.endSetTotal}
+                </div>
+              )}
               {hoveredMarker.linkTypeId !== 6 && hoveredMarker.excerpt && (
                 <div className="marker-tooltip-excerpt" style={{ fontSize: 11, color: "#8b949e", marginTop: 4, fontStyle: "italic", maxHeight: 60, overflow: "hidden" }}>
                   &ldquo;{hoveredMarker.excerpt}&rdquo;

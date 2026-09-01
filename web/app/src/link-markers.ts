@@ -1,4 +1,4 @@
-import type { HyperRefPayload, TransclusionMarker } from "./api/crdt_sync";
+import type { HyperRefPayload, LinkEntry, TransclusionMarker } from "./api/crdt_sync";
 
 export interface SpanRange {
   start: number;
@@ -11,6 +11,55 @@ export interface MarkerCluster {
   indices: number[];
   start: number;
   end: number;
+}
+
+/**
+ * FR-40 S6/L1: the gathered-end members that live on THIS work.
+ * A link's local end (LeftEnd when viewing the origin work,
+ * RightEnd when viewing the destination) may carry an end-set in
+ * `end_sets`; every attachment whose work_context matches the
+ * viewed work becomes a marker span. Returns members with their
+ * 1-based index and the end's total — the "passage i of N" data.
+ */
+export interface EndSetMember {
+  ref: HyperRefPayload;
+  index: number; // 1-based, within the full end-set
+  total: number;
+}
+
+export function localEndSetMembers(
+  link: LinkEntry,
+  workId: number,
+): EndSetMember[] {
+  const wireName = link.origin === workId ? "LeftEnd" : "RightEnd";
+  const attachments = (link.end_sets ?? []).find(([name, refs]) => name === wireName && refs.length > 1)?.[1];
+  if (!attachments) return [];
+  const members: EndSetMember[] = [];
+  attachments.forEach((ref, i) => {
+    if (ref.work_context === workId) {
+      members.push({ ref, index: i + 1, total: attachments.length });
+    }
+  });
+  return members;
+}
+
+/**
+ * FR-40 S6/L1: span of one attachment ref (same validity rule as
+ * resolveMarkerPositions' primary path).
+ */
+export function refSpan(
+  ref: Pick<HyperRefPayload, "start_position" | "end_position"> | null | undefined,
+): SpanRange | null {
+  if (
+    ref &&
+    typeof ref.start_position === "number" &&
+    typeof ref.end_position === "number" &&
+    ref.start_position >= 0 &&
+    ref.end_position >= ref.start_position
+  ) {
+    return { start: ref.start_position, end: ref.end_position };
+  }
+  return null;
 }
 
 /**

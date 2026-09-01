@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import type { CrdtSyncClient, LinkEntry, TransclusionMarker, WorkListEntry, BacklinkEntry, LinkTypeInfo } from "../api/crdt_sync";
-import { resolveMarkerPositions } from "../link-markers";
+import { resolveMarkerPositions, localEndSetMembers, refSpan } from "../link-markers";
 
 export interface PendingTransclusion {
   sourceWorkId: number;
@@ -196,11 +196,50 @@ export function useTransclusion(): TransclusionState {
             : (localRef?.excerpt || remoteRef?.excerpt || "");
           const chain = localRef?.provenance_chain || remoteRef?.provenance_chain;
           const fallback = (fallbackResults[i].status === "fulfilled") ? (fallbackResults[i] as PromiseFulfilledResult<{ start: number; end: number; }[]>).value : [];
-          const positions = resolveMarkerPositions(localRef, fallback);
           const webTitle = isWebLink ? (remoteRef?.excerpt || "Web Link") : title;
           const crossServerRef = remoteRef?.cross_server_ref
             ? { tumbler: remoteRef.cross_server_ref.tumbler, contentHash: remoteRef.cross_server_ref.content_hash }
             : null;
+          // FR-40 S6/L1 (B.1): a gathered end-set REPLACES the
+          // primary emission — every member on THIS work gets its
+          // own marker span (the localRef/origin_ref IS member 1;
+          // emitting both would duplicate it). All members share
+          // ONE colour keyed by the link identity (colour = link
+          // for gathered sets; plain links keep other-work colour).
+          const gathered = localEndSetMembers(link, workId);
+          if (gathered.length > 0) {
+            const gatheredColor = markerColorForWork(link.link_id);
+            for (const member of gathered) {
+              const span = refSpan(member.ref);
+              if (!span) continue;
+              newMarkers.push({
+                start: span.start,
+                end: span.end,
+                linkId: link.link_id,
+                direction: isOrigin ? "outgoing" : "incoming",
+                otherWorkId: member.ref.work_context ?? otherWorkId,
+                otherWorkTitle: isWebLink ? webTitle : title,
+                color: isWebLink ? "#39d2c0" : gatheredColor,
+                excerpt: (member.ref.excerpt || excerpt).slice(0, 120),
+                provenanceChain: member.ref.provenance_chain || chain,
+                linkTypeId: link.link_types?.[0],
+                otherWorkIsArchived: !!otherArchived,
+                otherWorkOwner: otherOwner ?? null,
+                crossServerRef: member.ref.cross_server_ref
+                  ? {
+                      tumbler: member.ref.cross_server_ref.tumbler,
+                      contentHash: member.ref.cross_server_ref.content_hash,
+                    }
+                  : null,
+                sourceSpanStart: remoteRef?.start_position ?? null,
+                sourceSpanEnd: remoteRef?.end_position ?? null,
+                endSetIndex: member.index,
+                endSetTotal: member.total,
+              });
+            }
+            continue;
+          }
+          const positions = resolveMarkerPositions(localRef, fallback);
           for (const pos of positions) {
             newMarkers.push({
               start: pos.start,
