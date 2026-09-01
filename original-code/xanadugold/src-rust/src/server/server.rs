@@ -9442,6 +9442,61 @@ impl Server {
         }
     }
 
+    /// Raw WAL replay of link_end_add_attachment (FR-40 Story 6).
+    pub(crate) fn wal_replay_link_end_add_attachment(
+        &mut self,
+        link_id: BeId,
+        end_name: String,
+        attachment: crate::server::transport::protocol::HyperRefPayload,
+    ) {
+        let attachment_work = attachment.work_context;
+        let hr = attachment.to_hyper_ref(attachment_work.unwrap_or(0));
+        let Some(ls) = self.links.get_mut(&link_id) else {
+            return;
+        };
+        ls.link = ls.link.with_attachment_added(&end_name, hr);
+        if let Some(wid) = attachment_work {
+            if !self
+                .work_to_links
+                .entry(wid)
+                .or_default()
+                .contains(&link_id)
+            {
+                self.work_to_links.entry(wid).or_default().push(link_id);
+            }
+        }
+    }
+
+    /// Raw WAL replay of link_end_remove_attachment (FR-40 Story 6).
+    pub(crate) fn wal_replay_link_end_remove_attachment(
+        &mut self,
+        link_id: BeId,
+        end_name: String,
+        attachment: crate::server::transport::protocol::HyperRefPayload,
+    ) {
+        let removed_work = attachment.work_context;
+        let hr = attachment.to_hyper_ref(removed_work.unwrap_or(0));
+        let Some(ls) = self.links.get_mut(&link_id) else {
+            return;
+        };
+        ls.link = ls.link.with_attachment_removed(&end_name, &hr);
+        if let Some(wid) = removed_work {
+            let still_referenced = ls.link.end_names().iter().any(|n| {
+                ls.link
+                    .attachments_at(n)
+                    .map(|attachments| attachments.iter().any(|a| a.work_context() == Some(wid)))
+                    .unwrap_or(false)
+            }) || ls.origin == wid
+                || ls.destination == wid
+                || ls.home_document == Some(wid);
+            if !still_referenced {
+                if let Some(ids) = self.work_to_links.get_mut(&wid) {
+                    ids.retain(|id| *id != link_id);
+                }
+            }
+        }
+    }
+
     /// Raw WAL replay of link_remove_end (FR-40 Story 1).
     pub(crate) fn wal_replay_link_remove_end(&mut self, link_id: BeId, end_name: String) {
         let Some(ls) = self.links.get_mut(&link_id) else {
@@ -12175,8 +12230,22 @@ impl Server {
                     payload.to_hyper_ref(payload.work_context.unwrap_or(0)),
                 );
             }
+            // FR-40 S6: end_sets carry COMPLETE sets and replace the
+            // end (avoids double-adding the first attachment).
+            for (name, payloads) in &link.end_sets {
+                let refs: Vec<_> = payloads
+                    .iter()
+                    .map(|p| p.to_hyper_ref(p.work_context.unwrap_or(0)))
+                    .collect();
+                hyperlink = hyperlink.with_end_set(name, refs);
+            }
             let mut restored_works = vec![link.origin, link.destination];
             restored_works.extend(link.named_ends.iter().filter_map(|(_, p)| p.work_context));
+            restored_works.extend(
+                link.end_sets
+                    .iter()
+                    .flat_map(|(_, ps)| ps.iter().filter_map(|p| p.work_context)),
+            );
             if let Some(home) = link.home_document {
                 restored_works.push(home);
             }
@@ -14176,6 +14245,117 @@ impl Server {
             .append_link_remove_end(link_id, end_name.to_string())
         {
             tracing::warn!("WAL write failed for link_remove_end: {}", e);
+        }
+        self.auto_checkpoint();
+        Ok(())
+    }
+
+    /// FR-40 Story 6: add one attachment to an end-set. Same
+    /// permission and bookkeeping model as link_add_end; the
+    /// attachment's work joins work_to_links.
+    pub fn link_end_add_attachment(
+        &mut self,
+        _session_id: SessionId,
+        link_id: BeId,
+        end_name: &str,
+        attachment: HyperRef,
+    ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(
+            self.consequence_tracker.clone(),
+            self.consequence_tracker.begin_operation(),
+        );
+        self.ensure_session(_session_id)?;
+        let old_link = {
+            let ls = self
+                .links
+                .get(&link_id)
+                .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+            ls.link.clone()
+        };
+        self.backfollow.unregister_link_content(&old_link, link_id);
+        let attachment_work = attachment.work_context();
+        let attachment_payload =
+            crate::server::transport::protocol::HyperRefPayload::from_hyper_ref(&attachment);
+        let ls = self
+            .links
+            .get_mut(&link_id)
+            .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+        ls.link = ls.link.with_attachment_added(end_name, attachment);
+        if let Some(wid) = attachment_work {
+            if !self
+                .work_to_links
+                .entry(wid)
+                .or_default()
+                .contains(&link_id)
+            {
+                self.work_to_links.entry(wid).or_default().push(link_id);
+            }
+        }
+        self.backfollow.register_link_content(&ls.link, link_id);
+        if let Err(e) = self.wal.append_link_end_add_attachment(
+            link_id,
+            end_name.to_string(),
+            &attachment_payload,
+        ) {
+            tracing::warn!("WAL write failed for link_end_add_attachment: {}", e);
+        }
+        self.auto_checkpoint();
+        Ok(())
+    }
+
+    /// FR-40 Story 6: remove one attachment from an end-set.
+    /// Removing the last attachment removes the end (an end must
+    /// hold ≥1 ref). Index maintenance covers EVERY attachment.
+    pub fn link_end_remove_attachment(
+        &mut self,
+        _session_id: SessionId,
+        link_id: BeId,
+        end_name: &str,
+        attachment: &HyperRef,
+    ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(
+            self.consequence_tracker.clone(),
+            self.consequence_tracker.begin_operation(),
+        );
+        self.ensure_session(_session_id)?;
+        let old_link = {
+            let ls = self
+                .links
+                .get(&link_id)
+                .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+            ls.link.clone()
+        };
+        self.backfollow.unregister_link_content(&old_link, link_id);
+        let removed_work = attachment.work_context();
+        let attachment_payload =
+            crate::server::transport::protocol::HyperRefPayload::from_hyper_ref(attachment);
+        let ls = self
+            .links
+            .get_mut(&link_id)
+            .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+        ls.link = ls.link.with_attachment_removed(end_name, attachment);
+        if let Some(wid) = removed_work {
+            let still_referenced = ls.link.end_names().iter().any(|n| {
+                ls.link
+                    .attachments_at(n)
+                    .map(|attachments| attachments.iter().any(|hr| hr.work_context() == Some(wid)))
+                    .unwrap_or(false)
+            }) || ls.origin == wid
+                || ls.destination == wid
+                || ls.home_document == Some(wid);
+            if !still_referenced {
+                if let Some(ids) = self.work_to_links.get_mut(&wid) {
+                    ids.retain(|id| *id != link_id);
+                }
+            }
+        }
+        self.backfollow.register_link_content(&ls.link, link_id);
+        if let Err(e) = self.wal.append_link_end_remove_attachment(
+            link_id,
+            end_name.to_string(),
+            &attachment_payload,
+        ) {
+            tracing::warn!("WAL write failed for link_end_remove_attachment: {}", e);
         }
         self.auto_checkpoint();
         Ok(())
@@ -20927,6 +21107,17 @@ pub(crate) mod persist_snapshot {
             serde(default, skip_serializing_if = "Vec::is_empty")
         )]
         named_ends: Vec<(String, crate::server::transport::protocol::HyperRefPayload)>,
+        /// Multi-attachment end-sets (FR-40 Story 6) — complete
+        /// sets, replace the end on restore (same contract as
+        /// LinkEntry.end_sets).
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Vec::is_empty")
+        )]
+        end_sets: Vec<(
+            String,
+            Vec<crate::server::transport::protocol::HyperRefPayload>,
+        )>,
         #[cfg_attr(
             feature = "serde",
             serde(default, skip_serializing_if = "Option::is_none")
@@ -21144,6 +21335,30 @@ pub(crate) mod persist_snapshot {
                                 })
                             })
                             .collect();
+                        // FR-40 S6: any end (INCLUDING LeftEnd/
+                        // RightEnd) with more than one attachment
+                        // persists its complete set here; singleton
+                        // ends keep the legacy shapes above.
+                        let end_sets: Vec<(
+                            String,
+                            Vec<crate::server::transport::protocol::HyperRefPayload>,
+                        )> = ls
+                            .link
+                            .end_names()
+                            .into_iter()
+                            .filter(|n| ls.link.attachment_count(n) > 1)
+                            .map(|n| {
+                                (
+                                    n.to_string(),
+                                    ls.link
+                                        .attachments_at(n)
+                                        .unwrap_or(&[])
+                                        .iter()
+                                        .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref)
+                                        .collect(),
+                                )
+                            })
+                            .collect();
                         LinkSnapshot {
                             link_id: *id,
                             origin: ls.origin,
@@ -21152,6 +21367,7 @@ pub(crate) mod persist_snapshot {
                             destination_ref: d_ref,
                             link_types: ls.link.link_types().to_vec(),
                             named_ends,
+                            end_sets,
                             home_document: ls.home_document,
                             cross_server_notify: ls.cross_server_notify.clone(),
                         }
@@ -21468,6 +21684,21 @@ pub(crate) mod persist_snapshot {
                     if let Some(w) = wid {
                         named_works.push(w);
                     }
+                }
+                // FR-40 S6: end_sets replace the end with the
+                // complete persisted set; every attachment's work
+                // is indexed.
+                for (name, payloads) in &ls.end_sets {
+                    let refs: Vec<_> = payloads
+                        .iter()
+                        .map(|p| p.to_hyper_ref(p.work_context.unwrap_or(0)))
+                        .collect();
+                    for p in payloads {
+                        if let Some(w) = p.work_context {
+                            named_works.push(w);
+                        }
+                    }
+                    link = link.with_end_set(name, refs);
                 }
                 server.links.insert(
                     ls.link_id,
@@ -21835,6 +22066,30 @@ pub(crate) mod persist_snapshot {
                                 })
                             })
                             .collect();
+                        // FR-40 S6: any end (INCLUDING LeftEnd/
+                        // RightEnd) with more than one attachment
+                        // persists its complete set here; singleton
+                        // ends keep the legacy shapes above.
+                        let end_sets: Vec<(
+                            String,
+                            Vec<crate::server::transport::protocol::HyperRefPayload>,
+                        )> = ls
+                            .link
+                            .end_names()
+                            .into_iter()
+                            .filter(|n| ls.link.attachment_count(n) > 1)
+                            .map(|n| {
+                                (
+                                    n.to_string(),
+                                    ls.link
+                                        .attachments_at(n)
+                                        .unwrap_or(&[])
+                                        .iter()
+                                        .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref)
+                                        .collect(),
+                                )
+                            })
+                            .collect();
                         crate::persist::manifest::LinkEntry {
                             link_id: *id,
                             origin: ls.origin,
@@ -21843,6 +22098,7 @@ pub(crate) mod persist_snapshot {
                             destination_ref: d_ref,
                             link_types: ls.link.link_types().to_vec(),
                             named_ends,
+                            end_sets,
                             home_document: ls.home_document,
                             cross_server_notify: ls.cross_server_notify.clone(),
                         }
@@ -22232,6 +22488,30 @@ pub(crate) mod persist_snapshot {
                                 })
                             })
                             .collect();
+                        // FR-40 S6: any end (INCLUDING LeftEnd/
+                        // RightEnd) with more than one attachment
+                        // persists its complete set here; singleton
+                        // ends keep the legacy shapes above.
+                        let end_sets: Vec<(
+                            String,
+                            Vec<crate::server::transport::protocol::HyperRefPayload>,
+                        )> = ls
+                            .link
+                            .end_names()
+                            .into_iter()
+                            .filter(|n| ls.link.attachment_count(n) > 1)
+                            .map(|n| {
+                                (
+                                    n.to_string(),
+                                    ls.link
+                                        .attachments_at(n)
+                                        .unwrap_or(&[])
+                                        .iter()
+                                        .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref)
+                                        .collect(),
+                                )
+                            })
+                            .collect();
                         crate::persist::manifest::LinkEntry {
                             link_id: *id,
                             origin: ls.origin,
@@ -22240,6 +22520,7 @@ pub(crate) mod persist_snapshot {
                             destination_ref: d_ref,
                             link_types: ls.link.link_types().to_vec(),
                             named_ends,
+                            end_sets,
                             home_document: ls.home_document,
                             cross_server_notify: ls.cross_server_notify.clone(),
                         }
@@ -33294,6 +33575,167 @@ mod tests {
         }
 
         let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    /// FR-40 Story 6 (P2 armor): multi-attachment end-sets survive
+    /// checkpoint/restore — end_sets carry complete sets; singleton
+    /// links keep the legacy shape (byte-identical manifests).
+    #[test]
+    #[cfg(feature = "server")]
+    fn fr40_s6_end_sets_survive_checkpoint_roundtrip() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_s6_roundtrip_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let link_id;
+        let a_id;
+        let c_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            let a = server
+                .create_work(sid, Edition::from_text("source document"))
+                .unwrap();
+            let b = server
+                .create_work(sid, Edition::from_text("target document"))
+                .unwrap();
+            let c = server
+                .create_work(sid, Edition::from_text("third document"))
+                .unwrap();
+            a_id = a;
+            c_id = c;
+
+            link_id = server
+                .create_link(
+                    sid,
+                    a,
+                    b,
+                    Some(HyperRef::single(None, Some(a), None, None).with_span(Some(0), Some(6))),
+                    Some(HyperRef::single(None, Some(b), None, None).with_span(Some(0), Some(6))),
+                )
+                .unwrap();
+
+            // Gather two more passages into the LeftEnd end-set,
+            // and one into a named end.
+            server
+                .link_end_add_attachment(
+                    sid,
+                    link_id,
+                    "LeftEnd",
+                    HyperRef::single(None, Some(a), None, None).with_span(Some(8), Some(11)),
+                )
+                .unwrap();
+            server
+                .link_end_add_attachment(
+                    sid,
+                    link_id,
+                    "LeftEnd",
+                    HyperRef::single(None, Some(c), None, None).with_span(Some(0), Some(5)),
+                )
+                .unwrap();
+            server
+                .link_end_add_attachment(
+                    sid,
+                    link_id,
+                    "Evidence",
+                    HyperRef::single(None, Some(c), None, None).with_span(Some(6), Some(9)),
+                )
+                .unwrap();
+
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let ls = server.links.get(&link_id).expect("link restored");
+            assert_eq!(
+                ls.link.attachment_count("LeftEnd"),
+                3,
+                "the gathered end-set survives with all members"
+            );
+            assert_eq!(ls.link.attachment_count("RightEnd"), 1);
+            assert_eq!(ls.link.attachment_count("Evidence"), 1);
+            assert_eq!(ls.link.end_count(), 3);
+
+            // Positions of every attachment survived.
+            let left_spans: Vec<_> = ls
+                .link
+                .attachments_at("LeftEnd")
+                .unwrap()
+                .iter()
+                .map(|hr| (hr.work_context(), hr.start_position(), hr.end_position()))
+                .collect();
+            assert_eq!(
+                left_spans,
+                vec![
+                    (Some(a_id), Some(0), Some(6)),
+                    (Some(a_id), Some(8), Some(11)),
+                    (Some(c_id), Some(0), Some(5))
+                ]
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    /// FR-40 Story 6 (P2 armor): WAL replay of attachment ops —
+    /// add and remove replay against a pre-existing link, index
+    /// maintenance covers every attachment's work.
+    #[test]
+    #[cfg(feature = "server")]
+    fn fr40_s6_wal_replay_attachment_ops() {
+        let (mut server, sid) = setup_logged_in_server();
+        let a = server
+            .create_work(sid, Edition::from_text("doc a"))
+            .unwrap();
+        let b = server
+            .create_work(sid, Edition::from_text("doc b"))
+            .unwrap();
+        let c = server
+            .create_work(sid, Edition::from_text("doc c"))
+            .unwrap();
+        let link_id = server.create_link(sid, a, b, None, None).unwrap();
+
+        // Replay an add for a span in c on LeftEnd.
+        let hr = HyperRef::single(None, Some(c), None, None).with_span(Some(0), Some(4));
+        let payload = crate::server::transport::protocol::HyperRefPayload::from_hyper_ref(&hr);
+        server.wal_replay_link_end_add_attachment(link_id, "LeftEnd".to_string(), payload.clone());
+
+        let ls = server.links.get(&link_id).unwrap();
+        assert_eq!(ls.link.attachment_count("LeftEnd"), 2);
+        assert!(
+            server
+                .work_to_links
+                .get(&c)
+                .is_some_and(|ids| ids.contains(&link_id)),
+            "the attachment's work joined the index"
+        );
+
+        // Replay the removal: the end drops back to one
+        // attachment, and c leaves the index (no longer
+        // referenced by any attachment).
+        server.wal_replay_link_end_remove_attachment(link_id, "LeftEnd".to_string(), payload);
+        let ls = server.links.get(&link_id).unwrap();
+        assert_eq!(ls.link.attachment_count("LeftEnd"), 1);
+        assert!(
+            !server
+                .work_to_links
+                .get(&c)
+                .is_some_and(|ids| ids.contains(&link_id)),
+            "c leaves the index when its last attachment goes"
+        );
     }
 
     #[test]

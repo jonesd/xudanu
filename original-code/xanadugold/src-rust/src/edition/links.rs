@@ -1011,6 +1011,25 @@ impl HyperLink {
         }
     }
 
+    /// Set an end to a complete attachment set (FR-40 S6
+    /// persistence restore path). Replaces whatever the end held.
+    /// An empty set removes the end (an end must hold ≥1 ref).
+    pub fn with_end_set(&self, name: &str, attachments: Vec<HyperRef>) -> Self {
+        if name == LINK_TYPES_KEY {
+            return self.clone();
+        }
+        let mut ends = self.ends.clone();
+        if attachments.is_empty() {
+            ends.remove(name);
+        } else {
+            ends.insert(name.to_string(), attachments);
+        }
+        HyperLink {
+            ends,
+            link_types: self.link_types.clone(),
+        }
+    }
+
     pub fn without_end(&self, name: &str) -> Self {
         if name == LINK_TYPES_KEY {
             return self.clone();
@@ -2041,12 +2060,13 @@ mod tests {
             let end = hr.end_position()? + 100;
             Some(hr.with_span(Some(start), Some(end)))
         });
-        let positions: Vec<_> = shifted
+        let mut positions: Vec<_> = shifted
             .ends()
             .values()
             .flat_map(|a| a.iter().map(|hr| hr.start_position()))
             .collect();
-        assert_eq!(positions, vec![Some(100), Some(140), Some(100), Some(110)]);
+        positions.sort();
+        assert_eq!(positions, vec![Some(100), Some(100), Some(110), Some(140)]);
     }
 
     #[test]

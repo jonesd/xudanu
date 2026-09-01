@@ -79,6 +79,20 @@ pub struct LinkEntry {
         serde(default, skip_serializing_if = "Vec::is_empty")
     )]
     pub named_ends: Vec<(String, crate::server::transport::protocol::HyperRefPayload)>,
+    /// Multi-attachment end-sets (FR-40 Story 6). Each entry
+    /// carries the COMPLETE attachment set for the named end and
+    /// replaces it on restore. Ends with exactly one attachment
+    /// keep the legacy shapes (origin_ref/destination_ref/
+    /// named_ends) so pre-S6 manifests and checkpoints are
+    /// byte-identical and restore unchanged.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub end_sets: Vec<(
+        String,
+        Vec<crate::server::transport::protocol::HyperRefPayload>,
+    )>,
     /// Home document (FR-40 Story 3); None = server-global.
     #[cfg_attr(
         feature = "serde",
@@ -1566,6 +1580,7 @@ mod tests {
             origin_ref: None,
             destination_ref: None,
             link_types: vec![],
+            end_sets: Vec::new(),
             named_ends: Vec::new(),
             home_document: None,
             cross_server_notify: None,

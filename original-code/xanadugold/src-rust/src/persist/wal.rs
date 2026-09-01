@@ -343,6 +343,40 @@ impl WalLog {
         )
     }
 
+    /// FR-40 Story 6: add one attachment to an end-set.
+    pub fn append_link_end_add_attachment(
+        &mut self,
+        link_id: BeId,
+        end_name: String,
+        attachment: &crate::server::transport::protocol::HyperRefPayload,
+    ) -> Result<u64, WalError> {
+        self.append(
+            "link_end_add_attachment",
+            serde_json::json!({
+                "link_id": link_id,
+                "end_name": end_name,
+                "attachment": attachment,
+            }),
+        )
+    }
+
+    /// FR-40 Story 6: remove one attachment from an end-set.
+    pub fn append_link_end_remove_attachment(
+        &mut self,
+        link_id: BeId,
+        end_name: String,
+        attachment: &crate::server::transport::protocol::HyperRefPayload,
+    ) -> Result<u64, WalError> {
+        self.append(
+            "link_end_remove_attachment",
+            serde_json::json!({
+                "link_id": link_id,
+                "end_name": end_name,
+                "attachment": attachment,
+            }),
+        )
+    }
+
     pub fn truncate(&mut self) -> Result<(), WalError> {
         if self.file.is_none() {
             return Ok(());
@@ -722,6 +756,37 @@ impl WalLog {
                     ) {
                         server.wal_replay_link_remove_end(link_id, end_name.to_string());
                         true
+                    } else {
+                        false
+                    }
+                }
+                "link_end_add_attachment" | "link_end_remove_attachment" => {
+                    if let (Some(link_id), Some(end_name), Some(attachment)) = (
+                        entry.args.get("link_id").and_then(|v| v.as_u64()),
+                        entry.args.get("end_name").and_then(|v| v.as_str()),
+                        entry.args.get("attachment"),
+                    ) {
+                        if let Ok(payload) = serde_json::from_value::<
+                            crate::server::transport::protocol::HyperRefPayload,
+                        >(attachment.clone())
+                        {
+                            if entry.op == "link_end_add_attachment" {
+                                server.wal_replay_link_end_add_attachment(
+                                    link_id,
+                                    end_name.to_string(),
+                                    payload,
+                                );
+                            } else {
+                                server.wal_replay_link_end_remove_attachment(
+                                    link_id,
+                                    end_name.to_string(),
+                                    payload,
+                                );
+                            }
+                            true
+                        } else {
+                            false
+                        }
                     } else {
                         false
                     }
