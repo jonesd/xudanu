@@ -39,6 +39,9 @@ Gold row says what Xudanu does and why.
 | Widdershin update | **Done (dormant with consumer)** — hoist.rs IS widdershin: RecorderHoister walks o_parents bottom-up, change_canopy() recomputes + propagates crums to root (20 tests) | `src/edition/hoist.rs` | 20 tests | **A-3** |
 | Fullsm (complete enfilade ops) | **Partial** — retrieve/store/copy done; regrid deferred (see A-6) | — | — | **A-6** |
 | Istm (frontend tree mgmt) | **N/A** — we have a web frontend, not Gold's frontend tree | — | — | **Reject** |
+| Multi-span link ends (FeMultiRef) | **Missing** — every link end is one span; Gold/Green end-SETS hold many attachments (Green's running impl uses this heavily) | — | — | **FR-40 Story 6** |
+| Links-to-links (reentrant) | **Missing** — Green end-sets may contain link ids; ours cannot target links | — | — | **FR-40 Story 7** |
+| N-ended links | **Done (FR-40 S1)** — link_add_end/remove_end + WAL, LinkCreator path; type ends (S2) and comparison (S5) open; home docs (S3) and link_query (S4) done | `src/edition/links.rs` | link suites | **FR-40** |
 
 ## Breakdown
 
