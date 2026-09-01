@@ -135,6 +135,61 @@ export function linkIdentityKey(linkId: number): string {
   return `link-${linkId}`;
 }
 
+/**
+ * FR-40 L2 (B.2 tier-1): the gathered ends whose members cover a
+ * position on this work — the bottom-bar strip's data. Pure;
+ * driven from link data, never marker DOM.
+ */
+export interface EndSetTouch {
+  linkId: number;
+  /** Local end name (origin/destination/custom). */
+  endName: string;
+  /** 1-based index of the covering member. */
+  index: number;
+  total: number;
+  /** This work's member spans of the end (jump targets). */
+  memberSpans: Array<{ start: number; end: number }>;
+}
+
+export function endSetsTouchingPosition(
+  links: LinkEntry[],
+  workId: number,
+  pos: number | null | undefined,
+): EndSetTouch[] {
+  if (pos == null) return [];
+  const touches: EndSetTouch[] = [];
+  for (const link of links) {
+    for (const end of linkEnds(link)) {
+      if (!isGatheredEnd(end)) continue;
+      const memberSpans: Array<{ start: number; end: number }> = [];
+      let covering: number | null = null;
+      (end.attachments ?? []).forEach((ref, i) => {
+        if (ref.work_context !== workId) return;
+        if (
+          typeof ref.start_position === "number" &&
+          typeof ref.end_position === "number" &&
+          ref.end_position > ref.start_position
+        ) {
+          memberSpans.push({ start: ref.start_position, end: ref.end_position });
+          if (pos >= ref.start_position && pos < ref.end_position) {
+            covering = i + 1;
+          }
+        }
+      });
+      if (covering !== null && memberSpans.length > 0) {
+        touches.push({
+          linkId: link.link_id,
+          endName: end.name,
+          index: covering as number,
+          total: end.attachments?.length ?? memberSpans.length,
+          memberSpans,
+        });
+      }
+    }
+  }
+  return touches;
+}
+
 export interface GatheredSpan {
   endName: string;
   workContext: number;

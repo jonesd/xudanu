@@ -246,3 +246,50 @@ describe("FR-40 S6 gather planning", () => {
     expect(planEndSetOperations([])).toEqual([]);
   });
 });
+
+// ---- FR-40 L2: endSetsTouchingPosition ----
+
+import { endSetsTouchingPosition } from "../link-ends";
+
+describe("endSetsTouchingPosition (L2 bottom-bar strip)", () => {
+  const member = (work: number, start: number, end: number) => ({
+    kind: "single" as const,
+    work_context: work,
+    original_context: null,
+    excerpt: null,
+    start_position: start,
+    end_position: end,
+  });
+
+  it("finds the gathered end covering the position, with member jump spans", () => {
+    const links: LinkEntry[] = [
+      mkLink({
+        link_id: 9,
+        end_sets: [
+          ["LeftEnd", [member(0x10, 0, 10), member(0x10, 40, 50), member(0x30, 0, 5)]],
+        ],
+      }),
+    ];
+    const touches = endSetsTouchingPosition(links, 0x10, 45);
+    expect(touches).toHaveLength(1);
+    expect(touches[0].linkId).toBe(9);
+    expect(touches[0].index).toBe(2);
+    expect(touches[0].total).toBe(3);
+    expect(touches[0].memberSpans).toEqual([
+      { start: 0, end: 10 },
+      { start: 40, end: 50 },
+    ]);
+  });
+
+  it("no touch outside member spans or without cursor", () => {
+    const links: LinkEntry[] = [
+      mkLink({ end_sets: [["LeftEnd", [member(0x10, 0, 10), member(0x10, 40, 50)]]] }),
+    ];
+    expect(endSetsTouchingPosition(links, 0x10, 25)).toEqual([]);
+    expect(endSetsTouchingPosition(links, 0x10, null)).toEqual([]);
+  });
+
+  it("ignores plain links entirely", () => {
+    expect(endSetsTouchingPosition([mkLink()], 0x10, 0)).toEqual([]);
+  });
+});

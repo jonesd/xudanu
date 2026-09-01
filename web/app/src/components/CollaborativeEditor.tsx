@@ -215,6 +215,32 @@ const hatchCache = new Map<number, CanvasPattern | null>();
 // consumed by the hover handler for tooltips.
 const authorBarZones: AuthorBarZone[] = [];
 
+/**
+ * FR-40 L2 (B.2 tier-1): the gathered-member gutter badge — a
+ * compact "i/N" chip beside the margin bar, same colour family as
+ * the end-set identity (green accent). Drawn from marker data so
+ * it stays truthful in the virtualized viewport (never derived
+ * from rendered marker DOM).
+ */
+function drawEndSetBadge(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  marker: TransclusionMarker,
+) {
+  const label = `${marker.endSetIndex ?? "?"}/${marker.endSetTotal}`;
+  ctx.save();
+  ctx.font = "9px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+  const w = ctx.measureText(label).width + 6;
+  ctx.fillStyle = "#7ee787";
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, 11, 2);
+  ctx.fill();
+  ctx.fillStyle = "#0d1117";
+  ctx.fillText(label, x + 3, y + 8.5);
+  ctx.restore();
+}
+
 function getHatchPattern(ctx: CanvasRenderingContext2D, workId: number): CanvasPattern | null {
   const cached = hatchCache.get(workId);
   if (cached !== undefined) return cached;
@@ -614,6 +640,9 @@ function drawOverlay(
     if (isIncoming && typeStyle) {
       const rightX = rect.width - 3 - lane * 4;
       ctx.fillRect(rightX, firstTop, 3, height);
+      if (marker.endSetTotal != null && marker.endSetTotal > 1) {
+        drawEndSetBadge(ctx, rightX - 26, firstTop, marker);
+      }
       hitZones.push({
         marker,
         x: Math.max(0, rightX - 9),
@@ -635,6 +664,13 @@ function drawOverlay(
           ctx.fillStyle = chainColor + "80";
           ctx.fillRect(stackX, firstTop, stackWidth, height);
         }
+      }
+
+      // FR-40 L2 (B.2 tier-1): gutter badge at every gathered
+      // member — "i/N here", driven from marker data (identity),
+      // visible wherever any member is on screen.
+      if (marker.endSetTotal != null && marker.endSetTotal > 1) {
+        drawEndSetBadge(ctx, leftX + 8, firstTop, marker);
       }
 
       hitZones.push({

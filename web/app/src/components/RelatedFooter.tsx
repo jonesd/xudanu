@@ -6,6 +6,7 @@ import type {
   CrossServerBacklinkPayload,
   AnnotationEntry,
 } from "../api/crdt_sync";
+import { endSetsTouchingPosition } from "../link-ends";
 
 const LINK_TYPE_LABELS: Record<number, string> = {
   1: "Comment",
@@ -39,6 +40,8 @@ interface RelatedFooterProps {
   crossServerBacklinks: CrossServerBacklinkPayload[];
   currentWorkId: number;
   onNavigateToWork: (workId: number) => void;
+  /** FR-40 L2: caret/selection position for the gathered-end strip. */
+  cursorPosition?: number | null;
 }
 
 const MAX_ITEMS = 12;
@@ -54,6 +57,7 @@ export function RelatedFooter({
   crossServerBacklinks,
   currentWorkId,
   onNavigateToWork,
+  cursorPosition,
 }: RelatedFooterProps) {
   const items = useMemo(() => {
     const seen = new Set<string>();
@@ -175,10 +179,39 @@ export function RelatedFooter({
   // one-line row truncates.
   const [expandedNote, setExpandedNote] = useState<number | null>(null);
 
-  if (totalCount === 0 && notes.length === 0) return null;
+  // FR-40 L2 (B.2 tier-1): the gathered-end strip — visible while
+  // the cursor sits inside any member passage; links data-driven.
+  const endSetTouches = useMemo(
+    () => endSetsTouchingPosition(outgoingLinks, currentWorkId, cursorPosition),
+    [outgoingLinks, currentWorkId, cursorPosition],
+  );
+
+  if (totalCount === 0 && notes.length === 0 && endSetTouches.length === 0) return null;
 
   return (
     <div className="related-footer-panel">
+      {endSetTouches.length > 0 && (
+        <div className="related-endset-strip" style={{ display: "flex", gap: 8, alignItems: "center", padding: "3px 12px", borderBottom: "1px solid #21262d", fontSize: 11 }}>
+          {endSetTouches.map((t) => (
+            <span key={`es-${t.linkId}-${t.endName}`} style={{ color: "#7ee787", display: "inline-flex", gap: 6, alignItems: "center" }}>
+              <span>
+                {"\u25E6"} gathered end — passage {t.index} of {t.total}
+              </span>
+              {t.memberSpans.map((span, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  title={`Jump to passage ${i + 1} (${span.start}\u2013${span.end})`}
+                  onClick={() => onJumpToSpan?.(span.start, span.end)}
+                  style={{ background: "none", border: "1px solid #30363d", borderRadius: 3, color: "#8b949e", cursor: "pointer", fontSize: 10, padding: "0 4px" }}
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </span>
+          ))}
+        </div>
+      )}
       {notes.length > 0 && (
         <div className="related-notes">
           <button

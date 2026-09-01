@@ -4445,6 +4445,7 @@ export function WorkspaceShell() {
               compoundSourceTitles={compound.sourceTitles}
               crossServerBacklinks={crossServerBacklinks}
               currentWorkId={workBeId}
+              cursorPosition={cursorPos}
               onNavigateToWork={selectWork}
             />
           )}

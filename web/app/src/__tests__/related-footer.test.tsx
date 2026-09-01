@@ -220,3 +220,75 @@ describe("RelatedFooter notes section", () => {
     expect(r.container.querySelectorAll(".related-note-row").length).toBe(1);
   });
 });
+
+// ---- FR-40 L2: gathered-end strip ----
+
+describe("RelatedFooter gathered-end strip (FR-40 L2)", () => {
+  const member = (work: number, start: number, end: number) => ({
+    kind: "single" as const,
+    work_context: work,
+    original_context: null,
+    excerpt: null,
+    start_position: start,
+    end_position: end,
+  });
+
+  function renderWithCursor(
+    outgoingLinks: LinkEntry[],
+    cursorPosition: number | null | undefined,
+  ) {
+    return render(
+      <RelatedFooter
+        annotations={[]}
+        backlinks={[]}
+        outgoingLinks={outgoingLinks}
+        compoundSpanRanges={[]}
+        compoundSourceTitles={{}}
+        crossServerBacklinks={[]}
+        currentWorkId={CURRENT_WORK}
+        onNavigateToWork={vi.fn()}
+        cursorPosition={cursorPosition}
+      />,
+    );
+  }
+
+  it("shows the strip with passage position and member jump buttons when the cursor is inside a member", () => {
+    renderWithCursor(
+      [
+        mkLink({
+          end_sets: [
+            ["LeftEnd", [member(CURRENT_WORK, 0, 10), member(CURRENT_WORK, 40, 50)]],
+          ],
+        }),
+      ],
+      45,
+    );
+    expect(screen.getByText(/passage 2 of 2/)).toBeInTheDocument();
+    const jumps = screen.getAllByTitle(/Jump to passage/);
+    expect(jumps).toHaveLength(2);
+  });
+
+  it("no strip when the cursor is elsewhere or absent", () => {
+    const links: LinkEntry[] = [
+      mkLink({
+        end_sets: [["LeftEnd", [member(CURRENT_WORK, 0, 10), member(CURRENT_WORK, 40, 50)]]],
+      }),
+    ];
+    const { rerender } = renderWithCursor(links, 25);
+    expect(screen.queryByText(/passage \d+ of \d+/)).toBeNull();
+    rerender(
+      <RelatedFooter
+        annotations={[]}
+        backlinks={[]}
+        outgoingLinks={links}
+        compoundSpanRanges={[]}
+        compoundSourceTitles={{}}
+        crossServerBacklinks={[]}
+        currentWorkId={CURRENT_WORK}
+        onNavigateToWork={vi.fn()}
+        cursorPosition={null}
+      />,
+    );
+    expect(screen.queryByText(/passage \d+ of \d+/)).toBeNull();
+  });
+});
