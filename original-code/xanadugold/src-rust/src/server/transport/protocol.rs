@@ -3497,6 +3497,15 @@ pub struct LinkPayload {
         serde(default, skip_serializing_if = "Vec::is_empty")
     )]
     pub named_ends: Vec<(String, HyperRefPayload)>,
+    /// Multi-attachment end-sets (FR-40 Story 6): the COMPLETE
+    /// attachment list for any end with more than one attachment.
+    /// Singleton ends keep the named_ends/origin_ref/
+    /// destination_ref shapes.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub end_sets: Vec<(String, Vec<HyperRefPayload>)>,
     /// Link type IDs (e.g., citation=1, response=2, commentary=3).
     #[cfg_attr(
         feature = "serde",
@@ -3770,6 +3779,13 @@ pub struct HyperRefPayload {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub end_position: Option<i64>,
+    /// FR-40 Story 7: the targeted link id when kind ==
+    /// "link_attachment".
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub link_attachment: Option<BeId>,
     #[cfg_attr(
         feature = "serde",
         serde(default, skip_serializing_if = "Option::is_none")
@@ -4438,7 +4454,9 @@ impl HyperRefPayload {
             })
             .collect();
         HyperRefPayload {
-            kind: if hr.is_single() {
+            kind: if hr.is_link_attachment() {
+                "link_attachment".to_string()
+            } else if hr.is_single() {
                 "single".to_string()
             } else {
                 "multi".to_string()
@@ -4450,6 +4468,7 @@ impl HyperRefPayload {
             provenance_chain,
             start_position: hr.start_position(),
             end_position: hr.end_position(),
+            link_attachment: hr.link_attachment_target(),
             cross_server_ref: hr
                 .cross_server_ref()
                 .map(CrossServerRefPayload::from_cross_server_ref),
@@ -4478,6 +4497,18 @@ impl HyperRefPayload {
             .map(|hop| ProvenanceHop::new(hop.source_work_id, hop.link_id))
             .collect();
         let work_context = self.work_context.or_else(|| Some(fallback_work_id));
+        // FR-40 S7: link attachments target links, not works — no
+        // fallback work context is forced onto them.
+        if self.kind == "link_attachment" {
+            if let Some(link_id) = self.link_attachment {
+                let mut hr = HyperRef::link_attachment(link_id, self.work_context);
+                hr = hr.with_span(self.start_position, self.end_position);
+                if !provenance_chain.is_empty() {
+                    hr = hr.with_provenance_chain(provenance_chain);
+                }
+                return hr;
+            }
+        }
         let mut hr = HyperRef::single(excerpt, work_context, self.original_context, path_context);
         hr = hr.with_span(self.start_position, self.end_position);
         if !provenance_chain.is_empty() {

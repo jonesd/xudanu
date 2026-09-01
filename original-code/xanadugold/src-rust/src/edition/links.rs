@@ -502,8 +502,22 @@ impl CrossServerRef {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum HyperRefKind {
-    Single { excerpt: Option<Edition> },
-    Multi { refs: Vec<HyperRef> },
+    Single {
+        excerpt: Option<Edition>,
+    },
+    Multi {
+        refs: Vec<HyperRef>,
+    },
+    /// FR-40 Story 7: an attachment targeting another LINK —
+    /// commenting on a connection. Gold needed no variant (links
+    /// are works, so a Single's workContext could point at a link
+    /// work); ours are not works, so the TYPE carries the
+    /// discriminator — link BeIds and work BeIds occupy overlapping
+    /// numeric ranges (link_counter is 0-based, GrandMap works
+    /// 1000-based) and must not be confused.
+    LinkAttachment {
+        link_id: u64,
+    },
 }
 
 impl HyperRef {
@@ -555,10 +569,39 @@ impl HyperRef {
         matches!(self.kind, HyperRefKind::Multi { .. })
     }
 
+    pub fn is_link_attachment(&self) -> bool {
+        matches!(self.kind, HyperRefKind::LinkAttachment { .. })
+    }
+
+    /// The targeted link id for a LinkAttachment ref (FR-40 S7).
+    pub fn link_attachment_target(&self) -> Option<u64> {
+        match &self.kind {
+            HyperRefKind::LinkAttachment { link_id } => Some(*link_id),
+            _ => None,
+        }
+    }
+
+    /// Constructor (FR-40 S7): an attachment targeting another link.
+    /// The home document, when the target link has one, is the
+    /// natural rendering context — carried via work_context.
+    pub fn link_attachment(link_id: u64, home_context: Option<u64>) -> Self {
+        HyperRef {
+            kind: HyperRefKind::LinkAttachment { link_id },
+            work_context: home_context,
+            original_context: None,
+            path_context: None,
+            provenance_chain: Vec::new(),
+            start_position: None,
+            end_position: None,
+            cross_server_ref: None,
+        }
+    }
+
     pub fn excerpt(&self) -> Option<&Edition> {
         match &self.kind {
             HyperRefKind::Single { excerpt } => excerpt.as_ref(),
             HyperRefKind::Multi { .. } => None,
+            HyperRefKind::LinkAttachment { .. } => None,
         }
     }
 
@@ -566,6 +609,7 @@ impl HyperRef {
         match &self.kind {
             HyperRefKind::Single { .. } => &[],
             HyperRefKind::Multi { refs } => refs,
+            HyperRefKind::LinkAttachment { .. } => &[],
         }
     }
 
@@ -747,7 +791,7 @@ impl HyperRef {
                     cross_server_ref: self.cross_server_ref.clone(),
                 }
             }
-            HyperRefKind::Single { .. } => self.clone(),
+            HyperRefKind::Single { .. } | HyperRefKind::LinkAttachment { .. } => self.clone(),
         }
     }
 
@@ -767,7 +811,7 @@ impl HyperRef {
                     cross_server_ref: self.cross_server_ref.clone(),
                 }
             }
-            HyperRefKind::Single { .. } => self.clone(),
+            HyperRefKind::Single { .. } | HyperRefKind::LinkAttachment { .. } => self.clone(),
         }
     }
 
@@ -856,6 +900,8 @@ impl HyperRef {
                     result.extend(r.referenced_content());
                 }
             }
+            // A link attachment references no content spans.
+            HyperRefKind::LinkAttachment { .. } => {}
         }
         result
     }

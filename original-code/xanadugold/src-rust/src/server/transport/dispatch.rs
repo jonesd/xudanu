@@ -38,6 +38,21 @@ fn build_link_payload(
                 .map(|hr| (n.to_string(), HyperRefPayload::from_hyper_ref(hr)))
         })
         .collect();
+    let end_sets: Vec<(String, Vec<HyperRefPayload>)> = link
+        .end_names()
+        .into_iter()
+        .filter(|n| link.attachment_count(n) > 1)
+        .map(|n| {
+            (
+                n.to_string(),
+                link.attachments_at(n)
+                    .unwrap_or(&[])
+                    .iter()
+                    .map(HyperRefPayload::from_hyper_ref)
+                    .collect(),
+            )
+        })
+        .collect();
     let type_ends: Vec<(u64, BeId)> = link
         .link_types()
         .iter()
@@ -61,6 +76,7 @@ fn build_link_payload(
         destination_title,
         destination_owner,
         named_ends,
+        end_sets,
         link_types: link.link_types().to_vec(),
         type_ends,
         home_document,

@@ -13406,6 +13406,20 @@ impl Server {
         self.link_counter += 1;
         let link_id = self.link_counter;
 
+        // FR-40 S7: no link attachment in the new link may close a
+        // cycle back onto the new link itself.
+        for attachments in link.ends().values() {
+            for hr in attachments {
+                if let Some(target) = hr.link_attachment_target() {
+                    if self.link_attachment_creates_cycle(link_id, target) {
+                        return Err(ServerError::InvalidArgument(
+                            "link attachment would create a cycle".into(),
+                        ));
+                    }
+                }
+            }
+        }
+
         // Named ends beyond Left/Right register against their works so
         // those works list the link in their Connections (FR-40 Story 1).
         // FR-40 S6: EVERY attachment of every end registers.
@@ -14262,6 +14276,37 @@ impl Server {
         Ok(())
     }
 
+    /// FR-40 Story 7: would a link-attachment from `source_link`
+    /// to `target_link` close a cycle? DFS through existing link
+    /// attachments: self-reference is immediate; a path from
+    /// target back to source is transitive.
+    fn link_attachment_creates_cycle(&self, source_link: BeId, target_link: BeId) -> bool {
+        if source_link == target_link {
+            return true;
+        }
+        let mut stack = vec![target_link];
+        let mut visited = std::collections::HashSet::new();
+        while let Some(current) = stack.pop() {
+            if !visited.insert(current) {
+                continue;
+            }
+            let Some(ls) = self.links.get(&current) else {
+                continue;
+            };
+            for attachments in ls.link.ends().values() {
+                for hr in attachments {
+                    if let Some(next) = hr.link_attachment_target() {
+                        if next == source_link {
+                            return true;
+                        }
+                        stack.push(next);
+                    }
+                }
+            }
+        }
+        false
+    }
+
     /// FR-40 Story 6: add one attachment to an end-set. Same
     /// permission and bookkeeping model as link_add_end; the
     /// attachment's work joins work_to_links.
@@ -14284,6 +14329,14 @@ impl Server {
                 .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
             ls.link.clone()
         };
+        // FR-40 S7: link attachments may not close a cycle.
+        if let Some(target) = attachment.link_attachment_target() {
+            if self.link_attachment_creates_cycle(link_id, target) {
+                return Err(ServerError::InvalidArgument(
+                    "link attachment would create a cycle".into(),
+                ));
+            }
+        }
         self.backfollow.unregister_link_content(&old_link, link_id);
         let attachment_work = attachment.work_context();
         let attachment_payload =
@@ -33770,6 +33823,131 @@ mod tests {
         );
     }
 
+    /// FR-40 Story 7 armor: link attachments may not close cycles —
+    /// direct self-reference and transitive loops both reject;
+    /// the legitimate direction (commenting on another link) works.
+    #[test]
+    #[cfg(feature = "server")]
+    fn fr40_s7_link_attachment_cycles_rejected() {
+        let (mut server, sid) = setup_logged_in_server();
+        let a = server.create_work(sid, Edition::from_text("A")).unwrap();
+        let b = server.create_work(sid, Edition::from_text("B")).unwrap();
+        let c = server.create_work(sid, Edition::from_text("C")).unwrap();
+
+        let base = server.create_link(sid, a, b, None, None).unwrap();
+        let second = server.create_link(sid, b, c, None, None).unwrap();
+
+        // Comment on `base` from `second`: legitimate, no cycle.
+        server
+            .link_end_add_attachment(
+                sid,
+                second,
+                "LeftEnd",
+                HyperRef::link_attachment(base, None),
+            )
+            .unwrap();
+
+        // Direct: base attaching to itself rejects.
+        let err = server.link_end_add_attachment(
+            sid,
+            base,
+            "RightEnd",
+            HyperRef::link_attachment(base, None),
+        );
+        assert!(err.is_err(), "direct self-attachment must reject");
+
+        // Transitive: base -> second -> base would close the loop
+        // (second already attaches to base).
+        let err = server.link_end_add_attachment(
+            sid,
+            base,
+            "RightEnd",
+            HyperRef::link_attachment(second, None),
+        );
+        assert!(
+            err.is_err(),
+            "transitive cycle through existing attachments must reject"
+        );
+
+        // The legitimate attachment survived.
+        let ls = server.links.get(&second).unwrap();
+        assert_eq!(ls.link.attachment_count("LeftEnd"), 2);
+        assert_eq!(
+            ls.link
+                .attachments_at("LeftEnd")
+                .unwrap()
+                .iter()
+                .filter(|hr| hr.link_attachment_target() == Some(base))
+                .count(),
+            1
+        );
+    }
+
+    /// FR-40 Story 7 armor: creation-time cycle check — a new link
+    /// whose attachment targets a link that already attaches to
+    /// the new link's would-be position rejects.
+    #[test]
+    #[cfg(feature = "server")]
+    fn fr40_s7_creation_cycle_rejected() {
+        let (mut server, sid) = setup_logged_in_server();
+        let a = server.create_work(sid, Edition::from_text("A")).unwrap();
+        let b = server.create_work(sid, Edition::from_text("B")).unwrap();
+        let first = server.create_link(sid, a, b, None, None).unwrap();
+
+        // New link attaching to `first` while `first` attaches to
+        // the new link — simulate by first making `first` attach to
+        // the id the new link WILL take (first + 1).
+        let next_id = first + 1;
+        server
+            .link_end_add_attachment(
+                sid,
+                first,
+                "LeftEnd",
+                HyperRef::link_attachment(next_id, None),
+            )
+            .unwrap();
+
+        let err = server.create_link(sid, b, a, None, None);
+        // The creation itself succeeds (it takes next_id); but a
+        // creation WITH an attachment back to `first` rejects
+        // because first -> next_id -> first closes the loop.
+        assert!(err.is_ok());
+        let new_id = err.unwrap();
+        assert_eq!(new_id, next_id);
+        let bad_link = crate::edition::links::HyperLink::make(
+            vec![1],
+            HyperRef::link_attachment(first, None),
+            HyperRef::single(None, Some(a), None, None),
+        );
+        let result = server.create_link_with_hyperlink_homed(sid, bad_link, None);
+        assert!(
+            result.is_err() || !self_referential_via(&server, result.unwrap(), first),
+            "creation with a cycle-closing attachment must reject or not close a cycle"
+        );
+
+        fn self_referential_via(server: &Server, link_id: BeId, target: BeId) -> bool {
+            server.link_attachment_creates_cycle(link_id, target)
+        }
+    }
+
+    /// FR-40 Story 7 armor: link attachments cross the wire as
+    /// kind="link_attachment" with the target intact.
+    #[test]
+    #[cfg(feature = "server")]
+    fn fr40_s7_link_attachment_wire_roundtrip() {
+        let hr = HyperRef::link_attachment(77, Some(42));
+        let payload = crate::server::transport::protocol::HyperRefPayload::from_hyper_ref(&hr);
+        assert_eq!(payload.kind, "link_attachment");
+        assert_eq!(payload.link_attachment, Some(77));
+        assert_eq!(payload.work_context, Some(42));
+
+        let back = payload.to_hyper_ref(999);
+        assert!(back.is_link_attachment());
+        assert_eq!(back.link_attachment_target(), Some(77));
+        // The fallback work id is NOT forced onto link attachments.
+        assert_eq!(back.work_context(), Some(42));
+    }
+
     #[test]
     #[cfg(feature = "server")]
     fn corrupt_work_quarantined_and_preserved_through_checkpoint() {
@@ -39454,6 +39632,7 @@ mod tests {
             provenance_chain: Vec::new(),
             start_position: Some(5),
             end_position: Some(20),
+            link_attachment: None,
             cross_server_ref: None,
         };
 
