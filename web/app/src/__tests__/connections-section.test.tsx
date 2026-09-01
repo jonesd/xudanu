@@ -171,3 +171,99 @@ describe("ConnectionsSection", () => {
     expect(screen.getByText("\u2605")).toBeTruthy();
   });
 });
+
+// ---- FR-40 S6/S7: end-set and link-attachment rendering ----
+
+describe("ConnectionsSection end-sets (FR-40 S6/S7)", () => {
+  it("shows passage counts for gathered ends in the link row meta", () => {
+    renderSection({
+      transclusionLinks: [
+        mkLink({
+          link_types: [3],
+          end_sets: [
+            [
+              "LeftEnd",
+              [
+                { kind: "single", work_context: 0x10, original_context: null, excerpt: "claim one" },
+                { kind: "single", work_context: 0x10, original_context: null, excerpt: "claim two" },
+                { kind: "single", work_context: 0x11, original_context: null, excerpt: "claim three" },
+              ],
+            ],
+          ],
+        }),
+      ],
+    });
+    expect(screen.getByText(/3 passages/)).toBeInTheDocument();
+  });
+
+  it("shows connection chips for link attachments (S7)", () => {
+    renderSection({
+      transclusionLinks: [
+        mkLink({
+          named_ends: [
+            [
+              "Commentary",
+              {
+                kind: "link_attachment",
+                work_context: null,
+                original_context: null,
+                excerpt: null,
+                link_attachment: 55,
+              },
+            ],
+          ],
+        }),
+      ],
+    });
+    expect(screen.getByText(/→ connection/)).toBeInTheDocument();
+  });
+
+  it("pluralizes multiple link attachments on one end", () => {
+    renderSection({
+      transclusionLinks: [
+        mkLink({
+          named_ends: [
+            [
+              "Commentary",
+              {
+                kind: "link_attachment",
+                work_context: null,
+                original_context: null,
+                excerpt: null,
+                link_attachment: 55,
+              },
+            ],
+          ],
+          end_sets: [
+            [
+              "Commentary",
+              [
+                {
+                  kind: "link_attachment",
+                  work_context: null,
+                  original_context: null,
+                  excerpt: null,
+                  link_attachment: 55,
+                },
+                {
+                  kind: "link_attachment",
+                  work_context: null,
+                  original_context: null,
+                  excerpt: null,
+                  link_attachment: 56,
+                },
+              ],
+            ],
+          ],
+        }),
+      ],
+    });
+    expect(screen.getByText(/→ 2 connections/)).toBeInTheDocument();
+  });
+
+  it("plain two-ended links keep the bare type meta", () => {
+    renderSection({ transclusionLinks: [mkLink()] });
+    expect(screen.queryByText(/passages/)).toBeNull();
+    expect(screen.queryByText(/connection/)).toBeNull();
+  });
+});

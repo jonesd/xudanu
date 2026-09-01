@@ -164,6 +164,9 @@ export interface LinkEntry {
   link_types?: number[];
   // FR-40: named ends beyond the two-ended fast path.
   named_ends?: [string, HyperRefPayload][];
+  // FR-40 S6: complete attachment lists for any end with more than
+  // one attachment (server end names: LeftEnd/RightEnd + custom).
+  end_sets?: [string, HyperRefPayload[]][];
   // FR-40: derived type ends — one per registered type with a
   // definition work (Green's three-set, materialized on read).
   type_ends?: [number, number][];
@@ -281,6 +284,8 @@ export interface HyperRefPayload {
   provenance_chain?: ProvenanceHop[];
   start_position?: number | null;
   end_position?: number | null;
+  // FR-40 S7: the targeted link id when kind == "link_attachment".
+  link_attachment?: number | null;
   cross_server_ref?: CrossServerRefPayload | null;
 }
 
@@ -1187,6 +1192,61 @@ export class CrdtSyncClient {
 
   async linkRemoveEnd(linkId: number, endName: string): Promise<void> {
     await this.sendRequest("link_remove_end", { link_id: linkId, end_name: endName });
+  }
+
+  /** FR-40 S6: add one attachment to an end-set. */
+  async linkEndAddAttachment(
+    linkId: number,
+    endName: string,
+    attachment: {
+      workContext: number;
+      excerpt?: string;
+      start?: number | null;
+      end?: number | null;
+      linkAttachment?: number | null;
+    },
+  ): Promise<void> {
+    await this.sendRequest("link_end_add_attachment", {
+      link_id: linkId,
+      end_name: endName,
+      attachment: {
+        kind: attachment.linkAttachment != null ? "link_attachment" : "single",
+        work_context: attachment.workContext,
+        original_context: null,
+        path_context: null,
+        excerpt: attachment.excerpt ?? null,
+        start_position: attachment.start ?? null,
+        end_position: attachment.end ?? null,
+        link_attachment: attachment.linkAttachment ?? null,
+      },
+    });
+  }
+
+  /** FR-40 S6: remove one attachment from an end-set. */
+  async linkEndRemoveAttachment(
+    linkId: number,
+    endName: string,
+    attachment: {
+      workContext: number;
+      start?: number | null;
+      end?: number | null;
+      linkAttachment?: number | null;
+    },
+  ): Promise<void> {
+    await this.sendRequest("link_end_remove_attachment", {
+      link_id: linkId,
+      end_name: endName,
+      attachment: {
+        kind: attachment.linkAttachment != null ? "link_attachment" : "single",
+        work_context: attachment.workContext,
+        original_context: null,
+        path_context: null,
+        excerpt: null,
+        start_position: attachment.start ?? null,
+        end_position: attachment.end ?? null,
+        link_attachment: attachment.linkAttachment ?? null,
+      },
+    });
   }
 
   async linkQuery(spec: LinkQuerySpec): Promise<LinkEntry[]> {

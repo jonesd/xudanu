@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { LinkEntry, SpanRangePayload, BacklinkEntry, CrossServerBacklinkPayload } from "../../api/crdt_sync";
 import { getTransclusionColor, DEFAULT_LINK_TYPES } from "../../hooks/useTransclusion";
+import { linkEnds, isGatheredEnd, endSetCount, linkAttachmentTarget } from "../../link-ends";
 
 const DEFAULT_LINK_TYPE_LABELS: Record<number, string> = {
   1: "Comment",
@@ -93,12 +94,32 @@ export function ConnectionsSection({
     const typeName = DEFAULT_LINK_TYPE_LABELS[typeId] || "link";
     const isOutgoing = currentWorkId !== null && link.origin === currentWorkId;
     const isWebLink = typeId === 6;
+    // FR-40 S6/S7: end-set and link-attachment annotations for the
+    // row's meta — "3 passages" per gathered end, "→ connection"
+    // per link attachment (Appendix B: the panel IS the legend).
+    const endSetParts: string[] = [];
+    for (const end of linkEnds(link)) {
+      if (isGatheredEnd(end)) {
+        endSetParts.push(`${endSetCount(end)} passages`);
+      }
+      const linkTargets = (end.attachments ?? [end.ref])
+        .map((r) => linkAttachmentTarget(r))
+        .filter((t): t is number => t !== null);
+      if (linkTargets.length > 0) {
+        endSetParts.push(
+          linkTargets.length === 1
+            ? "→ connection"
+            : `→ ${linkTargets.length} connections`,
+        );
+      }
+    }
+    const meta = [typeName, ...endSetParts].join(" · ");
     items.push({
       key,
       type: "link",
       title: isWebLink ? excerpt : (link.destination_title || link.origin_title || "Untitled"),
       excerpt: excerpt.slice(0, 80),
-      meta: typeName,
+      meta,
       workId: isOutgoing ? link.destination : link.origin,
       linkId: link.link_id,
       linkTypeId: typeId,

@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import type { CrdtSyncClient, WorkListEntry, CrossServerRefPayload, LinkTypeInfo } from "../api/crdt_sync";
 import { DEFAULT_LINK_TYPES } from "../hooks/useTransclusion";
+import { planEndSetOperations } from "../link-ends";
 
 const LINK_TYPE_DESCRIPTIONS: Record<number, string> = {
   1: "Annotate a passage or add a scholarly note",
@@ -55,6 +56,8 @@ export function LinkCreator({
   const [selectedTypeIds, setSelectedTypeIds] = useState<Set<number>>(new Set());
   const [serverTypes, setServerTypes] = useState<LinkTypeInfo[]>([]);
   const [extraEnds, setExtraEnds] = useState<ExtraEnd[]>([]);
+  // FR-40 S6: the end name currently being gathered into.
+  const [gatherFor, setGatherFor] = useState<string | null>(null);
   const [homeDocument, setHomeDocument] = useState<number | "">("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -198,11 +201,27 @@ export function LinkCreator({
         if (selectedTypeIds.size > 0) {
           await client.linkSetTypes(linkId, Array.from(selectedTypeIds));
         }
-        for (const extra of extraEnds) {
-          await client.linkAddEnd(linkId, extra.name, {
-            workContext: extra.workId,
+        // FR-40 S6: rows sharing an end name GATHER — first row
+        // creates the end, the rest attach to it (end-sets).
+        const ops = planEndSetOperations(
+          extraEnds.map((e) => ({
+            endName: e.name,
+            workContext: e.workId,
             excerpt: "",
-          });
+          })),
+        );
+        for (const op of ops) {
+          if (op.op === "add-end") {
+            await client.linkAddEnd(linkId, op.endName, {
+              workContext: op.span.workContext,
+              excerpt: op.span.excerpt ?? "",
+            });
+          } else {
+            await client.linkEndAddAttachment(linkId, op.endName, {
+              workContext: op.span.workContext,
+              excerpt: op.span.excerpt ?? "",
+            });
+          }
         }
         if (description.trim()) {
           await client.annotationCreate(
@@ -562,32 +581,90 @@ export function LinkCreator({
             </div>
             {extraEnds.length > 0 && (
               <div style={{ margin: "8px 0" }}>
-                {extraEnds.map((e, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: "4px 8px",
-                      border: "1px solid #30363d",
-                      borderRadius: 4,
-                      marginBottom: 4,
-                      fontSize: 12,
-                    }}
-                  >
-                    <span>
-                      <strong>{e.name}</strong> → {works.find((w) => w.work_id === e.workId)?.title || `0x${e.workId.toString(16)}`}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setExtraEnds((prev) => prev.filter((_, j) => j !== i))}
-                      style={{ background: "none", border: "none", color: "#f85149", cursor: "pointer" }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
+                {extraEnds.map((e, i) => {
+                  const memberCount = extraEnds.filter((x) => x.name === e.name).length;
+                  const gathering = gatherFor === e.name;
+                  return (
+                    <div key={i} style={{ marginBottom: 4 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "4px 8px",
+                          border: "1px solid #30363d",
+                          borderRadius: 4,
+                          fontSize: 12,
+                        }}
+                      >
+                        <span>
+                          <strong>{e.name}</strong>
+                          {memberCount > 1 && (
+                            <em style={{ color: "#7ee787", marginLeft: 6 }}>
+                              {memberCount} passages
+                            </em>
+                          )}{" "}
+                          → {works.find((w) => w.work_id === e.workId)?.title || `0x${e.workId.toString(16)}`}
+                        </span>
+                        <span>
+                          <button
+                            type="button"
+                            title="Gather another passage into this end"
+                            onClick={() => setGatherFor(gathering ? null : e.name)}
+                            style={{ background: "none", border: "none", color: "#7ee787", cursor: "pointer", marginRight: 6 }}
+                          >
+                            {"\uFF0B"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setExtraEnds((prev) => prev.filter((_, j) => j !== i))}
+                            style={{ background: "none", border: "none", color: "#f85149", cursor: "pointer" }}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      </div>
+                      {gathering && (
+                        <div style={{ padding: "4px 8px", borderLeft: "2px solid #7ee787", margin: "2px 0 4px 8px" }}>
+                          <div style={{ fontSize: 11, color: "#8b949e", marginBottom: 4 }}>
+                            Add passages to <strong>{e.name}</strong> — they become ONE gathered end:
+                          </div>
+                          <div className="link-work-list">
+                            {otherWorks
+                              .filter(
+                                (w) =>
+                                  w.work_id !== selectedWorkId &&
+                                  !extraEnds.some((x) => x.name === e.name && x.workId === w.work_id),
+                              )
+                              .map((w) => (
+                                <button
+                                  key={w.work_id}
+                                  type="button"
+                                  className="link-work-item"
+                                  onClick={() =>
+                                    setExtraEnds((prev) => [
+                                      ...prev,
+                                      { name: e.name, workId: w.work_id },
+                                    ])
+                                  }
+                                >
+                                  <span className="link-work-title">{w.title || "Untitled"}</span>
+                                  <span className="link-work-id">{w.work_id.toString(16).padStart(4, "0")}</span>
+                                </button>
+                              ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setGatherFor(null)}
+                            style={{ background: "none", border: "1px solid #30363d", color: "#8b949e", borderRadius: 4, fontSize: 11, marginTop: 4, cursor: "pointer" }}
+                          >
+                            done gathering
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
             <div className="link-work-picker">
@@ -619,7 +696,7 @@ export function LinkCreator({
               disabled={creating || selectedTypeIds.size === 0}
               onClick={handleCreate}
             >
-              {creating ? "Creating\u2026" : `Create Link (${2 + extraEnds.length} ends)`}
+              {creating ? "Creating\u2026" : `Create Link (${2 + new Set(extraEnds.map((e) => e.name)).size} ends)`}
             </button>
             {error && <div className="link-creator-error">{error}</div>}
           </div>
