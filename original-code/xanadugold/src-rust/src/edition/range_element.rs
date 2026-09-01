@@ -110,6 +110,62 @@ pub enum RangeElement {
         )]
         cached_content: Option<String>,
     },
+    /// Gold stubble Set (FR-52 A-2): an unordered collection of span
+    /// references quoted as ONE logical value — "quote these five
+    /// ranges as one quote". Members are span refs, not content:
+    /// a Set contributes zero chars to the text stream (structural
+    /// value semantics, same reader contract as an unmaterialized
+    /// Virtual). Fingerprint is order-insensitive (canonical sort),
+    /// so construction order never matters — that is what makes it
+    /// a Set and not a Path.
+    Set {
+        #[cfg_attr(feature = "serde", serde(default))]
+        spans: Vec<SpanRef>,
+    },
+    /// Gold stubble Path (FR-52 A-2): an ORDERED sequence of span
+    /// references — a path through documents (citation trail,
+    /// reading order). Same value semantics as Set, but sequence
+    /// order is part of the identity: the fingerprint hashes in
+    /// member order.
+    Path {
+        #[cfg_attr(feature = "serde", serde(default))]
+        spans: Vec<SpanRef>,
+    },
+}
+
+/// A reference to a span of another work (FR-52 A-2). The unit of
+/// structured quoting: Set and Path are collections of these.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SpanRef {
+    pub work_id: u64,
+    pub start: i64,
+    pub end: i64,
+}
+
+impl SpanRef {
+    /// Normalize so start <= end (same contract as the Transclusion
+    /// constructor: reversed bounds are swapped, not rejected).
+    pub fn new(work_id: u64, start: i64, end: i64) -> Self {
+        let (start, end) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
+        SpanRef {
+            work_id,
+            start,
+            end,
+        }
+    }
+
+    pub fn len(&self) -> i64 {
+        self.end - self.start
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.end <= self.start
+    }
 }
 
 /// Deterministic identity of a virtual element (FR-37 Phase 3): what
@@ -340,6 +396,42 @@ impl RangeElement {
 
     pub fn is_virtual(&self) -> bool {
         matches!(self, RangeElement::Virtual { .. })
+    }
+
+    /// Set element constructor (FR-52 A-2). Members are normalized
+    /// (start <= end) but NOT deduplicated — set semantics apply at
+    /// fingerprint time (canonical sort), and duplicate members are
+    /// the caller's content decision.
+    pub fn set(spans: Vec<SpanRef>) -> Self {
+        RangeElement::Set { spans }
+    }
+
+    /// Path element constructor (FR-52 A-2). Order is preserved —
+    /// sequence order is part of a Path's identity.
+    pub fn path(spans: Vec<SpanRef>) -> Self {
+        RangeElement::Path { spans }
+    }
+
+    pub fn is_set(&self) -> bool {
+        matches!(self, RangeElement::Set { .. })
+    }
+
+    pub fn is_path(&self) -> bool {
+        matches!(self, RangeElement::Path { .. })
+    }
+
+    pub fn as_set(&self) -> Option<&[SpanRef]> {
+        match self {
+            RangeElement::Set { spans } => Some(spans),
+            _ => None,
+        }
+    }
+
+    pub fn as_path(&self) -> Option<&[SpanRef]> {
+        match self {
+            RangeElement::Path { spans } => Some(spans),
+            _ => None,
+        }
     }
 
     pub fn source_generation(&self) -> Option<u64> {
@@ -653,6 +745,34 @@ impl RangeElement {
                 hasher.update(&entry_start.to_le_bytes());
                 hasher.update(&entry_end.to_le_bytes());
                 hasher.update(source_crum);
+                *hasher.finalize().as_bytes()
+            }
+            // FR-52 A-2: Set hashes in canonical (sorted) member
+            // order — order-insensitive identity is what makes it a
+            // Set. Distinct from the Path arm below, which hashes in
+            // sequence order.
+            RangeElement::Set { spans } => {
+                let mut sorted = spans.clone();
+                sorted.sort();
+                let mut hasher = blake3::Hasher::new();
+                hasher.update(b"set:");
+                hasher.update(&(sorted.len() as u64).to_le_bytes());
+                for span in &sorted {
+                    hasher.update(&span.work_id.to_le_bytes());
+                    hasher.update(&span.start.to_le_bytes());
+                    hasher.update(&span.end.to_le_bytes());
+                }
+                *hasher.finalize().as_bytes()
+            }
+            RangeElement::Path { spans } => {
+                let mut hasher = blake3::Hasher::new();
+                hasher.update(b"path:");
+                hasher.update(&(spans.len() as u64).to_le_bytes());
+                for span in spans {
+                    hasher.update(&span.work_id.to_le_bytes());
+                    hasher.update(&span.start.to_le_bytes());
+                    hasher.update(&span.end.to_le_bytes());
+                }
                 *hasher.finalize().as_bytes()
             }
         }
@@ -998,5 +1118,134 @@ mod tests {
         let json = serde_json::to_string(&e).unwrap();
         let e2: RangeElement = serde_json::from_str(&json).unwrap();
         assert_eq!(e, e2);
+    }
+
+    // ---- FR-52 A-2: Set/Path armor ----
+
+    fn sample_spans() -> Vec<SpanRef> {
+        vec![
+            SpanRef::new(7, 0, 12),
+            SpanRef::new(9, 40, 44),
+            SpanRef::new(7, 100, 130),
+        ]
+    }
+
+    #[test]
+    fn span_ref_normalizes_reversed_bounds() {
+        let s = SpanRef::new(1, 50, 10);
+        assert_eq!((s.start, s.end), (10, 50));
+        assert_eq!(s.len(), 40);
+        assert!(!s.is_empty());
+        assert!(SpanRef::new(1, 5, 5).is_empty());
+    }
+
+    #[test]
+    fn set_path_constructors_and_accessors() {
+        let set = RangeElement::set(sample_spans());
+        let path = RangeElement::path(sample_spans());
+        assert!(set.is_set());
+        assert!(path.is_path());
+        assert!(!set.is_path());
+        assert!(!path.is_set());
+        assert_eq!(set.as_set().unwrap().len(), 3);
+        assert_eq!(path.as_path().unwrap().len(), 3);
+        assert_eq!(set.as_set(), path.as_path());
+        assert_ne!(set, path, "same members, different type");
+    }
+
+    #[test]
+    fn set_path_value_semantics_zero_chars_no_text() {
+        let set = RangeElement::set(sample_spans());
+        let path = RangeElement::path(sample_spans());
+        assert_eq!(set.char_len(), 0);
+        assert_eq!(path.char_len(), 0);
+        assert_eq!(set.as_text(), None);
+        assert_eq!(path.as_text(), None);
+        assert!(!set.is_content_addressable());
+        assert!(!path.is_content_addressable());
+    }
+
+    #[test]
+    fn set_fingerprint_order_insensitive() {
+        let a = RangeElement::set(sample_spans());
+        let mut reversed = sample_spans();
+        reversed.reverse();
+        let b = RangeElement::set(reversed);
+        assert_eq!(
+            a.content_fingerprint(),
+            b.content_fingerprint(),
+            "construction order must not affect Set identity"
+        );
+    }
+
+    #[test]
+    fn path_fingerprint_order_sensitive() {
+        let a = RangeElement::path(sample_spans());
+        let mut reversed = sample_spans();
+        reversed.reverse();
+        let b = RangeElement::path(reversed);
+        assert_ne!(
+            a.content_fingerprint(),
+            b.content_fingerprint(),
+            "sequence order IS Path identity"
+        );
+    }
+
+    #[test]
+    fn set_path_fingerprints_distinct() {
+        let set = RangeElement::set(sample_spans());
+        let path = RangeElement::path(sample_spans());
+        assert_ne!(set.content_fingerprint(), path.content_fingerprint());
+    }
+
+    #[test]
+    fn set_path_fingerprint_deterministic_and_member_sensitive() {
+        let s1 = RangeElement::set(sample_spans());
+        let s2 = RangeElement::set(sample_spans());
+        assert_eq!(s1.content_fingerprint(), s2.content_fingerprint());
+        let mut different = sample_spans();
+        different[0] = SpanRef::new(8, 0, 12);
+        let s3 = RangeElement::set(different);
+        assert_ne!(s1.content_fingerprint(), s3.content_fingerprint());
+        let empty = RangeElement::set(Vec::new());
+        let one = RangeElement::set(vec![SpanRef::new(7, 0, 12)]);
+        assert_ne!(empty.content_fingerprint(), one.content_fingerprint());
+    }
+
+    #[test]
+    fn set_path_reversed_member_bounds_fingerprint_equal() {
+        let a = RangeElement::set(vec![SpanRef::new(1, 0, 10)]);
+        let b = RangeElement::set(vec![SpanRef::new(1, 10, 0)]);
+        assert_eq!(
+            a.content_fingerprint(),
+            b.content_fingerprint(),
+            "SpanRef normalization must run before fingerprinting"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn set_path_serde_roundtrip() {
+        for e in [
+            RangeElement::set(sample_spans()),
+            RangeElement::path(sample_spans()),
+        ] {
+            let json = serde_json::to_string(&e).unwrap();
+            let e2: RangeElement = serde_json::from_str(&json).unwrap();
+            assert_eq!(e, e2);
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn set_path_serde_roundtrip_postcard() {
+        for e in [
+            RangeElement::set(sample_spans()),
+            RangeElement::path(sample_spans()),
+        ] {
+            let bytes = postcard::to_allocvec(&e).unwrap();
+            let e2: RangeElement = postcard::from_bytes(&bytes).unwrap();
+            assert_eq!(e, e2);
+        }
     }
 }

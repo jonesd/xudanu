@@ -184,6 +184,10 @@ pub fn check_path(edition: &Edition) -> bool {
     for (_pos, carrier) in edition.all_entries() {
         match &carrier.element {
             RangeElement::Label { .. } => {}
+            // FR-52 A-2: a Path element is itself a path through
+            // documents — an edition of Path entries is the natural
+            // shape of a path document (citation trail).
+            RangeElement::Path { .. } => {}
             _ => return false,
         }
     }
@@ -372,6 +376,24 @@ mod tests {
 
         let text_edition = Edition::from_text("not labels");
         assert!(!check_path(&text_edition));
+    }
+
+    #[test]
+    fn path_check_accepts_path_elements() {
+        // FR-52 A-2: an edition of Path elements (a citation trail)
+        // is path-certifiable; other element kinds still reject.
+        use crate::edition::range_element::SpanRef;
+        let edition = Edition::from_text_elements(&[
+            RangeElement::path(vec![SpanRef::new(1, 0, 10), SpanRef::new(2, 4, 8)]),
+            RangeElement::path(vec![SpanRef::new(3, 0, 5)]),
+        ]);
+        assert!(check_path(&edition));
+
+        let mixed = Edition::from_text_elements(&[
+            RangeElement::path(vec![SpanRef::new(1, 0, 10)]),
+            RangeElement::set(vec![SpanRef::new(1, 0, 10)]),
+        ]);
+        assert!(!check_path(&mixed), "Set entries are not path steps");
     }
 
     #[test]

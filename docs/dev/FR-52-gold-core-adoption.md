@@ -23,7 +23,7 @@ Gold row says what Xudanu does and why.
 | Ent/Fulltrace (entity hierarchy) | **Dormant** — 4,422 lines, 68 dagwood + 64 content tests green | `src/ent/` | 479 module tests green | **A-1** |
 | DagWood (versioned trace DAG) | **Dormant** — used inside backfollow only for trace positions | `src/ent/dagwood.rs` | 68 tests | **A-1** |
 | Htree/HUpperCrum (crum tree) | **Dormant** — HPart trait, parents, partial crums | `src/ent/htree.rs` | 13 tests | **A-1** |
-| Stubble/Wrappers (type system) | **Partial** — wrapper.rs has endorsement tokens; links consume them; notarize.rs builds on this lineage | `src/edition/wrapper.rs`, `links.rs` | 23 wrapper tests | **A-2** |
+| Stubble/Wrappers (type system) | **Set/Path done (A-2, 2026-08-31)** — `RangeElement::Set/Path` + `SpanRef`, wire transport, `check_path` accepts Path entries. Wrapper tokens/endorsement dispatch remain the FR-38/base layer | `src/edition/wrapper.rs`, `links.rs`, `range_element.rs` | 23 wrapper + 13 new A-2 tests | **A-2 (types done; general endorsement-dispatch deferred)** |
 | Canopy (crum propagation tree) | **Dormant** — 1,092 lines; bert/sensor crums, flags, PropFinder used in backfollow | `src/edition/canopy.rs` | 32 tests | **A-3** |
 | Props (permissions algebra) | **Dormant** — BertProp, flags, permissions_flags computed in backfollow | `src/edition/props.rs` | 30 tests | **A-3** |
 | Hoist (recorder promotion) | **Dormant** — promotes crums up the tree | `src/edition/hoist.rs` | 20 tests | **A-3** |
@@ -32,12 +32,12 @@ Gold row says what Xudanu does and why.
 | FilterSpace (stepper filters) | **Dormant** — FilterRegion used in transclusion.rs | `src/space/filter.rs` | 20 tests | **A-4** |
 | RealSpace (real-valued positions) | **Dormant** — used in phase3 tests | `src/space/real.rs` | 29 tests | **A-5** |
 | Sequence as native ordering | **Active on lattice** — lattice uses Sequence directly | `src/space/sequence.rs` | in lattice tests | **Done** |
-| GrandMap (ID allocation) | **Dormant** — 324 lines | `src/edition/grandmap.rs` | 12 tests | **A-5** |
+| GrandMap (ID allocation) | **Active** — server.rs:632 owns a GrandMap; work elements allocated via `new_work_element`/`assign_new_id` at boot and work creation | `src/edition/grandmap.rs` | 12 tests | **Done** |
 | Pool (object pooling) | **Dormant** — 219 lines | `src/edition/pool.rs` | 13 tests | **A-5** |
 | Label system | **Active** — used in edition construction | `src/edition/label.rs` | 52 tests | **Done** |
 | Snarf (fixed storage segments) | **Active** — persist layer uses SnarfStore | `src/persist/snarf.rs` | packer tests | **Done** |
-| Widdershin update | **Missing** — Gold's bottom-up recompute protocol | — | — | **A-6** |
-| Fullsm (complete enfilade ops) | **Missing** — Gold's full ops set on orgls | — | — | **A-6** |
+| Widdershin update | **Done (dormant with consumer)** — hoist.rs IS widdershin: RecorderHoister walks o_parents bottom-up, change_canopy() recomputes + propagates crums to root (20 tests) | `src/edition/hoist.rs` | 20 tests | **A-3** |
+| Fullsm (complete enfilade ops) | **Partial** — retrieve/store/copy done; regrid deferred (see A-6) | — | — | **A-6** |
 | Istm (frontend tree mgmt) | **N/A** — we have a web frontend, not Gold's frontend tree | — | — | **Reject** |
 
 ## Breakdown
@@ -66,7 +66,11 @@ server-internal; the lattice (FR-51) is already the tumbler-native
 store. Fulltrace activation means giving the **server a fulltrace** —
 replacing today's flat `HashMap<BeId, WorkState>` with a hierarchical
 namespace: works organized under clubs/accounts. This is architectural
-and needs a design note before code. Deliverable A-1.1: design note.
+and needs a design note before code. **Design note complete: see
+`FR-52-A1-fulltrace-activation.md`** — parallel-index design (BeId
+stays primary, zero existing call sites change), four phases: P1 Ent
+on Server, P2 club branches, P3 branching revisions (waits for a
+frontend consumer), P4 content tree rejected-for-now.
 
 **Risk:** medium — it replaces the work-lookup path. Armor-first: the
 fulltrace is a super-keyed index (BeId → position), so lookup
@@ -91,6 +95,35 @@ general value-construction mechanism.
 
 **Path to integration:** extend RangeElement enum + wrapper tokens
 into the existing endorsement machinery. Moderate; isolated.
+
+**Status: DONE (2026-08-31).** Landed:
+- `SpanRef { work_id, start, end }` — the member unit; bounds
+  normalize (reversed swapped, same contract as Transclusion).
+- `RangeElement::Set` / `RangeElement::Path` — value-semantics
+  elements (zero chars, no text) with the identity rule that makes
+  them distinct: **Set fingerprint is order-insensitive (canonical
+  sort), Path fingerprint hashes in sequence order.** Same members,
+  different order: equal Sets, different Paths.
+- Wire: `SpanWire` + `spans` field on `RangeElementPayload`;
+  `"set"`/`"path"` decode arms reject missing spans; reversed
+  bounds normalize at decode. Fingerprints survive the wire
+  byte-exactly (round-trip proven).
+- `check_path` accepts Path entries (a citation-trail edition is
+  path-certifiable); Set entries still reject (a set is not a
+  path).
+- Armor: 13 tests — normalization, order (in)sensitivity, Set≠Path,
+  member sensitivity, serde/postcard round-trips, wire round-trips
+  with fingerprint equality.
+- Builds: default/server/wasm all green. Fixed a pre-existing wasm
+  regression while there: lattice_wire postcard functions were
+  ungated (postcard is server-only) — now `#[cfg(feature =
+  "server")]`.
+
+**Deferred from A-2:** the general endorsement-dispatch system
+(EndorsementSet as type signature with FR-38 as one consumer) —
+the license overlay works and rewriting its dispatch is churn
+without a second consumer. Revisit when A-3 or user-defined types
+need it.
 
 **Risk:** low — additive to RangeElement. No existing behavior
 changes.
@@ -158,40 +191,55 @@ adding cross-space positions is an edition-level change).
 
 ### A-5: GrandMap/Pool/RealSpace — infrastructure adoption
 
-- **GrandMap** (12 tests): Gold's global ID allocator with club-based
-  partitioning. Xudanu's ID allocation is flat u64 counters on
-  Server. GrandMap activation is a drop-in upgrade: ID allocation
-  becomes hierarchical (club-scoped ranges, namespace isolation).
-  **Low risk, low urgency** — the flat allocator works.
+- **GrandMap**: corrected 2026-08-31 — already active on the server
+  (work-element allocation); inventory table row updated to Done.
 - **Pool** (13 tests): object pooling for allocation-heavy paths.
   Performance-only; adopt when a profiler says allocation is hot.
 - **RealSpace** (29 tests): complete but no consumer identified.
   Gold used real positions for the frontend tree. **No action**
   unless a use case emerges.
 
-### A-6: Widdershin and Fullsm — the two Gold protocols we lack
+### A-6: Widdershin and Fullsm — status correction (2026-08-31)
 
-**Widdershin** ("bottom-up, against the grain") is Gold's protocol
-for updating crums after an edit: the edit site computes a new
-bottom crum, then widdershins up through o_parents to the root,
-updating each ancestor. This is how Gold maintained its typed crum
-trees incrementally (what A-3 activates). Our per-node crum
-maintenance in `fix()` and `split_from` already does this for
-content crums — widdershin for **typed** crums (canopy crums) is
-the A-3 deliverable.
+**Widdershin: already implemented.** A code audit found that
+`src/edition/hoist.rs` **is** the widdershin protocol, faithfully
+ported: `RecorderHoister` walks bottom-up through `o_parents`
+(exactly Gold's HPart parent chain), `change_canopy()` recomputes
+each crum's OR-flags and propagates to the parent, stopping at the
+root; `Hoisting { crum, cargo }` is Gold's recorder-carrying hoist
+with recorders installed at intermediate crums. 20 tests green,
+including stop-at-root and remove-from-children semantics. It is
+classified **dormant-with-its-consumer** rather than missing: it
+runs on the backfollow index's canopy today and activates with A-3
+(attaching the canopy tree to the enfilade). No separate
+deliverable.
 
-**Fullsm** (full structure manager): the complete set of enfilade
-operations Gold ran (retrieve, store, copy, combine, regrid).
-Xudanu has retrieve/fetch, store/with, copy — but not regrid
-(tree rebalancing without content change) and not the full
-operations manager that coordinated them. With S2 per-node crums
-and Arc sharing, we have most of what fullsm coordinated — but
-not regrid.
+**Fullsm:** retrieve (fetch), store (with/without), copy, and
+combine (build_bulk) all exist. The gap was **regrid** — and it is
+**deferred with rationale**:
 
-**Deliverable A-6.1:** implement regrid (rebalance enfilade by
-tumbler partition boundaries — partitions sections into subtrees).
-This is the splay concept done Gold's way. Deliverable A-6.2:
-operations inventory vs. Gold's fullsm — any gap gets a decision.
+- The orgl (O-tree path) has no rebalancing: `with` splits
+  overfull leaves (1024 entries) but never rebalances internal
+  nodes. This is the measured 1.4ms → 1.8ms drift at 100k entries
+  that the splay investigation surfaced (splay was rejected; regrid
+  would have been Gold's answer).
+- The **lattice (FR-51) already solves balanced incremental
+  editing**: a weight-balanced BST with `balance(i)` rotations
+  maintained through `fix()`. Regrid on the orgl would duplicate
+  the lattice's core structural advantage inside the engine the
+  lattice is scheduled to replace.
+- **Decision:** defer regrid to post-FR-51-cutover. If the O-tree
+  survives as a secondary engine and profiling shows depth
+  degradation, revisit; the careful version must preserve
+  Arc-shared subtrees, maintain crums through bulk rotation (S2
+  machinery should compose but is proven per-split, not bulk), and
+  pick a trigger policy Gold left to the operator. Until then the
+  honest position is: the orgl drifts, the lattice doesn't, and
+  the lattice is the future.
+
+Deliverable A-6.2 (operations inventory vs. Gold's fullsm) closes
+with: retrieve ✓, store ✓, copy ✓, combine ✓, regrid deferred,
+ops-manager coordination subsumed by server.rs + orgl invariants.
 
 ### Rejected: Istm (frontend tree management)
 
@@ -205,10 +253,11 @@ serves this role.
 ```
 A-2 (Wrapper/Set/Path types)     LOW RISK — additive, do first
 A-3 (Canopy tree on enfilade)    LOW-MED — replaces FR-38 flat overlay
+                                   (widdershin ships with this: hoist.rs)
 A-1 (Fulltrace activation)       MED — design note first
-A-6 (Widdershin for typed crums) follows A-3 naturally
 A-4 (CrossSpace compound docs)   after FR-51 cutover
 A-5 (GrandMap, Pool)             when needed, low priority
+A-6 (regrid)                     deferred to post-FR-51-cutover
 ```
 
 Each adoption lands with:

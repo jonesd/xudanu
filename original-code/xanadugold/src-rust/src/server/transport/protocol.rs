@@ -4042,6 +4042,37 @@ pub struct RangeElementPayload {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub virtual_revision: Option<u64>,
+    /// Set/Path elements (FR-52 A-2): the span members.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub spans: Option<Vec<SpanWire>>,
+}
+
+/// Wire form of a span reference (FR-52 A-2) — the member unit of
+/// Set and Path elements on the wire.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpanWire {
+    pub work_id: u64,
+    pub start: i64,
+    pub end: i64,
+}
+
+impl From<&crate::edition::range_element::SpanRef> for SpanWire {
+    fn from(s: &crate::edition::range_element::SpanRef) -> Self {
+        SpanWire {
+            work_id: s.work_id,
+            start: s.start,
+            end: s.end,
+        }
+    }
+}
+
+impl SpanWire {
+    pub fn to_span_ref(&self) -> crate::edition::range_element::SpanRef {
+        crate::edition::range_element::SpanRef::new(self.work_id, self.start, self.end)
+    }
 }
 
 impl RangeElementPayload {
@@ -4108,6 +4139,12 @@ impl RangeElementPayload {
                     None
                 }
             }
+            "set" => self.spans.as_ref().map(|spans| {
+                crate::edition::RangeElement::set(spans.iter().map(|s| s.to_span_ref()).collect())
+            }),
+            "path" => self.spans.as_ref().map(|spans| {
+                crate::edition::RangeElement::path(spans.iter().map(|s| s.to_span_ref()).collect())
+            }),
             _ => None,
         }
     }
@@ -4132,6 +4169,7 @@ impl RangeElementPayload {
                 transclusion_end: None,
                 virtual_source: None,
                 virtual_revision: None,
+                spans: None,
             },
             crate::edition::RangeElement::Label { label_id, inner } => RangeElementPayload {
                 elem_type: "label".to_string(),
@@ -4151,6 +4189,7 @@ impl RangeElementPayload {
                 transclusion_end: None,
                 virtual_source: None,
                 virtual_revision: None,
+                spans: None,
             },
             crate::edition::RangeElement::Work { work_id } => RangeElementPayload {
                 elem_type: "work".to_string(),
@@ -4170,6 +4209,7 @@ impl RangeElementPayload {
                 transclusion_end: None,
                 virtual_source: None,
                 virtual_revision: None,
+                spans: None,
             },
             crate::edition::RangeElement::Edition { edition_id } => RangeElementPayload {
                 elem_type: "edition".to_string(),
@@ -4189,6 +4229,7 @@ impl RangeElementPayload {
                 transclusion_end: None,
                 virtual_source: None,
                 virtual_revision: None,
+                spans: None,
             },
             crate::edition::RangeElement::IDHolder { id } => RangeElementPayload {
                 elem_type: "id_holder".to_string(),
@@ -4208,6 +4249,7 @@ impl RangeElementPayload {
                 transclusion_end: None,
                 virtual_source: None,
                 virtual_revision: None,
+                spans: None,
             },
             crate::edition::RangeElement::Blob {
                 content_hash,
@@ -4234,6 +4276,7 @@ impl RangeElementPayload {
                 transclusion_end: None,
                 virtual_source: None,
                 virtual_revision: None,
+                spans: None,
             },
             crate::edition::RangeElement::Transclusion {
                 source_work_id,
@@ -4258,6 +4301,7 @@ impl RangeElementPayload {
                 transclusion_end: Some(*char_end),
                 virtual_source: None,
                 virtual_revision: None,
+                spans: None,
             },
             crate::edition::RangeElement::Virtual { spec, .. } => RangeElementPayload {
                 elem_type: "virtual".to_string(),
@@ -4277,6 +4321,47 @@ impl RangeElementPayload {
                 transclusion_end: Some(spec.char_end),
                 virtual_source: Some(spec.source_work_id),
                 virtual_revision: Some(spec.revision),
+                spans: None,
+            },
+            crate::edition::RangeElement::Set { spans } => RangeElementPayload {
+                elem_type: "set".to_string(),
+                text: None,
+                label_id: None,
+                work_id: None,
+                edition_id: None,
+                id_holder: None,
+                blob_hash: None,
+                blob_mime: None,
+                blob_size: None,
+                blob_width: None,
+                blob_height: None,
+                blob_caption: None,
+                transclusion_source: None,
+                transclusion_start: None,
+                transclusion_end: None,
+                virtual_source: None,
+                virtual_revision: None,
+                spans: Some(spans.iter().map(SpanWire::from).collect()),
+            },
+            crate::edition::RangeElement::Path { spans } => RangeElementPayload {
+                elem_type: "path".to_string(),
+                text: None,
+                label_id: None,
+                work_id: None,
+                edition_id: None,
+                id_holder: None,
+                blob_hash: None,
+                blob_mime: None,
+                blob_size: None,
+                blob_width: None,
+                blob_height: None,
+                blob_caption: None,
+                transclusion_source: None,
+                transclusion_start: None,
+                transclusion_end: None,
+                virtual_source: None,
+                virtual_revision: None,
+                spans: Some(spans.iter().map(SpanWire::from).collect()),
             },
             _ => RangeElementPayload {
                 elem_type: "other".to_string(),
@@ -4296,6 +4381,7 @@ impl RangeElementPayload {
                 transclusion_end: None,
                 virtual_source: None,
                 virtual_revision: None,
+                spans: None,
             },
         }
     }
@@ -5000,6 +5086,94 @@ mod lattice_shadow_wire_tests {
 }
 
 #[cfg(test)]
+mod fr52_wire_tests {
+    use super::*;
+    use crate::edition::range_element::{RangeElement, SpanRef};
+
+    fn sample_spans() -> Vec<SpanRef> {
+        vec![
+            SpanRef::new(0xABCD, 0, 12),
+            SpanRef::new(0xBEEF, 40, 44),
+            SpanRef::new(0xABCD, 100, 130),
+        ]
+    }
+
+    #[test]
+    fn set_element_round_trip() {
+        let elem = RangeElement::set(sample_spans());
+        let payload = RangeElementPayload::from_range_element(&elem);
+        assert_eq!(payload.elem_type, "set");
+        assert_eq!(payload.spans.as_ref().unwrap().len(), 3);
+        assert_eq!(payload.spans.as_ref().unwrap()[0].work_id, 0xABCD);
+
+        let decoded = payload.to_range_element().expect("set decodes");
+        assert!(decoded.is_set());
+        assert_eq!(decoded.as_set().unwrap(), elem.as_set().unwrap());
+        assert_eq!(
+            decoded.content_fingerprint(),
+            elem.content_fingerprint(),
+            "fingerprint must survive the wire"
+        );
+    }
+
+    #[test]
+    fn path_element_round_trip_preserves_order() {
+        let elem = RangeElement::path(sample_spans());
+        let payload = RangeElementPayload::from_range_element(&elem);
+        assert_eq!(payload.elem_type, "path");
+
+        let decoded = payload.to_range_element().expect("path decodes");
+        assert!(decoded.is_path());
+        let orig = elem.as_path().unwrap();
+        let got = decoded.as_path().unwrap();
+        assert_eq!(orig.len(), got.len());
+        for (a, b) in orig.iter().zip(got.iter()) {
+            assert_eq!((a.work_id, a.start, a.end), (b.work_id, b.start, b.end));
+        }
+        assert_eq!(
+            decoded.content_fingerprint(),
+            elem.content_fingerprint(),
+            "sequence order must survive the wire byte-exactly for fingerprint equality"
+        );
+    }
+
+    #[test]
+    fn set_path_without_spans_rejected() {
+        let mut payload = RangeElementPayload::from_range_element(&RangeElement::set(vec![]));
+        payload.spans = None;
+        assert!(
+            payload.to_range_element().is_none(),
+            "set without spans is invalid"
+        );
+        payload.elem_type = "path".to_string();
+        assert!(
+            payload.to_range_element().is_none(),
+            "path without spans is invalid"
+        );
+    }
+
+    #[test]
+    fn span_wire_normalizes_reversed_bounds() {
+        let mut payload =
+            RangeElementPayload::from_range_element(&RangeElement::set(vec![SpanRef::new(
+                1, 0, 1,
+            )]));
+        payload.spans = Some(vec![SpanWire {
+            work_id: 1,
+            start: 50,
+            end: 10,
+        }]);
+        let decoded = payload.to_range_element().expect("decodes");
+        let s = decoded.as_set().unwrap()[0];
+        assert_eq!(
+            (s.start, s.end),
+            (10, 50),
+            "reversed wire bounds normalize at decode"
+        );
+    }
+}
+
+#[cfg(test)]
 mod fr37_wire_tests {
     use super::*;
 
@@ -5060,6 +5234,7 @@ mod fr37_wire_tests {
             transclusion_end: Some(5),
             virtual_source: Some(42),
             virtual_revision: None,
+            spans: None,
         };
         assert!(payload.to_range_element().is_none());
     }

@@ -62,7 +62,10 @@ impl From<&RegionTombstone> for Option<WireTombstone> {
 }
 
 /// Serialize the anti-entropy payload for the given dots plus all
-/// tombstones (postcard bytes).
+/// tombstones (postcard bytes). postcard is a server-feature dep,
+/// so the wire functions gate with it (the payload structs above
+/// stay available in every build).
+#[cfg(feature = "server")]
 pub fn encode_payload(doc: &LatticeDoc, dots: &[Dot]) -> Option<Vec<u8>> {
     let units: Vec<WireUnit> = dots
         .iter()
@@ -79,6 +82,7 @@ pub fn encode_payload(doc: &LatticeDoc, dots: &[Dot]) -> Option<Vec<u8>> {
 /// Decode and apply a payload: units are unioned (same dot = same
 /// unit), tombstones extended, then the index is rebuilt — the
 /// receiving half of anti-entropy.
+#[cfg(feature = "server")]
 pub fn decode_and_apply(doc: &mut LatticeDoc, bytes: &[u8]) -> Result<usize, String> {
     let payload: WirePayload = postcard::from_bytes(bytes).map_err(|e| format!("decode: {}", e))?;
     let mut added = 0usize;
@@ -108,7 +112,7 @@ pub fn decode_and_apply(doc: &mut LatticeDoc, bytes: &[u8]) -> Result<usize, Str
     Ok(added)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "server"))]
 mod tests {
     use super::super::lattice_multi::MultiWriter;
     use super::super::lattice_sim::{apply_delta, LatOp};

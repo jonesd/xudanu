@@ -13836,6 +13836,7 @@ fn element_insert_blob_with_correct_field_names() {
         transclusion_end: None,
         virtual_source: None,
         virtual_revision: None,
+        spans: None,
     };
 
     let result = server.element_insert(sid, work_id, 5, element.to_range_element().unwrap());
@@ -14253,6 +14254,7 @@ fn image_insert_end_to_end() {
         transclusion_end: None,
         virtual_source: None,
         virtual_revision: None,
+        spans: None,
     };
 
     let elem = element
