@@ -5,11 +5,11 @@ d458ed09 / 36221e13 / 418705ba)**; **S6-P4 frontend first cut
 DONE (49343817)**; **L1 DONE (e4751ad3)** — gathered end-sets
 render in the editor, one identity colour per link, "passage i of
 N" tooltips; **L2 DONE (7bd97c61)** — gutter badges + bottom-bar
-strip. OPEN: L3 span-level gather (needs in-editor "add to this
-end" affordance — deliberate UX, not a wizard bolt-on), L4
-comment-on-link + descriptor ends, L5 type chips, L6 comparison
-view. S2 UI part open; S1/S3/S4 done. · Drafted 2026-08-20 ·
-Surveyed vs Gold source 2026-08-31
+strip; **L3 DONE (046b1daf)** — span-level Gather from the
+selection bar into any end. OPEN: L4 comment-on-link + descriptor
+ends, L5 type chips, L6 comparison view. S2 UI part open;
+S1/S3/S4 done. · Drafted 2026-08-20 · Surveyed vs Gold source
+2026-08-31
 Builds on: FR-39 (link types as documents), FR-52 A-2 (Set/Path
 SpanRef)
 Heritage: Udanax Green FeBe manual, "Links and Link Types"; winfe
