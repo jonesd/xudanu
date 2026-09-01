@@ -342,27 +342,39 @@ discovery (nobody hovers everything):
 
 ### Appendix B.2: members too far apart for one screen (2026-08-31)
 
-The end is ONE object; the screen is not its boundary. Five
-mechanisms, in increasing commitment — all driven from LINK DATA,
-never from rendered marker DOM (the virtualized editor only
-materializes visible ranges; DOM-driven gutters/minimaps would lie
-about off-screen members):
+The end is ONE object; the screen is not its boundary. Two
+distinct tiers — design review correction: the comparison window
+is NOT a rendering of far-apart members, it is NAVIGATION (winfe's
+follow() — a deliberate jump, just to N places at once). Mixing
+the tiers confuses "see where the members are" with "go there."
 
-1. **Jump cycling** — the marker badge click cycles members
-   ("2 of 5"); ⌘→ next member within an end. The winfe answer:
-   follow-navigation (`show`/`follow`), not same-screen display.
-2. **Gutter badge per end** — the margin bar (lane offsets
+**Tier 1 — in-place awareness** (stay where you are; driven from
+LINK DATA, never rendered marker DOM — the virtualized editor
+only materializes visible ranges; DOM-driven gutters/minimaps
+would lie about off-screen members):
+
+1. **Gutter badge per end** — the margin bar (lane offsets
    already exist) carries a persistent chip at every member
    location: "end · 1/5 here". Visible wherever ANY member is
    on screen.
-3. **Minimap / DocumentMap dots** at member locations — the
+2. **Minimap / DocumentMap dots** at member locations — the
    overview IS the answer for far-apart spans.
-4. **Split view (Story 5 comparison)** — "show side by side"
-   opens members in panes. This is transpointing's reason to
-   exist: seeing far-apart connected content together.
-5. **Bottom-bar strip** (RelatedFooter pattern): "This end:
+3. **Bottom-bar strip** (RelatedFooter pattern): "This end:
    3 passages" with click-to-jump — works when nothing else is
    visible; the cheapest always-available surface.
+
+**Tier 2 — navigation** (go there; explicit actions, easy return
+to where you were):
+
+4. **Jump cycling** — the marker badge click cycles members
+   ("2 of 5"); ⌘→ next member within an end. The winfe answer:
+   follow-navigation (`show`/`follow`), not same-screen display.
+5. **Split view (Story 5 comparison)** — "show side by side"
+   jumps to ALL members at once: an explicit, heavyweight mode
+   change the user requests (like follow()), not an ambient
+   rendering. Entered deliberately from a marker, a Connections
+   row, or the bottom bar; preserves an easy return path. This
+   is transpointing's reason to exist — but it is a JUMP.
 
 ## Non-goals
 
