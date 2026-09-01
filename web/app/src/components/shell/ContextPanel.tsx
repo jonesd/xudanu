@@ -22,6 +22,7 @@ interface ContextPanelProps {
   onToggleFocus: () => void;
   onDeleteLink?: (linkId: number) => void;
   onRetypeLink?: (linkId: number, typeId: number) => void;
+  onCommentOnLink?: (linkId: number) => void;
   onRemoveTransclusion?: (sourceWorkId: number, charStart: number, charEnd: number) => void;
   pinnedKeys: Set<string>;
   onTogglePin: (key: string, pinned: boolean) => void;
@@ -48,6 +49,7 @@ export function ContextPanel(props: ContextPanelProps) {
         onNavigateToWork={props.onNavigateToWork}
         onDeleteLink={props.onDeleteLink}
         onRetypeLink={props.onRetypeLink}
+        onCommentOnLink={props.onCommentOnLink}
         onRemoveTransclusion={props.onRemoveTransclusion}
         pinnedKeys={props.pinnedKeys}
         onTogglePin={props.onTogglePin}

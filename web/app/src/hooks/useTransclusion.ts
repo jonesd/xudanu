@@ -195,6 +195,9 @@ export function useTransclusion(): TransclusionState {
             ? (remoteRef?.excerpt || localRef?.excerpt || "")
             : (localRef?.excerpt || remoteRef?.excerpt || "");
           const chain = localRef?.provenance_chain || remoteRef?.provenance_chain;
+          // FR-40 L4: the descriptor end's excerpt (winfe pattern).
+          const descriptorExcerpt =
+            (link.named_ends ?? []).find(([name]) => name === "Descriptor")?.[1]?.excerpt ?? undefined;
           const fallback = (fallbackResults[i].status === "fulfilled") ? (fallbackResults[i] as PromiseFulfilledResult<{ start: number; end: number; }[]>).value : [];
           const webTitle = isWebLink ? (remoteRef?.excerpt || "Web Link") : title;
           const crossServerRef = remoteRef?.cross_server_ref
@@ -235,6 +238,7 @@ export function useTransclusion(): TransclusionState {
                 sourceSpanEnd: remoteRef?.end_position ?? null,
                 endSetIndex: member.index,
                 endSetTotal: member.total,
+                descriptorExcerpt,
               });
             }
             continue;
@@ -257,6 +261,7 @@ export function useTransclusion(): TransclusionState {
               crossServerRef,
               sourceSpanStart: remoteRef?.start_position ?? null,
               sourceSpanEnd: remoteRef?.end_position ?? null,
+                descriptorExcerpt,
             });
           }
         }

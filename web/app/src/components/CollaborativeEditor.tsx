@@ -764,6 +764,7 @@ function drawOverlay(
       ctx.fillStyle = isResolved ? "#484f58" : "#8b949e";
       ctx.font = `${isResolved ? "italic " : ""}11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
       const descText = descEntry?.text
+        || (desc.marker.descriptorExcerpt ? desc.marker.descriptorExcerpt.slice(0, 80) : "")
         || (desc.marker.excerpt ? desc.marker.excerpt.slice(0, 80) : "")
         || desc.marker.otherWorkTitle
         || "";

@@ -206,6 +206,8 @@ export function WorkspaceShell() {
   // end" from the selection actions bar).
   const [gatherOpen, setGatherOpen] = useState(false);
   const [gatherBusy, setGatherBusy] = useState(false);
+  // FR-40 L4 (S7 attachLink): comment-on-connection composer.
+  const [commentOn, setCommentOn] = useState<{ linkId: number; text: string } | null>(null);
   const [narrating, setNarrating] = useState(false);
   const [narration, setNarration] = useState<string | null>(null);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
@@ -1566,6 +1568,50 @@ export function WorkspaceShell() {
   // Deferred 200ms after text is visible so text renders first
   // Gated on authenticated so nothing fires during the ticket-redeem window
   const loadLinks = transclusion.loadLinks;
+
+  /**
+   * FR-40 L4 (S7 attachLink, winfe links.cpp:305): commenting on a
+   * CONNECTION creates a link ABOUT the link — a fresh note work
+   * (the comment), a two-ended link from the note to the
+   * connection's context work, and a "Connection" end-set
+   * attachment targeting the commented link itself.
+   */
+  const handleSubmitCommentOnLink = useCallback(async () => {
+    if (!commentOn || !commentOn.text.trim() || !clientRef.current) return;
+    const client = clientRef.current;
+    const target = transclusion.links.find((l) => l.link_id === commentOn.linkId);
+    if (!target) {
+      setCommentOn(null);
+      return;
+    }
+    const text = commentOn.text.trim();
+    try {
+      const resp = await client.sendRequest("work_create", {
+        edition: { text },
+      });
+      const r = resp as Record<string, unknown>;
+      const val = (r && typeof r === "object" && "value" in r) ? r.value : resp;
+      const noteWorkId = typeof val === "number"
+        ? val
+        : (val && typeof val === "object" && "work_id" in val) ? (val as Record<string, unknown>).work_id as number : null;
+      if (noteWorkId === null) throw new Error("note work not created");
+      const contextWork = target.home_document ?? target.origin;
+      const commentLinkId = await client.linkCreate(noteWorkId, contextWork);
+      await client.linkSetTypes(commentLinkId, [1]);
+      await client.linkEndAddAttachment(commentLinkId, "Connection", {
+        workContext: contextWork,
+        linkAttachment: commentOn.linkId,
+      });
+      setCommentOn(null);
+      showToast("Comment on connection created");
+      if (workBeId !== null) {
+        void loadLinks(clientRef.current, workBeId, works);
+      }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Comment failed");
+    }
+  }, [commentOn, transclusion.links, workBeId, works, loadLinks]);
+
   const loadBacklinks = transclusion.loadBacklinks;
   useEffect(() => {
     // Links and backlinks are READ data: the server checks read
@@ -2332,6 +2378,19 @@ export function WorkspaceShell() {
                                   }}
                                 >
                                   ⇄
+                                </button>
+                              )}
+                              {canEdit && (
+                                <button
+                                  className="ws-conn-delete"
+                                  title="Comment on this connection — a link about the link"
+                                  style={{ color: "var(--green)" }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCommentOn({ linkId: link.link_id, text: "" });
+                                  }}
+                                >
+                                  {"\u2317"}
                                 </button>
                               )}
                               <button
@@ -3934,6 +3993,36 @@ export function WorkspaceShell() {
                           </button>
                         ))
                       )}
+                    </div>
+                  </div>
+                )}
+                {commentOn && (
+                  <div className="ws-trail-picker">
+                    <div className="ws-trail-picker-header">
+                      <span>Comment on connection</span>
+                      <button
+                        className="ws-trail-picker-close"
+                        onClick={() => setCommentOn(null)}
+                        title="Close"
+                      >×</button>
+                    </div>
+                    <div style={{ padding: "6px 10px" }}>
+                      <textarea
+                        value={commentOn.text}
+                        onChange={(e) => setCommentOn((c) => (c ? { ...c, text: e.target.value } : c))}
+                        placeholder="What do you want to say about this connection?"
+                        rows={3}
+                        style={{ width: "100%", background: "var(--bg-secondary)", color: "var(--text-primary)", border: "1px solid var(--border)", borderRadius: 4, padding: 6, fontSize: 12, resize: "vertical" }}
+                      />
+                      <button
+                        type="button"
+                        className="ws-action-btn"
+                        style={{ marginTop: 6, width: "100%", justifyContent: "center" }}
+                        disabled={!commentOn.text.trim()}
+                        onClick={() => void handleSubmitCommentOnLink()}
+                      >
+                        Save comment
+                      </button>
                     </div>
                   </div>
                 )}

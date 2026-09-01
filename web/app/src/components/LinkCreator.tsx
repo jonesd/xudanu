@@ -232,6 +232,28 @@ export function LinkCreator({
             source.start,
             source.end,
           );
+          // FR-40 L4 (winfe FELink:Descriptor): the description is
+          // ALSO a named end holding a fresh note work — Gold's
+          // descriptor-end pattern, portable with the link.
+          try {
+            const resp = await client.sendRequest("work_create", {
+              edition: { text: description.trim() },
+            });
+            const r = resp as Record<string, unknown>;
+            const val = (r && typeof r === "object" && "value" in r) ? r.value : resp;
+            const noteWorkId = typeof val === "number"
+              ? val
+              : (val && typeof val === "object" && "work_id" in val) ? (val as Record<string, unknown>).work_id as number : null;
+            if (noteWorkId !== null) {
+              await client.linkAddEnd(linkId, "Descriptor", {
+                workContext: noteWorkId,
+                excerpt: description.trim().slice(0, 120),
+              });
+            }
+          } catch {
+            // The annotation above already carries the description;
+            // the descriptor end is additive and best-effort here.
+          }
         }
         setStep("done");
         setTimeout(() => {

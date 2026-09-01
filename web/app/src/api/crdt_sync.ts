@@ -399,6 +399,10 @@ export interface TransclusionMarker {
    * "passage i of N". Present only for gathered members. */
   endSetIndex?: number;
   endSetTotal?: number;
+  /** FR-40 L4: the link's descriptor end excerpt (winfe's
+   * FELink:Descriptor pattern) — the human-readable label, used
+   * when no link-description annotation exists. */
+  descriptorExcerpt?: string;
 }
 
 export interface WorkListEntry {

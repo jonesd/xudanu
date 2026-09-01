@@ -21,6 +21,8 @@ interface ConnectionsSectionProps {
   onNavigateToWork: (workId: number) => void;
   onDeleteLink?: (linkId: number) => void;
   onRetypeLink?: (linkId: number, typeId: number) => void;
+  /** FR-40 L4 (S7 attachLink): open the comment-on-connection composer. */
+  onCommentOnLink?: (linkId: number) => void;
   onRemoveTransclusion?: (sourceWorkId: number, charStart: number, charEnd: number) => void;
   pinnedKeys: Set<string>;
   onTogglePin: (key: string, pinned: boolean) => void;
@@ -36,6 +38,7 @@ export function ConnectionsSection({
   onNavigateToWork,
   onDeleteLink,
   onRetypeLink,
+  onCommentOnLink,
   onRemoveTransclusion,
   pinnedKeys,
   onTogglePin,
@@ -277,6 +280,19 @@ export function ConnectionsSection({
                       <option key={t.type_id} value={t.type_id}>{t.name}</option>
                     ))}
                   </select>
+                )}
+                {item.type === "link" && onCommentOnLink && (
+                  <button
+                    className="conn-delete-btn"
+                    style={{ color: "var(--green)" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCommentOnLink(item.linkId!);
+                    }}
+                    title="Comment on this connection (a link about the link)"
+                  >
+                    {"\u2317"}
+                  </button>
                 )}
                 {onDeleteLink && (
                   <button
