@@ -530,3 +530,20 @@ Green's operational rules we are adopting verbatim where possible:
 - the backend performs edits — already our architecture
 - link matching never scans linearly in Green (enfiladic); ours
   scans until measured pain — recorded honestly
+
+### Enfiladic matching — IMPLEMENTED (2026-08-31, branch
+`fr40/enfiladic-link-canopy`, commits 0289321a / 28114759)
+
+The heritage line above is retired: link queries now prune
+subtrees. The canopy (edition/link_canopy.rs) is a work-range
+arena tree with OR-ed type bits — Gold's algorithm over our store,
+since our links are not works in the ent. Conservative contract
+(may over-return, never under-return); the exact per-link checks
+are unchanged behind it. Derived data: rebuilt at restore and
+post-WAL-replay, never journaled. Keys on (work, link, end) so
+span migration never touches it. Author-constrained specs fall to
+type-only pruning (a works-filter would under-return — caught by
+the equivalence armor). Armor: lifecycle tracking, rebuild-on-
+restore, canopy==scan equivalence (randomized corpus + 500-link
+scale), structure-level pruning proofs, and the slot-overflow
+conservative property. The scan path remains as the oracle.
