@@ -2,14 +2,14 @@
 
 Status: **S6 + S7 backend DONE (2026-08-31, commits 56b34d73 /
 d458ed09 / 36221e13 / 418705ba)**; **S6-P4 frontend first cut
-DONE (49343817)** — end_sets types + client ops, Connections
-end-set/connection rendering, LinkCreator gather mode (work-level
-gather), B.1 identity key. OPEN: in-editor marker rendering of
-gathered ends (B.1 colour=glyph rules in the underline layer),
-B.2 tier-1 surfaces (gutter badge, bottom-bar strip), span-level
-gather in the wizard, S2 (derived type ends on read), S5
-(comparison view). S1/S3/S4 done. · Drafted 2026-08-20 · Surveyed
-vs Gold source 2026-08-31
+DONE (49343817)**; **L1 DONE (e4751ad3)** — gathered end-sets
+render in the editor, one identity colour per link, "passage i of
+N" tooltips; **L2 DONE (7bd97c61)** — gutter badges + bottom-bar
+strip. OPEN: L3 span-level gather (needs in-editor "add to this
+end" affordance — deliberate UX, not a wizard bolt-on), L4
+comment-on-link + descriptor ends, L5 type chips, L6 comparison
+view. S2 UI part open; S1/S3/S4 done. · Drafted 2026-08-20 ·
+Surveyed vs Gold source 2026-08-31
 Builds on: FR-39 (link types as documents), FR-52 A-2 (Set/Path
 SpanRef)
 Heritage: Udanax Green FeBe manual, "Links and Link Types"; winfe
