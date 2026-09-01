@@ -309,6 +309,61 @@ Principles drawn from the archaeology above, applied to our UI:
    ONLY if the work is otherwise unreferenced (reachability,
    consistent with archive-first GC stance).
 
+### Appendix B.1: rendering identity — what a colour means (2026-08-31)
+
+Today's marker lanes are GEOMETRIC, not semantic:
+`assignLinkLanes` (link-markers.ts) partitions by span collision —
+a marker's lane exists so overlapping underlines stack legibly,
+NOT because it carries meaning. Consequence: no user can learn
+"what a colour means" because it is not stable across documents,
+viewports, or even edits. Rendering identity for multi-span ends
+separates the two jobs:
+
+- **Lane = geometry** (unchanged): where underlines stack.
+- **Colour = identity** (new rule): colour is assigned per LINK
+  (or per end-set, if the two ends must be distinguishable in
+  context), stable within a document view for the session.
+  Members of one end share the colour PLUS a shared glyph/shape
+  on their badges — redundant encoding, colourblind-safe.
+
+Explaining the colour — three layers, because hover alone is not
+discovery (nobody hovers everything):
+
+1. **Hover tooltip** (the explanation): type icon + name, the
+   link's descriptor (B.4 — this is what descriptors are FOR),
+   "passage 1 of 3 in this end", author, jump controls. Hover on
+   any member highlights all members of the end.
+2. **Click = the live legend** (the discovery path): clicking any
+   member span scrolls Connections to that link's row and
+   highlights it. The panel is the legend — persistent, queryable,
+   already-shipped UI — instead of a static key nobody reads.
+3. **Density pill expansion**: where members cluster, the pill
+   lists member passages with jump targets.
+
+### Appendix B.2: members too far apart for one screen (2026-08-31)
+
+The end is ONE object; the screen is not its boundary. Five
+mechanisms, in increasing commitment — all driven from LINK DATA,
+never from rendered marker DOM (the virtualized editor only
+materializes visible ranges; DOM-driven gutters/minimaps would lie
+about off-screen members):
+
+1. **Jump cycling** — the marker badge click cycles members
+   ("2 of 5"); ⌘→ next member within an end. The winfe answer:
+   follow-navigation (`show`/`follow`), not same-screen display.
+2. **Gutter badge per end** — the margin bar (lane offsets
+   already exist) carries a persistent chip at every member
+   location: "end · 1/5 here". Visible wherever ANY member is
+   on screen.
+3. **Minimap / DocumentMap dots** at member locations — the
+   overview IS the answer for far-apart spans.
+4. **Split view (Story 5 comparison)** — "show side by side"
+   opens members in panes. This is transpointing's reason to
+   exist: seeing far-apart connected content together.
+5. **Bottom-bar strip** (RelatedFooter pattern): "This end:
+   3 passages" with click-to-jump — works when nothing else is
+   visible; the cheapest always-available surface.
+
 ## Non-goals
 
 - Executable type-behaviors (Green's presentation programs) —
