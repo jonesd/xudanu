@@ -459,6 +459,58 @@ server --lib + integration, clippy --all-targets, fmt; frontend
 npm run build + test for P4. Each phase lands as its own commit
 with its armor in the same commit.
 
+## Completion plan — "complete the Links implementation" (2026-08-31)
+
+Six items, sequenced by dependency. Definition of done: the demo
+script runs — gather five passages across documents, see five
+underlines in one colour, hover for "passage 2 of 5", click the
+gutter badge, jump between members, compare side-by-side, comment
+on the connection.
+
+### L1 — Marker rendering for gathered ends (B.1 core) — the keystone
+The editor shows only a gathered end's first attachment; everything
+else surfaces through this.
+- link-markers.ts: resolveMarkerPositions generalizes to end_sets —
+  every attachment whose work_context matches the current work
+  becomes a span; each marker carries the linkId
+- Colour keyed by linkIdentityKey(linkId): colour = link, lane =
+  geometry stays
+- Shared glyph on member badges; hover gains "passage i of N" +
+  descriptor
+- CollaborativeEditor + VirtualizedEditor parity
+
+### L2 — B.2 tier-1 surfaces (stay-in-place awareness)
+- Gutter/margin-bar chip at each member location: "1/5 here" —
+  from link data, never marker DOM
+- RelatedFooter strip: "This end: 3 passages" when the cursor is
+  inside a member span (cursor→span→link resolution)
+
+### L3 — Span-level gather
+Wizard gather picker extends to spans (onSelectTextInOtherDoc flow
+exists; planEndSetOperations already carries start/end). Wiring.
+
+### L4 — Comment-on-link + descriptor ends (S7 payoff, winfe pattern)
+UI over shipped ops: "Comment on this connection" (work_create +
+LinkAttachment end); "Describe this link" (named descriptor end,
+replacing the annotation-kind workaround).
+
+### L5 — S2 type chips
+type_ends already materialized server-side; stacked chips,
+filter-under-either, multi-type toggle (selectedTypeIds is already
+a Set).
+
+### L6 — S5 comparison view (the transpointing jump)
+N ends side-by-side over the existing pairwise WorkDiffResult
+machinery, entered from marker/Connections/bottom bar; navigation
+tier, easy return. Largest piece; last because its entry points
+come from L1/L2.
+
+Deferred with rationale: enfiladic matching (until scans measurably
+hurt); v-span versioning algebra (no consumer); nested end-sets UI
+(data permits, UI flattens — Gold's own UI did too).
+
+Effort: L1/L6 are days; L2-L5 are hours each.
+
 ## Non-goals
 
 - Executable type-behaviors (Green's presentation programs) —
