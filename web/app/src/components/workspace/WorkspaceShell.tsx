@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useCrdtSync } from "../../hooks/useCrdtSync";
 import { useWorkStore } from "../../store/work-store";
 import { useTransclusion, DEFAULT_LINK_TYPES } from "../../hooks/useTransclusion";
-import { linkEnds, isMultiEnded, multiEndWorkIds, notifyStatus } from "../../link-ends";
+import { linkEnds, isMultiEnded, multiEndWorkIds, notifyStatus, gatherableEnds } from "../../link-ends";
 import { MultiEndCompare } from "../MultiEndCompare";
 import { useCompoundEdition } from "../../hooks/useCompoundEdition";
 import { authorColorPair } from "../../author-color";
@@ -202,6 +202,10 @@ export function WorkspaceShell() {
   const [serverDomain, setServerDomain] = useState<string>("localhost");
   const [viewingRevision, setViewingRevision] = useState<{ id: number; text: string } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // FR-40 L3: the in-editor gather picker (span-level "add to this
+  // end" from the selection actions bar).
+  const [gatherOpen, setGatherOpen] = useState(false);
+  const [gatherBusy, setGatherBusy] = useState(false);
   const [narrating, setNarrating] = useState(false);
   const [narration, setNarration] = useState<string | null>(null);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
@@ -3678,6 +3682,15 @@ export function WorkspaceShell() {
                     >
                       Link
                     </button>
+                    <button
+                      type="button"
+                      className="ws-sel-btn link"
+                      disabled={!selectionRange || gatherableEnds(transclusion.links, workBeId ?? -1).length === 0}
+                      onClick={() => setGatherOpen((g) => !g)}
+                      title="Gather this passage into an existing end — one connection, many passages"
+                    >
+                      Gather
+                    </button>
                       <button
                         type="button"
                         disabled={!canEdit || !workBeId}
@@ -3867,6 +3880,61 @@ export function WorkspaceShell() {
                     >
                       + New trail from this passage
                     </button>
+                  </div>
+                )}
+                {gatherOpen && selectionRange && workBeId !== null && (
+                  <div className="ws-trail-picker">
+                    <div className="ws-trail-picker-header">
+                      <span>Gather this passage into an end</span>
+                      <button
+                        className="ws-trail-picker-close"
+                        onClick={() => setGatherOpen(false)}
+                        title="Close"
+                      >×</button>
+                    </div>
+                    <div className="ws-trail-picker-list">
+                      {gatherableEnds(transclusion.links, workBeId).length === 0 ? (
+                        <div className="ws-placeholder-sublabel">
+                          No links on this work yet — create one with Link first.
+                        </div>
+                      ) : (
+                        gatherableEnds(transclusion.links, workBeId).map((end) => (
+                          <button
+                            key={`${end.linkId}-${end.wireName}`}
+                            className="ws-trail-picker-item"
+                            disabled={gatherBusy}
+                            onClick={async () => {
+                              if (!clientRef.current || !selectionRange) return;
+                              setGatherBusy(true);
+                              try {
+                                const selectedText = getSourceText().slice(selectionRange.start, selectionRange.end);
+                                await clientRef.current.linkEndAddAttachment(end.linkId, end.wireName, {
+                                  workContext: workBeId,
+                                  excerpt: selectedText.slice(0, 120),
+                                  start: selectionRange.start,
+                                  end: selectionRange.end,
+                                });
+                                setGatherOpen(false);
+                                setToast(`Gathered into ${end.localName} — now ${end.memberCount + 1} passages`);
+                                void loadLinks(clientRef.current, workBeId, works);
+                              } catch (e) {
+                                setToast(e instanceof Error ? e.message : "Gather failed");
+                              } finally {
+                                setGatherBusy(false);
+                              }
+                            }}
+                          >
+                            <span className="ws-trail-picker-name">
+                              {end.localName}
+                              {end.excerpt ? ` — “${end.excerpt}”` : ""}
+                            </span>
+                            <span className="ws-trail-picker-count">
+                              {end.memberCount > 1 ? `${end.memberCount} passages` : "1 passage"}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
                   </div>
                 )}
                 {narration && (

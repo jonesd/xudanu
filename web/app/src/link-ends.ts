@@ -190,6 +190,71 @@ export function endSetsTouchingPosition(
   return touches;
 }
 
+/**
+ * FR-40 L3: the ends a new passage can be gathered INTO — every
+ * end of every link touching this work. The in-editor "Gather"
+ * action's picker data. wireName is what the server expects
+ * (LeftEnd/RightEnd/custom); localName is the render name.
+ */
+export interface GatherableEnd {
+  linkId: number;
+  wireName: string;
+  localName: string;
+  /** Attachments the end holds today (1 = will become gathered). */
+  memberCount: number;
+  /** First attachment's excerpt, for the picker label. */
+  excerpt: string;
+  /** The link's primary type id, for the picker label. */
+  linkTypeId: number | undefined;
+}
+
+export function gatherableEnds(links: LinkEntry[], workId: number): GatherableEnd[] {
+  const out: GatherableEnd[] = [];
+  const localNameFor = (wire: string) => wireNameToLocal(wire);
+  for (const link of links) {
+    const touches =
+      link.origin === workId ||
+      link.destination === workId ||
+      (link.end_sets ?? []).some(([, refs]) => refs.some((r) => r.work_context === workId));
+    if (!touches) continue;
+    const seen = new Set<string>();
+    const push = (wireName: string, refs: HyperRefPayload[] | null | undefined) => {
+      if (seen.has(wireName)) return;
+      let members = refs ?? [];
+      if (members.length === 0 && (wireName === "LeftEnd" || wireName === "RightEnd")) {
+        // The end exists (origin/destination work) even without a
+        // ref payload — gatherable with a placeholder member.
+        const w = wireName === "LeftEnd" ? link.origin : link.destination;
+        members = [{ kind: "single", work_context: w, original_context: null, excerpt: null }];
+      }
+      if (members.length === 0) return;
+      seen.add(wireName);
+      // Label prefers THIS work's first member (the picker's
+      // context), falling back to the end's first member.
+      const mine = members.find((r) => r.work_context === workId) ?? members[0];
+      out.push({
+        linkId: link.link_id,
+        wireName,
+        localName: localNameFor(wireName),
+        memberCount: members.length,
+        excerpt: (mine?.excerpt || "").slice(0, 60),
+        linkTypeId: link.link_types?.[0],
+      });
+    };
+    // end_sets carry the truth for gathered ends (including L/R) —
+    // register them FIRST so they win over the singleton fallbacks.
+    for (const [name, refs] of link.end_sets ?? []) {
+      push(name, refs);
+    }
+    push("LeftEnd", link.origin_ref ? [link.origin_ref] : null);
+    push("RightEnd", link.destination_ref ? [link.destination_ref] : null);
+    for (const [name, ref] of link.named_ends ?? []) {
+      push(name, [ref]);
+    }
+  }
+  return out;
+}
+
 export interface GatheredSpan {
   endName: string;
   workContext: number;

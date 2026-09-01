@@ -293,3 +293,67 @@ describe("endSetsTouchingPosition (L2 bottom-bar strip)", () => {
     expect(endSetsTouchingPosition([mkLink()], 0x10, 0)).toEqual([]);
   });
 });
+
+// ---- FR-40 L3: gatherableEnds ----
+
+import { gatherableEnds } from "../link-ends";
+
+describe("gatherableEnds (L3 gather picker)", () => {
+  const member = (work: number, start: number, end: number, excerpt?: string) => ({
+    kind: "single" as const,
+    work_context: work,
+    original_context: null,
+    excerpt: excerpt ?? null,
+    start_position: start,
+    end_position: end,
+  });
+
+  it("lists every end of links touching this work, with wire + local names", () => {
+    const links: LinkEntry[] = [
+      mkLink({
+        link_id: 5,
+        origin: 0x10,
+        origin_ref: member(0x10, 0, 9, "first"),
+        named_ends: [["Evidence", member(0x40, 0, 3, "ev")]],
+      }),
+    ];
+    const ends = gatherableEnds(links, 0x10);
+    const names = ends.map((e) => e.wireName);
+    expect(names).toContain("LeftEnd");
+    expect(names).toContain("RightEnd");
+    expect(names).toContain("Evidence");
+    const left = ends.find((e) => e.wireName === "LeftEnd")!;
+    expect(left.localName).toBe("origin");
+    expect(left.excerpt).toBe("first");
+    expect(left.memberCount).toBe(1);
+  });
+
+  it("end_sets count wins over the singleton ref for the same end", () => {
+    const links: LinkEntry[] = [
+      mkLink({
+        origin_ref: member(0x10, 0, 9),
+        end_sets: [["LeftEnd", [member(0x10, 0, 9), member(0x10, 40, 50)]]],
+      }),
+    ];
+    const left = gatherableEnds(links, 0x10).find((e) => e.wireName === "LeftEnd")!;
+    expect(left.memberCount).toBe(2);
+  });
+
+  it("links touching only via a member attachment are included", () => {
+    const links: LinkEntry[] = [
+      mkLink({
+        origin: 0x99,
+        destination: 0x98,
+        end_sets: [["LeftEnd", [member(0x99, 0, 5), member(0x10, 40, 50, "mine")]]],
+      }),
+    ];
+    const ends = gatherableEnds(links, 0x10);
+    expect(ends.length).toBeGreaterThan(0);
+    expect(ends.find((e) => e.wireName === "LeftEnd")!.excerpt).toBe("mine");
+  });
+
+  it("links not touching this work are excluded", () => {
+    const links: LinkEntry[] = [mkLink({ origin: 0x99, destination: 0x98 })];
+    expect(gatherableEnds(links, 0x10)).toEqual([]);
+  });
+});
