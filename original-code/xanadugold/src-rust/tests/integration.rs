@@ -14606,3 +14606,144 @@ fn adversarial_blake3_hash_mismatch_rejected() {
         "hash mismatch should be rejected (content tampering detected)"
     );
 }
+
+// ============================================================
+// FR-52 A-2: Set/Path elements over the real WebSocket op path
+// ============================================================
+
+#[tokio::test]
+async fn fr52_set_path_element_insert_over_websocket() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "Hello world"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    // Insert a Set at char 5 through the real op dispatch.
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "element_insert",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "position": 5,
+                "element": {
+                    "type": "set",
+                    "spans": [
+                        {"work_id": 1001, "start": 0, "end": 10},
+                        {"work_id": 1002, "start": 40, "end": 44}
+                    ]
+                }
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "response", "set insert succeeds: {:?}", resp);
+    assert!(
+        resp["value"]["value"].as_u64().is_some(),
+        "returns a revision: {:?}",
+        resp["value"]
+    );
+
+    // Insert a Path at the end.
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "element_insert",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "position": 11,
+                "element": {
+                    "type": "path",
+                    "spans": [
+                        {"work_id": 1001, "start": 3, "end": 7},
+                        {"work_id": 1003, "start": 0, "end": 5}
+                    ]
+                }
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "response", "path insert succeeds: {:?}", resp);
+
+    // Read the edition back: both elements present with their spans,
+    // and the concatenated text is unchanged (zero-char elements).
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            13,
+            "work_get_edition",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "response");
+    let entries = resp["value"]["value"]["entries"]
+        .as_array()
+        .expect("edition returns the entries form (Set/Path break contiguous text)")
+        .clone();
+
+    let mut text = String::new();
+    let mut sets = 0usize;
+    let mut paths = 0usize;
+    for entry in &entries {
+        let elem = &entry[1];
+        if let Some(t) = elem["Text"]["text"].as_str() {
+            text.push_str(t);
+        }
+        if elem.get("Set").is_some() {
+            sets += 1;
+            let spans = elem["Set"]["spans"].as_array().expect("set spans");
+            assert_eq!(spans.len(), 2, "set members survive the wire");
+            assert_eq!(spans[0]["work_id"].as_u64(), Some(1001));
+            assert_eq!(spans[1]["work_id"].as_u64(), Some(1002));
+        }
+        if elem.get("Path").is_some() {
+            paths += 1;
+            let spans = elem["Path"]["spans"].as_array().expect("path spans");
+            assert_eq!(spans.len(), 2, "path members survive the wire");
+            assert_eq!(spans[0]["work_id"].as_u64(), Some(1001));
+            assert_eq!(spans[1]["work_id"].as_u64(), Some(1003));
+        }
+    }
+    assert_eq!(sets, 1, "exactly one Set in the edition");
+    assert_eq!(paths, 1, "exactly one Path in the edition");
+    assert_eq!(text, "Hello world", "zero-char elements do not alter text");
+
+    // Malformed over the wire: set without spans must be rejected
+    // at the dispatch boundary (to_range_element -> None -> error).
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            15,
+            "element_insert",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "position": 0,
+                "element": {"type": "set"}
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(
+        resp["type"], "error",
+        "set without spans is rejected by dispatch: {:?}",
+        resp
+    );
+}

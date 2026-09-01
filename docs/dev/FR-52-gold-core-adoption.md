@@ -23,7 +23,7 @@ Gold row says what Xudanu does and why.
 | Ent/Fulltrace (entity hierarchy) | **Dormant** — 4,422 lines, 68 dagwood + 64 content tests green | `src/ent/` | 479 module tests green | **A-1** |
 | DagWood (versioned trace DAG) | **Dormant** — used inside backfollow only for trace positions | `src/ent/dagwood.rs` | 68 tests | **A-1** |
 | Htree/HUpperCrum (crum tree) | **Dormant** — HPart trait, parents, partial crums | `src/ent/htree.rs` | 13 tests | **A-1** |
-| Stubble/Wrappers (type system) | **Set/Path done (A-2, 2026-08-31)** — `RangeElement::Set/Path` + `SpanRef`, wire transport, `check_path` accepts Path entries. Wrapper tokens/endorsement dispatch remain the FR-38/base layer | `src/edition/wrapper.rs`, `links.rs`, `range_element.rs` | 23 wrapper + 13 new A-2 tests | **A-2 (types done; general endorsement-dispatch deferred)** |
+| Stubble/Wrappers (type system) | **Set/Path done (A-2, 2026-08-31)** — `RangeElement::Set/Path` + `SpanRef`, wire transport, `check_path` accepts Path entries. Wrapper tokens/endorsement dispatch remain the FR-38/base layer | `src/edition/wrapper.rs`, `links.rs`, `range_element.rs` | 23 wrapper + 20 new A-2 tests | **A-2 (types done; general endorsement-dispatch deferred)** |
 | Canopy (crum propagation tree) | **Dormant** — 1,092 lines; bert/sensor crums, flags, PropFinder used in backfollow | `src/edition/canopy.rs` | 32 tests | **A-3** |
 | Props (permissions algebra) | **Dormant** — BertProp, flags, permissions_flags computed in backfollow | `src/edition/props.rs` | 30 tests | **A-3** |
 | Hoist (recorder promotion) | **Dormant** — promotes crums up the tree | `src/edition/hoist.rs` | 20 tests | **A-3** |
@@ -111,9 +111,22 @@ into the existing endorsement machinery. Moderate; isolated.
 - `check_path` accepts Path entries (a citation-trail edition is
   path-certifiable); Set entries still reject (a set is not a
   path).
-- Armor: 13 tests — normalization, order (in)sensitivity, Set≠Path,
-  member sensitivity, serde/postcard round-trips, wire round-trips
-  with fingerprint equality.
+- Armor: 15 type tests — normalization, order (in)sensitivity,
+  Set≠Path, member sensitivity, serde/postcard round-trips, wire
+  round-trips with fingerprint equality, wrapper certification.
+- CRDT alignment (4 tests, `otree_crdt.rs
+  fr52_set_path_alignment`): elements survive the REAL merge path
+  (stale session base → three_way_merge) with byte-identical
+  fingerprints; Set member order never leaks through the delta
+  pipeline; zero-char position contract (retain counts address
+  text chars only); delete semantics match the existing zero-char
+  class PROVEN side-by-side with an unstamped Transclusion (drop
+  at the boundary, survive strictly-beyond deletes).
+- End-to-end (1 test, `integration.rs`): set/path inserted through
+  the live WebSocket op dispatch (JSON frames, real server),
+  read back with spans intact from the edition entries form,
+  text unchanged, and malformed set-without-spans rejected at
+  the dispatch boundary.
 - Builds: default/server/wasm all green. Fixed a pre-existing wasm
   regression while there: lattice_wire postcard functions were
   ungated (postcard is server-only) — now `#[cfg(feature =

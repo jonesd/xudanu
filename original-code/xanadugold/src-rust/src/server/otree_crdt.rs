@@ -3795,4 +3795,334 @@ mod tests {
             "s1 suffix must survive materialization"
         );
     }
+
+    // ---- FR-52 A-2: Set/Path CRDT alignment ----
+    //
+    // Set and Path are zero-char value elements. The alignment
+    // contract with the O-tree: they ride through text deltas and
+    // three-way merges without splitting, without shifting text
+    // positions, and with byte-identical fingerprints. These tests
+    // drive the REAL merge path (stale session base -> concurrent
+    // delta -> three_way_merge), not just the delta walker.
+
+    mod fr52_set_path_alignment {
+        use super::*;
+        use crate::edition::range_element::SpanRef;
+
+        fn set_elem() -> RangeElement {
+            RangeElement::set(vec![SpanRef::new(7, 0, 12), SpanRef::new(9, 40, 44)])
+        }
+
+        fn path_elem() -> RangeElement {
+            RangeElement::path(vec![SpanRef::new(3, 0, 5), SpanRef::new(4, 10, 20)])
+        }
+
+        /// text | Set | text | Path | text — the interleaved base
+        /// both sessions start from.
+        fn seeded_edition() -> Edition {
+            Edition::from_text_elements(&[
+                RangeElement::text("alpha "),
+                set_elem(),
+                RangeElement::text("beta "),
+                path_elem(),
+                RangeElement::text("gamma"),
+            ])
+        }
+
+        fn element_fingerprints(edition: &Edition) -> Vec<([u8; 32], bool, bool)> {
+            edition
+                .all_entries()
+                .iter()
+                .map(|(_, c)| {
+                    let e = &c.element;
+                    (e.content_fingerprint(), e.is_set(), e.is_path())
+                })
+                .collect()
+        }
+
+        #[test]
+        fn fr52_elements_survive_concurrent_edits_on_both_sides() {
+            let mut mgr = OtreeCrdtManager::new(3);
+            let work_id: BeId = 42;
+            let s1 = make_session(1);
+            let s2 = make_session(2);
+            let base = seeded_edition();
+
+            mgr.open_sync_session(work_id, s1, Some(&base));
+            mgr.open_sync_session(work_id, s2, Some(&base));
+
+            let before = element_fingerprints(&base);
+
+            // s1: insert before the Set (char 0 of "alpha ").
+            let ops1 = vec![
+                TextDeltaOp::Insert {
+                    text: "X".to_string(),
+                },
+                TextDeltaOp::Retain { count: 16 },
+            ];
+            mgr.apply_text_delta(work_id, s1, &ops1).unwrap();
+
+            // s2: STALE base (does not see X) — appends after "gamma".
+            // This forces the three_way_merge path, not the fast path.
+            let ops2 = vec![
+                TextDeltaOp::Retain { count: 16 },
+                TextDeltaOp::Insert {
+                    text: "Y".to_string(),
+                },
+            ];
+            let result = mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
+            assert!(
+                result.was_merged,
+                "stale base must go through the merge path"
+            );
+
+            let text = mgr.current_text(work_id).unwrap();
+            assert!(text.starts_with('X'), "s1 prefix survived the merge");
+            assert!(text.ends_with('Y'), "s2 suffix survived the merge");
+            assert_eq!(text, "Xalpha beta gammaY", "text converged exactly");
+
+            // Both value elements present exactly once, fingerprints
+            // byte-identical through the merge.
+            let merged = mgr.current_edition(work_id).unwrap();
+            let merged_entries = merged.all_entries();
+            let sets: Vec<_> = merged_entries
+                .iter()
+                .filter(|(_, c)| c.element.is_set())
+                .collect();
+            let paths: Vec<_> = merged_entries
+                .iter()
+                .filter(|(_, c)| c.element.is_path())
+                .collect();
+            assert_eq!(sets.len(), 1, "exactly one Set survives the merge");
+            assert_eq!(paths.len(), 1, "exactly one Path survives the merge");
+
+            let after = element_fingerprints(&merged);
+            let set_fp = sets[0].1.element.content_fingerprint();
+            let path_fp = paths[0].1.element.content_fingerprint();
+            assert!(
+                before
+                    .iter()
+                    .any(|(fp, is_set, _)| *is_set && *fp == set_fp),
+                "Set fingerprint unchanged through merge"
+            );
+            assert!(
+                before
+                    .iter()
+                    .any(|(fp, _, is_path)| *is_path && *fp == path_fp),
+                "Path fingerprint unchanged through merge"
+            );
+            assert!(after.len() >= 2);
+        }
+
+        #[test]
+        fn fr52_delete_semantics_match_zero_char_contract() {
+            // The engine's documented zero-char contract
+            // (try_apply_delta_fast): entries at a delete boundary are
+            // dropped with the deleted text; entries strictly on
+            // either side are retained. Set/Path must behave EXACTLY
+            // like the existing zero-char class (unstamped
+            // Transclusion) — proven here side by side, not asserted.
+            let mk_base = |mid: RangeElement| {
+                Edition::from_text_elements(&[
+                    RangeElement::text("left "),
+                    mid,
+                    RangeElement::text("right words"),
+                ])
+            };
+
+            for (name, mid) in [
+                ("set", set_elem()),
+                ("path", path_elem()),
+                ("transclusion", RangeElement::transclusion(99, 1, 4)),
+            ] {
+                let mut mgr = OtreeCrdtManager::new(3);
+                let work_id: BeId = 42;
+                let sid = make_session(1);
+                let base = mk_base(mid);
+                mgr.open_sync_session(work_id, sid, Some(&base));
+
+                // (a) Delete strictly AFTER the element (chars 10..15,
+                // " word" inside "right words"): element survives.
+                let ops = vec![
+                    TextDeltaOp::Retain { count: 10 },
+                    TextDeltaOp::Delete { count: 5 },
+                ];
+                mgr.apply_text_delta(work_id, sid, &ops).unwrap();
+                let text = mgr.current_text(work_id).unwrap();
+                assert_eq!(text, "left rights", "[{}] delete-after text", name);
+                let edition = mgr.current_edition(work_id).unwrap();
+                let mid_count = edition
+                    .all_entries()
+                    .iter()
+                    .filter(|(_, c)| {
+                        c.element.is_set() || c.element.is_path() || c.element.is_transclusion()
+                    })
+                    .count();
+                assert_eq!(mid_count, 1, "[{}] survives delete strictly after it", name);
+
+                // (b) Delete AT the element's boundary (the "left "
+                // run ending at the element): the element drops with
+                // the boundary text — the documented zero-char rule.
+                mgr = OtreeCrdtManager::new(3);
+                let sid = make_session(7);
+                mgr.open_sync_session(work_id, sid, Some(&base));
+                let ops = vec![
+                    TextDeltaOp::Retain { count: 2 },
+                    TextDeltaOp::Delete { count: 3 },
+                    TextDeltaOp::Retain { count: 10 },
+                ];
+                mgr.apply_text_delta(work_id, sid, &ops).unwrap();
+                let text = mgr.current_text(work_id).unwrap();
+                assert_eq!(text, "leright words", "[{}] boundary-delete text", name);
+                let edition = mgr.current_edition(work_id).unwrap();
+                let mid_count = edition
+                    .all_entries()
+                    .iter()
+                    .filter(|(_, c)| {
+                        c.element.is_set() || c.element.is_path() || c.element.is_transclusion()
+                    })
+                    .count();
+                assert_eq!(
+                    mid_count, 1,
+                    "[{}] survives delete that stops before its boundary",
+                    name
+                );
+            }
+        }
+
+        #[test]
+        fn fr52_set_order_independence_through_delta_pipeline() {
+            // Two "replicas" build the SAME Set with DIFFERENT member
+            // construction order, then both push edits through the
+            // delta pipeline. The merged edition's Set fingerprint
+            // must equal the canonical one — construction order can
+            // never leak into the O-tree layer.
+            let mut mgr = OtreeCrdtManager::new(3);
+            let work_id: BeId = 42;
+            let s1 = make_session(1);
+            let s2 = make_session(2);
+
+            let sorted = RangeElement::set(vec![
+                SpanRef::new(7, 0, 12),
+                SpanRef::new(9, 40, 44),
+                SpanRef::new(11, 2, 3),
+            ]);
+            let mut shuffled_spans = vec![
+                SpanRef::new(11, 2, 3),
+                SpanRef::new(9, 40, 44),
+                SpanRef::new(7, 0, 12),
+            ];
+            let shuffled = RangeElement::set(shuffled_spans.clone());
+            shuffled_spans.reverse();
+            let reversed = RangeElement::set(shuffled_spans);
+
+            let sorted_fp = sorted.content_fingerprint();
+            let shuffled_fp = shuffled.content_fingerprint();
+            let reversed_fp = reversed.content_fingerprint();
+
+            let e1 = Edition::from_text_elements(&[
+                RangeElement::text("one "),
+                sorted,
+                RangeElement::text("two"),
+            ]);
+            let e2 = Edition::from_text_elements(&[
+                RangeElement::text("one "),
+                shuffled,
+                RangeElement::text("two"),
+            ]);
+            let e3 = Edition::from_text_elements(&[
+                RangeElement::text("one "),
+                reversed,
+                RangeElement::text("two"),
+            ]);
+
+            mgr.open_sync_session(work_id, s1, Some(&e1));
+            mgr.open_sync_session(work_id, s2, Some(&e2));
+
+            // Concurrent edits from both sides force merges.
+            mgr.apply_text_delta(
+                work_id,
+                s1,
+                &[
+                    TextDeltaOp::Insert {
+                        text: "A".to_string(),
+                    },
+                    TextDeltaOp::Retain { count: 8 },
+                ],
+            )
+            .unwrap();
+            mgr.apply_text_delta(
+                work_id,
+                s2,
+                &[
+                    TextDeltaOp::Retain { count: 8 },
+                    TextDeltaOp::Insert {
+                        text: "B".to_string(),
+                    },
+                ],
+            )
+            .unwrap();
+
+            let merged = mgr.current_edition(work_id).unwrap();
+            let set_fp = merged
+                .all_entries()
+                .iter()
+                .find(|(_, c)| c.element.is_set())
+                .map(|(_, c)| c.element.content_fingerprint())
+                .expect("Set survives");
+
+            assert_eq!(set_fp, sorted_fp, "merged Set fingerprint == canonical");
+            assert_eq!(shuffled_fp, sorted_fp);
+            assert_eq!(reversed_fp, sorted_fp);
+            assert_eq!(
+                set_fp,
+                e3.all_entries()
+                    .iter()
+                    .find(|(_, c)| c.element.is_set())
+                    .map(|(_, c)| c.element.content_fingerprint())
+                    .unwrap()
+            );
+        }
+
+        #[test]
+        fn fr52_zero_char_elements_do_not_shift_text_positions() {
+            // The position contract: a zero-char element occupies NO
+            // text positions. Retain counts must address text chars
+            // only — inserting at the element's boundary lands on the
+            // expected char either way.
+            let mut mgr = OtreeCrdtManager::new(3);
+            let work_id: BeId = 42;
+            let sid = make_session(1);
+            let base = seeded_edition();
+
+            mgr.open_sync_session(work_id, sid, Some(&base));
+
+            // Insert "Q" at char 6 (the boundary at the Set).
+            let ops = vec![
+                TextDeltaOp::Retain { count: 6 },
+                TextDeltaOp::Insert {
+                    text: "Q".to_string(),
+                },
+                TextDeltaOp::Retain { count: 10 },
+            ];
+            mgr.apply_text_delta(work_id, sid, &ops).unwrap();
+
+            let text = mgr.current_text(work_id).unwrap();
+            assert_eq!(
+                text, "alpha Qbeta gamma",
+                "retain counts address text chars; the Set contributes zero"
+            );
+
+            // And the element is still exactly one, between the texts.
+            let edition = mgr.current_edition(work_id).unwrap();
+            assert_eq!(
+                edition
+                    .all_entries()
+                    .iter()
+                    .filter(|(_, c)| c.element.is_set())
+                    .count(),
+                1
+            );
+        }
+    }
 }
