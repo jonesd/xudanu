@@ -865,7 +865,14 @@ const LINK_TYPES_KEY: &str = "LinkTypes";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct HyperLink {
-    ends: HashMap<String, HyperRef>,
+    /// FR-40 Story 6: each named end is a SET of attachments
+    /// (Gold's FeMultiRef — a MultiRef:Refs sub-edition in IDSpace,
+    /// an unordered set). A single-span end is a one-element set;
+    /// legacy links are singletons by construction. An end must
+    /// hold at least one attachment (Gold's check: every non-type
+    /// key holds a ref) — removing the last attachment removes the
+    /// end.
+    ends: HashMap<String, Vec<HyperRef>>,
     link_types: Vec<u64>,
 }
 
@@ -879,26 +886,44 @@ impl HyperLink {
 
     pub fn make(types: Vec<u64>, left_end: HyperRef, right_end: HyperRef) -> Self {
         let mut ends = HashMap::new();
-        ends.insert("LeftEnd".to_string(), left_end);
-        ends.insert("RightEnd".to_string(), right_end);
+        ends.insert("LeftEnd".to_string(), vec![left_end]);
+        ends.insert("RightEnd".to_string(), vec![right_end]);
         HyperLink {
             ends,
             link_types: types,
         }
     }
 
-    pub fn make_with_ends(types: Vec<u64>, ends: HashMap<String, HyperRef>) -> Self {
+    pub fn make_with_ends(types: Vec<u64>, ends: HashMap<String, Vec<HyperRef>>) -> Self {
         HyperLink {
             ends,
             link_types: types,
         }
     }
 
+    /// First attachment of the named end (compat view: a
+    /// single-span end is a one-element set).
     pub fn end_at(&self, name: &str) -> Option<&HyperRef> {
         if name == LINK_TYPES_KEY {
             return None;
         }
-        self.ends.get(name)
+        self.ends.get(name).and_then(|a| a.first())
+    }
+
+    /// All attachments of the named end (FR-40 Story 6).
+    pub fn attachments_at(&self, name: &str) -> Option<&[HyperRef]> {
+        if name == LINK_TYPES_KEY {
+            return None;
+        }
+        self.ends.get(name).map(|a| a.as_slice())
+    }
+
+    pub fn attachment_count(&self, name: &str) -> usize {
+        self.ends.get(name).map(|a| a.len()).unwrap_or(0)
+    }
+
+    pub fn total_attachments(&self) -> usize {
+        self.ends.values().map(|a| a.len()).sum()
     }
 
     pub fn end_names(&self) -> Vec<&str> {
@@ -909,22 +934,24 @@ impl HyperLink {
         &self.link_types
     }
 
-    /// Rebuild with each end mapped through `f` (None = keep as
-    /// is). One clone, in-place mutation — the per-end `with_end`
-    /// loop was O(E^2) map clones per link per delta (FR-50 F5
-    /// remnant).
+    /// Rebuild with each ATTACHMENT mapped through `f` (None =
+    /// keep as is). FR-40 Story 6: migration must cover every
+    /// attachment in every end. One clone, in-place mutation — the
+    /// per-end `with_end` loop was O(E^2) map clones per link per
+    /// delta (FR-50 F5 remnant).
     pub fn with_ends_mapped<F: FnMut(&str, &HyperRef) -> Option<HyperRef>>(
         &self,
         mut f: F,
     ) -> Self {
         let mut ends = self.ends.clone();
-        for (name, hr) in ends.iter_mut() {
+        for (name, attachments) in ends.iter_mut() {
             if name == LINK_TYPES_KEY {
                 continue;
             }
-            let mapped = f(name, &*hr);
-            if let Some(new_hr) = mapped {
-                *hr = new_hr;
+            for hr in attachments.iter_mut() {
+                if let Some(new_hr) = f(name, &*hr) {
+                    *hr = new_hr;
+                }
             }
         }
         HyperLink {
@@ -933,12 +960,51 @@ impl HyperLink {
         }
     }
 
+    /// Set an end to a single attachment (replaces the end-set).
     pub fn with_end(&self, name: &str, link_end: HyperRef) -> Self {
         if name == LINK_TYPES_KEY {
             return self.clone();
         }
         let mut ends = self.ends.clone();
-        ends.insert(name.to_string(), link_end);
+        ends.insert(name.to_string(), vec![link_end]);
+        HyperLink {
+            ends,
+            link_types: self.link_types.clone(),
+        }
+    }
+
+    /// Add an attachment to an end (FR-40 Story 6); creates the
+    /// end if absent.
+    pub fn with_attachment_added(&self, name: &str, attachment: HyperRef) -> Self {
+        if name == LINK_TYPES_KEY {
+            return self.clone();
+        }
+        let mut ends = self.ends.clone();
+        ends.entry(name.to_string()).or_default().push(attachment);
+        HyperLink {
+            ends,
+            link_types: self.link_types.clone(),
+        }
+    }
+
+    /// Remove one attachment from an end. Removing the last
+    /// attachment removes the end (an end cannot be empty —
+    /// Gold's check requires every non-type key to hold a ref).
+    /// Identity is by position-insensitive equality: the first
+    /// equal attachment goes.
+    pub fn with_attachment_removed(&self, name: &str, attachment: &HyperRef) -> Self {
+        if name == LINK_TYPES_KEY {
+            return self.clone();
+        }
+        let mut ends = self.ends.clone();
+        if let Some(attachments) = ends.get_mut(name) {
+            if let Some(pos) = attachments.iter().position(|a| a == attachment) {
+                attachments.remove(pos);
+            }
+            if attachments.is_empty() {
+                ends.remove(name);
+            }
+        }
         HyperLink {
             ends,
             link_types: self.link_types.clone(),
@@ -964,7 +1030,7 @@ impl HyperLink {
         }
     }
 
-    pub fn ends(&self) -> &HashMap<String, HyperRef> {
+    pub fn ends(&self) -> &HashMap<String, Vec<HyperRef>> {
         &self.ends
     }
 
@@ -978,8 +1044,10 @@ impl HyperLink {
 
     pub fn all_referenced_content(&self) -> Vec<RangeElement> {
         let mut result = Vec::new();
-        for end in self.ends.values() {
-            result.extend(end.referenced_content());
+        for attachments in self.ends.values() {
+            for hr in attachments {
+                result.extend(hr.referenced_content());
+            }
         }
         result
     }
@@ -989,11 +1057,11 @@ impl HyperLink {
     }
 
     pub fn left_end(&self) -> Option<&HyperRef> {
-        self.ends.get("LeftEnd")
+        self.ends.get("LeftEnd").and_then(|a| a.first())
     }
 
     pub fn right_end(&self) -> Option<&HyperRef> {
-        self.ends.get("RightEnd")
+        self.ends.get("RightEnd").and_then(|a| a.first())
     }
 }
 
@@ -1300,20 +1368,39 @@ mod tests {
         let mut ends = HashMap::new();
         ends.insert(
             "Source".to_string(),
-            HyperRef::single(Some(Edition::from_text("s")), None, None, None),
+            vec![HyperRef::single(
+                Some(Edition::from_text("s")),
+                None,
+                None,
+                None,
+            )],
         );
         ends.insert(
             "Target".to_string(),
-            HyperRef::single(Some(Edition::from_text("t")), None, None, None),
+            vec![HyperRef::single(
+                Some(Edition::from_text("t")),
+                None,
+                None,
+                None,
+            )],
         );
         ends.insert(
             "Annotation".to_string(),
-            HyperRef::single(Some(Edition::from_text("a")), None, None, None),
+            vec![HyperRef::single(
+                Some(Edition::from_text("a")),
+                None,
+                None,
+                None,
+            )],
         );
         let link = HyperLink::make_with_ends(vec![1, 2], ends);
         assert_eq!(link.end_count(), 3);
         assert!(!link.is_two_ended());
         assert_eq!(link.link_types().len(), 2);
+        // FR-40 Story 6: custom ends are singletons (one attachment
+        // each), and end_at sees the first attachment.
+        assert_eq!(link.attachment_count("Source"), 1);
+        assert!(link.end_at("Source").is_some());
     }
 
     #[test]
@@ -1864,5 +1951,114 @@ mod tests {
         assert!(hr.is_cross_server());
         let addr = hr.tumbler_address().unwrap();
         assert_eq!(addr.server(), "alice.com");
+    }
+
+    // ---- FR-40 Story 6 armor: end-sets ----
+
+    fn span_ref(work: u64, start: i64, end: i64) -> HyperRef {
+        HyperRef::single(None, Some(work), None, None).with_span(Some(start), Some(end))
+    }
+
+    #[test]
+    fn fr40_s6_legacy_link_is_singleton_ends() {
+        // Migration identity: the two-ended constructor produces
+        // ends of exactly one attachment each — every pre-S6 link
+        // is an end-set of size 1.
+        let link = HyperLink::make(vec![1], span_ref(1, 0, 5), span_ref(2, 0, 5));
+        assert_eq!(link.attachment_count("LeftEnd"), 1);
+        assert_eq!(link.attachment_count("RightEnd"), 1);
+        assert_eq!(link.total_attachments(), 2);
+        assert!(link.is_two_ended());
+    }
+
+    #[test]
+    fn fr40_s6_attachment_add_and_accessor() {
+        let link = HyperLink::make(vec![1], span_ref(1, 0, 5), span_ref(2, 0, 5));
+        let gathered = link
+            .with_attachment_added("LeftEnd", span_ref(1, 40, 44))
+            .with_attachment_added("LeftEnd", span_ref(3, 0, 9));
+        assert_eq!(gathered.attachment_count("LeftEnd"), 3);
+        assert_eq!(gathered.attachment_count("RightEnd"), 1);
+        assert_eq!(gathered.total_attachments(), 4);
+        // end_at (compat view) sees the FIRST attachment.
+        assert_eq!(
+            gathered.end_at("LeftEnd").unwrap().start_position(),
+            Some(0)
+        );
+        // attachments_at sees all of them.
+        let spans: Vec<_> = gathered
+            .attachments_at("LeftEnd")
+            .unwrap()
+            .iter()
+            .map(|hr| (hr.work_context(), hr.start_position()))
+            .collect();
+        assert_eq!(
+            spans,
+            vec![(Some(1), Some(0)), (Some(1), Some(40)), (Some(3), Some(0))]
+        );
+    }
+
+    #[test]
+    fn fr40_s6_last_attachment_removal_removes_end() {
+        // Gold's rule: every non-type key holds a ref — an empty
+        // end-set is not a link end (Appendix B principle 6).
+        let link = HyperLink::make(vec![1], span_ref(1, 0, 5), span_ref(2, 0, 5))
+            .with_attachment_added("Evidence", span_ref(4, 0, 3));
+        assert_eq!(link.end_count(), 3);
+
+        let one_left = link.with_attachment_removed("Evidence", &span_ref(4, 0, 3));
+        assert_eq!(one_left.end_count(), 2, "the Evidence end is gone");
+        assert!(!one_left.has_end("Evidence"));
+        assert!(one_left.is_two_ended());
+    }
+
+    #[test]
+    fn fr40_s6_attachment_removal_partial_keeps_end() {
+        let a = span_ref(1, 0, 5);
+        let b = span_ref(1, 40, 44);
+        let link = HyperLink::make(vec![1], a.clone(), span_ref(2, 0, 5))
+            .with_attachment_added("LeftEnd", b.clone());
+        let reduced = link.with_attachment_removed("LeftEnd", &b);
+        assert_eq!(reduced.attachment_count("LeftEnd"), 1);
+        assert_eq!(
+            reduced.end_at("LeftEnd").unwrap().start_position(),
+            Some(0),
+            "the surviving attachment is the original one"
+        );
+        // Removing an absent attachment is a no-op.
+        let same = reduced.with_attachment_removed("LeftEnd", &b);
+        assert_eq!(same, reduced);
+    }
+
+    #[test]
+    fn fr40_s6_ends_mapped_covers_every_attachment() {
+        // Migration contract: EVERY attachment in EVERY end moves.
+        let link = HyperLink::make(vec![1], span_ref(1, 0, 5), span_ref(2, 0, 5))
+            .with_attachment_added("LeftEnd", span_ref(1, 40, 44))
+            .with_attachment_added("RightEnd", span_ref(2, 10, 12));
+        let shifted = link.with_ends_mapped(|_name, hr| {
+            let start = hr.start_position()? + 100;
+            let end = hr.end_position()? + 100;
+            Some(hr.with_span(Some(start), Some(end)))
+        });
+        let positions: Vec<_> = shifted
+            .ends()
+            .values()
+            .flat_map(|a| a.iter().map(|hr| hr.start_position()))
+            .collect();
+        assert_eq!(positions, vec![Some(100), Some(140), Some(100), Some(110)]);
+    }
+
+    #[test]
+    fn fr40_s6_all_referenced_content_spans_attachments() {
+        // referenced_content counts excerpt MATERIAL, so build
+        // refs carrying editions (span-only refs have no content).
+        let with_material = |w: u64, s: i64| {
+            HyperRef::single(Some(Edition::from_text("m")), Some(w), None, None)
+                .with_span(Some(s), Some(s + 4))
+        };
+        let link = HyperLink::make(vec![1], with_material(1, 0), with_material(2, 0))
+            .with_attachment_added("LeftEnd", with_material(1, 40));
+        assert_eq!(link.all_referenced_content().len(), 3);
     }
 }

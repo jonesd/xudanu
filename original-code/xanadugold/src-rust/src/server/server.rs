@@ -17117,18 +17117,23 @@ impl Server {
 
             let mut touches_link = false;
             if !window_is_empty {
-                for hr in old_link.ends().values() {
-                    if hr.work_context() != Some(source_work_id) {
-                        continue;
-                    }
-                    if let (Some(start), Some(end)) = (hr.start_position(), hr.end_position()) {
-                        if start >= 0 && end >= 0 {
-                            let (s, e) = (start as usize, end as usize);
-                            if s < touches_hi && e > touches_lo {
-                                touches_link = true;
-                                break;
+                for attachments in old_link.ends().values() {
+                    for hr in attachments {
+                        if hr.work_context() != Some(source_work_id) {
+                            continue;
+                        }
+                        if let (Some(start), Some(end)) = (hr.start_position(), hr.end_position()) {
+                            if start >= 0 && end >= 0 {
+                                let (s, e) = (start as usize, end as usize);
+                                if s < touches_hi && e > touches_lo {
+                                    touches_link = true;
+                                    break;
+                                }
                             }
                         }
+                    }
+                    if touches_link {
+                        break;
                     }
                 }
             }
@@ -39752,15 +39757,15 @@ mod tests {
         let mut ends = HashMap::new();
         ends.insert(
             "Source".to_string(),
-            HyperRef::single(None, Some(1), None, None),
+            vec![HyperRef::single(None, Some(1), None, None)],
         );
         ends.insert(
             "Target".to_string(),
-            HyperRef::single(None, Some(2), None, None),
+            vec![HyperRef::single(None, Some(2), None, None)],
         );
         ends.insert(
             "Evidence".to_string(),
-            HyperRef::single(None, Some(3), None, None),
+            vec![HyperRef::single(None, Some(3), None, None)],
         );
 
         let link = HyperLink::make_with_ends(vec![10, 20], ends);
