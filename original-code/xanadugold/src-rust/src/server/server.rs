@@ -13408,11 +13408,17 @@ impl Server {
 
         // Named ends beyond Left/Right register against their works so
         // those works list the link in their Connections (FR-40 Story 1).
-        let named_works: Vec<BeId> = link
+        // FR-40 S6: EVERY attachment of every end registers.
+        let attached_works: Vec<BeId> = link
             .end_names()
             .into_iter()
-            .filter(|n| *n != "LeftEnd" && *n != "RightEnd")
-            .filter_map(|n| link.end_at(n).and_then(|hr| hr.work_context()))
+            .flat_map(|n| {
+                link.attachments_at(n)
+                    .unwrap_or(&[])
+                    .iter()
+                    .filter_map(|hr| hr.work_context())
+                    .collect::<Vec<_>>()
+            })
             .collect();
 
         self.links.insert(
@@ -13430,7 +13436,7 @@ impl Server {
             .entry(destination)
             .or_default()
             .push(link_id);
-        for wid in named_works {
+        for wid in attached_works {
             if !self
                 .work_to_links
                 .entry(wid)
@@ -13982,15 +13988,21 @@ impl Server {
                     continue;
                 }
             }
+            // FR-40 S6: matching is per-ATTACHMENT — every
+            // attachment of every end is a matchable (end, work)
+            // pair (Green's end-set semantics: the spec matches
+            // the end if ANY of its attachments matches).
             let ends: Vec<(String, BeId)> = ls
                 .link
                 .end_names()
                 .iter()
-                .filter_map(|n| {
+                .flat_map(|n| {
                     ls.link
-                        .end_at(n)
-                        .and_then(|hr| hr.work_context())
-                        .map(|w| (n.to_string(), w))
+                        .attachments_at(n)
+                        .unwrap_or(&[])
+                        .iter()
+                        .filter_map(|hr| hr.work_context().map(|w| (n.to_string(), w)))
+                        .collect::<Vec<_>>()
                 })
                 .collect();
             // The from/to distinction with multi-ended links: "the end
@@ -14574,7 +14586,27 @@ impl Server {
             } else if ls.origin == work_id {
                 ls.destination
             } else {
-                continue;
+                // FR-40 S6: the work is attached via an end-set
+                // attachment — the counterpart source is a work
+                // from a DIFFERENT end (prefer origin/destination,
+                // then any other end's attachment).
+                let counterpart = if ls.origin != work_id {
+                    Some(ls.origin)
+                } else if ls.destination != work_id {
+                    Some(ls.destination)
+                } else {
+                    ls.link.end_names().iter().find_map(|n| {
+                        ls.link.attachments_at(n).and_then(|attachments| {
+                            attachments
+                                .iter()
+                                .find_map(|hr| hr.work_context().filter(|w| *w != work_id))
+                        })
+                    })
+                };
+                match counterpart {
+                    Some(w) => w,
+                    None => continue,
+                }
             };
             if seen_works.contains(&source_work_id) {
                 continue;
@@ -39993,6 +40025,112 @@ mod tests {
             "multi-ended link matches to-spec via its named end"
         );
         assert!(!res.contains(&quote_ac));
+    }
+
+    /// FR-40 Story 6 (P3 armor): link matching is per-attachment —
+    /// a from/to spec matches an end if ANY of its attachments
+    /// matches (Green's end-set semantics).
+    #[test]
+    fn fr40_s6_link_query_matches_any_attachment() {
+        use crate::server::transport::protocol::LinkEndpointSpecPayload as Spec;
+        let (mut server, sid) = setup_logged_in_server();
+        let a = server.create_work(sid, Edition::from_text("A")).unwrap();
+        let b = server.create_work(sid, Edition::from_text("B")).unwrap();
+        let c = server.create_work(sid, Edition::from_text("C")).unwrap();
+
+        // One link: LeftEnd gathers spans from A AND C; RightEnd B.
+        let mut link = crate::edition::links::HyperLink::make(
+            vec![4],
+            HyperRef::single(None, Some(a), None, None),
+            HyperRef::single(None, Some(b), None, None),
+        );
+        link = link.with_attachment_added(
+            "LeftEnd",
+            HyperRef::single(None, Some(c), None, None).with_span(Some(0), Some(1)),
+        );
+        let gathered = server
+            .create_link_with_hyperlink_homed(sid, link, None)
+            .unwrap();
+
+        let ids = |res: Vec<(BeId, BeId, BeId)>| -> Vec<BeId> {
+            res.into_iter().map(|(l, _, _)| l).collect()
+        };
+
+        // "everywhere C quotes anyone" — C is the SECOND attachment
+        // of the LeftEnd end-set; it must still match.
+        let res = ids(server
+            .link_query(
+                sid,
+                &Spec {
+                    work_ids: vec![c],
+                    author: None,
+                },
+                &Spec {
+                    work_ids: vec![b],
+                    author: None,
+                },
+                &[4],
+                &Spec::any(),
+            )
+            .unwrap());
+        assert!(
+            res.contains(&gathered),
+            "any-attachment matching: the C attachment matches the from-spec"
+        );
+
+        // The pair check still requires DISTINCT ends: a from=C
+        // to=C query must not match (C is on the same end as... C).
+        let res = ids(server
+            .link_query(
+                sid,
+                &Spec {
+                    work_ids: vec![c],
+                    author: None,
+                },
+                &Spec {
+                    work_ids: vec![c],
+                    author: None,
+                },
+                &[4],
+                &Spec::any(),
+            )
+            .unwrap());
+        assert!(
+            !res.contains(&gathered),
+            "both specs matching the same end must not count as a pair"
+        );
+    }
+
+    /// FR-40 Story 6 (P3 armor): backlink equivalence — a link
+    /// whose LeftEnd gathers [A, C] is listed for BOTH A and C,
+    /// matching what N separate two-ended links would surface.
+    #[test]
+    fn fr40_s6_backlinks_cover_every_attachment() {
+        let (mut server, sid) = setup_logged_in_server();
+        let a = server.create_work(sid, Edition::from_text("A")).unwrap();
+        let b = server.create_work(sid, Edition::from_text("B")).unwrap();
+        let c = server.create_work(sid, Edition::from_text("C")).unwrap();
+
+        let mut link = crate::edition::links::HyperLink::make(
+            vec![4],
+            HyperRef::single(None, Some(a), None, None),
+            HyperRef::single(None, Some(b), None, None),
+        );
+        link = link.with_attachment_added(
+            "LeftEnd",
+            HyperRef::single(None, Some(c), None, None).with_span(Some(0), Some(1)),
+        );
+        server
+            .create_link_with_hyperlink_homed(sid, link, None)
+            .unwrap();
+
+        let a_links = server.find_backlinks(sid, a).unwrap();
+        let c_links = server.find_backlinks(sid, c).unwrap();
+        assert!(!a_links.is_empty(), "A sees the link");
+        assert!(
+            !c_links.is_empty(),
+            "C ALSO sees the link through its gathered attachment"
+        );
     }
 
     #[test]

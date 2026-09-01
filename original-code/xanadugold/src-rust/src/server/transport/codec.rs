@@ -1683,6 +1683,36 @@ impl JsonCodec {
                     end_name: args.end_name,
                 })
             }
+            OperationCode::LinkEndAddAttachment => {
+                #[derive(Deserialize)]
+                struct Args {
+                    link_id: BeId,
+                    end_name: String,
+                    attachment: super::protocol::HyperRefPayload,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LinkEndAddAttachment {
+                    link_id: args.link_id,
+                    end_name: args.end_name,
+                    attachment: args.attachment,
+                })
+            }
+            OperationCode::LinkEndRemoveAttachment => {
+                #[derive(Deserialize)]
+                struct Args {
+                    link_id: BeId,
+                    end_name: String,
+                    attachment: super::protocol::HyperRefPayload,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LinkEndRemoveAttachment {
+                    link_id: args.link_id,
+                    end_name: args.end_name,
+                    attachment: args.attachment,
+                })
+            }
             OperationCode::LinkSetTypes => {
                 #[derive(Deserialize)]
                 struct Args {

@@ -266,6 +266,8 @@ pub enum OperationCode {
     LinkListForWork,
     LinkAddEnd,
     LinkRemoveEnd,
+    LinkEndAddAttachment,
+    LinkEndRemoveAttachment,
     LinkSetTypes,
     LinkTypeRegister,
     LinkTypeList,
@@ -632,6 +634,8 @@ impl OperationCode {
             0x0706 => Some(OperationCode::FindExcerptPositions),
             0x0707 => Some(OperationCode::LinkAddEnd),
             0x0708 => Some(OperationCode::LinkRemoveEnd),
+            0x0709 => Some(OperationCode::LinkEndAddAttachment),
+            0x070A => Some(OperationCode::LinkEndRemoveAttachment),
             0x0709 => Some(OperationCode::LinkSetTypes),
             0x070A => Some(OperationCode::LinkTypeRegister),
             0x070B => Some(OperationCode::LinkTypeList),
@@ -980,6 +984,8 @@ impl OperationCode {
             OperationCode::FindExcerptPositions => 0x0706,
             OperationCode::LinkAddEnd => 0x0707,
             OperationCode::LinkRemoveEnd => 0x0708,
+            OperationCode::LinkEndAddAttachment => 0x0709,
+            OperationCode::LinkEndRemoveAttachment => 0x070A,
             OperationCode::LinkSetTypes => 0x0709,
             OperationCode::LinkTypeRegister => 0x070A,
             OperationCode::LinkTypeList => 0x070B,
@@ -1730,6 +1736,19 @@ pub enum WireRequest {
     LinkRemoveEnd {
         link_id: BeId,
         end_name: String,
+    },
+    /// FR-40 Story 6: add one attachment to an end-set.
+    LinkEndAddAttachment {
+        link_id: BeId,
+        end_name: String,
+        attachment: HyperRefPayload,
+    },
+    /// FR-40 Story 6: remove one attachment from an end-set
+    /// (removing the last attachment removes the end).
+    LinkEndRemoveAttachment {
+        link_id: BeId,
+        end_name: String,
+        attachment: HyperRefPayload,
     },
     LinkSetTypes {
         link_id: BeId,

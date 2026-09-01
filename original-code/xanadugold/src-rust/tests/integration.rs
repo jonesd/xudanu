@@ -14747,3 +14747,142 @@ async fn fr52_set_path_element_insert_over_websocket() {
         resp
     );
 }
+
+/// FR-40 Story 6: end-set attachments through the real WS dispatch.
+/// A gathered attachment (work C joining LeftEnd) is added and
+/// removed via the new ops; per-attachment matching is proven by
+/// link_query behavior — from=C to=B matches only while the
+/// attachment exists.
+#[tokio::test]
+async fn fr40_s6_end_set_attachment_over_websocket() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    async fn mk_work(s: &mut SplitSender, r: &mut SplitReceiver, name: &str) -> u64 {
+        send_recv_json(
+            s,
+            r,
+            json_req(
+                900,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": name}})),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap()
+    }
+    let a = mk_work(&mut s, &mut r, "gather A").await;
+    let b = mk_work(&mut s, &mut r, "gather B").await;
+    let c = mk_work(&mut s, &mut r, "gather C").await;
+
+    let link_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            901,
+            "link_create",
+            Some(serde_json::json!({
+                "origin": a,
+                "destination": b,
+                "origin_ref": {
+                    "kind": "single",
+                    "work_context": a,
+                    "start_position": 0,
+                    "end_position": 7
+                }
+            })),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    // C joins the LeftEnd end-set.
+    let add = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            902,
+            "link_end_add_attachment",
+            Some(serde_json::json!({
+                "link_id": link_id,
+                "end_name": "LeftEnd",
+                "attachment": {
+                    "kind": "single",
+                    "work_context": c,
+                    "start_position": 0,
+                    "end_position": 5
+                }
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(add["type"], "response", "add attachment failed: {add}");
+
+    // Per-attachment matching: from=C to=B now finds the link.
+    let q = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            903,
+            "link_query",
+            Some(serde_json::json!({
+                "from_spec": {"work_ids": [c]},
+                "to_spec": {"work_ids": [b]},
+                "type_ids": [],
+                "home_spec": {"work_ids": [], "author": null}
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(q["type"], "response", "query failed: {q}");
+    let body = serde_json::to_string(&q["value"]).unwrap();
+    assert!(
+        body.contains(&link_id.to_string()),
+        "from=C to=B matches via the gathered attachment: {body}"
+    );
+
+    // Remove the attachment: the query stops matching.
+    let rm = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            904,
+            "link_end_remove_attachment",
+            Some(serde_json::json!({
+                "link_id": link_id,
+                "end_name": "LeftEnd",
+                "attachment": {
+                    "kind": "single",
+                    "work_context": c,
+                    "start_position": 0,
+                    "end_position": 5
+                }
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(rm["type"], "response", "remove attachment failed: {rm}");
+
+    let q = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            905,
+            "link_query",
+            Some(serde_json::json!({
+                "from_spec": {"work_ids": [c]},
+                "to_spec": {"work_ids": [b]},
+                "type_ids": [],
+                "home_spec": {"work_ids": [], "author": null}
+            })),
+        ),
+    )
+    .await;
+    let body = serde_json::to_string(&q["value"]).unwrap();
+    assert!(
+        !body.contains(&link_id.to_string()),
+        "after removal the C attachment no longer matches: {body}"
+    );
+}

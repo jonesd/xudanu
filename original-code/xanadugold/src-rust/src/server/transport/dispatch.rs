@@ -2027,6 +2027,32 @@ fn dispatch_inner(
             srv.link_remove_end(session_id, link_id, &end_name)?;
             Ok(ResponseValue::Void)
         }
+        WireRequest::LinkEndAddAttachment {
+            link_id,
+            end_name,
+            attachment,
+        } => {
+            srv.ensure_authenticated(session_id)?;
+            let (origin, destination, _) = srv.get_link(link_id)?;
+            srv.ensure_can_read(session_id, origin)?;
+            srv.ensure_can_read(session_id, destination)?;
+            let hr = attachment.to_hyper_ref(attachment.work_context.unwrap_or(origin));
+            srv.link_end_add_attachment(session_id, link_id, &end_name, hr)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::LinkEndRemoveAttachment {
+            link_id,
+            end_name,
+            attachment,
+        } => {
+            srv.ensure_authenticated(session_id)?;
+            let (origin, destination, _) = srv.get_link(link_id)?;
+            srv.ensure_can_read(session_id, origin)?;
+            srv.ensure_can_read(session_id, destination)?;
+            let hr = attachment.to_hyper_ref(attachment.work_context.unwrap_or(origin));
+            srv.link_end_remove_attachment(session_id, link_id, &end_name, &hr)?;
+            Ok(ResponseValue::Void)
+        }
         WireRequest::LinkSetTypes {
             link_id,
             link_types,
