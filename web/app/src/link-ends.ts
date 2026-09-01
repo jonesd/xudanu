@@ -292,7 +292,16 @@ export function planEndSetOperations(spans: GatheredSpan[]): EndSetOperation[] {
 export function multiEndWorkIds(link: LinkEntry): number[] {
   const ids = new Set<number>();
   for (const end of linkEnds(link)) {
-    if (end.workId !== null) ids.add(end.workId);
+    // FR-40 L6: a gathered end contributes EVERY attachment's work
+    // — comparing the link shows all member passages' documents,
+    // not just each end's first.
+    if (end.attachments && end.attachments.length > 0) {
+      for (const ref of end.attachments) {
+        if (ref.work_context != null) ids.add(ref.work_context);
+      }
+    } else if (end.workId !== null) {
+      ids.add(end.workId);
+    }
   }
   return Array.from(ids);
 }

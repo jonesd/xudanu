@@ -357,3 +357,33 @@ describe("gatherableEnds (L3 gather picker)", () => {
     expect(gatherableEnds(links, 0x10)).toEqual([]);
   });
 });
+
+// ---- FR-40 L6: multiEndWorkIds covers gathered attachments ----
+
+describe("multiEndWorkIds with gathered ends (L6)", () => {
+  const member = (work: number) => ({
+    kind: "single" as const,
+    work_context: work,
+    original_context: null,
+    excerpt: null,
+  });
+
+  it("a gathered end contributes every attachment's work", () => {
+    const link = mkLink({
+      origin: 0x10,
+      destination: 0x20,
+      end_sets: [
+        ["LeftEnd", [member(0x10), member(0x11), member(0x12)]],
+      ],
+    });
+    const ids = multiEndWorkIds(link);
+    for (const id of [0x10, 0x11, 0x12, 0x20]) {
+      expect(ids).toContain(id);
+    }
+  });
+
+  it("plain links unchanged", () => {
+    const ids = multiEndWorkIds(mkLink());
+    expect(ids.sort()).toEqual([0x10, 0x20].sort());
+  });
+});
