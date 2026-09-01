@@ -2,14 +2,15 @@
 
 Status: **S6 + S7 backend DONE (2026-08-31, commits 56b34d73 /
 d458ed09 / 36221e13 / 418705ba)**; **S6-P4 frontend first cut
-DONE (49343817)**; **L1 DONE (e4751ad3)** — gathered end-sets
-render in the editor, one identity colour per link, "passage i of
-N" tooltips; **L2 DONE (7bd97c61)** — gutter badges + bottom-bar
-strip; **L3 DONE (046b1daf)** — span-level Gather from the
-selection bar into any end. OPEN: L4 comment-on-link + descriptor
-ends, L5 type chips, L6 comparison view. S2 UI part open;
-S1/S3/S4 done. · Drafted 2026-08-20 · Surveyed vs Gold source
-2026-08-31
+DONE (49343817)**; **completion plan L1-L6 DONE** — L1 markers
+(e4751ad3), L2 gutter+bottom-bar (7bd97c61), L3 span-level Gather
+(046b1daf), L4 comment-on-link + descriptor ends (bd747d34), L5
+type chips (done-by-audit — already shipped; the plan
+over-listed it), L6 comparison (c54bc520: gathered-end
+integration over the existing MultiEndCompare — the plan
+under-listed it; same mangled-grep survey). S2 UI part open
+(server payload ships type_ends; chips render). S1/S3/S4 done.
+· Drafted 2026-08-20 · Surveyed vs Gold source 2026-08-31
 Builds on: FR-39 (link types as documents), FR-52 A-2 (Set/Path
 SpanRef)
 Heritage: Udanax Green FeBe manual, "Links and Link Types"; winfe
