@@ -1,11 +1,16 @@
 # FR-40: Green/Gold Link Constructs — multi-ended links, home documents, claim sets
 
-Status: partially implemented (see Story status marks) · Drafted
-2026-08-20 · Surveyed vs Gold source 2026-08-31
+Status: **S6 backend + S7 DONE (2026-08-31, commits 56b34d73 /
+d458ed09 / 36221e13 / 418705ba)**; S6-P4 FRONTEND open (gather
+mode, end_sets rendering, B.1/B.2 surfaces). S2 (derived type
+ends on read) and S5 (comparison view) open. S1/S3/S4 done
+(2026-08-31 re-measure). · Drafted 2026-08-20 · Surveyed vs Gold
+source 2026-08-31
 Builds on: FR-39 (link types as documents), FR-52 A-2 (Set/Path
 SpanRef)
 Heritage: Udanax Green FeBe manual, "Links and Link Types"; winfe
-`links.cpp` (1993). Summary in `docs/gold-link-semantics.md`.
+`links.cpp` (1993). Summary in `docs/gold-link-semantics.md`;
+full model treatment in `docs/gold-link-model.md`.
 
 > **Green-compatibility note (2026-08-31):** observation of the
 > running Green implementation (XCP-Green gateway work) shows heavy
