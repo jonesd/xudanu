@@ -1,11 +1,15 @@
 # FR-40: Green/Gold Link Constructs — multi-ended links, home documents, claim sets
 
-Status: **S6 backend + S7 DONE (2026-08-31, commits 56b34d73 /
-d458ed09 / 36221e13 / 418705ba)**; S6-P4 FRONTEND open (gather
-mode, end_sets rendering, B.1/B.2 surfaces). S2 (derived type
-ends on read) and S5 (comparison view) open. S1/S3/S4 done
-(2026-08-31 re-measure). · Drafted 2026-08-20 · Surveyed vs Gold
-source 2026-08-31
+Status: **S6 + S7 backend DONE (2026-08-31, commits 56b34d73 /
+d458ed09 / 36221e13 / 418705ba)**; **S6-P4 frontend first cut
+DONE (49343817)** — end_sets types + client ops, Connections
+end-set/connection rendering, LinkCreator gather mode (work-level
+gather), B.1 identity key. OPEN: in-editor marker rendering of
+gathered ends (B.1 colour=glyph rules in the underline layer),
+B.2 tier-1 surfaces (gutter badge, bottom-bar strip), span-level
+gather in the wizard, S2 (derived type ends on read), S5
+(comparison view). S1/S3/S4 done. · Drafted 2026-08-20 · Surveyed
+vs Gold source 2026-08-31
 Builds on: FR-39 (link types as documents), FR-52 A-2 (Set/Path
 SpanRef)
 Heritage: Udanax Green FeBe manual, "Links and Link Types"; winfe
