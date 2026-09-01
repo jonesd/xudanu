@@ -285,6 +285,29 @@ fn split_text_carrier(carrier: &Carrier, start: usize, end: usize) -> Option<Car
             }
             Some(c)
         }
+        // Same contract for MATERIALIZED StructuralTransclusions
+        // (the queued sibling of the virtual fix): the crum cannot
+        // describe a partial span, so the fragment keeps its bytes
+        // and drops the structural identity. Before this, partial
+        // splits returned None and the walker silently DROPPED the
+        // piece — same whole-quotation content loss ("AAxyzBB"
+        // deleting one char yielded "AABB").
+        RangeElement::StructuralTransclusion {
+            cached_content: Some(text),
+            ..
+        } => {
+            let start_byte = char_index_to_byte(text, start)?;
+            let end_byte = char_index_to_byte(text, end)?;
+            if start_byte == end_byte {
+                return None;
+            }
+            let slice = &text[start_byte..end_byte];
+            let mut c = Carrier::new(RangeElement::text(slice.to_string()));
+            if let Some(prov) = &carrier.provenance {
+                c = c.with_provenance(prov.clone());
+            }
+            Some(c)
+        }
         _ => {
             if start == 0 && end >= 1 {
                 Some(carrier.clone())
@@ -2869,6 +2892,117 @@ mod tests {
                 .count(),
             1,
             "unmaterialized virtual survives nearby edits"
+        );
+    }
+
+    /// Same contract for MATERIALIZED StructuralTransclusions — the
+    /// queued sibling of the virtual split fix (7bad9f9): a partial
+    /// split of the cached span converts the fragment to plain text
+    /// (bytes kept, identity dropped). The crum cannot describe a
+    /// partial span, and dropping the piece was whole-quotation
+    /// content loss on a 1-char edit.
+    #[test]
+    fn structural_inside_edit_splits_like_text() {
+        let mk = |mat: Option<&str>| {
+            let mut st = RangeElement::structural_transclusion(1, 0, 3, [9u8; 32], 0, None);
+            if let Some(m) = mat {
+                st.set_cached_content(m.to_string());
+            }
+            Edition::from_entries(vec![
+                (
+                    0i64,
+                    Arc::new(Carrier::new(RangeElement::text("AA".to_string()))),
+                ),
+                (1i64, Arc::new(Carrier::new(st))),
+                (
+                    2i64,
+                    Arc::new(Carrier::new(RangeElement::text("BB".to_string()))),
+                ),
+            ])
+        };
+
+        // Delete one char inside the cached content ("xyz" -> "yz").
+        let ed = mk(Some("xyz"));
+        let ops = vec![
+            TextDeltaOp::Retain { count: 2 },
+            TextDeltaOp::Delete { count: 1 },
+            TextDeltaOp::Retain { count: 4 },
+        ];
+        let r = apply_text_delta_to_edition(&ed, &ops, None);
+        assert_eq!(
+            r.to_text(),
+            "AAyzBB",
+            "partial edit keeps the remaining cached bytes"
+        );
+        assert_eq!(
+            r.cached_entries()
+                .iter()
+                .filter(|(_, c)| c.element.is_structural_transclusion())
+                .count(),
+            0,
+            "edited fragment drops the (unrepresentable) identity"
+        );
+
+        // Insert inside the cached content.
+        let ed = mk(Some("xyz"));
+        let ops = vec![
+            TextDeltaOp::Retain { count: 3 },
+            TextDeltaOp::Insert {
+                text: "-".to_string(),
+            },
+            TextDeltaOp::Retain { count: 4 },
+        ];
+        let r = apply_text_delta_to_edition(&ed, &ops, None);
+        assert_eq!(r.to_text(), "AAx-yzBB");
+
+        // Retain THROUGH: identity survives intact.
+        let ed = mk(Some("xyz"));
+        let ops = vec![TextDeltaOp::Retain { count: 7 }];
+        let r = apply_text_delta_to_edition(&ed, &ops, None);
+        assert_eq!(
+            r.cached_entries()
+                .iter()
+                .filter(|(_, c)| c.element.is_structural_transclusion())
+                .count(),
+            1,
+            "unedited structural keeps its identity"
+        );
+        assert_eq!(r.to_text(), "AAxyzBB");
+
+        // Delete covering exactly the whole cached span: removed.
+        let ed = mk(Some("xyz"));
+        let ops = vec![
+            TextDeltaOp::Retain { count: 2 },
+            TextDeltaOp::Delete { count: 3 },
+            TextDeltaOp::Retain { count: 2 },
+        ];
+        let r = apply_text_delta_to_edition(&ed, &ops, None);
+        assert_eq!(r.to_text(), "AABB");
+        assert_eq!(
+            r.cached_entries()
+                .iter()
+                .filter(|(_, c)| c.element.is_structural_transclusion())
+                .count(),
+            0
+        );
+
+        // Unmaterialized: passes through untouched (zero-char
+        // semantics) — same as the virtual contract.
+        let ed = mk(None);
+        let ops = vec![
+            TextDeltaOp::Retain { count: 2 },
+            TextDeltaOp::Insert {
+                text: "X".to_string(),
+            },
+        ];
+        let r = apply_text_delta_to_edition(&ed, &ops, None);
+        assert_eq!(
+            r.cached_entries()
+                .iter()
+                .filter(|(_, c)| c.element.is_structural_transclusion())
+                .count(),
+            1,
+            "unmaterialized structural survives nearby edits"
         );
     }
 
