@@ -2307,6 +2307,101 @@ mod tests {
             entries.sort_by_key(|(p, _)| *p);
             docs.push(("zero-char-mixed", Edition::from_entries(entries)));
         }
+        // FR-52 A-2: zero-char VALUE elements — Set, Path, unstamped
+        // Transclusion, unmaterialized Virtual/Structural. Text and
+        // char_len equality alone cannot see these (zero chars, no
+        // as_text), so the assertions below also compare fingerprint
+        // multisets — the identity-sensitive equivalence.
+        {
+            use crate::edition::range_element::SpanRef;
+            let mut entries: Vec<(i64, Arc<Carrier>)> = vec![
+                (
+                    0i64,
+                    Arc::new(Carrier::new(RangeElement::text("ab".to_string()))),
+                ),
+                (
+                    1i64,
+                    Arc::new(Carrier::new(RangeElement::set(vec![
+                        SpanRef::new(7, 0, 12),
+                        SpanRef::new(9, 40, 44),
+                    ]))),
+                ),
+                (
+                    2i64,
+                    Arc::new(Carrier::new(RangeElement::text("cd".to_string()))),
+                ),
+                (
+                    3i64,
+                    Arc::new(Carrier::new(RangeElement::path(vec![SpanRef::new(
+                        3, 0, 5,
+                    )]))),
+                ),
+                (
+                    4i64,
+                    Arc::new(Carrier::new(RangeElement::text("ef".to_string()))),
+                ),
+                (
+                    5i64,
+                    Arc::new(Carrier::new(RangeElement::transclusion(99, 1, 4))),
+                ),
+                (
+                    6i64,
+                    Arc::new(Carrier::new(RangeElement::virtual_element(
+                        crate::edition::range_element::VirtualSpec {
+                            source_work_id: 5,
+                            char_start: 0,
+                            char_end: 3,
+                            revision: 2,
+                            placed_at: 0,
+                            placed_by: None,
+                        },
+                    ))),
+                ),
+                (
+                    7i64,
+                    Arc::new(Carrier::new(RangeElement::structural_transclusion(
+                        6, 0, 3, [7u8; 32], 0, None,
+                    ))),
+                ),
+            ];
+            entries.sort_by_key(|(p, _)| *p);
+            docs.push(("value-elements", Edition::from_entries(entries)));
+        }
+        // Cached-span (materialized) elements — the classes with
+        // their own split arms (7bad9f9 for Virtual, 385ff005 for
+        // Structural). Deletes crossing these exercise the
+        // materialize-on-split contract in BOTH paths.
+        {
+            let mut vm =
+                RangeElement::virtual_element(crate::edition::range_element::VirtualSpec {
+                    source_work_id: 1,
+                    char_start: 0,
+                    char_end: 3,
+                    revision: 1,
+                    placed_at: 0,
+                    placed_by: None,
+                });
+            vm.set_virtual_content("xyz".to_string());
+            let mut st = RangeElement::structural_transclusion(2, 0, 3, [5u8; 32], 0, None);
+            st.set_cached_content("uvw".to_string());
+            let entries: Vec<(i64, Arc<Carrier>)> = vec![
+                (
+                    0i64,
+                    Arc::new(Carrier::new(RangeElement::text("AA".to_string()))),
+                ),
+                (1i64, Arc::new(Carrier::new(vm))),
+                (
+                    2i64,
+                    Arc::new(Carrier::new(RangeElement::text("BB".to_string()))),
+                ),
+                (3i64, Arc::new(Carrier::new(st))),
+                (
+                    4i64,
+                    Arc::new(Carrier::new(RangeElement::text("CC".to_string()))),
+                ),
+            ];
+            docs.push(("materialized-cached-spans", Edition::from_entries(entries)));
+        }
 
         for (name, doc) in &docs {
             let total = doc.char_len();
@@ -2372,6 +2467,24 @@ mod tests {
                     i
                 );
                 assert_eq!(fast.char_len(), bulk.char_len(), "doc={} ops#{}", name, i);
+                // Identity equivalence: zero-char value elements are
+                // invisible to text/char_len — compare the fingerprint
+                // multiset so one path dropping a Set/Path/virtual
+                // while the other keeps it fails here.
+                let fp_multiset = |ed: &Edition| -> std::collections::BTreeMap<[u8; 32], usize> {
+                    let mut m = std::collections::BTreeMap::new();
+                    for (_, c) in ed.cached_entries().iter() {
+                        *m.entry(c.element.content_fingerprint()).or_insert(0) += 1;
+                    }
+                    m
+                };
+                assert_eq!(
+                    fp_multiset(&fast),
+                    fp_multiset(&bulk),
+                    "doc={} ops#{}: fast and bulk must agree on element identities",
+                    name,
+                    i
+                );
             }
         }
     }
