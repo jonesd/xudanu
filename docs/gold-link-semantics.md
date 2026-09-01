@@ -1,6 +1,9 @@
 # Gold & Green Link Semantics — Heritage Notes and Xudanu Alignment
 
 Status: reference · Date: 2026-08-20
+Deeper source treatment of the model, the shipped UX, descriptors,
+and transpointing: see `docs/gold-link-model.md` (2026-08-31,
+source archaeology from nlinksx + winfe).
 
 Sources studied:
 - Udanax Green FeBe manual, "Links and Link Types" chapter (via the

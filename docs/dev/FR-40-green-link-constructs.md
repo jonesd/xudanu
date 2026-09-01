@@ -177,6 +177,138 @@ makes reentrant links expressible without making links works.
 assume span-attachments (markers, comparison) degrade gracefully
 to "link attachment shown as chip".
 
+## Appendix A: application-use archaeology (2026-08-31)
+
+Full treatment in `docs/gold-link-model.md` (source archaeology:
+the model from nlinksx, the shipped UX from winfe, descriptors,
+transpointing). Summary here for story context.
+
+Read from the shipped Gold winfe sources (winfe/links.cpp,
+xstuff.hxx, 1993) and the backend link implementation
+(src/server/nlinksx.cxx) — how multi-ended links were ACTUALLY
+used and intended, beyond the FeBe manual semantics.
+
+### The Gold link data model, precise (nlinksx.cxx:102-245)
+
+- A link is an EDITION whose domain holds a reserved
+  `Link:LinkTypes` key (holding a FeSet — the type SET, endorsed
+  by the author) plus ANY NUMBER of other named keys, each holding
+  a FeHyperRef. Ends are named sub-editions; naming an end
+  "Link:LinkTypes" raises MustUseDifferentLinkEndKey.
+- The canonical constructor builds `Link:LinkTypes` +
+  `Link:LeftEnd` + `Link:RightEnd` — our `HyperLink::make`
+  mirrors this exactly (including our LINK_TYPES_KEY guard).
+- `FeMultiRef::check` (nlinksx.cxx:464): a HyperRef carrying a
+  `MultiRef:Refs` sub-edition in **IDSpace** — an identity-keyed,
+  unordered SET — whose members must each be a FeHyperRef.
+  Two consequences: (a) end-sets are true sets (order-free),
+  matching our order-insensitive Set<SpanRef> fingerprint
+  decision in FR-52 A-2 — convergent design, recorded; (b)
+  members are refs, and FeMultiRef IS a FeHyperRef — **end-sets
+  can nest** (a multi-ref of multi-refs).
+- Links-to-links needs NO special mechanism in Gold: every link is
+  a work (`XuWork::make(link->edition())` — winfe links.cpp:300),
+  and a FeSingleRef's workContext can point at any work, including
+  a LINK work. The uniform everything-is-a-work model gives
+  reentrant links for free. **Design consequence for us:** Story
+  7's special variant is the compensating mechanism because our
+  links aren't works; the Gold-faithful alternative is links-as-
+  works (which Story 3 homes + FR-39 types-as-works already
+  approach). Decision stays with the variant (smaller blast
+  radius), revisit if links ever become works.
+
+### How the shipped application used the model (winfe links.cpp)
+
+1. **The descriptor end** — `FE_MYLINKDESCKEY
+   "FELink:Descriptor"` (links.cpp:26): every link carries an
+   application-defined named END whose excerpt is the human-
+   readable description ("< New Link >" default, then the first
+   characters of the other end's text, then the descriptor if
+   present). Multi-endedness was used for APPLICATION METADATA,
+   not just content connections. This needs NO model change for
+   us — `link_add_end` already carries it; it needs LinkCreator
+   support (a "describe this link" field that creates the end).
+2. **this/other presentation** — the link list showed every link
+   two-ended-at-a-time, relative to the current work:
+   `atRight(link, work)` → thisEnd/otherEnd
+   (links.cpp:86-91). The n-ended model lived in the DATA layer;
+   the UX simplified to two ends at a time. Lesson for our
+   Connections panel: render any link as "this end ⇄ other ends
+   (N)" from the viewing work's perspective — n-endedness without
+   n-ended visual complexity.
+3. **attachLink — commentary by fresh document** (links.cpp:305):
+   one end = the target passage; other end = a BRAND-NEW document
+   ("New Attachment", titled, public). The shipped annotation
+   pattern: comment BY linking to a new doc, not by inline
+   markup. This is the natural first application of links-to-
+   links in Xudanu: "comment on this connection" creates a link
+   whose end is the link (via Story 7) plus a fresh note work.
+4. **Live link lists via transcluders** — the list window is
+   `domain->rangeTranscluders(NULL, linkTypeFilter)` +
+   FillRangeDetectors (links.cpp:151-155): links discovered by
+   region query with type filter, updated reactively. Ours lists
+   per-work; the region/filtered query is FR-39 S4's link_query.
+5. **Creation UI never finished** — `endLink`'s TODO "this should
+   pop up the link creation dialog" (links.cpp:299). Warning
+   taken: link creation is where link UIs die; keep the
+   two-ended fast path sacred and make every additional end a
+   deliberate extra step (our LinkCreator wizard shape is right).
+
+### Green-specific notes
+
+Green's FeBe model (per the manual, documented in
+docs/gold-link-semantics.md §1): from-set / to-set / three-set
+(the type, "deliberately misnamed"), each end-SET containing
+v-spans AND link ids; predefined types jump, quote, footnote,
+marginal note. The running Green instance observed 2026-08
+(heavy many-ended use) is consistent: Green's end-set matching
+queries are n-ended by construction. **Open:** inspect the Green
+instance's client scripts / scenario corpus for concrete
+application patterns when the tree is located — recorded as a
+follow-up, not blocking Stories 6-7 whose shapes match the
+manual's model.
+
+## Appendix B: UX review for Stories 6-7 (2026-08-31)
+
+Principles drawn from the archaeology above, applied to our UI:
+
+1. **Two-ended-at-a-time views over n-ended data** (the winfe
+   lesson). Every link rendering is FROM a work: "this end ⇄
+   others". Multi-span ends render as one CLUSTERED marker per
+   end (link-markers.ts already clusters by lane/density) — a
+   five-span end is five underlines sharing one badge/label, not
+   five links. Hover on any member span highlights the whole end.
+2. **Creation: gather, then commit.** The two-ended wizard stays
+   the default. "Add another end" repeats target selection
+   (exists). For multi-SPAN ends, a gather mode: select passage →
+   "add to this end" → repeat → "complete end". The end-set
+   materializes only on commit; cancel is free. Never require
+   multi-span to make a simple link.
+3. **Links-to-links: comment chips, not recursion.** A link with
+   link-attachments renders a badge ("3 connections") on its
+   marker and its Connections row; clicking opens the comparison
+   or the attached link's own row. Visual depth capped at one
+   level — no infinite nesting UI; the DATA allows nesting, the
+   UI flattens (Gold's own UI did exactly this).
+4. **The descriptor end ships with Story 6.** Once ends are
+   sets, add "describe this link" in LinkCreator → named end
+   holding a fresh note work (winfe's pattern, FR-37 derived
+   works make the note portable). This gives every link a
+   human-readable label cheaply — the winfe list window's core
+   feature.
+5. **Comparison (Story 5) is the payoff view** — transpointing
+   windows for n ends. Sequence AFTER Story 6 lands: compare
+   needs multi-span ends to have anything to show for gathered
+   quotations.
+6. **Destructive edges.** Removing an end from a 3-ended link
+   leaves a 2-ended link (already Story 1 acceptance); removing
+   a SPAN from a multi-span end with 1 span left removes the end
+   (an end cannot be empty — Gold's check requires every
+   non-type key to hold a ref; an empty end-set is not a link
+   end). Deleting a link deletes its descriptor end's note work
+   ONLY if the work is otherwise unreferenced (reachability,
+   consistent with archive-first GC stance).
+
 ## Non-goals
 
 - Executable type-behaviors (Green's presentation programs) —
