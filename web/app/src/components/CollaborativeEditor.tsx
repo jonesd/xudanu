@@ -739,7 +739,10 @@ function drawOverlay(
       ctx.restore();
 
       ctx.save();
-      ctx.fillStyle = isResolved ? color + "06" : color + "12";
+      // Readability fix (demo feedback): the old 12%-alpha fill let
+      // the document text bleed through under the label text —
+      // near-opaque so labels stay readable over long lines.
+      ctx.fillStyle = isResolved ? color + "CC" : color + "E6";
       ctx.strokeStyle = isResolved ? color + "30" : color + "90";
       if (isResolved) ctx.setLineDash([3, 2]);
       ctx.lineWidth = 1;
@@ -2405,6 +2408,11 @@ export function CollaborativeEditor({
               {hoveredMarker.endSetTotal != null && hoveredMarker.endSetTotal > 1 && (
                 <div className="marker-tooltip-endset" style={{ fontSize: 11, color: "#7ee787", marginTop: 2 }}>
                   {"\u25E6"} gathered passage {hoveredMarker.endSetIndex ?? "?"} of {hoveredMarker.endSetTotal}
+                </div>
+              )}
+              {hoveredMarker.totalEnds != null && hoveredMarker.totalEnds > 2 && (
+                <div className="marker-tooltip-ends" style={{ fontSize: 11, color: "#58a6ff", marginTop: 2 }}>
+                  {"\u21C4"} a {hoveredMarker.totalEnds}-ended connection — this is the end in this document; the others live elsewhere
                 </div>
               )}
               {hoveredMarker.linkTypeId !== 6 && hoveredMarker.excerpt && (

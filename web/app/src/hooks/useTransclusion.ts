@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import type { CrdtSyncClient, LinkEntry, TransclusionMarker, WorkListEntry, BacklinkEntry, LinkTypeInfo } from "../api/crdt_sync";
 import { resolveMarkerPositions, localEndSetMembers, refSpan } from "../link-markers";
+import { linkEnds } from "../link-ends";
 
 export interface PendingTransclusion {
   sourceWorkId: number;
@@ -198,6 +199,10 @@ export function useTransclusion(): TransclusionState {
           // FR-40 L4: the descriptor end's excerpt (winfe pattern).
           const descriptorExcerpt =
             (link.named_ends ?? []).find(([name]) => name === "Descriptor")?.[1]?.excerpt ?? undefined;
+          // FR-40: end count — the in-document view shows only the
+          // local end; the count tells the reader how far the
+          // connection reaches (linkEnds already merges end_sets).
+          const totalEnds = linkEnds(link).length;
           const fallback = (fallbackResults[i].status === "fulfilled") ? (fallbackResults[i] as PromiseFulfilledResult<{ start: number; end: number; }[]>).value : [];
           const webTitle = isWebLink ? (remoteRef?.excerpt || "Web Link") : title;
           const crossServerRef = remoteRef?.cross_server_ref
@@ -239,6 +244,7 @@ export function useTransclusion(): TransclusionState {
                 endSetIndex: member.index,
                 endSetTotal: member.total,
                 descriptorExcerpt,
+                totalEnds,
               });
             }
             continue;
@@ -262,6 +268,7 @@ export function useTransclusion(): TransclusionState {
               sourceSpanStart: remoteRef?.start_position ?? null,
               sourceSpanEnd: remoteRef?.end_position ?? null,
                 descriptorExcerpt,
+                totalEnds,
             });
           }
         }
