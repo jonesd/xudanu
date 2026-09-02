@@ -131,6 +131,7 @@ Other subcommands: `init | verify | rebuild-manifest | verify-security-log | pre
 | `rebuild.sh` | Clean rebuild of backend + frontend |
 | `pre-push.sh` | Fast pre-push static checks (CI runs the full suites) |
 | `demo-links-seed.mjs` | Seed a live server with the FR-40 links demo corpus (gathered end-sets, three-ended, comment-on-link, descriptor). `node scripts/demo-links-seed.mjs [ws-url]` against a `--edit-policy public-sandbox` server |
+| `demo-links-playground.mjs` | Seed the INTERACTIVE Links Playground work — the document's own text walks the reader through gather/link/describe/comment/compare on the real editor. Same usage as demo-links-seed |
 | `demo-network.sh` | FR-41: bring up the seeded 3-node federation demo network + story smoke test |
 | `ws-link-probe.mjs` | Drive one cross-server link_create against a node, report notify outcome + timing as JSON |
 | `screenshot-capture.mjs` | Headless screenshot capture (docs/screenshots/) |
