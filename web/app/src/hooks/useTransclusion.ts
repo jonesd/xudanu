@@ -199,10 +199,23 @@ export function useTransclusion(): TransclusionState {
           // FR-40 L4: the descriptor end's excerpt (winfe pattern).
           const descriptorExcerpt =
             (link.named_ends ?? []).find(([name]) => name === "Descriptor")?.[1]?.excerpt ?? undefined;
-          // FR-40: end count — the in-document view shows only the
-          // local end; the count tells the reader how far the
-          // connection reaches (linkEnds already merges end_sets).
-          const totalEnds = linkEnds(link).length;
+          // FR-40: end count + seat letters — the in-document view
+          // shows only the LOCAL end; the letter ("B of 3") and the
+          // other seats' titles tell the reader where the rest of
+          // the committee sits (linkEnds already merges end_sets).
+          const allEnds = linkEnds(link);
+          const totalEnds = allEnds.length;
+          const localEndName = isOrigin ? "origin" : "destination";
+          const localEndIdx = allEnds.findIndex(
+            (e) =>
+              e.name === localEndName ||
+              (localEndName === "destination" && e.name === "RightEnd"),
+          );
+          const endLabel =
+            localEndIdx >= 0 ? String.fromCharCode(65 + localEndIdx) : undefined;
+          const otherEndTitles = allEnds
+            .filter((e) => e.name !== localEndName && e.name !== "RightEnd")
+            .map((e) => e.excerpt?.slice(0, 24) || e.workId?.toString(16) || "?");
           const fallback = (fallbackResults[i].status === "fulfilled") ? (fallbackResults[i] as PromiseFulfilledResult<{ start: number; end: number; }[]>).value : [];
           const webTitle = isWebLink ? (remoteRef?.excerpt || "Web Link") : title;
           const crossServerRef = remoteRef?.cross_server_ref
@@ -245,6 +258,8 @@ export function useTransclusion(): TransclusionState {
                 endSetTotal: member.total,
                 descriptorExcerpt,
                 totalEnds,
+                endLabel,
+                otherEndTitles,
               });
             }
             continue;
@@ -269,6 +284,8 @@ export function useTransclusion(): TransclusionState {
               sourceSpanEnd: remoteRef?.end_position ?? null,
                 descriptorExcerpt,
                 totalEnds,
+                endLabel,
+                otherEndTitles,
             });
           }
         }

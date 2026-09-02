@@ -407,6 +407,12 @@ export interface TransclusionMarker {
    * in-document view only shows the LOCAL end — this count tells
    * the reader the connection reaches further). */
   totalEnds?: number;
+  /** FR-40 seat letters: which END of the link this marker is
+   * ("A", "B", ... — the committee-seat identity, stable across
+   * tooltip, panel, and compare; derived from linkEnds order). */
+  endLabel?: string;
+  /** The other seats' document titles, for the tooltip. */
+  otherEndTitles?: string[];
 }
 
 export interface WorkListEntry {
