@@ -545,6 +545,14 @@ Effort: L1/L6 are days; L2-L5 are hours each.
   other readers (owner-filtered listing); course/publish flows now
   publish. The panel header says "through this work" but lists all
   trails — wording/filter mismatch open.
+- **End-vocabulary trial (2026-09-02)**: 'end' alone confused
+  readers (role-vs-document conflation). 'Seat' (committee
+  metaphor) rejected in hands-on use. Current trial: the LINK IS
+  A SENTENCE WITH BLANKS — the type is the verb, ends are the
+  blanks, gathered ends fill one blank jointly. Tooltip now reads
+  'this fills blank A of 3 — other blanks: ...'. Decision pending
+  the reader's verdict; whichever word sticks becomes the UI
+  vocabulary everywhere.
 - Click-to-source vs caret placement tension on marked spans —
   offered ⌘-click modifier, decision pending.
 

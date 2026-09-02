@@ -2412,9 +2412,9 @@ export function CollaborativeEditor({
               )}
               {hoveredMarker.totalEnds != null && hoveredMarker.totalEnds > 2 && (
                 <div className="marker-tooltip-ends" style={{ fontSize: 11, color: "#58a6ff", marginTop: 2 }}>
-                  {"\u21C4"} seat {hoveredMarker.endLabel ?? "?"} of {hoveredMarker.totalEnds}
+                  {"\u21C4"} this fills blank {hoveredMarker.endLabel ?? "?"} of {hoveredMarker.totalEnds}
                   {hoveredMarker.otherEndTitles && hoveredMarker.otherEndTitles.length > 0 && (
-                    <> — other seats: {hoveredMarker.otherEndTitles.join(", ")}</>
+                    <> — other blanks: {hoveredMarker.otherEndTitles.join(", ")}</>
                   )}
                 </div>
               )}
