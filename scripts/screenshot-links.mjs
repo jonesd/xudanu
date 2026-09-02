@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 // screenshot-links.mjs — the FR-40 links screenshot collector (GitHub docs).
-// Captures the Multi-Link Showcase work: stacked labels, gathered-end
-// chips + tooltip, the bottom-bar strip, and the Connections panel.
+//
+// Progression by design: ONE link first, then ONE gathered end, then the
+// complex interacting case, then the panel — dense multi-link renderings
+// are illegible to untrained eyes, so each frame teaches one concept.
 //
 // Usage: node scripts/screenshot-links.mjs [wsBase] [outDir]
 //   wsBase default http://127.0.0.1:8081 (the static demo build)
 import { createRequire } from "node:module";
 const require = createRequire("/Users/jonesd/code/xu-gold-2026/web/app/");
 const { chromium } = require("playwright-core");
-import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import { mkdirSync, existsSync, readFileSync } from "node:fs";
 
 const BASE = process.argv[2] ?? "http://127.0.0.1:8081";
 const outDir = process.argv[3] ?? "/Users/jonesd/code/xu-gold-2026/docs/screenshots-links";
@@ -34,10 +36,10 @@ mkdirSync(outDir, { recursive: true });
 const browser = await chromium.launch({ executablePath, headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
 
-async function openShowcase() {
+async function openWork(title) {
   await page.goto(BASE, { waitUntil: "networkidle", timeout: 20000 });
   await page.waitForTimeout(1500);
-  const item = page.locator("text=Multi-Link Showcase >> visible=true").first();
+  const item = page.locator(`text=${title} >> visible=true`).first();
   await item.waitFor({ state: "visible", timeout: 10000 });
   await item.click();
   await page.waitForTimeout(2500);
@@ -53,19 +55,9 @@ async function shot(name, action) {
   }
 }
 
-await openShowcase();
-
-// 1. Stacked labels: the overlap trio at the top of the work.
-await shot("links-label-stacking", async () => {
-  await page.mouse.move(400, 300); // clear hover
-  await page.waitForTimeout(400);
-});
-
-// The editor virtualizes/off-screens content: wheel-scroll the
-// editor area until the target text enters the DOM, then use it.
-async function scrollToText(needle) {
-  // Raw-DOM: find the text node's element, scrollIntoView, and read
-  // its viewport rect (bypasses Playwright visibility heuristics).
+// Raw-DOM locate: TreeWalker for the text, scrollIntoView, viewport rect
+// (Playwright's visibility heuristics reject text under the canvas overlay).
+async function rectOf(needle) {
   const rect = await page.evaluate((n) => {
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     let node;
@@ -84,24 +76,34 @@ async function scrollToText(needle) {
   return rect;
 }
 
-// 2. Gathered end: hover a member for the "passage i of N" tooltip
-//    and the gutter chips.
-await shot("links-gathered-end-tooltip", async () => {
-  const box = await scrollToText("performance repeats daily");
-  await page.mouse.move(box.x + 10, box.y + box.height / 2);
-  await page.waitForTimeout(900); // tooltip fade-in
+// ── 1. ONE link: the whole concept in one frame ─────────────────────────
+await openWork("One Clean Link");
+await shot("01-one-link", async () => {
+  await rectOf("which is connected to another document");
 });
 
-// 3. Bottom bar: click inside a member so the caret drives the
-//    gathered-end strip with its numbered jump buttons.
-await shot("links-bottom-bar", async () => {
-  const box = await scrollToText("dares own the schedule");
-  await page.mouse.click(box.x + 15, box.y + box.height / 2);
-  await page.waitForTimeout(900);
+// ── 2. ONE gathered end: Lesson 3 explains itself in its own text ──────
+await openWork("Links Lesson 3");
+await shot("02-gathered-end", async () => {
+  await rectOf("Hover any of the three");
 });
 
-// 4. Connections panel: rows with "N passages", type badges, chips.
-await shot("links-connections-panel", async () => {
+// 2b. The tooltip on a member (aim at the UNDERLINE strip at the line's
+// bottom, where the canvas hit-zones live).
+await shot("03-gathered-tooltip", async () => {
+  const r = await rectOf("Hover any of the three");
+  await page.mouse.move(r.x + r.width * 0.4, r.y + r.height - 2);
+  await page.waitForTimeout(1000);
+});
+
+// ── 3. The complex case: labels interacting on shared lines ────────────
+await openWork("Multi-Link Showcase");
+await shot("04-links-interacting", async () => {
+  await rectOf("The whole of this sentence");
+});
+
+// ── 4. The Connections panel: rows as the legend ───────────────────────
+await shot("05-connections-panel", async () => {
   const linksTab = page.locator('button:has-text("Links")').first();
   if (await linksTab.isVisible({ timeout: 4000 }).catch(() => false)) {
     await linksTab.click();
