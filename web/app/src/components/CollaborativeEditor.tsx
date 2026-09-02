@@ -20,6 +20,7 @@ import {
   assignLinkLanes,
   clusterOverlappingMarkers,
   filterMarkersByType,
+  markerFocusAlpha,
   placeDescBoxes,
   presentLinkTypeIds,
 } from "../link-markers";
@@ -289,6 +290,7 @@ function drawOverlay(
   showCompound: boolean = true,
   showLinkDescriptions: boolean = false,
   linkDescMap: Map<number, { text: string; resolved: boolean }> = new Map(),
+  focusLinkId: number | null = null,
 ): MarkerHitZone[] {
   const hitZones: MarkerHitZone[] = [];
   authorBarZones.length = 0;
@@ -560,6 +562,10 @@ function drawOverlay(
   for (let mi = 0; mi < markers.length; mi++) {
     if (collapsed.has(mi)) continue;
     const marker = markers[mi];
+    // FR-40 solo/focus: hovering a connection dims every other
+    // link's rendering; the hovered link (and, for gathered ends,
+    // ALL its member passages) stands alone.
+    ctx.globalAlpha = markerFocusAlpha(marker, focusLinkId);
     const lane = lanes.get(mi) ?? 0;
     // Stale-offset recovery: stored spans were computed when the link
     // was created; revised text can leave them pointing at nothing
@@ -682,6 +688,7 @@ function drawOverlay(
         height,
       });
     }
+    ctx.globalAlpha = 1;
 
     if (showLinkDescriptions && typeStyle) {
       const textRightX = lastRect.right - rect.left;
@@ -698,12 +705,14 @@ function drawOverlay(
     }
   }
 
+  ctx.globalAlpha = 1;
   if (showLinkDescriptions && pendingDescs.length > 0) {
     // FR-40 demo feedback fix: deterministic, pairwise-disjoint
     // placement (was: arbitrary tie order + single-pass push-down
     // that could land on an already-passed box).
     const placedDescs = placeDescBoxes(pendingDescs, DESC_BOX_HEIGHT, DESC_BOX_GAP);
     for (const { desc, y: boxY } of placedDescs) {
+      ctx.globalAlpha = markerFocusAlpha(desc.marker, focusLinkId);
       if (desc.firstTop + DESC_BOX_HEIGHT < viewportTop || desc.firstTop > viewportBottom) continue;
       const boxH = DESC_BOX_HEIGHT;
 
@@ -770,6 +779,7 @@ function drawOverlay(
       }
       ctx.restore();
 
+      ctx.globalAlpha = 1;
       hitZones.push({
         marker: desc.marker,
         x: boxX,
@@ -783,6 +793,7 @@ function drawOverlay(
   // FR-4.5: density pills collapse DENSITY_THRESHOLD+ overlapping links into
   // one summary badge; clicking the pill expands the cluster.
   for (const pill of densityPills) {
+    ctx.globalAlpha = markerFocusAlpha(pill.first, focusLinkId);
     const drawStart = Math.max(pill.start, 0);
     const drawEnd = Math.min(pill.end, textLen);
     if (drawStart >= drawEnd) continue;
@@ -1295,16 +1306,16 @@ export function CollaborativeEditor({
         cancelAnimationFrame(rafId);
         rafId = requestAnimationFrame(() => {
           lastDraw = performance.now();
-          hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap);
+          hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null);
         });
         return;
       }
       cancelAnimationFrame(rafId);
       lastDraw = now;
-      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap);
+      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null);
     };
 
-    hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap);
+    hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null);
 
     const ro = new ResizeObserver(redraw);
     ro.observe(container);
@@ -1317,7 +1328,7 @@ export function CollaborativeEditor({
       scrollPending = true;
       rafId = requestAnimationFrame(() => {
         scrollPending = false;
-        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap);
+        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null);
       });
     };
     container.addEventListener("scroll", scrollRedraw, { passive: true });
@@ -1331,7 +1342,7 @@ export function CollaborativeEditor({
   // rendered (link load is deferred only 200ms; text sync can be
   // slower) — the draw then finds no text nodes, paints nothing, and
   // without a text-triggered redraw the underlines never appear.
-  }, [attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, displayText, buffer]);
+  }, [attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, displayText, buffer, hoveredMarker]);
 
   // Highlight a range when user clicks a transclusion in the Connections panel
   useEffect(() => {
@@ -1425,7 +1436,7 @@ export function CollaborativeEditor({
       const el = editorRef.current;
       const canvas = overlayRef.current;
       if (!el || !canvas) return;
-      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap);
+      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null);
     }, 200);
     return () => clearInterval(interval);
   }, [recentChanges, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, effectiveShowAttribution, expandedClusters]);
@@ -1704,7 +1715,7 @@ export function CollaborativeEditor({
       const el = editorRef.current;
       const canvas = overlayRef.current;
       if (el && canvas) {
-        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap);
+        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null);
       }
     }, 400);
     let newText = hasInlineTransclusions ? getEditableText(el) : getTextContent(el);

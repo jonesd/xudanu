@@ -527,9 +527,10 @@ Effort: L1/L6 are days; L2-L5 are hours each.
   interacting are hard to understand immediately. Consequences:
   documentation teaches one concept per frame (see
   docs/links-gallery.md — one link → one gathered end → the
-  complex case); the product should keep earning legibility
-  (candidate: a solo/focus mode that dims other connections while
-  hovering one).
+  complex case); **solo/focus mode IMPLEMENTED** — hovering a
+  connection dims every other link's rendering (underlines, bars,
+  labels, pills; gathered ends stay whole); the hovered link
+  stands alone against a quieted page.
 - **Label overlap** — fixed (78ec9e53): deterministic
   pairwise-disjoint placement.
 - **Gather discoverability** — fixed (ec981dd0): green button;

@@ -280,3 +280,31 @@ describe("placeDescBoxes (label collision fix)", () => {
     expect(placed[1].y).toBe(100 + H + GAP);
   });
 });
+
+// ---- FR-40 solo/focus dimming ----
+
+import { markerFocusAlpha, FOCUS_DIM_ALPHA } from "../link-markers";
+
+describe("markerFocusAlpha (solo/focus dimming)", () => {
+  it("no focus: everything full alpha", () => {
+    expect(markerFocusAlpha({ linkId: 5 }, null)).toBe(1);
+  });
+
+  it("the focused link and its members stay full; other links dim", () => {
+    expect(markerFocusAlpha({ linkId: 5 }, 5)).toBe(1);
+    expect(markerFocusAlpha({ linkId: 9 }, 5)).toBe(FOCUS_DIM_ALPHA);
+  });
+
+  it("gathered members share the link id, so the whole end stays lit", () => {
+    // Three members of one gathered end all carry linkId 7.
+    for (const m of [{ linkId: 7 }, { linkId: 7 }, { linkId: 7 }]) {
+      expect(markerFocusAlpha(m, 7)).toBe(1);
+    }
+    expect(markerFocusAlpha({ linkId: 8 }, 7)).toBe(FOCUS_DIM_ALPHA);
+  });
+
+  it("transclusions and compounds never dim; focus on them dims nothing", () => {
+    expect(markerFocusAlpha({ linkId: 0 }, 5)).toBe(1);
+    expect(markerFocusAlpha({ linkId: 5 }, 0)).toBe(1);
+  });
+});

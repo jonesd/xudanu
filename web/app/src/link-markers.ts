@@ -222,3 +222,23 @@ export function placeDescBoxes<T extends DescBoxInput>(
   }
   return out;
 }
+
+/**
+ * FR-40 solo/focus mode: hovering a connection dims every OTHER
+ * link's rendering (underlines, margin bars, labels, badges) so the
+ * hovered link — and, for gathered ends, ALL its member passages —
+ * stands alone against a quieted page. The untrained-eye fix:
+ * density stays, confusion goes.
+ */
+export const FOCUS_DIM_ALPHA = 0.22;
+
+export function markerFocusAlpha(
+  marker: Pick<TransclusionMarker, "linkId">,
+  focusLinkId: number | null,
+): number {
+  // No focus, or focus on a non-link surface: nothing dims.
+  if (focusLinkId == null || focusLinkId === 0) return 1;
+  // Transclusions/compounds (linkId 0) never participate.
+  if (marker.linkId === 0) return 1;
+  return marker.linkId === focusLinkId ? 1 : FOCUS_DIM_ALPHA;
+}

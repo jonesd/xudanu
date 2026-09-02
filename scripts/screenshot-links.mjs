@@ -102,6 +102,14 @@ await shot("04-links-interacting", async () => {
   await rectOf("The whole of this sentence");
 });
 
+// 3b. Solo/focus: hovering one connection dims every other link —
+// the untrained-eye fix for the dense frame above.
+await shot("04b-focus-dimming", async () => {
+  const r = await rectOf("The performance repeats daily");
+  await page.mouse.move(r.x + r.width * 0.4, r.y + r.height - 2);
+  await page.waitForTimeout(1000);
+});
+
 // ── 4. The Connections panel: rows as the legend ───────────────────────
 await shot("05-connections-panel", async () => {
   const linksTab = page.locator('button:has-text("Links")').first();

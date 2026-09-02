@@ -48,6 +48,16 @@ is dense — to an untrained eye, genuinely hard — which is why the
 labels stack in a fixed order with clear gaps, and why the next
 frame matters.
 
+## 4b. The same frame, one connection hovered
+
+![Focus dimming](screenshots-links/04b-focus-dimming.png)
+
+The fix for that density: **hover any connection and every other
+link dims away** — its underline, its labels, its margin marks —
+leaving the hovered link, and for gathered ends *all* its member
+passages, standing alone against a quieted page. The density
+stays; the confusion goes.
+
 ## 5. The Links panel — the legend
 
 ![Connections panel](screenshots-links/05-connections-panel.png)
