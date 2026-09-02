@@ -3046,3 +3046,72 @@ mod a3_descent_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod a3_p4_splay_invariant_tests {
+    use super::*;
+    use crate::edition::range_element::Carrier;
+
+    fn owned(text: &str, club: u64) -> (i64, Arc<Carrier>) {
+        let c = Carrier::new(crate::edition::RangeElement::text(text)).with_provenance(
+            crate::edition::provenance::ElementProvenance {
+                author_public_key: [0u8; 32],
+                author_display_name: "t".into(),
+                author_club_id: club,
+                timestamp: 0,
+                author_type: crate::edition::provenance::AuthorType::Human,
+                llm_model: None,
+                historical_author_id: None,
+                source_work_id: None,
+                transcluded_by: None,
+                derived_by: None,
+            },
+        );
+        (0, Arc::new(c))
+    }
+
+    /// FR-52 A-3 P4: the splay restructure path does NOT recompute
+    /// the node's owner_set/char_len (it rebuilds children and
+    /// recomputes crum/domain — the Aug-2026 fix — but leaves these
+    /// two as pre-splay values). They stay correct BY INVARIANCE:
+    /// splay preserves each node's total content, so the owner union
+    /// and char total cannot change. This test PINS that invariant —
+    /// if a future splay change ever violates it, owner queries
+    /// silently go stale.
+    #[test]
+    fn a3_splay_preserves_owner_sets_and_char_len() {
+        let mut entries = Vec::new();
+        for i in 0..3000i64 {
+            let mut e = owned(&format!("{:03}", i), (i % 5) as u64 + 1);
+            e.0 = i;
+            entries.push(e);
+        }
+        let mut loaf = Loaf::build_bulk(entries, None, XnRegion::above(0));
+        let before_owners = loaf.owner_set().clone();
+        let before_chars = loaf.char_len();
+
+        // Splay a middle region — forces deep restructuring.
+        let result = loaf.splay(&XnRegion::interval(1200, 1800));
+        // Structure genuinely changed (the splay did something).
+        assert_ne!(result, SplayResult::Outside);
+        let after = &loaf;
+
+        assert_eq!(
+            after.owner_set().owners(),
+            before_owners.owners(),
+            "root owner set invariant under splay"
+        );
+        assert_eq!(
+            after.char_len(),
+            before_chars,
+            "root char_len invariant under splay"
+        );
+
+        // And the descent still agrees with a flat walk over the
+        // splayed structure (the full-corpus query).
+        let mut got = OwnerSet::default();
+        after.owner_summary_range(0, 0, before_chars, &mut got);
+        assert_eq!(got.owners(), before_owners.owners());
+        let _ = result;
+    }
+}

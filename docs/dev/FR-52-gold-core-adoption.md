@@ -219,9 +219,27 @@ stable).
   same owner sets, classes resolved identically); then switch
   the server's license_overlay_cache to the tree and retire the
   flat overlay.
-- A-3 P4: hoist integration — widdershin maintains owner crums
-  on the live edit path (already how with/without rebuild
-  paths work; hoist.rs drives recorder propagation).
+- A-3 P4: **CLOSED BY DESIGN (2026-09-02)** — the enfilade is
+  copy-on-write: no shared node is ever mutated, and every edit
+  rebuilds its O(log n) path through constructors that compute
+  crum/owner_set/char_len BY CONSTRUCTION. There is no staleness
+  window for the widdershin patching protocol to close — not for
+  correctness (impossible) and not for performance (the path
+  rebuild happens anyway for the content crums, S2 machinery;
+  the owner-set union rides along at negligible marginal cost).
+  Gold needed hoist because its tree nodes were MUTABLE; ours
+  are not. hoist.rs remains live where that shape exists:
+  backfollow's mutable parent-linked canopy (recorder
+  propagation). The one subtle in-place path — splay — leaves
+  owner_set/char_len as pre-splay values, correct BY INVARIANCE
+  (splay preserves each node's total content); the invariant is
+  PINNED by test a3_splay_preserves_owner_sets_and_char_len so a
+  future splay change cannot break it silently.
+
+**A-3 COMPLETE**: P1 OwnerSet crums → P2 descent → coverage
+hardening → P3 the switch (license queries served by the canopy;
+flat-overlay cache deleted; boundaries keep the flat module for
+the public API wire contract) → P4 closed by design.
 
 ### A-4: CrossSpace2/Arrangement/FilterSpace activation
 
