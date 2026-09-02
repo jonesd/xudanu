@@ -3747,7 +3747,11 @@ export function WorkspaceShell() {
                       style={{ color: "var(--green)", borderColor: "var(--green)" }}
                       disabled={!selectionRange || gatherableEnds(transclusion.links, workBeId ?? -1).length === 0}
                       onClick={() => setGatherOpen((g) => !g)}
-                      title="Gather this passage into an existing end — one connection, many passages"
+                      title={
+                        gatherableEnds(transclusion.links, workBeId ?? -1).length === 0
+                          ? "Gather adds this passage to an existing end — no links on this work yet, so create one with Link first"
+                          : "Gather this passage into an existing end — one connection, many passages"
+                      }
                     >
                       Gather
                     </button>
