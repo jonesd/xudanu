@@ -644,7 +644,7 @@ pub struct Server {
     pub(crate) system_clubs: SystemClubs,
     pub(crate) operation_counter: u64,
     admin: AdminState,
-    links: HashMap<BeId, LinkState>,
+    pub(crate) links: HashMap<BeId, LinkState>,
     work_to_links: HashMap<BeId, Vec<BeId>>,
     /// FR-40 enfiladic matching: the link canopy (derived index;
     /// rebuilt at restore and after WAL replay, never journaled).
@@ -702,7 +702,7 @@ pub struct Server {
     write_barrier: Arc<WriteBarrier>,
     starred_works: HashMap<BeId, HashSet<BeId>>,
     user_pins: HashMap<BeId, HashSet<String>>,
-    trails: HashMap<BeId, TrailState>,
+    pub(crate) trails: HashMap<BeId, TrailState>,
     trail_counter: BeId,
     compound_editions: HashMap<BeId, crate::edition::compound::CompoundEdition>,
     compound_dirty: HashSet<BeId>,
@@ -762,7 +762,7 @@ pub struct Server {
 }
 
 #[derive(Debug, Clone)]
-struct TrailStop {
+pub(crate) struct TrailStop {
     work_id: BeId,
     char_start: Option<u64>,
     char_end: Option<u64>,
@@ -771,14 +771,14 @@ struct TrailStop {
 }
 
 #[derive(Debug, Clone)]
-struct TrailState {
+pub(crate) struct TrailState {
     trail_id: BeId,
     owner_club: BeId,
-    name: String,
+    pub(crate) name: String,
     introduction: Option<String>,
     categories: Vec<String>,
-    published: bool,
-    stops: Vec<TrailStop>,
+    pub(crate) published: bool,
+    pub(crate) stops: Vec<TrailStop>,
     created_at: u64,
     updated_at: u64,
     /// FR-37 Phase 4c: the derived WORK presenting this trail as a
@@ -826,8 +826,8 @@ pub struct ServerHealth {
 }
 
 #[derive(Debug)]
-struct LinkState {
-    link: HyperLink,
+pub(crate) struct LinkState {
+    pub(crate) link: HyperLink,
     origin: BeId,
     destination: BeId,
     /// Home document (FR-40 Story 3): the work this link lives in.

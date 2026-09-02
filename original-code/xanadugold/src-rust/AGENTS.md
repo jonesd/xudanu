@@ -131,6 +131,7 @@ Other subcommands: `init | verify | rebuild-manifest | verify-security-log | pre
 | `rebuild.sh` | Clean rebuild of backend + frontend |
 | `pre-push.sh` | Fast pre-push static checks (CI runs the full suites) |
 | `demo-links-seed.mjs` | Seed a live server with the FR-40 links demo corpus (gathered end-sets, three-ended, comment-on-link, descriptor). `node scripts/demo-links-seed.mjs [ws-url]` against a `--edit-policy public-sandbox` server |
+| `--seed-links-demo` (server flag) | **Ships with the binary**: `xudanu-server run <addr> <dir> --edit-policy public-sandbox --seed-links-demo` seeds the Links Course (5 lessons, sandbox, companions, published trail) natively — no Node, no scripts; end users with a release tarball recreate the demo by wiping the dir and restarting. Idempotent |
 | `demo-links-reset.sh` | **One command to a fresh links demo** — wipes the demo data dir, restarts :8081 (public-sandbox), runs every seed (corpus, course, playground, gallery works) |
 | `demo-links-course.mjs` | The progressive Links COURSE: five lessons simple→complex (two-ended, three-ended, gathered sets, comment-on-link, reading toolkit) + sandbox, each with a live demo and one task — wired as a trail. Same usage |
 | `demo-links-playground.mjs` | Seed the INTERACTIVE Links Playground work — the document's own text walks the reader through gather/link/describe/comment/compare on the real editor. Same usage as demo-links-seed |

@@ -28,6 +28,7 @@ pub mod rate_limiter;
 #[cfg(feature = "server")]
 pub mod ollama;
 #[cfg(feature = "server")]
+pub mod seed_demo;
 pub mod server;
 pub mod server_directory;
 #[cfg(feature = "server")]
