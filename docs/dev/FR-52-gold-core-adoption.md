@@ -181,6 +181,66 @@ integration point is "attach to Loaf" which touches orgl.rs
 construction paths (S2's territory — but S2's machinery is proven
 stable).
 
+### A-3 implementation plan (2026-09-02 survey, branch fr52-a3-canopy-enfilade)
+
+**Survey findings:**
+- `Loaf` (orgl.rs:77) already maintains per-node content crums
+  through every construction path (`compute_leaf_crum_parts`,
+  `compute_split_crum`, `compute_dsp_crum`) — the license canopy
+  mirrors this exact pattern.
+- backfollow is the live precedent: `CanopyCrumData` +
+  `BertProp` + `propagate_flags` already run in production for
+  content-reuse flags.
+- **Critical constraint (from FR-38's own design):** the overlay
+  resolves owner→license at QUERY TIME (`query(start, end,
+  owner_license: F)`) so re-licensing never rebuilds. The tree
+  therefore caches what is STABLE — owner CLUB SETS from entry
+  provenance — never license classes. Baking license bits into
+  the tree would regress FR-38's improvement over Gold. Hoist/
+  widdershin maintains the owner sets on edit.
+
+**Design: per-node `OwnerCrum`** (parallel to the content crum):
+- Leaf: the distinct owner clubs of its entries' provenance.
+- Split/Dsp: union of children.
+- Query: descend; subtree fully inside the span → merge its
+  cached owner set (license classes resolved via the caller's
+  lookup at query time); partial → descend. Distinct-owner
+  summary in O(subtree-hits + log n) instead of O(runs).
+- PartialEq: owner crums derive from entry provenance
+  (content-adjacent, deterministic) — safe to include.
+
+**Phases:**
+- A-3 P1: `OwnerCrum` on Loaf, maintained in all crum
+  construction paths; unit tests for maintenance invariants.
+- A-3 P2: tree-descent `owner_summary(start, end)` on
+  Edition/OrglRoot.
+- A-3 P3: armor — equivalence vs the flat FR-38 overlay
+  (randomized editions/queries, incl. re-license mutations:
+  same owner sets, classes resolved identically); then switch
+  the server's license_overlay_cache to the tree and retire the
+  flat overlay.
+- A-3 P4: **CLOSED BY DESIGN (2026-09-02)** — the enfilade is
+  copy-on-write: no shared node is ever mutated, and every edit
+  rebuilds its O(log n) path through constructors that compute
+  crum/owner_set/char_len BY CONSTRUCTION. There is no staleness
+  window for the widdershin patching protocol to close — not for
+  correctness (impossible) and not for performance (the path
+  rebuild happens anyway for the content crums, S2 machinery;
+  the owner-set union rides along at negligible marginal cost).
+  Gold needed hoist because its tree nodes were MUTABLE; ours
+  are not. hoist.rs remains live where that shape exists:
+  backfollow's mutable parent-linked canopy (recorder
+  propagation). The one subtle in-place path — splay — leaves
+  owner_set/char_len as pre-splay values, correct BY INVARIANCE
+  (splay preserves each node's total content); the invariant is
+  PINNED by test a3_splay_preserves_owner_sets_and_char_len so a
+  future splay change cannot break it silently.
+
+**A-3 COMPLETE**: P1 OwnerSet crums → P2 descent → coverage
+hardening → P3 the switch (license queries served by the canopy;
+flat-overlay cache deleted; boundaries keep the flat module for
+the public API wire contract) → P4 closed by design.
+
 ### A-4: CrossSpace2/Arrangement/FilterSpace activation
 
 CrossSpace2 is complete: full `Space` impl over (A×B) with cross

@@ -104,11 +104,6 @@ pub(crate) struct WorkState {
     content_start_line: Option<u64>,
     content_end_line: Option<u64>,
     source_fingerprint: Option<crate::server::source_matcher::MinHashSignature>,
-    /// Cached license overlay (FR-38 Phase 2) with the content
-    /// generation it was built from. Invalidated implicitly: any
-    /// mutation bumps dirty_gen, so a mismatching generation triggers
-    /// rebuild on next query. Derived data only — never persisted.
-    license_overlay_cache: Option<(u64, crate::edition::license_overlay::LicenseOverlay)>,
 }
 
 impl WorkState {
@@ -3985,7 +3980,6 @@ impl Server {
             content_start_line: None,
             content_end_line: None,
             source_fingerprint: None,
-            license_overlay_cache: None,
         };
         self.works.insert(be_id, ws);
 
@@ -6384,7 +6378,6 @@ impl Server {
             content_start_line: Some(content_start),
             content_end_line: Some(content_end),
             source_fingerprint: Some(crate::server::source_matcher::compute_minhash(&text)),
-            license_overlay_cache: None,
         };
         self.works.insert(be_id, ws);
 
@@ -11418,7 +11411,6 @@ impl Server {
             content_start_line: None,
             content_end_line: None,
             source_fingerprint: None,
-            license_overlay_cache: None,
         };
         self.works.insert(be_id, ws);
         self.demo_work_id = Some(be_id);
@@ -12123,7 +12115,6 @@ impl Server {
                         content_start_line: work_entry.content_start_line,
                         content_end_line: work_entry.content_end_line,
                         source_fingerprint,
-                        license_overlay_cache: None,
                     };
                     self.works.insert(work_entry.be_id, ws);
                 }
@@ -13002,56 +12993,40 @@ impl Server {
             })
     }
 
-    /// License classes for a char span of a work (FR-38 Phase 2):
-    /// served from the per-work overlay, rebuilt lazily when the
-    /// content generation has moved. Owner -> license resolution
-    /// happens at query time (re-licensing never rebuilds the index);
-    /// owners resolve through their personal work's license, falling
-    /// back to the containing work's license, then UNKNOWN (safe
-    /// default).
+    /// License classes for a char span of a work (FR-38 Phase 2,
+    /// FR-52 A-3 P3): served by the ENFILADE CANOPY descent —
+    /// O(log n + hits), maintained incrementally through every
+    /// tree operation, never rebuilt per generation (the flat
+    /// overlay cache is retired). Owner -> license resolution
+    /// still happens at query time (re-licensing never rebuilds
+    /// anything); owners resolve through their personal work's
+    /// license, falling back to the containing work's license,
+    /// then UNKNOWN (safe default).
     pub fn work_span_license_classes(
-        &mut self,
+        &self,
         work_id: BeId,
         char_start: usize,
         char_end: usize,
     ) -> Result<crate::edition::SpanLicenseSummary, ServerError> {
-        let generation = self
-            .work_generation(work_id)
+        let ws = self
+            .works
+            .get(&work_id)
             .ok_or(ServerError::WorkNotFound(work_id))?;
+        let owners = ws
+            .work()
+            .current_edition()
+            .owner_summary(char_start, char_end);
 
-        // Rebuild if the cached overlay predates the current content.
-        let stale = self
-            .works
-            .get(&work_id)
-            .unwrap()
-            .license_overlay_cache
-            .as_ref()
-            .map_or(true, |(g, _)| *g != generation);
-        if stale {
-            let overlay = {
-                let ws = self.works.get(&work_id).unwrap();
-                ws.work().current_edition().license_overlay()
-            };
-            let ws = self.works.get_mut(&work_id).unwrap();
-            ws.license_overlay_cache = Some((generation, overlay));
-        }
-
-        // Owner -> license: owner's personal work license first; no
-        // owner (provenance-less entry) or no personal work falls back
-        // to the containing work's license, then UNKNOWN.
-        let work_license = self
-            .works
-            .get(&work_id)
-            .map(|ws| ws.work().license())
-            .unwrap_or(crate::edition::License::AllRightsReserved);
-        let ws = self.works.get(&work_id).unwrap();
-        let overlay = &ws.license_overlay_cache.as_ref().unwrap().1;
+        let work_license = ws.work().license();
         let works = &self.works;
-        Ok(overlay.query(char_start, char_end, move |owner| {
-            owner
-                .and_then(|o| works.get(&o).map(|ows| ows.work().license()))
-                .or(Some(work_license))
-        }))
+        Ok(crate::edition::Edition::license_summary_from_owners(
+            &owners,
+            move |owner| {
+                owner
+                    .and_then(|o| works.get(&o).map(|ows| ows.work().license()))
+                    .or(Some(work_license))
+            },
+        ))
     }
 
     /// Place a virtual transclusion (FR-37 Phase 3): append a Virtual
@@ -19647,7 +19622,6 @@ impl Server {
                     content_start_line: None,
                     content_end_line: None,
                     source_fingerprint: None,
-                    license_overlay_cache: None,
                 };
                 self.works.insert(be_id, ws);
                 imported += 1;
@@ -22002,7 +21976,6 @@ pub(crate) mod persist_snapshot {
                     } else {
                         None
                     },
-                    license_overlay_cache: None,
                 };
                 server.works.insert(*id, ws);
             }

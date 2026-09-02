@@ -1012,6 +1012,54 @@ impl Edition {
         summary
     }
 
+    /// FR-52 A-3 P3: owner summary via the enfilade canopy descent
+    /// (replaces the flat-overlay CACHE path; the flat overlay
+    /// remains for run-boundary detail in the public API).
+    pub fn owner_summary(&self, char_start: usize, char_end: usize) -> super::orgl::OwnerSet {
+        self.orgl.owner_summary(char_start, char_end)
+    }
+
+    /// Resolve an owner set into a license summary at query time
+    /// (FR-38's re-license-without-rebuild contract preserved: the
+    /// tree caches OWNER CLUBS; classes resolve here).
+    /// NOTE distinct_owners is TRUE distinct (the flat overlay's
+    /// field counted runs — a misnomer; only total_class is
+    /// consumed in production).
+    pub fn license_summary_from_owners<F>(
+        owners: &super::orgl::OwnerSet,
+        owner_license: F,
+    ) -> SpanLicenseSummary
+    where
+        F: Fn(Option<BeId>) -> Option<License>,
+    {
+        let mut summary = SpanLicenseSummary::default();
+        let mut classes: Vec<super::work::LicenseClass> = Vec::new();
+        for o in owners.owners().iter() {
+            let class = owner_license(Some(*o))
+                .map(|l| l.license_class())
+                .unwrap_or(super::work::LicenseClass::UNKNOWN);
+            if class.contains(super::work::LicenseClass::UNKNOWN) {
+                summary.unresolved_entries += 1;
+            }
+            classes.push(class);
+        }
+        if owners.has_unowned() {
+            let class = owner_license(None)
+                .map(|l| l.license_class())
+                .unwrap_or(super::work::LicenseClass::UNKNOWN);
+            if class.contains(super::work::LicenseClass::UNKNOWN) {
+                summary.unresolved_entries += 1;
+            }
+            classes.push(class);
+        }
+        for c in classes {
+            summary.total_class = summary.total_class.combine(c);
+            summary.pending_class = c;
+        }
+        summary.distinct_owners = owners.owners().len() + usize::from(owners.has_unowned());
+        summary
+    }
+
     /// Build the ownership overlay for this edition (FR-38 Phase 2).
     /// O(n) over the cached entries; callers on the server side cache
     /// the result keyed by content generation.
@@ -4233,5 +4281,127 @@ mod tests {
             vec![0, 1],
             "positions should be sequential after renumber"
         );
+    }
+}
+
+#[cfg(test)]
+mod a3_p3_equivalence_tests {
+    use super::*;
+    use crate::edition::range_element::Carrier;
+
+    fn owned(text: &str, club: Option<u64>) -> (i64, Arc<Carrier>) {
+        let mut c = Carrier::new(crate::edition::RangeElement::text(text));
+        if let Some(club) = club {
+            c = c.with_provenance(crate::edition::provenance::ElementProvenance {
+                author_public_key: [0u8; 32],
+                author_display_name: "t".into(),
+                author_club_id: club,
+                timestamp: 0,
+                author_type: crate::edition::provenance::AuthorType::Human,
+                llm_model: None,
+                historical_author_id: None,
+                source_work_id: None,
+                transcluded_by: None,
+                derived_by: None,
+            });
+        }
+        (0, Arc::new(c))
+    }
+
+    /// Deterministic PRNG (xorshift) — reproducible failures.
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+    }
+
+    fn fake_license(owner: Option<u64>) -> Option<License> {
+        // Deterministic license per owner — varies by owner id.
+        Some(match owner {
+            None => License::AllRightsReserved,
+            Some(0) => License::PublicDomain,
+            Some(1) => License::CreativeCommonsBy,
+            Some(2) => License::Transcopyright,
+            Some(_) => License::AllRightsReserved,
+        })
+    }
+
+    #[test]
+    fn a3_tree_equivalent_to_flat_overlay_total_class() {
+        let mut rng = Rng(0x5EED_1234);
+        for round in 0..30 {
+            let n = 5 + (rng.next() % 60) as usize;
+            let mut entries: Vec<(i64, Arc<Carrier>)> = Vec::new();
+            for i in 0..n {
+                let len = 1 + (rng.next() % 6) as usize;
+                let text: String = std::iter::repeat('x').take(len).collect();
+                let club = match rng.next() % 4 {
+                    0 => None,
+                    k => Some(k), // owners 1..3
+                };
+                let mut e = owned(&text, club);
+                e.0 = i as i64;
+                entries.push(e);
+            }
+            let ed = Edition::from_entries(entries.clone());
+            let overlay = ed.license_overlay();
+            let total: usize = ed.to_text().chars().count();
+
+            for q in 0..12 {
+                let s = (rng.next() as usize) % (total + 1);
+                let e = s + (rng.next() as usize) % (total + 1 - s);
+                let flat = overlay.query(s, e, fake_license);
+                let tree_owners = ed.owner_summary(s, e);
+                let tree = Edition::license_summary_from_owners(&tree_owners, fake_license);
+                assert_eq!(
+                    flat.total_class, tree.total_class,
+                    "round {} query {} [{},{}) class mismatch",
+                    round, q, s, e
+                );
+                // Owner-set equivalence vs the flat runs.
+                let mut flat_owners: Vec<Option<u64>> = Vec::new();
+                for (bs, be, owner, _) in &flat.boundaries {
+                    if *be > s && *bs < e && !flat_owners.contains(owner) {
+                        flat_owners.push(*owner);
+                    }
+                }
+                let mut tree_list: Vec<Option<u64>> =
+                    tree_owners.owners().iter().map(|o| Some(*o)).collect();
+                if tree_owners.has_unowned() {
+                    tree_list.push(None);
+                }
+                flat_owners.sort();
+                tree_list.sort();
+                assert_eq!(
+                    flat_owners, tree_list,
+                    "round {} query {} [{},{}) owner sets differ",
+                    round, q, s, e
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a3_relicense_changes_classes_not_owners() {
+        let entries: Vec<(i64, Arc<Carrier>)> = (0..12)
+            .map(|i| {
+                let club = if i % 3 == 2 { None } else { Some((i % 2) + 1) };
+                owned(&format!("{}{}", i, "ab"), club)
+            })
+            .collect();
+        let ed = Edition::from_entries(entries);
+        let before = ed.owner_summary(0, 24);
+        let s1 = Edition::license_summary_from_owners(&before, fake_license);
+        // Re-license EVERYTHING to public domain — resolution at
+        // query time, nothing rebuilt.
+        let all_pd = |_| Some(License::PublicDomain);
+        let s2 = Edition::license_summary_from_owners(&before, all_pd);
+        let after = ed.owner_summary(0, 24);
+        assert_eq!(before, after, "owner sets are license-independent");
+        assert_ne!(s1.total_class, s2.total_class, "classes resolve per query");
     }
 }
