@@ -1,3 +1,4 @@
+use crate::edition::BeId;
 use std::sync::Arc;
 
 use super::range_element::{Carrier, RangeElement};
@@ -69,6 +70,80 @@ fn compute_dsp_crum(offset: i64, child_crum: &Crum) -> Crum {
     *hasher.finalize().as_bytes()
 }
 
+/// FR-52 A-3: the per-node OWNER crum — the canopy's stable
+/// aggregation (owner CLUBS from entry provenance; licenses
+/// resolve at query time, preserving FR-38's re-license-without-
+/// rebuild). Sorted distinct set; union is a merge.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct OwnerSet {
+    owners: Vec<BeId>,
+    /// Entries with no provenance exist in this subtree (owner
+    /// None in the flat overlay — resolves to UNKNOWN class).
+    has_unowned: bool,
+}
+
+impl OwnerSet {
+    pub(crate) fn from_entries(entries: &[(i64, Arc<Carrier>)]) -> Self {
+        let mut owners = Vec::new();
+        let mut has_unowned = false;
+        for (_, c) in entries {
+            if c.char_len() == 0 {
+                continue; // mirror the overlay: zero-len entries skip
+            }
+            match c.provenance.as_ref() {
+                Some(p) => owners.push(p.author_club_id),
+                None => has_unowned = true,
+            }
+        }
+        owners.sort_unstable();
+        owners.dedup();
+        OwnerSet {
+            owners,
+            has_unowned,
+        }
+    }
+
+    pub(crate) fn union(a: &OwnerSet, b: &OwnerSet) -> OwnerSet {
+        let mut owners = Vec::with_capacity(a.owners.len() + b.owners.len());
+        let (mut i, mut j) = (0, 0);
+        while i < a.owners.len() && j < b.owners.len() {
+            match a.owners[i].cmp(&b.owners[j]) {
+                std::cmp::Ordering::Less => {
+                    owners.push(a.owners[i]);
+                    i += 1;
+                }
+                std::cmp::Ordering::Greater => {
+                    owners.push(b.owners[j]);
+                    j += 1;
+                }
+                std::cmp::Ordering::Equal => {
+                    owners.push(a.owners[i]);
+                    i += 1;
+                    j += 1;
+                }
+            }
+        }
+        owners.extend_from_slice(&a.owners[i..]);
+        owners.extend_from_slice(&b.owners[j..]);
+        OwnerSet {
+            owners,
+            has_unowned: a.has_unowned || b.has_unowned,
+        }
+    }
+
+    pub(crate) fn owners(&self) -> &[BeId] {
+        &self.owners
+    }
+
+    pub(crate) fn has_unowned(&self) -> bool {
+        self.has_unowned
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.owners.is_empty() && !self.has_unowned
+    }
+}
+
 /// Enfilade tree node with per-node crum and domain caches (Gold's OCs
 /// on every node). Tree operations (`with`/`without`/`copy`) recompute
 /// caches only along the changed path — O(log n) per op instead of a
@@ -83,6 +158,8 @@ pub(crate) enum Loaf {
         fingerprints: Vec<[u8; 32]>,
         default: Option<Arc<Carrier>>,
         crum: Crum,
+        /// FR-52 A-3: stable owner canopy aggregation (see OwnerSet).
+        owner_set: OwnerSet,
     },
     Split {
         split: XnRegion,
@@ -90,18 +167,29 @@ pub(crate) enum Loaf {
         out_child: Arc<Loaf>,
         domain: XnRegion,
         crum: Crum,
+        owner_set: OwnerSet,
     },
     Dsp {
         offset: i64,
         child: Arc<Loaf>,
         domain: XnRegion,
         crum: Crum,
+        owner_set: OwnerSet,
     },
 }
 
 #[allow(dead_code)]
 impl Loaf {
     /// Cached crum — O(1). Every construction path maintains this.
+    /// FR-52 A-3: cached owner canopy aggregation — O(1).
+    pub(crate) fn owner_set(&self) -> &OwnerSet {
+        match self {
+            Loaf::Leaf { owner_set, .. } => owner_set,
+            Loaf::Split { owner_set, .. } => owner_set,
+            Loaf::Dsp { owner_set, .. } => owner_set,
+        }
+    }
+
     pub fn compute_crum(&self) -> Crum {
         match self {
             Loaf::Leaf { crum, .. } => *crum,
@@ -122,12 +210,14 @@ impl Loaf {
     pub(crate) fn new_leaf(region: XnRegion, entries: Vec<(i64, Arc<Carrier>)>) -> Self {
         let fingerprints = entry_fingerprints(&entries);
         let crum = compute_leaf_crum_parts(&entries, &region, &None, &fingerprints);
+        let owner_set = OwnerSet::from_entries(&entries);
         Loaf::Leaf {
             region,
             entries,
             fingerprints,
             default: None,
             crum,
+            owner_set,
         }
     }
 
@@ -136,12 +226,14 @@ impl Loaf {
         let fingerprints = Vec::new();
         let crum =
             compute_leaf_crum_parts(&entries, &region, &Some(default.clone()), &fingerprints);
+        let owner_set = OwnerSet::from_entries(&entries);
         Loaf::Leaf {
             region,
             entries,
             fingerprints,
             default: Some(default),
             crum,
+            owner_set,
         }
     }
 
@@ -156,12 +248,14 @@ impl Loaf {
         if sorted_entries.is_empty() {
             let fingerprints = Vec::new();
             let crum = compute_leaf_crum_parts(&sorted_entries, &region, &default, &fingerprints);
+            let owner_set = OwnerSet::from_entries(&sorted_entries);
             return Loaf::Leaf {
                 region,
                 entries: sorted_entries,
                 fingerprints,
                 default,
                 crum,
+                owner_set,
             };
         }
         if sorted_entries.len() <= MAX_LEAF_SIZE {
@@ -176,12 +270,14 @@ impl Loaf {
             let fingerprints = entry_fingerprints(&sorted_entries);
             let crum =
                 compute_leaf_crum_parts(&sorted_entries, &leaf_region, &default, &fingerprints);
+            let owner_set = OwnerSet::from_entries(&sorted_entries);
             return Loaf::Leaf {
                 region: leaf_region,
                 entries: sorted_entries,
                 fingerprints,
                 default,
                 crum,
+                owner_set,
             };
         }
         let mid = sorted_entries.len() / 2;
@@ -205,6 +301,7 @@ impl Loaf {
             fingerprints: Vec::new(),
             default: None,
             crum,
+            owner_set: OwnerSet::from_entries(&[]),
         }
     }
 
@@ -213,12 +310,14 @@ impl Loaf {
     pub(crate) fn split_from(split: XnRegion, in_child: Arc<Loaf>, out_child: Arc<Loaf>) -> Self {
         let domain = in_child.cached_domain().union(out_child.cached_domain());
         let crum = compute_split_crum(&split, &in_child.compute_crum(), &out_child.compute_crum());
+        let owner_set = OwnerSet::union(in_child.owner_set(), out_child.owner_set());
         Loaf::Split {
             split,
             in_child,
             out_child,
             domain,
             crum,
+            owner_set,
         }
     }
 
@@ -226,11 +325,13 @@ impl Loaf {
     pub(crate) fn dsp_from(offset: i64, child: Arc<Loaf>) -> Self {
         let domain = shift_region(child.cached_domain(), offset);
         let crum = compute_dsp_crum(offset, &child.compute_crum());
+        let owner_set = child.owner_set().clone();
         Loaf::Dsp {
             offset,
             child,
             domain,
             crum,
+            owner_set,
         }
     }
 
@@ -420,14 +521,17 @@ impl Loaf {
                         fingerprints: new_fingerprints,
                         default: default.clone(),
                         crum,
+                        owner_set: OwnerSet::from_entries(&entries),
                     }
                 } else {
+                    let owner_set = OwnerSet::from_entries(&new_entries);
                     let loaf = Loaf::Leaf {
                         region: new_region,
                         entries: new_entries,
                         fingerprints: new_fingerprints,
                         default: default.clone(),
                         crum: [0u8; 32],
+                        owner_set,
                     };
                     loaf.maybe_split()
                 }
@@ -492,6 +596,7 @@ impl Loaf {
                     fingerprints: new_fingerprints,
                     default: default.clone(),
                     crum,
+                    owner_set: OwnerSet::from_entries(&entries),
                 }
             }
             Loaf::Split {
@@ -553,6 +658,7 @@ impl Loaf {
                     fingerprints: new_fingerprints,
                     default: default.clone(),
                     crum,
+                    owner_set: OwnerSet::from_entries(&entries),
                 }
             }
             Loaf::Split {
@@ -650,6 +756,7 @@ impl Loaf {
                     fingerprints: in_fingerprints,
                     default: default.clone(),
                     crum: in_crum,
+                    owner_set: OwnerSet::from_entries(&entries),
                 };
                 let out_loaf = Loaf::Leaf {
                     region: out_region,
@@ -657,6 +764,7 @@ impl Loaf {
                     fingerprints: out_fingerprints,
                     default,
                     crum: out_crum,
+                    owner_set: OwnerSet::from_entries(&entries),
                 };
                 let split = region.intersect(leaf_region);
                 *self = Loaf::split_from(split, Arc::new(in_loaf), Arc::new(out_loaf));
@@ -668,6 +776,7 @@ impl Loaf {
                 out_child,
                 crum: node_crum,
                 domain: node_domain,
+                owner_set: _,
             } => {
                 // Children are Arc-shared across editions (structural
                 // sharing). Take them out; unwrap_or_clone clones only
@@ -864,6 +973,7 @@ impl Loaf {
                         fingerprints: in_fingerprints,
                         default: default.clone(),
                         crum: in_crum,
+                        owner_set: OwnerSet::from_entries(&entries),
                     }),
                     Arc::new(Loaf::Leaf {
                         region: out_region,
@@ -871,6 +981,7 @@ impl Loaf {
                         fingerprints: out_fingerprints,
                         default,
                         crum: out_crum,
+                        owner_set: OwnerSet::from_entries(&entries),
                     }),
                 )
             }
@@ -954,6 +1065,7 @@ impl Loaf {
                     fingerprints: new_fingerprints,
                     default: default.clone(),
                     crum,
+                    owner_set: OwnerSet::from_entries(&entries),
                 }
             }
             Loaf::Split {
@@ -2561,5 +2673,101 @@ fn visit_loaf_pair(
         }
         (Loaf::Dsp { child, .. }, _) => visit_loaf_pair(child, b, visit),
         (_, Loaf::Dsp { child, .. }) => visit_loaf_pair(a, child, visit),
+    }
+}
+
+#[cfg(test)]
+mod a3_owner_canopy_tests {
+    use super::*;
+    use crate::edition::range_element::Carrier;
+
+    fn owned(text: &str, club: u64) -> (i64, Arc<Carrier>) {
+        let c = Carrier::new(crate::edition::RangeElement::text(text)).with_provenance(
+            crate::edition::provenance::ElementProvenance {
+                author_public_key: [0u8; 32],
+                author_display_name: "t".into(),
+                author_club_id: club,
+                timestamp: 0,
+                author_type: crate::edition::provenance::AuthorType::Human,
+                llm_model: None,
+                historical_author_id: None,
+                source_work_id: None,
+                transcluded_by: None,
+                derived_by: None,
+            },
+        );
+        (0, Arc::new(c))
+    }
+
+    fn plain(text: &str) -> (i64, Arc<Carrier>) {
+        (
+            0,
+            Arc::new(Carrier::new(crate::edition::RangeElement::text(text))),
+        )
+    }
+
+    #[test]
+    fn a3_leaf_owner_set_from_provenance() {
+        let leaf = Loaf::new_leaf(
+            XnRegion::interval(0, 10),
+            vec![owned("aaa", 7), owned("bbb", 7), owned("ccc", 9)],
+        );
+        assert_eq!(leaf.owner_set().owners(), &[7, 9]);
+        assert!(!leaf.owner_set().has_unowned());
+    }
+
+    #[test]
+    fn a3_unowned_entries_flagged() {
+        let leaf = Loaf::new_leaf(
+            XnRegion::interval(0, 10),
+            vec![owned("aaa", 7), plain("bbb")],
+        );
+        assert_eq!(leaf.owner_set().owners(), &[7]);
+        assert!(leaf.owner_set().has_unowned());
+    }
+
+    #[test]
+    fn a3_build_bulk_aggregates_all_owners() {
+        // Force deep structure: many entries split across leaves.
+        let mut entries = Vec::new();
+        for i in 0..5000i64 {
+            entries.push((i, owned("x", (i % 7) as u64 + 1).1.clone()));
+            entries.last_mut().unwrap().0 = i;
+        }
+        let loaf = Loaf::build_bulk(entries, None, XnRegion::above(0));
+        assert_eq!(loaf.owner_set().owners(), &[1, 2, 3, 4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn a3_split_and_dsp_union_children() {
+        let in_child = Arc::new(Loaf::new_leaf(
+            XnRegion::interval(0, 5),
+            vec![owned("aaa", 1)],
+        ));
+        let out_child = Arc::new(Loaf::new_leaf(
+            XnRegion::interval(5, 10),
+            vec![owned("bbb", 2), owned("ccc", 1)],
+        ));
+        let split = Loaf::split_from(XnRegion::below(5), in_child, out_child);
+        assert_eq!(split.owner_set().owners(), &[1, 2]);
+
+        let dsp = Loaf::dsp_from(100, Arc::new(split));
+        assert_eq!(dsp.owner_set().owners(), &[1, 2]);
+    }
+
+    #[test]
+    fn a3_with_without_preserve_owners() {
+        let mut entries = Vec::new();
+        for i in 0..200i64 {
+            let mut e = owned("x", (i % 3) as u64 + 1);
+            e.0 = i;
+            entries.push(e);
+        }
+        let root = OrglRoot::from_loaf(Loaf::build_bulk(entries, None, XnRegion::above(0)));
+        let loaf = match &root.inner {
+            crate::edition::orgl::OrglInner::Actual { loaf, .. } => loaf,
+            _ => panic!("expected actual loaf"),
+        };
+        assert_eq!(loaf.owner_set().owners(), &[1, 2, 3]);
     }
 }
