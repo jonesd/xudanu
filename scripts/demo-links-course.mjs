@@ -222,7 +222,11 @@ When the shapes feel natural, you have the whole vocabulary: link, gather, descr
   for (const [i, w] of [l1, l2, l3, l4, l5, sandbox].entries()) {
     await request("trail_add_stop", { trail_id: trailId, work_id: w, note: ["The simple link", "Three ends", "Gathering passages", "Comment on a connection", "The reading toolkit", "Sandbox"][i] });
   }
-  console.log(`trail = ${trailId}`);
+  // Publish: the Trails panel merges own + PUBLISHED trails; an
+  // unpublished trail is private to its creator's club, so a fresh
+  // reader would see "No trails yet" forever.
+  await request("trail_publish", { trail_id: trailId });
+  console.log(`trail = ${trailId} (published)`);
 
   console.log("\nCOURSE READY");
   console.log(`lessons=${l1},${l2},${l3},${l4},${l5} sandbox=${sandbox} companions=${companion},${companionB} trail=${trailId}`);
