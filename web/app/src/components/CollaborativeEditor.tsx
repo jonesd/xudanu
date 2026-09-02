@@ -20,6 +20,7 @@ import {
   assignLinkLanes,
   clusterOverlappingMarkers,
   filterMarkersByType,
+  placeDescBoxes,
   presentLinkTypeIds,
 } from "../link-markers";
 
@@ -698,18 +699,13 @@ function drawOverlay(
   }
 
   if (showLinkDescriptions && pendingDescs.length > 0) {
-    pendingDescs.sort((a, b) => a.firstTop - b.firstTop);
-    const placedBoxes: Array<{ y: number; height: number }> = [];
-    for (const desc of pendingDescs) {
+    // FR-40 demo feedback fix: deterministic, pairwise-disjoint
+    // placement (was: arbitrary tie order + single-pass push-down
+    // that could land on an already-passed box).
+    const placedDescs = placeDescBoxes(pendingDescs, DESC_BOX_HEIGHT, DESC_BOX_GAP);
+    for (const { desc, y: boxY } of placedDescs) {
       if (desc.firstTop + DESC_BOX_HEIGHT < viewportTop || desc.firstTop > viewportBottom) continue;
-      let boxY = desc.firstTop;
-      for (const box of placedBoxes) {
-        if (boxY < box.y + box.height + DESC_BOX_GAP && boxY + DESC_BOX_HEIGHT > box.y) {
-          boxY = box.y + box.height + DESC_BOX_GAP;
-        }
-      }
       const boxH = DESC_BOX_HEIGHT;
-      placedBoxes.push({ y: boxY, height: boxH });
 
       const boxX = rect.width - DESC_BOX_WIDTH - DESC_BOX_RIGHT_MARGIN;
       const color = desc.typeStyle.color;
