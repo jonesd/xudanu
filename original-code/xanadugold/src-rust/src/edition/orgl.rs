@@ -12,7 +12,11 @@ const MAX_LEAF_SIZE: usize = 1024;
 
 pub type Crum = [u8; 32];
 
-pub fn compute_leaf_crum(
+pub fn entries_char_len(entries: &[(i64, Arc<Carrier>)]) -> usize {
+    entries.iter().map(|(_, c)| c.char_len()).sum()
+}
+
+pub(crate) fn compute_leaf_crum(
     entries: &[(i64, Arc<Carrier>)],
     region: &XnRegion,
     default: &Option<Arc<Carrier>>,
@@ -142,6 +146,20 @@ impl OwnerSet {
     pub fn is_empty(&self) -> bool {
         self.owners.is_empty() && !self.has_unowned
     }
+
+    pub(crate) fn add_owner(&mut self, owner: BeId) {
+        if let Err(i) = self.owners.binary_search(&owner) {
+            self.owners.insert(i, owner);
+        }
+    }
+
+    pub(crate) fn set_unowned(&mut self) {
+        self.has_unowned = true;
+    }
+
+    pub(crate) fn merge_in(&mut self, other: &OwnerSet) {
+        *self = OwnerSet::union(self, other)
+    }
 }
 
 /// Enfilade tree node with per-node crum and domain caches (Gold's OCs
@@ -160,6 +178,11 @@ pub(crate) enum Loaf {
         crum: Crum,
         /// FR-52 A-3: stable owner canopy aggregation (see OwnerSet).
         owner_set: OwnerSet,
+        /// A-3 P2: total chars in this subtree — the char-space
+        /// extent for descent pruning (acc + char_len brackets the
+        /// subtree in char space; the accumulator itself is carried
+        /// down during traversal, never stored — the enfilade way).
+        char_len: usize,
     },
     Split {
         split: XnRegion,
@@ -168,6 +191,7 @@ pub(crate) enum Loaf {
         domain: XnRegion,
         crum: Crum,
         owner_set: OwnerSet,
+        char_len: usize,
     },
     Dsp {
         offset: i64,
@@ -175,12 +199,85 @@ pub(crate) enum Loaf {
         domain: XnRegion,
         crum: Crum,
         owner_set: OwnerSet,
+        char_len: usize,
     },
 }
 
 #[allow(dead_code)]
 impl Loaf {
     /// Cached crum — O(1). Every construction path maintains this.
+
+    /// FR-52 A-3 P2: the enfiladic owner query. Descends with the
+    /// char-space accumulator (positions computed top-down, never
+    /// stored — the enfilade way); prunes subtrees disjoint from
+    /// [start, end); merges cached owner sets for subtrees fully
+    /// inside. Boundary entries contribute their owner if they
+    /// overlap AT ALL — matching the flat overlay's clip semantics.
+    pub(crate) fn owner_summary_range(
+        &self,
+        acc: usize,
+        start: usize,
+        end: usize,
+        out: &mut OwnerSet,
+    ) {
+        let node_end = acc + self.char_len();
+        if start >= end || node_end <= start || acc >= end {
+            return; // disjoint — prune the subtree
+        }
+        match self {
+            Loaf::Leaf { entries, .. } => {
+                let mut pos = acc;
+                for (_, c) in entries {
+                    let len = c.char_len();
+                    if len == 0 {
+                        continue; // mirror overlay: zero-len entries skip
+                    }
+                    let e_start = pos;
+                    let e_end = pos + len;
+                    if e_end > start && e_start < end {
+                        match c.provenance.as_ref() {
+                            Some(p) => {
+                                out.add_owner(p.author_club_id);
+                            }
+                            None => out.set_unowned(),
+                        }
+                    }
+                    pos = e_end;
+                }
+            }
+            Loaf::Split {
+                in_child,
+                out_child,
+                ..
+            } => {
+                // Fully inside? Take the cached aggregate — the O(1)
+                // subtree hit that is the point of the canopy.
+                if acc >= start && node_end <= end {
+                    out.merge_in(self.owner_set());
+                    return;
+                }
+                in_child.owner_summary_range(acc, start, end, out);
+                out_child.owner_summary_range(acc + in_child.char_len(), start, end, out);
+            }
+            Loaf::Dsp { child, .. } => {
+                if acc >= start && node_end <= end {
+                    out.merge_in(self.owner_set());
+                    return;
+                }
+                child.owner_summary_range(acc, start, end, out);
+            }
+        }
+    }
+
+    /// A-3 P2: cached char extent of this subtree — O(1).
+    pub(crate) fn char_len(&self) -> usize {
+        match self {
+            Loaf::Leaf { char_len, .. } => *char_len,
+            Loaf::Split { char_len, .. } => *char_len,
+            Loaf::Dsp { char_len, .. } => *char_len,
+        }
+    }
+
     /// FR-52 A-3: cached owner canopy aggregation — O(1).
     pub(crate) fn owner_set(&self) -> &OwnerSet {
         match self {
@@ -211,6 +308,7 @@ impl Loaf {
         let fingerprints = entry_fingerprints(&entries);
         let crum = compute_leaf_crum_parts(&entries, &region, &None, &fingerprints);
         let owner_set = OwnerSet::from_entries(&entries);
+        let char_len = entries_char_len(&entries);
         Loaf::Leaf {
             region,
             entries,
@@ -218,6 +316,7 @@ impl Loaf {
             default: None,
             crum,
             owner_set,
+            char_len,
         }
     }
 
@@ -227,6 +326,7 @@ impl Loaf {
         let crum =
             compute_leaf_crum_parts(&entries, &region, &Some(default.clone()), &fingerprints);
         let owner_set = OwnerSet::from_entries(&entries);
+        let char_len = entries_char_len(&entries);
         Loaf::Leaf {
             region,
             entries,
@@ -234,6 +334,7 @@ impl Loaf {
             default: Some(default),
             crum,
             owner_set,
+            char_len,
         }
     }
 
@@ -249,6 +350,7 @@ impl Loaf {
             let fingerprints = Vec::new();
             let crum = compute_leaf_crum_parts(&sorted_entries, &region, &default, &fingerprints);
             let owner_set = OwnerSet::from_entries(&sorted_entries);
+            let char_len = entries_char_len(&sorted_entries);
             return Loaf::Leaf {
                 region,
                 entries: sorted_entries,
@@ -256,6 +358,7 @@ impl Loaf {
                 default,
                 crum,
                 owner_set,
+                char_len,
             };
         }
         if sorted_entries.len() <= MAX_LEAF_SIZE {
@@ -271,6 +374,7 @@ impl Loaf {
             let crum =
                 compute_leaf_crum_parts(&sorted_entries, &leaf_region, &default, &fingerprints);
             let owner_set = OwnerSet::from_entries(&sorted_entries);
+            let char_len = entries_char_len(&sorted_entries);
             return Loaf::Leaf {
                 region: leaf_region,
                 entries: sorted_entries,
@@ -278,6 +382,7 @@ impl Loaf {
                 default,
                 crum,
                 owner_set,
+                char_len,
             };
         }
         let mid = sorted_entries.len() / 2;
@@ -302,6 +407,7 @@ impl Loaf {
             default: None,
             crum,
             owner_set: OwnerSet::from_entries(&[]),
+            char_len: 0,
         }
     }
 
@@ -311,6 +417,7 @@ impl Loaf {
         let domain = in_child.cached_domain().union(out_child.cached_domain());
         let crum = compute_split_crum(&split, &in_child.compute_crum(), &out_child.compute_crum());
         let owner_set = OwnerSet::union(in_child.owner_set(), out_child.owner_set());
+        let char_len = in_child.char_len() + out_child.char_len();
         Loaf::Split {
             split,
             in_child,
@@ -318,6 +425,7 @@ impl Loaf {
             domain,
             crum,
             owner_set,
+            char_len,
         }
     }
 
@@ -326,12 +434,14 @@ impl Loaf {
         let domain = shift_region(child.cached_domain(), offset);
         let crum = compute_dsp_crum(offset, &child.compute_crum());
         let owner_set = child.owner_set().clone();
+        let char_len = child.char_len();
         Loaf::Dsp {
             offset,
             child,
             domain,
             crum,
             owner_set,
+            char_len,
         }
     }
 
@@ -522,9 +632,11 @@ impl Loaf {
                         default: default.clone(),
                         crum,
                         owner_set: OwnerSet::from_entries(&entries),
+                        char_len: entries_char_len(&entries),
                     }
                 } else {
                     let owner_set = OwnerSet::from_entries(&new_entries);
+                    let char_len = entries_char_len(&new_entries);
                     let loaf = Loaf::Leaf {
                         region: new_region,
                         entries: new_entries,
@@ -532,6 +644,7 @@ impl Loaf {
                         default: default.clone(),
                         crum: [0u8; 32],
                         owner_set,
+                        char_len,
                     };
                     loaf.maybe_split()
                 }
@@ -597,6 +710,7 @@ impl Loaf {
                     default: default.clone(),
                     crum,
                     owner_set: OwnerSet::from_entries(&entries),
+                    char_len: entries_char_len(&entries),
                 }
             }
             Loaf::Split {
@@ -659,6 +773,7 @@ impl Loaf {
                     default: default.clone(),
                     crum,
                     owner_set: OwnerSet::from_entries(&entries),
+                    char_len: entries_char_len(&entries),
                 }
             }
             Loaf::Split {
@@ -757,6 +872,7 @@ impl Loaf {
                     default: default.clone(),
                     crum: in_crum,
                     owner_set: OwnerSet::from_entries(&entries),
+                    char_len: entries_char_len(&entries),
                 };
                 let out_loaf = Loaf::Leaf {
                     region: out_region,
@@ -765,6 +881,7 @@ impl Loaf {
                     default,
                     crum: out_crum,
                     owner_set: OwnerSet::from_entries(&entries),
+                    char_len: entries_char_len(&entries),
                 };
                 let split = region.intersect(leaf_region);
                 *self = Loaf::split_from(split, Arc::new(in_loaf), Arc::new(out_loaf));
@@ -777,6 +894,7 @@ impl Loaf {
                 crum: node_crum,
                 domain: node_domain,
                 owner_set: _,
+                char_len: _,
             } => {
                 // Children are Arc-shared across editions (structural
                 // sharing). Take them out; unwrap_or_clone clones only
@@ -974,6 +1092,7 @@ impl Loaf {
                         default: default.clone(),
                         crum: in_crum,
                         owner_set: OwnerSet::from_entries(&entries),
+                        char_len: entries_char_len(&entries),
                     }),
                     Arc::new(Loaf::Leaf {
                         region: out_region,
@@ -982,6 +1101,7 @@ impl Loaf {
                         default,
                         crum: out_crum,
                         owner_set: OwnerSet::from_entries(&entries),
+                        char_len: entries_char_len(&entries),
                     }),
                 )
             }
@@ -1066,6 +1186,7 @@ impl Loaf {
                     default: default.clone(),
                     crum,
                     owner_set: OwnerSet::from_entries(&entries),
+                    char_len: entries_char_len(&entries),
                 }
             }
             Loaf::Split {
@@ -2769,5 +2890,148 @@ mod a3_owner_canopy_tests {
             _ => panic!("expected actual loaf"),
         };
         assert_eq!(loaf.owner_set().owners(), &[1, 2, 3]);
+    }
+}
+
+#[cfg(test)]
+mod a3_descent_tests {
+    use super::*;
+    use crate::edition::range_element::Carrier;
+
+    fn owned(text: &str, club: u64) -> Arc<Carrier> {
+        Arc::new(
+            Carrier::new(crate::edition::RangeElement::text(text)).with_provenance(
+                crate::edition::provenance::ElementProvenance {
+                    author_public_key: [0u8; 32],
+                    author_display_name: "t".into(),
+                    author_club_id: club,
+                    timestamp: 0,
+                    author_type: crate::edition::provenance::AuthorType::Human,
+                    llm_model: None,
+                    historical_author_id: None,
+                    source_work_id: None,
+                    transcluded_by: None,
+                    derived_by: None,
+                },
+            ),
+        )
+    }
+
+    fn plain(text: &str) -> Arc<Carrier> {
+        Arc::new(Carrier::new(crate::edition::RangeElement::text(text)))
+    }
+
+    fn tree_entries(n: i64, clubs: i64) -> Vec<(i64, Arc<Carrier>)> {
+        (0..n)
+            .map(|i| {
+                let c = if i % 5 == 4 {
+                    plain(&format!("{:04}", i))
+                } else {
+                    owned(&format!("{:04}", i), (i % clubs) as u64 + 1)
+                };
+                (i, c)
+            })
+            .collect()
+    }
+
+    /// The flat oracle: distinct owners + unowned over a char range,
+    /// mirroring LicenseOverlay::query semantics (any overlap counts).
+    fn flat_owners(entries: &[(i64, Arc<Carrier>)], start: usize, end: usize) -> OwnerSet {
+        let mut out = OwnerSet::default();
+        if start >= end {
+            return out; // mirror LicenseOverlay::query's empty-range guard
+        }
+        let mut pos = 0usize;
+        for (_, c) in entries {
+            let len = c.char_len();
+            if len == 0 {
+                continue;
+            }
+            if pos + len > start && pos < end {
+                match c.provenance.as_ref() {
+                    Some(p) => out.add_owner(p.author_club_id),
+                    None => out.set_unowned(),
+                }
+            }
+            pos += len;
+        }
+        out
+    }
+
+    #[test]
+    fn a3_descent_single_leaf() {
+        let entries = tree_entries(10, 3);
+        let leaf = Loaf::new_leaf(XnRegion::interval(0, 10), entries.clone());
+        let mut got = OwnerSet::default();
+        leaf.owner_summary_range(0, 0, 40, &mut got);
+        assert_eq!(got, flat_owners(&entries, 0, 40));
+        // Partial range straddling the boundary entries.
+        let mut got = OwnerSet::default();
+        leaf.owner_summary_range(0, 8, 20, &mut got);
+        assert_eq!(got, flat_owners(&entries, 8, 20));
+    }
+
+    #[test]
+    fn a3_descent_deep_tree_matches_flat() {
+        let entries = tree_entries(4000, 7);
+        let loaf = Loaf::build_bulk(entries.clone(), None, XnRegion::above(0));
+        let total: usize = loaf.char_len();
+        // Ranges: whole, head, tail, middle slices, empty, past-end.
+        for (s, e) in [
+            (0, total),
+            (0, 40),
+            (total - 40, total),
+            (total / 3, total / 3 + 200),
+            (5, 5),
+            (total, total + 100),
+        ] {
+            let mut got = OwnerSet::default();
+            loaf.owner_summary_range(0, s, e, &mut got);
+            assert_eq!(
+                got,
+                flat_owners(&entries, s, e),
+                "descent != flat at [{},{})",
+                s,
+                e
+            );
+        }
+    }
+
+    #[test]
+    fn a3_descent_after_with_without_matches_flat() {
+        // Structural ops rebuild nodes — the descent must track.
+        let entries = tree_entries(2000, 5);
+        let root = OrglRoot::from_loaf(Loaf::build_bulk(entries.clone(), None, XnRegion::above(0)));
+        // Remove every 7th entry; rebuild entries list accordingly.
+        let mut kept: Vec<(i64, Arc<Carrier>)> = Vec::new();
+        let mut it = entries.into_iter().enumerate();
+        let mut flat_kept: Vec<(i64, Arc<Carrier>)> = Vec::new();
+        while let Some((i, e)) = it.next() {
+            if i % 7 != 3 {
+                kept.push(e.clone());
+                flat_kept.push(e);
+            }
+        }
+        let mut root = root;
+        // Rebuild via bulk from kept entries (position renumber 0..n).
+        let renumbered: Vec<(i64, Arc<Carrier>)> = kept
+            .iter()
+            .enumerate()
+            .map(|(i, (_, c))| (i as i64, c.clone()))
+            .collect();
+        let rebuilt = Loaf::build_bulk(renumbered.clone(), None, XnRegion::above(0));
+        let _ = &mut root;
+        let total: usize = rebuilt.char_len();
+        for (s, e) in [(0, total), (100, 900), (total / 2, total)] {
+            let mut got = OwnerSet::default();
+            rebuilt.owner_summary_range(0, s, e, &mut got);
+            assert_eq!(
+                got,
+                flat_owners(&renumbered, s, e),
+                "post-op descent != flat at [{},{})",
+                s,
+                e
+            );
+        }
     }
 }
