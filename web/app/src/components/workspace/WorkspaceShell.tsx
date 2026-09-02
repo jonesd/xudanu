@@ -3744,6 +3744,7 @@ export function WorkspaceShell() {
                     <button
                       type="button"
                       className="ws-sel-btn link"
+                      style={{ color: "var(--green)", borderColor: "var(--green)" }}
                       disabled={!selectionRange || gatherableEnds(transclusion.links, workBeId ?? -1).length === 0}
                       onClick={() => setGatherOpen((g) => !g)}
                       title="Gather this passage into an existing end — one connection, many passages"
