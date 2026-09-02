@@ -739,10 +739,14 @@ function drawOverlay(
       ctx.restore();
 
       ctx.save();
-      // Readability fix (demo feedback): the old 12%-alpha fill let
-      // the document text bleed through under the label text —
-      // near-opaque so labels stay readable over long lines.
-      ctx.fillStyle = isResolved ? color + "CC" : color + "E6";
+      // Label fill, adaptive (two rounds of demo feedback): in the
+      // clear margin the box is near-opaque (labels readable); when
+      // forced OVER text it drops to ~70% so the lines beneath stay
+      // visible — the overlap itself only happens when the text
+      // column reaches past where the box would sit.
+      const fitsInMargin = desc.textRightX + 12 <= boxX;
+      const fillA = fitsInMargin ? (isResolved ? "CC" : "E6") : "B3";
+      ctx.fillStyle = color + fillA;
       ctx.strokeStyle = isResolved ? color + "30" : color + "90";
       if (isResolved) ctx.setLineDash([3, 2]);
       ctx.lineWidth = 1;
