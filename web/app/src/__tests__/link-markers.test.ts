@@ -228,3 +228,83 @@ describe("refSpan", () => {
     expect(refSpan({ start_position: 5, end_position: 2 })).toBeNull();
   });
 });
+
+// ---- FR-40 demo feedback: label placement ----
+
+import { placeDescBoxes } from "../link-markers";
+
+describe("placeDescBoxes (label collision fix)", () => {
+  const H = 40;
+  const GAP = 2;
+  const item = (firstTop: number, lane = 0, start = 0) => ({ firstTop, lane, start });
+
+  it("same-line labels stack without intersection, in lane order", () => {
+    const placed = placeDescBoxes([item(100, 1), item(100, 0), item(100, 2)], H, GAP);
+    const ys = placed.map((p) => p.y);
+    // Lane order wins the top slots deterministically.
+    expect(placed.map((p) => p.desc.lane)).toEqual([0, 1, 2]);
+    for (let i = 1; i < ys.length; i++) {
+      expect(ys[i]).toBeGreaterThanOrEqual(ys[i - 1] + H + GAP);
+    }
+  });
+
+  it("is deterministic under shuffled input (server HashMap order is arbitrary)", () => {
+    const items = [item(50, 0), item(100, 1, 30), item(100, 0, 10), item(300, 2), item(52, 1)];
+    const a = placeDescBoxes(items, H, GAP).map((p) => [p.desc.firstTop, p.desc.lane, p.y]);
+    const shuffled = [...items].reverse();
+    const b = placeDescBoxes(shuffled, H, GAP).map((p) => [p.desc.firstTop, p.desc.lane, p.y]);
+    expect(a).toEqual(b);
+  });
+
+  it("pushed-down boxes clear the running lowest bottom, never an earlier-passed box", () => {
+    // Three crowded labels + one far below that must NOT be dragged up.
+    const placed = placeDescBoxes([item(10), item(12), item(14), item(500)], H, GAP);
+    const ys = placed.map((p) => p.y);
+    expect(ys[0]).toBe(10);
+    expect(ys[1]).toBe(10 + H + GAP);
+    expect(ys[2]).toBe(10 + 2 * (H + GAP));
+    expect(ys[3]).toBe(500);
+    // Pairwise disjoint across the WHOLE set (the old single-pass bug).
+    for (let i = 0; i < ys.length; i++) {
+      for (let j = i + 1; j < ys.length; j++) {
+        const [hi, lo] = ys[i] <= ys[j] ? [ys[i], ys[j]] : [ys[j], ys[i]];
+        expect(lo).toBeGreaterThanOrEqual(hi + H + GAP);
+      }
+    }
+  });
+
+  it("positions below the current one never move up", () => {
+    const placed = placeDescBoxes([item(100, 2), item(100, 0)], H, GAP);
+    expect(placed[0].desc.lane).toBe(0);
+    expect(placed[0].y).toBe(100);
+    expect(placed[1].y).toBe(100 + H + GAP);
+  });
+});
+
+// ---- FR-40 solo/focus dimming ----
+
+import { markerFocusAlpha, FOCUS_DIM_ALPHA } from "../link-markers";
+
+describe("markerFocusAlpha (solo/focus dimming)", () => {
+  it("no focus: everything full alpha", () => {
+    expect(markerFocusAlpha({ linkId: 5 }, null)).toBe(1);
+  });
+
+  it("the focused link and its members stay full; other links dim", () => {
+    expect(markerFocusAlpha({ linkId: 5 }, 5)).toBe(1);
+    expect(markerFocusAlpha({ linkId: 9 }, 5)).toBe(FOCUS_DIM_ALPHA);
+  });
+
+  it("gathered members share the link id, so the whole end stays lit", () => {
+    // Three members of one gathered end all carry linkId 7.
+    for (const m of [{ linkId: 7 }, { linkId: 7 }, { linkId: 7 }]) {
+      expect(markerFocusAlpha(m, 7)).toBe(1);
+    }
+    expect(markerFocusAlpha({ linkId: 8 }, 7)).toBe(FOCUS_DIM_ALPHA);
+  });
+
+  it("transclusions and compounds never dim; focus on them dims nothing", () => {
+    expect(markerFocusAlpha({ linkId: 0 }, 5)).toBe(1);
+    expect(markerFocusAlpha({ linkId: 5 }, 0)).toBe(1);
+  });
+});

@@ -644,8 +644,13 @@ pub struct Server {
     pub(crate) system_clubs: SystemClubs,
     pub(crate) operation_counter: u64,
     admin: AdminState,
-    links: HashMap<BeId, LinkState>,
+    pub(crate) links: HashMap<BeId, LinkState>,
     work_to_links: HashMap<BeId, Vec<BeId>>,
+    /// FR-40 enfiladic matching: the link canopy (derived index;
+    /// rebuilt at restore and after WAL replay, never journaled).
+    link_canopy: crate::edition::link_canopy::LinkCanopy,
+    /// Dense bit slots for type ids (custom types are work ids).
+    type_slots: crate::edition::link_canopy::TypeSlotRegistry,
     link_counter: BeId,
     link_type_names: HashMap<u64, String>,
     /// FR-39 Story 1: registered link types with definition works.
@@ -697,7 +702,7 @@ pub struct Server {
     write_barrier: Arc<WriteBarrier>,
     starred_works: HashMap<BeId, HashSet<BeId>>,
     user_pins: HashMap<BeId, HashSet<String>>,
-    trails: HashMap<BeId, TrailState>,
+    pub(crate) trails: HashMap<BeId, TrailState>,
     trail_counter: BeId,
     compound_editions: HashMap<BeId, crate::edition::compound::CompoundEdition>,
     compound_dirty: HashSet<BeId>,
@@ -757,7 +762,7 @@ pub struct Server {
 }
 
 #[derive(Debug, Clone)]
-struct TrailStop {
+pub(crate) struct TrailStop {
     work_id: BeId,
     char_start: Option<u64>,
     char_end: Option<u64>,
@@ -766,14 +771,14 @@ struct TrailStop {
 }
 
 #[derive(Debug, Clone)]
-struct TrailState {
+pub(crate) struct TrailState {
     trail_id: BeId,
     owner_club: BeId,
-    name: String,
+    pub(crate) name: String,
     introduction: Option<String>,
     categories: Vec<String>,
-    published: bool,
-    stops: Vec<TrailStop>,
+    pub(crate) published: bool,
+    pub(crate) stops: Vec<TrailStop>,
     created_at: u64,
     updated_at: u64,
     /// FR-37 Phase 4c: the derived WORK presenting this trail as a
@@ -821,8 +826,8 @@ pub struct ServerHealth {
 }
 
 #[derive(Debug)]
-struct LinkState {
-    link: HyperLink,
+pub(crate) struct LinkState {
+    pub(crate) link: HyperLink,
     origin: BeId,
     destination: BeId,
     /// Home document (FR-40 Story 3): the work this link lives in.
@@ -1281,6 +1286,8 @@ impl Server {
             links: HashMap::new(),
             work_to_links: HashMap::new(),
             link_counter: 0,
+            link_canopy: crate::edition::link_canopy::LinkCanopy::new(),
+            type_slots: crate::edition::link_canopy::TypeSlotRegistry::new(),
             link_type_names: HashMap::new(),
             link_type_registry: HashMap::new(),
             cross_server_backlinks: Vec::new(),
@@ -12576,6 +12583,12 @@ impl Server {
             }
         }
 
+        // FR-40 enfiladic matching: the canopy is derived data —
+        // one rebuild covers chunk-restored links and any WAL
+        // replay mutations (the replay's raw applies skip per-op
+        // maintenance by design).
+        self.rebuild_link_canopy();
+
         self.rebuild_pending_attributions();
 
         Ok(())
@@ -13340,6 +13353,9 @@ impl Server {
         }
         self.backfollow
             .register_link_content(&self.links[&link_id].link, link_id);
+        // FR-40 enfiladic matching: index every attachment.
+        let inserted = self.links[&link_id].link.clone();
+        self.canopy_insert_link(link_id, &inserted);
         {
             let ls = &self.links[&link_id];
             let o_ref = ls
@@ -13472,6 +13488,9 @@ impl Server {
         }
         self.backfollow
             .register_link_content(&self.links[&link_id].link, link_id);
+        // FR-40 enfiladic matching: index every attachment.
+        let inserted = self.links[&link_id].link.clone();
+        self.canopy_insert_link(link_id, &inserted);
         {
             let ls = &self.links[&link_id];
             let o_ref = ls
@@ -13986,8 +14005,44 @@ impl Server {
         home_spec: &crate::server::transport::protocol::LinkEndpointSpecPayload,
     ) -> Result<Vec<(BeId, BeId, BeId)>, ServerError> {
         self.ensure_session(session_id)?;
+        // FR-40 enfiladic matching: when there is anything to prune
+        // (work-constrained from/to, or type-constrained), collect
+        // candidates from the canopy's pruned descent instead of
+        // scanning every link. The per-link checks below are the
+        // exact scan-path checks — the canopy is a conservative
+        // pre-filter (may over-return, never under-return).
+        let candidate_ids: Option<Vec<BeId>> = {
+            let mut slots = self.type_slots.clone();
+            let bits = slots.bits_for(type_ids);
+            // Works-pruning is only sound when the spec matches
+            // purely by work ids — an author-constrained spec can
+            // match works outside work_ids, so those fall to the
+            // type-only pruning (still conservative).
+            let from_prunable = !from_spec.work_ids.is_empty() && from_spec.author.is_none();
+            let to_prunable = !to_spec.work_ids.is_empty() && to_spec.author.is_none();
+            if from_prunable {
+                Some(self.link_canopy_pruned(Some(&from_spec.work_ids), &bits))
+            } else if to_prunable {
+                Some(self.link_canopy_pruned(Some(&to_spec.work_ids), &bits))
+            } else if !bits.is_empty() {
+                Some(self.link_canopy_pruned(None, &bits))
+            } else {
+                None // nothing to prune — the honest full scan
+            }
+        };
+        // Inverted loop: iterate the PRUNED candidates (or all
+        // links when nothing can prune) — never O(L) iteration
+        // plus per-link lookups when the canopy already pruned.
+        let ids: Vec<BeId> = match candidate_ids {
+            Some(cands) => cands,
+            None => self.links.keys().copied().collect(),
+        };
         let mut results = Vec::new();
-        for (&link_id, ls) in &self.links {
+        for link_id in ids {
+            let ls = match self.links.get(&link_id) {
+                Some(ls) => ls,
+                None => continue,
+            };
             if self.link_hidden_by_home_archive(link_id) {
                 continue;
             }
@@ -14057,6 +14112,86 @@ impl Server {
         Ok(results)
     }
 
+    /// Pruned descent over the canopy (&self: query takes &mut in
+    /// the pure structure for stats — copy-on-query keeps the
+    /// server borrow simple; the arena clone is shallow-per-node
+    /// and only on query).
+    fn link_canopy_pruned(
+        &self,
+        works: Option<&[u64]>,
+        bits: &crate::edition::link_canopy::TypeBits,
+    ) -> Vec<BeId> {
+        let mut canopy = self.link_canopy.clone();
+        let hits = canopy.query(works, bits);
+        let mut ids: Vec<BeId> = hits.into_iter().map(|(_, e)| e.link_id).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+
+    /// The scan-path twin of link_query WITHOUT the canopy — the
+    /// equivalence-test oracle (armor).
+    pub(crate) fn link_query_scan(
+        &self,
+        session_id: SessionId,
+        from_spec: &crate::server::transport::protocol::LinkEndpointSpecPayload,
+        to_spec: &crate::server::transport::protocol::LinkEndpointSpecPayload,
+        type_ids: &[u64],
+        home_spec: &crate::server::transport::protocol::LinkEndpointSpecPayload,
+    ) -> Result<Vec<(BeId, BeId, BeId)>, ServerError> {
+        let mut results = Vec::new();
+        for (&link_id, ls) in &self.links {
+            if self.link_hidden_by_home_archive(link_id) {
+                continue;
+            }
+            if !type_ids.iter().all(|t| ls.link.link_types().contains(t)) {
+                continue;
+            }
+            if !home_spec.is_any() {
+                let Some(home) = ls.home_document else {
+                    continue;
+                };
+                if !self.work_matches_spec(home, home_spec) {
+                    continue;
+                }
+            }
+            let ends: Vec<(String, BeId)> = ls
+                .link
+                .end_names()
+                .iter()
+                .flat_map(|n| {
+                    ls.link
+                        .attachments_at(n)
+                        .unwrap_or(&[])
+                        .iter()
+                        .filter_map(|hr| hr.work_context().map(|w| (n.to_string(), w)))
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+            let from_any = from_spec.is_any();
+            let to_any = to_spec.is_any();
+            let pair_ok = if from_any && to_any {
+                true
+            } else {
+                ends.iter().any(|(na, wa)| {
+                    if !from_any && !self.work_matches_spec(*wa, from_spec) {
+                        return false;
+                    }
+                    to_any
+                        || ends
+                            .iter()
+                            .any(|(nb, wb)| nb != na && self.work_matches_spec(*wb, to_spec))
+                })
+            };
+            if !pair_ok {
+                continue;
+            }
+            results.push((link_id, ls.origin, ls.destination));
+        }
+        results.sort_by_key(|(id, _, _)| *id);
+        Ok(results)
+    }
+
     /// A work matches an end-set spec when it is listed in `work_ids`
     /// OR owned by the spec's author club. Empty specs match anything
     /// (callers check `is_any` first).
@@ -14108,6 +14243,12 @@ impl Server {
             ls.link = ls.link.with_end("RightEnd", d_ref);
         }
         self.backfollow.register_link_content(&ls.link, link_id);
+        // FR-40 enfiladic matching: per-op canopy maintenance
+        // (remove+reinsert keeps leaf bits correct under any end/
+        // attachment mutation).
+        self.canopy_remove_link(link_id, &old_link);
+        let updated_link = self.links[&link_id].link.clone();
+        self.canopy_insert_link(link_id, &updated_link);
         Ok(())
     }
 
@@ -14122,6 +14263,7 @@ impl Server {
             .remove(&link_id)
             .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
         self.backfollow.unregister_link_content(&ls.link, link_id);
+        self.canopy_remove_link(link_id, &ls.link);
         // Clean every work registration: origin, destination, named
         // ends, and home (FR-40).
         let mut works = vec![ls.origin, ls.destination];
@@ -14196,6 +14338,12 @@ impl Server {
             }
         }
         self.backfollow.register_link_content(&ls.link, link_id);
+        // FR-40 enfiladic matching: per-op canopy maintenance
+        // (remove+reinsert keeps leaf bits correct under any end/
+        // attachment mutation).
+        self.canopy_remove_link(link_id, &old_link);
+        let updated_link = self.links[&link_id].link.clone();
+        self.canopy_insert_link(link_id, &updated_link);
         {
             let ls = self
                 .links
@@ -14266,6 +14414,12 @@ impl Server {
             }
         }
         self.backfollow.register_link_content(&ls.link, link_id);
+        // FR-40 enfiladic matching: per-op canopy maintenance
+        // (remove+reinsert keeps leaf bits correct under any end/
+        // attachment mutation).
+        self.canopy_remove_link(link_id, &old_link);
+        let updated_link = self.links[&link_id].link.clone();
+        self.canopy_insert_link(link_id, &updated_link);
         if let Err(e) = self
             .wal
             .append_link_remove_end(link_id, end_name.to_string())
@@ -14280,6 +14434,96 @@ impl Server {
     /// to `target_link` close a cycle? DFS through existing link
     /// attachments: self-reference is immediate; a path from
     /// target back to source is transitive.
+    // ---- FR-40 enfiladic matching: canopy maintenance ----
+
+    /// Bits for a type list (dense slots; registry-based).
+    fn canopy_bits(&mut self, types: &[u64]) -> crate::edition::link_canopy::TypeBits {
+        self.type_slots.bits_for(types)
+    }
+
+    /// Index every attachment of every end of a link into the
+    /// canopy. Call after the link enters self.links.
+    fn canopy_insert_link(&mut self, link_id: BeId, link: &crate::edition::links::HyperLink) {
+        let bits = self.canopy_bits(link.link_types());
+        for (end_name, attachments) in link.ends() {
+            for hr in attachments {
+                if let Some(work) = hr.work_context() {
+                    self.link_canopy.insert(
+                        work,
+                        crate::edition::link_canopy::AttachmentEntry {
+                            link_id,
+                            end_name: end_name.clone(),
+                        },
+                        &bits,
+                    );
+                }
+            }
+        }
+    }
+
+    /// Remove a link's entries. Leaf bits are recomputed from the
+    /// links that REMAIN attached to each affected work (the
+    /// server holds the truth), so removal never strands stale
+    /// OR-bits. Call BEFORE the link leaves self.links is fine —
+    /// the lookup here skips the link being removed.
+    fn canopy_remove_link(&mut self, link_id: BeId, link: &crate::edition::links::HyperLink) {
+        let mut touched: Vec<(u64, crate::edition::link_canopy::AttachmentEntry)> = Vec::new();
+        for (end_name, attachments) in link.ends() {
+            for hr in attachments {
+                if let Some(work) = hr.work_context() {
+                    touched.push((
+                        work,
+                        crate::edition::link_canopy::AttachmentEntry {
+                            link_id,
+                            end_name: end_name.clone(),
+                        },
+                    ));
+                }
+            }
+        }
+        let mut works: Vec<u64> = touched.iter().map(|(w, _)| *w).collect();
+        works.sort_unstable();
+        works.dedup();
+        for work in works {
+            // Remaining bits at this work: every other link still
+            // attached there (via any end/attachment).
+            let mut remaining = crate::edition::link_canopy::TypeBits::default();
+            let others: Vec<Vec<u64>> = self
+                .work_to_links
+                .get(&work)
+                .map(|ids| {
+                    ids.iter()
+                        .filter(|id| **id != link_id)
+                        .filter_map(|id| self.links.get(id).map(|ls| ls.link.link_types().to_vec()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            for types in others {
+                let b = self.canopy_bits(&types);
+                remaining.union(&b);
+            }
+            for (w, entry) in &touched {
+                if *w == work {
+                    self.link_canopy.remove_with_bits(work, entry, &remaining);
+                }
+            }
+        }
+    }
+
+    /// Full rebuild — restore paths and post-WAL-replay (the
+    /// replay's raw mutations skip per-op maintenance by design;
+    /// one rebuild at the end is the derived-data contract).
+    fn rebuild_link_canopy(&mut self) {
+        self.link_canopy = crate::edition::link_canopy::LinkCanopy::new();
+        let ids: Vec<BeId> = self.links.keys().copied().collect();
+        for id in ids {
+            let link = self.links.get(&id).map(|ls| ls.link.clone());
+            if let Some(link) = link {
+                self.canopy_insert_link(id, &link);
+            }
+        }
+    }
+
     fn link_attachment_creates_cycle(&self, source_link: BeId, target_link: BeId) -> bool {
         if source_link == target_link {
             return true;
@@ -14357,6 +14601,12 @@ impl Server {
             }
         }
         self.backfollow.register_link_content(&ls.link, link_id);
+        // FR-40 enfiladic matching: per-op canopy maintenance
+        // (remove+reinsert keeps leaf bits correct under any end/
+        // attachment mutation).
+        self.canopy_remove_link(link_id, &old_link);
+        let updated_link = self.links[&link_id].link.clone();
+        self.canopy_insert_link(link_id, &updated_link);
         if let Err(e) = self.wal.append_link_end_add_attachment(
             link_id,
             end_name.to_string(),
@@ -14415,6 +14665,12 @@ impl Server {
             }
         }
         self.backfollow.register_link_content(&ls.link, link_id);
+        // FR-40 enfiladic matching: per-op canopy maintenance
+        // (remove+reinsert keeps leaf bits correct under any end/
+        // attachment mutation).
+        self.canopy_remove_link(link_id, &old_link);
+        let updated_link = self.links[&link_id].link.clone();
+        self.canopy_insert_link(link_id, &updated_link);
         if let Err(e) = self.wal.append_link_end_remove_attachment(
             link_id,
             end_name.to_string(),
@@ -14437,11 +14693,25 @@ impl Server {
             self.consequence_tracker.begin_operation(),
         );
         self.ensure_session(_session_id)?;
-        let ls = self
-            .links
-            .get_mut(&link_id)
-            .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
-        ls.link = ls.link.with_link_types(link_types);
+        let old_link = {
+            let ls = self
+                .links
+                .get(&link_id)
+                .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+            ls.link.clone()
+        };
+        {
+            let ls = self
+                .links
+                .get_mut(&link_id)
+                .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+            ls.link = ls.link.with_link_types(link_types);
+        }
+        // FR-40 enfiladic matching: types carry the canopy bits —
+        // remove+reinsert re-ORs every affected leaf.
+        let updated_link = self.links[&link_id].link.clone();
+        self.canopy_remove_link(link_id, &old_link);
+        self.canopy_insert_link(link_id, &updated_link);
         Ok(())
     }
 
@@ -17426,6 +17696,8 @@ impl Server {
                 self.backfollow.unregister_link_content(&old_link, link_id);
                 ls.link = link.clone();
                 self.backfollow.register_link_content(&ls.link, link_id);
+                // Positions moved; work ids did not — the canopy
+                // keys on (work, link, end), so nothing to do.
             } else {
                 ls.link = link;
             }
@@ -21542,6 +21814,8 @@ pub(crate) mod persist_snapshot {
                 standalone_editions: HashMap::new(),
                 standalone_edition_refs: HashMap::new(),
                 dirty_clubs: HashSet::new(),
+                link_canopy: crate::edition::link_canopy::LinkCanopy::new(),
+                type_slots: crate::edition::link_canopy::TypeSlotRegistry::new(),
                 club_refs: HashMap::new(),
                 edition_detectors: HashMap::new(),
                 system_clubs: snapshot.system_clubs,
@@ -21857,6 +22131,10 @@ pub(crate) mod persist_snapshot {
             for (link_id, ls) in &server.links {
                 server.backfollow.register_link_content(&ls.link, *link_id);
             }
+
+            // FR-40 enfiladic matching: rebuild the derived canopy
+            // from the snapshot-restored links.
+            server.rebuild_link_canopy();
 
             let max_id = server
                 .works
@@ -45635,6 +45913,392 @@ mod tests_security_tracker {
             ann_span(&server, work),
             (10, 13),
             "partial delete: old 10,11 stay, old 16 migrates to 12 — hull (10,13)"
+        );
+    }
+
+    #[cfg(test)]
+    mod link_canopy_server_tests {
+        use super::*;
+
+        #[test]
+        fn link_query_canopy_equals_scan_at_scale() {
+            use crate::server::transport::protocol::LinkEndpointSpecPayload as Spec;
+            let (mut server, sid) = setup();
+            let mut works = Vec::new();
+            for i in 0..40u64 {
+                works.push(
+                    server
+                        .create_work(sid, Edition::from_text(&format!("w{}", i)))
+                        .unwrap(),
+                );
+            }
+            let mut planted_rare = 0usize;
+            for k in 0..500u64 {
+                let a = works[(k as usize) % works.len()];
+                let b = works[((k * 7 + 3) as usize) % works.len()];
+                if a == b {
+                    continue;
+                }
+                let types = vec![if k % 50 == 0 { 5u64 } else { 4 }];
+                if k % 50 == 0 {
+                    planted_rare += 1;
+                }
+                server
+                    .create_link_with_hyperlink(
+                        sid,
+                        crate::edition::links::HyperLink::make(
+                            types,
+                            HyperRef::single(None, Some(a), None, None),
+                            HyperRef::single(None, Some(b), None, None),
+                        ),
+                    )
+                    .unwrap();
+            }
+            assert!(planted_rare >= 8);
+            for w in works.iter().step_by(3) {
+                let from = Spec {
+                    work_ids: vec![*w],
+                    author: None,
+                };
+                let canopy = server
+                    .link_query(sid, &from, &Spec::any(), &[5], &Spec::any())
+                    .unwrap();
+                let scan = server
+                    .link_query_scan(sid, &from, &Spec::any(), &[5], &Spec::any())
+                    .unwrap();
+                assert_eq!(canopy, scan, "scale equivalence from {:?}", w);
+            }
+        }
+
+        /// FR-40 enfiladic matching P3 armor: the canopy path returns
+        /// EXACTLY the scan path's results, across a randomized corpus of
+        /// links (types, named ends, gathered attachments) and every spec
+        /// shape (work-only, author-only, mixed, any).
+        #[test]
+        fn link_query_canopy_equals_scan() {
+            use crate::server::transport::protocol::LinkEndpointSpecPayload as Spec;
+            let mut rng: u64 = 0x9E3779B97F4A7C15;
+            let mut next = || {
+                rng ^= rng << 13;
+                rng ^= rng >> 7;
+                rng ^= rng << 17;
+                rng
+            };
+            let (mut server, sid) = setup();
+            let mut works = Vec::new();
+            for i in 0..12u64 {
+                works.push(
+                    server
+                        .create_work(sid, Edition::from_text(&format!("w{}", i)))
+                        .unwrap(),
+                );
+            }
+            // Random link corpus.
+            for _ in 0..60 {
+                let a = works[(next() % works.len() as u64) as usize];
+                let b = works[(next() % works.len() as u64) as usize];
+                if a == b {
+                    continue;
+                }
+                let types = vec![(next() % 5) + 1];
+                let mut link = crate::edition::links::HyperLink::make(
+                    types,
+                    HyperRef::single(None, Some(a), None, None),
+                    HyperRef::single(None, Some(b), None, None),
+                );
+                // Randomly gather attachments and named ends.
+                if next() % 2 == 0 {
+                    let extra = works[(next() % works.len() as u64) as usize];
+                    link = link.with_attachment_added(
+                        "LeftEnd",
+                        HyperRef::single(None, Some(extra), None, None).with_span(Some(0), Some(3)),
+                    );
+                }
+                if next() % 3 == 0 {
+                    let named = works[(next() % works.len() as u64) as usize];
+                    link =
+                        link.with_end("Evidence", HyperRef::single(None, Some(named), None, None));
+                }
+                server
+                    .create_link_with_hyperlink_homed(sid, link, None)
+                    .unwrap();
+            }
+
+            // Every spec shape, compared.
+            for i in 0..works.len() {
+                for j in 0..works.len() {
+                    for t in [0u64, 1, 3, 4] {
+                        let from = Spec {
+                            work_ids: if i % 2 == 0 { vec![works[i]] } else { vec![] },
+                            author: None,
+                        };
+                        let to = Spec {
+                            work_ids: if j % 3 == 0 { vec![works[j]] } else { vec![] },
+                            author: None,
+                        };
+                        let types = if t == 0 { vec![] } else { vec![t] };
+                        let canopy = server
+                            .link_query(sid, &from, &to, &types, &Spec::any())
+                            .unwrap();
+                        let scan = server
+                            .link_query_scan(sid, &from, &to, &types, &Spec::any())
+                            .unwrap();
+                        assert_eq!(
+                            canopy, scan,
+                            "canopy must equal scan: from={:?} to={:?} types={:?}",
+                            from.work_ids, to.work_ids, types
+                        );
+                    }
+                }
+            }
+
+            // Author-shaped specs (the pruning-restriction case).
+            let from_author = Spec {
+                work_ids: vec![],
+                author: Some(1),
+            };
+            let canopy = server
+                .link_query(sid, &from_author, &Spec::any(), &[], &Spec::any())
+                .unwrap();
+            let scan = server
+                .link_query_scan(sid, &from_author, &Spec::any(), &[], &Spec::any())
+                .unwrap();
+            assert_eq!(canopy, scan, "author-only specs must match the scan");
+        }
+
+        fn setup() -> (Server, SessionId) {
+            let mut server = Server::new();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            (server, sid)
+        }
+
+        #[test]
+        fn canopy_tracks_link_lifecycle() {
+            let (mut server, sid) = setup();
+            let a = server.create_work(sid, Edition::from_text("A")).unwrap();
+            let b = server.create_work(sid, Edition::from_text("B")).unwrap();
+            let c = server.create_work(sid, Edition::from_text("C")).unwrap();
+
+            // Create: all ends indexed.
+            let link_id = server.create_link(sid, a, b, None, None).unwrap();
+            server.link_set_types(sid, link_id, vec![4]).unwrap();
+            assert_eq!(server.link_canopy.total_entries(), 2);
+            let hits = server
+                .link_canopy
+                .query(Some(&[a]), &server.type_slots.bits_for(&[4]));
+            assert!(hits.iter().any(|(_, e)| e.link_id == link_id));
+
+            // Add attachment: indexed.
+            server
+                .link_end_add_attachment(
+                    sid,
+                    link_id,
+                    "LeftEnd",
+                    HyperRef::single(None, Some(c), None, None).with_span(Some(0), Some(3)),
+                )
+                .unwrap();
+            assert_eq!(server.link_canopy.total_entries(), 3);
+
+            // Retype away from 4: type query no longer finds it.
+            server.link_set_types(sid, link_id, vec![1]).unwrap();
+            let hits = server
+                .link_canopy
+                .query(Some(&[a]), &server.type_slots.bits_for(&[4]));
+            assert!(!hits.iter().any(|(_, e)| e.link_id == link_id));
+            let hits = server
+                .link_canopy
+                .query(Some(&[c]), &server.type_slots.bits_for(&[1]));
+            assert!(hits.iter().any(|(_, e)| e.link_id == link_id));
+
+            // Remove attachment: unindexed.
+            server
+                .link_end_remove_attachment(
+                    sid,
+                    link_id,
+                    "LeftEnd",
+                    &HyperRef::single(None, Some(c), None, None).with_span(Some(0), Some(3)),
+                )
+                .unwrap();
+            assert_eq!(server.link_canopy.total_entries(), 2);
+
+            // Delete: gone entirely.
+            server.delete_link(sid, link_id).unwrap();
+            assert_eq!(server.link_canopy.total_entries(), 0);
+            let hits = server
+                .link_canopy
+                .query(None, &server.type_slots.bits_for(&[1]));
+            assert!(hits.is_empty());
+        }
+
+        #[test]
+        fn canopy_rebuilt_on_restore() {
+            let data_dir = std::env::temp_dir().join(format!(
+                "xudanu_canopy_restore_{}_{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+            ));
+            let _ = std::fs::remove_dir_all(&data_dir);
+            std::fs::create_dir_all(&data_dir).unwrap();
+
+            let a;
+            let link_id;
+            {
+                let mut server = Server::new();
+                server.init_data_dir(&data_dir, None).unwrap();
+                let sid = server.connect();
+                server.login_public(sid).unwrap();
+                a = server.create_work(sid, Edition::from_text("A")).unwrap();
+                let b = server.create_work(sid, Edition::from_text("B")).unwrap();
+                link_id = server.create_link(sid, a, b, None, None).unwrap();
+                server.link_set_types(sid, link_id, vec![3]).unwrap();
+                server.checkpoint_to_store().unwrap();
+            }
+
+            {
+                let mut server = Server::new();
+                server.restore_from_data_dir(&data_dir, None).unwrap();
+                assert_eq!(
+                    server.link_canopy.total_entries(),
+                    2,
+                    "the canopy is rebuilt from restored links"
+                );
+                let hits = server
+                    .link_canopy
+                    .query(Some(&[a]), &server.type_slots.bits_for(&[3]));
+                assert!(hits.iter().any(|(_, e)| e.link_id == link_id));
+            }
+
+            let _ = std::fs::remove_dir_all(&data_dir);
+        }
+    }
+}
+
+#[cfg(test)]
+mod link_canopy_bench {
+    use super::*;
+
+    fn setup() -> (Server, SessionId) {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        (server, sid)
+    }
+
+    /// Ignored-by-default benchmark: run with
+    /// `cargo test --features server --lib link_canopy_bench -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_canopy_vs_scan() {
+        use crate::server::transport::protocol::LinkEndpointSpecPayload as Spec;
+        let (mut server, sid) = setup();
+        let mut works = Vec::new();
+        for i in 0..150u64 {
+            works.push(
+                server
+                    .create_work(sid, Edition::from_text(&format!("w{}", i)))
+                    .unwrap(),
+            );
+        }
+        // 3000 links, types 1-4 common, type 5 rare (2%).
+        for k in 0..3000u64 {
+            let a = works[(k as usize) % works.len()];
+            let b = works[((k * 13 + 7) as usize) % works.len()];
+            let t = if k % 50 == 0 { 5u64 } else { (k % 4) + 1 };
+            server
+                .create_link_with_hyperlink(
+                    sid,
+                    crate::edition::links::HyperLink::make(
+                        vec![t],
+                        HyperRef::single(None, Some(a), None, None),
+                        HyperRef::single(None, Some(b), None, None),
+                    ),
+                )
+                .unwrap();
+        }
+        // Empty-result query (works[3] has no type-5 attachments)
+        // AND matching query (works[0] is the k=0 type-5 origin).
+        let from_empty = Spec {
+            work_ids: vec![works[3]],
+            author: None,
+        };
+        let from_hit = Spec {
+            work_ids: vec![works[0]],
+            author: None,
+        };
+
+        let measure = |from: &Spec, label: &str| {
+            let _ = server
+                .link_query(sid, from, &Spec::any(), &[5], &Spec::any())
+                .unwrap();
+            let _ = server
+                .link_query_scan(sid, from, &Spec::any(), &[5], &Spec::any())
+                .unwrap();
+            let reps = 200;
+            let t0 = std::time::Instant::now();
+            for _ in 0..reps {
+                let _ = server
+                    .link_query(sid, from, &Spec::any(), &[5], &Spec::any())
+                    .unwrap();
+            }
+            let canopy_ms = t0.elapsed().as_secs_f64() * 1000.0 / reps as f64;
+            let t1 = std::time::Instant::now();
+            for _ in 0..reps {
+                let _ = server
+                    .link_query_scan(sid, from, &Spec::any(), &[5], &Spec::any())
+                    .unwrap();
+            }
+            let scan_ms = t1.elapsed().as_secs_f64() * 1000.0 / reps as f64;
+            println!(
+                "bench {}: canopy={:.3}ms scan={:.3}ms speedup={:.1}x",
+                label,
+                canopy_ms,
+                scan_ms,
+                scan_ms / canopy_ms
+            );
+        };
+        measure(&from_empty, "empty-result");
+        measure(&from_hit, "matching");
+        let from = from_empty;
+
+        // Isolate: pure canopy descent vs the full query path.
+        let mut slots_b = server.type_slots.clone();
+        let bits = slots_b.bits_for(&[5]);
+        let t2 = std::time::Instant::now();
+        for _ in 0..200 {
+            let _ = server.link_canopy.query(Some(&[works[3]]), &bits);
+        }
+        println!(
+            "bench: pure canopy descent = {:.3}ms/call",
+            t2.elapsed().as_secs_f64() * 1000.0 / 200.0
+        );
+        let t3 = std::time::Instant::now();
+        for _ in 0..200 {
+            server.ensure_session(sid).unwrap();
+        }
+        println!(
+            "bench: ensure_session = {:.3}ms/call",
+            t3.elapsed().as_secs_f64() * 1000.0 / 200.0
+        );
+
+        // Structure-level pruning: entries visited by the descent.
+        let mut slots = server.type_slots.clone();
+        let bits = slots.bits_for(&[5]);
+        let hits = server.link_canopy.query(Some(&[works[3]]), &bits);
+        let visited = server
+            .link_canopy
+            .visited_entries
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        let _ = hits;
+        println!(
+            "bench: structure visited_entries={} of {} total ({:.1}%)",
+            visited,
+            server.link_canopy.total_entries(),
+            100.0 * visited as f64 / server.link_canopy.total_entries() as f64
         );
     }
 }

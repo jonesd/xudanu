@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import type { CrdtSyncClient, LinkEntry, TransclusionMarker, WorkListEntry, BacklinkEntry, LinkTypeInfo } from "../api/crdt_sync";
 import { resolveMarkerPositions, localEndSetMembers, refSpan } from "../link-markers";
+import { linkEnds } from "../link-ends";
 
 export interface PendingTransclusion {
   sourceWorkId: number;
@@ -198,6 +199,23 @@ export function useTransclusion(): TransclusionState {
           // FR-40 L4: the descriptor end's excerpt (winfe pattern).
           const descriptorExcerpt =
             (link.named_ends ?? []).find(([name]) => name === "Descriptor")?.[1]?.excerpt ?? undefined;
+          // FR-40: end count + seat letters — the in-document view
+          // shows only the LOCAL end; the letter ("B of 3") and the
+          // other seats' titles tell the reader where the rest of
+          // the committee sits (linkEnds already merges end_sets).
+          const allEnds = linkEnds(link);
+          const totalEnds = allEnds.length;
+          const localEndName = isOrigin ? "origin" : "destination";
+          const localEndIdx = allEnds.findIndex(
+            (e) =>
+              e.name === localEndName ||
+              (localEndName === "destination" && e.name === "RightEnd"),
+          );
+          const endLabel =
+            localEndIdx >= 0 ? String.fromCharCode(65 + localEndIdx) : undefined;
+          const otherEndTitles = allEnds
+            .filter((e) => e.name !== localEndName && e.name !== "RightEnd")
+            .map((e) => e.excerpt?.slice(0, 24) || e.workId?.toString(16) || "?");
           const fallback = (fallbackResults[i].status === "fulfilled") ? (fallbackResults[i] as PromiseFulfilledResult<{ start: number; end: number; }[]>).value : [];
           const webTitle = isWebLink ? (remoteRef?.excerpt || "Web Link") : title;
           const crossServerRef = remoteRef?.cross_server_ref
@@ -239,6 +257,9 @@ export function useTransclusion(): TransclusionState {
                 endSetIndex: member.index,
                 endSetTotal: member.total,
                 descriptorExcerpt,
+                totalEnds,
+                endLabel,
+                otherEndTitles,
               });
             }
             continue;
@@ -262,6 +283,9 @@ export function useTransclusion(): TransclusionState {
               sourceSpanStart: remoteRef?.start_position ?? null,
               sourceSpanEnd: remoteRef?.end_position ?? null,
                 descriptorExcerpt,
+                totalEnds,
+                endLabel,
+                otherEndTitles,
             });
           }
         }

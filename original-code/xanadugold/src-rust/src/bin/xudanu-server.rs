@@ -586,6 +586,10 @@ async fn main() {
                 .ok()
                 .and_then(|s| s.parse().ok());
             let mut public_address: Option<String> = std::env::var("XUDANU_PUBLIC_ADDRESS").ok();
+            // FR-40: seed the built-in links demo (course, trail,
+            // companions) at startup — ships with the binary so end
+            // users can recreate the demo with one flag.
+            let mut seed_links_demo = false;
             let mut edit_policy: Option<xudanu::server::EditPolicy> =
                 std::env::var("XUDANU_EDIT_POLICY")
                     .ok()
@@ -761,6 +765,9 @@ async fn main() {
                                 std::process::exit(1);
                             }));
                     }
+                    "--seed-links-demo" => {
+                        seed_links_demo = true;
+                    }
                     "--edit-policy" => {
                         i += 1;
                         let raw = args.get(i).map(|s| s.clone()).unwrap_or_else(|| {
@@ -866,6 +873,9 @@ async fn main() {
                 Server::new()
             };
 
+            if seed_links_demo {
+                xudanu::server::seed_demo::seed_links_demo(&mut server);
+            }
             if lattice_shadow_enabled {
                 server.enable_lattice_shadow();
                 tracing::info!("FR-51 lattice shadow enabled (enroll works via admin op 0x0353)");

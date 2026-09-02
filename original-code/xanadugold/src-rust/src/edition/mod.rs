@@ -18,6 +18,7 @@ pub mod grandmap;
 pub mod hoist;
 pub mod label;
 pub mod license_overlay;
+pub mod link_canopy;
 pub mod links;
 pub mod mapping;
 pub mod notarize;

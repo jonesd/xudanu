@@ -30,6 +30,9 @@ Gold row says what Xudanu does and why.
 | CrossSpace2 (product spaces) | **Dormant** — full Space impl, cross_n extension | `src/space/cross.rs`, `cross_n.rs` | 14 + phase3 tests | **A-4** |
 | Arrangement (space mapping) | **Dormant** — index<->position mapping | `src/space/arrangement.rs` | 8 tests | **A-4** |
 | FilterSpace (stepper filters) | **Dormant** — FilterRegion used in transclusion.rs | `src/space/filter.rs` | 20 tests | **A-4** |
+| Urdi/SnarfHandle staged storage (urdix) | **Rejected (2026-09-02 final sweep)** — Gold's atomic-disk-commit layer (read/write views, usableStages, commitWrite); our WAL + snapshot + chunk store cover the same contract | — | — | **Reject** |
+| stubble/ dir + Formic | **Rejected (2026-09-02 final sweep)** — NOT the type system: the .hf files are Formic *code-generation scripts*, Gold's own migration tooling (their LLM-migration equivalent) | — | — | **Reject (historically notable)** |
+| promise/, xpp/, comm/, disk/, ftp/, platform/ | **Rejected** — platform/transport infrastructure; modern equivalents in place | — | — | **Reject** |
 | RealSpace (real-valued positions) | **Dormant** — used in phase3 tests | `src/space/real.rs` | 29 tests | **A-5** |
 | Sequence as native ordering | **Active on lattice** — lattice uses Sequence directly | `src/space/sequence.rs` | in lattice tests | **Done** |
 | GrandMap (ID allocation) | **Active** — server.rs:632 owns a GrandMap; work elements allocated via `new_work_element`/`assign_new_id` at boot and work creation | `src/edition/grandmap.rs` | 12 tests | **Done** |

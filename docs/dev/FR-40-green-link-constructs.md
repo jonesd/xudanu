@@ -521,6 +521,41 @@ Effort: L1/L6 are days; L2-L5 are hours each.
 - Rewriting existing links — all shipped links remain valid
   two-ended links forever
 
+## UX feedback log (2026-09-02, hands-on demo session)
+
+- **Legibility**: to the untrained eye, renderings of a few links
+  interacting are hard to understand immediately. Consequences:
+  documentation teaches one concept per frame (see
+  docs/links-gallery.md — one link → one gathered end → the
+  complex case); **solo/focus mode IMPLEMENTED** — hovering a
+  connection dims every other link's rendering (underlines, bars,
+  labels, pills; gathered ends stay whole); the hovered link
+  stands alone against a quieted page.
+- **Label overlap** — fixed (78ec9e53): deterministic
+  pairwise-disjoint placement.
+- **Gather discoverability** — fixed (ec981dd0): green button;
+  note the selection toolbar only appears over a selection and
+  reading mode hides it entirely.
+- **"How do I engage with a connected work?"** — the other end is
+  reachable by clicking an underline (jump-to-source) or the Links
+  panel, but nothing on the work list/header advertises the
+  connection. Open: an "N connections" affordance, or wiring the
+  docuverse graph into the live UI.
+- **Trails visibility** — unpublished trails are invisible to
+  other readers (owner-filtered listing); course/publish flows now
+  publish. The panel header says "through this work" but lists all
+  trails — wording/filter mismatch open.
+- **End-vocabulary trial (2026-09-02)**: 'end' alone confused
+  readers (role-vs-document conflation). 'Seat' (committee
+  metaphor) rejected in hands-on use. Current trial: the LINK IS
+  A SENTENCE WITH BLANKS — the type is the verb, ends are the
+  blanks, gathered ends fill one blank jointly. Tooltip now reads
+  'this fills blank A of 3 — other blanks: ...'. Decision pending
+  the reader's verdict; whichever word sticks becomes the UI
+  vocabulary everywhere.
+- Click-to-source vs caret placement tension on marked spans —
+  offered ⌘-click modifier, decision pending.
+
 ## Heritage appendix
 
 Green's operational rules we are adopting verbatim where possible:
@@ -530,3 +565,20 @@ Green's operational rules we are adopting verbatim where possible:
 - the backend performs edits — already our architecture
 - link matching never scans linearly in Green (enfiladic); ours
   scans until measured pain — recorded honestly
+
+### Enfiladic matching — IMPLEMENTED (2026-08-31, branch
+`fr40/enfiladic-link-canopy`, commits 0289321a / 28114759)
+
+The heritage line above is retired: link queries now prune
+subtrees. The canopy (edition/link_canopy.rs) is a work-range
+arena tree with OR-ed type bits — Gold's algorithm over our store,
+since our links are not works in the ent. Conservative contract
+(may over-return, never under-return); the exact per-link checks
+are unchanged behind it. Derived data: rebuilt at restore and
+post-WAL-replay, never journaled. Keys on (work, link, end) so
+span migration never touches it. Author-constrained specs fall to
+type-only pruning (a works-filter would under-return — caught by
+the equivalence armor). Armor: lifecycle tracking, rebuild-on-
+restore, canopy==scan equivalence (randomized corpus + 500-link
+scale), structure-level pruning proofs, and the slot-overflow
+conservative property. The scan path remains as the oracle.

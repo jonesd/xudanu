@@ -95,7 +95,9 @@ npm run build        # tsc -b && vite build -> dist/
 
 ## Run (development)
 
-**One-liner** from workspace root:
+**One-liner** from workspace root — ALWAYS prefer this over
+manually backgrounding servers (it handles graceful stop with
+checkpoint flush, port cleanup, health-wait, and Ctrl+C teardown):
 
 ```sh
 ./scripts/restart.sh    # kills :8080 and :5173, starts both servers, Ctrl+C stops
@@ -120,6 +122,31 @@ embedded HTML), `--tls-cert/--tls-key`, `--peer <addr>` (federation),
 `--server-namespace-id <id>`, `--public-address <domain>` (FR-6 cross-server).
 
 Other subcommands: `init | verify | rebuild-manifest | verify-security-log | preflight`.
+
+## Scripts (workspace `./scripts/` — prefer these over ad-hoc commands)
+
+| Script | Use |
+|---|---|
+| `restart.sh` | Dev servers (backend :8080 + Vite :5173) — graceful stop, port cleanup, health-wait. **The default way to run anything live.** |
+| `rebuild.sh` | Clean rebuild of backend + frontend |
+| `pre-push.sh` | Fast pre-push static checks (CI runs the full suites) |
+| `demo-links-seed.mjs` | Seed a live server with the FR-40 links demo corpus (gathered end-sets, three-ended, comment-on-link, descriptor). `node scripts/demo-links-seed.mjs [ws-url]` against a `--edit-policy public-sandbox` server |
+| `--seed-links-demo` (server flag) | **Ships with the binary**: `xudanu-server run <addr> <dir> --edit-policy public-sandbox --seed-links-demo` seeds the Links Course (5 lessons, sandbox, companions, published trail) natively — no Node, no scripts; end users with a release tarball recreate the demo by wiping the dir and restarting. Idempotent |
+| `demo-links-reset.sh` | **One command to a fresh links demo** — wipes the demo data dir, restarts :8081 (public-sandbox), runs every seed (corpus, course, playground, gallery works) |
+| `demo-links-course.mjs` | The progressive Links COURSE: five lessons simple→complex (two-ended, three-ended, gathered sets, comment-on-link, reading toolkit) + sandbox, each with a live demo and one task — wired as a trail. Same usage |
+| `demo-links-playground.mjs` | Seed the INTERACTIVE Links Playground work — the document's own text walks the reader through gather/link/describe/comment/compare on the real editor. Same usage as demo-links-seed |
+| `demo-network.sh` | FR-41: bring up the seeded 3-node federation demo network + story smoke test |
+| `ws-link-probe.mjs` | Drive one cross-server link_create against a node, report notify outcome + timing as JSON |
+| `screenshot-capture.mjs` | Headless screenshot capture (docs/screenshots/) |
+| `create-test-data.js` | Bulk test data generation |
+| `debug-ws.cjs` | Raw WebSocket debugging against a running server |
+| `deploy.sh` / `deploy-aws.sh` | Update xudanu.com / AWS deployment |
+| `backup-offsite.sh` / `restore-offsite.sh` | Offsite data-dir backup + restore |
+| `gen-wire-doc.py` | Regenerate wire-protocol docs |
+
+Notes for ad-hoc servers (when a script doesn't fit, e.g. a second
+instance on another port): use `nohup ... & disown` — plain
+`(cmd &)` subshells get reaped when the spawning shell exits.
 
 ## Test & lint
 
