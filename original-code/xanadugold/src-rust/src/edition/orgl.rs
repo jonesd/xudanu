@@ -1318,6 +1318,17 @@ impl OrglRoot {
         }
     }
 
+    /// FR-52 A-3 P3: the enfiladic owner summary for a char range.
+    /// O(log n + hits) descent; empty editions and empty ranges
+    /// return the empty set.
+    pub fn owner_summary(&self, char_start: usize, char_end: usize) -> OwnerSet {
+        let mut out = OwnerSet::default();
+        if let OrglInner::Actual { loaf, .. } = &self.inner {
+            loaf.owner_summary_range(0, char_start, char_end, &mut out);
+        }
+        out
+    }
+
     pub(crate) fn from_loaf(loaf: Loaf) -> Self {
         // O(1): crum and domain are maintained per-node by every
         // construction path (PERF-PLAN Stage 2).
