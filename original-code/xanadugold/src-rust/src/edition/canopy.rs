@@ -1090,3 +1090,75 @@ mod tests {
         assert!(!a.lock().unwrap_or_else(|e| e.into_inner()).change_canopy());
     }
 }
+
+#[cfg(test)]
+mod coverage_gap_tests {
+    use super::*;
+
+    /// The cache-HIT fast path in find_root (uncovered 408-420):
+    /// a second find_root on the same crum must return the SAME
+    /// root via Arc::ptr_eq, without walking parents.
+    #[test]
+    fn find_root_cache_hit_returns_same_root() {
+        // Build a two-level tree the way the tree builder does.
+        let cache = Arc::new(Mutex::new(CanopyCacheInner::new()));
+        let (root, child) = {
+            let c1 = Arc::new(Mutex::new(CanopyCrumData::new_leaf(
+                1,
+                CanopyCrumKind::Bert,
+                cache.clone(),
+            )));
+            let c2 = Arc::new(Mutex::new(CanopyCrumData::new_leaf(
+                2,
+                CanopyCrumKind::Bert,
+                cache.clone(),
+            )));
+            let root = Arc::new(Mutex::new(CanopyCrumData::new_parent(
+                c1.clone(),
+                c2,
+                CanopyCrumKind::Bert,
+                cache.clone(),
+            )));
+            // The tree builder wires parents separately; mirror it.
+            c1.lock().unwrap_or_else(|e| e.into_inner()).parent = Some(root.clone());
+            (root, c1)
+        };
+        let first = find_root(&child);
+        let second = find_root(&child);
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "cache must return the same root Arc"
+        );
+        assert!(Arc::ptr_eq(&first, &root));
+    }
+
+    /// Zero-length entries are skipped by overlay build (uncovered
+    /// license_overlay.rs:59) — mirrored by OwnerSet::from_entries.
+    #[test]
+    fn zero_len_entries_skipped_in_owner_sets() {
+        use super::super::range_element::Carrier;
+        let zero_len = Arc::new(Carrier::new(crate::edition::RangeElement::text("")));
+        let owned = Arc::new(
+            Carrier::new(crate::edition::RangeElement::text("x")).with_provenance(
+                crate::edition::provenance::ElementProvenance {
+                    author_public_key: [0u8; 32],
+                    author_display_name: "t".into(),
+                    author_club_id: 5,
+                    timestamp: 0,
+                    author_type: crate::edition::provenance::AuthorType::Human,
+                    llm_model: None,
+                    historical_author_id: None,
+                    source_work_id: None,
+                    transcluded_by: None,
+                    derived_by: None,
+                },
+            ),
+        );
+        let os = crate::edition::orgl::OwnerSet::from_entries(&[(0, zero_len), (1, owned)]);
+        assert_eq!(
+            os.owners(),
+            &[5],
+            "zero-len carriers contribute nothing; owned ones do"
+        );
+    }
+}

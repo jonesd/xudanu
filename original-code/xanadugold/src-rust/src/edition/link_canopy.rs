@@ -227,34 +227,6 @@ impl LinkCanopy {
     /// Remove an entry; recomputes OR bits up the path (removal is
     /// rarer than insert; recompute-from-children keeps it simple
     /// and correct).
-    pub fn remove(&mut self, work: u64, entry: &AttachmentEntry) {
-        self.remove_at(self.root(), work, entry);
-    }
-
-    fn remove_at(&mut self, idx: usize, work: u64, entry: &AttachmentEntry) {
-        let node = &mut self.nodes[idx];
-        if node.leaf.is_some() {
-            if let Some(leaf) = node.leaf_map.get_mut(&work) {
-                leaf.entries.retain(|e| e != entry);
-                // bits recompute deferred to the upward pass below
-            }
-            return;
-        }
-        let (l, r) = (node.left.unwrap(), node.right.unwrap());
-        let mid = mid_of(node.lo, node.hi);
-        if work <= mid {
-            self.remove_at(l, work, entry);
-        } else {
-            self.remove_at(r, work, entry);
-        }
-        // Recompute this node's bits from children + any leaf data.
-        let mut bits = TypeBits::default();
-        for c in [l, r] {
-            bits.union(&self.nodes[c].bits);
-        }
-        self.nodes[idx].bits = bits;
-    }
-
     /// Leaf bit recompute is not derivable from children (leaves
     /// hold the truth), so removal must fix leaf bits from its
     /// remaining entries — which requires the registry to map

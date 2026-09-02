@@ -886,3 +886,106 @@ mod tests {
         assert_eq!(flags & IS_PARTIAL_FLAG, IS_PARTIAL_FLAG);
     }
 }
+
+// ---- Coverage-driven armor: the are_equal_props comparison algebra
+// (uncovered block 406-467 — the change-detection A-3 P4 leans on).
+
+#[cfg(test)]
+mod are_equal_props_tests {
+    use super::*;
+
+    fn bert(perm: &[Id], endorse: &[Id], waiting: bool, partial: bool) -> Prop {
+        Prop::Bert(BertProp::new(
+            perm.to_vec(),
+            endorse.to_vec(),
+            waiting,
+            partial,
+        ))
+    }
+
+    fn sensor(perm: &[Id], endorse: &[Id]) -> Prop {
+        Prop::Sensor(SensorProp::new(perm.to_vec(), endorse.to_vec(), false))
+    }
+
+    fn id(n: u64) -> Id {
+        Id::global(n as i64)
+    }
+
+    #[test]
+    fn permissions_equality_bert() {
+        let a = bert(&[id(1)], &[id(9)], false, false);
+        let same = bert(&[id(1)], &[id(8)], true, true);
+        let diff = bert(&[id(2)], &[id(9)], false, false);
+        assert!(a.are_equal_props(PropChangeKind::Permissions, &same));
+        assert!(!a.are_equal_props(PropChangeKind::Permissions, &diff));
+    }
+
+    #[test]
+    fn permissions_equality_sensor_ignores_endorsements() {
+        let a = sensor(&[id(1)], &[id(5)]);
+        let same = sensor(&[id(1)], &[id(6)]);
+        let diff = sensor(&[id(2)], &[id(5)]);
+        assert!(a.are_equal_props(PropChangeKind::Permissions, &same));
+        assert!(!a.are_equal_props(PropChangeKind::Permissions, &diff));
+    }
+
+    #[test]
+    fn endorsements_equality_ignores_permissions() {
+        let a = bert(&[id(1)], &[id(9)], false, false);
+        let same = bert(&[id(2)], &[id(9)], true, true);
+        let diff = bert(&[id(1)], &[id(8)], false, false);
+        assert!(a.are_equal_props(PropChangeKind::Endorsements, &same));
+        assert!(!a.are_equal_props(PropChangeKind::Endorsements, &diff));
+    }
+
+    #[test]
+    fn endorsements_equality_sensor_ignores_permissions() {
+        let a = sensor(&[id(1)], &[id(5)]);
+        let same = sensor(&[id(2)], &[id(5)]);
+        let diff = sensor(&[id(1)], &[id(6)]);
+        assert!(a.are_equal_props(PropChangeKind::Endorsements, &same));
+        assert!(!a.are_equal_props(PropChangeKind::Endorsements, &diff));
+    }
+
+    #[test]
+    fn cannot_partialize_equality_only_that_flag() {
+        let a = bert(&[id(1)], &[id(9)], false, true);
+        let same = bert(&[id(2)], &[id(8)], true, true);
+        let diff = bert(&[id(1)], &[id(9)], false, false);
+        assert!(a.are_equal_props(PropChangeKind::CannotPartialize, &same));
+        assert!(!a.are_equal_props(PropChangeKind::CannotPartialize, &diff));
+    }
+
+    #[test]
+    fn detector_waiting_equality_only_that_flag() {
+        let a = bert(&[id(1)], &[id(9)], true, false);
+        let same = bert(&[id(2)], &[id(8)], true, true);
+        let diff = bert(&[id(1)], &[id(9)], false, false);
+        assert!(a.are_equal_props(PropChangeKind::DetectorWaiting, &same));
+        assert!(!a.are_equal_props(PropChangeKind::DetectorWaiting, &diff));
+    }
+
+    #[test]
+    fn mixed_variants_never_equal() {
+        let b = bert(&[id(1)], &[], false, false);
+        let s = sensor(&[id(1)], &[]);
+        for kind in [PropChangeKind::Permissions, PropChangeKind::Endorsements] {
+            assert!(!b.are_equal_props(kind, &s));
+            assert!(!s.are_equal_props(kind, &b));
+        }
+        // CannotPartialize/DetectorWaiting on Sensors: not comparable.
+        assert!(!s.are_equal_props(PropChangeKind::CannotPartialize, &s.clone()));
+    }
+
+    #[test]
+    fn changed_produces_exactly_the_requested_change() {
+        let old = bert(&[id(1)], &[id(9)], false, false);
+        let perms_only = bert(&[id(2), id(3)], &[id(7)], true, true);
+        let merged = old.changed(PropChangeKind::Permissions, &perms_only);
+        // New permissions; old endorsements/flags preserved.
+        assert!(merged.are_equal_props(PropChangeKind::Permissions, &perms_only));
+        assert!(merged.are_equal_props(PropChangeKind::Endorsements, &old));
+        assert!(merged.are_equal_props(PropChangeKind::DetectorWaiting, &old));
+        assert!(merged.are_equal_props(PropChangeKind::CannotPartialize, &old));
+    }
+}
