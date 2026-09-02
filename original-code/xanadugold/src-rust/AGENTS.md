@@ -128,6 +128,7 @@ Other subcommands: `init | verify | rebuild-manifest | verify-security-log | pre
 | Script | Use |
 |---|---|
 | `restart.sh` | Dev servers (backend :8080 + Vite :5173) — graceful stop, port cleanup, health-wait. **The default way to run anything live.** |
+| `clear-build-cache.sh` | Reclaim disk: drops target/debug/incremental (the usual multi-GB hog), llvm-cov, stale release. **Run this when builds fail with 'No space left on device'** |
 | `rebuild.sh` | Clean rebuild of backend + frontend |
 | `pre-push.sh` | Fast pre-push static checks (CI runs the full suites) |
 | `demo-links-seed.mjs` | Seed a live server with the FR-40 links demo corpus (gathered end-sets, three-ended, comment-on-link, descriptor). `node scripts/demo-links-seed.mjs [ws-url]` against a `--edit-policy public-sandbox` server |
