@@ -181,6 +181,48 @@ integration point is "attach to Loaf" which touches orgl.rs
 construction paths (S2's territory — but S2's machinery is proven
 stable).
 
+### A-3 implementation plan (2026-09-02 survey, branch fr52-a3-canopy-enfilade)
+
+**Survey findings:**
+- `Loaf` (orgl.rs:77) already maintains per-node content crums
+  through every construction path (`compute_leaf_crum_parts`,
+  `compute_split_crum`, `compute_dsp_crum`) — the license canopy
+  mirrors this exact pattern.
+- backfollow is the live precedent: `CanopyCrumData` +
+  `BertProp` + `propagate_flags` already run in production for
+  content-reuse flags.
+- **Critical constraint (from FR-38's own design):** the overlay
+  resolves owner→license at QUERY TIME (`query(start, end,
+  owner_license: F)`) so re-licensing never rebuilds. The tree
+  therefore caches what is STABLE — owner CLUB SETS from entry
+  provenance — never license classes. Baking license bits into
+  the tree would regress FR-38's improvement over Gold. Hoist/
+  widdershin maintains the owner sets on edit.
+
+**Design: per-node `OwnerCrum`** (parallel to the content crum):
+- Leaf: the distinct owner clubs of its entries' provenance.
+- Split/Dsp: union of children.
+- Query: descend; subtree fully inside the span → merge its
+  cached owner set (license classes resolved via the caller's
+  lookup at query time); partial → descend. Distinct-owner
+  summary in O(subtree-hits + log n) instead of O(runs).
+- PartialEq: owner crums derive from entry provenance
+  (content-adjacent, deterministic) — safe to include.
+
+**Phases:**
+- A-3 P1: `OwnerCrum` on Loaf, maintained in all crum
+  construction paths; unit tests for maintenance invariants.
+- A-3 P2: tree-descent `owner_summary(start, end)` on
+  Edition/OrglRoot.
+- A-3 P3: armor — equivalence vs the flat FR-38 overlay
+  (randomized editions/queries, incl. re-license mutations:
+  same owner sets, classes resolved identically); then switch
+  the server's license_overlay_cache to the tree and retire the
+  flat overlay.
+- A-3 P4: hoist integration — widdershin maintains owner crums
+  on the live edit path (already how with/without rebuild
+  paths work; hoist.rs drives recorder propagation).
+
 ### A-4: CrossSpace2/Arrangement/FilterSpace activation
 
 CrossSpace2 is complete: full `Space` impl over (A×B) with cross
