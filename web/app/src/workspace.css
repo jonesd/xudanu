@@ -3919,3 +3919,174 @@
   cursor: pointer;
 }
 .marker-tooltip-origin:hover { background: rgba(124, 58, 237, 0.35); }
+
+/* ── Studio layout (Design B: three-pane workspace) ───────────────── */
+
+.ws-body.ws-studio {
+  grid-template-columns: 240px 300px minmax(320px, 1fr) 320px;
+}
+.ws-body.ws-studio:has(.ws-left-rail.hidden) {
+  grid-template-columns: 0 300px minmax(320px, 1fr) 320px;
+}
+@media (max-width: 1500px) {
+  .ws-body.ws-studio {
+    grid-template-columns: 0 280px minmax(300px, 1fr) 300px;
+  }
+}
+
+/* Rail brand + new-doc (studio) */
+.ws-studio-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 14px;
+}
+.ws-studio-brand-name {
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 1px;
+  color: var(--amber);
+}
+.ws-studio-rail-newdoc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--amber);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  margin: 0 10px 12px;
+  cursor: pointer;
+}
+.ws-studio-rail-newdoc:hover { filter: brightness(1.08); }
+.ws-studio-rail-foot {
+  margin-top: auto;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.ws-studio-layout-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 6px;
+  font-size: 11.5px;
+  padding: 5px 10px;
+  cursor: pointer;
+  width: 100%;
+}
+.ws-studio-layout-toggle:hover { color: var(--text); }
+
+/* Documents column */
+.ws-studio-list {
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg);
+}
+.ws-studio-list-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 16px 8px;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.ws-studio-count {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 400;
+}
+.ws-studio-newdoc {
+  margin-left: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ws-studio-newdoc:hover { border-color: var(--amber); color: var(--amber); }
+.ws-studio-filters {
+  display: flex;
+  gap: 6px;
+  padding: 0 16px 10px;
+}
+.ws-studio-filter {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 20px;
+  font-size: 11.5px;
+  padding: 3px 12px;
+  cursor: pointer;
+}
+.ws-studio-filter.on {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+.ws-studio-docs {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.ws-studio-doc {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border);
+  padding: 11px 16px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.ws-studio-doc:hover { background: var(--bg-surface); }
+.ws-studio-doc.active {
+  background: var(--bg-elevated);
+  border-left: 3px solid var(--amber);
+  padding-left: 13px;
+}
+.ws-studio-doc-t { font-size: 13.5px; font-weight: 550; color: var(--text); }
+.ws-studio-doc-m { font-size: 11.5px; color: var(--text-muted); }
+.ws-studio-meta { padding: 18px 16px; font-size: 12.5px; color: var(--text-dim); }
+
+/* Paper surface: the reading pane becomes a warm page */
+.ws-doc-surface.ws-studio-paper {
+  padding: 20px 24px;
+  overflow-y: auto;
+}
+.ws-doc-surface.ws-studio-paper > * {
+  max-width: 860px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+/* Layout-mode toggle (floating) */
+.ws-studio-layout-fab {
+  position: fixed;
+  right: 20px;
+  bottom: 64px;
+  z-index: 40;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.ws-studio-layout-fab:hover { color: var(--text); border-color: var(--amber); }

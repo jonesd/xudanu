@@ -27,6 +27,7 @@ import { LICENSES } from "../../api/crdt_sync";
 import { HomeLanding } from "../HomeLanding";
 import { BeamsView } from "../BeamsView";
 import { OriginPanel } from "../OriginPanel";
+import { StudioSidebar } from "../StudioSidebar";
 import type { TransclusionMarker } from "../../api/crdt_sync";
 import type { WorkKind } from "../../graph-scoring";
 import { KIND_ICON, KIND_COLOR, KIND_ICON_COLOR } from "../../graph-scoring";
@@ -180,6 +181,13 @@ export function WorkspaceShell() {
   const [landingDismissed, setLandingDismissed] = useState(false);
   const [beamsOpen, setBeamsOpen] = useState(false);
   const [originMarker, setOriginMarker] = useState<TransclusionMarker | null>(null);
+  const [studio, setStudio] = useState<boolean>(() => {
+    try { return storageGet("xudanu_layout_studio") === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { storageSet("xudanu_layout_studio", studio ? "1" : "0"); } catch { /* ignore */ }
+  }, [studio]);
+  const studioActive = studio && !isTablet && !isPhone;
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"updated" | "title" | "revisions" | "id">("updated");
   const [invalidWorkId, setInvalidWorkId] = useState<number | null>(null);
@@ -2936,12 +2944,25 @@ export function WorkspaceShell() {
         activeDarkPaletteId={themeState.darkPaletteId}
       />
 
-      <div className="ws-body">
+      <div className={`ws-body ${studioActive ? "ws-studio" : ""}`}>
         {/* Left rail */}
         <aside
           className={`ws-left-rail ${leftRailHidden ? "hidden" : ""} ${isTablet && openDrawer === "left" ? "drawer-open" : ""}`}
           data-drawer="left"
         >
+          {studioActive && (
+            <>
+              <div className="ws-studio-brand">
+                <span className="ws-studio-brand-name">xudanu</span>
+              </div>
+              <button
+                className="ws-studio-rail-newdoc"
+                onClick={() => (identity ? void createAndSelectWork() : setShowIdentity(true))}
+              >
+                ＋ New document
+              </button>
+            </>
+          )}
           <div className="ws-rail-toggle">
             <button
               className={leftRailMode === "graph" ? "active" : ""}
@@ -3140,8 +3161,19 @@ export function WorkspaceShell() {
           </button>
         </aside>
 
+        {studioActive && (
+          <StudioSidebar
+            works={works}
+            worksLoading={worksLoading}
+            activeWorkId={workBeId}
+            currentClubId={identity?.club_id ?? null}
+            onSelectWork={selectWork}
+            onNewDocument={() => (identity ? void createAndSelectWork() : setShowIdentity(true))}
+          />
+        )}
+
         {/* Document surface */}
-        <main className={`ws-doc-surface ${canEdit ? "editable" : "readonly"} ${editorMode === "reading" ? "reading-mode" : ""}`}>
+        <main className={`ws-doc-surface ${canEdit ? "editable" : "readonly"} ${editorMode === "reading" ? "reading-mode" : ""} ${studioActive ? "ws-studio-paper" : ""}`}>
           {invalidWorkId !== null ? (
             <div className="ws-empty-doc">
               <h2>Work 0x{invalidWorkId.toString(16)} not found</h2>
@@ -5244,6 +5276,15 @@ export function WorkspaceShell() {
         <button className="ws-beams-entry" onClick={() => setBeamsOpen(true)}>
           <i aria-hidden /> Beams
           <span className="ws-beams-entry-count">{transclusion.links.length}</span>
+        </button>
+      )}
+      {!isPhone && !isTablet && (
+        <button
+          className="ws-studio-layout-fab"
+          onClick={() => setStudio((v) => !v)}
+          title={studio ? "Switch to classic layout" : "Switch to studio layout"}
+        >
+          {studio ? "◨ Classic" : "◧ Studio"}
         </button>
       )}
       {beamsOpen && workBeId !== null && (
