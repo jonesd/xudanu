@@ -38,6 +38,7 @@ pub mod region_index;
 pub mod shared_mapping;
 pub mod snapshot;
 pub mod space_bridge;
+pub mod span_key;
 pub mod three_way;
 pub mod transclusion;
 pub mod tumbler;
