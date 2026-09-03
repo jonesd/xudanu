@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #1a1a24; --bg-surface: #22222e; --border: #3a3a48;
+    --text: #e8e6e0; --text-muted: #8a8a96; --text-dim: #5a5a66;
+    --amber: #d97706; --doc-bg: #faf9f6; --doc-text: #1a1a1a;
+    --green: #059669; --blue: #2563eb; --purple: #7c3aed; --red: #dc2626;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); font-family: -apple-system, 'Inter', sans-serif; color: var(--text); width: 1440px; height: 900px; overflow: hidden; }
+
+  .topbar { height: 50px; background: var(--bg-surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 12px; }
+  .brand { font-weight: 700; color: var(--amber); letter-spacing: 1px; }
+  .crumb { color: var(--text-muted); font-size: 13px; }
+  .crumb b { color: var(--text); }
+  .beams-toggle { margin-left: auto; font-size: 12px; color: var(--text); border: 1px solid var(--border); padding: 4px 12px; border-radius: 6px; background: var(--bg-elevated); }
+
+  .legend { position: absolute; top: 62px; left: 20px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 11.5px; color: var(--text-muted); z-index: 10; }
+  .legend .row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+  .swatch { width: 18px; height: 3px; border-radius: 2px; }
+  .legend b { color: var(--text); font-weight: 550; }
+
+  .stage { position: relative; display: flex; gap: 24px; padding: 56px 24px 24px; height: 850px; }
+
+  .doc { width: 400px; background: var(--doc-bg); color: var(--doc-text); border-radius: 4px; padding: 40px 44px; box-shadow: 0 2px 12px rgba(0,0,0,.35); position: relative; z-index: 2; }
+  .doc h3 { font-family: 'Source Serif 4', Georgia, serif; font-size: 17px; margin-bottom: 14px; }
+  .doc p { font-family: 'Source Serif 4', Georgia, serif; font-size: 13.5px; line-height: 1.75; color: #333; margin-bottom: 12px; }
+  .doc .meta { font-size: 11px; color: #8a8a8a; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid #e5e2db; }
+
+  /* span highlights, each with a color = its link */
+  .s1 { background: rgba(124,58,237,.22); border-bottom: 2px solid var(--purple); border-radius: 2px; padding: 1px 2px; }
+  .s2 { background: rgba(5,150,105,.20); border-bottom: 2px solid var(--green); border-radius: 2px; padding: 1px 2px; }
+  .s3 { background: rgba(220,38,38,.18); border-bottom: 2px solid var(--red); border-radius: 2px; padding: 1px 2px; }
+  .s4 { background: rgba(217,119,6,.22); border-bottom: 2px solid var(--amber); border-radius: 2px; padding: 1px 2px; }
+
+  /* beam overlay */
+  svg.overlay { position: absolute; top: 0; left: 0; width: 1440px; height: 900px; z-index: 1; pointer-events: none; }
+  .beam { fill: none; stroke-width: 2.5; opacity: .85; }
+  .beam-label { font-size: 10.5px; font-family: -apple-system, sans-serif; }
+
+  .hovercard { position: absolute; top: 70px; right: 24px; width: 300px; background: var(--bg-surface); border: 1px solid var(--purple); border-radius: 10px; padding: 14px 16px; z-index: 20; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+  .hovercard .h { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; margin-bottom: 8px; }
+  .hovercard .h .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--purple); }
+  .hovercard p { font-size: 11.5px; color: var(--text-muted); line-height: 1.55; margin-bottom: 8px; }
+  .hovercard .ends { font-size: 11px; color: var(--text-dim); }
+  .hovercard .ends b { color: var(--text-muted); font-weight: 500; }
+  .hovercard .btn { display: inline-block; margin-top: 8px; background: var(--purple); color: #fff; font-size: 11px; padding: 5px 10px; border-radius: 5px; margin-right: 6px; }
+  .hovercard .btn.ghost { background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text); }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <span class="brand">xudanu</span>
+    <span class="crumb">Beams view — <b>3 documents · 4 connections · 7 ends</b></span>
+    <span class="beams-toggle">⇄ Beams on · parallel scroll</span>
+  </div>
+
+  <div class="legend">
+    <div class="row"><span class="swatch" style="background:var(--purple)"></span><b>3-ended</b> — “deep structure” cited in 3 docs</div>
+    <div class="row"><span class="swatch" style="background:var(--green)"></span><b>2-ended</b> — comment ↔ passage</div>
+    <div class="row"><span class="swatch" style="background:var(--red)"></span><b>2-ended</b> — contradiction flag</div>
+    <div class="row"><span class="swatch" style="background:var(--amber)"></span><b>2-ended</b> — supports/derives</div>
+  </div>
+
+  <div class="hovercard">
+    <div class="h"><span class="dot"></span>Link L-3f7 · 3 ends</div>
+    <p>Anyone created this link — no author coordination. Addresses are tumblers: it survives every revision of all three documents.</p>
+    <div class="ends"><b>Ends:</b> Notes ¶2 · Interview ¶5 · Critique ¶1</div>
+    <span class="btn">Add an end…</span><span class="btn ghost">Copy tumbler set</span>
+  </div>
+
+  <div class="stage">
+    <svg class="overlay">
+      <!-- purple 3-ended link: doc1 s1 -> doc2 s1, doc2 s1 -> doc3 s1 -->
+      <path class="beam" stroke="#7c3aed" d="M 400 220 C 470 220, 470 300, 540 300"/>
+      <path class="beam" stroke="#7c3aed" d="M 890 300 C 960 300, 960 200, 1030 200"/>
+      <!-- green comment link: doc2 s2 <-> doc3 s2 -->
+      <path class="beam" stroke="#059669" d="M 890 430 C 960 430, 960 420, 1030 420"/>
+      <!-- red contradiction: doc1 s3 <-> doc3 s3 -->
+      <path class="beam" stroke="#dc2626" d="M 400 350 C 720 560, 750 560, 1030 540"/>
+      <!-- amber derives: doc1 s4 <-> doc2 s4 -->
+      <path class="beam" stroke="#d97706" d="M 400 480 C 470 480, 470 520, 540 520"/>
+    </svg>
+
+    <div class="doc">
+      <h3>Notes on hypertext</h3>
+      <div class="meta">you · rev 12 · edited 2m ago</div>
+      <p>The core insight is that quotation is not copying; <span class="s1">the deep structure of literature is tumblered</span>, and connections go both ways.</p>
+      <p><span class="s3">A link in Xanadu can never dangle</span> — some dispute this claim for partial transclusions.</p>
+      <p><span class="s4">Tumblers assign permanent addresses to bytes</span>, so references outlive every edit.</p>
+    </div>
+
+    <div class="doc">
+      <h3>Gold interview prep</h3>
+      <div class="meta">Roger Gregory · rev 4 · 2 days ago</div>
+      <p>…the interview turned to structure. Ted kept returning to <span class="s1">the deep structure of literature is tumblered</span> — connections go both ways, and nothing is fully severed.</p>
+      <p><span class="s4">Every span has a tumbler address</span> derived from content, not position in a file.</p>
+      <p><span class="s2">This is the part the web never got right.</span></p>
+    </div>
+
+    <div class="doc">
+      <h3>Critique of transclusion</h3>
+      <div class="meta">anonymous · rev 2 · shared</div>
+      <p>Whatever its merits, the claim that <span class="s1">the deep structure of literature is tumblered</span> needs more evidence from real corpora.</p>
+      <p><span class="s2">Disagree — see the interview notes.</span></p>
+      <p>In practice <span class="s3">links can dangle when sources vanish</span> unless federation guarantees replication.</p>
+    </div>
+  </div>
+</body>
+</html>

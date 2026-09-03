@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #1a1a24; --bg-surface: #22222e; --bg-elevated: #2a2a38;
+    --border: #3a3a48; --text: #e8e6e0; --text-muted: #8a8a96; --text-dim: #5a5a66;
+    --amber: #d97706; --doc-bg: #faf9f6; --doc-text: #1a1a1a;
+    --green: #059669; --blue: #2563eb; --purple: #7c3aed;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); font-family: -apple-system, 'Inter', sans-serif; color: var(--text); width: 1440px; height: 900px; overflow: hidden; display: flex; }
+
+  .rail { width: 220px; background: var(--bg-surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 16px 12px; }
+  .brand { font-weight: 700; font-size: 17px; letter-spacing: 1px; color: var(--amber); padding: 4px 10px 18px; }
+  .newdoc { display: flex; align-items: center; gap: 8px; background: var(--amber); color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 14px; font-weight: 600; margin-bottom: 18px; }
+  .section { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-dim); padding: 10px 10px 6px; }
+  .item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; font-size: 13.5px; color: var(--text-muted); }
+  .item.active { background: var(--bg-elevated); color: var(--text); }
+  .item .k { font-size: 10px; color: var(--text-dim); margin-left: auto; font-family: monospace; }
+  .rail .foot { margin-top: auto; padding: 10px; font-size: 12px; color: var(--text-dim); border-top: 1px solid var(--border); }
+
+  .list-col { width: 320px; border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  .list-head { padding: 18px 18px 10px; font-size: 15px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .list-head span.badge { font-size: 11px; color: var(--text-dim); font-weight: 400; }
+  .filter { display: flex; gap: 6px; padding: 0 18px 12px; }
+  .f { font-size: 12px; padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border); color: var(--text-muted); }
+  .f.on { background: var(--bg-elevated); color: var(--text); border-color: var(--text-dim); }
+  .doc { padding: 14px 18px; border-top: 1px solid var(--border); cursor: pointer; }
+  .doc:hover { background: var(--bg-surface); }
+  .doc.sel { background: var(--bg-elevated); border-left: 3px solid var(--amber); }
+  .doc .t { font-size: 14px; font-weight: 550; margin-bottom: 3px; }
+  .doc .m { font-size: 12px; color: var(--text-muted); }
+  .doc .s { display: flex; gap: 8px; margin-top: 6px; font-size: 11px; color: var(--text-dim); }
+  .doc .s i { font-style: normal; }
+
+  .reader { flex: 1; display: flex; flex-direction: column; }
+  .reader-bar { height: 48px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; padding: 0 20px; background: var(--bg-surface); }
+  .crumb { font-size: 13px; color: var(--text-muted); }
+  .crumb b { color: var(--text); font-weight: 600; }
+  .mode { margin-left: auto; display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-size: 12px; }
+  .mode span { padding: 5px 12px; color: var(--text-muted); }
+  .mode span.on { background: var(--bg-elevated); color: var(--text); }
+  .paper { flex: 1; background: var(--doc-bg); margin: 20px; border-radius: 4px; padding: 56px 72px; color: var(--doc-text); overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.35); }
+  .paper h2 { font-size: 24px; margin-bottom: 18px; font-family: 'Source Serif 4', Georgia, serif; }
+  .paper p { font-size: 15px; line-height: 1.75; color: #333; margin-bottom: 14px; font-family: 'Source Serif 4', Georgia, serif; }
+  .quote { border-left: 3px solid var(--purple); background: rgba(124,58,237,.06); padding: 10px 16px; margin: 14px 0; font-size: 14px; border-radius: 0 4px 4px 0; }
+  .quote .src { font-size: 11px; color: var(--purple); margin-top: 6px; }
+  .cursor1, .cursor2 { position: relative; display: inline-block; width: 2px; height: 1.15em; vertical-align: text-bottom; }
+  .cursor1 { background: var(--amber); } .cursor2 { background: var(--green); left: 40px; }
+  .presence { margin-left: 12px; display: flex; }
+  .avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--green); color: #fff; font-size: 10px; display: flex; align-items: center; justify-content: center; margin-left: -6px; border: 2px solid var(--bg-surface); }
+  .avatar.b { background: var(--blue); }
+</style>
+</head>
+<body>
+  <div class="rail">
+    <div class="brand">xudanu</div>
+    <div class="newdoc">＋ New document <span style="margin-left:auto;font-size:11px;opacity:.8">N</span></div>
+    <div class="section">Workspace</div>
+    <div class="item active">📄 Documents <span class="k">⌘1</span></div>
+    <div class="item">✂️ Transclusions</div>
+    <div class="item">👤 People</div>
+    <div class="item">🔗 Links</div>
+    <div class="section">Views</div>
+    <div class="item">🕘 History</div>
+    <div class="item">☆ Starred</div>
+    <div class="foot">Anonymous — Sign in</div>
+  </div>
+
+  <div class="list-col">
+    <div class="list-head">Documents <span class="badge">7</span></div>
+    <div class="filter"><span class="f on">All</span><span class="f">Mine</span><span class="f">Shared</span><span class="f">Archived</span></div>
+    <div class="doc sel">
+      <div class="t">Notes on hypertext</div>
+      <div class="m">edited 2 minutes ago · you + Roger</div>
+      <div class="s"><i>⇣ 3 quotes in</i><i>⇡ 1 quoted</i></div>
+    </div>
+    <div class="doc">
+      <div class="t">Gold interview prep</div>
+      <div class="m">yesterday</div>
+      <div class="s"><i>⇣ 1 quote in</i></div>
+    </div>
+    <div class="doc">
+      <div class="t">Transclusion design notes</div>
+      <div class="m">Aug 12 · shared</div>
+    </div>
+    <div class="doc">
+      <div class="t">Untitled</div>
+      <div class="m">draft · Aug 10</div>
+    </div>
+  </div>
+
+  <div class="reader">
+    <div class="reader-bar">
+      <span class="crumb">Documents <b>/ Notes on hypertext</b></span>
+      <div class="presence"><span class="avatar">DJ</span><span class="avatar b">RG</span></div>
+      <div class="mode"><span class="on">Edit</span><span>Read</span><span>Beams</span></div>
+    </div>
+    <div class="paper">
+      <h2>Notes on hypertext</h2>
+      <p>The core insight of Xanadu is that quotation is not copying. When you quote a passage, both documents should know about the connection — the quote remains live, traceable to its origin.<span class="cursor1"></span></p>
+      <div class="quote">
+        "The deep structure of literature is tumblered — connections go both ways, and nothing is ever fully severed."
+        <div class="src">⇣ from “Gold interview prep” · rev 4 · Roger Gregory</div>
+      </div>
+      <p>Practically, this means our storage needs bidirectional provenance on every span<span class="cursor2"></span> — the part the O-tree gives us for free, and the part conventional documents never had.</p>
+    </div>
+  </div>
+</body>
+</html>
