@@ -18,6 +18,11 @@ impl BranchId {
     pub fn to_u64(&self) -> u64 {
         self.0
     }
+
+    /// FR-52 A-1 P1: rebuild from the persisted id (snapshot restore).
+    pub fn from_u64(raw: u64) -> Self {
+        BranchId(raw)
+    }
 }
 
 // [New Migration Comment] Discriminates the three branch shapes from the
@@ -25,6 +30,7 @@ impl BranchId {
 // DagBranch (two parents). An enum replaces the three concrete subclasses.
 // Source: branchx.hxx lines 90-175
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum BranchKind {
     Root,
     Tree {
@@ -49,6 +55,7 @@ pub enum BranchKind {
 // The original also had myLeft/myRight as CHKPTR(BranchDescription | NULL),
 // which were owning pointers with a checked-pointer wrapper.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Branch {
     pub kind: BranchKind,
     // [Original] "At the moment, these never go away!!!"
@@ -66,6 +73,7 @@ pub struct Branch {
 // back from disk. Here, we record the identity and hash; reification is deferred
 // until the persistence layer exists.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BranchStub {
     pub hash: u32,
 }
@@ -76,9 +84,18 @@ pub struct BranchStub {
 // pointer swapped via changeClassToThatOf (tofux.ixx line 22-34). Making the
 // transition explicit in the type system is the Rust equivalent.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum BranchState {
     Materialized(Branch),
     Stub(BranchStub),
+}
+
+/// FR-52 A-1 P1: the persisted form of one branch entry.
+#[cfg(feature = "serde")]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SnapshotBranchEntry {
+    pub id: u64,
+    pub state: BranchState,
 }
 
 #[derive(Debug, Clone)]
@@ -232,6 +249,44 @@ impl BranchStore {
 
     /// Get an immutable reference to a materialized branch.
     /// Returns Err if not found or if the branch is currently a stub.
+    /// FR-52 A-1 P1: snapshot the branch FACTS for persistence.
+    /// Derived caches live in DagWood and rebuild lazily.
+    #[cfg(feature = "serde")]
+    pub fn snapshot_entries(&self) -> Vec<SnapshotBranchEntry> {
+        let mut entries: Vec<SnapshotBranchEntry> = self
+            .branches
+            .iter()
+            .map(|(id, state)| SnapshotBranchEntry {
+                id: id.to_u64(),
+                state: state.clone(),
+            })
+            .collect();
+        entries.sort_by_key(|e| e.id);
+        entries
+    }
+
+    /// Rebuild from snapshot facts. next_id must be >= every id + 1;
+    /// callers carry it in the snapshot.
+    #[cfg(feature = "serde")]
+    pub fn restore(next_id: u64, entries: Vec<SnapshotBranchEntry>) -> Self {
+        let mut branches = HashMap::new();
+        for e in entries {
+            branches.insert(BranchId::from_u64(e.id), e.state);
+        }
+        BranchStore { branches, next_id }
+    }
+
+    /// FR-52 A-1 P1: next id (persisted in the snapshot).
+    #[cfg(feature = "serde")]
+    pub fn next_id(&self) -> u64 {
+        self.next_id
+    }
+
+    /// Debug accessor for restore diagnostics.
+    pub fn next_id_value(&self) -> u64 {
+        self.next_id
+    }
+
     pub fn get(&self, id: BranchId) -> Result<&Branch, BranchError> {
         match self.branches.get(&id) {
             None => Err(BranchError::NotFound(id)),

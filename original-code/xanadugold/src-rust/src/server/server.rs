@@ -81,6 +81,8 @@ struct GrabWaiter {
 
 pub(crate) struct WorkState {
     work: Work,
+    /// FR-52 A-1 P1: the work's place in the server fulltrace.
+    trace: crate::ent::trace::TracePosition,
     chunk_ref: Option<crate::persist::edition_chunks::WorkChunkRef>,
     /// Preserved chunk history from before mark_dirty cleared chunk_ref.
     /// Used by checkpoint to merge old revisions with new ones.
@@ -644,6 +646,10 @@ pub struct Server {
     /// FR-40 enfiladic matching: the link canopy (derived index;
     /// rebuilt at restore and after WAL replay, never journaled).
     link_canopy: crate::edition::link_canopy::LinkCanopy,
+    /// FR-52 A-1 P1: the server's FULLTRACE — every work gets a
+    /// TracePosition at creation (the parallel index; BeId stays
+    /// the primary key, zero existing call sites change).
+    fulltrace: crate::ent::ent::Ent,
     /// Dense bit slots for type ids (custom types are work ids).
     type_slots: crate::edition::link_canopy::TypeSlotRegistry,
     link_counter: BeId,
@@ -854,6 +860,8 @@ impl Default for Server {
 pub(crate) struct DirtyWorkData {
     be_id: BeId,
     work: Work,
+    /// FR-52 A-1 P1: carried to the manifest write.
+    trace: crate::ent::trace::TracePosition,
     is_source: bool,
     source_author_id: Option<BeId>,
     source_edition_info: Option<String>,
@@ -885,6 +893,8 @@ pub(crate) struct CheckpointPayload {
     fossil_snapshots_data: Vec<crate::edition::recorder::Fossil>,
 
     links: Vec<crate::persist::manifest::LinkEntry>,
+    /// FR-52 A-1 P1: the fulltrace snapshot for the manifest.
+    fulltrace_snapshot: Option<crate::ent::dagwood::SnapshotDagWood>,
 
     dirty_works: Vec<DirtyWorkData>,
     dirty_work_gens: Vec<(BeId, u64)>,
@@ -1002,6 +1012,8 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         work_refs.push((gen_be_id, work_ref.clone(), dirty_gen));
         all_work_entries.push(crate::persist::manifest::WorkEntry {
+            trace_branch: Some(dw.trace.branch().to_u64()),
+            trace_position: Some(dw.trace.position()),
             be_id: dw.be_id,
             work_ref,
             is_source: dw.is_source,
@@ -1106,6 +1118,7 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         'a'
     };
     let manifest = crate::persist::manifest::Manifest {
+        fulltrace: payload.fulltrace_snapshot.clone(),
         format_version: 0,
         created_at: String::new(),
         server_version: String::new(),
@@ -1282,6 +1295,7 @@ impl Server {
             work_to_links: HashMap::new(),
             link_counter: 0,
             link_canopy: crate::edition::link_canopy::LinkCanopy::new(),
+            fulltrace: crate::ent::ent::Ent::new(),
             type_slots: crate::edition::link_canopy::TypeSlotRegistry::new(),
             link_type_names: HashMap::new(),
             link_type_registry: HashMap::new(),
@@ -3951,6 +3965,7 @@ impl Server {
 
         let ws = WorkState {
             work,
+            trace: self.fulltrace.new_trace(),
             chunk_ref: None,
             prev_chunk_history: None,
             dirty_gen: 0,
@@ -6359,6 +6374,7 @@ impl Server {
         };
         let ws = WorkState {
             work,
+            trace: self.fulltrace.new_trace(),
             chunk_ref: None,
             prev_chunk_history: None,
             dirty_gen: 0,
@@ -11392,6 +11408,7 @@ impl Server {
         work.set_read_club(Some(self.system_clubs.public_club));
         let ws = WorkState {
             work: work.clone(),
+            trace: self.fulltrace.new_trace(),
             chunk_ref: None,
             prev_chunk_history: None,
             dirty_gen: 0,
@@ -12064,6 +12081,12 @@ impl Server {
 
         self.personal_club_count = self.clubs.values().filter(|c| c.is_personal()).count();
 
+        // FR-52 A-1 P1: restore the fulltrace exactly as checkpointed
+        // (legacy manifests: None -> keep the fresh Ent; per-work
+        // traces then synthesize consistently).
+        if let Some(ft) = &manifest.fulltrace {
+            self.fulltrace = crate::ent::ent::Ent::restore(ft.clone());
+        }
         for work_entry in &manifest.works {
             match crate::persist::edition_chunks::work_from_chunks_current(
                 &work_entry.work_ref,
@@ -12094,8 +12117,17 @@ impl Server {
                     if let Some(hc) = work_entry.history_club {
                         work.set_history_club(Some(hc));
                     }
+                    let trace = match (work_entry.trace_branch, work_entry.trace_position) {
+                        (Some(b), Some(p)) => crate::ent::trace::TracePosition::new(
+                            crate::ent::branch::BranchId::from_u64(b),
+                            p,
+                        ),
+                        // Legacy manifest: synthesize a fresh position.
+                        _ => self.fulltrace.new_trace(),
+                    };
                     let ws = WorkState {
                         work: work.clone(),
+                        trace,
                         chunk_ref: Some(work_entry.work_ref.clone()),
                         prev_chunk_history: None,
                         dirty_gen: 0,
@@ -19603,6 +19635,7 @@ impl Server {
                 work.set_read_club(Some(self.system_clubs.public_club));
                 let ws = WorkState {
                     work,
+                    trace: self.fulltrace.new_trace(),
                     chunk_ref: None,
                     prev_chunk_history: None,
                     dirty_gen: 0,
@@ -21470,6 +21503,13 @@ pub(crate) mod persist_snapshot {
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     pub struct ServerSnapshot {
+        /// FR-52 A-1 P1: the server fulltrace (None = legacy
+        /// snapshot; restore synthesizes positions).
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        fulltrace: Option<crate::ent::dagwood::SnapshotDagWood>,
         grand_map_id_counter: BeId,
         session_counter: u64,
         pub(crate) operation_counter: u64,
@@ -21632,6 +21672,7 @@ pub(crate) mod persist_snapshot {
             });
 
             ServerSnapshot {
+                fulltrace: Some(self.fulltrace.snapshot()),
                 grand_map_id_counter: self.grand_map.id_counter(),
                 session_counter: self.session_counter,
                 operation_counter: self.operation_counter,
@@ -21763,6 +21804,10 @@ pub(crate) mod persist_snapshot {
         }
 
         pub fn from_snapshot(snapshot: &ServerSnapshot) -> Self {
+            let fulltrace = match &snapshot.fulltrace {
+                Some(snap) => crate::ent::ent::Ent::restore(snap.clone()),
+                None => crate::ent::ent::Ent::new(),
+            };
             let mut grand_map = GrandMap::new();
             crate::edition::init_endorsement_flags();
             grand_map.set_id_counter(snapshot.grand_map_id_counter);
@@ -21789,6 +21834,7 @@ pub(crate) mod persist_snapshot {
                 standalone_edition_refs: HashMap::new(),
                 dirty_clubs: HashSet::new(),
                 link_canopy: crate::edition::link_canopy::LinkCanopy::new(),
+                fulltrace,
                 type_slots: crate::edition::link_canopy::TypeSlotRegistry::new(),
                 club_refs: HashMap::new(),
                 edition_detectors: HashMap::new(),
@@ -21952,6 +21998,7 @@ pub(crate) mod persist_snapshot {
                 }
                 let ws = WorkState {
                     work: work.clone(),
+                    trace: server.fulltrace.new_trace(),
                     chunk_ref: None,
                     prev_chunk_history: None,
                     dirty_gen: 0,
@@ -22185,6 +22232,8 @@ pub(crate) mod persist_snapshot {
                     partial
                         .clean_work_entries
                         .push(crate::persist::manifest::WorkEntry {
+                            trace_branch: Some(ws.trace.branch().to_u64()),
+                            trace_position: Some(ws.trace.position()),
                             be_id: *id,
                             work_ref: existing_ref.clone(),
                             is_source: ws.is_source,
@@ -22212,6 +22261,7 @@ pub(crate) mod persist_snapshot {
                     partial.dirty_works.push(DirtyWorkData {
                         be_id: *id,
                         work: ws.work.clone(),
+                        trace: ws.trace,
                         is_source: ws.is_source,
                         source_author_id: ws.source_author_id,
                         source_edition_info: ws.source_edition_info.clone(),
@@ -22525,6 +22575,7 @@ pub(crate) mod persist_snapshot {
                 .collect();
 
             Ok(CheckpointPayload {
+                fulltrace_snapshot: Some(self.fulltrace.snapshot()),
                 chunk_store,
                 manifest_path,
                 data_dir,
@@ -22690,6 +22741,8 @@ pub(crate) mod persist_snapshot {
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
                 };
                 work_entries.push(crate::persist::manifest::WorkEntry {
+                    trace_branch: Some(ws.trace.branch().to_u64()),
+                    trace_position: Some(ws.trace.position()),
                     be_id: *id,
                     work_ref: work_ref.clone(),
                     is_source: ws.is_source,
@@ -22887,6 +22940,7 @@ pub(crate) mod persist_snapshot {
 
             let next_slot = if self.manifest_slot == 'a' { 'b' } else { 'a' };
             let mut manifest = crate::persist::manifest::Manifest {
+                fulltrace: Some(self.fulltrace.snapshot()),
                 format_version: 0,
                 created_at: String::new(),
                 server_version: String::new(),
@@ -46273,5 +46327,104 @@ mod link_canopy_bench {
             server.link_canopy.total_entries(),
             100.0 * visited as f64 / server.link_canopy.total_entries() as f64
         );
+    }
+}
+
+// ---- FR-52 A-1 P1 armor: the fulltrace bijection ----
+
+#[cfg(test)]
+mod a1_fulltrace_tests {
+    use super::*;
+
+    fn setup() -> (Server, SessionId) {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        (server, sid)
+    }
+
+    /// Every work has a position; distinct works have distinct
+    /// positions; the map is a bijection by construction.
+    #[test]
+    fn fulltrace_bijection_on_create() {
+        let (mut server, sid) = setup();
+        let mut ids = Vec::new();
+        for i in 0..10 {
+            ids.push(
+                server
+                    .create_work(sid, Edition::from_text(&format!("w{}", i)))
+                    .unwrap(),
+            );
+        }
+        let positions: Vec<_> = ids
+            .iter()
+            .map(|id| {
+                let (b, p) = {
+                    let ws = server.works.get(id).unwrap();
+                    (ws.trace.branch().to_u64(), ws.trace.position())
+                };
+                (b, p)
+            })
+            .collect();
+        let deduped: std::collections::HashSet<_> = positions.iter().copied().collect();
+        assert_eq!(deduped.len(), 10, "positions distinct");
+        assert!(positions.iter().all(|(b, _)| *b != 0), "no branch 0");
+    }
+
+    /// Checkpoint -> restore: the fulltrace survives; each work's
+    /// position is preserved EXACTLY (the manifest round trip).
+    #[test]
+    fn fulltrace_survives_checkpoint_restore() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_a1_ft_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let mut before = std::collections::HashMap::new();
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            for i in 0..5 {
+                let id = server
+                    .create_work(sid, Edition::from_text(&format!("ft{}", i)))
+                    .unwrap();
+                let ws = server.works.get(&id).unwrap();
+                before.insert(id, (ws.trace.branch().to_u64(), ws.trace.position()));
+            }
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert_eq!(server.works.len(), 5);
+
+            for (id, want) in &before {
+                let ws = server.works.get(id).expect("work restored");
+                let got = (ws.trace.branch().to_u64(), ws.trace.position());
+                assert_eq!(&got, want, "work {} trace preserved exactly", id);
+            }
+            // Allocation continues without collision after restore.
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let fresh = server
+                .create_work(sid, Edition::from_text("post-restore"))
+                .unwrap();
+            let ws = server.works.get(&fresh).unwrap();
+            let new_pos = (ws.trace.branch().to_u64(), ws.trace.position());
+            assert!(
+                !before.values().any(|p| *p == new_pos),
+                "new allocation distinct from restored positions"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 }

@@ -82,6 +82,12 @@ pub struct WorkStateChunk {
     #[cfg_attr(feature = "serde", serde(default))]
     pub format_version: u32,
     pub be_id: BeId,
+    /// FR-52 A-1 P1: the work's fulltrace position (survives the
+    /// root-chunk round trip).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub trace_branch: Option<u64>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub trace_position: Option<u32>,
     pub owner: Option<BeId>,
     pub read_club: Option<BeId>,
     pub edit_club: Option<BeId>,
@@ -211,6 +217,9 @@ pub struct SystemClubsChunk {
 pub struct ServerRootChunk {
     pub format_version: u32,
     pub sequence: u64,
+    /// FR-52 A-1 P1: the server fulltrace snapshot.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub fulltrace: Option<crate::ent::dagwood::SnapshotDagWood>,
     pub checkpoint_at: String,
 
     pub grand_map_id_counter: BeId,
@@ -425,6 +434,8 @@ pub fn checkpoint_write_root(
         let ws = WorkStateChunk {
             format_version: ROOT_CHUNK_FORMAT_VERSION,
             be_id: entry.be_id,
+            trace_branch: entry.trace_branch,
+            trace_position: entry.trace_position,
             owner: entry.work_ref.owner,
             read_club: entry.work_ref.read_club,
             edit_club: entry.work_ref.edit_club,
@@ -590,6 +601,7 @@ pub fn checkpoint_write_root(
     let root = ServerRootChunk {
         format_version: ROOT_CHUNK_FORMAT_VERSION,
         sequence: manifest.sequence,
+        fulltrace: manifest.fulltrace.clone(),
         checkpoint_at: now,
         grand_map_id_counter: manifest.grand_map_id_counter,
         session_counter: manifest.session_counter,
@@ -774,6 +786,8 @@ pub fn read_root_as_manifest(
                 endorsements: ws.endorsements,
             };
             let work_entry = crate::persist::manifest::WorkEntry {
+                trace_branch: ws.trace_branch,
+                trace_position: ws.trace_position,
                 be_id: entry.be_id,
                 work_ref: work_chunk_ref,
                 is_source: ws.is_source,
@@ -906,6 +920,7 @@ pub fn read_root_as_manifest(
 
     // ── Build Manifest ────────────────────────────────────────────────────────
     let manifest = crate::persist::manifest::Manifest {
+        fulltrace: root.fulltrace.clone(),
         format_version: crate::persist::manifest::CURRENT_MANIFEST_VERSION,
         created_at: now.clone(),
         server_version: env!("CARGO_PKG_VERSION", "unknown").to_string(),
@@ -1337,6 +1352,8 @@ mod tests {
         let store = ChunkStore::open(&dir).unwrap();
 
         let chunk = WorkStateChunk {
+            trace_branch: None,
+            trace_position: None,
             format_version: 0,
             be_id: 42,
             owner: Some(99),
@@ -1396,6 +1413,8 @@ mod tests {
         let store = ChunkStore::open(&dir).unwrap();
 
         let chunk = WorkStateChunk {
+            trace_branch: None,
+            trace_position: None,
             format_version: 0,
             be_id: 1,
             current_edition_hash: make_test_hash(0),
@@ -1498,6 +1517,7 @@ mod tests {
         let store = ChunkStore::open(&dir).unwrap();
 
         let chunk = ServerRootChunk {
+            fulltrace: None,
             format_version: ROOT_CHUNK_FORMAT_VERSION,
             sequence: 42,
             checkpoint_at: "2026-08-14T12:00:00Z".to_string(),
@@ -1546,6 +1566,7 @@ mod tests {
         let store = ChunkStore::open(&dir).unwrap();
 
         let chunk = ServerRootChunk {
+            fulltrace: None,
             format_version: ROOT_CHUNK_FORMAT_VERSION,
             sequence: 0,
             checkpoint_at: String::new(),
@@ -1592,6 +1613,7 @@ mod tests {
         let store = ChunkStore::open(&dir).unwrap();
 
         let chunk = ServerRootChunk {
+            fulltrace: None,
             format_version: ROOT_CHUNK_FORMAT_VERSION,
             sequence: 1,
             checkpoint_at: "test".to_string(),
@@ -1661,6 +1683,7 @@ mod tests {
         let store = ChunkStore::open(&dir).unwrap();
 
         let make_root = || ServerRootChunk {
+            fulltrace: None,
             format_version: ROOT_CHUNK_FORMAT_VERSION,
             sequence: 99,
             checkpoint_at: "same".to_string(),
@@ -1795,6 +1818,8 @@ mod tests {
         let store = ChunkStore::open(dir).unwrap();
 
         let mk_work_entry = |be_id: u64| crate::persist::manifest::WorkEntry {
+            trace_branch: None,
+            trace_position: None,
             be_id,
             work_ref: crate::persist::edition_chunks::WorkChunkRef {
                 be_id,
@@ -1844,6 +1869,7 @@ mod tests {
             let idx_hash = store.write_chunk(&idx_data).unwrap();
 
             let root = ServerRootChunk {
+                fulltrace: None,
                 format_version: ROOT_CHUNK_FORMAT_VERSION,
                 sequence: seq,
                 checkpoint_at: format!("seq-{}", seq),
@@ -1959,6 +1985,7 @@ mod tests {
         let store = ChunkStore::open(&dir).unwrap();
 
         let chunk = ServerRootChunk {
+            fulltrace: None,
             format_version: ROOT_CHUNK_FORMAT_VERSION,
             sequence: 1,
             checkpoint_at: "test".to_string(),
@@ -2021,6 +2048,7 @@ mod tests {
         let store = ChunkStore::open(&dir).unwrap();
 
         let prev_root = ServerRootChunk {
+            fulltrace: None,
             format_version: ROOT_CHUNK_FORMAT_VERSION,
             sequence: 10,
             checkpoint_at: "prev".to_string(),
@@ -2083,6 +2111,8 @@ mod tests {
         let store = ChunkStore::open(&dir).unwrap();
 
         let work1 = WorkStateChunk {
+            trace_branch: None,
+            trace_position: None,
             format_version: 0,
             be_id: 1,
             current_edition_hash: make_test_hash(100),
@@ -2109,6 +2139,8 @@ mod tests {
         };
 
         let work2 = WorkStateChunk {
+            trace_branch: None,
+            trace_position: None,
             format_version: 0,
             be_id: 2,
             current_edition_hash: make_test_hash(200),
@@ -2135,6 +2167,8 @@ mod tests {
         };
 
         let work3 = WorkStateChunk {
+            trace_branch: None,
+            trace_position: None,
             format_version: 0,
             be_id: 3,
             current_edition_hash: make_test_hash(44),
@@ -2187,6 +2221,7 @@ mod tests {
         let index_hash = write_works_index_chunk(&index, &store).unwrap();
 
         let root = ServerRootChunk {
+            fulltrace: None,
             format_version: ROOT_CHUNK_FORMAT_VERSION,
             sequence: 1,
             checkpoint_at: "2026-08-14T12:00:00Z".to_string(),
@@ -2304,6 +2339,7 @@ mod tests {
         };
 
         let root = ServerRootChunk {
+            fulltrace: None,
             format_version: ROOT_CHUNK_FORMAT_VERSION,
             sequence: 1,
             checkpoint_at: "2026-08-15T00:00:00Z".into(),
