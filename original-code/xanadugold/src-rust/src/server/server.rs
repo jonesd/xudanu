@@ -16114,18 +16114,44 @@ impl Server {
             Ok(ed) => ed,
             Err(_) => return Vec::new(),
         };
-        let mut results = ed_a.find_content_shared_regions(&ed_b, 2);
-        let text_results = self.find_text_shared_regions(work_a, work_b);
-        let mut seen_a = std::collections::HashSet::new();
-        let mut seen_b = std::collections::HashSet::new();
-        for (sa, ea, sb, eb, _) in &results {
-            seen_a.insert((*sa, *ea));
-            seen_b.insert((*sb, *eb));
+        // FR-37: structural tier first — node crums match whole
+        // subtrees (largest shared units, O(depth × divergences)).
+        // The flat fingerprint/text tiers below fill in moved passages
+        // and anything the tree walk couldn't align.
+        let text_a = ed_a.to_text();
+        let mut results: Vec<(i64, i64, i64, i64, String)> = Vec::new();
+        // seen ranges as (start, end) — coverage-checked, not just
+        // exact-tuple, because the tiers report different bounds for
+        // the same passage.
+        let mut seen_a: Vec<(i64, i64)> = Vec::new();
+        let mut seen_b: Vec<(i64, i64)> = Vec::new();
+        let covered =
+            |seen: &[(i64, i64)], s: i64, e: i64| seen.iter().any(|(cs, ce)| *cs <= s && e <= *ce);
+
+        for (sa, ea, sb, eb) in ed_a.crum_diff(&ed_b).matched {
+            let slice = text_a
+                .chars()
+                .skip(sa as usize)
+                .take((ea - sa) as usize)
+                .collect::<String>();
+            seen_a.push((sa, ea));
+            seen_b.push((sb, eb));
+            results.push((sa, ea, sb, eb, slice));
         }
-        for (sa, ea, sb, eb, text) in text_results {
-            if !seen_a.contains(&(sa, ea)) || !seen_b.contains(&(sb, eb)) {
-                results.push((sa, ea, sb, eb, text));
+
+        for (sa, ea, sb, eb, text) in ed_a.find_content_shared_regions(&ed_b, 2) {
+            if covered(&seen_a, sa, ea) && covered(&seen_b, sb, eb) {
+                continue;
             }
+            seen_a.push((sa, ea));
+            seen_b.push((sb, eb));
+            results.push((sa, ea, sb, eb, text));
+        }
+        for (sa, ea, sb, eb, text) in self.find_text_shared_regions(work_a, work_b) {
+            if covered(&seen_a, sa, ea) && covered(&seen_b, sb, eb) {
+                continue;
+            }
+            results.push((sa, ea, sb, eb, text));
         }
         results
     }
@@ -23926,6 +23952,64 @@ mod tests_find_text {
 
         let regions = server.find_shared_regions(doc_a, doc_b);
         assert!(regions.is_empty());
+    }
+
+    #[test]
+    fn find_shared_regions_crum_tier_whole_document() {
+        // FR-37: identical editions match via one root-crum comparison —
+        // a single region covering both documents entirely.
+        let (mut server, sid) = setup();
+        let text = "line one of the document\nline two of the document\n";
+        let doc_a = server.create_work(sid, Edition::from_text(text)).unwrap();
+        let doc_b = server.create_work(sid, Edition::from_text(text)).unwrap();
+
+        let regions = server.find_shared_regions(doc_a, doc_b);
+        assert!(!regions.is_empty(), "identical works share everything");
+        let longest = regions.iter().max_by_key(|r| r.1 - r.0).unwrap();
+        assert_eq!(longest.0, 0, "match starts at 0");
+        assert_eq!(
+            longest.1,
+            text.chars().count() as i64,
+            "match covers all of A"
+        );
+        assert_eq!(longest.2, 0);
+        assert_eq!(
+            longest.3,
+            text.chars().count() as i64,
+            "match covers all of B"
+        );
+        assert_eq!(longest.4, text, "text slice matches the document");
+    }
+
+    #[test]
+    fn find_shared_regions_crum_tier_subtree_prefixed() {
+        // B = A with a changed tail: the shared prefix arrives as one
+        // structural (crum) region rather than fingerprint runs.
+        let (mut server, sid) = setup();
+        let a_text = (0..200)
+            .map(|i| format!("line {:03} stable content\n", i))
+            .collect::<String>();
+        let b_text = (0..199)
+            .map(|i| format!("line {:03} stable content\n", i))
+            .collect::<String>()
+            + "entirely different ending\n";
+        let doc_a = server
+            .create_work(sid, Edition::from_text(&a_text))
+            .unwrap();
+        let doc_b = server
+            .create_work(sid, Edition::from_text(&b_text))
+            .unwrap();
+
+        let regions = server.find_shared_regions(doc_a, doc_b);
+        assert!(!regions.is_empty());
+        let best = regions.iter().max_by_key(|r| r.1 - r.0).unwrap();
+        // The bulk of A (the stable prefix) matches in one region.
+        assert!(
+            best.1 - best.0 >= a_text.chars().count() as i64 * 9 / 10,
+            "prefix matched structurally: got {} of {} chars",
+            best.1 - best.0,
+            a_text.chars().count()
+        );
     }
 
     #[test]
