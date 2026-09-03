@@ -25,6 +25,7 @@ import type { WorkListEntry, TrailPayload, AgainHop } from "../../api/crdt_sync"
 import type { License } from "../../api/crdt_sync";
 import { LICENSES } from "../../api/crdt_sync";
 import { HomeLanding } from "../HomeLanding";
+import { BeamsView } from "../BeamsView";
 import type { WorkKind } from "../../graph-scoring";
 import { KIND_ICON, KIND_COLOR, KIND_ICON_COLOR } from "../../graph-scoring";
 import { DataIntegrityBanner } from "../DataIntegrityBanner";
@@ -175,6 +176,7 @@ export function WorkspaceShell() {
   const [worksLoading, setWorksLoading] = useState(false);
   const [worksError, setWorksError] = useState<string | null>(null);
   const [landingDismissed, setLandingDismissed] = useState(false);
+  const [beamsOpen, setBeamsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"updated" | "title" | "revisions" | "id">("updated");
   const [invalidWorkId, setInvalidWorkId] = useState<number | null>(null);
@@ -5233,6 +5235,22 @@ export function WorkspaceShell() {
         </>
       )}
       <ConnectionOverlay connected={connected} reconnectAttempt={reconnectAttempt} />
+
+      {workBeId !== null && transclusion.links.length > 0 && !beamsOpen && (
+        <button className="ws-beams-entry" onClick={() => setBeamsOpen(true)}>
+          <i aria-hidden /> Beams
+          <span className="ws-beams-entry-count">{transclusion.links.length}</span>
+        </button>
+      )}
+      {beamsOpen && workBeId !== null && (
+        <BeamsView
+          client={clientRef.current}
+          currentWorkId={workBeId}
+          works={works}
+          links={transclusion.links}
+          onClose={() => setBeamsOpen(false)}
+        />
+      )}
     </div>
   );
 }

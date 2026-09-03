@@ -3581,3 +3581,207 @@
   padding: 6px 8px;
 }
 .ws-home-identity-cancel:hover { color: var(--text-muted); }
+
+/* ── Beams view (Design D: transpointing windows, n-way links) ───── */
+
+.ws-beams {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-beams-topbar {
+  height: 50px;
+  flex: 0 0 auto;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 20px;
+}
+.ws-beams-brand { font-weight: 700; color: var(--amber); letter-spacing: 1px; }
+.ws-beams-crumb { color: var(--text-muted); font-size: 13px; }
+.ws-beams-crumb b { color: var(--text); font-weight: 600; }
+.ws-beams-add {
+  margin-left: auto;
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.ws-beams-close {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 6px;
+  font-size: 13px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.ws-beams-close:hover { color: var(--text); }
+
+.ws-beams-legend {
+  position: absolute;
+  top: 60px;
+  left: 20px;
+  z-index: 10;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ws-beams-legend-row { display: flex; align-items: center; gap: 8px; }
+.ws-beams-legend-row i { width: 18px; height: 3px; border-radius: 2px; display: inline-block; }
+
+.ws-beams-card {
+  position: absolute;
+  top: 60px;
+  right: 20px;
+  z-index: 20;
+  width: 320px;
+  background: var(--bg-surface);
+  border: 1px solid var(--purple);
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+.ws-beams-card-h { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; margin-bottom: 8px; }
+.ws-beams-card-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.ws-beams-card p { font-size: 11.5px; color: var(--text-muted); line-height: 1.55; margin: 0 0 8px; }
+.ws-beams-card-ends { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.ws-beams-card-end {
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+}
+.ws-beams-card-end b { color: var(--text-muted); font-weight: 550; }
+.ws-beams-btn {
+  background: var(--purple);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  font-size: 11px;
+  padding: 5px 10px;
+  cursor: pointer;
+  margin-right: 6px;
+}
+.ws-beams-btn.ghost { background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text); }
+
+.ws-beams-stage {
+  position: relative;
+  flex: 1;
+  display: flex;
+  gap: 24px;
+  padding: 60px 24px 24px;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+.ws-beams-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+.ws-beams-beam { fill: none; stroke-width: 2.5; opacity: 0.85; }
+.ws-beams-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; }
+
+.ws-beams-doc {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 400px;
+  max-width: 400px;
+  align-self: flex-start;
+  background: var(--bg-document, #faf9f6);
+  color: var(--doc-text, #1a1a1a);
+  border-radius: 4px;
+  padding: 32px 36px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+.ws-beams-doc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid #e5e2db;
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+}
+.ws-beams-doc-head h3 {
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 16px;
+  margin: 0;
+}
+.ws-beams-doc-x {
+  background: none;
+  border: none;
+  color: #8a8a8a;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+.ws-beams-doc-body {
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: #333;
+}
+.ws-beams-doc-body p { margin: 0 0 12px; white-space: pre-wrap; }
+.ws-beams-mark {
+  padding: 1px 2px;
+  border-radius: 2px;
+  border-bottom: 2px solid;
+  cursor: pointer;
+}
+.ws-beams-meta { color: #8a8a8a; font-style: italic; }
+
+/* Entry button on the workspace */
+.ws-beams-entry {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 13.5px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.ws-beams-entry:hover { border-color: var(--purple); }
+.ws-beams-entry i {
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--purple), var(--green));
+  display: inline-block;
+}
+.ws-beams-entry-count {
+  background: var(--bg-elevated);
+  border-radius: 10px;
+  font-size: 11px;
+  padding: 1px 8px;
+  color: var(--text-muted);
+}
