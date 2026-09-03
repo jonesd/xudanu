@@ -1262,6 +1262,251 @@ fn entry_fingerprints(entries: &[(i64, Arc<Carrier>)]) -> Vec<[u8; 32]> {
 /// Eager full-tree crum recomputation — reference implementation used by
 /// tests to verify incremental per-node cache maintenance (Stage 2b).
 /// Must stay byte-identical to the cached values.
+// ── FR-37 K1: crum-based structural comparison ──────────────────────────────
+
+/// Result of a structural (crum) diff between two loaves. All ranges are
+/// char offsets, matching `find_content_shared_regions`' coordinate space.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CrumDiff {
+    /// Matched regions as (a_start, a_end, b_start, b_end), sorted by
+    /// a-range, adjacent ranges merged, non-overlapping in both sides.
+    pub matched: Vec<(i64, i64, i64, i64)>,
+    /// Char ranges present only in A / only in B (gaps between matches).
+    pub only_a: Vec<(i64, i64)>,
+    pub only_b: Vec<(i64, i64)>,
+    /// Whole subtrees skipped via crum equality (cache/bloom-reusable).
+    pub matched_crum_count: usize,
+}
+
+impl OrglRoot {
+    /// Gold-style structural comparison: equal node crums match whole
+    /// subtrees in O(1); unequal crums descend. Leaf-vs-leaf mismatch
+    /// falls back to the content-fingerprint tier inside the leaf pair.
+    pub fn crum_diff(&self, other: &OrglRoot) -> CrumDiff {
+        let mut out = CrumDiff::default();
+        crum_walk(self.loaf(), other.loaf(), 0, 0, &mut out);
+        finalize_crum_diff(
+            &mut out,
+            self.loaf().char_len() as i64,
+            other.loaf().char_len() as i64,
+        );
+        out
+    }
+}
+
+/// Cached per-node crum, O(1).
+fn loaf_crum(l: &Loaf) -> Crum {
+    match l {
+        Loaf::Leaf { crum, .. } | Loaf::Split { crum, .. } | Loaf::Dsp { crum, .. } => *crum,
+    }
+}
+
+fn crum_walk(a: &Loaf, b: &Loaf, a_off: i64, b_off: i64, out: &mut CrumDiff) {
+    if a.char_len() == 0 || b.char_len() == 0 {
+        return;
+    }
+    if loaf_crum(a) == loaf_crum(b) {
+        out.matched.push((
+            a_off,
+            a_off + a.char_len() as i64,
+            b_off,
+            b_off + b.char_len() as i64,
+        ));
+        out.matched_crum_count += 1;
+        return;
+    }
+    match (a, b) {
+        (
+            Loaf::Split {
+                in_child: ai,
+                out_child: ao,
+                ..
+            },
+            Loaf::Split {
+                in_child: bi,
+                out_child: bo,
+                ..
+            },
+        ) => {
+            let a_in = ai.char_len() as i64;
+            let b_in = bi.char_len() as i64;
+            crum_walk(ai, bi, a_off, b_off, out);
+            crum_walk(ao, bo, a_off + a_in, b_off + b_in, out);
+        }
+        // Dsp shifts logical positions, not char extents — recurse in
+        // the same char space. Its crum includes the offset, so a dsp
+        // never subtree-matches against different-offset content.
+        (Loaf::Dsp { child, .. }, _) => crum_walk(child, b, a_off, b_off, out),
+        (_, Loaf::Dsp { child, .. }) => crum_walk(a, child, a_off, b_off, out),
+        // Leaf × Leaf with differing crums: fingerprint tier, leaf-local.
+        (
+            Loaf::Leaf {
+                entries: ea,
+                fingerprints: fa,
+                ..
+            },
+            Loaf::Leaf {
+                entries: eb,
+                fingerprints: fb,
+                ..
+            },
+        ) => leaf_fingerprint_match(ea, fa, eb, fb, a_off, b_off, out),
+        // Shape mismatch at an aligned range (Leaf × Split or the
+        // reverse): v1 treats the range as divergent — the gaps land in
+        // only_a/only_b, and the fingerprint tier of the compatibility
+        // path still finds moved content. (Structure descent across
+        // mismatched shapes is a K2 refinement.)
+        _ => {}
+    }
+}
+
+/// Minimum run length for the leaf fingerprint tier — matches the
+/// flat `find_content_shared_regions(min_run)` noise floor.
+const CRUM_DIFF_MIN_RUN: usize = 2;
+
+/// Leaf-local fingerprint tier: sequential best-run matching, the same
+/// greedy scheme as `find_content_shared_regions` but bounded to one
+/// leaf pair and to runs the fingerprint actually confirms.
+fn leaf_fingerprint_match(
+    ea: &[(i64, Arc<Carrier>)],
+    fa: &[[u8; 32]],
+    eb: &[(i64, Arc<Carrier>)],
+    fb: &[[u8; 32]],
+    a_off: i64,
+    b_off: i64,
+    out: &mut CrumDiff,
+) {
+    use std::collections::HashMap;
+    if ea.is_empty() || eb.is_empty() {
+        return;
+    }
+    // char-prefix sums, length n+1: prefix[i] = chars before entry i.
+    let mut pa = Vec::with_capacity(ea.len() + 1);
+    pa.push(0usize);
+    for (_, c) in ea {
+        pa.push(pa.last().unwrap() + c.char_len());
+    }
+    let mut pb = Vec::with_capacity(eb.len() + 1);
+    pb.push(0usize);
+    for (_, c) in eb {
+        pb.push(pb.last().unwrap() + c.char_len());
+    }
+
+    let mut fp_to_b: HashMap<&[u8; 32], Vec<usize>> = HashMap::new();
+    for (j, f) in fb.iter().enumerate() {
+        fp_to_b.entry(f).or_default().push(j);
+    }
+    let mut claimed_b = vec![false; eb.len()];
+    let mut i = 0usize;
+    while i < ea.len() {
+        let cands = match fp_to_b.get(&fa[i]) {
+            Some(v) if v.iter().any(|&j| !claimed_b[j]) => v,
+            _ => {
+                i += 1;
+                continue;
+            }
+        };
+        // longest unclaimed run starting at any candidate
+        let mut best: Option<(usize, usize)> = None;
+        for &j in cands {
+            if claimed_b[j] {
+                continue;
+            }
+            let mut len = 1usize;
+            while i + len < ea.len()
+                && j + len < eb.len()
+                && !claimed_b[j + len]
+                && fa[i + len] == fb[j + len]
+            {
+                len += 1;
+            }
+            if best.map_or(true, |(bl, _)| len > bl) {
+                best = Some((j, len));
+            }
+        }
+        if let Some((j, len)) = best.filter(|(_, len)| *len >= CRUM_DIFF_MIN_RUN) {
+            out.matched.push((
+                a_off + pa[i] as i64,
+                a_off + pa[i + len] as i64,
+                b_off + pb[j] as i64,
+                b_off + pb[j + len] as i64,
+            ));
+            for k in 0..len {
+                claimed_b[j + k] = true;
+            }
+            i += len;
+        } else {
+            i += 1;
+        }
+    }
+}
+
+/// Sort, de-overlap (greedy, longest-first in both coordinate spaces),
+/// merge adjacent, then derive only_a / only_b from coverage gaps.
+fn finalize_crum_diff(out: &mut CrumDiff, a_total: i64, b_total: i64) {
+    if out.matched.is_empty() {
+        if a_total > 0 {
+            out.only_a.push((0, a_total));
+        }
+        if b_total > 0 {
+            out.only_b.push((0, b_total));
+        }
+        return;
+    }
+    // Greedy non-overlap: longest matches win in both spaces.
+    out.matched.sort_by_key(|m| -(m.1 - m.0));
+    let mut kept: Vec<(i64, i64, i64, i64)> = Vec::new();
+    let mut a_claimed: Vec<(i64, i64)> = Vec::new();
+    let mut b_claimed: Vec<(i64, i64)> = Vec::new();
+    let overlaps = |cl: &[(i64, i64)], s: i64, e: i64| cl.iter().any(|(cs, ce)| s < *ce && *cs < e);
+    for m in out.matched.drain(..) {
+        if overlaps(&a_claimed, m.0, m.1) || overlaps(&b_claimed, m.2, m.3) {
+            continue;
+        }
+        a_claimed.push((m.0, m.1));
+        b_claimed.push((m.2, m.3));
+        kept.push(m);
+    }
+    kept.sort_by_key(|m| (m.0, m.1));
+    // Merge adjacent (a-adjacent AND b-adjacent).
+    let mut merged: Vec<(i64, i64, i64, i64)> = Vec::new();
+    for m in kept {
+        if let Some(last) = merged.last_mut() {
+            if last.1 == m.0 && last.3 == m.2 {
+                last.1 = m.1;
+                last.3 = m.3;
+                continue;
+            }
+        }
+        merged.push(m);
+    }
+    out.matched = merged;
+
+    let mut pos = 0i64;
+    for (s, e, _, _) in &out.matched {
+        if *s > pos {
+            out.only_a.push((pos, *s));
+        }
+        pos = (*e).max(pos);
+    }
+    if pos < a_total {
+        out.only_a.push((pos, a_total));
+    }
+
+    let mut by_b: Vec<&(i64, i64, i64, i64)> = out.matched.iter().collect();
+    by_b.sort_by_key(|m| (m.2, m.3));
+    let mut pos = 0i64;
+    for m in by_b {
+        if m.2 > pos {
+            out.only_b.push((pos, m.2));
+        }
+        pos = m.3.max(pos);
+    }
+    if pos < b_total {
+        out.only_b.push((pos, b_total));
+    }
+}
+
 #[cfg(test)]
 fn compute_crum_eager(loaf: &Loaf) -> Crum {
     match loaf {

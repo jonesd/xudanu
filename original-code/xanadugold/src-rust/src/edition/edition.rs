@@ -1639,6 +1639,13 @@ impl Edition {
             .sum()
     }
 
+    /// FR-37 K1: Gold-style structural comparison via node crums.
+    /// Equal crums match whole subtrees; leaf-local mismatches fall to
+    /// the fingerprint tier. See `orgl::CrumDiff`.
+    pub fn crum_diff(&self, other: &Edition) -> crate::edition::orgl::CrumDiff {
+        self.orgl.crum_diff(&other.orgl)
+    }
+
     pub fn find_content_shared_regions(
         &self,
         other: &Edition,
@@ -2198,6 +2205,128 @@ mod tests {
 
         let region = XnRegion::interval(0, 1);
         assert!(a.is_range_identical(&c, Some(&region)));
+    }
+
+    // ── FR-37 K1: crum-based structural comparison ───────────────────
+
+    fn big_text(lines: usize, line_len: usize) -> String {
+        (0..lines)
+            .map(|i| {
+                let pad = i.to_string();
+                format!(
+                    "l{:0>width$}{}\n",
+                    pad,
+                    "x".repeat(line_len.saturating_sub(pad.len() + 3)),
+                    width = 4
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn crum_diff_identical() {
+        let a = Edition::from_text_batched(&big_text(600, 64));
+        let d = a.crum_diff(&a);
+        // Root crums equal → one whole-document match, no divergence.
+        assert_eq!(d.matched.len(), 1);
+        assert_eq!(d.matched[0].0, 0);
+        assert_eq!(d.matched[0].1, a.char_len() as i64);
+        assert!(d.only_a.is_empty());
+        assert!(d.only_b.is_empty());
+        assert!(d.matched_crum_count >= 1);
+    }
+
+    #[test]
+    fn crum_diff_disjoint_insert() {
+        let base = big_text(600, 64);
+        let a = Edition::from_text_batched(&base);
+        let b = Edition::from_text_batched(&(base.clone() + "APPENDED TAIL CONTENT\n"));
+        let d = a.crum_diff(&b);
+        // Whole of A is matched (prefix); B has one trailing divergence.
+        assert!(
+            d.matched.iter().any(|m| m.1 == a.char_len() as i64),
+            "A fully matched"
+        );
+        assert!(d.only_a.is_empty());
+        assert_eq!(d.only_b.len(), 1);
+        assert!(d.only_b[0].1 > d.only_b[0].0);
+    }
+
+    #[test]
+    fn crum_diff_middle_edit() {
+        let base = big_text(600, 64);
+        let edited = {
+            // split_inclusive keeps every newline — the edit must not
+            // shift entry positions after the change site.
+            let mut lines: Vec<String> =
+                base.split_inclusive('\n').map(|s| s.to_string()).collect();
+            lines[300] = "CHANGED MIDDLE LINE\n".to_string();
+            lines.concat()
+        };
+        let a = Edition::from_text_batched(&base);
+        let b = Edition::from_text_batched(&edited);
+        let d = a.crum_diff(&b);
+        // Prefix and suffix subtrees survive; the middle diverges on
+        // both sides.
+        assert!(d.matched.iter().any(|m| m.0 == 0), "prefix matched");
+        assert!(
+            d.matched.iter().any(|m| m.1 == a.char_len() as i64),
+            "suffix matched"
+        );
+        assert!(!d.only_a.is_empty());
+        assert!(!d.only_b.is_empty());
+    }
+
+    #[test]
+    fn crum_diff_moved_passage_reports_divergence() {
+        // Structurally, a moved passage is a change at BOTH sites —
+        // the fingerprint tier (compat path) is what finds the move.
+        let base = big_text(400, 64);
+        let moved = {
+            let mut lines: Vec<String> = base.lines().map(|l| l.to_string()).collect();
+            let passage = lines[10..14].join("\n");
+            for l in lines.iter_mut().take(14).skip(10) {
+                *l = String::new();
+            }
+            lines.push(passage);
+            lines.join("\n")
+        };
+        let a = Edition::from_text_batched(&base);
+        let b = Edition::from_text_batched(&moved);
+        let d = a.crum_diff(&b);
+        assert!(!d.only_a.is_empty(), "source site diverges");
+        assert!(!d.only_b.is_empty(), "destination site diverges");
+    }
+
+    #[test]
+    fn crum_diff_shape_mismatch_sane() {
+        // A flat (leaf) edition vs a bulk-built (split) edition — the
+        // walk must produce monotonic, non-overlapping ranges.
+        let flat = Edition::from_text(&big_text(40, 64));
+        let bulk = Edition::from_text_batched(&big_text(40, 64));
+        let d = flat.crum_diff(&bulk);
+        let mut last_end = 0i64;
+        for (s, e, _, _) in &d.matched {
+            assert!(*s >= last_end, "matched ranges must be ordered in A");
+            assert!(e > s, "non-empty matched range");
+            last_end = *e;
+        }
+    }
+
+    #[test]
+    fn crum_diff_fingerprint_tier_finds_shifted_content() {
+        // Same sentence at a different offset inside one leaf pair:
+        // the leaf-local fingerprint tier should still match it.
+        let a = Edition::from_text("prefix that is unique ALPHA SENTENCE HERE");
+        let b = Edition::from_text("different unique lead ALPHA SENTENCE HERE");
+        let d = a.crum_diff(&b);
+        assert!(
+            d.matched
+                .iter()
+                .any(|m| m.1 - m.0 >= "ALPHA SENTENCE HERE".len() as i64),
+            "fingerprint tier matches the shared sentence, got {:?}",
+            d.matched
+        );
     }
 
     #[test]
