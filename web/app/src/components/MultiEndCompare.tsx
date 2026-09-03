@@ -129,29 +129,64 @@ export function MultiEndCompare({
         const regionsByWork = new Map<number, { start: number; end: number; cidx: number }[]>();
         const labels = new Map<string, string>();
         let colorIdx = 0;
-        for (let i = 0; i < uniqueIds.length && !cancelled; i++) {
-          for (let j = i + 1; j < uniqueIds.length && !cancelled; j++) {
-            const a = uniqueIds[i];
-            const b = uniqueIds[j];
-            let shared: SharedRegion[] = [];
-            try {
-              shared = await client.findSharedRegions(a, b);
-            } catch {
-              continue;
+        const addRegion = (id: number, start: number, end: number, cidx: number) => {
+          const r = regionsByWork.get(id) ?? [];
+          r.push({ start, end, cidx });
+          regionsByWork.set(id, r);
+        };
+
+        // FR-37 K3: n-way pass first — one shared_crum_regions request
+        // instead of O(n^2) pairwise diffs; each region carries exact
+        // spans for every member work.
+        let nwayOk = false;
+        try {
+          const resp = await client.sendRequest("shared_crum_regions", { work_ids: uniqueIds });
+          const val = resp && typeof resp === "object" && "value" in (resp as Record<string, unknown>)
+            ? (resp as Record<string, unknown>).value : resp;
+          const regions = (val as { regions?: Array<{ works: number[]; spans: Array<[number, number]> }> })?.regions;
+          if (Array.isArray(regions)) {
+            nwayOk = true;
+            for (const region of regions) {
+              const cidx = colorIdx % PAIR_COLORS.length;
+              colorIdx++;
+              const memberTitles = region.works
+                .map((id) => works.find((w) => w.work_id === id)?.title || `0x${id.toString(16)}`)
+                .join(" · ");
+              labels.set(
+                region.works.join(":"),
+                `${memberTitles} (${region.works.length}-way)`,
+              );
+              region.works.forEach((id, k) => {
+                const [s, e] = region.spans[k] ?? [0, 0];
+                if (e > s) addRegion(id, s, e, cidx);
+              });
             }
-            if (shared.length === 0) continue;
-            const cidx = colorIdx % PAIR_COLORS.length;
-            colorIdx++;
-            const wa = works.find((w) => w.work_id === a);
-            const wb = works.find((w) => w.work_id === b);
-            labels.set(pairKey(a, b), `${wa?.title || `0x${a.toString(16)}`} ⇄ ${wb?.title || `0x${b.toString(16)}`} (${shared.length})`);
-            for (const s of shared) {
-              const ra = regionsByWork.get(a) ?? [];
-              ra.push({ start: s.start_a, end: s.end_a, cidx });
-              regionsByWork.set(a, ra);
-              const rb = regionsByWork.get(b) ?? [];
-              rb.push({ start: s.start_b, end: s.end_b, cidx });
-              regionsByWork.set(b, rb);
+          }
+        } catch {
+          // older server or op unavailable — fall through to pairwise
+        }
+
+        if (!nwayOk) {
+          for (let i = 0; i < uniqueIds.length && !cancelled; i++) {
+            for (let j = i + 1; j < uniqueIds.length && !cancelled; j++) {
+              const a = uniqueIds[i];
+              const b = uniqueIds[j];
+              let shared: SharedRegion[] = [];
+              try {
+                shared = await client.findSharedRegions(a, b);
+              } catch {
+                continue;
+              }
+              if (shared.length === 0) continue;
+              const cidx = colorIdx % PAIR_COLORS.length;
+              colorIdx++;
+              const wa = works.find((w) => w.work_id === a);
+              const wb = works.find((w) => w.work_id === b);
+              labels.set(pairKey(a, b), `${wa?.title || `0x${a.toString(16)}`} ⇄ ${wb?.title || `0x${b.toString(16)}`} (${shared.length})`);
+              for (const s of shared) {
+                addRegion(a, s.start_a, s.end_a, cidx);
+                addRegion(b, s.start_b, s.end_b, cidx);
+              }
             }
           }
         }

@@ -1822,6 +1822,17 @@ impl JsonCodec {
                     filter_text: args.filter_text,
                 })
             }
+            OperationCode::SharedCrumRegions => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_ids: Vec<BeId>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::SharedCrumRegions {
+                    work_ids: args.work_ids,
+                })
+            }
             OperationCode::WorkDiffRegions => {
                 #[derive(Deserialize)]
                 struct Args {

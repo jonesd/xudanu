@@ -16156,6 +16156,26 @@ impl Server {
         results
     }
 
+    /// FR-37 K2: n-way shared regions across works, as wire-ready JSON.
+    /// Indices in NwaySharedRegion map to the (deduped) ids order.
+    pub fn shared_crum_regions(&self, ids: &[BeId]) -> serde_json::Value {
+        let mut eds = Vec::with_capacity(ids.len());
+        for id in ids {
+            match self.work_edition(*id) {
+                Ok(ed) => eds.push(ed),
+                Err(_) => return serde_json::json!({ "error": format!("work {id:#x} not found") }),
+            }
+        }
+        let refs: Vec<&crate::edition::Edition> = eds.iter().collect();
+        let regions = crate::edition::Edition::shared_regions_nway(&refs, 2);
+        serde_json::json!({
+            "regions": regions.iter().map(|r| serde_json::json!({
+                "works": r.works.iter().map(|&i| ids[i]).collect::<Vec<BeId>>(),
+                "spans": r.spans.iter().map(|(s, e)| serde_json::json!([s, e])).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>()
+        })
+    }
+
     pub fn find_text_shared_regions(
         &self,
         work_a: BeId,
