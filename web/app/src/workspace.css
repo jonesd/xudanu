@@ -3400,7 +3400,11 @@
 }
 
 .ws-sel-btn:disabled {
-  opacity: 0.55;
+  /* Keep the label legible in every theme: the tinted inline colors
+     (green Gather, etc.) wash out when dimmed. Border keeps the tint
+     identity; text goes muted but readable. */
+  opacity: 0.75;
+  color: var(--text-muted) !important;
   cursor: default;
 }
 

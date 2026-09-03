@@ -15,6 +15,7 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   projects: [
+    { name: "firefox", use: { browserName: "firefox" } },
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
