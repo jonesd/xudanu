@@ -202,8 +202,9 @@ export function MultiEndCompare({
         </div>
         {uniqueIds.length < 2 && (
           <div className="ws-conn-empty">
-            Select a multi-ended link in Connections and click ⇄ to compare its ends,
-            or pick works below.
+            {otherWorks.length > 0
+              ? "Select a multi-ended link in Connections and click ⇄ to compare its ends, or pick works below."
+              : "Comparison needs at least one other document. Create a second document first (＋ New document), or open Connections on a multi-ended link and click ⇄ — then the ends load here automatically."}
           </div>
         )}
         {loading && <div className="ws-conn-empty">Comparing…</div>}
@@ -300,15 +301,20 @@ export function MultiEndCompare({
             ))}
           </div>
         )}
-        {!loading && otherWorks.length > 0 && (
+        {!loading && (
           <div style={{ marginTop: 8, display: "flex", gap: 6, alignItems: "center" }}>
             <select
               className="ws-filter-select"
               value={addWorkId}
+              disabled={otherWorks.length === 0}
               onChange={(e) => setAddWorkId(e.target.value === "" ? "" : Number(e.target.value))}
               style={{ flex: 1 }}
             >
-              <option value="">Add a work to the comparison…</option>
+              {otherWorks.length === 0 ? (
+                <option value="">No other documents yet — create a second document to compare</option>
+              ) : (
+                <option value="">Add a work to the comparison…</option>
+              )}
               {otherWorks.map((w) => (
                 <option key={w.work_id} value={w.work_id}>
                   {w.title || "Untitled"}
