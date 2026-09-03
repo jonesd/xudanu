@@ -71,6 +71,7 @@ interface CollaborativeEditorProps {
   selectionRange?: { start: number; end: number } | null;
   highlightRange?: { start: number; end: number } | null;
   onNavigateToWork?: (workId: number) => void;
+  onOpenOrigin?: (marker: TransclusionMarker) => void;
   onCrossServerResolve?: (tumbler: string, contentHash: string) => Promise<{ text: string; hashVerified: boolean; cached: boolean } | null>;
   onTraceProvenance?: (workId: number, charStart: number, charEnd: number) => Promise<AgainHop[]>;
   blobEntries?: Array<{ charPos: number; hash: string; url?: string; mime?: string; width?: number; height?: number }>;
@@ -973,6 +974,7 @@ export function CollaborativeEditor({
   onNavigateToSource,
   highlightRange,
   onNavigateToWork,
+  onOpenOrigin,
   onCrossServerResolve,
   onTraceProvenance,
   onShowBacklinks,
@@ -2465,6 +2467,17 @@ export function CollaborativeEditor({
                   }}
                 >
                   Go to {hoveredMarker.otherWorkId.toString(16).padStart(4, "0")}
+                </button>
+              )}
+              {onOpenOrigin && hoveredMarker.linkTypeId !== 6 && !hoveredMarker.otherWorkIsArchived && (
+                <button
+                  className="marker-tooltip-origin"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenOrigin(hoveredMarker);
+                  }}
+                >
+                  ⤳ Origin
                 </button>
               )}
               {onTraceProvenance && hoveredMarker.start < hoveredMarker.end && hoveredMarker.linkTypeId == null && (

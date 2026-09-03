@@ -3785,3 +3785,137 @@
   padding: 1px 8px;
   color: var(--text-muted);
 }
+
+/* ── Origin panel (Design C: transclusion origin) ─────────────────── */
+
+.ws-origin {
+  position: fixed;
+  top: 56px;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  z-index: 55;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+}
+.ws-origin-head {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ws-origin-pill {
+  font-size: 10.5px;
+  background: rgba(124, 58, 237, 0.15);
+  color: #b794f4;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+.ws-origin-x {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.ws-origin-x:hover { color: var(--text-muted); }
+
+.ws-origin-src { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.ws-origin-src-t { font-size: 14px; font-weight: 550; color: var(--text); }
+.ws-origin-src-m { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+
+.ws-origin-hl {
+  margin: 14px;
+  background: var(--bg-document, #faf9f6);
+  color: var(--doc-text, #1a1a1a);
+  border-radius: 6px;
+  padding: 18px;
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 13.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+.ws-origin-mark {
+  background: rgba(124, 58, 237, 0.2);
+  padding: 1px 0;
+  border-radius: 2px;
+}
+.ws-origin-fade { color: #8a8a8a; }
+.ws-origin-meta { color: #8a8a8a; font-style: italic; margin: 0; }
+
+.ws-origin-chain,
+.ws-origin-ends { padding: 4px 18px 10px; }
+.ws-origin-chain h4,
+.ws-origin-ends h4 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--text-dim);
+  margin: 10px 0 8px;
+  font-weight: 500;
+}
+.ws-origin-chain-hop { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.ws-origin-end {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.ws-origin-end:hover { border-color: var(--purple); }
+.ws-origin-end b { font-size: 12px; color: var(--text); font-weight: 550; }
+.ws-origin-end span { font-size: 11px; color: var(--text-muted); }
+
+.ws-origin-foot {
+  margin-top: auto;
+  padding: 14px 18px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+}
+.ws-origin-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ws-origin-btn.primary {
+  background: var(--purple);
+  border-color: var(--purple);
+  color: #fff;
+}
+
+/* Editor tooltip affordance */
+.marker-tooltip-origin {
+  display: inline-block;
+  margin-top: 4px;
+  margin-left: 6px;
+  background: rgba(124, 58, 237, 0.2);
+  border: 1px solid var(--purple);
+  color: #b794f4;
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.marker-tooltip-origin:hover { background: rgba(124, 58, 237, 0.35); }

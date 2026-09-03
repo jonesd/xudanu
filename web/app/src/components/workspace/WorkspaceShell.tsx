@@ -26,6 +26,8 @@ import type { License } from "../../api/crdt_sync";
 import { LICENSES } from "../../api/crdt_sync";
 import { HomeLanding } from "../HomeLanding";
 import { BeamsView } from "../BeamsView";
+import { OriginPanel } from "../OriginPanel";
+import type { TransclusionMarker } from "../../api/crdt_sync";
 import type { WorkKind } from "../../graph-scoring";
 import { KIND_ICON, KIND_COLOR, KIND_ICON_COLOR } from "../../graph-scoring";
 import { DataIntegrityBanner } from "../DataIntegrityBanner";
@@ -177,6 +179,7 @@ export function WorkspaceShell() {
   const [worksError, setWorksError] = useState<string | null>(null);
   const [landingDismissed, setLandingDismissed] = useState(false);
   const [beamsOpen, setBeamsOpen] = useState(false);
+  const [originMarker, setOriginMarker] = useState<TransclusionMarker | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"updated" | "title" | "revisions" | "id">("updated");
   const [invalidWorkId, setInvalidWorkId] = useState<number | null>(null);
@@ -4272,6 +4275,7 @@ export function WorkspaceShell() {
                   selectionRange={selectionRange}
                   highlightRange={highlightRange}
                   onNavigateToWork={selectWork}
+                  onOpenOrigin={(m) => setOriginMarker(m)}
                   onCrossServerResolve={async (tumbler, contentHash) => {
                     if (!clientRef.current) return null;
                     try {
@@ -5249,6 +5253,18 @@ export function WorkspaceShell() {
           works={works}
           links={transclusion.links}
           onClose={() => setBeamsOpen(false)}
+        />
+      )}
+      {originMarker && (
+        <OriginPanel
+          client={clientRef.current}
+          marker={originMarker}
+          links={transclusion.links}
+          onClose={() => setOriginMarker(null)}
+          onOpenFull={(id) => {
+            setOriginMarker(null);
+            selectWork(id);
+          }}
         />
       )}
     </div>
