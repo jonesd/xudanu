@@ -87,6 +87,15 @@ impl CompoundSegment {
 pub enum SegmentRender {
     /// Fully resolved text (authored, or transcluded and unchanged).
     Text(String),
+    /// FR-55 T5: an embedded image — resolved by content hash from
+    /// the blob store; renders caption + dimensions in text views.
+    Image {
+        content_hash: u64,
+        mime_type: String,
+        width: Option<u32>,
+        height: Option<u32>,
+        caption: Option<String>,
+    },
     /// Transcluded and resolved, but the source span's content
     /// differs from placement time. Rendered WITH the flag —
     /// never silently wrong.
@@ -109,6 +118,21 @@ impl SegmentRender {
     pub fn text(&self) -> String {
         match self {
             SegmentRender::Text(t) => t.clone(),
+            SegmentRender::Image {
+                caption,
+                content_hash,
+                width,
+                height,
+                ..
+            } => {
+                let marker = caption
+                    .clone()
+                    .unwrap_or_else(|| format!("[image {content_hash:016x}]"));
+                match (width, height) {
+                    (Some(w), Some(h)) => format!("{marker} ({w}×{h})"),
+                    _ => marker,
+                }
+            }
             SegmentRender::Drifted { text, .. } => text.clone(),
             SegmentRender::Placeholder { .. } => "\u{2026}[awaiting source]\u{2026}".to_string(),
         }
@@ -234,6 +258,35 @@ pub fn migrate_legacy<'a>(
                     .sum();
                 let local_key = local_space.insert_span(total, content.chars().count().max(1));
                 out.push(CompoundSegment::authored(local_key, content.clone()));
+            }
+            CompoundElement::Image {
+                content_hash,
+                mime_type,
+                byte_size: _,
+                width,
+                height,
+                caption,
+            } => {
+                let label = caption
+                    .clone()
+                    .unwrap_or_else(|| format!("image {content_hash:016x}"));
+                let total: usize = out
+                    .iter()
+                    .map(|s| match &s.source {
+                        SegmentSource::Authored { text } => text.chars().count(),
+                        SegmentSource::Transcluded { placed_len, .. } => *placed_len,
+                    })
+                    .sum();
+                let local_key = local_space.insert_span(total, 1);
+                out.push(CompoundSegment {
+                    local_key,
+                    source: SegmentSource::Authored { text: label },
+                });
+                // The blob reference itself rides in the render:
+                // stash the full image data via extension — v1 keeps
+                // segments text-typed; the builder resolves images
+                // from the CompoundElement directly (hash is stable).
+                let _ = (mime_type, width, height);
             }
             CompoundElement::Span { span } => {
                 let sw = span.source_work_id();

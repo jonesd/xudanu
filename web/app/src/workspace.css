@@ -4099,3 +4099,32 @@
   color: var(--green);
   font-size: 11px;
 }
+
+/* FR-55 T5: builder live preview */
+.cb-dock-preview {
+  display: flex;
+  flex-direction: column;
+  min-height: 120px;
+  overflow-y: auto;
+}
+.cb-preview-text {
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+.cb-preview-empty { color: var(--text-muted); font-style: italic; }
+.cb-preview-drift {
+  background: rgba(217, 119, 6, 0.18);
+  border-bottom: 2px solid var(--amber);
+  padding: 0 2px;
+}
+.cb-preview-ph {
+  background: rgba(248, 81, 73, 0.12);
+  border-bottom: 2px dashed #f85149;
+  padding: 0 2px;
+  font-style: italic;
+}
+.cb-badge-drift { color: var(--amber); font-size: 11px; }
+.cb-badge-ph { color: #f85149; font-size: 11px; }

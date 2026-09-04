@@ -340,6 +340,45 @@ export function CompoundBuilder({
 
   const transclusionCount = compoundSpanRanges.length;
 
+  // FR-55 T5: live preview — resolve segments through the server
+  // (compound_resolve_segments) and render with drift/placeholder
+  // badges. Falls back silently when unavailable.
+  const [previewRenders, setPreviewRenders] = useState<Array<{
+    kind: "text" | "drifted" | "placeholder";
+    text: string;
+  }> | null>(null);
+
+  useEffect(() => {
+    if (!client || centerWorkId == null) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = (await client.sendRequest("compound_resolve_segments", {
+          work_id: centerWorkId,
+        })) as Record<string, unknown>;
+        const val =
+          resp && typeof resp === "object" && "value" in resp
+            ? (resp.value as Record<string, unknown>)
+            : resp;
+        const renders = (val as { renders?: Array<Record<string, unknown>> })?.renders;
+        if (!Array.isArray(renders) || cancelled) return;
+        setPreviewRenders(
+          renders.map((r) => {
+            const text = String(r.text ?? "");
+            if (r.kind === "drifted") return { kind: "drifted" as const, text };
+            if (r.kind === "placeholder") return { kind: "placeholder" as const, text };
+            return { kind: "text" as const, text };
+          }),
+        );
+      } catch {
+        setPreviewRenders(null); // older server — builder works without
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, centerWorkId, transclusionCount, onReloadCompound]);
+
   return (
     <div className="cb-dock">
       <div className="cb-header">
@@ -497,6 +536,36 @@ export function CompoundBuilder({
         </div>
 
         {/* Quoted passages (manifest) */}
+        <div className="cb-panel-resizer cb-dock-vresizer">
+          <span />
+        </div>
+        <div className="cb-preview-panel cb-dock-preview">
+          <div className="cb-panel-header">Live preview</div>
+          <div className="cb-panel-sub">
+            Resolved now — <span className="cb-badge-drift">&#x26A0; drifted</span>{" "}
+            <span className="cb-badge-ph">&#x2026; awaiting</span>
+          </div>
+          <div className="cb-preview-text">
+            {previewRenders == null && (
+              <div className="cb-preview-empty">
+                {centerText.slice(0, 400) || "Write or include a passage to begin."}
+              </div>
+            )}
+            {previewRenders?.map((r, i) =>
+              r.kind === "text" ? (
+                <span key={i}>{r.text}</span>
+              ) : r.kind === "drifted" ? (
+                <mark key={i} className="cb-preview-drift" title="Source changed since inclusion">
+                  {r.text}
+                </mark>
+              ) : (
+                <mark key={i} className="cb-preview-ph" title="Source unavailable or span deleted">
+                  {r.text}
+                </mark>
+              ),
+            )}
+          </div>
+        </div>
         <div className="cb-panel-resizer cb-dock-vresizer">
           <span />
         </div>

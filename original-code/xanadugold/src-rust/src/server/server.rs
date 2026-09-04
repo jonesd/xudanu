@@ -16592,6 +16592,31 @@ impl Server {
 
         for element in compound.elements() {
             match element {
+                CompoundElement::Image {
+                    caption,
+                    content_hash,
+                    width,
+                    height,
+                    ..
+                } => {
+                    let dims = match (width, height) {
+                        (Some(w), Some(h)) => format!(" ({w}×{h})"),
+                        _ => String::new(),
+                    };
+                    let label = caption
+                        .clone()
+                        .unwrap_or_else(|| format!("image {content_hash:016x}"))
+                        + &dims;
+                    let total: usize = out
+                        .iter()
+                        .map(|s| match &s.source {
+                            SegmentSource::Authored { text } => text.chars().count(),
+                            SegmentSource::Transcluded { placed_len, .. } => *placed_len,
+                        })
+                        .sum();
+                    let key = local_space.insert_span(total, label.chars().count().max(1));
+                    out.push(CompoundSegment::authored(key, label));
+                }
                 CompoundElement::Text { content } => {
                     let total: usize = out
                         .iter()
@@ -17061,6 +17086,33 @@ impl Server {
             while compound_idx < compound.elements().len() {
                 let comp_elem = &compound.elements()[compound_idx];
                 match comp_elem {
+                    crate::edition::compound::CompoundElement::Image {
+                        content_hash,
+                        mime_type,
+                        byte_size,
+                        width,
+                        height,
+                        caption,
+                    } => {
+                        // FR-55 T5: images materialize as Blob entries
+                        // in the compound's edition.
+                        let mut elem = match (width, height) {
+                            (Some(w), Some(h)) => RangeElement::blob_with_dims(
+                                *content_hash,
+                                mime_type.clone(),
+                                *byte_size,
+                                *w,
+                                *h,
+                            ),
+                            _ => RangeElement::blob(*content_hash, mime_type.clone(), *byte_size),
+                        };
+                        let _ = caption; // caption rides in the compound element
+                        new_entries
+                            .push((pos, std::sync::Arc::new(crate::edition::Carrier::new(elem))));
+                        pos += 1;
+                        compound_idx += 1;
+                        continue;
+                    }
                     crate::edition::compound::CompoundElement::Text { content } => {
                         let content_len = content.chars().count();
                         if text_chars_consumed + remaining_in_entry >= content_len {
@@ -24442,6 +24494,47 @@ mod tests_find_text {
             text2, "Header\nthe quoted passage verbatim\nFooter",
             "keyed segments survive a live 200-char source prefix edit"
         );
+    }
+
+    #[test]
+    fn compound_images_render_and_derive() {
+        // T5: image elements — authored segments with image labels,
+        // materialized as Blob entries in the flat render.
+        let (mut server, sid, _src, compound_id) = compound_env("source text");
+        use crate::edition::compound::{CompoundEdition, CompoundElement};
+        let mut ed = CompoundEdition::empty();
+        ed.push(CompoundElement::text("Figure 1 shows it:\n"));
+        ed.push(CompoundElement::image(
+            0xABCD_1234_5678_9ABC,
+            "image/png",
+            4096,
+            Some(800),
+            Some(600),
+            Some("The diagram".to_string()),
+        ));
+        ed.push(CompoundElement::text("\nEnd."));
+        server.set_compound_edition(compound_id, ed, sid).unwrap();
+
+        // Segments derived: 3 authored (label = caption text)
+        let segs = server.compound_segments.get(&compound_id).unwrap();
+        assert_eq!(segs.len(), 3);
+        let img_seg = &segs[1];
+        match &img_seg.source {
+            crate::edition::compound_segment::SegmentSource::Authored { text } => {
+                assert!(text.contains("The diagram"), "caption is the label: {text}");
+                assert!(text.contains("800×600"), "dims in label: {text}");
+            }
+            _ => panic!("image is authored-typed"),
+        }
+
+        // Resolution renders the same
+        let r = server.compound_resolve_segments(compound_id);
+        let text: String = r.iter().map(|x| x.text()).collect::<Vec<_>>().join("");
+        assert!(
+            text.contains("The diagram (800×600)"),
+            "full render: {text}"
+        );
+        assert!(text.starts_with("Figure 1 shows it:"));
     }
 
     #[test]

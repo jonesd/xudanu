@@ -307,14 +307,66 @@ impl CompoundSpan {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "serde", serde(tag = "type", rename_all = "snake_case"))]
 pub enum CompoundElement {
-    Text { content: String },
-    Span { span: CompoundSpan },
+    Text {
+        content: String,
+    },
+    Span {
+        span: CompoundSpan,
+    },
+    /// FR-55 T5: an image from the blob store, embedded in the
+    /// compound by content hash — stable across every edit.
+    Image {
+        content_hash: u64,
+        mime_type: String,
+        byte_size: u64,
+        width: Option<u32>,
+        height: Option<u32>,
+        caption: Option<String>,
+    },
 }
 
 impl CompoundElement {
     pub fn text(content: impl Into<String>) -> Self {
         CompoundElement::Text {
             content: content.into(),
+        }
+    }
+
+    pub fn image(
+        content_hash: u64,
+        mime_type: impl Into<String>,
+        byte_size: u64,
+        width: Option<u32>,
+        height: Option<u32>,
+        caption: Option<String>,
+    ) -> Self {
+        CompoundElement::Image {
+            content_hash,
+            mime_type: mime_type.into(),
+            byte_size,
+            width,
+            height,
+            caption,
+        }
+    }
+
+    pub fn image_content(&self) -> Option<(u64, &str, Option<u32>, Option<u32>, Option<&str>)> {
+        match self {
+            CompoundElement::Image {
+                content_hash,
+                mime_type,
+                width,
+                height,
+                caption,
+                ..
+            } => Some((
+                *content_hash,
+                mime_type,
+                *width,
+                *height,
+                caption.as_deref(),
+            )),
+            _ => None,
         }
     }
 
@@ -327,21 +379,21 @@ impl CompoundElement {
     pub fn text_content(&self) -> Option<&str> {
         match self {
             CompoundElement::Text { content } => Some(content),
-            CompoundElement::Span { .. } => None,
+            _ => None,
         }
     }
 
     pub fn span_content(&self) -> Option<&CompoundSpan> {
         match self {
-            CompoundElement::Text { .. } => None,
             CompoundElement::Span { span } => Some(span),
+            _ => None,
         }
     }
 
     pub fn span_content_mut(&mut self) -> Option<&mut CompoundSpan> {
         match self {
-            CompoundElement::Text { .. } => None,
             CompoundElement::Span { span } => Some(span),
+            _ => None,
         }
     }
 }
@@ -457,6 +509,33 @@ impl CompoundEdition {
                     let end = flat_text.chars().count();
                     resolved_elements.push(ResolvedElement::Text {
                         content: content.clone(),
+                        flat_start: start,
+                        flat_end: end,
+                    });
+                }
+                CompoundElement::Image {
+                    caption,
+                    content_hash,
+                    width,
+                    height,
+                    ..
+                } => {
+                    // Images render as their caption (or a compact
+                    // marker) in flat text; the builder resolves the
+                    // blob itself via content hash.
+                    let marker = caption
+                        .clone()
+                        .unwrap_or_else(|| format!("[image {content_hash:016x}]"));
+                    let dims = match (width, height) {
+                        (Some(w), Some(h)) => format!(" ({w}×{h})"),
+                        _ => String::new(),
+                    };
+                    let content = format!("{marker}{dims}");
+                    let start = flat_text.chars().count();
+                    flat_text.push_str(&content);
+                    let end = flat_text.chars().count();
+                    resolved_elements.push(ResolvedElement::Text {
+                        content,
                         flat_start: start,
                         flat_end: end,
                     });
