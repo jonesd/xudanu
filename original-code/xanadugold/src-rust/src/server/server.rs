@@ -3996,6 +3996,7 @@ impl Server {
             source_fingerprint: None,
         };
         self.works.insert(be_id, ws);
+        self.span_key_map_init(be_id); // FR-38 S3: key map from birth
 
         let edition = self.works[&be_id].work.edition().clone();
         self.content_address.intern_edition_elements(&edition);
@@ -6394,6 +6395,7 @@ impl Server {
             source_fingerprint: Some(crate::server::source_matcher::compute_minhash(&text)),
         };
         self.works.insert(be_id, ws);
+        self.span_key_map_init(be_id); // FR-38 S3: key map from birth
 
         let edition = self.works[&be_id].work.edition().clone();
         self.content_address.intern_edition_elements(&edition);
@@ -8443,6 +8445,37 @@ impl Server {
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
             self.migrate_link_spans_for_delta(work_be_id, ops);
+            // FR-38 S3: maintain the span key map through the same
+            // ops — inserts allocate between neighbours, deletes
+            // retire. Best-effort: works without an initialized map
+            // (lazy, on first permalink interest) are skipped.
+            {
+                let mut pos = 0usize;
+                for op in ops {
+                    match op {
+                        crate::server::transport::protocol::TextDeltaOp::Retain { count } => {
+                            pos += *count as usize;
+                        }
+                        crate::server::transport::protocol::TextDeltaOp::Insert { text } => {
+                            let len = text.chars().count();
+                            self.maintain_span_keys(
+                                work_be_id,
+                                SpanKeyEdit::Insert { at: pos, len },
+                            );
+                            pos += len;
+                        }
+                        crate::server::transport::protocol::TextDeltaOp::Delete { count } => {
+                            self.maintain_span_keys(
+                                work_be_id,
+                                SpanKeyEdit::Delete {
+                                    start: pos,
+                                    end: pos + *count as usize,
+                                },
+                            );
+                        }
+                    }
+                }
+            }
             // FR-41 S4: CRDT edits change source content exactly like
             // the legacy delta path — dependents' inline transclusion
             // spans must migrate here too (the legacy path calls this
@@ -19752,6 +19785,7 @@ impl Server {
                     source_fingerprint: None,
                 };
                 self.works.insert(be_id, ws);
+                self.span_key_map_init(be_id); // FR-38 S3: key map from birth
                 imported += 1;
 
                 let ws = match self.works.get(&be_id) {
@@ -24058,6 +24092,54 @@ mod tests_find_text {
     }
 
     #[test]
+    fn span_keys_survive_live_edits() {
+        // FR-38 S3 end-to-end: init a map, edit through the REAL
+        // delta path, resolve — offsets follow the edits, key holds.
+        let (mut server, sid) = setup();
+        server.login_public(sid).unwrap();
+        let text = (0..40)
+            .map(|i| format!("line {i:03} with padding content\n"))
+            .collect::<String>();
+        let doc = server.create_work(sid, Edition::from_text(&text)).unwrap();
+        server.crdt_open_session(sid, doc).unwrap();
+        assert!(server.span_key_map_init(doc));
+
+        // Key of the last span (~offset 35*35):
+        let target_offset = 20 * 35;
+        let key = {
+            // Resolve whatever key governs that offset via the op:
+            // find it through the map by resolving each candidate is
+            // awkward — expose via resolve on offsets 0.. and pick.
+            // Simpler: compute from granularity 64: span index =
+            // target_offset / 64 → k-th key. Use resolve on known
+            // span starts instead:
+            let r = server.span_key_resolve(doc, "2147483648");
+            assert_eq!(r["status"], "ok");
+            r["key"].as_str().unwrap().to_string()
+        };
+        let before = server.span_key_resolve(doc, &key);
+        assert_eq!(before["start"], 0);
+
+        // Insert 100 chars at the very front through the delta path.
+        use crate::server::transport::protocol::TextDeltaOp;
+        let ops = vec![
+            TextDeltaOp::Insert {
+                text: "x".repeat(100),
+            },
+            TextDeltaOp::Retain {
+                count: text.chars().count() as u64,
+            },
+        ];
+        server
+            .crdt_apply_text_delta(sid, doc, &ops)
+            .expect("delta applies");
+
+        let after = server.span_key_resolve(doc, &key);
+        assert_eq!(after["status"], "ok");
+        assert_eq!(after["start"], 100, "offset shifted by the insert");
+    }
+
+    #[test]
     fn span_key_resolve_lifecycle() {
         // FR-38 S3: init → resolve → retire-on-delete → no-map error.
         let (mut server, sid) = setup();
@@ -24066,9 +24148,11 @@ mod tests_find_text {
             .collect::<String>();
         let doc = server.create_work(sid, Edition::from_text(&text)).unwrap();
 
-        // Before init: explicit pending-status error.
+        // Maps exist from birth (eager init at creation): the first
+        // key resolves immediately.
         let r = server.span_key_resolve(doc, "2147483648");
-        assert_eq!(r["status"], "error");
+        assert_eq!(r["status"], "ok");
+        assert_eq!(r["start"], 0);
 
         assert!(server.span_key_map_init(doc));
         let first = crate::edition::span_key::SpanKeyMap::default;
