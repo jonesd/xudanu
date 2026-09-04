@@ -6,6 +6,7 @@ pub mod bundle_stepper;
 pub mod canopy;
 #[cfg(feature = "serde")]
 pub mod compound;
+pub mod compound_segment;
 pub mod content_address;
 #[cfg(feature = "serde")]
 pub mod derived;
