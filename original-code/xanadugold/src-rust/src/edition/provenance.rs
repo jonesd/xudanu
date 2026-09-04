@@ -132,7 +132,7 @@ impl FederationMetadata {
 
     #[cfg(feature = "serde")]
     pub fn to_prov_entity(&self) -> (String, ProvEntity) {
-        let entity_id = generate_prov_id("xudanu:federation", &self.server_id);
+        let entity_id = generate_prov_id("xudanu", &format!("federation_{}", self.server_id));
         let mut attributes = std::collections::HashMap::new();
 
         attributes.insert(
@@ -186,8 +186,10 @@ impl FederationServerAgent {
 
     #[cfg(feature = "serde")]
     pub fn to_prov_agent(&self) -> (String, ProvAgent) {
-        let agent_id =
-            generate_prov_id("xudanu:server", &hex_encode(self.server_id.as_bytes())[..8]);
+        let agent_id = generate_prov_id(
+            "xudanu",
+            &format!("server_{}", &hex_encode(self.server_id.as_bytes())[..8]),
+        );
         let mut attributes = std::collections::HashMap::new();
 
         attributes.insert(
@@ -389,8 +391,10 @@ impl ClusterVerificationActivity {
 
         for (idx, server_id) in self.verifying_servers.iter().enumerate() {
             let assoc_id = format!("{}:assoc:{}", self.activity_id, idx);
-            let agent_id =
-                generate_prov_id("xudanu:server", &hex_encode(server_id.as_bytes())[..8]);
+            let agent_id = generate_prov_id(
+                "xudanu",
+                &format!("server_{}", &hex_encode(server_id.as_bytes())[..8]),
+            );
 
             let mut attributes = std::collections::HashMap::new();
             attributes.insert("xudanu:role".to_string(), ProvValue::string("verifier"));
@@ -401,7 +405,7 @@ impl ClusterVerificationActivity {
                     activity: self.activity_id.clone(),
                     agent: Some(agent_id),
                     plan: None,
-                    role: Some(ProvValue::qname("verifier")),
+                    role: Some(ProvValue::qname("xudanu:verifier")),
                     attributes,
                 },
             ));
@@ -1939,6 +1943,172 @@ mod tests {
         (key, fps, prov, server_id)
     }
 
+    // ── W3C PROV-JSON conformance (FR: spec-compliance guard) ─────
+
+    /// Structural validator: every rule a strict PROV consumer
+    /// checks first. Run against the serialized JSON so serde
+    /// renames/omissions are audited too, not just our types.
+    fn assert_prov_json_conformance(value: &serde_json::Value) {
+        use std::collections::HashSet;
+        let obj = value.as_object().expect("document is an object");
+
+        const ALLOWED: &[&str] = &[
+            "prefix",
+            "entity",
+            "activity",
+            "agent",
+            "used",
+            "wasGeneratedBy",
+            "wasInformedBy",
+            "wasStartedBy",
+            "wasEndedBy",
+            "wasInvalidatedBy",
+            "wasDerivedFrom",
+            "wasAttributedTo",
+            "wasAssociatedWith",
+            "actedOnBehalfOf",
+            "wasInfluencedBy",
+            "alternateOf",
+            "specializationOf",
+            "hadMember",
+            "bundle",
+        ];
+        for key in obj.keys() {
+            assert!(
+                ALLOWED.contains(&key.as_str()),
+                "non-PROV top-level key: {key}"
+            );
+        }
+
+        let prefix: HashSet<String> = obj
+            .get("prefix")
+            .and_then(|p| p.as_object())
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default();
+        assert!(prefix.contains("prov") && prefix.contains("xsd"));
+
+        let qname_re = regex_lite_re();
+        let mut check_id = |id: &str, ctx: &str| {
+            let (pfx, local) = match id.split_once(':') {
+                Some(x) => x,
+                None => panic!("{ctx}: id is not a QName: {id}"),
+            };
+            assert!(
+                prefix.contains(pfx),
+                "{ctx}: unbound prefix {pfx:?} in id {id}"
+            );
+            assert!(!local.contains(':'), "{ctx}: colon in local part: {id}");
+            assert!(qname_re(local), "{ctx}: illegal local name: {id}");
+        };
+
+        // Collect all entity/agent/activity ids (for reference resolution)
+        let mut known: HashSet<String> = HashSet::new();
+        for kind in ["entity", "activity", "agent"] {
+            if let Some(map) = obj.get(kind).and_then(|v| v.as_object()) {
+                for id in map.keys() {
+                    check_id(id, kind);
+                    known.insert(id.clone());
+                }
+            }
+        }
+
+        // Relations: ids valid; refs resolve; temporal slots dateTime
+        let dt_ok = |v: &serde_json::Value, ctx: &str| {
+            let t = v.as_str().unwrap_or_else(|| panic!("{ctx} non-string"));
+            assert!(
+                t.len() >= 20
+                    && t.ends_with('Z')
+                    && t.as_bytes()[4] == b'-'
+                    && t.as_bytes()[10] == b'T',
+                "{ctx}: not xsd:dateTime: {t}"
+            );
+        };
+        for rel in [
+            "used",
+            "wasGeneratedBy",
+            "wasAttributedTo",
+            "wasAssociatedWith",
+            "wasDerivedFrom",
+        ] {
+            let Some(map) = obj.get(rel).and_then(|v| v.as_object()) else {
+                continue;
+            };
+            for (rid, rec) in map {
+                check_id(rid, rel);
+                let rec = rec.as_object().unwrap();
+                for field in [
+                    "prov:entity",
+                    "prov:agent",
+                    "prov:activity",
+                    "prov:generatedEntity",
+                    "prov:usedEntity",
+                ] {
+                    if let Some(v) = rec.get(field) {
+                        let id = v.as_str().unwrap();
+                        check_id(id, rel);
+                        assert!(known.contains(id), "{rel}/{rid}: dangling {field} -> {id}");
+                    }
+                }
+                if let Some(t) = rec.get("prov:time") {
+                    dt_ok(t, rel);
+                }
+                if let Some(t) = rec.get("prov:startTime") {
+                    dt_ok(t, rel);
+                }
+                if let Some(t) = rec.get("prov:endTime") {
+                    dt_ok(t, rel);
+                }
+                if let Some(tv) = rec.get("prov:type") {
+                    let t = tv.as_object().unwrap();
+                    assert_eq!(
+                        t.get("type").and_then(|x| x.as_str()),
+                        Some("xsd:QName"),
+                        "{rel}/{rid}: prov:type must be QName-typed"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Minimal QName local-name check without a regex dep:
+    /// [A-Za-z_][A-Za-z0-9_.-]*
+    fn regex_lite_re() -> impl Fn(&str) -> bool {
+        |s: &str| {
+            let mut cs = s.chars();
+            match cs.next() {
+                Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+                _ => return false,
+            }
+            cs.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+        }
+    }
+
+    #[test]
+    fn prov_json_export_conforms_to_spec() {
+        let (_k, _fps, base_prov, _) = build_base_provenance(b"conf");
+        let peer = generate_signing_key();
+        let mut server_id = [0u8; 32];
+        server_id[..4].copy_from_slice(b"peer");
+        let vk = peer.verifying_key();
+        let sig = sign_cross_server(&peer, &base_prov, &server_id, &vk.to_bytes(), 2000);
+        let fed = FederatedProvenance {
+            base_provenance: base_prov,
+            cross_server_signatures: vec![sig],
+            consensus: ClusterConsensus {
+                consensus_type: ConsensusType::Unanimous,
+                verifications: vec![],
+                threshold_met: true,
+                total_servers: 1,
+                approving_servers: 1,
+                timestamp: 2000,
+            },
+        };
+        let doc = fed.to_prov_json_with_federation().expect("export");
+        let json = serde_json::to_value(&doc).expect("serialize");
+        eprintln!("{}", serde_json::to_string_pretty(&json).unwrap());
+        assert_prov_json_conformance(&json);
+    }
+
     #[test]
     fn federated_provenance_unanimous_passes() {
         let (_author_key, fps, base_prov, _) = build_base_provenance(b"base");
@@ -2203,14 +2373,14 @@ mod tests {
     #[test]
     fn prov_id_generators() {
         assert_eq!(generate_prov_id("pre", "base"), "pre:base");
-        assert_eq!(generate_span_prov_id(42, 0, 10), "xudanu:span:42:0:10");
+        assert_eq!(generate_span_prov_id(42, 0, 10), "xudanu:span_42_0_10");
         let key = [0xaa; 32];
         let id = generate_author_prov_id(&key);
-        assert!(id.starts_with("xudanu:agent:"));
-        assert_eq!(generate_edit_activity_id(7, 1234), "xudanu:activity:7:1234");
+        assert!(id.starts_with("xudanu:agent_"));
+        assert_eq!(generate_edit_activity_id(7, 1234), "xudanu:activity_7_1234");
         assert_eq!(
             generate_federation_bundle_id(9999),
-            "xudanu:federation:consensus:9999"
+            "xudanu:federation_consensus_9999"
         );
     }
 
@@ -2254,7 +2424,7 @@ mod tests {
             "member".to_string(),
         );
         let (id, entity) = meta.to_prov_entity();
-        assert!(id.starts_with("xudanu:federation:"));
+        assert!(id.starts_with("xudanu:federation_"));
         assert!(entity.attributes.contains_key("prov:type"));
         assert_eq!(
             entity.attributes.get("xudanu:serverId").unwrap().value,
@@ -2278,7 +2448,7 @@ mod tests {
             1000,
         );
         let (id, prov_agent) = agent.to_prov_agent();
-        assert!(id.starts_with("xudanu:server:"));
+        assert!(id.starts_with("xudanu:server_"));
         assert!(prov_agent.attributes.contains_key("prov:type"));
         assert_eq!(
             prov_agent.attributes.get("xudanu:serverId").unwrap().value,
@@ -2615,7 +2785,7 @@ mod tests {
 
 const PROV_JSON_DOMAIN: &[u8] = b"xudanu/v1/prov-json";
 const PROV_NS: &str = "http://www.w3.org/ns/prov#";
-const XUDANU_NS: &str = "http://xudanu.example.org/ns#";
+const XUDANU_NS: &str = "https://dgjones.info/ns/xudanu/";
 
 // PHASE 1: PROV-JSON Data Structures
 
@@ -2773,6 +2943,26 @@ pub struct ProvGeneration {
     pub attributes: std::collections::HashMap<String, ProvValue>,
 }
 
+/// PROV `used` relation: an activity used an entity — the relation
+/// PROV-DM builds its core sentence from. Without it, generation
+/// says an entity appeared but never what it came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProvUsage {
+    #[cfg_attr(feature = "serde", serde(rename = "prov:activity"))]
+    pub activity: String,
+    #[cfg_attr(feature = "serde", serde(rename = "prov:entity"))]
+    pub entity: String,
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    #[cfg_attr(feature = "serde", serde(rename = "prov:time"))]
+    pub time: Option<String>,
+    #[cfg_attr(feature = "serde", serde(flatten))]
+    pub attributes: std::collections::HashMap<String, ProvValue>,
+}
+
 /// PROV bundle representation (for federation)
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -2801,6 +2991,8 @@ pub struct ProvJsonDocument {
     pub wasAssociatedWith: std::collections::HashMap<String, ProvAssociation>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub wasGeneratedBy: std::collections::HashMap<String, ProvGeneration>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub used: std::collections::HashMap<String, ProvUsage>,
     #[cfg_attr(
         feature = "serde",
         serde(default, skip_serializing_if = "Option::is_none")
@@ -2819,6 +3011,7 @@ impl ProvJsonDocument {
             wasDerivedFrom: std::collections::HashMap::new(),
             wasAssociatedWith: std::collections::HashMap::new(),
             wasGeneratedBy: std::collections::HashMap::new(),
+            used: std::collections::HashMap::new(),
             bundle: None,
         };
 
@@ -2841,32 +3034,75 @@ impl ProvJsonDocument {
 
 // PHASE 1: ID Generation Functions
 
-/// Generate consistent PROV identifiers
+/// Generate consistent PROV identifiers.
+///
+/// W3C PROV-JSON conformance: identifiers are QNames. The local part
+/// must not contain ':' (or other QName-illegal characters), so the
+/// base id is sanitized — `xudanu:span` + `1:0:1` becomes
+/// `xudanu:span_1_0_1`, not `xudanu:span:1:0:1`.
 pub fn generate_prov_id(prefix: &str, base_id: &str) -> String {
-    format!("{}:{}", prefix, base_id)
+    let local: String = base_id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("{}:{}", prefix, local)
+}
+
+/// Unix seconds → xsd:dateTime (RFC 3339, UTC) for PROV temporal
+/// slots. Integer timestamps stay available via xudanu: attributes.
+pub fn unix_to_xsd_datetime(secs: u64) -> String {
+    // Civil-from-days algorithm (Howard Hinnant) — no chrono dep
+    // needed at this layer.
+    let days = (secs / 86400) as i64;
+    let rem = (secs % 86400) as i64;
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        y,
+        m,
+        d,
+        rem / 3600,
+        (rem % 3600) / 60,
+        rem % 60
+    )
 }
 
 /// Generate entity ID for span
 pub fn generate_span_prov_id(work_id: BeId, span_start: i64, span_end: i64) -> String {
     generate_prov_id(
-        "xudanu:span",
-        &format!("{}:{}:{}", work_id, span_start, span_end),
+        "xudanu",
+        &format!("span_{}_{}_{}", work_id, span_start, span_end),
     )
 }
 
 /// Generate agent ID for author
 pub fn generate_author_prov_id(author_public_key: &[u8; 32]) -> String {
     let key_hex = hex_encode(author_public_key);
-    generate_prov_id("xudanu:agent", &key_hex[..16]) // Use first 16 chars for brevity
+    generate_prov_id("xudanu", &format!("agent_{}", &key_hex[..16]))
 }
 /// Generate activity ID for edit operation
 pub fn generate_edit_activity_id(work_id: BeId, timestamp: u64) -> String {
-    generate_prov_id("xudanu:activity", &format!("{}:{}", work_id, timestamp))
+    generate_prov_id("xudanu", &format!("activity_{}_{}", work_id, timestamp))
 }
 
 /// Generate bundle ID for federation
 pub fn generate_federation_bundle_id(timestamp: u64) -> String {
-    generate_prov_id("xudanu:federation", &format!("consensus:{}", timestamp))
+    generate_prov_id("xudanu", &format!("federation_consensus_{}", timestamp))
 }
 
 // PHASE 1: PROV-JSON Conversion Methods
@@ -2925,7 +3161,7 @@ impl FederatedProvenance {
         );
 
         // Create attribution
-        let attribution_id = format!("attr:{}", entity_id);
+        let attribution_id = generate_prov_id("xudanu", &format!("attr_{}", entity_id));
         doc.wasAttributedTo.insert(
             attribution_id,
             ProvAttribution {
@@ -2938,7 +3174,7 @@ impl FederatedProvenance {
 
         // Add cross-server signatures as activities and associations
         for (idx, sig) in self.cross_server_signatures.iter().enumerate() {
-            let activity_id = format!("cross_sig:{}", idx);
+            let activity_id = generate_prov_id("xudanu", &format!("crosssig_{}", idx));
             let mut activity_attrs = std::collections::HashMap::new();
             activity_attrs.insert(
                 "prov:type".to_string(),
@@ -2964,15 +3200,32 @@ impl FederatedProvenance {
             doc.activity.insert(
                 activity_id.clone(),
                 ProvActivity {
-                    start_time: None,
-                    end_time: None,
+                    // PROV temporal slots carry xsd:dateTime; the raw
+                    // integer stays in xudanu:timestamp.
+                    start_time: Some(unix_to_xsd_datetime(sig.timestamp)),
+                    end_time: Some(unix_to_xsd_datetime(sig.timestamp)),
                     attributes: activity_attrs,
                 },
             );
 
+            // The verification activity USED the attested entity —
+            // the core PROV usage record (previously unstateable).
+            let usage_id = generate_prov_id("xudanu", &format!("use_crosssig_{}", idx));
+            doc.used.insert(
+                usage_id,
+                ProvUsage {
+                    activity: activity_id.clone(),
+                    entity: entity_id.clone(),
+                    time: Some(unix_to_xsd_datetime(sig.timestamp)),
+                    attributes: std::collections::HashMap::new(),
+                },
+            );
+
             // Associate server agent with activity
-            let server_agent_id =
-                generate_prov_id("xudanu:server", &hex_encode(&sig.server_id)[..8]);
+            let server_agent_id = generate_prov_id(
+                "xudanu",
+                &format!("server_{}", &hex_encode(&sig.server_id)[..8]),
+            );
             let mut server_attrs = std::collections::HashMap::new();
             server_attrs.insert("prov:type".to_string(), ProvValue::qname("xudanu:Server"));
             server_attrs.insert(
@@ -2987,7 +3240,7 @@ impl FederatedProvenance {
                 },
             );
 
-            let assoc_id = format!("assoc:{}:{}", activity_id, idx);
+            let assoc_id = generate_prov_id("xudanu", &format!("assoc_{}_{}", idx, idx));
             doc.wasAssociatedWith.insert(
                 assoc_id,
                 ProvAssociation {
@@ -3001,7 +3254,8 @@ impl FederatedProvenance {
         }
 
         // Add consensus as an entity
-        let consensus_entity_id = format!("consensus:{}", self.consensus.timestamp);
+        let consensus_entity_id =
+            generate_prov_id("xudanu", &format!("consensus_{}", self.consensus.timestamp));
         let mut consensus_attrs = std::collections::HashMap::new();
         consensus_attrs.insert(
             "prov:type".to_string(),

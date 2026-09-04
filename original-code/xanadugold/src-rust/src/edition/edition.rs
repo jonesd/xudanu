@@ -23,6 +23,15 @@ use super::xn_region::XnRegion;
 /// delta path (PERF-PLAN Stage 5).
 pub(crate) type EntriesCache = (Vec<(i64, Arc<Carrier>)>, Vec<usize>, Vec<[u8; 32]>, bool);
 
+/// FR-37 K2: one n-way shared region. `works` is the sorted set of
+/// edition indices sharing the passage; `spans[i]` is the char range
+/// in edition i (zeros for non-members).
+#[derive(Debug, Clone, PartialEq)]
+pub struct NwaySharedRegion {
+    pub works: Vec<usize>,
+    pub spans: Vec<(i64, i64)>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Edition {
     pub(crate) orgl: OrglRoot,
@@ -1639,6 +1648,129 @@ impl Edition {
             .sum()
     }
 
+    /// FR-37 K1: Gold-style structural comparison via node crums.
+    /// Equal crums match whole subtrees; leaf-local mismatches fall to
+    /// the fingerprint tier. See `orgl::CrumDiff`.
+    pub fn crum_diff(&self, other: &Edition) -> crate::edition::orgl::CrumDiff {
+        self.orgl.crum_diff(&other.orgl)
+    }
+
+    /// FR-37 K2: n-way shared regions in one pass over all editions.
+    ///
+    /// A passage shared by k works is a run of entries whose content
+    /// fingerprints occur **as the same consecutive sequence** in each
+    /// of the k works. Fingerprint membership is only the prefilter —
+    /// every member is verified by sequence alignment, so regions
+    /// cannot bleed through coincidentally-shared characters, and
+    /// spans are exact. Each region is emitted once, from its
+    /// lowest-index member. O(total entries) with per-work fingerprint
+    /// position indexes, instead of O(n²) pairwise calls.
+    pub fn shared_regions_nway(eds: &[&Edition], min_run: usize) -> Vec<NwaySharedRegion> {
+        use std::collections::{HashMap, HashSet};
+        if eds.len() < 2 {
+            return Vec::new();
+        }
+
+        let entries: Vec<Vec<(i64, Arc<Carrier>)>> =
+            eds.iter().map(|e| e.cached_entries().clone()).collect();
+        let fp_of = |e: &(i64, Arc<Carrier>)| e.1.element.content_fingerprint();
+
+        // Per-work fingerprint → entry indices, and char prefix sums.
+        let mut fp_pos: Vec<HashMap<[u8; 32], Vec<usize>>> = Vec::with_capacity(eds.len());
+        let mut prefixes: Vec<Vec<usize>> = Vec::with_capacity(eds.len());
+        for es in &entries {
+            let mut m: HashMap<[u8; 32], Vec<usize>> = HashMap::new();
+            let mut p = vec![0usize];
+            for (k, e) in es.iter().enumerate() {
+                m.entry(fp_of(e)).or_default().push(k);
+                let last = *p.last().unwrap();
+                p.push(last + e.1.char_len());
+            }
+            fp_pos.push(m);
+            prefixes.push(p);
+        }
+
+        // Global prefilter: fingerprint → works containing it.
+        let mut fp_works: HashMap<[u8; 32], Vec<usize>> = HashMap::new();
+        for (i, es) in entries.iter().enumerate() {
+            let mut seen: HashSet<[u8; 32]> = HashSet::new();
+            for e in es {
+                if seen.insert(fp_of(e)) {
+                    fp_works.entry(fp_of(e)).or_default().push(i);
+                }
+            }
+        }
+
+        let mut regions: Vec<NwaySharedRegion> = Vec::new();
+        for i in 0..eds.len() {
+            let es = &entries[i];
+            let mut k = 0usize;
+            while k < es.len() {
+                let members = fp_works.get(&fp_of(&es[k])).cloned().unwrap_or_default();
+                if members.len() < 2 || members[0] != i {
+                    k += 1;
+                    continue;
+                }
+                // Greedy k-way alignment: for each candidate member j,
+                // take the first occurrence of the seed fingerprint,
+                // then extend while every j's next entry matches i's.
+                // The region length is the minimum across members; a
+                // member that aligns shorter than the rest drops out
+                // only below min_run (its span is cut by the min).
+                let seed = fp_of(&es[k]);
+                let mut starts: Vec<usize> = Vec::with_capacity(members.len());
+                starts.push(k);
+                let mut aligned = true;
+                for &j in &members[1..] {
+                    match fp_pos[j].get(&seed).and_then(|v| v.first()) {
+                        Some(&p) => starts.push(p),
+                        None => {
+                            aligned = false;
+                            break;
+                        }
+                    }
+                }
+                if !aligned {
+                    k += 1;
+                    continue;
+                }
+                let mut len = 1usize;
+                'extend: loop {
+                    let next_fp = {
+                        let ki = k + len;
+                        if ki >= es.len() {
+                            break;
+                        }
+                        fp_of(&es[ki])
+                    };
+                    for w in 1..members.len() {
+                        let pos = starts[w] + len;
+                        if pos >= entries[members[w]].len()
+                            || fp_of(&entries[members[w]][pos]) != next_fp
+                        {
+                            break 'extend;
+                        }
+                    }
+                    len += 1;
+                }
+                if len >= min_run {
+                    let mut works = Vec::with_capacity(members.len());
+                    let mut spans = vec![(0i64, 0i64); eds.len()];
+                    for (w, &m) in members.iter().enumerate() {
+                        works.push(m);
+                        spans[m] = (
+                            prefixes[m][starts[w]] as i64,
+                            prefixes[m][starts[w] + len] as i64,
+                        );
+                    }
+                    regions.push(NwaySharedRegion { works, spans });
+                }
+                k += len.max(1);
+            }
+        }
+        regions
+    }
+
     pub fn find_content_shared_regions(
         &self,
         other: &Edition,
@@ -2198,6 +2330,314 @@ mod tests {
 
         let region = XnRegion::interval(0, 1);
         assert!(a.is_range_identical(&c, Some(&region)));
+    }
+
+    // ── FR-37 K1: crum-based structural comparison ───────────────────
+
+    fn big_text(lines: usize, line_len: usize) -> String {
+        (0..lines)
+            .map(|i| {
+                let pad = i.to_string();
+                format!(
+                    "l{:0>width$}{}\n",
+                    pad,
+                    "x".repeat(line_len.saturating_sub(pad.len() + 3)),
+                    width = 4
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn crum_diff_identical() {
+        let a = Edition::from_text_batched(&big_text(600, 64));
+        let d = a.crum_diff(&a);
+        // Root crums equal → one whole-document match, no divergence.
+        assert_eq!(d.matched.len(), 1);
+        assert_eq!(d.matched[0].0, 0);
+        assert_eq!(d.matched[0].1, a.char_len() as i64);
+        assert!(d.only_a.is_empty());
+        assert!(d.only_b.is_empty());
+        assert!(d.matched_crum_count >= 1);
+    }
+
+    #[test]
+    fn crum_diff_disjoint_insert() {
+        let base = big_text(600, 64);
+        let a = Edition::from_text_batched(&base);
+        let b = Edition::from_text_batched(&(base.clone() + "APPENDED TAIL CONTENT\n"));
+        let d = a.crum_diff(&b);
+        // Whole of A is matched (prefix); B has one trailing divergence.
+        assert!(
+            d.matched.iter().any(|m| m.1 == a.char_len() as i64),
+            "A fully matched"
+        );
+        assert!(d.only_a.is_empty());
+        assert_eq!(d.only_b.len(), 1);
+        assert!(d.only_b[0].1 > d.only_b[0].0);
+    }
+
+    #[test]
+    fn crum_diff_middle_edit() {
+        let base = big_text(600, 64);
+        let edited = {
+            // split_inclusive keeps every newline — the edit must not
+            // shift entry positions after the change site.
+            let mut lines: Vec<String> =
+                base.split_inclusive('\n').map(|s| s.to_string()).collect();
+            lines[300] = "CHANGED MIDDLE LINE\n".to_string();
+            lines.concat()
+        };
+        let a = Edition::from_text_batched(&base);
+        let b = Edition::from_text_batched(&edited);
+        let d = a.crum_diff(&b);
+        // Prefix and suffix subtrees survive; the middle diverges on
+        // both sides.
+        assert!(d.matched.iter().any(|m| m.0 == 0), "prefix matched");
+        assert!(
+            d.matched.iter().any(|m| m.1 == a.char_len() as i64),
+            "suffix matched"
+        );
+        assert!(!d.only_a.is_empty());
+        assert!(!d.only_b.is_empty());
+    }
+
+    #[test]
+    fn crum_diff_moved_passage_reports_divergence() {
+        // Structurally, a moved passage is a change at BOTH sites —
+        // the fingerprint tier (compat path) is what finds the move.
+        let base = big_text(400, 64);
+        let moved = {
+            let mut lines: Vec<String> = base.lines().map(|l| l.to_string()).collect();
+            let passage = lines[10..14].join("\n");
+            for l in lines.iter_mut().take(14).skip(10) {
+                *l = String::new();
+            }
+            lines.push(passage);
+            lines.join("\n")
+        };
+        let a = Edition::from_text_batched(&base);
+        let b = Edition::from_text_batched(&moved);
+        let d = a.crum_diff(&b);
+        assert!(!d.only_a.is_empty(), "source site diverges");
+        assert!(!d.only_b.is_empty(), "destination site diverges");
+    }
+
+    #[test]
+    fn crum_diff_shape_mismatch_sane() {
+        // A flat (leaf) edition vs a bulk-built (split) edition — the
+        // walk must produce monotonic, non-overlapping ranges.
+        let flat = Edition::from_text(&big_text(40, 64));
+        let bulk = Edition::from_text_batched(&big_text(40, 64));
+        let d = flat.crum_diff(&bulk);
+        let mut last_end = 0i64;
+        for (s, e, _, _) in &d.matched {
+            assert!(*s >= last_end, "matched ranges must be ordered in A");
+            assert!(e > s, "non-empty matched range");
+            last_end = *e;
+        }
+    }
+
+    #[test]
+    fn crum_diff_fingerprint_tier_finds_shifted_content() {
+        // Same sentence at a different offset inside one leaf pair:
+        // the leaf-local fingerprint tier should still match it.
+        let a = Edition::from_text("prefix that is unique ALPHA SENTENCE HERE");
+        let b = Edition::from_text("different unique lead ALPHA SENTENCE HERE");
+        let d = a.crum_diff(&b);
+        assert!(
+            d.matched
+                .iter()
+                .any(|m| m.1 - m.0 >= "ALPHA SENTENCE HERE".len() as i64),
+            "fingerprint tier matches the shared sentence, got {:?}",
+            d.matched
+        );
+    }
+
+    // ── FR-37 K2: n-way shared regions ───────────────────────────────
+
+    #[test]
+    fn nway_three_works_share_one_passage() {
+        let passage = "the deep structure of literature is tumblered";
+        let a = Edition::from_text(&format!("intro A\n{passage}\noutro A"));
+        let b = Edition::from_text(&format!("lead-in B differs\n{passage}\ntail B differs"));
+        let c = Edition::from_text(&format!("completely other start\n{passage}\nend C"));
+        let eds = [&a, &b, &c];
+
+        let regions = Edition::shared_regions_nway(&eds, 2);
+        let triple = regions
+            .iter()
+            .find(|r| r.works == vec![0, 1, 2])
+            .expect("a region shared by all three works");
+        for (i, span) in triple.spans.iter().enumerate() {
+            assert!(span.1 > span.0, "work {i} has a real span");
+        }
+        // The shared span in A is the passage, not the intros. All
+        // three intros AND outros bracket the passage with '\n', so
+        // the maximal shared run includes both bounding newlines.
+        let a_span = triple.spans[0];
+        let a_offset = "intro A\n".chars().count() as i64;
+        assert_eq!(a_span.0, a_offset - 1, "span starts at the shared newline");
+        assert_eq!(
+            a_span.1 - a_span.0,
+            passage.chars().count() as i64 + 2,
+            "span covers newline + passage + newline"
+        );
+    }
+
+    #[test]
+    fn nway_pair_exclusive_passage() {
+        // A passage shared by only two of three works gets a 2-member
+        // region; the third work is absent.
+        let only_ab = "just between the first two works";
+        let a = Edition::from_text(&format!("start\n{only_ab}\ncommon tail"));
+        let b = Edition::from_text(&format!("different start\n{only_ab}\ncommon tail"));
+        let c = Edition::from_text(&format!("solo start\ncommon tail"));
+        let eds = [&a, &b, &c];
+
+        let regions = Edition::shared_regions_nway(&eds, 2);
+        let pair = regions
+            .iter()
+            .find(|r| r.works == vec![0, 1])
+            .expect("pair-exclusive region for works 0 and 1");
+        assert!(pair.spans[0].1 > pair.spans[0].0);
+        assert!(pair.spans[1].1 > pair.spans[1].0);
+        assert_eq!(pair.spans[2], (0, 0), "work 2 not a member");
+
+        let all3 = regions
+            .iter()
+            .find(|r| r.works == vec![0, 1, 2])
+            .expect("common tail shared by all three");
+        assert!(all3.spans[2].1 > all3.spans[2].0);
+    }
+
+    #[test]
+    fn nway_min_run_and_empty() {
+        let a = Edition::from_text("abcdef");
+        let b = Edition::from_text("abcdef");
+        let eds = [&a, &b];
+        // min_run longer than the works → no regions
+        assert!(Edition::shared_regions_nway(&eds, 100).is_empty());
+        // min_run satisfied → one region covering both
+        let regions = Edition::shared_regions_nway(&eds, 2);
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].works, vec![0, 1]);
+        // Single edition → nothing to share
+        let solo = Edition::from_text("solo");
+        let one = [&solo];
+        assert!(Edition::shared_regions_nway(&one, 1).is_empty());
+    }
+
+    // ── FR-37 performance benchmarks (Gold-expectation checks) ──────
+
+    fn bench_edition(lines: usize, line_len: usize) -> Edition {
+        Edition::from_text_batched(&big_text(lines, line_len))
+    }
+
+    fn edit_lines(base: &str, targets: &[usize], line_len: usize) -> String {
+        let mut lines: Vec<String> = base.split_inclusive('\n').map(|s| s.to_string()).collect();
+        for &t in targets {
+            lines[t] = format!(
+                "EDITED {:04} {}\n",
+                t,
+                "y".repeat(line_len.saturating_sub(10))
+            );
+        }
+        lines.concat()
+    }
+
+    #[test]
+    fn benchmark_crum_diff_identical_scaling() {
+        // Gold expectation: equal root crums → O(1); identical editions
+        // at any size diff in one comparison.
+        for lines in [1_000usize, 10_000, 100_000] {
+            let a = bench_edition(lines, 64);
+            let start = std::time::Instant::now();
+            let d = a.crum_diff(&a);
+            let elapsed = start.elapsed();
+            assert_eq!(d.matched.len(), 1);
+            println!("crum_diff identical ({lines} lines): {elapsed:?}");
+        }
+    }
+
+    #[test]
+    fn benchmark_crum_diff_edit_scaling() {
+        // Gold expectation: cost ∝ divergences (k), ~independent of n.
+        for k in [1usize, 10, 100] {
+            let base = big_text(100_000, 64);
+            let a = Edition::from_text_batched(&base);
+            let targets: Vec<usize> = (0..k).map(|i| 10_000 + i * 900).collect();
+            let b = Edition::from_text_batched(&edit_lines(&base, &targets, 64));
+            let start = std::time::Instant::now();
+            let d = a.crum_diff(&b);
+            let elapsed = start.elapsed();
+            assert!(!d.only_a.is_empty());
+            println!("crum_diff k={k} edits (100k lines): {elapsed:?}");
+        }
+        // Fixed k, growing n → flat.
+        for lines in [10_000usize, 100_000] {
+            let base = big_text(lines, 64);
+            let a = Edition::from_text_batched(&base);
+            let b = Edition::from_text_batched(&edit_lines(&base, &[lines / 2], 64));
+            let start = std::time::Instant::now();
+            let _ = a.crum_diff(&b);
+            println!("crum_diff k=1 edits ({lines} lines): {:?}", start.elapsed());
+        }
+    }
+
+    #[test]
+    fn benchmark_nway_vs_pairwise() {
+        // Gold expectation: n-way single pass ~ O(total entries);
+        // pairwise loop ~ O(works² × entries).
+        const LINES: usize = 20_000;
+        let common = big_text(LINES / 2, 64);
+        let works: Vec<Edition> = (0..8)
+            .map(|i| {
+                Edition::from_text_batched(&format!(
+                    "unique intro {i}\n{common}\nunique outro {i}\n"
+                ))
+            })
+            .collect();
+        let refs: Vec<&Edition> = works.iter().collect();
+
+        let start = std::time::Instant::now();
+        let regions = Edition::shared_regions_nway(&refs, 2);
+        let nway = start.elapsed();
+        assert!(!regions.is_empty());
+
+        let start = std::time::Instant::now();
+        let mut pairwise_count = 0usize;
+        for i in 0..works.len() {
+            for j in (i + 1)..works.len() {
+                pairwise_count += works[i].find_content_shared_regions(&works[j], 2).len();
+            }
+        }
+        let pairwise = start.elapsed();
+
+        println!(
+            "n-way 8 works x {LINES} lines: nway={nway:?} ({} regions) vs pairwise(28 pairs)={pairwise:?} ({} regions)",
+            regions.len(),
+            pairwise_count
+        );
+    }
+
+    #[test]
+    fn nway_matches_pairwise_superset() {
+        // Property-ish: every pairwise shared region (min_run 2) shows
+        // up in the n-way result with the right members.
+        let a = Edition::from_text("alpha common middle omega");
+        let b = Edition::from_text("beta common middle gamma");
+        let eds = [&a, &b];
+        let pairwise = a.find_content_shared_regions(&b, 2);
+        let nway = Edition::shared_regions_nway(&eds, 2);
+        assert!(!pairwise.is_empty());
+        // union of nway spans in A covers every pairwise span in A
+        for (sa, ea, _, _, _) in &pairwise {
+            let covered = nway
+                .iter()
+                .any(|r| r.spans[0].0 <= *sa && *ea <= r.spans[0].1);
+            assert!(covered, "pairwise span {sa}..{ea} not covered by n-way");
+        }
     }
 
     #[test]

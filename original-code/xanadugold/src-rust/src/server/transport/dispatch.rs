@@ -2213,6 +2213,26 @@ fn dispatch_inner(
                 .collect();
             Ok(ResponseValue::SharedRegions(payloads))
         }
+        WireRequest::SharedCrumRegions { work_ids } => {
+            let mut ids: Vec<BeId> = Vec::new();
+            for id in &work_ids {
+                if !ids.contains(id) {
+                    ids.push(*id);
+                }
+            }
+            ids.truncate(8);
+            if ids.len() < 2 {
+                return Ok(ResponseValue::Json(serde_json::json!({ "regions": [] })));
+            }
+            for id in &ids {
+                srv.ensure_can_read(session_id, *id)?;
+            }
+            Ok(ResponseValue::Json(srv.shared_crum_regions(&ids)))
+        }
+        WireRequest::SpanKeyResolve { work_id, key } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            Ok(ResponseValue::Json(srv.span_key_resolve(work_id, &key)))
+        }
         WireRequest::WorkDiffRegions { work_a, work_b } => {
             srv.ensure_can_read(session_id, work_a)?;
             srv.ensure_can_read(session_id, work_b)?;

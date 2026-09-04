@@ -623,7 +623,19 @@ pub struct AdminClubInfo {
     pub is_system: bool,
 }
 
+/// FR-38 S3: edit-path maintenance operation for span key maps.
+#[derive(Debug, Clone)]
+pub enum SpanKeyEdit {
+    Insert { at: usize, len: usize },
+    Delete { start: usize, end: usize },
+}
+
 pub struct Server {
+    /// FR-38 S3: per-work span key maps (lazy-init; edit-path
+    /// maintenance via maintain_span_keys — wiring pending).
+    pub(crate) span_key_maps:
+        std::sync::Mutex<std::collections::HashMap<BeId, crate::edition::span_key::SpanKeyMap>>,
+
     pub(crate) grand_map: GrandMap,
     pub(crate) sessions: HashMap<SessionId, Session>,
     session_counter: u64,
@@ -1225,6 +1237,7 @@ impl Server {
     pub fn new() -> Self {
         crate::edition::init_endorsement_flags();
         let mut grand_map = GrandMap::new();
+        let span_key_maps = std::sync::Mutex::new(std::collections::HashMap::new());
 
         let public_club = {
             let (be_id, elem) = grand_map.new_work_element(None);
@@ -1265,6 +1278,7 @@ impl Server {
 
         let mut server = Server {
             grand_map,
+            span_key_maps,
             sessions: HashMap::new(),
             session_counter: 0,
             clubs: HashMap::new(),
@@ -3982,6 +3996,7 @@ impl Server {
             source_fingerprint: None,
         };
         self.works.insert(be_id, ws);
+        self.span_key_map_init(be_id); // FR-38 S3: key map from birth
 
         let edition = self.works[&be_id].work.edition().clone();
         self.content_address.intern_edition_elements(&edition);
@@ -6380,6 +6395,7 @@ impl Server {
             source_fingerprint: Some(crate::server::source_matcher::compute_minhash(&text)),
         };
         self.works.insert(be_id, ws);
+        self.span_key_map_init(be_id); // FR-38 S3: key map from birth
 
         let edition = self.works[&be_id].work.edition().clone();
         self.content_address.intern_edition_elements(&edition);
@@ -8429,6 +8445,37 @@ impl Server {
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
             self.migrate_link_spans_for_delta(work_be_id, ops);
+            // FR-38 S3: maintain the span key map through the same
+            // ops — inserts allocate between neighbours, deletes
+            // retire. Best-effort: works without an initialized map
+            // (lazy, on first permalink interest) are skipped.
+            {
+                let mut pos = 0usize;
+                for op in ops {
+                    match op {
+                        crate::server::transport::protocol::TextDeltaOp::Retain { count } => {
+                            pos += *count as usize;
+                        }
+                        crate::server::transport::protocol::TextDeltaOp::Insert { text } => {
+                            let len = text.chars().count();
+                            self.maintain_span_keys(
+                                work_be_id,
+                                SpanKeyEdit::Insert { at: pos, len },
+                            );
+                            pos += len;
+                        }
+                        crate::server::transport::protocol::TextDeltaOp::Delete { count } => {
+                            self.maintain_span_keys(
+                                work_be_id,
+                                SpanKeyEdit::Delete {
+                                    start: pos,
+                                    end: pos + *count as usize,
+                                },
+                            );
+                        }
+                    }
+                }
+            }
             // FR-41 S4: CRDT edits change source content exactly like
             // the legacy delta path — dependents' inline transclusion
             // spans must migrate here too (the legacy path calls this
@@ -16114,20 +16161,134 @@ impl Server {
             Ok(ed) => ed,
             Err(_) => return Vec::new(),
         };
-        let mut results = ed_a.find_content_shared_regions(&ed_b, 2);
-        let text_results = self.find_text_shared_regions(work_a, work_b);
-        let mut seen_a = std::collections::HashSet::new();
-        let mut seen_b = std::collections::HashSet::new();
-        for (sa, ea, sb, eb, _) in &results {
-            seen_a.insert((*sa, *ea));
-            seen_b.insert((*sb, *eb));
+        // FR-37: structural tier first — node crums match whole
+        // subtrees (largest shared units, O(depth × divergences)).
+        // The flat fingerprint/text tiers below fill in moved passages
+        // and anything the tree walk couldn't align.
+        let text_a = ed_a.to_text();
+        let mut results: Vec<(i64, i64, i64, i64, String)> = Vec::new();
+        // seen ranges as (start, end) — coverage-checked, not just
+        // exact-tuple, because the tiers report different bounds for
+        // the same passage.
+        let mut seen_a: Vec<(i64, i64)> = Vec::new();
+        let mut seen_b: Vec<(i64, i64)> = Vec::new();
+        let covered =
+            |seen: &[(i64, i64)], s: i64, e: i64| seen.iter().any(|(cs, ce)| *cs <= s && e <= *ce);
+
+        for (sa, ea, sb, eb) in ed_a.crum_diff(&ed_b).matched {
+            let slice = text_a
+                .chars()
+                .skip(sa as usize)
+                .take((ea - sa) as usize)
+                .collect::<String>();
+            seen_a.push((sa, ea));
+            seen_b.push((sb, eb));
+            results.push((sa, ea, sb, eb, slice));
         }
-        for (sa, ea, sb, eb, text) in text_results {
-            if !seen_a.contains(&(sa, ea)) || !seen_b.contains(&(sb, eb)) {
-                results.push((sa, ea, sb, eb, text));
+
+        for (sa, ea, sb, eb, text) in ed_a.find_content_shared_regions(&ed_b, 2) {
+            if covered(&seen_a, sa, ea) && covered(&seen_b, sb, eb) {
+                continue;
             }
+            seen_a.push((sa, ea));
+            seen_b.push((sb, eb));
+            results.push((sa, ea, sb, eb, text));
+        }
+        for (sa, ea, sb, eb, text) in self.find_text_shared_regions(work_a, work_b) {
+            if covered(&seen_a, sa, ea) && covered(&seen_b, sb, eb) {
+                continue;
+            }
+            results.push((sa, ea, sb, eb, text));
         }
         results
+    }
+
+    /// FR-37 K2: n-way shared regions across works, as wire-ready JSON.
+    /// Indices in NwaySharedRegion map to the (deduped) ids order.
+    pub fn shared_crum_regions(&self, ids: &[BeId]) -> serde_json::Value {
+        let mut eds = Vec::with_capacity(ids.len());
+        for id in ids {
+            match self.work_edition(*id) {
+                Ok(ed) => eds.push(ed),
+                Err(_) => return serde_json::json!({ "error": format!("work {id:#x} not found") }),
+            }
+        }
+        let refs: Vec<&crate::edition::Edition> = eds.iter().collect();
+        let regions = crate::edition::Edition::shared_regions_nway(&refs, 2);
+        serde_json::json!({
+            "regions": regions.iter().map(|r| serde_json::json!({
+                "works": r.works.iter().map(|&i| ids[i]).collect::<Vec<BeId>>(),
+                "spans": r.spans.iter().map(|(s, e)| serde_json::json!([s, e])).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>()
+        })
+    }
+
+    /// FR-38 S3 (experimental): resolve a span key to the char range
+    /// it governs in the work's CURRENT edition.
+    ///
+    /// Status: maps are lazily initialized from the current edition
+    /// and maintained through `maintain_span_keys`; the edit-path
+    /// wiring is the remaining S3/Phase-I integration. Until wired,
+    /// resolution is exact for works unedited since initialization.
+    pub fn span_key_resolve(&self, work_id: BeId, key: &str) -> serde_json::Value {
+        let maps = self.span_key_maps.lock().unwrap_or_else(|e| e.into_inner());
+        match maps.get(&work_id) {
+            Some(map) => match crate::edition::span_key::SpanKey::parse(key) {
+                Some(k) => match map.range_of(&k) {
+                    Some((start, end)) => serde_json::json!({
+                        "work_id": work_id, "key": key,
+                        "start": start, "end": end, "status": "ok"
+                    }),
+                    None => serde_json::json!({
+                        "work_id": work_id, "key": key,
+                        "status": "retired", "error": "key no longer resolves (span deleted)"
+                    }),
+                },
+                None => serde_json::json!({ "status": "error", "error": "malformed key" }),
+            },
+            None => serde_json::json!({
+                "work_id": work_id, "status": "error",
+                "error": "no span key map for this work (S3 edit-path integration pending)"
+            }),
+        }
+    }
+
+    /// Initialize (or re-initialize) a work's span key map from its
+    /// current edition. Granularity ~1 span per 64 chars.
+    pub fn span_key_map_init(&self, work_id: BeId) -> bool {
+        let text = match self.otree_crdt.current_text(work_id) {
+            Ok(t) => t,
+            Err(_) => match self.works.get(&work_id) {
+                Some(ws) => ws.work.current_edition().to_text(),
+                None => return false,
+            },
+        };
+        let map = crate::edition::span_key::SpanKeyMap::from_total_chars(text.chars().count(), 64);
+        self.span_key_maps
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(work_id, map);
+        true
+    }
+
+    /// Edit-path maintenance hook (S3/Phase-I wiring point): apply a
+    /// content edit to the work's key map. Public so the delta
+    /// handler can call it in one line once wired.
+    pub fn maintain_span_keys(&self, work_id: BeId, edit: SpanKeyEdit) -> bool {
+        let mut maps = self.span_key_maps.lock().unwrap_or_else(|e| e.into_inner());
+        let map = match maps.get_mut(&work_id) {
+            Some(m) => m,
+            None => return false,
+        };
+        match edit {
+            SpanKeyEdit::Insert { at, len } => {
+                map.insert_span(at, len);
+            }
+            SpanKeyEdit::Delete { start, end } => {
+                map.delete_range(start, end);
+            }
+        }
+        true
     }
 
     pub fn find_text_shared_regions(
@@ -19624,6 +19785,7 @@ impl Server {
                     source_fingerprint: None,
                 };
                 self.works.insert(be_id, ws);
+                self.span_key_map_init(be_id); // FR-38 S3: key map from birth
                 imported += 1;
 
                 let ws = match self.works.get(&be_id) {
@@ -21780,6 +21942,7 @@ pub(crate) mod persist_snapshot {
 
             let mut server = Server {
                 grand_map,
+                span_key_maps: std::sync::Mutex::new(std::collections::HashMap::new()),
                 sessions: HashMap::new(),
                 session_counter: snapshot.session_counter,
                 clubs: HashMap::new(),
@@ -23926,6 +24089,146 @@ mod tests_find_text {
 
         let regions = server.find_shared_regions(doc_a, doc_b);
         assert!(regions.is_empty());
+    }
+
+    #[test]
+    fn span_keys_survive_live_edits() {
+        // FR-38 S3 end-to-end: init a map, edit through the REAL
+        // delta path, resolve — offsets follow the edits, key holds.
+        let (mut server, sid) = setup();
+        server.login_public(sid).unwrap();
+        let text = (0..40)
+            .map(|i| format!("line {i:03} with padding content\n"))
+            .collect::<String>();
+        let doc = server.create_work(sid, Edition::from_text(&text)).unwrap();
+        server.crdt_open_session(sid, doc).unwrap();
+        assert!(server.span_key_map_init(doc));
+
+        // Key of the last span (~offset 35*35):
+        let target_offset = 20 * 35;
+        let key = {
+            // Resolve whatever key governs that offset via the op:
+            // find it through the map by resolving each candidate is
+            // awkward — expose via resolve on offsets 0.. and pick.
+            // Simpler: compute from granularity 64: span index =
+            // target_offset / 64 → k-th key. Use resolve on known
+            // span starts instead:
+            let r = server.span_key_resolve(doc, "2147483648");
+            assert_eq!(r["status"], "ok");
+            r["key"].as_str().unwrap().to_string()
+        };
+        let before = server.span_key_resolve(doc, &key);
+        assert_eq!(before["start"], 0);
+
+        // Insert 100 chars at the very front through the delta path.
+        use crate::server::transport::protocol::TextDeltaOp;
+        let ops = vec![
+            TextDeltaOp::Insert {
+                text: "x".repeat(100),
+            },
+            TextDeltaOp::Retain {
+                count: text.chars().count() as u64,
+            },
+        ];
+        server
+            .crdt_apply_text_delta(sid, doc, &ops)
+            .expect("delta applies");
+
+        let after = server.span_key_resolve(doc, &key);
+        assert_eq!(after["status"], "ok");
+        assert_eq!(after["start"], 100, "offset shifted by the insert");
+    }
+
+    #[test]
+    fn span_key_resolve_lifecycle() {
+        // FR-38 S3: init → resolve → retire-on-delete → no-map error.
+        let (mut server, sid) = setup();
+        let text = (0..50)
+            .map(|i| format!("line {i:03} with some content\n"))
+            .collect::<String>();
+        let doc = server.create_work(sid, Edition::from_text(&text)).unwrap();
+
+        // Maps exist from birth (eager init at creation): the first
+        // key resolves immediately.
+        let r = server.span_key_resolve(doc, "2147483648");
+        assert_eq!(r["status"], "ok");
+        assert_eq!(r["start"], 0);
+
+        assert!(server.span_key_map_init(doc));
+        let first = crate::edition::span_key::SpanKeyMap::default;
+        let _ = first;
+        // First key of a 2^31-based space:
+        let k = crate::edition::span_key::SpanKey::parse("2147483648").unwrap();
+        let r = server.span_key_resolve(doc, &k.canonical());
+        assert_eq!(r["status"], "ok");
+        assert_eq!(r["start"], 0);
+
+        // Maintenance: delete the first 64 chars → key retires.
+        assert!(server.maintain_span_keys(doc, super::SpanKeyEdit::Delete { start: 0, end: 64 }));
+        let r = server.span_key_resolve(doc, &k.canonical());
+        assert_eq!(r["status"], "retired");
+
+        // Malformed key.
+        let r = server.span_key_resolve(doc, "not.a.key");
+        assert_eq!(r["status"], "error");
+    }
+
+    #[test]
+    fn find_shared_regions_crum_tier_whole_document() {
+        // FR-37: identical editions match via one root-crum comparison —
+        // a single region covering both documents entirely.
+        let (mut server, sid) = setup();
+        let text = "line one of the document\nline two of the document\n";
+        let doc_a = server.create_work(sid, Edition::from_text(text)).unwrap();
+        let doc_b = server.create_work(sid, Edition::from_text(text)).unwrap();
+
+        let regions = server.find_shared_regions(doc_a, doc_b);
+        assert!(!regions.is_empty(), "identical works share everything");
+        let longest = regions.iter().max_by_key(|r| r.1 - r.0).unwrap();
+        assert_eq!(longest.0, 0, "match starts at 0");
+        assert_eq!(
+            longest.1,
+            text.chars().count() as i64,
+            "match covers all of A"
+        );
+        assert_eq!(longest.2, 0);
+        assert_eq!(
+            longest.3,
+            text.chars().count() as i64,
+            "match covers all of B"
+        );
+        assert_eq!(longest.4, text, "text slice matches the document");
+    }
+
+    #[test]
+    fn find_shared_regions_crum_tier_subtree_prefixed() {
+        // B = A with a changed tail: the shared prefix arrives as one
+        // structural (crum) region rather than fingerprint runs.
+        let (mut server, sid) = setup();
+        let a_text = (0..200)
+            .map(|i| format!("line {:03} stable content\n", i))
+            .collect::<String>();
+        let b_text = (0..199)
+            .map(|i| format!("line {:03} stable content\n", i))
+            .collect::<String>()
+            + "entirely different ending\n";
+        let doc_a = server
+            .create_work(sid, Edition::from_text(&a_text))
+            .unwrap();
+        let doc_b = server
+            .create_work(sid, Edition::from_text(&b_text))
+            .unwrap();
+
+        let regions = server.find_shared_regions(doc_a, doc_b);
+        assert!(!regions.is_empty());
+        let best = regions.iter().max_by_key(|r| r.1 - r.0).unwrap();
+        // The bulk of A (the stable prefix) matches in one region.
+        assert!(
+            best.1 - best.0 >= a_text.chars().count() as i64 * 9 / 10,
+            "prefix matched structurally: got {} of {} chars",
+            best.1 - best.0,
+            a_text.chars().count()
+        );
     }
 
     #[test]

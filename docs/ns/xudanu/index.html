@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The xudanu Namespace — https://dgjones.info/ns/xudanu/</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: Georgia, 'Times New Roman', serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.65; }
+  h1 { font-size: 1.5rem; } h2 { font-size: 1.15rem; margin-top: 2rem; }
+  code { font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; background: rgba(127,127,127,.12); padding: 0 .3em; border-radius: 3px; }
+  table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+  th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid rgba(127,127,127,.3); vertical-align: top; }
+  th { font-family: ui-monospace, Menlo, monospace; font-weight: 600; }
+  .muted { opacity: .7; font-size: .9em; }
+  footer { margin-top: 3rem; border-top: 1px solid rgba(127,127,127,.3); padding-top: 1rem; font-size: .85em; opacity: .7; }
+</style>
+</head>
+<body prefix="xudanu: https://dgjones.info/ns/xudanu/ prov: http://www.w3.org/ns/prov#"
+      typeof="owl:Ontology" about="https://dgjones.info/ns/xudanu/"
+      xmlns:owl="http://www.w3.org/2002/07/owl#"
+      xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+      xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+
+<h1 property="rdfs:label">The <code>xudanu</code> Namespace</h1>
+<p property="rdfs:comment">Vocabulary for xudanu provenance export in W3C PROV-JSON:
+cryptographically signed, per-span authorship for collaborative
+hypertext documents (transclusion-aware). Terms are used as PROV
+extensions — qualified names in the <code>xudanu:</code> prefix —
+inside documents serialized per the
+<a href="https://www.w3.org/Submission/2013/SUBM-prov-json-20130430/">PROV-JSON</a>
+specification.</p>
+<p class="muted">Namespace URI: <code>https://dgjones.info/ns/xudanu/</code> ·
+see also <a href="https://dgjones.info/xudanu/">project documentation</a>.</p>
+
+<h2 id="types">prov:type values</h2>
+<table>
+  <thead><tr><th>Term</th><th>Used on</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code property="rdfs:label" resource="https://dgjones.info/ns/xudanu/Server">xudanu:Server</code></td>
+        <td>prov:Agent</td><td property="rdfs:comment">A federated xudanu server acting as a provenance witness.</td></tr>
+    <tr><td><code property="rdfs:label" resource="https://dgjones.info/ns/xudanu/CrossServerSignature">xudanu:CrossServerSignature</code></td>
+        <td>prov:Activity</td><td property="rdfs:comment">A peer server's Ed25519 signature over attested provenance (federation witnessing).</td></tr>
+    <tr><td><code property="rdfs:label" resource="https://dgjones.info/ns/xudanu/verifier">xudanu:verifier</code></td>
+        <td>prov:role</td><td property="rdfs:comment">Role of a server agent in a verification activity.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="attributes">Entity / agent attributes</h2>
+<table>
+  <thead><tr><th>Term</th><th>Range</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code property="rdfs:label" resource="https://dgjones.info/ns/xudanu/timestamp">xudanu:timestamp</code></td>
+        <td>xsd:integer</td><td property="rdfs:comment">Unix seconds. PROV temporal slots carry xsd:dateTime; this attribute preserves the raw value.</td></tr>
+    <tr><td><code property="rdfs:label" resource="https://dgjones.info/ns/xudanu/serverId">xudanu:serverId</code></td>
+        <td>xsd:hexBinary</td><td property="rdfs:comment">BLAKE3-derived server identity (32 bytes).</td></tr>
+    <tr><td><code property="rdfs:label" resource="https://dgjones.info/ns/xudanu/publicKey">xudanu:publicKey</code></td>
+        <td>xsd:hexBinary</td><td property="rdfs:comment">Author's Ed25519 verifying key (32 bytes) for span signatures.</td></tr>
+    <tr><td><code property="rdfs:label" resource="https://dgjones.info/ns/xudanu/signature">xudanu:signature</code></td>
+        <td>xsd:hexBinary</td><td property="rdfs:comment">Ed25519 signature (64 bytes) over the span fingerprint — per-span non-repudiation.</td></tr>
+    <tr><td><code property="rdfs:label" resource="https://dgjones.info/ns/xudanu/verifyingKey">xudanu:verifyingKey</code></td>
+        <td>xsd:hexBinary</td><td property="rdfs:comment">Verifying key of a witnessing server.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="identifiers">Identifier conventions</h2>
+<p>Entity, agent, and activity identifiers are QNames in this
+namespace with structured local names:</p>
+<table>
+  <tbody>
+    <tr><td><code>xudanu:span_{work}_{start}_{end}</code></td><td>a span entity (work id, char range)</td></tr>
+    <tr><td><code>xudanu:agent_{key16}</code></td><td>an author agent (first 16 hex of verifying key)</td></tr>
+    <tr><td><code>xudanu:server_{id8}</code></td><td>a server agent</td></tr>
+    <tr><td><code>xudanu:activity_{work}_{ts}</code></td><td>an edit activity</td></tr>
+    <tr><td><code>xudanu:federation_consensus_{ts}</code></td><td>the federation witnessing bundle</td></tr>
+  </tbody>
+</table>
+
+<footer>
+  Maintained by the <a href="https://dgjones.info/xudanu/">xudanu</a> project
+  (Apache-2.0). Terms may evolve; new terms will only be added, never
+  repurposed. Generated to accompany the PROV-JSON export of the
+  xudanu provenance &amp; attestation subsystem.
+</footer>
+
+</body>
+</html>

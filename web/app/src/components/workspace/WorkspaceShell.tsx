@@ -1677,6 +1677,32 @@ export function WorkspaceShell() {
     return () => clearTimeout(linkTimer);
   }, [connected, workBeId, switchingWork, clientRef, works, loadLinks, loadBacklinks, refreshAttribution, refreshAnnotations]);
 
+  // FR-38 S3: tumbler-stable permalink span (?span=2.4.1) — resolve
+  // to current offsets and highlight, regardless of later edits.
+  useEffect(() => {
+    const spanKey = new URLSearchParams(window.location.search).get("span");
+    if (!spanKey || workBeId === null || !connected) return;
+    const client = clientRef.current;
+    if (!client) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = (await client.sendRequest("span_key_resolve", {
+          work_id: workBeId,
+          key: spanKey,
+        })) as Record<string, unknown>;
+        const val = (resp && typeof resp === "object" && "value" in resp ? resp.value : resp) as Record<string, unknown>;
+        if (cancelled || val?.status !== "ok") return;
+        setHighlightRange({ start: Number(val.start), end: Number(val.end) });
+      } catch {
+        // older server or unresolved key — permalink silently no-ops
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workBeId, connected]);
+
   // Debounced attribution refresh after text changes
   useEffect(() => {
     if (!connected || workBeId === null || !text) return;

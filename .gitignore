@@ -11,7 +11,7 @@ key_history.json
 .idea/
 run/
 dgj-server1/
-xudanu/
+/xudanu/
 web/app/app@*
 web/app/tsc
 docs/*.bak
