@@ -2528,6 +2528,99 @@ mod tests {
         assert!(Edition::shared_regions_nway(&one, 1).is_empty());
     }
 
+    // ── FR-37 performance benchmarks (Gold-expectation checks) ──────
+
+    fn bench_edition(lines: usize, line_len: usize) -> Edition {
+        Edition::from_text_batched(&big_text(lines, line_len))
+    }
+
+    fn edit_lines(base: &str, targets: &[usize], line_len: usize) -> String {
+        let mut lines: Vec<String> = base.split_inclusive('\n').map(|s| s.to_string()).collect();
+        for &t in targets {
+            lines[t] = format!(
+                "EDITED {:04} {}\n",
+                t,
+                "y".repeat(line_len.saturating_sub(10))
+            );
+        }
+        lines.concat()
+    }
+
+    #[test]
+    fn benchmark_crum_diff_identical_scaling() {
+        // Gold expectation: equal root crums → O(1); identical editions
+        // at any size diff in one comparison.
+        for lines in [1_000usize, 10_000, 100_000] {
+            let a = bench_edition(lines, 64);
+            let start = std::time::Instant::now();
+            let d = a.crum_diff(&a);
+            let elapsed = start.elapsed();
+            assert_eq!(d.matched.len(), 1);
+            println!("crum_diff identical ({lines} lines): {elapsed:?}");
+        }
+    }
+
+    #[test]
+    fn benchmark_crum_diff_edit_scaling() {
+        // Gold expectation: cost ∝ divergences (k), ~independent of n.
+        for k in [1usize, 10, 100] {
+            let base = big_text(100_000, 64);
+            let a = Edition::from_text_batched(&base);
+            let targets: Vec<usize> = (0..k).map(|i| 10_000 + i * 900).collect();
+            let b = Edition::from_text_batched(&edit_lines(&base, &targets, 64));
+            let start = std::time::Instant::now();
+            let d = a.crum_diff(&b);
+            let elapsed = start.elapsed();
+            assert!(!d.only_a.is_empty());
+            println!("crum_diff k={k} edits (100k lines): {elapsed:?}");
+        }
+        // Fixed k, growing n → flat.
+        for lines in [10_000usize, 100_000] {
+            let base = big_text(lines, 64);
+            let a = Edition::from_text_batched(&base);
+            let b = Edition::from_text_batched(&edit_lines(&base, &[lines / 2], 64));
+            let start = std::time::Instant::now();
+            let _ = a.crum_diff(&b);
+            println!("crum_diff k=1 edits ({lines} lines): {:?}", start.elapsed());
+        }
+    }
+
+    #[test]
+    fn benchmark_nway_vs_pairwise() {
+        // Gold expectation: n-way single pass ~ O(total entries);
+        // pairwise loop ~ O(works² × entries).
+        const LINES: usize = 20_000;
+        let common = big_text(LINES / 2, 64);
+        let works: Vec<Edition> = (0..8)
+            .map(|i| {
+                Edition::from_text_batched(&format!(
+                    "unique intro {i}\n{common}\nunique outro {i}\n"
+                ))
+            })
+            .collect();
+        let refs: Vec<&Edition> = works.iter().collect();
+
+        let start = std::time::Instant::now();
+        let regions = Edition::shared_regions_nway(&refs, 2);
+        let nway = start.elapsed();
+        assert!(!regions.is_empty());
+
+        let start = std::time::Instant::now();
+        let mut pairwise_count = 0usize;
+        for i in 0..works.len() {
+            for j in (i + 1)..works.len() {
+                pairwise_count += works[i].find_content_shared_regions(&works[j], 2).len();
+            }
+        }
+        let pairwise = start.elapsed();
+
+        println!(
+            "n-way 8 works x {LINES} lines: nway={nway:?} ({} regions) vs pairwise(28 pairs)={pairwise:?} ({} regions)",
+            regions.len(),
+            pairwise_count
+        );
+    }
+
     #[test]
     fn nway_matches_pairwise_superset() {
         // Property-ish: every pairwise shared region (min_run 2) shows

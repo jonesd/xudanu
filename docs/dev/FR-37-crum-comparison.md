@@ -121,6 +121,26 @@ Per work, maintain the set of subtree crums at a fixed granularity
   single-pair quick view)
 - Connections ⇄ flow unchanged — ends arrive as `workIds` either way
 
+## Measured performance (benchmarks, Apple Silicon / release)
+
+Gold-expectation checks — the `benchmark_*` convention from FR-34:
+
+| Measurement | Numbers | Gold expectation | Verdict |
+|---|---|---|---|
+| Identical editions, 1k → 100k lines | 1.29µs → 3µs | O(1) — one root-crum compare | ✅ 100× data, ~2× time |
+| k edits @ 100k lines (k = 1 / 10 / 100) | 430µs / 1.7ms / 12.7ms | O(divergences) | ✅ linear in k |
+| Fixed k=1, 10k → 100k lines | 111µs → 179µs | flat in n (log-depth only) | ✅ |
+| n-way, 8 works × 20k lines | 325ms (one pass) vs 3.09s (28 pairwise calls) | O(works) vs O(works²) | ✅ ~9.5×, gap grows with work count |
+
+The headline property Gold relied on holds: **diff cost is proportional
+to what changed, not to document size.** Whole-tree identity is one
+comparison; a single-character edit in a 100k-line document costs
+~400µs regardless of where the rest of the document sits.
+
+(`benchmark_crum_diff_identical_scaling`, `benchmark_crum_diff_edit_scaling`,
+`benchmark_nway_vs_pairwise` in `edition.rs` — run with
+`cargo test --release benchmark_ -- --nocapture`.)
+
 ## Test Plan
 
 Unit (edition.rs):
