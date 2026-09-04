@@ -712,6 +712,11 @@ pub struct Server {
     pub(crate) trails: HashMap<BeId, TrailState>,
     trail_counter: BeId,
     compound_editions: HashMap<BeId, crate::edition::compound::CompoundEdition>,
+    /// FR-55 T2: keyed segments per compound work, auto-derived on
+    /// every set_compound_edition (the placement hook) and resolved
+    /// on demand against live source maps.
+    pub(crate) compound_segments:
+        std::collections::HashMap<BeId, Vec<crate::edition::compound_segment::CompoundSegment>>,
     compound_dirty: HashSet<BeId>,
     wal_deleted_annotations: HashMap<BeId, HashSet<u64>>,
     /// FR-23: Revision metadata per work
@@ -1159,6 +1164,7 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         trails: payload.trails,
         trail_counter: payload.trail_counter,
         compound_editions: payload.compound_editions,
+        compound_segments: Vec::new(),
         social_chunk_hash: None,
         ticket_nonces: ticket_nonces_inline,
         revisions: std::collections::HashMap::new(),
@@ -1344,6 +1350,7 @@ impl Server {
             trails: HashMap::new(),
             trail_counter: 10_000,
             compound_editions: HashMap::new(),
+            compound_segments: std::collections::HashMap::new(),
             compound_dirty: HashSet::new(),
             wal_deleted_annotations: HashMap::new(),
             revisions: HashMap::new(),
@@ -16557,8 +16564,183 @@ impl Server {
         if !self.works.contains_key(&work_id) {
             return Err(ServerError::WorkNotFound(work_id));
         }
+        self.derive_compound_segments(work_id, &compound);
         self.compound_editions.insert(work_id, compound);
         Ok(())
+    }
+
+    /// FR-55 T2: (re)derive keyed segments from a compound's spans.
+    /// Existing segments for the same (source, range) are REUSED so
+    /// placement keys (and their insertion into source maps) happen
+    /// once; new spans get fresh dedicated keys via insert_span on
+    /// the source's live map.
+    fn derive_compound_segments(
+        &mut self,
+        work_id: BeId,
+        compound: &crate::edition::compound::CompoundEdition,
+    ) {
+        use crate::edition::compound::CompoundElement;
+        use crate::edition::compound_segment::{CompoundSegment, SegmentSource};
+
+        let existing = self
+            .compound_segments
+            .get(&work_id)
+            .cloned()
+            .unwrap_or_default();
+        let mut local_space = crate::edition::span_key::SpanKeyMap::default();
+        let mut out: Vec<CompoundSegment> = Vec::with_capacity(compound.len());
+
+        for element in compound.elements() {
+            match element {
+                CompoundElement::Text { content } => {
+                    let total: usize = out
+                        .iter()
+                        .map(|s| match &s.source {
+                            SegmentSource::Authored { text } => text.chars().count(),
+                            SegmentSource::Transcluded { placed_len, .. } => *placed_len,
+                        })
+                        .sum();
+                    let key = local_space.insert_span(total, content.chars().count().max(1));
+                    out.push(CompoundSegment::authored(key, content.clone()));
+                }
+                CompoundElement::Span { span } => {
+                    let sw = span.source_work_id();
+                    let cs = span.char_start();
+                    let ce = span.char_end();
+                    // Reuse rule: the SOURCE key (and its insertion
+                    // into the source map) is stable across re-sets —
+                    // but the LOCAL key is per-derivation identity,
+                    // always freshly allocated so local keys never
+                    // collide. (Invariant caught by the reuse test.)
+                    if let Some(prev) = existing.iter().find(|s| match &s.source {
+                        SegmentSource::Transcluded {
+                            source_work,
+                            placed_len,
+                            ..
+                        } => {
+                            *source_work == sw
+                                && cs + *placed_len == ce
+                                && self.span_key_resolves(sw, s)
+                        }
+                        _ => false,
+                    }) {
+                        let reused = prev.clone();
+                        let placed_len = ce.saturating_sub(cs);
+                        let total: usize = out
+                            .iter()
+                            .map(|s| match &s.source {
+                                SegmentSource::Authored { text } => text.chars().count(),
+                                SegmentSource::Transcluded { placed_len, .. } => *placed_len,
+                            })
+                            .sum();
+                        let local_key = local_space.insert_span(total, placed_len);
+                        let stable = match reused.source {
+                            SegmentSource::Transcluded {
+                                source_key,
+                                placed_crum,
+                                ..
+                            } => CompoundSegment::transcluded(
+                                local_key,
+                                sw,
+                                source_key,
+                                placed_len,
+                                placed_crum,
+                            ),
+                            _ => unreachable!("matched transcluded"),
+                        };
+                        out.push(stable);
+                        continue;
+                    }
+                    // Fresh placement: dedicated key in the SOURCE's
+                    // live map (insert_span — exact range).
+                    let placed_len = ce.saturating_sub(cs);
+                    let text = self.work_text_opt(sw).unwrap_or_default();
+                    let crum = crate::edition::compound_segment::content_crum(
+                        &text.chars().skip(cs).take(placed_len).collect::<String>(),
+                    );
+                    let source_key = {
+                        let mut maps = self.span_key_maps.lock().unwrap_or_else(|e| e.into_inner());
+                        let map = maps
+                            .entry(sw)
+                            .or_insert_with(crate::edition::span_key::SpanKeyMap::default);
+                        map.insert_span(cs, placed_len)
+                    };
+                    let total: usize = out
+                        .iter()
+                        .map(|s| match &s.source {
+                            SegmentSource::Authored { text } => text.chars().count(),
+                            SegmentSource::Transcluded { placed_len, .. } => *placed_len,
+                        })
+                        .sum();
+                    let local_key = local_space.insert_span(total, 1);
+                    out.push(CompoundSegment::transcluded(
+                        local_key, sw, source_key, placed_len, crum,
+                    ));
+                }
+            }
+        }
+        self.compound_segments.insert(work_id, out);
+    }
+
+    fn span_key_resolves(
+        &self,
+        work: BeId,
+        seg: &crate::edition::compound_segment::CompoundSegment,
+    ) -> bool {
+        match &seg.source {
+            crate::edition::compound_segment::SegmentSource::Transcluded { source_key, .. } => self
+                .span_key_maps
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(&work)
+                .map(|m| m.range_of(source_key).is_some())
+                .unwrap_or(false),
+            _ => false,
+        }
+    }
+
+    fn work_text_opt(&self, work_id: BeId) -> Option<String> {
+        match self.otree_crdt.current_text(work_id) {
+            Ok(t) => Some(t),
+            Err(_) => self
+                .works
+                .get(&work_id)
+                .map(|ws| ws.work.current_edition().to_text()),
+        }
+    }
+
+    /// FR-55 T2: resolve a compound work's segments against the
+    /// LIVE state of all sources — exact text, drift flags, or
+    /// placeholders. This is the render path compounds migrate to.
+    pub fn compound_resolve_segments(
+        &self,
+        work_id: BeId,
+    ) -> Vec<crate::edition::compound_segment::SegmentRender> {
+        use std::collections::HashMap;
+
+        let Some(segments) = self.compound_segments.get(&work_id) else {
+            return Vec::new();
+        };
+        // Clone each referenced source's map once (maps are small),
+        // then resolve over owned state.
+        let maps = self.span_key_maps.lock().unwrap_or_else(|e| e.into_inner());
+        let mut owned: HashMap<BeId, (crate::edition::span_key::SpanKeyMap, String)> =
+            HashMap::new();
+        for seg in segments {
+            if let crate::edition::compound_segment::SegmentSource::Transcluded {
+                source_work,
+                ..
+            } = &seg.source
+            {
+                if !owned.contains_key(source_work) {
+                    let map = maps.get(source_work).cloned().unwrap_or_default();
+                    let text = self.work_text_opt(*source_work).unwrap_or_default();
+                    owned.insert(*source_work, (map, text));
+                }
+            }
+        }
+        drop(maps);
+        crate::edition::compound_segment::resolve_segments_owned(segments, &owned)
     }
 
     pub fn element_insert(
@@ -21943,6 +22125,7 @@ pub(crate) mod persist_snapshot {
             let mut server = Server {
                 grand_map,
                 span_key_maps: std::sync::Mutex::new(std::collections::HashMap::new()),
+                compound_segments: std::collections::HashMap::new(),
                 sessions: HashMap::new(),
                 session_counter: snapshot.session_counter,
                 clubs: HashMap::new(),
@@ -23266,6 +23449,11 @@ pub(crate) mod persist_snapshot {
                     .iter()
                     .map(|(id, c)| (*id, c.clone()))
                     .collect(),
+                compound_segments: self
+                    .compound_segments
+                    .iter()
+                    .map(|(id, segs)| (*id, segs.clone()))
+                    .collect(),
                 social_chunk_hash: None,
                 ticket_nonces: std::collections::HashMap::new(),
                 revisions: std::collections::HashMap::new(),
@@ -23280,6 +23468,7 @@ pub(crate) mod persist_snapshot {
                 trails: manifest.trails.clone(),
                 trail_counter: manifest.trail_counter,
                 compound_editions: manifest.compound_editions.clone(),
+                compound_segments: manifest.compound_segments.clone(),
                 cross_server_backlinks: self
                     .cross_server_backlinks
                     .iter()
@@ -24089,6 +24278,175 @@ mod tests_find_text {
 
         let regions = server.find_shared_regions(doc_a, doc_b);
         assert!(regions.is_empty());
+    }
+
+    // ── FR-55 T2: server compound segments ────────────────────────────
+
+    /// Test harness: source work + live map from birth + a compound
+    /// set through the REAL server path.
+    fn compound_env(src_text: &str) -> (Server, SessionId, BeId, BeId) {
+        let (mut server, sid) = setup();
+        server.login_public(sid).unwrap();
+        let src = server
+            .create_work(sid, Edition::from_text(src_text))
+            .unwrap();
+        let compound = server.create_work(sid, Edition::from_text("")).unwrap();
+        (server, sid, src, compound)
+    }
+
+    fn set_compound_with_span(
+        server: &mut Server,
+        sid: SessionId,
+        compound_id: BeId,
+        src: BeId,
+        cs: usize,
+        ce: usize,
+    ) {
+        use crate::edition::compound::{CompoundEdition, CompoundElement, CompoundSpan};
+        let mut ed = CompoundEdition::empty();
+        ed.push(CompoundElement::Text {
+            content: "Header\n".into(),
+        });
+        ed.push(CompoundElement::Span {
+            span: CompoundSpan::new(src, cs, ce),
+        });
+        ed.push(CompoundElement::Text {
+            content: "\nFooter".into(),
+        });
+        server.set_compound_edition(compound_id, ed, sid).unwrap();
+    }
+
+    #[test]
+    fn compound_segments_auto_derived_with_dedicated_keys() {
+        // The placement hook: set_compound_edition derives keyed
+        // segments. The source key must be a DEDICATED span (exact
+        // range), not a borrowed granularity key.
+        let (mut server, sid, src, compound_id) = compound_env("alpha quote here\nomega");
+        set_compound_with_span(&mut server, sid, compound_id, src, 0, 16);
+
+        let segs = server.compound_segments.get(&compound_id).unwrap();
+        assert_eq!(segs.len(), 3, "header + span + footer");
+        let transcluded = segs.iter().find(|s| {
+            matches!(
+                &s.source,
+                crate::edition::compound_segment::SegmentSource::Transcluded { .. }
+            )
+        });
+        let seg = transcluded.expect("one transcluded segment");
+        let (source_work, source_key, placed_len) = match &seg.source {
+            crate::edition::compound_segment::SegmentSource::Transcluded {
+                source_work,
+                source_key,
+                placed_len,
+                ..
+            } => (*source_work, source_key.clone(), *placed_len),
+            _ => unreachable!(),
+        };
+        assert_eq!(source_work, src);
+        assert_eq!(placed_len, 16);
+        // The key resolves in the SOURCE's live map to exactly [0,16).
+        let maps = server.span_key_maps.lock().unwrap();
+        let range = maps.get(&src).unwrap().range_of(&source_key).unwrap();
+        assert_eq!(range, (0, 16), "dedicated key governs the exact range");
+    }
+
+    #[test]
+    fn compound_segments_reused_across_sets() {
+        // Re-set with the same span: keys (and source-map insertions)
+        // must be REUSED, not re-allocated — the stability rule.
+        let (mut server, sid, src, compound_id) = compound_env("alpha quote here\nomega");
+        set_compound_with_span(&mut server, sid, compound_id, src, 0, 16);
+        let first = server.compound_segments.get(&compound_id).unwrap().clone();
+        // Source map span count before/after re-set:
+        let before = {
+            let maps = server.span_key_maps.lock().unwrap();
+            maps.get(&src).unwrap().len()
+        };
+        set_compound_with_span(&mut server, sid, compound_id, src, 0, 16);
+        let second = server.compound_segments.get(&compound_id).unwrap().clone();
+        let after = {
+            let maps = server.span_key_maps.lock().unwrap();
+            maps.get(&src).unwrap().len()
+        };
+        assert_eq!(first, second, "identical segments on re-set");
+        assert_eq!(before, after, "no duplicate placement keys inserted");
+    }
+
+    #[test]
+    fn compound_resolve_exact_through_live_edits() {
+        // The headline: set a compound; edit the SOURCE through the
+        // real CRDT delta path; resolution stays exact.
+        let (mut server, sid, src, compound_id) =
+            compound_env("PRELUDE\nthe quoted passage verbatim\nTAIL");
+        let offset = "PRELUDE\n".chars().count();
+        let len = "the quoted passage verbatim".chars().count();
+        set_compound_with_span(&mut server, sid, compound_id, src, offset, offset + len);
+
+        let r = server.compound_resolve_segments(compound_id);
+        let text: String = r.iter().map(|x| x.text()).collect::<Vec<_>>().join("");
+        assert_eq!(text, "Header\nthe quoted passage verbatim\nFooter");
+
+        // Live source edit: 200 chars at the front (every stored
+        // offset would rot; the key must hold).
+        server.crdt_open_session(sid, src).unwrap();
+        use crate::server::transport::protocol::TextDeltaOp;
+        let total = "PRELUDE\nthe quoted passage verbatim\nTAIL".chars().count() as u64;
+        server
+            .crdt_apply_text_delta(
+                sid,
+                src,
+                &[
+                    TextDeltaOp::Insert {
+                        text: "Y".repeat(200),
+                    },
+                    TextDeltaOp::Retain { count: total },
+                ],
+            )
+            .unwrap();
+
+        let r2 = server.compound_resolve_segments(compound_id);
+        let text2: String = r2.iter().map(|x| x.text()).collect::<Vec<_>>().join("");
+        assert_eq!(
+            text2, "Header\nthe quoted passage verbatim\nFooter",
+            "keyed segments survive a live 200-char source prefix edit"
+        );
+    }
+
+    #[test]
+    fn compound_resolve_flags_drift_on_content_change() {
+        // Source content edited IN PLACE (same extent): drift is
+        // flagged, never silent.
+        let (mut server, sid, src, compound_id) = compound_env("stable\nMUTABLE PASSAGE\ntail");
+        let offset = "stable\n".chars().count();
+        let len = "MUTABLE PASSAGE".chars().count();
+        set_compound_with_span(&mut server, sid, compound_id, src, offset, offset + len);
+
+        // Replace the passage content via delta (delete + insert).
+        server.crdt_open_session(sid, src).unwrap();
+        use crate::server::transport::protocol::TextDeltaOp;
+        let pre = "stable\n".chars().count() as u64;
+        server
+            .crdt_apply_text_delta(
+                sid,
+                src,
+                &[
+                    TextDeltaOp::Retain { count: pre },
+                    TextDeltaOp::Delete { count: len as u64 },
+                    TextDeltaOp::Insert {
+                        text: "REWRITTEN NOW".into(),
+                    },
+                    TextDeltaOp::Retain {
+                        count: "\ntail".chars().count() as u64,
+                    },
+                ],
+            )
+            .unwrap();
+
+        let r = server.compound_resolve_segments(compound_id);
+        assert!(
+            r.iter().any(|x| x.is_drifted()),
+            "in-place source edit must flag drift, got {r:?}"
+        );
     }
 
     #[test]

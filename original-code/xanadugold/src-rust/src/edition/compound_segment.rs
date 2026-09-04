@@ -27,6 +27,7 @@ pub type BeId = u64;
 
 /// What a segment IS.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SegmentSource {
     /// Native compound text, authored here.
     Authored { text: String },
@@ -47,6 +48,7 @@ pub enum SegmentSource {
 
 /// One segment of a compound document: identity + source.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CompoundSegment {
     /// Local identity within the compound (its own key space).
     pub local_key: SpanKey,
@@ -176,6 +178,20 @@ pub fn resolve_segments(
             }
         })
         .collect()
+}
+
+/// Server-side resolution over owned (cloned-once) source state —
+/// the mutex-held live maps can't back borrowed `SourceView`s, so
+/// callers clone each referenced source's map once per resolve.
+pub fn resolve_segments_owned(
+    segments: &[CompoundSegment],
+    sources: &HashMap<BeId, (SpanKeyMap, String)>,
+) -> Vec<SegmentRender> {
+    let views: HashMap<BeId, SourceView<'_>> = sources
+        .iter()
+        .map(|(id, (map, text))| (*id, SourceView { keys: map, text }))
+        .collect();
+    resolve_segments(segments, &views)
 }
 
 /// Content identity of a resolved span (BLAKE3, FR-35 sense).

@@ -171,3 +171,69 @@ pub enum SegmentSource {
   after review
 - Federated compounds (source on a peer server) — needs cross-server
   key exchange first (FR-38 S3 remainder)
+
+## 6. T2 mechanics — how the server core actually works (the anti-magic doc)
+
+### The four key spaces (who owns which keys)
+
+| Key space | Owner | Lifetime | Stability rule |
+|---|---|---|---|
+| **Source map keys** | each source work's `SpanKeyMap` (Server.span_key_maps) | from work birth (eager init), forever | allocated ONCE at placement; reused across re-sets; never re-derived |
+| **Local segment keys** | the compound derivation (fresh `SpanKeyMap` per derive) | one derivation | EPHEMERAL — freshly allocated every `derive_compound_segments`; identity within one derive only |
+| **Placement crum** | the segment (BLAKE3 of placed content) | frozen at placement | drift detector — compared against current source content at every resolve |
+| **Placed len** | the segment | frozen at placement | extent metadata; rides with the source key anchor |
+
+**The invariant the reuse test caught:** on re-set with the same
+span, the SOURCE key + crum + placed_len are reused (stable), but
+the LOCAL key is always freshly allocated. Skipping local
+allocation on the reuse path produced duplicate local keys — now
+pinned by `compound_segments_reused_across_sets`.
+
+### The derive path (set_compound_edition → segments)
+
+```
+set_compound_edition(work, elements)
+  └─ derive_compound_segments(work, elements)
+       for each element:
+         Text   → fresh local key (insert_span at running total)
+                  → Authored segment
+         Span   → REUSE match? (same source + same range + source
+                  key still resolves) → stable source fields +
+                  FRESH local key
+                → else PLACEMENT: insert_span(cs, len) into the
+                  SOURCE's live map (the dedicated key — never a
+                  borrowed granularity key) + crum of current
+                  content → Transcluded segment
+```
+
+### The resolve path (compound_resolve_segments)
+
+1. Clone each referenced source's map once (mutex → owned; maps
+   are small)
+2. `resolve_segments_owned` over live (map, text) pairs
+3. Per segment: key anchors position (range start), placed_len
+   carries extent, crum comparison yields the trichotomy —
+   Text / Drifted (flagged) / Placeholder (async-fill seam)
+
+### Persistence
+
+- `Server.compound_segments: HashMap<BeId, Vec<CompoundSegment>>`
+- Checkpoint: into the Manifest → **SocialSection**
+  (`compound_segments`, serde-default → old checkpoints restore
+  empty and re-derive on first set — self-healing)
+- Restore: social chunk → server map (same path as compounds)
+- **Self-healing property**: segments are DERIVED state — losing
+  them costs nothing but a re-derivation; the source-map placement
+  keys (the truly stable identity) live in the source works' own
+  maps, checkpointed with FR-38
+
+### What is deliberately NOT magic
+
+- No offset stored anywhere in a segment — offsets are computed
+  fresh at every resolve from the key anchor
+- No silent wrongness possible: content change ⇒ crum mismatch ⇒
+  Drifted flag; key retirement ⇒ visible Placeholder
+- Drift test pins the honest edge: a shorter replacement renders
+  the placed extent (trailing newline included) — the flag, not
+  the slice, is the contract
+

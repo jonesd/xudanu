@@ -540,6 +540,10 @@ pub struct Manifest {
         serde(default, skip_serializing_if = "Vec::is_empty")
     )]
     pub compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
+    /// FR-55 T2: keyed compound segments (span-key source refs).
+    /// Legacy vec above remains the UI-facing form until T4.
+    #[serde(default)]
+    pub compound_segments: Vec<(BeId, Vec<crate::edition::compound_segment::CompoundSegment>)>,
     #[cfg_attr(
         feature = "serde",
         serde(default, skip_serializing_if = "Option::is_none")
@@ -1353,6 +1357,7 @@ pub fn create_empty_manifest(
         trails: Vec::new(),
         trail_counter: 10_000,
         compound_editions: Vec::new(),
+        compound_segments: Vec::new(),
         social_chunk_hash: None,
         ticket_nonces: std::collections::HashMap::new(),
         revisions: std::collections::HashMap::new(),
@@ -1403,6 +1408,10 @@ pub struct SocialSection {
     pub trails: Vec<TrailManifestEntry>,
     pub trail_counter: BeId,
     pub compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
+    /// FR-55 T2: keyed compound segments (span-key source refs).
+    /// Legacy vec above remains the UI-facing form until T4.
+    #[serde(default)]
+    pub compound_segments: Vec<(BeId, Vec<crate::edition::compound_segment::CompoundSegment>)>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub cross_server_backlinks: Vec<CrossServerBacklinkEntry>,
     #[cfg_attr(feature = "serde", serde(default))]

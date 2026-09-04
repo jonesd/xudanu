@@ -956,6 +956,7 @@ pub fn read_root_as_manifest(
         trails: vec![],
         trail_counter: crate::edition::backend::BeId::default(),
         compound_editions: vec![],
+        compound_segments: vec![],
         social_chunk_hash: root.social_hash,
         ticket_nonces: std::collections::HashMap::new(),
         revisions: std::collections::HashMap::new(),

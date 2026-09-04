@@ -19,6 +19,7 @@ use std::collections::BTreeSet;
 /// Ordering is lexicographic on components — allocation guarantees
 /// it matches document order at all times.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SpanKey {
     components: Vec<u32>,
 }
