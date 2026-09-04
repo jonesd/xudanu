@@ -5,7 +5,9 @@ pub mod bundle;
 pub mod bundle_stepper;
 pub mod canopy;
 #[cfg(feature = "serde")]
+#[cfg(feature = "serde")]
 pub mod compound;
+#[cfg(feature = "serde")]
 pub mod compound_segment;
 pub mod content_address;
 #[cfg(feature = "serde")]
