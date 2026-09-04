@@ -16709,6 +16709,38 @@ impl Server {
         }
     }
 
+    /// FR-55 T4: the arrangement for a compound work — rows +
+    /// live-resolved cross positions, ready for UI follow-back.
+    pub fn compound_arrangement(
+        &self,
+        work_id: BeId,
+    ) -> Option<crate::edition::compound_arrangement::CompoundArrangement> {
+        let segments = self.compound_segments.get(&work_id)?;
+        let renders = self.compound_resolve_segments(work_id);
+        Some(
+            crate::edition::compound_arrangement::CompoundArrangement::from_renders(
+                segments, &renders,
+            ),
+        )
+    }
+
+    /// FR-55 T4: follow-back for the Origin panel — compound char
+    /// → (source work, source title, source char). Walk-first;
+    /// callers fall back to excerpt search only for legacy content.
+    pub fn compound_follow_back(
+        &self,
+        work_id: BeId,
+        local_char: usize,
+    ) -> Option<(BeId, String, usize)> {
+        let arr = self.compound_arrangement(work_id)?;
+        let maps = self.span_key_maps.lock().unwrap_or_else(|e| e.into_inner());
+        let (pos, _) = arr.at(local_char, &maps)?;
+        let title = self
+            .work_title(pos.work)
+            .unwrap_or_else(|| format!("Work 0x{:x}", pos.work));
+        Some((pos.work, title, pos.char))
+    }
+
     /// FR-55 T2: resolve a compound work's segments against the
     /// LIVE state of all sources — exact text, drift flags, or
     /// placeholders. This is the render path compounds migrate to.
@@ -24410,6 +24442,47 @@ mod tests_find_text {
             text2, "Header\nthe quoted passage verbatim\nFooter",
             "keyed segments survive a live 200-char source prefix edit"
         );
+    }
+
+    #[test]
+    fn compound_arrangement_and_follow_back() {
+        // T4: the server convenience — walk-first follow-back with
+        // title resolution, exact through live edits.
+        let (mut server, sid, src, compound_id) =
+            compound_env("PRELUDE\nthe quoted passage verbatim\nTAIL");
+        server.set_work_title(src, "Source Document".to_string());
+        let offset = "PRELUDE\n".chars().count();
+        let len = "the quoted passage verbatim".chars().count();
+        set_compound_with_span(&mut server, sid, compound_id, src, offset, offset + len);
+
+        // Follow back from compound char 10 (inside the quote at
+        // local 7): into=3 → source offset+3.
+        let (work, title, char) = server.compound_follow_back(compound_id, 10).unwrap();
+        assert_eq!(work, src);
+        assert!(title.contains("Source"), "title resolved: {title}");
+        assert_eq!(char, offset + 3);
+
+        // Authored region → None.
+        assert!(server.compound_follow_back(compound_id, 2).is_none());
+
+        // Live source edit: walk still exact (+200).
+        server.crdt_open_session(sid, src).unwrap();
+        use crate::server::transport::protocol::TextDeltaOp;
+        let total = "PRELUDE\nthe quoted passage verbatim\nTAIL".chars().count() as u64;
+        server
+            .crdt_apply_text_delta(
+                sid,
+                src,
+                &[
+                    TextDeltaOp::Insert {
+                        text: "Q".repeat(200),
+                    },
+                    TextDeltaOp::Retain { count: total },
+                ],
+            )
+            .unwrap();
+        let (_, _, char2) = server.compound_follow_back(compound_id, 10).unwrap();
+        assert_eq!(char2, offset + 3 + 200);
     }
 
     #[test]

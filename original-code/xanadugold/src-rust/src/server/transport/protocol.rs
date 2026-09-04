@@ -281,6 +281,7 @@ pub enum OperationCode {
     FindSharedRegions,
     SharedCrumRegions,
     SpanKeyResolve,
+    CompoundFollowBack,
     WorkDiffRegions,
 
     ServerStats,
@@ -649,6 +650,7 @@ impl OperationCode {
             0x0804 => Some(OperationCode::FindSharedRegions),
             0x0806 => Some(OperationCode::SharedCrumRegions),
             0x0807 => Some(OperationCode::SpanKeyResolve),
+            0x0808 => Some(OperationCode::CompoundFollowBack),
             0x0805 => Some(OperationCode::WorkDiffRegions),
 
             0x0805 => Some(OperationCode::ProvenanceAncestry),
@@ -1001,6 +1003,7 @@ impl OperationCode {
             OperationCode::FindSharedRegions => 0x0804,
             OperationCode::SharedCrumRegions => 0x0806,
             OperationCode::SpanKeyResolve => 0x0807,
+            OperationCode::CompoundFollowBack => 0x0808,
             OperationCode::WorkDiffRegions => 0x0805,
 
             OperationCode::ServerStats => 0x0601,
@@ -1811,6 +1814,12 @@ pub enum WireRequest {
     SpanKeyResolve {
         work_id: BeId,
         key: String,
+    },
+    /// FR-55 T4: compound char → (source work, title, source char)
+    /// via the arrangement walk.
+    CompoundFollowBack {
+        work_id: BeId,
+        local_char: u64,
     },
     WorkDiffRegions {
         work_a: BeId,

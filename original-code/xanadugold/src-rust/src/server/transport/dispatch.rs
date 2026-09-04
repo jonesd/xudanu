@@ -2233,6 +2233,23 @@ fn dispatch_inner(
             srv.ensure_can_read(session_id, work_id)?;
             Ok(ResponseValue::Json(srv.span_key_resolve(work_id, &key)))
         }
+        WireRequest::CompoundFollowBack {
+            work_id,
+            local_char,
+        } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            match srv.compound_follow_back(work_id, local_char as usize) {
+                Some((source_work, title, char)) => Ok(ResponseValue::Json(serde_json::json!({
+                    "status": "ok",
+                    "work_id": source_work,
+                    "title": title,
+                    "char": char,
+                }))),
+                None => Ok(ResponseValue::Json(serde_json::json!({
+                    "status": "none",
+                }))),
+            }
+        }
         WireRequest::WorkDiffRegions { work_a, work_b } => {
             srv.ensure_can_read(session_id, work_a)?;
             srv.ensure_can_read(session_id, work_b)?;

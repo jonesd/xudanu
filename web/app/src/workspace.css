@@ -4094,3 +4094,8 @@
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 .ws-studio-layout-fab:hover { color: var(--text); border-color: var(--amber); }
+
+.ws-origin-exact {
+  color: var(--green);
+  font-size: 11px;
+}

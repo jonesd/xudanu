@@ -1846,6 +1846,19 @@ impl JsonCodec {
                     key: args.key,
                 })
             }
+            OperationCode::CompoundFollowBack => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    local_char: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CompoundFollowBack {
+                    work_id: args.work_id,
+                    local_char: args.local_char,
+                })
+            }
             OperationCode::WorkDiffRegions => {
                 #[derive(Deserialize)]
                 struct Args {

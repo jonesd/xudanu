@@ -12,6 +12,9 @@ export interface OriginPanelProps {
   links: LinkEntry[];
   onClose: () => void;
   onOpenFull: (workId: number) => void;
+  /** FR-55 T4: the compound this marker lives in, if any — enables
+   *  walk-first exact resolution via compound_follow_back. */
+  compoundWorkId?: number | null;
 }
 
 /** Context window (chars) shown around the highlighted origin span. */
@@ -35,9 +38,51 @@ function extractText(resp: unknown): string {
  * quote: the origin document with the exact span highlighted, provenance
  * hops, and the other ends of the same link (n-way context).
  */
-export function OriginPanel({ client, marker, links, onClose, onOpenFull }: OriginPanelProps) {
+export function OriginPanel({
+  client,
+  marker,
+  links,
+  onClose,
+  onOpenFull,
+  compoundWorkId,
+}: OriginPanelProps) {
   const [originText, setOriginText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** FR-55 T4: exact source range from the arrangement walk —
+   *  preferred over excerpt search when available. */
+  const [exactRange, setExactRange] = useState<{ start: number; end: number } | null>(null);
+  const [exactSource, setExactSource] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!client || !compoundWorkId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = (await client.sendRequest("compound_follow_back", {
+          work_id: compoundWorkId,
+          local_char: marker.start,
+        })) as Record<string, unknown>;
+        const val =
+          resp && typeof resp === "object" && "value" in resp
+            ? (resp.value as Record<string, unknown>)
+            : resp;
+        if (cancelled || !val || val.status === "error") return;
+        // Walk hit: use the exact source char + excerpt length.
+        setExactSource(
+          `${val.title ?? `Work 0x${Number(val.work_id).toString(16)}`} · exact (arrangement walk)`,
+        );
+        const start = Number(val.char);
+        const len = marker.end - marker.start;
+        setExactRange({ start, end: start + len });
+      } catch {
+        // Walk unavailable (older server / not a compound) — the
+        // excerpt-search path below remains the fallback.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, compoundWorkId, marker.start, marker.end]);
 
   const link = links.find((l) => l.link_id === marker.linkId) ?? null;
   const ends = link ? linkEnds(link) : [];
@@ -63,11 +108,16 @@ export function OriginPanel({ client, marker, links, onClose, onOpenFull }: Orig
     };
   }, [client, marker.otherWorkId, marker.linkId]);
 
-  /** Locate the quoted span: prefer explicit positions, else excerpt search. */
+  /** Locate the quoted span: arrangement walk (exact) > stored
+   *  positions > excerpt search. */
   const located = useMemo(() => {
     if (originText == null) return null;
     const excerpt = (marker.excerpt ?? "").trim();
     if (!excerpt) return null;
+    // Walk-first: the exact range from the live arrangement.
+    if (exactRange && exactRange.end > exactRange.start) {
+      return exactRange;
+    }
     let start = -1;
     if (marker.sourceSpanStart != null && marker.sourceSpanEnd != null) {
       const cand = originText.slice(marker.sourceSpanStart, marker.sourceSpanEnd).trim();
@@ -78,7 +128,7 @@ export function OriginPanel({ client, marker, links, onClose, onOpenFull }: Orig
     if (start < 0) start = originText.indexOf(excerpt);
     if (start < 0) return null;
     return { start, end: start + excerpt.length };
-  }, [originText, marker.excerpt, marker.sourceSpanStart, marker.sourceSpanEnd]);
+  }, [originText, marker.excerpt, marker.sourceSpanStart, marker.sourceSpanEnd, exactRange]);
 
   const author = marker.provenanceChain?.[0]?.source_author_name ?? null;
   const otherEnds = ends.filter((e) => e.workId !== marker.otherWorkId);
@@ -107,7 +157,8 @@ export function OriginPanel({ client, marker, links, onClose, onOpenFull }: Orig
       <div className="ws-origin-src">
         <div className="ws-origin-src-t">{marker.otherWorkTitle || `Work 0x${marker.otherWorkId.toString(16)}`}</div>
         <div className="ws-origin-src-m">
-          {author ? `by ${author}` : "author unknown"}
+          {exactSource && <span className="ws-origin-exact">{exactSource}</span>}
+          {author ? ` · by ${author}` : " · author unknown"}
           {marker.provenanceChain && marker.provenanceChain.length > 0 && (
             <> · {marker.provenanceChain.length + 1} works in chain</>
           )}

@@ -5327,6 +5327,7 @@ export function WorkspaceShell() {
           client={clientRef.current}
           marker={originMarker}
           links={transclusion.links}
+          compoundWorkId={compound.hasCompound ? workBeId : null}
           onClose={() => setOriginMarker(null)}
           onOpenFull={(id) => {
             setOriginMarker(null);
