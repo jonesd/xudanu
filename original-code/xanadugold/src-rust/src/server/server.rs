@@ -623,7 +623,19 @@ pub struct AdminClubInfo {
     pub is_system: bool,
 }
 
+/// FR-38 S3: edit-path maintenance operation for span key maps.
+#[derive(Debug, Clone)]
+pub enum SpanKeyEdit {
+    Insert { at: usize, len: usize },
+    Delete { start: usize, end: usize },
+}
+
 pub struct Server {
+    /// FR-38 S3: per-work span key maps (lazy-init; edit-path
+    /// maintenance via maintain_span_keys — wiring pending).
+    pub(crate) span_key_maps:
+        std::sync::Mutex<std::collections::HashMap<BeId, crate::edition::span_key::SpanKeyMap>>,
+
     pub(crate) grand_map: GrandMap,
     pub(crate) sessions: HashMap<SessionId, Session>,
     session_counter: u64,
@@ -1225,6 +1237,7 @@ impl Server {
     pub fn new() -> Self {
         crate::edition::init_endorsement_flags();
         let mut grand_map = GrandMap::new();
+        let span_key_maps = std::sync::Mutex::new(std::collections::HashMap::new());
 
         let public_club = {
             let (be_id, elem) = grand_map.new_work_element(None);
@@ -1265,6 +1278,7 @@ impl Server {
 
         let mut server = Server {
             grand_map,
+            span_key_maps,
             sessions: HashMap::new(),
             session_counter: 0,
             clubs: HashMap::new(),
@@ -16176,6 +16190,74 @@ impl Server {
         })
     }
 
+    /// FR-38 S3 (experimental): resolve a span key to the char range
+    /// it governs in the work's CURRENT edition.
+    ///
+    /// Status: maps are lazily initialized from the current edition
+    /// and maintained through `maintain_span_keys`; the edit-path
+    /// wiring is the remaining S3/Phase-I integration. Until wired,
+    /// resolution is exact for works unedited since initialization.
+    pub fn span_key_resolve(&self, work_id: BeId, key: &str) -> serde_json::Value {
+        let maps = self.span_key_maps.lock().unwrap_or_else(|e| e.into_inner());
+        match maps.get(&work_id) {
+            Some(map) => match crate::edition::span_key::SpanKey::parse(key) {
+                Some(k) => match map.range_of(&k) {
+                    Some((start, end)) => serde_json::json!({
+                        "work_id": work_id, "key": key,
+                        "start": start, "end": end, "status": "ok"
+                    }),
+                    None => serde_json::json!({
+                        "work_id": work_id, "key": key,
+                        "status": "retired", "error": "key no longer resolves (span deleted)"
+                    }),
+                },
+                None => serde_json::json!({ "status": "error", "error": "malformed key" }),
+            },
+            None => serde_json::json!({
+                "work_id": work_id, "status": "error",
+                "error": "no span key map for this work (S3 edit-path integration pending)"
+            }),
+        }
+    }
+
+    /// Initialize (or re-initialize) a work's span key map from its
+    /// current edition. Granularity ~1 span per 64 chars.
+    pub fn span_key_map_init(&self, work_id: BeId) -> bool {
+        let text = match self.otree_crdt.current_text(work_id) {
+            Ok(t) => t,
+            Err(_) => match self.works.get(&work_id) {
+                Some(ws) => ws.work.current_edition().to_text(),
+                None => return false,
+            },
+        };
+        let map = crate::edition::span_key::SpanKeyMap::from_total_chars(text.chars().count(), 64);
+        self.span_key_maps
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(work_id, map);
+        true
+    }
+
+    /// Edit-path maintenance hook (S3/Phase-I wiring point): apply a
+    /// content edit to the work's key map. Public so the delta
+    /// handler can call it in one line once wired.
+    pub fn maintain_span_keys(&self, work_id: BeId, edit: SpanKeyEdit) -> bool {
+        let mut maps = self.span_key_maps.lock().unwrap_or_else(|e| e.into_inner());
+        let map = match maps.get_mut(&work_id) {
+            Some(m) => m,
+            None => return false,
+        };
+        match edit {
+            SpanKeyEdit::Insert { at, len } => {
+                map.insert_span(at, len);
+            }
+            SpanKeyEdit::Delete { start, end } => {
+                map.delete_range(start, end);
+            }
+        }
+        true
+    }
+
     pub fn find_text_shared_regions(
         &self,
         work_a: BeId,
@@ -21826,6 +21908,7 @@ pub(crate) mod persist_snapshot {
 
             let mut server = Server {
                 grand_map,
+                span_key_maps: std::sync::Mutex::new(std::collections::HashMap::new()),
                 sessions: HashMap::new(),
                 session_counter: snapshot.session_counter,
                 clubs: HashMap::new(),
@@ -23972,6 +24055,38 @@ mod tests_find_text {
 
         let regions = server.find_shared_regions(doc_a, doc_b);
         assert!(regions.is_empty());
+    }
+
+    #[test]
+    fn span_key_resolve_lifecycle() {
+        // FR-38 S3: init → resolve → retire-on-delete → no-map error.
+        let (mut server, sid) = setup();
+        let text = (0..50)
+            .map(|i| format!("line {i:03} with some content\n"))
+            .collect::<String>();
+        let doc = server.create_work(sid, Edition::from_text(&text)).unwrap();
+
+        // Before init: explicit pending-status error.
+        let r = server.span_key_resolve(doc, "2147483648");
+        assert_eq!(r["status"], "error");
+
+        assert!(server.span_key_map_init(doc));
+        let first = crate::edition::span_key::SpanKeyMap::default;
+        let _ = first;
+        // First key of a 2^31-based space:
+        let k = crate::edition::span_key::SpanKey::parse("2147483648").unwrap();
+        let r = server.span_key_resolve(doc, &k.canonical());
+        assert_eq!(r["status"], "ok");
+        assert_eq!(r["start"], 0);
+
+        // Maintenance: delete the first 64 chars → key retires.
+        assert!(server.maintain_span_keys(doc, super::SpanKeyEdit::Delete { start: 0, end: 64 }));
+        let r = server.span_key_resolve(doc, &k.canonical());
+        assert_eq!(r["status"], "retired");
+
+        // Malformed key.
+        let r = server.span_key_resolve(doc, "not.a.key");
+        assert_eq!(r["status"], "error");
     }
 
     #[test]

@@ -280,6 +280,7 @@ pub enum OperationCode {
     FindTextTranscluders,
     FindSharedRegions,
     SharedCrumRegions,
+    SpanKeyResolve,
     WorkDiffRegions,
 
     ServerStats,
@@ -647,6 +648,7 @@ impl OperationCode {
             0x0803 => Some(OperationCode::FindTextTranscluders),
             0x0804 => Some(OperationCode::FindSharedRegions),
             0x0806 => Some(OperationCode::SharedCrumRegions),
+            0x0807 => Some(OperationCode::SpanKeyResolve),
             0x0805 => Some(OperationCode::WorkDiffRegions),
 
             0x0805 => Some(OperationCode::ProvenanceAncestry),
@@ -998,6 +1000,7 @@ impl OperationCode {
             OperationCode::FindTextTranscluders => 0x0803,
             OperationCode::FindSharedRegions => 0x0804,
             OperationCode::SharedCrumRegions => 0x0806,
+            OperationCode::SpanKeyResolve => 0x0807,
             OperationCode::WorkDiffRegions => 0x0805,
 
             OperationCode::ServerStats => 0x0601,
@@ -1803,6 +1806,11 @@ pub enum WireRequest {
     /// FR-37 K2: n-way shared regions across 2..=8 works.
     SharedCrumRegions {
         work_ids: Vec<BeId>,
+    },
+    /// FR-38 S3: resolve a span key to current char offsets.
+    SpanKeyResolve {
+        work_id: BeId,
+        key: String,
     },
     WorkDiffRegions {
         work_a: BeId,

@@ -2229,6 +2229,10 @@ fn dispatch_inner(
             }
             Ok(ResponseValue::Json(srv.shared_crum_regions(&ids)))
         }
+        WireRequest::SpanKeyResolve { work_id, key } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            Ok(ResponseValue::Json(srv.span_key_resolve(work_id, &key)))
+        }
         WireRequest::WorkDiffRegions { work_a, work_b } => {
             srv.ensure_can_read(session_id, work_a)?;
             srv.ensure_can_read(session_id, work_b)?;
