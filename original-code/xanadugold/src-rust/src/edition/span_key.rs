@@ -152,6 +152,15 @@ impl SpanKeySpace {
         while branch < depth && prev.components[branch] == next.components[branch] {
             branch += 1;
         }
+        if branch == prev.components.len() {
+            // `prev` is a strict prefix of `next` (e.g. [5] vs [5,1]).
+            // With components >= 1 there is NO valid key strictly
+            // between them ([5] < k < [5,1] requires [5,0]). Decline —
+            // the caller falls back to allocate_after_all. Key order
+            // is a convenience, never a correctness invariant (the
+            // map's extents carry document order).
+            return None;
+        }
         let a = prev.components[branch];
         let b = next.components[branch];
         debug_assert!(a < b, "ordering checked above");
@@ -451,6 +460,30 @@ mod tests {
         assert_eq!(mid.canonical(), "2");
         let inner = wide.allocate_between(&w1, &mid).unwrap();
         assert_eq!(inner.canonical(), "1.1");
+    }
+
+    #[test]
+    fn between_declines_when_prev_prefix_of_next() {
+        // The impossible adjacency: [5] and [5,1] are ordered
+        // neighbours with NO valid key between them (would need the
+        // illegal [5,0]). Found by the keystroke-cost hammer —
+        // allocation must decline, never panic.
+        let mut space = SpanKeySpace::new();
+        let a = space.allocate_after_all(); // [1]
+        let b = space.allocate_after_all(); // [2]
+        let deep = space.allocate_between(&a, &b).unwrap(); // [1.1]
+        assert!(a < deep && deep < b);
+        // [1] vs [1.1]: prefix adjacency → None (no panic)
+        // (a vs deep has room: allocates [1.0.5-style midpoint normally))
+        // Direct check of the panicking shape:
+        let prev = SpanKey::parse("5").unwrap();
+        let next = SpanKey::parse("5.1").unwrap();
+        assert!(prev < next);
+        assert!(space.allocate_between(&prev, &next).is_none());
+        // And it stays none for deeper prefixes:
+        let prev2 = SpanKey::parse("5.1").unwrap();
+        let next2 = SpanKey::parse("5.1.1").unwrap();
+        assert!(space.allocate_between(&prev2, &next2).is_none());
     }
 
     #[test]
