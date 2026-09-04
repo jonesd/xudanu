@@ -2785,7 +2785,7 @@ mod tests {
 
 const PROV_JSON_DOMAIN: &[u8] = b"xudanu/v1/prov-json";
 const PROV_NS: &str = "http://www.w3.org/ns/prov#";
-const XUDANU_NS: &str = "http://xudanu.example.org/ns#";
+const XUDANU_NS: &str = "https://dgjones.info/ns/xudanu/";
 
 // PHASE 1: PROV-JSON Data Structures
 

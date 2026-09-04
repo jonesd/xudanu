@@ -24,7 +24,7 @@
 {
   "prefix": {
     "prov": "http://www.w3.org/ns/prov#",
-    "xudanu": "http://xudanu.example.org/ns#",
+    "xudanu": "https://dgjones.info/ns/xudanu/",
     "ex": "http://example.org/"
   },
   "entity": {
