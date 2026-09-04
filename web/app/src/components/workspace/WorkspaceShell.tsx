@@ -24,6 +24,11 @@ import type { ThemeMode } from "../../theme";
 import type { WorkListEntry, TrailPayload, AgainHop } from "../../api/crdt_sync";
 import type { License } from "../../api/crdt_sync";
 import { LICENSES } from "../../api/crdt_sync";
+import { HomeLanding } from "../HomeLanding";
+import { BeamsView } from "../BeamsView";
+import { OriginPanel } from "../OriginPanel";
+import { StudioSidebar } from "../StudioSidebar";
+import type { TransclusionMarker } from "../../api/crdt_sync";
 import type { WorkKind } from "../../graph-scoring";
 import { KIND_ICON, KIND_COLOR, KIND_ICON_COLOR } from "../../graph-scoring";
 import { DataIntegrityBanner } from "../DataIntegrityBanner";
@@ -173,6 +178,16 @@ export function WorkspaceShell() {
   const [works, setWorks] = useState<WorkListEntry[]>([]);
   const [worksLoading, setWorksLoading] = useState(false);
   const [worksError, setWorksError] = useState<string | null>(null);
+  const [landingDismissed, setLandingDismissed] = useState(false);
+  const [beamsOpen, setBeamsOpen] = useState(false);
+  const [originMarker, setOriginMarker] = useState<TransclusionMarker | null>(null);
+  const [studio, setStudio] = useState<boolean>(() => {
+    try { return storageGet("xudanu_layout_studio") === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { storageSet("xudanu_layout_studio", studio ? "1" : "0"); } catch { /* ignore */ }
+  }, [studio]);
+  const studioActive = studio && !isTablet && !isPhone;
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"updated" | "title" | "revisions" | "id">("updated");
   const [invalidWorkId, setInvalidWorkId] = useState<number | null>(null);
@@ -520,6 +535,36 @@ export function WorkspaceShell() {
     url.searchParams.set("work", `0x${id.toString(16)}`);
     window.history.replaceState({}, "", url.toString());
   }, [navTab]);
+
+  // Home landing: import a .md/.txt file as a new work (Design A card 3).
+  const importFileAsWork = useCallback(async (file: File): Promise<number | null> => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected()) return null;
+    const raw = await file.text();
+    let body = raw;
+    let title = file.name.replace(/\.(md|markdown|txt)$/i, "");
+    const mdMatch = raw.match(/^#\s+(.+)\n+/);
+    if (mdMatch) {
+      title = mdMatch[1].trim();
+      body = raw.slice(mdMatch[0].length);
+    }
+    if (!body.trim()) throw new Error("File is empty");
+    const resp = (await client.sendRequest("work_create", { edition: { text: body } })) as Record<string, unknown>;
+    const val = resp && typeof resp === "object" && "value" in resp ? resp.value : resp;
+    const id = typeof val === "number" ? val : (val as Record<string, unknown> | null)?.work_id as number | undefined;
+    if (typeof id !== "number" || !id) return null;
+    try {
+      await client.sendRequest("work_set_title", { work_id: id, title });
+    } catch { /* title optional — work exists */ }
+    selectWork(id);
+    return id;
+  }, [selectWork]);
+
+  const createAndSelectWork = useCallback(async (): Promise<number | null> => {
+    const id = await createWork();
+    if (typeof id === "number") selectWork(id);
+    return id ?? null;
+  }, [createWork, selectWork]);
 
   // Trail following: the trail being followed and current stop index.
   // Persisted so a refresh mid-tour resumes where the reader left off.
@@ -2828,6 +2873,17 @@ export function WorkspaceShell() {
 
   return (
     <div className={`ws-shell ${activeCssClass} ${navTab === "compose" ? "ws-mode-compose" : ""} ${navTab === "library" ? "ws-mode-library" : ""} ${workBeId !== null ? "ws-mode-doc" : ""} ${workBeId === null && navTab !== "library" ? "ws-mode-welcome" : ""}`}>
+      {connected && !worksLoading && works.length === 0 && !landingDismissed && workBeId === null && (
+        <HomeLanding
+          onCreate={createAndSelectWork}
+          onImport={importFileAsWork}
+          onCreateIdentity={createIdentity}
+          needsIdentity={!identity}
+          recent={works.slice(0, 5)}
+          connected={connected}
+          onDismiss={() => setLandingDismissed(true)}
+        />
+      )}
       <DataIntegrityBanner />
       {offlineReading && (
         <div className="ws-offline-banner" role="status">
@@ -2888,12 +2944,25 @@ export function WorkspaceShell() {
         activeDarkPaletteId={themeState.darkPaletteId}
       />
 
-      <div className="ws-body">
+      <div className={`ws-body ${studioActive ? "ws-studio" : ""}`}>
         {/* Left rail */}
         <aside
           className={`ws-left-rail ${leftRailHidden ? "hidden" : ""} ${isTablet && openDrawer === "left" ? "drawer-open" : ""}`}
           data-drawer="left"
         >
+          {studioActive && (
+            <>
+              <div className="ws-studio-brand">
+                <span className="ws-studio-brand-name">xudanu</span>
+              </div>
+              <button
+                className="ws-studio-rail-newdoc"
+                onClick={() => (identity ? void createAndSelectWork() : setShowIdentity(true))}
+              >
+                ＋ New document
+              </button>
+            </>
+          )}
           <div className="ws-rail-toggle">
             <button
               className={leftRailMode === "graph" ? "active" : ""}
@@ -3092,8 +3161,19 @@ export function WorkspaceShell() {
           </button>
         </aside>
 
+        {studioActive && (
+          <StudioSidebar
+            works={works}
+            worksLoading={worksLoading}
+            activeWorkId={workBeId}
+            currentClubId={identity?.club_id ?? null}
+            onSelectWork={selectWork}
+            onNewDocument={() => (identity ? void createAndSelectWork() : setShowIdentity(true))}
+          />
+        )}
+
         {/* Document surface */}
-        <main className={`ws-doc-surface ${canEdit ? "editable" : "readonly"} ${editorMode === "reading" ? "reading-mode" : ""}`}>
+        <main className={`ws-doc-surface ${canEdit ? "editable" : "readonly"} ${editorMode === "reading" ? "reading-mode" : ""} ${studioActive ? "ws-studio-paper" : ""}`}>
           {invalidWorkId !== null ? (
             <div className="ws-empty-doc">
               <h2>Work 0x{invalidWorkId.toString(16)} not found</h2>
@@ -4227,6 +4307,7 @@ export function WorkspaceShell() {
                   selectionRange={selectionRange}
                   highlightRange={highlightRange}
                   onNavigateToWork={selectWork}
+                  onOpenOrigin={(m) => setOriginMarker(m)}
                   onCrossServerResolve={async (tumbler, contentHash) => {
                     if (!clientRef.current) return null;
                     try {
@@ -5190,6 +5271,43 @@ export function WorkspaceShell() {
         </>
       )}
       <ConnectionOverlay connected={connected} reconnectAttempt={reconnectAttempt} />
+
+      {workBeId !== null && transclusion.links.length > 0 && !beamsOpen && (
+        <button className="ws-beams-entry" onClick={() => setBeamsOpen(true)}>
+          <i aria-hidden /> Beams
+          <span className="ws-beams-entry-count">{transclusion.links.length}</span>
+        </button>
+      )}
+      {!isPhone && !isTablet && (
+        <button
+          className="ws-studio-layout-fab"
+          onClick={() => setStudio((v) => !v)}
+          title={studio ? "Switch to classic layout" : "Switch to studio layout"}
+        >
+          {studio ? "◨ Classic" : "◧ Studio"}
+        </button>
+      )}
+      {beamsOpen && workBeId !== null && (
+        <BeamsView
+          client={clientRef.current}
+          currentWorkId={workBeId}
+          works={works}
+          links={transclusion.links}
+          onClose={() => setBeamsOpen(false)}
+        />
+      )}
+      {originMarker && (
+        <OriginPanel
+          client={clientRef.current}
+          marker={originMarker}
+          links={transclusion.links}
+          onClose={() => setOriginMarker(null)}
+          onOpenFull={(id) => {
+            setOriginMarker(null);
+            selectWork(id);
+          }}
+        />
+      )}
     </div>
   );
 }

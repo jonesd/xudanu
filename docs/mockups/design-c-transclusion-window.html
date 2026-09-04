@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #1a1a24; --bg-surface: #22222e; --bg-elevated: #2a2a38;
+    --border: #3a3a48; --text: #e8e6e0; --text-muted: #8a8a96; --text-dim: #5a5a66;
+    --amber: #d97706; --doc-bg: #faf9f6; --doc-text: #1a1a1a;
+    --green: #059669; --blue: #2563eb; --purple: #7c3aed;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); font-family: -apple-system, 'Inter', sans-serif; color: var(--text); width: 1440px; height: 900px; overflow: hidden; }
+
+  .topbar { height: 52px; background: var(--bg-surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 14px; }
+  .brand { font-weight: 700; color: var(--amber); letter-spacing: 1px; }
+  .crumb { color: var(--text-muted); font-size: 13px; }
+  .crumb b { color: var(--text); }
+  .save { margin-left: auto; font-size: 12px; color: var(--green); display: flex; align-items: center; gap: 6px; }
+  .save .d { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+  .rev { font-size: 12px; color: var(--text-muted); border: 1px solid var(--border); padding: 3px 10px; border-radius: 6px; margin-left: 10px; }
+
+  .stage { display: flex; height: 848px; }
+  .doc { flex: 1; background: var(--doc-bg); color: var(--doc-text); padding: 56px 90px; overflow: hidden; }
+  .doc h2 { font-family: 'Source Serif 4', Georgia, serif; font-size: 26px; margin-bottom: 20px; }
+  .doc p { font-family: 'Source Serif 4', Georgia, serif; font-size: 15.5px; line-height: 1.8; color: #333; margin-bottom: 16px; }
+  .quote { border-left: 3px solid var(--purple); background: rgba(124,58,237,.07); padding: 12px 18px; margin: 16px 0; border-radius: 0 4px 4px 0; font-size: 14.5px; line-height: 1.7; }
+  .quote .src { font-family: -apple-system, sans-serif; font-size: 11.5px; color: var(--purple); margin-top: 8px; }
+  .beam { position: relative; }
+  .beam::after { content: "⤳"; position: absolute; right: 14px; top: 6px; color: var(--purple); font-size: 16px; }
+
+  .origin { width: 380px; border-left: 1px solid var(--border); background: var(--bg-surface); display: flex; flex-direction: column; }
+  .origin-head { padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .origin-head .pill { font-size: 10.5px; background: rgba(124,58,237,.15); color: #b794f4; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+  .origin-src { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+  .origin-src .t { font-size: 14px; font-weight: 550; color: var(--text); }
+  .origin-src .m { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+  .hl { background: var(--doc-bg); color: var(--doc-text); margin: 14px; border-radius: 6px; padding: 18px; font-family: 'Source Serif 4', Georgia, serif; font-size: 13.5px; line-height: 1.7; }
+  .hl mark { background: rgba(124,58,237,.18); color: inherit; padding: 1px 0; border-radius: 2px; }
+  .origin-foot { margin-top: auto; padding: 14px 18px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted); }
+  .btn { display: inline-block; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text); font-size: 12px; padding: 6px 12px; border-radius: 6px; margin-right: 8px; }
+  .btn.primary { background: var(--purple); border-color: var(--purple); color: #fff; }
+
+  .stats { display: flex; gap: 18px; padding: 12px 18px; font-size: 11.5px; color: var(--text-dim); }
+  .stats b { color: var(--text-muted); font-weight: 500; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <span class="brand">xudanu</span>
+    <span class="crumb">Documents <b>/ Notes on hypertext</b></span>
+    <span class="save"><span class="d"></span> Saved · rev 12</span>
+    <span class="rev">⏱ History</span>
+  </div>
+  <div class="stage">
+    <div class="doc">
+      <h2>Notes on hypertext</h2>
+      <p>The core insight of Xanadu is that quotation is not copying. When you quote a passage, both documents should know about the connection — the quote remains live, traceable to its origin.</p>
+      <div class="quote beam">
+        The deep structure of literature is tumblered — connections go both ways, and nothing is ever fully severed.
+        <div class="src">⇣ quoted from “Gold interview prep” · tap to see origin</div>
+      </div>
+      <p>Practically, this means storage needs bidirectional provenance on every span — the part the O-tree gives us for free, and the part conventional documents never had.</p>
+    </div>
+    <div class="origin">
+      <div class="origin-head">✂️ Origin <span class="pill">transclusion · 1 of 3 ends</span> <span style="margin-left:auto;color:var(--text-dim)">✕</span></div>
+      <div class="origin-src">
+        <div class="t">Gold interview prep</div>
+        <div class="m">by Roger Gregory · rev 4 · 2 days ago</div>
+      </div>
+      <div class="hl">…the interview turned to structure. Ted kept returning to the idea that <mark>the deep structure of literature is tumblered — connections go both ways, and nothing is ever fully severed</mark>. What he meant was that in a properly-built hypertext, removal of a connection is itself a visible act…</div>
+      <div class="origin-foot">
+        <span class="btn primary">Open full document</span>
+        <span class="btn">Copy tumbler</span>
+        <div class="stats"><span><b>4</b> revisions of origin</span><span><b>2</b> other ends of this link</span></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
