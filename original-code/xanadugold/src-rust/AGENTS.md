@@ -321,6 +321,13 @@ Vite proxy config (`vite.config.ts`): `/api`, `/xudanu` (WS), `/csrf-token`,
 - `WorkspacePage.tsx` is dead code (not imported by App.tsx). The live UI is
   `AppShell.tsx`. Do not add features to WorkspacePage.
 - Pre-push hook runs 6 checks. If it fails, fix the issue and re-push.
+- **Docs site (dgjones.info) deployment rule**: `.github/scripts/render_docs.py`
+  converts every `docs/**/*.md` to `<name>.html` with its own template,
+  then deletes the .md from the deployed tree. If a hand-crafted HTML doc
+  has the SAME NAME as a .md file, the markdown conversion OVERWRITES it.
+  Rule: fancy HTML docs are HTML-ONLY — never create a matching .md.
+  Markdown docs are .md-only — the renderer creates the HTML.
+
 - Git remotes: `origin` (self-hosted), `github` (github.com/jonesd/xudanu).
   GitHub Pages deploys from `github` remote.
 
