@@ -207,13 +207,14 @@ port. No separate frontend server is needed in production.
 <tr><td>Development</td><td>Vite :5173 (HMR)</td><td>Rust :8080</td><td><code class="mono">./scripts/restart.sh</code></td></tr>
 <tr><td>Production</td><td>Embedded in binary</td><td>Rust :8080</td><td><code class="mono">xudanu-server run &lt;addr&gt; &lt;dir&gt;</code></td></tr>
 <tr><td>Production + static</td><td><code class="mono">--static-dir</code> (serves dist/)</td><td>Rust :8080</td><td>Binary + built frontend</td></tr>
+<tr><td><strong>Headless (API only)</strong></td><td>None</td><td>Rust :8080</td><td><code class="mono">xudanu-server run &lt;addr&gt; &lt;dir&gt;</code> &mdash; no <code class="mono">--static-dir</code></td></tr>
 </table>
 
 <!-- ============================================================ -->
 <h2 id="s3">3. The Backend Module Map</h2>
 
 <p>
-The backend is organized into six layers, each depending only on the layer below it:
+The backend is organized into five layers (with two horizontal pairs at the same level), each depending only on the layer below it:
 </p>
 
 <div class="diagram-container">
@@ -416,6 +417,34 @@ passages.
 </div>
 <p class="diagram-caption">The link model: a sentence with blanks. The link canopy provides enfiladic query matching (subtree pruning by work-range and type bits).</p>
 
+<div class="gold">
+<strong>This is not the web&rsquo;s link model.</strong> Web links are one-way,
+one-ended, break when content moves, and carry no type. Xudanu&rsquo;s links are
+<strong>bidirectional</strong> (both ends know about each other),
+<strong>multi-ended</strong> (any number of ends, each a set of passages),
+<strong>typed</strong> (Disagreement, Quotation, Comment&hellip;),
+<strong>unbreakable</strong> (span migration follows edits), and can target
+<strong>other links</strong> (connections about connections). No mainstream
+system has this expressiveness.
+</div>
+
+<h3>Headless deployment</h3>
+<p>
+The server <strong>is the product</strong> &mdash; the frontend is optional. Without
+<code class="mono">--static-dir</code>, the binary serves only the API:
+</p>
+<table>
+<tr><th>Interface</th><th>Endpoint</th><th>Use case</th></tr>
+<tr><td>WebSocket</td><td><code class="mono">ws://&lt;addr&gt;/xudanu</code></td><td>Full protocol: works, links, CRDT editing, subscriptions</td></tr>
+<tr><td>HTTP API</td><td><code class="mono">http://&lt;addr&gt;/api/*</code></td><td>REST-style access for integration</td></tr>
+<tr><td>CLI client</td><td><code class="mono">xudanu-cli &lt;url&gt; repl</code></td><td>Interactive headless session</td></tr>
+</table>
+<p>
+The <code class="mono">xudanu-cli</code> binary ships with the release and
+provides create, revise, link, list, query, and revision-history operations
+over the same WebSocket protocol as the frontend &mdash; no browser needed.
+</p>
+
 <!-- ============================================================ -->
 <h2 id="s6">6. The Fulltrace: The Version DAG</h2>
 
@@ -572,7 +601,7 @@ The result is a hierarchical namespace queryable via the partial order.
 
 <table>
 <tr><th>Concern</th><th>Technology</th><th>Why</th></tr>
-<tr><td>Server language</td><td><span class="accent-blue">Rust</span></td><td>Safety, performance, no GC pauses for the enfilade</td></tr>
+<tr><td>Server language</td><td><span class="accent-blue">Rust</span></td><td>Safety, performance, deterministic memory (no GC — like C++, unlike Java/Go)</td></tr>
 <tr><td>Async runtime</td><td><span class="accent-blue">tokio</span></td><td>WS connections, HTTP serving, background checkpoint</td></tr>
 <tr><td>Web framework</td><td><span class="accent-blue">axum 0.8</span></td><td>Type-safe routing, WebSocket support</td></tr>
 <tr><td>CRDT</td><td><span class="accent-purple">Custom O-tree</span></td><td>Purpose-built for Xudanu's content model</td></tr>
