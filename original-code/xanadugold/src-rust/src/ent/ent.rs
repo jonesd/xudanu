@@ -33,6 +33,11 @@ impl Ent {
 
     // [Adapted from Original] Ent::newTrace()
     // Source: entx.cxx lines 88-92
+    /// FR-52 A-1 P2: successor on an existing branch (club works).
+    pub fn new_position_after(&mut self, after: TracePosition) -> TracePosition {
+        self.fulltrace.new_position_after(after)
+    }
+
     pub fn new_trace(&mut self) -> TracePosition {
         self.fulltrace.new_position()
     }
