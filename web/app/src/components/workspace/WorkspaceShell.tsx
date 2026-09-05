@@ -215,6 +215,13 @@ export function WorkspaceShell() {
   const [seedingConcepts, setSeedingConcepts] = useState(false);
   const [seedProgress, setSeedProgress] = useState(0);
   const [serverDomain, setServerDomain] = useState<string>("localhost");
+  const [copiedFullId, setCopiedFullId] = useState(false);
+
+  // Abbreviate long server IDs (hash fingerprints): first 6 + "..." + last 4
+  const abbreviateDomain = (domain: string): string => {
+    if (domain.length <= 14) return domain;
+    return domain.slice(0, 6) + "..." + domain.slice(-4);
+  };
   const [viewingRevision, setViewingRevision] = useState<{ id: number; text: string } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   // FR-40 L3: the in-editor gather picker (span-level "add to this
@@ -2314,7 +2321,21 @@ export function WorkspaceShell() {
                     <dt>Work ID</dt>
                     <dd><code>{workIdDisplay}</code></dd>
                     <dt>Persistent ID</dt>
-                    <dd><code>xan://{serverDomain}.{workIdDisplay}</code></dd>
+                    <dd>
+                      <code
+                        style={{ cursor: "pointer", userSelect: "none" }}
+                        title={`Click to copy full address:\nxan://${serverDomain}.${workIdDisplay}`}
+                        onClick={() => {
+                          const full = `xan://${serverDomain}.${workIdDisplay}`;
+                          navigator.clipboard.writeText(full).then(() => {
+                            setCopiedFullId(true);
+                            setTimeout(() => setCopiedFullId(false), 1500);
+                          }).catch(() => {});
+                        }}
+                      >
+                        {copiedFullId ? "copied!" : `xan://${abbreviateDomain(serverDomain)}.${workIdDisplay}`}
+                      </code>
+                    </dd>
                     {workMeta?.publishedAt && (<><dt>Updated</dt><dd>{workMeta.publishedAt}</dd></>)}
                   </dl>
                 </div>
