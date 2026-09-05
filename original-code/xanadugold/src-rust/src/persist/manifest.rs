@@ -127,6 +127,18 @@ pub struct LinkEntry {
 /// recomputed from the edition text on restore (see `restore_from_data_dir`).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WorkEntry {
+    /// FR-52 A-1 P1: the work's fulltrace position (absent in
+    /// legacy manifests = synthesized on restore).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub trace_branch: Option<u64>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub trace_position: Option<u32>,
     pub be_id: BeId,
     pub work_ref: WorkChunkRef,
     #[cfg_attr(feature = "serde", serde(default))]
@@ -386,6 +398,13 @@ fn reconcile_store_is_empty(rs: &crate::server::federation::ReconcileStore) -> b
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Manifest {
+    /// FR-52 A-1 P1: the server fulltrace (None = legacy manifest;
+    /// restore rebuilds from per-work traces or synthesizes).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub fulltrace: Option<crate::ent::dagwood::SnapshotDagWood>,
     // ── Envelope (always present) ──
     pub format_version: u32,
     pub created_at: String,
@@ -1306,6 +1325,7 @@ pub fn create_empty_manifest(
     grand_map_id_counter: BeId,
 ) -> Manifest {
     Manifest {
+        fulltrace: None,
         format_version: CURRENT_MANIFEST_VERSION,
         created_at: iso_now(),
         server_version: server_version(),
@@ -1567,6 +1587,8 @@ mod tests {
 
         let mut manifest = create_empty_manifest(test_system_clubs(), 200);
         manifest.works.push(WorkEntry {
+            trace_branch: None,
+            trace_position: None,
             be_id: 10,
             work_ref: work_ref,
             is_source: false,

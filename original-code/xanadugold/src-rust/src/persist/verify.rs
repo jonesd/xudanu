@@ -10,6 +10,8 @@ fn make_work_entry(
     work_ref: WorkChunkRef,
 ) -> manifest::WorkEntry {
     manifest::WorkEntry {
+        trace_branch: None,
+        trace_position: None,
         be_id,
         work_ref,
         is_source: false,
@@ -567,6 +569,8 @@ mod tests {
 
         let mut m = create_empty_manifest(test_system_clubs(), 100);
         m.works.push(crate::persist::manifest::WorkEntry {
+            trace_branch: None,
+            trace_position: None,
             be_id: 1,
             work_ref: wr1.clone(),
             is_source: false,
@@ -595,6 +599,8 @@ mod tests {
         drop(store2);
 
         m.works.push(crate::persist::manifest::WorkEntry {
+            trace_branch: None,
+            trace_position: None,
             be_id: 2,
             work_ref: wr2,
             is_source: false,
@@ -642,6 +648,8 @@ mod tests {
 
         let mut m = create_empty_manifest(test_system_clubs(), 100);
         m.works.push(crate::persist::manifest::WorkEntry {
+            trace_branch: None,
+            trace_position: None,
             be_id: 5,
             work_ref: work_ref,
             is_source: false,

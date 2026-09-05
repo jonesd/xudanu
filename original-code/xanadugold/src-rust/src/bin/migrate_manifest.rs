@@ -287,6 +287,7 @@ fn migrate_manifest(
     // --- Build ServerRootChunk ---
     let now = chrono::Utc::now().to_rfc3339();
     let root = ServerRootChunk {
+        fulltrace: None,
         format_version: ROOT_CHUNK_FORMAT_VERSION,
         sequence: m.sequence,
         checkpoint_at: now,
@@ -345,6 +346,8 @@ fn build_work_state_chunk(entry: &manifest::WorkEntry) -> WorkStateChunk {
     WorkStateChunk {
         format_version: 0,
         be_id: entry.be_id,
+        trace_branch: entry.trace_branch,
+        trace_position: entry.trace_position,
         owner: entry.work_ref.owner,
         read_club: entry.work_ref.read_club,
         edit_club: entry.work_ref.edit_club,

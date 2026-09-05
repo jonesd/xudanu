@@ -43,6 +43,20 @@ impl Ent {
     // [Original] "When we are making an orgl out of a table, we break the
     // table up into pieces which should be no larger than this, so that they
     // each fit into a snarf."
+    /// FR-52 A-1 P1: snapshot the fulltrace for persistence.
+    #[cfg(feature = "serde")]
+    pub fn snapshot(&self) -> crate::ent::dagwood::SnapshotDagWood {
+        self.fulltrace.snapshot()
+    }
+
+    /// FR-52 A-1 P1: rebuild from snapshot facts.
+    #[cfg(feature = "serde")]
+    pub fn restore(snap: crate::ent::dagwood::SnapshotDagWood) -> Self {
+        Ent {
+            fulltrace: crate::ent::dagwood::DagWood::restore(snap),
+        }
+    }
+
     pub const fn table_segment_max_size() -> u32 {
         16384
     }

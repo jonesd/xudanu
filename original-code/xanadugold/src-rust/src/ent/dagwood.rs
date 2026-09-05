@@ -25,6 +25,27 @@ pub struct DagWood {
     nav_cache: HashMap<BranchId, u32>,
 }
 
+/// FR-52 A-1 P1: the persisted DagWood — facts only (caches rebuild).
+#[cfg(feature = "serde")]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SnapshotDagWood {
+    pub next_id: u64,
+    pub branches: Vec<super::branch::SnapshotBranchEntry>,
+    pub root: TracePosition,
+    /// Trunk map: trace position -> branch id (HashMap form is
+    /// not serialization-stable; the Vec is).
+    pub trunk: Vec<(SnapshotTraceKey, u64)>,
+}
+
+#[cfg(feature = "serde")]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+pub struct SnapshotTraceKey {
+    pub branch: u64,
+    pub position: u32,
+}
+
 impl DagWood {
     // [Adapted from Original] DagWood::DagWood()
     // Source: dagwoodx.cxx lines 159-168
@@ -59,6 +80,61 @@ impl DagWood {
 
     // [Adapted from Original] DagWood::root()
     // Source: dagwoodx.cxx lines 76-78
+    /// FR-52 A-1 P1: the persisted form — branch FACTS only; the
+    /// nav caches rebuild lazily on first is_le (cache_trace_pos
+    /// clears and rebuilds per reference position), and
+    /// cached_position starts None exactly like a fresh DagWood.
+    #[cfg(feature = "serde")]
+    pub fn snapshot(&self) -> SnapshotDagWood {
+        SnapshotDagWood {
+            next_id: self.branches.next_id(),
+            branches: self.branches.snapshot_entries(),
+            root: self.root,
+            trunk: {
+                let mut v: Vec<(SnapshotTraceKey, u64)> = self
+                    .trunk
+                    .iter()
+                    .map(|(pos, id)| {
+                        (
+                            SnapshotTraceKey {
+                                branch: pos.branch().to_u64(),
+                                position: pos.position(),
+                            },
+                            id.to_u64(),
+                        )
+                    })
+                    .collect();
+                // HashMap iteration order must not leak into the
+                // manifest — sort for byte-stable snapshots.
+                v.sort();
+                v
+            },
+        }
+    }
+
+    /// Rebuild from snapshot facts.
+    #[cfg(feature = "serde")]
+    pub fn restore(snap: SnapshotDagWood) -> Self {
+        let branches = super::branch::BranchStore::restore(snap.next_id, snap.branches);
+        let trunk = snap
+            .trunk
+            .into_iter()
+            .map(|(k, id)| {
+                (
+                    TracePosition::new(super::branch::BranchId::from_u64(k.branch), k.position),
+                    super::branch::BranchId::from_u64(id),
+                )
+            })
+            .collect();
+        DagWood {
+            branches,
+            root: snap.root,
+            trunk,
+            cached_position: None,
+            nav_cache: HashMap::new(),
+        }
+    }
+
     pub fn root(&self) -> TracePosition {
         self.root
     }
@@ -1528,5 +1604,93 @@ mod tests {
             }
             eprintln!("{}", elapsed(t));
         }
+    }
+}
+
+#[cfg(test)]
+mod a1_snapshot_tests {
+    use super::*;
+
+    /// FR-52 A-1 P1 armor: snapshot -> restore preserves the DAG's
+    /// behavior — allocation continues, the partial order agrees,
+    /// visibility agrees — across a structure with roots, tree
+    /// branches, and dag branches.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn snapshot_restore_round_trip() {
+        let mut dw = DagWood::new();
+        let t1 = dw.new_position();
+        let t2 = dw.new_position();
+        let t3 = dw.new_successor_after(t1, t2); // branch point (dag successor)
+        let t4 = dw.new_position_after(t2);
+
+        // Pre-snapshot semantics.
+        assert!(dw.is_le(t1, t3));
+        assert!(dw.is_le(t2, t3));
+        assert!(!dw.is_le(t3, t1));
+        let view_before = dw.trace_view(t3);
+
+        // Round trip through serde JSON (the manifest's form).
+        let snap = dw.snapshot();
+        let json = serde_json::to_string(&snap).expect("serialize");
+        let back: SnapshotDagWood = serde_json::from_str(&json).expect("deserialize");
+        let mut restored = DagWood::restore(back);
+
+        // Partial order agrees.
+        assert!(restored.is_le(t1, t3));
+        assert!(restored.is_le(t2, t3));
+        assert!(!restored.is_le(t3, t1));
+        assert_eq!(
+            restored.is_le(t4, t2),
+            dw.is_le(t4, t2),
+            "t4/t2 order agrees"
+        );
+        assert_eq!(
+            restored.is_le(t2, t4),
+            dw.is_le(t2, t4),
+            "t2/t4 order agrees"
+        );
+
+        // Visibility agrees.
+        assert_eq!(
+            restored.trace_view(t3).is_visible(t1),
+            view_before.is_visible(t1)
+        );
+        assert_eq!(
+            restored.trace_view(t3).is_visible(t3),
+            view_before.is_visible(t3)
+        );
+
+        // Allocation continues without collision.
+        let t5 = restored.new_position();
+        let t6 = restored.new_position();
+        assert_ne!(t5, t6);
+        assert_ne!(t5, t4);
+        for t in [t1, t2, t3, t4] {
+            assert_ne!(t5, t);
+        }
+
+        // And the JSON is stable (manifest determinism): a restore
+        // that has NOT been mutated re-snapshots identically.
+        let pristine = DagWood::restore(serde_json::from_str(&json).unwrap());
+        assert_eq!(
+            json,
+            serde_json::to_string(&pristine.snapshot()).expect("reserialize")
+        );
+    }
+
+    /// The empty fulltrace round-trips to the empty fulltrace.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn empty_snapshot_round_trip() {
+        let mut dw = DagWood::new();
+        let first = dw.new_position();
+        let mut restored = DagWood::restore(
+            serde_json::from_str(&serde_json::to_string(&dw.snapshot()).unwrap()).unwrap(),
+        );
+        // Root position preserved; new traces distinct from it.
+        let next = restored.new_position();
+        assert_ne!(next, first);
+        assert!(restored.is_le(first, first));
     }
 }
