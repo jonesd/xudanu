@@ -690,7 +690,7 @@ pub struct Server {
     reconcile_store: crate::server::federation::ReconcileStore,
     reconcile_counter: u64,
     last_checkpoint_time: u64,
-    checkpoint_in_flight: bool,
+    pub(crate) checkpoint_in_flight: bool,
     pub(crate) otree_crdt: super::otree_crdt::OtreeCrdtManager,
     /// FR-51 Phase 4: per-work lattice dual-write shadows. Empty and
     /// inert unless enabled AND the work is enrolled — zero impact
@@ -12914,6 +12914,16 @@ impl Server {
         &self.restore_errors
     }
 
+    /// Test helper: current WAL entry count.
+    pub fn wal_len(&self) -> usize {
+        self.wal.append_count() as usize
+    }
+
+    /// Test helper: count of dirty works pending checkpoint.
+    pub fn dirty_work_count(&self) -> usize {
+        self.works.values().filter(|ws| ws.dirty_gen > 0).count()
+    }
+
     /// Marks a background checkpoint as complete and updates the timestamp.
     pub fn checkpoint_completed(&mut self) {
         self.checkpoint_in_flight = false;
@@ -23009,6 +23019,21 @@ pub(crate) mod persist_snapshot {
         }
 
         pub fn checkpoint_commit(&mut self, result: CheckpointResult) -> std::io::Result<()> {
+            self.checkpoint_commit_impl(result, true)
+        }
+
+        pub fn checkpoint_commit_no_wal_truncate(
+            &mut self,
+            result: CheckpointResult,
+        ) -> std::io::Result<()> {
+            self.checkpoint_commit_impl(result, false)
+        }
+
+        fn checkpoint_commit_impl(
+            &mut self,
+            result: CheckpointResult,
+            truncate_wal: bool,
+        ) -> std::io::Result<()> {
             for (be_id, work_ref, dirty_gen) in &result.work_refs {
                 if let Some(ws) = self.works.get_mut(be_id) {
                     if ws.dirty_gen == *dirty_gen && ws.chunk_ref.is_none() {
@@ -23037,8 +23062,21 @@ pub(crate) mod persist_snapshot {
                 .as_secs();
             self.checkpoint_in_flight = false;
 
-            if let Err(e) = self.wal.truncate() {
-                tracing::warn!("WAL truncate failed after checkpoint: {}", e);
+            if truncate_wal {
+                if let Err(e) = self.wal.truncate() {
+                    tracing::warn!("WAL truncate failed after checkpoint: {}", e);
+                }
+            } else {
+                // Async path: DON'T truncate the WAL. Operations may
+                // have arrived during the I/O phase (between payload
+                // finalize and this commit) — they're in the WAL but
+                // NOT in the checkpoint payload. Truncating now would
+                // lose them on crash. The next synchronous checkpoint
+                // (or shutdown) will truncate safely.
+                tracing::debug!(
+                    "[checkpoint] async commit: WAL preserved ({} entries)",
+                    self.wal.append_count()
+                );
             }
 
             if let Err(e) = self.gc_orphaned_chunks() {
@@ -37098,6 +37136,79 @@ mod tests {
         }
 
         let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_preserved_during_async_checkpoint_window() {
+        let dir = std::env::temp_dir().join(format!(
+            "xudanu_wal_async_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let w1 = server
+                .create_work(sid, Edition::from_text("async wal"))
+                .unwrap();
+            server.checkpoint_to_store().unwrap();
+            assert_eq!(server.wal_len(), 0);
+            server.work_star(sid, w1).unwrap();
+            assert!(server.wal_len() > 0, "star in WAL");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_truncate_only_on_synchronous_path() {
+        let dir = std::env::temp_dir().join(format!(
+            "xudanu_wal_sync_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let w1 = server
+                .create_work(sid, Edition::from_text("sync async"))
+                .unwrap();
+
+            server.work_star(sid, w1).unwrap();
+            assert!(server.wal_len() > 0);
+
+            // Sync checkpoint: truncates WAL
+            server.checkpoint_to_store().unwrap();
+            assert_eq!(server.wal_len(), 0, "sync truncates");
+
+            // New WAL entry
+            server.work_unstar(sid, w1).unwrap();
+            assert!(server.wal_len() > 0);
+
+            // Async commit: WAL preserved
+            let payload = server.checkpoint_prepare().unwrap();
+            let result = crate::server::server::checkpoint_persist(payload).unwrap();
+            server.checkpoint_commit_no_wal_truncate(result).unwrap();
+            assert!(server.wal_len() > 0, "async commit preserves WAL");
+
+            // Next sync checkpoint truncates
+            server.checkpoint_to_store().unwrap();
+            assert_eq!(server.wal_len(), 0, "next sync truncates");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

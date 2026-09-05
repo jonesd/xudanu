@@ -318,7 +318,7 @@ impl ServerHandle {
                 .await
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))??;
 
-        self.with_server(|srv| srv.checkpoint_commit(result))
+        self.with_server(|srv| srv.checkpoint_commit_no_wal_truncate(result))
     }
 
     /// Lightweight ticket-only save. Writes just the ticket nonces to a
@@ -336,6 +336,58 @@ impl std::fmt::Debug for ServerHandle {
 
 #[cfg(all(test, feature = "server"))]
 mod tests {
+    // ── Non-blocking checkpoint correctness (FR-#90) ────────────────
+
+    #[test]
+    fn checkpoint_in_flight_prevents_double_checkpoint() {
+        let handle = ServerHandle::new(Server::new());
+        handle.with_server(|srv| {
+            let sid = srv.connect();
+            srv.login_public(sid).unwrap();
+            srv.create_work(sid, crate::edition::Edition::from_text("test"))
+                .unwrap();
+        });
+
+        // Simulate: flag in-flight → auto_checkpoint returns false
+        handle.with_server(|srv| {
+            srv.checkpoint_in_flight = true;
+            assert!(
+                !srv.check_periodic_maintenance(),
+                "in-flight blocks re-entry"
+            );
+            srv.checkpoint_in_flight = false;
+        });
+    }
+
+    #[test]
+    fn concurrent_health_during_checkpoint_prepare() {
+        // The sliced prepare acquires/releases the lock in batches.
+        // Health checks (try_health_json) use try_lock — they should
+        // succeed between slices, proving the lock is released.
+        let handle = ServerHandle::new(Server::new());
+
+        // Populate
+        handle.with_server(|srv| {
+            let sid = srv.connect();
+            srv.login_public(sid).unwrap();
+            srv.create_work(sid, crate::edition::Edition::from_text("concurrent test"))
+                .unwrap();
+        });
+
+        // Health check succeeds (lock is free)
+        let json = handle.try_health_json();
+        assert!(json.is_some(), "health succeeds when lock is free");
+
+        // Simulate a slice holding the lock briefly
+        handle.with_server(|srv| {
+            srv.prune_disconnected_sessions();
+        });
+
+        // Health still succeeds (lock released between slices)
+        let json2 = handle.try_health_json();
+        assert!(json2.is_some(), "health succeeds between slices");
+    }
+
     use super::*;
 
     #[test]

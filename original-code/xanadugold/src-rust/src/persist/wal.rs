@@ -48,6 +48,7 @@ pub struct WalLog {
     path: PathBuf,
     seq: u64,
     file: Option<std::fs::File>,
+    append_count: u64,
 }
 
 impl WalLog {
@@ -73,6 +74,7 @@ impl WalLog {
             path,
             seq,
             file: Some(file),
+            append_count: 0,
         })
     }
 
@@ -81,11 +83,16 @@ impl WalLog {
             path: PathBuf::new(),
             seq: 0,
             file: None,
+            append_count: 0,
         }
     }
 
     pub fn is_enabled(&self) -> bool {
         self.file.is_some()
+    }
+
+    pub fn append_count(&self) -> u64 {
+        self.append_count
     }
 
     pub fn seq(&self) -> u64 {
@@ -98,6 +105,7 @@ impl WalLog {
             None => return Ok(0),
         };
         self.seq += 1;
+        self.append_count += 1;
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -378,6 +386,7 @@ impl WalLog {
     }
 
     pub fn truncate(&mut self) -> Result<(), WalError> {
+        self.append_count = 0;
         if self.file.is_none() {
             return Ok(());
         }
