@@ -321,12 +321,35 @@ Vite proxy config (`vite.config.ts`): `/api`, `/xudanu` (WS), `/csrf-token`,
 - `WorkspacePage.tsx` is dead code (not imported by App.tsx). The live UI is
   `AppShell.tsx`. Do not add features to WorkspacePage.
 - Pre-push hook runs 6 checks. If it fails, fix the issue and re-push.
-- **Docs site (dgjones.info) deployment rule**: `.github/scripts/render_docs.py`
-  converts every `docs/**/*.md` to `<name>.html` with its own template,
-  then deletes the .md from the deployed tree. If a hand-crafted HTML doc
-  has the SAME NAME as a .md file, the markdown conversion OVERWRITES it.
-  Rule: fancy HTML docs are HTML-ONLY — never create a matching .md.
-  Markdown docs are .md-only — the renderer creates the HTML.
+- **Docs site (dgjones.info) deployment**:
+  **Pipeline**: push to main (docs/** changed) → GitHub Actions
+  (deploy-docs.yml) → `render_docs.py` converts every `docs/**/*.md`
+  to `<name>.html` (dark theme, Pygments syntax highlighting), rewrites
+  .md links to .html in existing HTML files, deletes the .md sources
+  from the deployed tree, uploads docs/ to GitHub Pages.
+
+  **THE CRITICAL RULE**: if a hand-crafted HTML doc has the SAME NAME
+  as a .md file, the markdown conversion OVERWRITES the fancy HTML.
+  Two kinds of docs, never both for the same name:
+  - **Fancy HTML docs** (styled, SVG diagrams, callout boxes):
+    create `<name>.html` ONLY — never create a matching `<name>.md`
+  - **Markdown docs** (plain reference): create `<name>.md` ONLY —
+    the pipeline generates the HTML automatically
+
+  **Creating a fancy doc — step by step**:
+  1. Copy the CSS from an existing fancy doc (e.g., ent-dagwood-trace-dag.html)
+  2. Create `docs/<name>.html` — self-contained (CSS inline, SVG inline)
+  3. Verify NO `docs/<name>.md` exists (it would clobber the HTML)
+  4. Commit and push to main
+  5. Wait ~3 min for the GitHub Actions deploy-docs workflow
+  6. Verify at `https://dgjones.info/xudanu/<name>.html`
+  7. If it shows the markdown template instead of your styled version,
+     you have a name collision — delete the .md and push again
+
+  **Existing fancy docs that work** (use as templates):
+  ent-dagwood-trace-dag, architecture, crdt-evolution, cryptography,
+  transclusion-engine, gold-link-model, and others in docs/*.html
+
 
 - Git remotes: `origin` (self-hosted), `github` (github.com/jonesd/xudanu).
   GitHub Pages deploys from `github` remote.
