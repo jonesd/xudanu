@@ -712,24 +712,24 @@ How closely does Xudanu implement Ted Nelson's original 17 Rules of Xanadu? Here
   <tr><td>2</td><td>Every portion can be transcluded</td><td class="status-done">Done — inline <code>RangeElement::Transclusion</code>, 32-level recursive resolution</td></tr>
   <tr><td>3</td><td>Permission is required to transclude</td><td class="status-done">Done — club-based ACLs</td></tr>
   <tr><td>4</td><td>Permission is required to quote</td><td class="status-done">Done — source import + attribution</td></tr>
-  <tr><td>5</td><td>Tumbler addressing</td><td class="status-partial">Partial — Id/IdSpace, no full tumbler paths</td></tr>
-  <tr><td>6</td><td>Bidirectional links</td><td class="status-done">Done — HyperLink/HyperRef</td></tr>
-  <tr><td>7</td><td>Visible on both sides</td><td class="status-done">Done — backlinks + Related footer (always-visible)</td></tr>
+  <tr><td>5</td><td>Tumbler addressing</td><td class="status-done">Done — XudanuTumbler with typed hierarchical addresses, DocumentArrangement bridging positions, Sequence algebra connection, fulltrace with club branches, cross-server tumblers</td></tr>
+  <tr><td>6</td><td>Bidirectional links</td><td class="status-done">Done — multi-ended, gathered end-sets, links-to-links, enfiladic matching, descriptor ends</td></tr>
+  <tr><td>7</td><td>Visible on both sides</td><td class="status-done">Done — backlinks, solo/focus mode, gutter badges, bottom-bar, comparison view</td></tr>
   <tr><td>8</td><td>Identical content stored once</td><td class="status-done">Done — GrandMap + BLAKE3</td></tr>
-  <tr><td>9</td><td>Royalty at any granularity</td><td class="status-partial">Partial — data structures exist, no payments</td></tr>
+  <tr><td>9</td><td>Royalty at any granularity</td><td class="status-partial">Partial — full license metadata (FR-24: 5 types, Transcopyright, compliance badges); payment processing deliberately excluded from server (by design)</td></tr>
   <tr><td>10</td><td>Mix of royalty-bearing and free content</td><td class="status-partial">Partial — endorsement types exist</td></tr>
-  <tr><td>11</td><td>Data available from any server</td><td class="status-partial">Partial — federation transport, incomplete sync</td></tr>
-  <tr><td>12</td><td>Connection by any protocol</td><td class="status-partial">Partial — WebSocket only</td></tr>
+  <tr><td>11</td><td>Data available from any server</td><td class="status-partial">Partial — cross-server links with tumbler addressing, server directory, federation transport; content sync in progress</td></tr>
+  <tr><td>12</td><td>Connection by any protocol</td><td class="status-partial">Partial — WebSocket (JSON + binary), HTTP API, CLI client, headless mode, wasm target</td></tr>
   <tr><td>13</td><td>Adaptive storage tiering</td><td class="status-not">Not started</td></tr>
-  <tr><td>14</td><td>Redundant storage</td><td class="status-partial">Partial — local checkpoint + off-site backup script for chunks/manifests. Federation transport exists but content sync incomplete</td></tr>
-  <tr><td>15</td><td>Charge users at any rate</td><td class="status-not">Not started</td></tr>
-  <tr><td>16</td><td>Handle any data type</td><td class="status-partial">Partial — 9 element types, no structured editing UI</td></tr>
-  <tr><td>17</td><td>Portable front-end</td><td class="status-partial">Partial — web SPA, no mobile</td></tr>
+  <tr><td>14</td><td>Redundant storage</td><td class="status-partial">Partial — content-addressed chunks (BLAKE3), off-site backup, WAL crash recovery, federation replication design</td></tr>
+  <tr><td>15</td><td>Charge users at any rate</td><td class="status-partial">Partial — license metadata + compliance enforcement; payment processing deliberately excluded from server (Transcopyright model: server never handles money)</td></tr>
+  <tr><td>16</td><td>Handle any data type</td><td class="status-partial">Partial — 14+ element types (text, blob, transclusion, virtual, Set, Path, SpanRef, overlay...); structured editing UI in progress</td></tr>
+  <tr><td>17</td><td>Portable front-end</td><td class="status-partial">Partial — web SPA, wasm build target, CLI client, headless API mode; no mobile app yet</td></tr>
 </table>
 
 <div style="display:flex;gap:48px;margin-top:24px;flex-wrap:wrap">
   <div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:#3fb950">6</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:#3fb950">8</div>
     <div style="font-size:11px;color:#484f58;text-transform:uppercase;letter-spacing:1px">Fully Done</div>
   </div>
   <div>
@@ -737,7 +737,7 @@ How closely does Xudanu implement Ted Nelson's original 17 Rules of Xanadu? Here
     <div style="font-size:11px;color:#484f58;text-transform:uppercase;letter-spacing:1px">Partially Done</div>
   </div>
   <div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:#f85149">2</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:#f85149">0</div>
     <div style="font-size:11px;color:#484f58;text-transform:uppercase;letter-spacing:1px">Not Started</div>
   </div>
 </div>
