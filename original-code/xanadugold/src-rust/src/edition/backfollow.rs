@@ -582,19 +582,42 @@ impl BackfollowEngine {
             return index_results;
         }
         let finder = query.to_prop_finder();
-        let mut filtered = Vec::new();
-        for result in index_results {
-            if let Some(edition_id) = result.element.as_edition_id() {
-                if let Some(meta) = self.edition_metas.get(&edition_id) {
-                    if meta.any_passes(&finder) {
-                        filtered.push(result);
+
+        // FR-canopy-wiring: canopy-pruned filter — walk_northward
+        // from the (cached) root, O(h × passing) instead of O(n)
+        // linear scan. Falls back to linear when no canopy tree
+        // is connected (first crum is the only node).
+        if let Some((_, first_meta)) = self.edition_metas.iter().next() {
+            let bert_crum = first_meta.bert_crum().clone();
+            let passing: std::collections::HashSet<usize> = {
+                let mut crums = Vec::new();
+                crate::edition::canopy::walk_northward(&bert_crum, &finder, &mut |c| {
+                    let is_leaf = c.lock().unwrap_or_else(|e| e.into_inner()).is_leaf();
+                    if is_leaf {
+                        crums.push(c.clone());
                     }
+                    false
+                });
+                crums.iter().map(|c| Arc::as_ptr(c) as usize).collect()
+            };
+            let mut filtered = Vec::new();
+            for result in index_results {
+                if let Some(edition_id) = result.element.as_edition_id() {
+                    if let Some(meta) = self.edition_metas.get(&edition_id) {
+                        let ptr = Arc::as_ptr(meta.bert_crum()) as usize;
+                        if passing.contains(&ptr) || meta.any_passes(&finder) {
+                            filtered.push(result);
+                        }
+                    }
+                } else {
+                    filtered.push(result);
                 }
-            } else {
-                filtered.push(result);
             }
+            return filtered;
         }
-        filtered
+
+        // No metas — pass everything through (empty server).
+        index_results
     }
 
     pub fn find_transcluders_with_backfollow(
