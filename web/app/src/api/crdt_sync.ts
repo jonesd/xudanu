@@ -2163,7 +2163,23 @@ export class CrdtSyncClient {
         }
 
         if (wasInitialOpen) {
-          this.text = (inner.current_text as string) || "";
+          const serverText = (inner.current_text as string) || "";
+          const localText = this.text;
+
+          if (localText && localText !== serverText) {
+            // Reconnect recovery: the client has unsynced edits (server
+            // crash, network gap, or offline editing). Push the local
+            // version — the CRDT merges concurrent changes. Without
+            // this, the client would silently discard its edits.
+            console.log(
+              "[crdt] reconnect: local state differs from server — pushing local (local=" +
+                localText.length + " chars, server=" + serverText.length + " chars)",
+            );
+            this.sendTextDelta(serverText, localText);
+            this.text = localText;
+          } else {
+            this.text = serverText;
+          }
           // Offline mirror: every successful read is a cache candidate
           // (starred pinning + LRU budget handled inside).
           cacheDocument({
