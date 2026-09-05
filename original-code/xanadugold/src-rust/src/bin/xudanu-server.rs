@@ -590,6 +590,7 @@ async fn main() {
             // companions) at startup — ships with the binary so end
             // users can recreate the demo with one flag.
             let mut seed_links_demo = false;
+            let mut seed_compound_demo_flag = false;
             let mut edit_policy: Option<xudanu::server::EditPolicy> =
                 std::env::var("XUDANU_EDIT_POLICY")
                     .ok()
@@ -765,6 +766,9 @@ async fn main() {
                                 std::process::exit(1);
                             }));
                     }
+                    "--seed-compound-demo" => {
+                        seed_compound_demo_flag = true;
+                    }
                     "--seed-links-demo" => {
                         seed_links_demo = true;
                     }
@@ -873,6 +877,9 @@ async fn main() {
                 Server::new()
             };
 
+            if seed_compound_demo_flag {
+                xudanu::server::seed_compound_demo::seed_compound_demo(&mut server);
+            }
             if seed_links_demo {
                 xudanu::server::seed_demo::seed_links_demo(&mut server);
             }
