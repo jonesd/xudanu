@@ -460,12 +460,12 @@ li{margin-bottom:4px}
 <tr>
   <td><strong>Canopy cache</strong></td>
   <td class="accent-amber"><code>CanopyCache</code> &mdash; caches path lookups and root-finding for repeated queries</td>
-  <td class="accent-red">No cache &mdash; <code>CanopyCacheInner</code> is defined but <strong>unused</strong> (scaffolding only)</td>
+  <td class="cx cx-ok"><strong>Wired + benchmarked</strong> &mdash; <code>root_of()</code> uses cached path, invalidated on <code>propagate()</code>. <strong>100&times; speedup measured</strong> (334ns hit vs 33.3&mu;s miss at n=500)</td>
 </tr>
 <tr>
   <td><strong>walk_northward</strong></td>
   <td>Live &mdash; the canopy's own traversal engine</td>
-  <td class="accent-red">Defined but <strong>unused</strong> &mdash; query walk goes through <code>HUpperCrumData::delayed_store_backfollow</code> instead</td>
+  <td class="cx cx-ok"><strong>Wired</strong> into <code>find_transcluders</code> &mdash; pruned walk from the cached root, O(h &times; passing) instead of O(n) linear scan. <code>query_canopy()</code>/<code>query_leaves()</code> are the entry points</td>
 </tr>
 <tr>
   <td><strong>Exhaustive fallback</strong></td>
@@ -475,12 +475,12 @@ li{margin-bottom:4px}
 <tr>
   <td><strong>Height maintenance</strong></td>
   <td>Live (<code>PropChanger</code>, <code>HeightChanger</code>)</td>
-  <td class="accent-red">Defined but unused (<code>propagate_height</code>, <code>change_height</code>)</td>
+  <td class="cx cx-ok">Live &mdash; <code>propagate_height</code> runs inside <code>make_crum</code> and the combine path</td>
 </tr>
 </table>
 
-<div class="warning">
-<strong>Gap: Canopy cache is unused.</strong> Gold's <code>CanopyCache</code> caches path lookups (<code>pathFor</code>, <code>rootFor</code>) so repeated queries on the same subtree are O(1) instead of O(h). Xudanu has the cache structure defined (<code>CanopyCacheInner</code>) but it's never called in production &mdash; only in unit tests. For workloads with many repeated transclusion queries, this could be a performance gap. <strong>Recommendation: wire up the canopy cache or add an LRU cache on path lookups.</strong>
+<div class="cx cx-ok" style="padding:0.5rem 1rem;border-radius:4px;">
+<strong>Resolved (v1.10+): canopy cache and walk_northward wired.</strong> Both mechanisms are live with benchmarks: the cache delivers <strong>100&times; speedup</strong> on repeated root lookups (334ns cached vs 33.3&mu;s first-call), and <code>walk_northward</code> prunes non-matching subtrees (0 visits for a closed finder at n=1000). The backfollow query path now uses the canopy-pruned walk instead of a linear scan. <em>Measured in <code>benchmark_canopy_pruning_vs_linear_scan</code> and <code>benchmark_canopy_cache_hit_vs_miss</code>.</em>
 </div>
 
 <div class="gold">
@@ -979,7 +979,7 @@ li{margin-bottom:4px}
   <td><strong>Canopy path cache</strong></td>
   <td><span class="diverged">Unused</span></td>
   <td><code>CanopyCache</code> caches path/root lookups for O(1) repeated access</td>
-  <td><strong>Wire up the existing <code>CanopyCacheInner</code></strong> or add LRU cache</td>
+  <td class="cx cx-ok"><strong>Done</strong> &mdash; wired, 100&times; measured</td>
 </tr>
 <tr>
   <td><strong>Object stubbing</strong></td>
@@ -1070,7 +1070,7 @@ li{margin-bottom:4px}
 <h3>Priority ranking</h3>
 
 <ol>
-  <li><strong class="accent-amber">Canopy cache</strong> &mdash; already coded, just needs wiring. Low effort, immediate benefit for repeated queries.</li>
+  <li><strong class="cx cx-ok">Canopy cache</strong> &mdash; <strong>done</strong>: wired with invalidation, 100&times; speedup measured.</li>
   <li><strong class="accent-blue">Differential revisions</strong> &mdash; moderate effort, big win for storage efficiency on long-lived documents.</li>
   <li><strong class="accent-green">Intercomparison UI</strong> &mdash; <s>algorithms exist, just needs frontend work</s> <strong>SHIPPED</strong>: wire ops (<code>find_shared_regions</code>, <code>content_shared_region</code>) now feed <code>MultiEndCompare</code>, <code>ComparePanel</code>, and <code>ThreeWayDiffPanel</code>.</li>
   <li><strong class="accent-purple">Persistent incremental backfollow</strong> &mdash; high effort, but essential for docuverse-scale transclusion queries. Study Gold's <code>RecorderFossil</code> pattern.</li>
