@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Xudanu Headless Guide — Developer Guide</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.example-block{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin:16px 0}
+.example-block .example-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#484f58;margin-bottom:8px;font-weight:600}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-amber{color:#d29922}
+.accent-cyan{color:#39d2c0}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+ul{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:4px}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Xudanu Headless Guide</h1>
+<p class="subtitle">Running the server as a pure API backend — no browser, no frontend, just the document store, link engine, and CRDT collaboration over WebSocket and HTTP.</p>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. What Headless Means</a>
+  <a class="toc-section" href="#s2">2. Quick Start: Server + CLI</a>
+  <a class="toc-section" href="#s3">3. The CLI Client</a>
+  <a class="toc-section" href="#s4">4. The WebSocket API</a>
+  <a class="toc-section" href="#s5">5. The HTTP API</a>
+  <a class="toc-section" href="#s6">6. Use Cases</a>
+  <a class="toc-section" href="#s7">7. What's Included vs Not</a>
+  <a class="toc-section" href="#s8">8. Federation Headless</a>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. What Headless Means</h2>
+
+<p>
+Xudanu's server binary (<code class="mono">xudanu-server</code>) is a complete
+document store, link engine, and CRDT collaboration backend. The web frontend
+is optional — it's served as static files when you provide
+<code class="mono">--static-dir</code>, but the API is always available.
+</p>
+
+<p>
+<strong>Headless = run the server without serving any UI.</strong> You interact
+with it entirely through the WebSocket protocol, HTTP endpoints, or the
+bundled CLI client. This is the architecture for:
+</p>
+
+<ul>
+  <li>API backends for custom frontends (mobile apps, desktop clients, other web apps)</li>
+  <li>Content pipelines (automated import, export, archiving)</li>
+  <li>Federation nodes (peer servers that relay content, not browsers)</li>
+  <li>CI/CD testing (integration tests use this mode)</li>
+  <li>Embedded systems (the <code class="mono">wasm</code> feature targets browsers)</li>
+</ul>
+
+<div class="note">
+<strong>No separate build exists or is needed.</strong> The same
+<code class="mono">xudanu-server</code> binary IS the headless server. Simply
+omit <code class="mono">--static-dir</code> and the frontend is not served.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. Quick Start: Server + CLI</h2>
+
+<div class="example-block">
+<div class="example-label">Start a headless server</div>
+<pre>
+# Start the server (API only, no UI)
+xudanu-server run 127.0.0.1:8080 ./data
+
+# Or with the demo corpus (optional)
+xudanu-server run 127.0.0.1:8080 ./data --edit-policy public-sandbox --seed-links-demo
+
+# Health check
+curl http://127.0.0.1:8080/health
+</pre>
+</div>
+
+<div class="example-block">
+<div class="example-label">Connect with the CLI</div>
+<pre>
+# Interactive REPL mode
+xudanu-cli ws://127.0.0.1:8080/xudanu repl
+
+# Or one-shot commands
+xudanu-cli ws://127.0.0.1:8080/xudanu create-work "My Document" "Hello, world"
+xudanu-cli ws://127.0.0.1:8080/xudanu list-works
+xudanu-cli ws://127.0.0.1:8080/xudanu create-link 1004 1005 3
+</pre>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. The CLI Client</h2>
+
+<p>
+The <code class="mono">xudanu-cli</code> binary ships with every release. It
+connects over WebSocket and speaks the same protocol as the web frontend:
+</p>
+
+<table>
+<tr><th>Command</th><th>Description</th></tr>
+<tr><td><code class="mono">repl</code></td><td>Interactive mode (all commands available)</td></tr>
+<tr><td><code class="mono">create-work &lt;text&gt;</code></td><td>Create a work with text content</td></tr>
+<tr><td><code class="mono">create-work &lt;title&gt; &lt;text&gt;</code></td><td>Create a titled work</td></tr>
+<tr><td><code class="mono">get-work &lt;id&gt;</code></td><td>Get a work's edition</td></tr>
+<tr><td><code class="mono">list-works</code></td><td>List all works</td></tr>
+<tr><td><code class="mono">grab &lt;id&gt;</code></td><td>Grab a work for editing</td></tr>
+<tr><td><code class="mono">revise &lt;id&gt; &lt;text&gt;</code></td><td>Revise a grabbed work</td></tr>
+<tr><td><code class="mono">release &lt;id&gt;</code></td><td>Release a grabbed work</td></tr>
+<tr><td><code class="mono">history &lt;id&gt;</code></td><td>Show revision count</td></tr>
+<tr><td><code class="mono">fetch-revision &lt;id&gt; &lt;n&gt;</code></td><td>Fetch specific revision</td></tr>
+<tr><td><code class="mono">create-link &lt;from&gt; &lt;to&gt; [type]</code></td><td>Create a typed link</td></tr>
+<tr><td><code class="mono">set-link-type &lt;link&gt; &lt;type&gt;</code></td><td>Change a link's type</td></tr>
+<tr><td><code class="mono">get-link &lt;link&gt;</code></td><td>Get link details</td></tr>
+<tr><td><code class="mono">list-links &lt;work&gt;</code></td><td>List links involving a work</td></tr>
+<tr><td><code class="mono">delete-link &lt;link&gt;</code></td><td>Delete a link</td></tr>
+<tr><td><code class="mono">publish &lt;id&gt;</code></td><td>Make a work publicly readable</td></tr>
+<tr><td><code class="mono">find-content &lt;be-id&gt;</code></td><td>Find works containing content</td></tr>
+</table>
+
+<div class="gold">
+<strong>Link types:</strong> 1=Comment, 2=Reference, 3=Disagreement,
+4=Quotation, 5=See Also. The full multi-ended link model (end-sets,
+gathered passages, links-to-links) is available via the WebSocket
+protocol directly — the CLI covers the common two-ended cases.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. The WebSocket API</h2>
+
+<p>
+The full protocol lives at <code class="mono">ws://&lt;addr&gt;/xudanu</code>.
+Two formats are supported:
+</p>
+
+<ul>
+  <li><strong>JSON</strong> — human-readable, good for development (<code class="mono">?format=json</code>)</li>
+  <li><strong>Binary (postcard)</strong> — compact, good for production (<code class="mono">?format=binary</code>)</li>
+</ul>
+
+<div class="example-block">
+<div class="example-label">Example: create a work over JSON WebSocket</div>
+<pre>
+{"v": 2, "type": "request", "id": 1, "op": "session_connect"}
+{"v": 2, "type": "request", "id": 2, "op": "session_login_public"}
+{"v": 2, "type": "request", "id": 3, "op": "work_create",
+ "payload": {"edition": {"text": "Hello, headless world"}}}
+</pre>
+</div>
+
+<p>
+The full operation set (200+ operations) covers works, links, revisions,
+transclusion, annotations, trails, CRDT editing, federation, and more.
+See the wire protocol documentation generated by
+<code class="mono">scripts/gen-wire-doc.py</code>.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. The HTTP API</h2>
+
+<p>
+Limited HTTP endpoints are available for simple integrations:
+</p>
+
+<table>
+<tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+<tr><td><code class="mono">/health</code></td><td>GET</td><td>Server health and stats</td></tr>
+<tr><td><code class="mono">/api/public/work/{id}</code></td><td>GET</td><td>Public work content (published works only)</td></tr>
+<tr><td><code class="mono">/csrf-token</code></td><td>GET</td><td>CSRF token for state-changing HTTP operations</td></tr>
+<tr><td><code class="mono">/auth/*</code></td><td>GET/POST</td><td>OAuth2 callbacks (GitHub, Google)</td></tr>
+</table>
+
+<div class="note">
+<strong>Most operations require WebSocket.</strong> The HTTP API is intentionally
+minimal — it exists for health checks, public content reads, and OAuth
+callbacks. All state-changing operations go through the WebSocket protocol.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. Use Cases</h2>
+
+<h3>Custom frontend (mobile app, desktop client)</h3>
+<p>
+Connect via WebSocket, speak the same protocol as the web frontend. The
+<code class="mono">wasm</code> build of the Xudanu library can be embedded in
+browser-based clients for offline-capable editing.
+</p>
+
+<h3>Content pipeline</h3>
+<div class="example-block">
+<div class="example-label">Automated content import</div>
+<pre>
+#!/bin/bash
+# Create a work from a file
+CONTENT=$(cat article.txt)
+xudanu-cli ws://server:8080/xudanu create-work "Imported Article" "$CONTENT"
+
+# Link it to a topic work
+xudanu-cli ws://server:8080/xudanu create-link $NEW_WORK_ID $TOPIC_ID 2
+</pre>
+</div>
+
+<h3>Testing and CI</h3>
+<p>
+Start a headless server in CI, run assertions against the WebSocket API,
+then stop it. The integration test suite (315 tests) already does this.
+</p>
+
+<h3>Federation node</h3>
+<p>
+A headless server with <code class="mono">--peer</code> flags joins the
+federation mesh and relays content between servers without serving browsers.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. What's Included vs Not</h2>
+
+<table>
+<tr><th>Feature</th><th>Headless</th><th>Notes</th></tr>
+<tr><td>Work CRUD</td><td class="accent-green">✓ Full</td><td>Create, read, revise, delete, publish</td></tr>
+<tr><td>Link model (full)</td><td class="accent-green">✓ Full</td><td>Multi-ended, gathered end-sets, links-to-links</td></tr>
+<tr><td>CRDT collaborative editing</td><td class="accent-green">✓ Full</td><td>Same O-tree CRDT as the web editor</td></tr>
+<tr><td>Transclusion</td><td class="accent-green">✓ Full</td><td>Structural and virtual transclusion</td></tr>
+<tr><td>Annotations</td><td class="accent-green">✓ Full</td><td>Public and private</td></tr>
+<tr><td>Trails</td><td class="accent-green">✓ Full</td><td>Curated document sequences</td></tr>
+<tr><td>Licensing</td><td class="accent-green">✓ Full</td><td>All five license types, compliance checking</td></tr>
+<tr><td>Provenance / attribution</td><td class="accent-green">✓ Full</td><td>Ed25519 signed spans, attribution log</td></tr>
+<tr><td>Federation</td><td class="accent-green">✓ Full</td><td>Peer mesh, cross-server links, content replication</td></tr>
+<tr><td>Version history</td><td class="accent-green">✓ Full</td><td>Revision fetch, branching (fulltrace)</td></tr>
+<tr><td>Web UI (editor, panels)</td><td class="accent-red">✗ Not included</td><td>Requires a frontend (web app or custom client)</td></tr>
+<tr><td>Visual comparison view</td><td class="accent-red">✗ Not included</td><td>Frontend feature; data is available via API</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Federation Headless</h2>
+
+<div class="example-block">
+<div class="example-label">Start a headless federation node</div>
+<pre>
+xudanu-server run 0.0.0.0:8080 ./data \
+  --peer ws://peer1:8080/xudanu \
+  --peer ws://peer2:8080/xudanu \
+  --enable-cluster
+</pre>
+</div>
+
+<p>
+Federation nodes replicate content across servers. A headless federation
+node is a relay: it stores and forwards content between peers without
+serving any browser clients. See FR-41 for the full mesh protocol.
+</p>
+
+<div class="footer">
+Xudanu Headless Guide · 2026-09-05 · <a href="https://dgjones.info/xudanu/">dgjones.info/xudanu</a>
+</div>
+
+</div>
+</body>
+</html>
