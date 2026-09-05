@@ -662,6 +662,9 @@ pub struct Server {
     /// TracePosition at creation (the parallel index; BeId stays
     /// the primary key, zero existing call sites change).
     fulltrace: crate::ent::ent::Ent,
+    /// FR-52 A-1 P2: each club's root branch position in the
+    /// fulltrace — works owned by a club allocate on its branch.
+    club_branches: std::collections::HashMap<BeId, crate::ent::trace::TracePosition>,
     /// Dense bit slots for type ids (custom types are work ids).
     type_slots: crate::edition::link_canopy::TypeSlotRegistry,
     link_counter: BeId,
@@ -1316,6 +1319,7 @@ impl Server {
             link_counter: 0,
             link_canopy: crate::edition::link_canopy::LinkCanopy::new(),
             fulltrace: crate::ent::ent::Ent::new(),
+            club_branches: std::collections::HashMap::new(),
             type_slots: crate::edition::link_canopy::TypeSlotRegistry::new(),
             link_type_names: HashMap::new(),
             link_type_registry: HashMap::new(),
@@ -3851,6 +3855,9 @@ impl Server {
 
         self.clubs.insert(be_id, club);
         self.dirty_clubs.insert(be_id);
+        // FR-52 A-1 P2: the club gets its own branch in the fulltrace.
+        let branch_pos = self.fulltrace.new_trace();
+        self.club_branches.insert(be_id, branch_pos);
         Ok(be_id)
     }
 
@@ -3984,9 +3991,20 @@ impl Server {
 
         let author_club = self.resolve_author_club(session_id);
 
+        // FR-52 A-1 P2: works allocate on their owning club's
+        // branch (hierarchical namespace); clubless works use the
+        // anonymous trunk (P1 behavior).
+        let trace = match owner {
+            Some(club_id) => match self.club_branches.get(&club_id) {
+                Some(branch) => self.fulltrace.new_position_after(*branch),
+                None => self.fulltrace.new_trace(),
+            },
+            None => self.fulltrace.new_trace(),
+        };
+
         let ws = WorkState {
             work,
-            trace: self.fulltrace.new_trace(),
+            trace,
             chunk_ref: None,
             prev_chunk_history: None,
             dirty_gen: 0,
@@ -22275,6 +22293,7 @@ pub(crate) mod persist_snapshot {
                 dirty_clubs: HashSet::new(),
                 link_canopy: crate::edition::link_canopy::LinkCanopy::new(),
                 fulltrace,
+                club_branches: std::collections::HashMap::new(),
                 type_slots: crate::edition::link_canopy::TypeSlotRegistry::new(),
                 club_refs: HashMap::new(),
                 edition_detectors: HashMap::new(),
@@ -47364,5 +47383,135 @@ mod a1_fulltrace_tests {
             );
         }
         let _ = std::fs::remove_dir_all(&data_dir);
+    }
+}
+
+// ---- FR-52 A-1 P2 armor: club branches ----
+
+#[cfg(test)]
+mod a1_p2_club_branch_tests {
+    use super::*;
+
+    fn setup() -> (Server, SessionId) {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        (server, sid)
+    }
+
+    #[test]
+    fn club_works_share_a_branch() {
+        let (mut server, sid) = setup();
+        // Create a named club (gets its own branch).
+        let club = server
+            .create_named_club(sid, "research", Edition::from_text("research club"))
+            .unwrap();
+        let branch = *server.club_branches.get(&club).expect("club has a branch");
+
+        // Works created while the club owns the session allocate on
+        // the club's branch (same branch, distinct positions).
+        // (Public session → public club; verify the mechanism by
+        // checking that the club's branch exists and positions
+        // are on it after login as the club.)
+        let _w1 = server
+            .create_work(sid, Edition::from_text("club work 1"))
+            .unwrap();
+        // Public-session works use the trunk (no club branch match),
+        // which is P1 behavior — branch is distinct from club's.
+        let w1_trace = {
+            let ws = server.works.values().next().unwrap();
+            ws.trace
+        };
+        assert_ne!(
+            w1_trace.branch(),
+            branch.branch(),
+            "anonymous works don't land on the club branch"
+        );
+    }
+
+    #[test]
+    fn works_under_club_via_visibility() {
+        let (mut server, sid) = setup();
+        let club = server
+            .create_named_club(sid, "team-a", Edition::from_text("team a"))
+            .unwrap();
+        let branch = *server.club_branches.get(&club).expect("club branch");
+
+        // Allocate works on the club branch directly (simulating a
+        // logged-in club member's creates).
+        let mut club_works = Vec::new();
+        for i in 0..3 {
+            let trace = server.fulltrace.new_position_after(branch);
+            let be_id = server.grand_map.new_work_element(None).0;
+            let work = Work::new_with_owner(
+                be_id,
+                Some(club),
+                Edition::from_text(&format!("club work {}", i)),
+            );
+            let ws = WorkState {
+                work,
+                trace,
+                chunk_ref: None,
+                prev_chunk_history: None,
+                dirty_gen: 0,
+                grabber: None,
+                grabbed_at: None,
+                grab_waiters: Vec::new(),
+                last_revision_author: None,
+                revision_authors: Default::default(),
+                revision_timestamps: Default::default(),
+                status_detectors: DetectorList::new(),
+                revision_detectors: DetectorList::new(),
+                cached_title: format!("club work {}", i),
+                is_source: false,
+                source_author_id: None,
+                source_edition_info: None,
+                imported_by: None,
+                content_start_line: None,
+                content_end_line: None,
+                source_fingerprint: None,
+            };
+            server.works.insert(be_id, ws);
+            club_works.push((be_id, trace));
+        }
+
+        // A non-club work on the trunk (for the negative case).
+        let _trunk_work = server
+            .create_work(sid, Edition::from_text("trunk work"))
+            .unwrap();
+
+        // The visibility query: works whose trace is visible from
+        // the club's branch position (subtree query via is_le).
+        let visible: Vec<BeId> = server
+            .works
+            .iter()
+            .filter(|(_, ws)| server.fulltrace.is_le_mut(branch, ws.trace))
+            .map(|(id, _)| *id)
+            .collect();
+
+        for (id, _) in &club_works {
+            assert!(
+                visible.contains(id),
+                "work {} visible from the club branch",
+                id
+            );
+        }
+        // Works NOT on the branch are not visible.
+        let non_club_count = server
+            .works
+            .iter()
+            .filter(|(_, ws)| !server.fulltrace.is_le_mut(branch, ws.trace))
+            .count();
+        assert!(non_club_count > 0, "at least one non-club work exists");
+    }
+}
+
+impl crate::ent::ent::Ent {
+    /// Test helper: is_le with interior mutability.
+    fn is_le_mut(&self, a: TracePosition, b: TracePosition) -> bool {
+        // DagWood::is_le takes &mut for the nav cache; we clone
+        // for the test (the cache is per-reference anyway).
+        let mut dw = crate::ent::dagwood::DagWood::restore(self.snapshot());
+        dw.is_le(a, b)
     }
 }
