@@ -623,6 +623,76 @@ impl LatticeOverlay {
     }
 }
 
+/// FR-51 C-3: a char-range annotation on the lattice that tracks
+/// position changes. Anchored to a Sequence REGION (address range)
+/// — stable across edits because addresses are immutable. The char
+/// offsets are derived at query time, never stored as identity.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LatticeAnnotation {
+    pub id: u64,
+    /// The address region this annotation spans. Immutable — edits
+    /// don't shift it. An annotation dies when ALL units in the
+    /// region are tombstoned.
+    pub region: SequenceRegion,
+    /// The annotation payload (text, type, etc).
+    pub kind: String,
+    pub text: String,
+    /// Who created this annotation.
+    pub author: u64,
+}
+
+/// FR-51 C-3: position mapping for char-offset consumers. Given a
+/// set of ops that were applied, maps before-offsets to
+/// after-offsets (the lattice equivalent of the O-tree's
+/// positional_delta_mapping). Addresses are the stable key; char
+/// offsets are derived from the live-unit walk.
+pub struct LatticeMapping {
+    /// (before_offset, delta) pairs — offset shifts.
+    /// For each pair: text at char `before_offset` moved to
+    /// `before_offset + delta` in the new text.
+    pub shifts: Vec<(u64, i64)>,
+}
+
+impl LatticeMapping {
+    /// Map a char offset from the before-text to the after-text.
+    /// Offsets before the first shift are unchanged; offsets after
+    /// a shift get that delta; offsets between shifts get the
+    /// preceding shift's delta.
+    pub fn map(&self, offset: u64) -> u64 {
+        let mut delta_sum: i64 = 0;
+        for (before, delta) in &self.shifts {
+            if *before <= offset {
+                delta_sum += delta;
+            }
+        }
+        (offset as i64 + delta_sum).max(0) as u64
+    }
+
+    /// Map a range (start, end) — both endpoints shifted.
+    pub fn map_range(&self, start: u64, end: u64) -> (u64, u64) {
+        (self.map(start), self.map(end))
+    }
+}
+
+/// FR-51 C-3: delete semantics for overlay elements. An element
+/// dies when the unit it's anchored to is tombstoned. Returns
+/// the addresses of elements that should be removed.
+pub fn dead_elements_after_delete(overlay: &LatticeOverlay, doc: &LatticeDoc) -> Vec<Sequence> {
+    overlay
+        .elements()
+        .iter()
+        .filter(|le| {
+            // Check if any live unit has this element's address in
+            // its neighborhood. If the anchoring region is fully
+            // tombstoned, the element is dead.
+            !doc.live()
+                .iter()
+                .any(|u| u.address.compare_to(&le.address) != std::cmp::Ordering::Greater)
+        })
+        .map(|le| le.address.clone())
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegionTombstone {
     pub region: SequenceRegion,
