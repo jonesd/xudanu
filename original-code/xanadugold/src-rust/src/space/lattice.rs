@@ -971,6 +971,39 @@ impl LatticeDoc {
     }
 
     /// The live units in address order (index walk).
+    /// FR-51 C-4: the distinct owner clubs among live units that
+    /// carry provenance. The lattice's equivalent of the enfilade's
+    /// OwnerSet descent — aggregated from C-1 provenance, resolved
+    /// at query time (licensing is a query-time concern, same as FR-38).
+    pub fn owner_summary(&self) -> std::collections::BTreeSet<u64> {
+        let mut owners = std::collections::BTreeSet::new();
+        for u in self.units.values() {
+            if let Some(p) = &u.provenance {
+                owners.insert(p.author_club_id);
+            }
+        }
+        owners
+    }
+
+    /// FR-51 C-4: owner summary for a sub-range [lo, hi).
+    pub fn owner_summary_between(
+        &self,
+        lo: &Sequence,
+        hi: &Sequence,
+    ) -> std::collections::BTreeSet<u64> {
+        let mut owners = std::collections::BTreeSet::new();
+        for u in self.units.values() {
+            let rel_lo = u.address.compare_to(lo);
+            let rel_hi = u.address.compare_to(hi);
+            if rel_lo != std::cmp::Ordering::Less && rel_hi == std::cmp::Ordering::Less {
+                if let Some(p) = &u.provenance {
+                    owners.insert(p.author_club_id);
+                }
+            }
+        }
+        owners
+    }
+
     pub fn live(&self) -> Vec<&LatticeUnit> {
         self.index
             .in_order()
