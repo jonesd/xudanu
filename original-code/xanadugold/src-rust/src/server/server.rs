@@ -654,7 +654,7 @@ pub struct Server {
     pub(crate) operation_counter: u64,
     admin: AdminState,
     pub(crate) links: HashMap<BeId, LinkState>,
-    work_to_links: HashMap<BeId, Vec<BeId>>,
+    work_to_links: HashMap<BeId, std::collections::HashSet<BeId>>,
     /// FR-40 enfiladic matching: the link canopy (derived index;
     /// rebuilt at restore and after WAL replay, never journaled).
     link_canopy: crate::edition::link_canopy::LinkCanopy,
@@ -6584,7 +6584,7 @@ impl Server {
         let affected_links: Vec<BeId> = self
             .work_to_links
             .get(&work_be_id)
-            .cloned()
+            .map(|s| s.iter().copied().collect())
             .unwrap_or_default();
         for link_id in affected_links {
             self.links.remove(&link_id);
@@ -9490,13 +9490,16 @@ impl Server {
                     home_document,
                 },
             );
-            self.work_to_links.entry(origin).or_default().push(link_id);
+            self.work_to_links
+                .entry(origin)
+                .or_default()
+                .insert(link_id);
             self.work_to_links
                 .entry(destination)
                 .or_default()
-                .push(link_id);
+                .insert(link_id);
             if let Some(home) = home_document {
-                self.work_to_links.entry(home).or_default().push(link_id);
+                self.work_to_links.entry(home).or_default().insert(link_id);
             }
             if link_id > self.link_counter {
                 self.link_counter = link_id;
@@ -9525,7 +9528,7 @@ impl Server {
                 .or_default()
                 .contains(&link_id)
             {
-                self.work_to_links.entry(wid).or_default().push(link_id);
+                self.work_to_links.entry(wid).or_default().insert(link_id);
             }
         }
     }
@@ -9550,7 +9553,7 @@ impl Server {
                 .or_default()
                 .contains(&link_id)
             {
-                self.work_to_links.entry(wid).or_default().push(link_id);
+                self.work_to_links.entry(wid).or_default().insert(link_id);
             }
         }
     }
@@ -12371,7 +12374,7 @@ impl Server {
                     self.work_to_links
                         .entry(wid)
                         .or_default()
-                        .push(link.link_id);
+                        .insert(link.link_id);
                 }
             }
         }
@@ -13432,13 +13435,16 @@ impl Server {
                 home_document,
             },
         );
-        self.work_to_links.entry(origin).or_default().push(link_id);
+        self.work_to_links
+            .entry(origin)
+            .or_default()
+            .insert(link_id);
         self.work_to_links
             .entry(destination)
             .or_default()
-            .push(link_id);
+            .insert(link_id);
         if let Some(home) = home_document {
-            self.work_to_links.entry(home).or_default().push(link_id);
+            self.work_to_links.entry(home).or_default().insert(link_id);
         }
         self.backfollow
             .register_link_content(&self.links[&link_id].link, link_id);
@@ -13550,11 +13556,14 @@ impl Server {
                 home_document,
             },
         );
-        self.work_to_links.entry(origin).or_default().push(link_id);
+        self.work_to_links
+            .entry(origin)
+            .or_default()
+            .insert(link_id);
         self.work_to_links
             .entry(destination)
             .or_default()
-            .push(link_id);
+            .insert(link_id);
         for wid in attached_works {
             if !self
                 .work_to_links
@@ -13562,7 +13571,7 @@ impl Server {
                 .or_default()
                 .contains(&link_id)
             {
-                self.work_to_links.entry(wid).or_default().push(link_id);
+                self.work_to_links.entry(wid).or_default().insert(link_id);
             }
         }
         if let Some(home) = home_document {
@@ -13572,7 +13581,7 @@ impl Server {
                 .or_default()
                 .contains(&link_id)
             {
-                self.work_to_links.entry(home).or_default().push(link_id);
+                self.work_to_links.entry(home).or_default().insert(link_id);
             }
         }
         self.backfollow
@@ -14423,7 +14432,7 @@ impl Server {
                 .or_default()
                 .contains(&link_id)
             {
-                self.work_to_links.entry(wid).or_default().push(link_id);
+                self.work_to_links.entry(wid).or_default().insert(link_id);
             }
         }
         self.backfollow.register_link_content(&ls.link, link_id);
@@ -14686,7 +14695,7 @@ impl Server {
                 .or_default()
                 .contains(&link_id)
             {
-                self.work_to_links.entry(wid).or_default().push(link_id);
+                self.work_to_links.entry(wid).or_default().insert(link_id);
             }
         }
         self.backfollow.register_link_content(&ls.link, link_id);
@@ -18074,7 +18083,7 @@ impl Server {
         let mut link_ids: Vec<BeId> = self
             .work_to_links
             .get(&source_work_id)
-            .cloned()
+            .map(|s| s.iter().copied().collect())
             .unwrap_or_default();
         link_ids.sort_unstable();
         link_ids.dedup();
@@ -22552,12 +22561,12 @@ pub(crate) mod persist_snapshot {
                     .work_to_links
                     .entry(ls.origin)
                     .or_default()
-                    .push(ls.link_id);
+                    .insert(ls.link_id);
                 server
                     .work_to_links
                     .entry(ls.destination)
                     .or_default()
-                    .push(ls.link_id);
+                    .insert(ls.link_id);
                 for wid in named_works {
                     if !server
                         .work_to_links
@@ -22569,7 +22578,7 @@ pub(crate) mod persist_snapshot {
                             .work_to_links
                             .entry(wid)
                             .or_default()
-                            .push(ls.link_id);
+                            .insert(ls.link_id);
                     }
                 }
                 if let Some(home) = ls.home_document {
@@ -22583,7 +22592,7 @@ pub(crate) mod persist_snapshot {
                             .work_to_links
                             .entry(home)
                             .or_default()
-                            .push(ls.link_id);
+                            .insert(ls.link_id);
                     }
                 }
             }
