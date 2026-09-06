@@ -396,12 +396,20 @@ export function WorkspaceShell() {
     publicClubId,
   } = crdt;
   const [suggestBusy, setSuggestBusy] = useState(false);
+  const [suggestionsEnabled, setSuggestionsEnabled] = useState(false);
   const reuse = useReuseSuggestions(
     canEdit ? (clientRef.current ?? null) : null,
     workBeId,
     text,
     cursorPos ?? 0,
   );
+  const handleSetSuggestionsEnabled = async (enabled: boolean) => {
+    if (!clientRef.current) return;
+    await clientRef.current.suggestionConfigSet(enabled);
+    setSuggestionsEnabled(enabled);
+    if (enabled) reuse.refresh(cursorPos ?? 0);
+    showToast(enabled ? "Reference-over-copy suggestions on" : "Suggestions off");
+  };
   const handleAcceptSuggestion = async (card: SuggestionCardPayload) => {
     const client = clientRef.current;
     if (!client || workBeId === null) return;
@@ -5211,10 +5219,11 @@ export function WorkspaceShell() {
           prefs={docPrefs}
           onPrefsChange={setDocPrefs}
           onClose={() => setShowSettings(false)}
-          networkEnabled={networkEnabled}
-          externalLinksEnabled={externalLinksEnabled}
-          isAdmin={isAdmin}
-          onSetNetworkEnabled={async (enabled) => {
+           networkEnabled={networkEnabled}
+           externalLinksEnabled={externalLinksEnabled}
+           suggestionsEnabled={suggestionsEnabled}
+           isAdmin={isAdmin}
+           onSetNetworkEnabled={async (enabled) => {
             if (!clientRef.current) return;
             try {
               await clientRef.current.sendRequest("network_set_enabled", { enabled });
@@ -5232,6 +5241,13 @@ export function WorkspaceShell() {
               showToast(enabled ? "External links enabled" : "External links disabled — only xudanu links are clickable");
             } catch (e) {
               showToast(`Could not change link setting: ${e instanceof Error ? e.message : String(e)}`);
+            }
+          }}
+          onSetSuggestionsEnabled={async (enabled) => {
+            try {
+              await handleSetSuggestionsEnabled(enabled);
+            } catch (e) {
+              showToast(`Could not change suggestions: ${e instanceof Error ? e.message : String(e)}`);
             }
           }}
         />

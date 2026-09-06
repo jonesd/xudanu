@@ -42,12 +42,14 @@ interface DocumentSettingsProps {
   onPrefsChange: (prefs: DocPreferences) => void;
   networkEnabled: boolean;
   externalLinksEnabled: boolean;
+  suggestionsEnabled: boolean;
   isAdmin: boolean;
   onSetNetworkEnabled: (enabled: boolean) => Promise<void>;
   onSetExternalLinksEnabled: (enabled: boolean) => Promise<void>;
+  onSetSuggestionsEnabled: (enabled: boolean) => Promise<void>;
 }
 
-export function DocumentSettings({ visible, onClose, prefs, onPrefsChange, networkEnabled, externalLinksEnabled, isAdmin, onSetNetworkEnabled, onSetExternalLinksEnabled }: DocumentSettingsProps) {
+export function DocumentSettings({ visible, onClose, prefs, onPrefsChange, networkEnabled, externalLinksEnabled, suggestionsEnabled, isAdmin, onSetNetworkEnabled, onSetExternalLinksEnabled, onSetSuggestionsEnabled }: DocumentSettingsProps) {
   const [local, setLocal] = useState(prefs);
   const [netBusy, setNetBusy] = useState(false);
   const [cacheLimit, setCacheLimit] = useState(getCacheLimitMb());
@@ -166,6 +168,31 @@ export function DocumentSettings({ visible, onClose, prefs, onPrefsChange, netwo
             </div>
             <div className={`settings-net-status ${networkEnabled ? "on" : "off"}`}>
               {networkEnabled ? "● Network: ON" : "● Network: OFF (single-player)"}
+            </div>
+          </div>
+
+          <div className="settings-section">
+            <h3>Writing suggestions</h3>
+            <div className="settings-row">
+              <div>
+                <span>Reference-over-copy</span>
+                <div className="settings-sub">
+                  {suggestionsEnabled
+                    ? "While typing, passages that already exist in works you can read are offered as live transclusions."
+                    : "Off (default): no suggestions while typing. When on, retyping an existing passage offers it as a live transclusion."}
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={suggestionsEnabled}
+                className={`settings-switch ${suggestionsEnabled ? "on" : ""}`}
+                disabled={!isAdmin}
+                title={isAdmin ? undefined : "Admin sign-in required"}
+                onClick={() => void onSetSuggestionsEnabled(!suggestionsEnabled)}
+              >
+                <span className="settings-switch-knob" />
+              </button>
             </div>
           </div>
 

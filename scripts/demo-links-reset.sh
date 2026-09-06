@@ -15,10 +15,11 @@ sleep 1
 echo "==> wiping $DATA"
 rm -rf "$DATA"
 
-echo "==> starting demo server (public-sandbox, static build)"
+echo "==> starting demo server (public-sandbox, dev admin, static build)"
 nohup "$BIN" run 127.0.0.1:$PORT "$DATA" \
   --static-dir "$ROOT/web/app/dist" \
-  --edit-policy public-sandbox > /tmp/xudanu-link-demo.log 2>&1 &
+  --edit-policy public-sandbox \
+  --dev > /tmp/xudanu-link-demo.log 2>&1 &
 disown
 
 for i in $(seq 1 20); do
