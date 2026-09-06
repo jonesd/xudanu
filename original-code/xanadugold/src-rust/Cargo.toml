@@ -58,7 +58,7 @@ tracing-appender = { version = "0.2", optional = true }
 tokio-tungstenite = { version = "0.29", optional = true }
 chacha20poly1305 = { version = "0.10", optional = true }
 x25519-dalek = { version = "2.0", features = ["static_secrets"], optional = true }
-ed25519-dalek = { version = "2.1", features = ["rand_core"], optional = true }
+ed25519-dalek = { version = "3.0", features = ["rand_core"], optional = true }
 sha2 = { version = "0.10", optional = true }
 hmac = { version = "0.12", optional = true }
 hkdf = { version = "0.12", optional = true }
