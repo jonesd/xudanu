@@ -413,3 +413,39 @@ Phase J (Overlap Combine)   combine_overlapping active; structural
 | 2026-08-16 | `527b656` | S5-0 | Arc-shared Loaf children (structural sharing) |
 | 2026-08-16 | `68513fa` | S5/I | Tree-native delta fast path + 3 merge bug fixes |
 | 2026-08-16 | `e543f78` | fix | EditionPayload::Text position-layout leak over wire |
+
+---
+
+## Design decision: domain tumblers confirmed (2026-09-05)
+
+**Decision:** The domain-based tumbler (`"alice.com".5.3.10`) is the
+confirmed cross-server address format. Numeric server IDs (u64 from
+keypair hash) were considered and rejected for the tumbler's first
+segment.
+
+**Rationale:**
+- Within a server, all tumblers share the same domain prefix —
+  ordering and prefix queries work correctly on the numeric path
+  segments alone (`to_sequence()` dropping the server is correct
+  for the within-server algebra)
+- Cross-server resolution is a lookup (parse domain → connect →
+  resolve path), not an ordering operation
+- DNS handles global uniqueness — no registry, no ID assignment
+  problem (the original reason we moved from Gold's numeric form)
+- The only gap is global cross-server tumbler ordering, for which
+  no practical use case has been identified
+
+**The three address forms and their roles:**
+| Form | Example | Role |
+|---|---|---|
+| Domain tumbler | `"alice.com".5.3.10` | Public cross-server address (wire + display) |
+| xan:// URI | `xan://e677...714d.0400` | Self-certifying persistent identity |
+| Numeric paths | `5.3.10` | Internal Sequence algebra (within-server) |
+
+**Rejected:** automatic domain ↔ numeric conversion. No practical
+consumer; the server directory provides manual resolution when needed.
+Adding it would be complexity without a use case.
+
+**Consistency note:** the user observes the three forms feel
+inconsistent and a better compromise may emerge. Revisit when a
+concrete pain point surfaces.
