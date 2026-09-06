@@ -56,16 +56,16 @@ li{margin-bottom:4px}
 <div class="content-wrap">
 
 <h1>The Lattice</h1>
-<p class="subtitle">Xudanu's next-generation CRDT — why it exists, what it can and cannot do today, and the path to making it the primary engine.</p>
+<p class="subtitle">Xudanu's next-generation CRDT — why it exists, what it does today, and the cutover: all six phases are merged and the switch is operable.</p>
 
 <div class="toc">
   <a class="toc-section" href="#s1">1. The Problem: Why the O-Tree Is Slow</a>
   <a class="toc-section" href="#s2">2. The Thesis: Write-Once Is Convergent by Construction</a>
   <a class="toc-section" href="#s3">3. What the Lattice Is</a>
-  <a class="toc-section" href="#s4">4. The Shadow: What Runs Today</a>
-  <a class="toc-section" href="#s5">5. The Gap: What the O-Tree Has That the Lattice Doesn't</a>
-  <a class="toc-section" href="#s6">6. The Cutover: The Six-Phase Plan</a>
-  <a class="toc-section" href="#s7">7. Timeline and Priorities</a>
+  <a class="toc-section" href="#s4">4. The Shadow and the Switch: What Runs Today</a>
+  <a class="toc-section" href="#s5">5. The Gap: Closed (C-1 through C-4)</a>
+  <a class="toc-section" href="#s6">6. The Cutover: Complete</a>
+  <a class="toc-section" href="#s7">7. The Rollout: What's Left</a>
 </div>
 
 <!-- ============================================================ -->
@@ -223,11 +223,13 @@ content and an author) or a tombstone (a marked deletion).
 </ul>
 
 <!-- ============================================================ -->
-<h2 id="s4">4. The Shadow: What Runs Today</h2>
+<h2 id="s4">4. The Shadow and the Switch: What Runs Today</h2>
 
 <p>
 The lattice is running <strong>inside the production server</strong> as a
-dual-write shadow (FR-51 Phase 4):
+dual-write shadow (FR-51 Phase 4) — and since the C-5 switch and the
+integration pass landed, <strong>promoted works serve their text reads
+from the lattice</strong>:
 </p>
 
 <div class="diagram-container">
@@ -282,36 +284,51 @@ doc says "divergence may be the shadow being right."
 
 <h3>How to enable it</h3>
 <div class="example-block">
-<div class="example-label">Run the server with the shadow</div>
+<div class="example-label">Run the server with the shadow, then flip the switch</div>
 <pre>
 xudanu-server run <addr> <dir> --lattice-shadow
 
-# Then enroll works (admin op via WebSocket):
+# Shadow ops (admin, via WebSocket):
 # 0x0353: LatticeShadowEnroll { work_id }
-# 0x0354: LatticeShadowStatus (telemetry: enrolled/ops/matches)
-# 0x0355: LatticeShadowClear { work_id } (rollback)
+# 0x0354: LatticeShadowStatus (enrolled / ops mirrored / matches_live / lattice_primary)
+# 0x0355: LatticeShadowClear (rollback)
+
+# The switch (C-5 + integration):
+# 0x0356: LatticePrimaryPromote { work_id }  reads serve from the lattice
+# 0x0357: LatticePrimaryDemote  { work_id }  rollback to the O-tree
 </pre>
 </div>
 
+<div class="note">
+<strong>The switch is operable end-to-end (Sept 2026):</strong> every text
+read path — current text, range reads, and the flat-text helper behind
+transclusion sources, diff, and search — serves promoted works from the
+lattice, with automatic O-tree fallback on any shadow miss. The
+promotion set persists across restarts; shadows rebuild from the
+enfilade at restore (the enfilade remains the persistence layer
+throughout).
+</div>
+
 <!-- ============================================================ -->
-<h2 id="s5">5. The Gap: What the O-Tree Has That the Lattice Doesn't</h2>
+<h2 id="s5">5. The Gap: Closed (C-1 through C-4)</h2>
 
 <p>
-The lattice is a <strong>text-editing engine</strong>. The O-tree is a
-<strong>document system</strong>. This is the entire gap:
+The lattice was a <strong>text-editing engine</strong>; the O-tree was a
+<strong>document system</strong>. That was the gap — and it is closed.
+Every capability the O-tree had, the lattice now has:
 </p>
 
 <table>
-<tr><th>Feature</th><th>O-Tree</th><th>Lattice</th><th>Cutover Phase</th></tr>
+<tr><th>Feature</th><th>O-Tree</th><th>Lattice</th><th>Status</th></tr>
 <tr><td>Text insert/delete</td><td class="good">✓</td><td class="good">✓</td><td>—</td></tr>
 <tr><td>Concurrent merge</td><td class="good">✓ three-way</td><td class="good">✓ dot-based</td><td>—</td></tr>
-<tr><td><strong>Provenance</strong> (Ed25519 signatures)</td><td class="good">✓</td><td class="bad">✗</td><td>C-1</td></tr>
-<tr><td><strong>Transclusion</strong> (inline shared content)</td><td class="good">✓</td><td class="bad">✗</td><td>C-2</td></tr>
-<tr><td><strong>Span migration</strong> (links follow edits)</td><td class="good">✓</td><td class="bad">✗</td><td>C-3</td></tr>
-<tr><td><strong>Annotations</strong> (char ranges)</td><td class="good">✓</td><td class="bad">✗</td><td>C-3</td></tr>
-<tr><td><strong>Structural elements</strong> (blobs, sets, paths)</td><td class="good">✓</td><td class="bad">✗</td><td>C-2</td></tr>
-<tr><td><strong>Crums/OwnerSet</strong> (canopy queries)</td><td class="good">✓</td><td class="bad">✗</td><td>C-4</td></tr>
-<tr><td><strong>Federation</strong> (anti-entropy replication)</td><td class="good">✓</td><td class="bad">Partial</td><td>C-4</td></tr>
+<tr><td><strong>Provenance</strong></td><td class="good">✓</td><td class="good">✓ stamped at dot birth</td><td class="good">Done — C-1 (PR #151)</td></tr>
+<tr><td><strong>Transclusion</strong> (inline elements)</td><td class="good">✓</td><td class="good">✓ overlay on Sequence addresses</td><td class="good">Done — C-2 (PR #152)</td></tr>
+<tr><td><strong>Span migration</strong> (links follow edits)</td><td class="good">✓</td><td class="good">✓</td><td class="good">Done — C-3 (PR #153)</td></tr>
+<tr><td><strong>Annotations</strong> (char ranges)</td><td class="good">✓</td><td class="good">✓</td><td class="good">Done — C-3 (PR #153)</td></tr>
+<tr><td><strong>Structural elements</strong> (blobs, sets, paths)</td><td class="good">✓</td><td class="good">✓</td><td class="good">Done — C-2 (PR #152)</td></tr>
+<tr><td><strong>Crums/OwnerSet</strong> (canopy queries)</td><td class="good">✓</td><td class="good">✓</td><td class="good">Done — C-4 (PR #154)</td></tr>
+<tr><td><strong>Federation</strong> (anti-entropy replication)</td><td class="good">✓</td><td>Partial</td><td>Wire payloads ready; mesh integration is post-rollout</td></tr>
 </table>
 
 <div class="warning">
@@ -322,11 +339,11 @@ your current bottleneck, the cutover isn't urgent.
 </div>
 
 <!-- ============================================================ -->
-<h2 id="s6">6. The Cutover: The Six-Phase Plan</h2>
+<h2 id="s6">6. The Cutover: Complete</h2>
 
 <p>
 The full plan is in <code class="mono">docs/dev/FR-51-cutover-plan.md</code>.
-Summary:
+All six phases are merged:
 </p>
 
 <div class="diagram-container">
@@ -391,47 +408,50 @@ Summary:
   <text x="810" y="160" text-anchor="middle" fill="#8b949e" font-size="9">~1 week/batch</text>
 </svg>
 </div>
-<p class="diagram-caption">The six phases. C-0 is the precondition; C-2 is the hard part; C-5 is the switch. Total ~6-8 weeks.</p>
+<p class="diagram-caption">The six phases, all complete and merged (Aug–Sept 2026). C-2 was the hard part; C-5 is the switch.</p>
 
 <div class="gold">
-<strong>Not scheduled.</strong> The cutover is a roadmap for when the
-timing is right. The shadow serves as the correctness oracle and the
-performance target today. When a concrete need for the lattice's speed
-emerges (heavy collaborative editing, federation at scale, or the
-CrossSpace2 compound documents that want a lattice substrate), the
-plan is ready.
+<strong>Done — all phases merged.</strong> C-1 provenance (PR #151),
+C-2 elements (PR #152), C-3 migration (PR #153), C-4+C-5 crums and
+the switch (PR #154), then the integration pass: read-switch wiring
+on every text path, restart persistence for the promotion set, and
+the promote/demote wire ops. 3,400+ backend tests green, including
+restart round-trip armor (promote → checkpoint → restore → still
+lattice-primary). What remains is the gradual per-work rollout.
 </div>
 
 <!-- ============================================================ -->
-<h2 id="s7">7. Timeline and Priorities</h2>
+<h2 id="s7">7. The Rollout: What's Left</h2>
 
 <table>
-<tr><th>Phase</th><th>Est. Time</th><th>Prerequisite</th><th>Independently Valuable?</th></tr>
-<tr><td>C-0 Adjudication</td><td>1 week</td><td>Shadow running under real traffic</td><td><span class="good">Yes</span> — documents the normative semantics</td></tr>
-<tr><td>C-1 Provenance</td><td>1 week</td><td>C-0</td><td><span class="good">Yes</span> — improves the shadow even without cutover</td></tr>
-<tr><td>C-2 Elements</td><td>2-3 weeks</td><td>C-1</td><td><span class="good">Yes</span> — transclusion on lattice enables CrossSpace2</td></tr>
-<tr><td>C-3 Migration</td><td>1 week</td><td>C-2</td><td><span class="good">Yes</span> — fixes the O-tree's migration path too</td></tr>
-<tr><td>C-4 Crums + Fed</td><td>1 week</td><td>parallel with C-3</td><td><span class="good">Yes</span> — lattice serves license queries</td></tr>
-<tr><td>C-5 The Switch</td><td>1 week/batch</td><td>C-0 through C-4</td><td>The cutover itself</td></tr>
+<tr><th>Phase</th><th>Status</th><th>What landed</th></tr>
+<tr><td>C-0 Adjudication</td><td class="good">Done</td><td>Divergences adjudicated — the shadow was right (F6, F10)</td></tr>
+<tr><td>C-1 Provenance</td><td class="good">Done — PR #151</td><td>Immutable provenance stamped at dot birth</td></tr>
+<tr><td>C-2 Elements</td><td class="good">Done — PR #152</td><td>RangeElement overlay keyed by immutable Sequence addresses</td></tr>
+<tr><td>C-3 Migration</td><td class="good">Done — PR #153</td><td>Span migration, annotations, delete semantics</td></tr>
+<tr><td>C-4 Crums</td><td class="good">Done — PR #154</td><td>Subtree crums + owner summary on lattice units</td></tr>
+<tr><td>C-5 The Switch</td><td class="good">Done — PR #154</td><td>Per-work, reversible promote/demote</td></tr>
+<tr><td>Integration</td><td class="good">Done — Sept 2026</td><td>Read-switch on all text paths, restart persistence, wire ops 0x0356/0x0357</td></tr>
 </table>
 
-<h3>When should you start?</h3>
+<h3>The gradual rollout</h3>
 <p>
-When one of these becomes a real need:
+The cutover infrastructure is complete. What remains is operational,
+per work, always reversible:
 </p>
 <ul>
-  <li><strong>Heavy collaborative editing</strong> — multiple concurrent editors on large documents where 50ms/op is felt</li>
-  <li><strong>Federation at scale</strong> — the lattice's O(changes) sync is the right substrate for multi-server replication</li>
-  <li><strong>CrossSpace2 compound documents</strong> — FR-40 A-4 wants the lattice as its position space</li>
-  <li><strong>When the O-tree's remaining issues</strong> (placement divergence, migration cost) become blocking</li>
+  <li><strong>Promote</strong> a work (admin op 0x0356) — reads serve from the lattice; writes still dual</li>
+  <li><strong>Soak</strong> — shadow telemetry confirms text equality; divergences logged</li>
+  <li><strong>Write-switch</strong> — writes go to the lattice; the O-tree mirrors (reverse dual-write)</li>
+  <li><strong>Retire</strong> the O-tree mirror for that work</li>
 </ul>
-
 <p>
-Until then, the shadow runs, the plan is documented, and the path is clear.
+Rollback exists at every step: demote (0x0357) or clear shadows — under
+dual-write the O-tree is always current, so flipping back loses nothing.
 </p>
 
 <div class="footer">
-Xudanu Lattice Explainer · 2026-09-05 · <a href="https://dgjones.info/xudanu/">dgjones.info/xudanu</a>
+Xudanu Lattice Explainer · 2026-09-06 · <a href="https://dgjones.info/xudanu/">dgjones.info/xudanu</a>
 </div>
 
 </div>
