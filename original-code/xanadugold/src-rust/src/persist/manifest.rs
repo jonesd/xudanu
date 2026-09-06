@@ -575,6 +575,15 @@ pub struct Manifest {
     pub ticket_nonces: std::collections::HashMap<String, u64>,
     // ── v5+ (future additions go here with version annotation) ──
 
+    // ── FR-51 cutover: the per-work lattice-primary switch set ──
+    // Shadows themselves are ephemeral (rebuilt from the enfilade at
+    // restore); only the promotion set persists.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub lattice_primary_works: Vec<BeId>,
+
     // ── FR-23: revision metadata ──
     #[cfg_attr(
         feature = "serde",
@@ -1381,6 +1390,7 @@ pub fn create_empty_manifest(
         social_chunk_hash: None,
         ticket_nonces: std::collections::HashMap::new(),
         revisions: std::collections::HashMap::new(),
+        lattice_primary_works: Vec::new(),
     }
 }
 

@@ -184,6 +184,8 @@ pub enum OperationCode {
     LatticeShadowEnroll,
     LatticeShadowStatus,
     LatticeShadowClear,
+    LatticePrimaryPromote,
+    LatticePrimaryDemote,
     WorkUnstar,
     WorkIsStarred,
     ConnectionPinSet,
@@ -566,6 +568,8 @@ impl OperationCode {
             0x0353 => Some(OperationCode::LatticeShadowEnroll),
             0x0354 => Some(OperationCode::LatticeShadowStatus),
             0x0355 => Some(OperationCode::LatticeShadowClear),
+            0x0356 => Some(OperationCode::LatticePrimaryPromote),
+            0x0357 => Some(OperationCode::LatticePrimaryDemote),
             0x0336 => Some(OperationCode::WorkUnstar),
             0x0337 => Some(OperationCode::WorkIsStarred),
             0x0338 => Some(OperationCode::WorkGraph),
@@ -904,6 +908,8 @@ impl OperationCode {
             OperationCode::LatticeShadowEnroll => 0x0353,
             OperationCode::LatticeShadowStatus => 0x0354,
             OperationCode::LatticeShadowClear => 0x0355,
+            OperationCode::LatticePrimaryPromote => 0x0356,
+            OperationCode::LatticePrimaryDemote => 0x0357,
             OperationCode::WorkUnstar => 0x0336,
             OperationCode::WorkIsStarred => 0x0337,
             OperationCode::WorkGraph => 0x0338,
@@ -1380,6 +1386,12 @@ pub enum WireRequest {
         work_id: BeId,
     },
     LatticeShadowClear {},
+    LatticePrimaryPromote {
+        work_id: BeId,
+    },
+    LatticePrimaryDemote {
+        work_id: BeId,
+    },
     WorkUnstar {
         work_id: BeId,
     },
@@ -5138,6 +5150,8 @@ mod lattice_shadow_wire_tests {
             OperationCode::LatticeShadowEnroll,
             OperationCode::LatticeShadowStatus,
             OperationCode::LatticeShadowClear,
+            OperationCode::LatticePrimaryPromote,
+            OperationCode::LatticePrimaryDemote,
         ] {
             let wire = code.to_u16();
             let back = OperationCode::from_u16(wire).expect("decode");
@@ -5152,6 +5166,8 @@ mod lattice_shadow_wire_tests {
             (0x0353u16, OperationCode::LatticeShadowEnroll),
             (0x0354, OperationCode::LatticeShadowStatus),
             (0x0355, OperationCode::LatticeShadowClear),
+            (0x0356, OperationCode::LatticePrimaryPromote),
+            (0x0357, OperationCode::LatticePrimaryDemote),
         ];
         for (wire, want) in targets {
             assert_eq!(OperationCode::from_u16(wire), Some(want));

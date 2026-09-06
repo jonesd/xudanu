@@ -941,6 +941,8 @@ pub(crate) struct CheckpointPayload {
     federation_snapshot: Option<crate::server::federation::FederationSnapshot>,
     starred_works: HashMap<BeId, HashSet<BeId>>,
     user_pins: HashMap<BeId, HashSet<String>>,
+    /// FR-51 cutover: the promotion set for the manifest.
+    lattice_primary_works: Vec<BeId>,
     trails: Vec<crate::persist::manifest::TrailManifestEntry>,
     trail_counter: BeId,
     compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
@@ -1179,6 +1181,7 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         annotations_hash,
         fossil_snapshots_hash,
         starred_works: payload.starred_works,
+        lattice_primary_works: payload.lattice_primary_works,
         trails: payload.trails,
         trail_counter: payload.trail_counter,
         compound_editions: payload.compound_editions,
@@ -8428,6 +8431,27 @@ impl Server {
         Ok(())
     }
 
+    /// FR-51 cutover integration: restore the lattice-primary set
+    /// after a restart. Shadows are ephemeral BY DESIGN — the
+    /// O-tree/enfilade is the persistence layer, so each shadow is
+    /// rebuilt from the materialized edition text (no live sessions
+    /// exist at restore time). Works that no longer exist (deleted
+    /// while promoted) are skipped silently.
+    pub fn lattice_restore_promoted(&mut self, works: &[BeId]) {
+        if works.is_empty() {
+            return;
+        }
+        self.lattice_shadow_enabled = true;
+        for work_be_id in works {
+            let Ok(text) = self.work_edition(*work_be_id) else {
+                continue;
+            };
+            let mw = crate::space::lattice_multi::MultiWriter::new(&text.to_text());
+            self.lattice_shadows.insert(*work_be_id, mw);
+            self.lattice_primary_works.insert(*work_be_id);
+        }
+    }
+
     /// The shadow's rendered text, if the work is enrolled.
     pub fn lattice_shadow_text(&mut self, work_be_id: BeId) -> Option<String> {
         self.lattice_shadows
@@ -8480,6 +8504,18 @@ impl Server {
     /// FR-51 C-5: is this work in lattice-primary mode?
     pub fn lattice_is_primary(&self, work_be_id: BeId) -> bool {
         self.lattice_primary_works.contains(&work_be_id)
+    }
+
+    /// FR-51 cutover integration: immutable lattice read (for &self
+    /// paths). Uses the shadow's cached text if available.
+    pub fn lattice_shadow_read(&self, work_be_id: BeId) -> Option<String> {
+        // lattice_primary_text takes &mut self because MultiWriter::text()
+        // is &mut (view caching). For the &self read path, we snapshot
+        // via the debug doc clone. This is correct but not hot-path
+        // optimized — that's fine for the gradual rollout.
+        self.lattice_shadows
+            .get(&work_be_id)
+            .map(|mw| mw.debug_doc_clone().render())
     }
 
     /// FR-51 C-5: the primary read path — serves text from the
@@ -8697,6 +8733,15 @@ impl Server {
     }
 
     pub fn crdt_current_text(&self, work_be_id: BeId) -> Result<String, ServerError> {
+        // FR-51 cutover integration: lattice-primary works serve
+        // text from the lattice shadow (the dual-write mirror).
+        // Falls through to the O-tree for non-promoted works or
+        // when the shadow is absent (rollback safety).
+        if self.lattice_primary_works.contains(&work_be_id) {
+            if let Some(text) = self.lattice_shadow_read(work_be_id) {
+                return Ok(text);
+            }
+        }
         self.otree_crdt
             .current_text(work_be_id)
             .map_err(|e| ServerError::Internal(e.to_string()))
@@ -8708,6 +8753,20 @@ impl Server {
         start_char: usize,
         end_char: usize,
     ) -> Result<super::otree_crdt::TextRangeResult, ServerError> {
+        // FR-51 cutover integration: lattice-primary range reads.
+        if self.lattice_primary_works.contains(&work_be_id) {
+            if let Some(text) = self.lattice_shadow_read(work_be_id) {
+                let chars: Vec<char> = text.chars().collect();
+                let s = start_char.min(chars.len());
+                let e = end_char.min(chars.len());
+                return Ok(super::otree_crdt::TextRangeResult {
+                    text: chars[s..e].iter().collect(),
+                    total_chars: chars.len(),
+                    start_char: s,
+                    end_char: e,
+                });
+            }
+        }
         let is_source = self.is_source_work(work_be_id);
         tracing::info!(
             "[crdt_text_range] work={} is_source={} start={} end={}",
@@ -11944,6 +12003,18 @@ impl Server {
                 "[restore] user_pins: {} clubs, {} total pins",
                 self.user_pins.len(),
                 pin_total
+            );
+        }
+
+        // FR-51 cutover: rebuild shadows + re-promote the persisted
+        // lattice-primary set (shadows seed from the materialized
+        // edition — no live sessions exist at restore time).
+        let promoted_count = manifest.lattice_primary_works.len();
+        if promoted_count > 0 {
+            self.lattice_restore_promoted(&manifest.lattice_primary_works);
+            tracing::info!(
+                "[restore] lattice_primary_works: {} works re-promoted",
+                promoted_count
             );
         }
 
@@ -16642,6 +16713,13 @@ impl Server {
     }
 
     fn work_text(&self, work_id: u64) -> Result<String, ServerError> {
+        // FR-51 cutover integration: promoted works serve flat-text
+        // reads from the lattice shadow (read-switch consistency).
+        if self.lattice_primary_works.contains(&work_id) {
+            if let Some(text) = self.lattice_shadow_read(work_id) {
+                return Ok(text);
+            }
+        }
         if let Ok(text) = self.otree_crdt.current_text(work_id) {
             return Ok(text);
         }
@@ -22038,6 +22116,9 @@ pub(crate) mod persist_snapshot {
         trail_counter: BeId,
         #[cfg_attr(feature = "serde", serde(default))]
         compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
+        /// FR-51 cutover: the per-work lattice-primary promotion set.
+        #[cfg_attr(feature = "serde", serde(default))]
+        lattice_primary_works: Vec<BeId>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -22300,6 +22381,7 @@ pub(crate) mod persist_snapshot {
                     .iter()
                     .map(|(id, c)| (*id, c.clone()))
                     .collect(),
+                lattice_primary_works: self.lattice_primary_works.iter().copied().collect(),
             }
         }
 
@@ -22678,6 +22760,10 @@ pub(crate) mod persist_snapshot {
             }
 
             server.rebuild_pending_attributions();
+
+            // FR-51 cutover: re-promote the persisted set (shadows
+            // rebuild from the restored editions).
+            server.lattice_restore_promoted(&snapshot.lattice_primary_works);
 
             server
         }
@@ -23110,6 +23196,7 @@ pub(crate) mod persist_snapshot {
                 federation_snapshot: Some(federation_snapshot),
                 starred_works: self.starred_works.clone(),
                 user_pins: self.user_pins.clone(),
+                lattice_primary_works: self.lattice_primary_works.iter().copied().collect(),
                 trails,
                 trail_counter: self.trail_counter,
                 compound_editions,
@@ -23697,6 +23784,7 @@ pub(crate) mod persist_snapshot {
                 social_chunk_hash: None,
                 ticket_nonces: std::collections::HashMap::new(),
                 revisions: std::collections::HashMap::new(),
+                lattice_primary_works: self.lattice_primary_works.iter().copied().collect(),
             };
 
             // ── Migrate large sections to chunks before writing manifest ──
@@ -47558,5 +47646,227 @@ impl crate::ent::ent::Ent {
         // for the test (the cache is per-reference anyway).
         let mut dw = crate::ent::dagwood::DagWood::restore(self.snapshot());
         dw.is_le(a, b)
+    }
+}
+
+#[cfg(test)]
+mod cutover_integration_tests {
+    use super::*;
+
+    /// FR-51 cutover integration: a promoted work's text serves
+    /// from the lattice; demoting falls back to the O-tree.
+    #[test]
+    fn lattice_primary_read_path() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work = server
+            .create_work(sid, Edition::from_text("lattice primary test"))
+            .unwrap();
+        server.crdt_open_session(sid, work).unwrap();
+
+        // No shadow, no promotion: text from the O-tree.
+        assert!(!server.lattice_is_primary(work));
+        let text = server.crdt_current_text(work).unwrap();
+        assert_eq!(text, "lattice primary test");
+
+        // Enable shadows and enroll.
+        server.enable_lattice_shadow();
+        server.enroll_lattice_shadow(sid, work).unwrap();
+
+        // Promote: reads serve from the lattice.
+        assert!(server.lattice_primary_promote(work));
+        assert!(server.lattice_is_primary(work));
+
+        let text = server.crdt_current_text(work).unwrap();
+        assert_eq!(
+            text, "lattice primary test",
+            "lattice-primary read matches O-tree text"
+        );
+
+        // Range read also serves from the lattice.
+        let range = server.crdt_text_range(work, 0, 6).unwrap();
+        assert_eq!(range.text, "lattic");
+
+        // Demote: rollback to O-tree.
+        assert!(server.lattice_primary_demote(work));
+        assert!(!server.lattice_is_primary(work));
+
+        let text = server.crdt_current_text(work).unwrap();
+        assert_eq!(text, "lattice primary test", "O-tree fallback works");
+    }
+
+    /// FR-51 cutover integration: edits flow to BOTH engines
+    /// (dual-write), and the lattice-primary read reflects them.
+    #[test]
+    fn lattice_primary_edit_dual_write() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work = server.create_work(sid, Edition::from_text("base")).unwrap();
+        server.crdt_open_session(sid, work).unwrap();
+
+        // Enable shadow + promote.
+        server.enable_lattice_shadow();
+        server.enroll_lattice_shadow(sid, work).unwrap();
+        server.lattice_primary_promote(work);
+
+        // Apply an edit through the CRDT (goes to O-tree, mirrors
+        // to the lattice via dual-write).
+        let ops = vec![
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 4 },
+            crate::server::transport::protocol::TextDeltaOp::Insert {
+                text: "X".to_string(),
+            },
+        ];
+        server.crdt_apply_text_delta(sid, work, &ops).unwrap();
+
+        // Lattice-primary read should see the edit (dual-write
+        // mirrors it to the lattice).
+        let text = server.crdt_current_text(work).unwrap();
+        assert!(
+            text.contains("X"),
+            "lattice-primary read sees the dual-write edit: {}",
+            text
+        );
+
+        // O-tree also has it (dual-write).
+        let text = server.otree_crdt.current_text(work).unwrap();
+        assert!(text.contains("X"), "O-tree still has the edit");
+    }
+
+    /// FR-51 cutover integration: the private flat-text read helper
+    /// (`work_text` — transclusion source reads, diff, search) serves
+    /// promoted works from the lattice.
+    #[test]
+    fn lattice_primary_work_text_helper() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let work = server
+            .create_work(sid, Edition::from_text("flat helper"))
+            .unwrap();
+        server.crdt_open_session(sid, work).unwrap();
+
+        server.enable_lattice_shadow();
+        server.enroll_lattice_shadow(sid, work).unwrap();
+        assert!(server.lattice_primary_promote(work));
+
+        assert_eq!(server.work_text(work).unwrap(), "flat helper");
+    }
+
+    /// FR-51 cutover integration: the promotion set survives
+    /// checkpoint → restore. Shadows are rebuilt from the
+    /// materialized edition; reads resume lattice-primary.
+    #[test]
+    fn lattice_primary_survives_restore() {
+        use crate::server::transport::protocol::TextDeltaOp;
+
+        let base = std::env::temp_dir().join(format!(
+            "xudanu-lattice-restore-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        struct Dir(std::path::PathBuf);
+        impl Dir {
+            fn snapshot_path(&self) -> std::path::PathBuf {
+                self.0.join("snapshot.bin")
+            }
+        }
+        impl Drop for Dir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let dir = Dir(base);
+        let work = {
+            let mut server = Server::new();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let work = server
+                .create_work(sid, Edition::from_text("restart body"))
+                .unwrap();
+            server.crdt_open_session(sid, work).unwrap();
+
+            server.enable_lattice_shadow();
+            server.enroll_lattice_shadow(sid, work).unwrap();
+            assert!(server.lattice_primary_promote(work));
+
+            // An edit before checkpoint (dual-write; the close
+            // materializes it into the edition, as a clean shutdown
+            // would).
+            let ops = vec![
+                TextDeltaOp::Retain { count: 13 },
+                TextDeltaOp::Insert {
+                    text: "!".to_string(),
+                },
+            ];
+            server.crdt_apply_text_delta(sid, work, &ops).unwrap();
+            server.crdt_close_session(sid, work).unwrap();
+
+            server.checkpoint_to_file(&dir.snapshot_path()).unwrap();
+            work
+        };
+
+        let mut server = Server::restore_from_file(&dir.snapshot_path()).unwrap();
+        assert!(
+            server.lattice_is_primary(work),
+            "promotion survives restart"
+        );
+        assert!(
+            server.lattice_shadow_enabled(),
+            "restore re-enables the shadow flag for promoted works"
+        );
+
+        // The rebuilt shadow serves the materialized text (with the
+        // pre-restart edit).
+        let text = server.crdt_current_text(work).unwrap();
+        assert_eq!(text, "restart body!");
+
+        // Edition agrees (the enfilade is the persistence layer).
+        assert_eq!(
+            server.work_edition(work).unwrap().to_text(),
+            "restart body!"
+        );
+
+        // Post-restore edits still dual-write: open a session on the
+        // restored server, edit, and the lattice-primary read sees it.
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        server.crdt_open_session(sid, work).unwrap();
+        let ops = vec![
+            TextDeltaOp::Retain { count: 14 },
+            TextDeltaOp::Insert {
+                text: "?".to_string(),
+            },
+        ];
+        server.crdt_apply_text_delta(sid, work, &ops).unwrap();
+        let text = server.crdt_current_text(work).unwrap();
+        assert_eq!(
+            text, "restart body!?",
+            "post-restore dual-write flows to the rebuilt shadow"
+        );
+
+        // Rollback stays available: demote → O-tree serves.
+        assert!(server.lattice_primary_demote(work));
+        assert_eq!(
+            server.crdt_current_text(work).unwrap(),
+            "restart body!?",
+            "O-tree fallback after post-restore demote"
+        );
+    }
+
+    /// FR-51 cutover integration: a work deleted while promoted must
+    /// not break restore (lattice_restore_promoted skips it).
+    #[test]
+    fn lattice_primary_restore_skips_missing_works() {
+        let mut server = Server::new();
+        server.lattice_restore_promoted(&[999_999]);
+        assert!(!server.lattice_is_primary(999_999));
     }
 }

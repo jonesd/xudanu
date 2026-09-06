@@ -1154,6 +1154,28 @@ impl JsonCodec {
                 })
             }
             OperationCode::LatticeShadowClear => Ok(WireRequest::LatticeShadowClear {}),
+            OperationCode::LatticePrimaryPromote => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LatticePrimaryPromote {
+                    work_id: args.work_id,
+                })
+            }
+            OperationCode::LatticePrimaryDemote => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LatticePrimaryDemote {
+                    work_id: args.work_id,
+                })
+            }
             OperationCode::WorkAutoTag => {
                 #[derive(Deserialize)]
                 struct Args {

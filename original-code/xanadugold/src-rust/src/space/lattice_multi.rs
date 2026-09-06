@@ -512,7 +512,6 @@ mod c2_element_tests {
     /// position, survive in reading order, and don't affect text.
     #[test]
     fn c2_overlay_insert_and_read() {
-        use crate::space::lattice::LatticeProvenance;
         let mut mw = MultiWriter::with_namespace("hello world", 1);
         mw.open_session(1);
 
