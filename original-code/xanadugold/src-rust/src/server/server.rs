@@ -709,6 +709,11 @@ pub struct Server {
     /// FR-51 C-5: works where the lattice is the PRIMARY read source.
     pub(crate) lattice_primary_works: HashSet<BeId>,
     lattice_shadow_enabled: bool,
+    /// FR-58 S2: reference-over-copy suggestions (off by default;
+    /// admin toggle, per FR-58 acceptance criteria).
+    reuse_suggestions_enabled: bool,
+    /// FR-58 S1: the reuse n-gram index (lazy per-work reindex).
+    pub(crate) reuse: crate::server::reuse_match::ReuseService,
     pub(crate) personal_club_count: usize,
     pub(crate) max_personal_clubs: usize,
     pub(crate) login_attempts: HashMap<BeId, crate::server::identity::ClubAttemptTracker>,
@@ -1360,6 +1365,8 @@ impl Server {
             lattice_shadows: HashMap::new(),
             lattice_primary_works: HashSet::new(),
             lattice_shadow_enabled: false,
+            reuse_suggestions_enabled: false,
+            reuse: crate::server::reuse_match::ReuseService::new(),
             personal_club_count: 0,
             max_personal_clubs: 10_000,
             login_attempts: HashMap::new(),
@@ -4211,6 +4218,9 @@ impl Server {
         ws.mark_dirty();
         ws.work.revise(edition);
         ws.cached_title = Self::extract_title(ws.work.current_edition());
+        // FR-58 S1: the work's text changed — its reuse postings are
+        // stale; reindexed lazily on the next suggestion query.
+        self.reuse.touch(work_be_id);
         let revision = ws.work.revision_count();
         let now = Self::current_timestamp_secs();
         ws.revision_timestamps.insert(revision, now);
@@ -8504,6 +8514,69 @@ impl Server {
     /// FR-51 C-5: is this work in lattice-primary mode?
     pub fn lattice_is_primary(&self, work_be_id: BeId) -> bool {
         self.lattice_primary_works.contains(&work_be_id)
+    }
+
+    /// FR-58 S2: admin toggle for reference-over-copy suggestions.
+    /// Off by default (FR-58 acceptance criteria).
+    pub fn reuse_suggestions_set_enabled(
+        &mut self,
+        session_id: SessionId,
+        enabled: bool,
+    ) -> Result<(), ServerError> {
+        self.ensure_admin(session_id)?;
+        self.reuse_suggestions_enabled = enabled;
+        Ok(())
+    }
+
+    pub fn reuse_suggestions_enabled(&self) -> bool {
+        self.reuse_suggestions_enabled
+    }
+
+    /// FR-58 S1+S2: suggest works whose text contains n-grams of the
+    /// typed prefix. The querying work is excluded; candidates the
+    /// session cannot read are filtered (never surfaced). Stale and
+    /// never-indexed works are reindexed from their editions here —
+    /// edits pay index cost only when suggestions are asked for.
+    pub fn reuse_suggest(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+        text: &str,
+    ) -> Result<Vec<crate::server::reuse_match::SuggestionCard>, ServerError> {
+        if !self.reuse_suggestions_enabled {
+            return Err(ServerError::NotAuthorized);
+        }
+        self.ensure_can_read(session_id, work_be_id)?;
+        if text.len() > 8_000 {
+            return Err(ServerError::InvalidArgument(
+                "suggestion query text too long".into(),
+            ));
+        }
+        let ids: Vec<BeId> = self.works.keys().copied().collect();
+        for id in ids {
+            if self.reuse.needs_rebuild(id) {
+                match self.work_edition(id) {
+                    Ok(ed) => {
+                        let paras = crate::server::reuse_match::paragraphs(&ed.to_text());
+                        self.reuse.rebuild(id, paras);
+                    }
+                    Err(_) => self.reuse.remove(id),
+                }
+            }
+        }
+        let cards = self.reuse.query(work_be_id, text);
+        let mut visible = Vec::new();
+        for mut card in cards {
+            if self.ensure_can_read(session_id, card.work_id).is_ok() {
+                card.title = self
+                    .works
+                    .get(&card.work_id)
+                    .map(|ws| ws.cached_title.clone())
+                    .unwrap_or_default();
+                visible.push(card);
+            }
+        }
+        Ok(visible)
     }
 
     /// FR-51 cutover integration: immutable lattice read (for &self
@@ -22467,6 +22540,8 @@ pub(crate) mod persist_snapshot {
                 lattice_shadows: HashMap::new(),
                 lattice_primary_works: HashSet::new(),
                 lattice_shadow_enabled: false,
+                reuse_suggestions_enabled: false,
+                reuse: crate::server::reuse_match::ReuseService::new(),
                 personal_club_count: 0,
                 max_personal_clubs: 10_000,
                 login_attempts: HashMap::new(),
@@ -47868,5 +47943,121 @@ mod cutover_integration_tests {
         let mut server = Server::new();
         server.lattice_restore_promoted(&[999_999]);
         assert!(!server.lattice_is_primary(999_999));
+    }
+}
+
+/// FR-58 S1+S2 armor: server-level suggestion behavior.
+#[cfg(test)]
+mod reuse_suggestion_tests {
+    use super::*;
+
+    fn setup() -> (Server, SessionId, BeId, BeId) {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let src = server
+            .create_work(
+                sid,
+                Edition::from_text(
+                    "Source Studies\n\nA garden is not a photograph; it is a performance that repeats daily.\n\nThe greenhouse kept the same plants for six years, and regulars began greeting them like staff.",
+                ),
+            )
+            .unwrap();
+        let dest = server
+            .create_work(sid, Edition::from_text("Untitled notes"))
+            .unwrap();
+        (server, sid, src, dest)
+    }
+
+    #[test]
+    fn suggestions_off_by_default_and_gated() {
+        let (mut server, sid, _src, dest) = setup();
+        assert!(!server.reuse_suggestions_enabled());
+        let r = server.reuse_suggest(sid, dest, "a performance that repeats daily");
+        assert!(r.is_err(), "disabled flag must gate queries");
+    }
+
+    #[test]
+    fn suggest_finds_source_with_title_and_excludes_self() {
+        let (mut server, sid, src, dest) = setup();
+        server.reuse_suggestions_enabled = true;
+
+        let cards = server
+            .reuse_suggest(sid, dest, "it is a performance that repeats daily")
+            .unwrap();
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].work_id, src);
+        assert_eq!(cards[0].title, "Source Studies");
+        assert!(cards[0].snippet.contains("garden"));
+
+        // Querying FROM the source never suggests itself.
+        let cards = server
+            .reuse_suggest(sid, src, "it is a performance that repeats daily")
+            .unwrap();
+        assert!(cards.is_empty(), "self excluded");
+    }
+
+    #[test]
+    fn unreadable_works_never_surfaced() {
+        let (mut server, sid, _src, dest) = setup();
+        server.reuse_suggestions_enabled = true;
+        // A matching work created by ANOTHER session, then locked to
+        // a club the querying session does not hold (the creator
+        // session would keep edit->read fallback, so it must differ).
+        let other = server.connect();
+        server.login_public(other).unwrap();
+        let hidden = server
+            .create_work(
+                other,
+                Edition::from_text(
+                    "A garden is not a photograph; it is a performance that repeats daily.",
+                ),
+            )
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&hidden) {
+            ws.work.set_read_club(Some(999_999));
+            ws.work.set_edit_club(Some(999_999));
+        }
+        let cards = server
+            .reuse_suggest(sid, dest, "it is a performance that repeats daily")
+            .unwrap();
+        assert!(
+            cards.iter().all(|c| c.work_id != hidden),
+            "unreadable candidates must be filtered; got {:?}",
+            cards.iter().map(|c| c.work_id).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn edits_reindex_lazily() {
+        let (mut server, sid, src, dest) = setup();
+        server.reuse_suggestions_enabled = true;
+        // First query indexes everything.
+        let cards = server
+            .reuse_suggest(sid, dest, "it is a performance that repeats daily")
+            .unwrap();
+        assert_eq!(cards.len(), 1);
+
+        // Rewrite the source wholesale; the old text's postings must
+        // not survive the next query (revise_work touched it).
+        server
+            .revise_work(
+                src,
+                sid,
+                Edition::from_text("Only harbor studies remain in this document now."),
+                None,
+            )
+            .unwrap();
+        let cards = server
+            .reuse_suggest(sid, dest, "it is a performance that repeats daily")
+            .unwrap();
+        assert!(cards.is_empty(), "stale postings must not fire after edit");
+
+        // New text is suggestable.
+        let cards = server
+            .reuse_suggest(sid, dest, "harbor studies remain in this document")
+            .unwrap();
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].work_id, src);
     }
 }

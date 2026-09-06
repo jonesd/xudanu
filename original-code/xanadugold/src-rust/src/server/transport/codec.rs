@@ -1176,6 +1176,30 @@ impl JsonCodec {
                     work_id: args.work_id,
                 })
             }
+            OperationCode::SuggestionQuery => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    text: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::SuggestionQuery {
+                    work_id: args.work_id,
+                    text: args.text,
+                })
+            }
+            OperationCode::SuggestionConfigSet => {
+                #[derive(Deserialize)]
+                struct Args {
+                    enabled: bool,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::SuggestionConfigSet {
+                    enabled: args.enabled,
+                })
+            }
             OperationCode::WorkAutoTag => {
                 #[derive(Deserialize)]
                 struct Args {
