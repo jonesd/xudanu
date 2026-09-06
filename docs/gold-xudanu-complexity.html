@@ -248,13 +248,13 @@ li{margin-bottom:4px}
   <td>O-tree CRDT: three-way merge per concurrent op</td>
   <td style="font-size:11px">Dual-write shadow: per-session views, author-minted dots, seen-set deletes</td>
   <td><span class="aligned">&mdash;</span></td>
-  <td class="cx cx-bad">compounds*</td>
-  <td class="cx cx-bad">compounds*</td>
+  <td class="cx cx-ok">flat ~50ms/op @16k</td>
+  <td class="cx cx-ok">flat ~50ms/op @16k</td>
   <td class="cx cx-good">~80&micro;s/op flat</td>
 </tr>
 </table>
 
-<p style="font-size:11px;color:#484f58">* Under strictly-interleaved two-session traffic the O-tree's per-op three-way merge cost compounds (doubling roughly every two ops; 14.8s/op measured at op 52 &mdash; FR-50 finding 10), while the FR-51 lattice shadow stays flat at ~80&micro;s/op (~900&times;) and produced the length-exact result where the merge garbled (finding 11, F6 evidence). Measured by the dual-engine bench; records in <code>docs/bench/results.jsonl</code>.
+<p style="font-size:11px;color:#484f58">* FR-50 findings 10/11 (compounding + garbling) were <strong>both fixed 2026-08-30</strong>: span-provenance coalescing restored flat per-op cost (120 interleaved ops, worst 112ms, spans bounded at 2), and the OutBuilder absorption rule eliminated the duplication. The O-tree now runs flat ~50ms/op @16k under interleaving &mdash; still ~300-700&times; slower than the FR-51 lattice shadow (~80-150&micro;s/op), which is the remaining gap (not a correctness issue). Residual open item: shadow vs O-tree <em>placement</em> divergence on concurrent inserts (both length-exact) &mdash; see <code>FR-50-performance-verification.md</code> line 392. Measured by the dual-engine bench; records in <code>docs/bench/results.jsonl</code>.
 * Gold's IntegerRegion <code>hasMember</code> should be O(log n) binary search but is actually O(n) linear scan &mdash; the only explicit O() confession in the codebase: <em>"Currently many of the methods which could be doing an O(log) binary search (such as hasMember) are instead doing a linear search. This will be fixed if it turns out to be a problem in practice."</em></p>
 
 <!-- ==================== CORE DATA STRUCTURE ==================== -->
