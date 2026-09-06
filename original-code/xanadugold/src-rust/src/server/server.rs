@@ -706,6 +706,8 @@ pub struct Server {
     /// on the default path. Shadows are ephemeral (rebuilt from the
     /// live text at enrollment); rollback is dropping them.
     pub(crate) lattice_shadows: HashMap<BeId, crate::space::lattice_multi::MultiWriter>,
+    /// FR-51 C-5: works where the lattice is the PRIMARY read source.
+    pub(crate) lattice_primary_works: HashSet<BeId>,
     lattice_shadow_enabled: bool,
     pub(crate) personal_club_count: usize,
     pub(crate) max_personal_clubs: usize,
@@ -1353,6 +1355,7 @@ impl Server {
             checkpoint_in_flight: false,
             otree_crdt: super::otree_crdt::OtreeCrdtManager::new(3),
             lattice_shadows: HashMap::new(),
+            lattice_primary_works: HashSet::new(),
             lattice_shadow_enabled: false,
             personal_club_count: 0,
             max_personal_clubs: 10_000,
@@ -8458,6 +8461,38 @@ impl Server {
 
     /// Total nanoseconds the shadow spent mirroring (dual-engine
     /// bench telemetry).
+    /// FR-51 C-5: promote a work's shadow to primary (reads from
+    /// the lattice). The work must already have a shadow (dual-write
+    /// running). Writes continue to go to BOTH engines.
+    pub fn lattice_primary_promote(&mut self, work_be_id: BeId) -> bool {
+        if !self.lattice_shadows.contains_key(&work_be_id) {
+            return false;
+        }
+        self.lattice_primary_works.insert(work_be_id)
+    }
+
+    /// FR-51 C-5: demote a work from lattice-primary (reads resume
+    /// from the O-tree). Rollback path.
+    pub fn lattice_primary_demote(&mut self, work_be_id: BeId) -> bool {
+        self.lattice_primary_works.remove(&work_be_id)
+    }
+
+    /// FR-51 C-5: is this work in lattice-primary mode?
+    pub fn lattice_is_primary(&self, work_be_id: BeId) -> bool {
+        self.lattice_primary_works.contains(&work_be_id)
+    }
+
+    /// FR-51 C-5: the primary read path — serves text from the
+    /// lattice when promoted, falls back to the O-tree otherwise.
+    pub fn lattice_primary_text(&mut self, work_be_id: BeId) -> Option<String> {
+        if self.lattice_primary_works.contains(&work_be_id) {
+            if let Some(shadow) = self.lattice_shadows.get_mut(&work_be_id) {
+                return Some(shadow.text());
+            }
+        }
+        None
+    }
+
     pub fn lattice_shadow_nanos(&self, work_be_id: BeId) -> Option<u128> {
         self.lattice_shadows
             .get(&work_be_id)
@@ -22348,6 +22383,7 @@ pub(crate) mod persist_snapshot {
                 checkpoint_in_flight: false,
                 otree_crdt: crate::server::otree_crdt::OtreeCrdtManager::new(3),
                 lattice_shadows: HashMap::new(),
+                lattice_primary_works: HashSet::new(),
                 lattice_shadow_enabled: false,
                 personal_club_count: 0,
                 max_personal_clubs: 10_000,
