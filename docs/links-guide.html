@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Xudanu Links Guide — How to Use the Most Expressive Link System Ever Built</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+.example-block{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin:16px 0}
+.example-block .example-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#484f58;margin-bottom:8px;font-weight:600}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.accent-cyan{color:#39d2c0}
+.accent-purple{color:#a371f7}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+ul{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:4px}
+.good{color:#3fb950;font-weight:500}
+.bad{color:#f85149;font-weight:500}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Xudanu Links Guide</h1>
+<p class="subtitle">How to make the most of the most expressive link system ever shipped — when to use multi-ended connections, how to gather passages, and how to keep your documents readable.</p>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. The Mental Model: Sentences with Blanks</a>
+  <a class="toc-section" href="#s2">2. The Simple Link (Where Everyone Starts)</a>
+  <a class="toc-section" href="#s3">3. Multi-Ended Links: When and Why</a>
+  <a class="toc-section" href="#s4">4. Gathering Passages into One End</a>
+  <a class="toc-section" href="#s5">5. Links About Links</a>
+  <a class="toc-section" href="#s6">6. Layout: Keeping Dense Connections Readable</a>
+  <a class="toc-section" href="#s7">7. Common Mistakes</a>
+  <a class="toc-section" href="#s8">8. The Reading Toolkit</a>
+  <a class="toc-section" href="#s9">9. Recipes</a>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. The Mental Model: Sentences with Blanks</h2>
+
+<p>
+Forget everything you know about web links. A web link says <em>"click here to go there"</em> — one-way, one-ended, breaks when content moves, carries no meaning.
+</p>
+
+<p>
+An Xudanu link is <strong>a sentence with blanks</strong>:
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 200" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <rect x="20" y="30" width="180" height="50" rx="10" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="110" y="55" text-anchor="middle" fill="#58a6ff" font-size="14" font-weight="700">___</text>
+  <text x="110" y="72" text-anchor="middle" fill="#8b949e" font-size="10">end A (passage)</text>
+
+  <rect x="260" y="30" width="260" height="50" rx="10" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="2"/>
+  <text x="390" y="55" text-anchor="middle" fill="#39d2c0" font-size="14" font-weight="700">disagrees with</text>
+  <text x="390" y="72" text-anchor="middle" fill="#8b949e" font-size="10">the TYPE (the verb)</text>
+
+  <rect x="580" y="30" width="180" height="50" rx="10" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="670" y="55" text-anchor="middle" fill="#58a6ff" font-size="14" font-weight="700">___</text>
+  <text x="670" y="72" text-anchor="middle" fill="#8b949e" font-size="10">end B (passage)</text>
+
+  <text x="390" y="130" text-anchor="middle" fill="#e6edf3" font-size="16" font-weight="600">"This passage disagrees with that passage"</text>
+  <text x="390" y="155" text-anchor="middle" fill="#8b949e" font-size="12">The type names the relationship. The ends fill the blanks.</text>
+</svg>
+</div>
+<p class="diagram-caption">A link is a sentence: the type is the verb, each end fills one blank.</p>
+
+<div class="gold">
+<strong>Five types, five verbs:</strong> Comment (annotates), Reference
+(points to), Disagreement (contests), Quotation (cites), See Also
+(relates). The type determines how the connection renders and what
+it means when you follow it.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. The Simple Link (Where Everyone Starts)</h2>
+
+<p>
+The two-ended link is the fast path — select text, click Link,
+choose a type. This is 80% of what you'll do. It's deliberately
+the easiest gesture in the editor.
+</p>
+
+<div class="example-block">
+<div class="example-label">When to use a simple link</div>
+<ul>
+  <li class="good">"This passage cites that source" (Quotation)</li>
+  <li class="good">"This section is annotated by this comment" (Comment)</li>
+  <li class="good">"See this related document" (See Also)</li>
+</ul>
+<div class="example-label">When NOT to use a simple link</div>
+<ul>
+  <li class="bad">When you need to connect MORE than two places → multi-ended (§3)</li>
+  <li class="bad">When multiple passages form ONE side of an argument → gather (§4)</li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Multi-Ended Links: When and Why</h2>
+
+<p>
+A link can have <strong>any number of ends</strong>. A three-ended
+link is not a chain (A → B → C) and not a list — it's
+<strong>one claim involving several places simultaneously</strong>.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 240" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <!-- Three-ended link -->
+  <rect x="260" y="20" width="260" height="55" rx="12" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="2"/>
+  <text x="390" y="45" text-anchor="middle" fill="#39d2c0" font-size="14" font-weight="700">Compare</text>
+  <text x="390" y="65" text-anchor="middle" fill="#8b949e" font-size="11">"___ compares with ___ and ___"</text>
+
+  <!-- End A -->
+  <line x1="320" y1="75" x2="130" y2="120" stroke="#58a6ff" stroke-width="1.5"/>
+  <rect x="40" y="120" width="180" height="45" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="130" y="140" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">End A: Report §3</text>
+  <text x="130" y="155" text-anchor="middle" fill="#8b949e" font-size="9">the original claim</text>
+
+  <!-- End B -->
+  <line x1="390" y1="75" x2="390" y2="120" stroke="#3fb950" stroke-width="1.5"/>
+  <rect x="300" y="120" width="180" height="45" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="390" y="140" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">End B: Review §1</text>
+  <text x="390" y="155" text-anchor="middle" fill="#8b949e" font-size="9">the first critique</text>
+
+  <!-- End C -->
+  <line x1="460" y1="75" x2="650" y2="120" stroke="#a371f7" stroke-width="1.5"/>
+  <rect x="560" y="120" width="180" height="45" rx="8" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="650" y="140" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="600">End C: Field Notes</text>
+  <text x="650" y="155" text-anchor="middle" fill="#8b949e" font-size="9">the supporting evidence</text>
+
+  <text x="390" y="205" text-anchor="middle" fill="#8b949e" font-size="12">ONE connection. THREE places. Not a chain — a comparison.</text>
+  <text x="390" y="225" text-anchor="middle" fill="#484f58" font-size="10">Delete end C and the comparison still stands (with two ends). Delete the link and all three connections go together.</text>
+</svg>
+</div>
+<p class="diagram-caption">A three-ended "Compare" link. Each end is a seat in the relationship, not a step in a chain.</p>
+
+<h3>When to use multi-ended links</h3>
+<table>
+<tr><th>Use multi-ended when...</th><th>Example</th></tr>
+<tr><td>You're making a <strong>comparison</strong></td><td>"Compare these three translations of the same passage"</td></tr>
+<tr><td>You're <strong>triangulating</strong></td><td>"This claim, that evidence, and this counter-example"</td></tr>
+<tr><td>You're showing a <strong>relationship</strong> among peers</td><td>"These three documents all address the same question"</td></tr>
+</table>
+
+<h3>When NOT to use multi-ended</h3>
+<table>
+<tr><th>Don't use multi-ended when...</th><th>Use instead</th></tr>
+<tr><td>Two of the ends have <strong>different roles</strong> in the claim</td><td>Two separate links with different types</td></tr>
+<tr><td>You're connecting more than ~4 places (visual density)</td><td>A trail, or several focused links</td></tr>
+<tr><td>It's really just a list of "see also"s</td><td>Multiple See Also links (simpler to read)</td></tr>
+</table>
+
+<div class="warning">
+<strong>The multi-ended trap:</strong> don't make every connection
+multi-ended just because you can. A three-ended link says "these
+places are in ONE relationship" — make sure that's what you mean.
+Three separate links say "these are three separate relationships."
+The distinction matters.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Gathering Passages into One End</h2>
+
+<p>
+The step change: a single <strong>END</strong> can hold multiple
+passages. This is <em>gathering</em> — several passages jointly
+filling one blank in the link's sentence.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 260" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <!-- The link -->
+  <rect x="250" y="15" width="280" height="50" rx="12" fill="rgba(248,81,73,0.06)" stroke="#f85149" stroke-width="2"/>
+  <text x="390" y="38" text-anchor="middle" fill="#f85149" font-size="14" font-weight="700">Disagreement</text>
+  <text x="390" y="55" text-anchor="middle" fill="#8b949e" font-size="11">"[passages 1-3] disagree with [that]"</text>
+
+  <!-- Gathered end (left) -->
+  <rect x="30" y="90" width="220" height="130" rx="10" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="2" stroke-dasharray="5,3"/>
+  <text x="140" y="112" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700">LeftEnd (gathered)</text>
+
+  <rect x="50" y="125" width="180" height="25" rx="6" fill="rgba(63,185,80,0.04)" stroke="#3fb950" stroke-width="1"/>
+  <text x="140" y="142" text-anchor="middle" fill="#c9d1d9" font-size="9">"passage 1 of 3" — report §3.1</text>
+
+  <rect x="50" y="155" width="180" height="25" rx="6" fill="rgba(63,185,80,0.04)" stroke="#3fb950" stroke-width="1"/>
+  <text x="140" y="172" text-anchor="middle" fill="#c9d1d9" font-size="9">"passage 2 of 3" — report §5.2</text>
+
+  <rect x="50" y="185" width="180" height="25" rx="6" fill="rgba(63,185,80,0.04)" stroke="#3fb950" stroke-width="1"/>
+  <text x="140" y="202" text-anchor="middle" fill="#c9d1d9" font-size="9">"passage 3 of 3" — report §7</text>
+
+  <!-- Connection -->
+  <line x1="250" y1="65" x2="140" y2="88" stroke="#f85149" stroke-width="1.5"/>
+
+  <!-- Other end (right) -->
+  <rect x="560" y="100" width="200" height="45" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="660" y="120" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">RightEnd</text>
+  <text x="660" y="135" text-anchor="middle" fill="#8b949e" font-size="9">review §1 (the rebuttal)</text>
+
+  <line x1="530" y1="65" x2="660" y2="95" stroke="#f85149" stroke-width="1.5"/>
+
+  <text x="390" y="245" text-anchor="middle" fill="#8b949e" font-size="11">Three passages, one end, one blank: "[all three] disagree with [the rebuttal]"</text>
+</svg>
+</div>
+<p class="diagram-caption">A gathered end: three passages jointly filling one blank in a Disagreement link.</p>
+
+<h3>When to gather</h3>
+<table>
+<tr><th>Gather when...</th><th>Why</th></tr>
+<tr><td>Multiple passages <strong>jointly support</strong> one claim</td><td>"These three data points together prove the thesis"</td></tr>
+<tr><td>Passages are <strong>evidence for the same argument</strong></td><td>"These five quotes all show the same pattern"</td></tr>
+<tr><td>You want the connection to be <strong>one claim, not five</strong></td><td>Deleting the link removes one argument, not five separate ones</td></tr>
+</table>
+
+<h3>When NOT to gather</h3>
+<table>
+<tr><th>Don't gather when...</th><th>Use instead</th></tr>
+<tr><td>Passages are <strong>sequential</strong> (part A then part B)</td><td>A trail or separate links</td></tr>
+<tr><td>Each passage supports a <strong>different sub-argument</strong></td><td>Separate links with the same type</td></tr>
+<tr><td>Passages come from <strong>different roles</strong> in the debate</td><td>Multi-ended link (different seats)</td></tr>
+</table>
+
+<div class="note">
+<strong>The test:</strong> can you describe the connection as
+"[all these passages] [verb] [that]"? If the sentence reads
+naturally, gather. If you need "and then" or "also separately",
+don't.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Links About Links</h2>
+
+<p>
+Any connection can itself be connected to. A comment on a link is
+a link whose end attaches to the link — <strong>a link about a link</strong>.
+This is how you argue about the argument.
+</p>
+
+<div class="example-block">
+<div class="example-label">Example: commenting on a disagreement</div>
+<pre>
+Original link:  "report §3" [disagrees with] "review §1"
+
+Comment link:   "my analysis" [comments on] (the disagreement link)
+                → the analysis addresses the CONNECTION itself,
+                  not either end
+</pre>
+</div>
+
+<p>
+Use this when the <em>relationship</em> is what you want to discuss,
+not the passages it connects. "This disagreement turns on a
+measurement difference" is a comment on the link, not on either
+document.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. Layout: Keeping Dense Connections Readable</h2>
+
+<p>
+Dense links are the honest representation of a connected document.
+But <em>readable</em> requires effort. Here's what we've learned:
+</p>
+
+<h3>Principles</h3>
+<table>
+<tr><th>Principle</th><th>What it means</th></tr>
+<tr><td><strong>One concept per view</strong></td><td>When a page feels dense, hover one link — solo/focus mode quiets everything else</td></tr>
+<tr><td><strong>Colour = link identity</strong></td><td>All passages of one gathered end share one colour; the i/N chips count the set</td></tr>
+<tr><td><strong>Compare, don't pile</strong></td><td>For multi-ended links, use the comparison view (⇄) rather than trying to read all ends inline</td></tr>
+<tr><td><strong>Connections panel is the legend</strong></td><td>When the canvas overwhelms, the right panel lists every connection with type, end count, and actions</td></tr>
+</table>
+
+<h3>Practical tips</h3>
+<ul>
+  <li><strong>Start simple, gather later.</strong> Create a two-ended link first; gather additional passages into an end when you're sure they belong together.</li>
+  <li><strong>Use named ends for clarity.</strong> "Evidence", "Context", "Counter-example" — names make multi-ended links readable in the panel.</li>
+  <li><strong>Don't gather passages just because they're from the same document.</strong> Gather because they fill the same blank.</li>
+  <li><strong>One gathered end per argument.</strong> If you have three arguments, make three links — not one link with three gathered ends.</li>
+  <li><strong>Respect the colour coding.</strong> When all members of a gathered end share one colour, the visual grouping IS the information.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. Common Mistakes</h2>
+
+<table>
+<tr><th>Mistake</th><th>Why it hurts</th><th>Do instead</th></tr>
+<tr><td>Everything is multi-ended</td><td>Reduces signal; makes the panel noisy</td><td>Use two-ended unless the claim genuinely involves 3+ peers</td></tr>
+<tr><td>Gathering sequential passages</td><td>Gathering means "jointly fill one blank", not "read these in order"</td><td>Use a trail for sequences</td></tr>
+<tr><td>Link spam (many low-value links)</td><td>Dilutes the meaningful connections</td><td>Link only when the relationship matters</td></tr>
+<tr><td>Wrong type for the relationship</td><td>"Disagreement" and "See Also" render and behave differently</td><td>Pick the verb that matches your intent</td></tr>
+<tr><td>Gathering from different roles</td><td>Gathering means "jointly", not "also"</td><td>Use multi-ended (different seats) or separate links</td></tr>
+<tr><td>Not naming multi-ended ends</td><td>"End 3" is meaningless; "Context" teaches</td><td>Name ends for their role in the relationship</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. The Reading Toolkit</h2>
+
+<table>
+<tr><th>Gesture</th><th>What it shows</th></tr>
+<tr><td><strong>Hover a link underline</strong></td><td>Type, target, "passage i of N" for gathered ends</td></tr>
+<tr><td><strong>Hover (solo/focus mode)</strong></td><td>Every other link dims — the hovered link stands alone</td></tr>
+<tr><td><strong>Click an underline</strong></td><td>Jumps to the far end of the connection</td></tr>
+<tr><td><strong>Cursor inside a gathered passage</strong></td><td>Bottom bar shows "gathered end — passage i of N" with jump buttons</td></tr>
+<tr><td><strong>⇄ on a multi-ended row</strong></td><td>Comparison view: all ends side by side</td></tr>
+<tr><td><strong>⌗ on a link row</strong></td><td>Comment on the connection itself</td></tr>
+<tr><td><strong>Links panel</strong></td><td>Every connection: type badges, passage counts, actions</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. Recipes</h2>
+
+<h3>Recipe: The three-way comparison</h3>
+<div class="example-block">
+<pre>
+1. Select the first passage → Link → "Compare"
+2. In the wizard's final step, use "Additional ends"
+3. Select the second and third documents as targets
+4. Name the ends: "Original", "Translation A", "Translation B"
+5. Use ⇄ to see all three side by side
+</pre>
+</div>
+
+<h3>Recipe: The gathered evidence</h3>
+<div class="example-block">
+<pre>
+1. Select your thesis passage → Link → "Disagreement"
+2. Link to the opposing claim
+3. Select each supporting passage in your document
+4. Click Gather (green button) → choose the end
+5. Watch the chips count up: 2/3, 3/3, 4/3...
+</pre>
+</div>
+
+<h3>Recipe: The connection critique</h3>
+<div class="example-block">
+<pre>
+1. Find the link you want to comment on (Links panel)
+2. Click the ⌗ button on its row
+3. Write your analysis of the CONNECTION
+4. Your comment becomes a link about the link
+</pre>
+</div>
+
+<h3>Recipe: The annotated reading path</h3>
+<div class="example-block">
+<pre>
+1. Create a trail for the reading order
+2. Add documents as stops
+3. Within each document, create Comment links
+   on passages that need explanation
+4. The trail carries the structure; the links
+   carry the commentary
+</pre>
+</div>
+
+<div class="footer">
+Xudanu Links Guide · 2026-09-05 · <a href="https://dgjones.info/xudanu/">dgjones.info/xudanu</a>
+</div>
+
+</div>
+</body>
+</html>
