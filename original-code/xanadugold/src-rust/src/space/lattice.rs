@@ -498,6 +498,41 @@ pub struct LatticeUnit {
     /// deterministic function of POSITION — independent of which
     /// replica merges first.
     pub anchor: Option<(Dot, usize)>,
+    /// FR-51 C-1: immutable authorship (set at dot creation).
+    pub provenance: Option<LatticeProvenance>,
+}
+
+/// FR-51 C-1: per-unit provenance on the lattice. Set at
+/// dot-creation time; immutable thereafter (the lattice is
+/// append-only, so provenance can never go stale). Lighter than
+/// the O-tree's ElementProvenance — no transclusion/source/derived
+/// chains (those are C-2); this covers authorship + signature.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LatticeProvenance {
+    pub author_public_key: [u8; 32],
+    pub author_display_name: String,
+    pub author_club_id: u64,
+    pub timestamp: u64,
+    pub author_type: crate::edition::provenance::AuthorType,
+    pub llm_model: Option<String>,
+    /// Ed25519 signature over (content_fingerprint || address).
+    /// None = unsigned (public-sandbox edits, imported content).
+    pub signature: Option<[u8; 64]>,
+}
+
+impl LatticeProvenance {
+    /// The signing payload: unit content fingerprint || serialized
+    /// address. Deterministic — two replicas signing the same unit
+    /// produce the same payload.
+    pub fn signing_payload(content: &str, address: &Sequence) -> [u8; 32] {
+        let mut h = blake3::Hasher::new();
+        h.update(b"lat-prov");
+        h.update(&content_crum(content));
+        for n in address.numbers() {
+            h.update(&n.to_le_bytes());
+        }
+        *h.finalize().as_bytes()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -706,6 +741,25 @@ impl LatticeDoc {
     /// The address suffix IS the dot, so concurrent inserts at one
     /// anchor order deterministically by (author, counter) regardless
     /// of which replica applies them first.
+    /// FR-51 C-1: insert with provenance — the dot carries its
+    /// immutable authorship from birth.
+    pub fn insert_at_with_dot_and_prov(
+        &mut self,
+        prev: Option<&Sequence>,
+        next: Option<&Sequence>,
+        content: impl Into<String>,
+        author: u64,
+        anchor: Option<(Dot, usize)>,
+        dot: Dot,
+        provenance: Option<LatticeProvenance>,
+    ) -> Dot {
+        let d = self.insert_at_with_dot(prev, next, content, author, anchor, dot);
+        if let (Some(p), Some(u)) = (provenance, self.units.get_mut(&d)) {
+            u.provenance = Some(p);
+        }
+        d
+    }
+
     pub fn insert_at_with_dot(
         &mut self,
         prev: Option<&Sequence>,
@@ -742,6 +796,7 @@ impl LatticeDoc {
                 dot,
                 lineage: None,
                 anchor,
+                provenance: None,
             },
         );
         let u = &self.units[&dot];
@@ -1145,10 +1200,25 @@ impl LatticeDoc {
         lineage: Option<(Dot, usize, usize)>,
         anchor: Option<(Dot, usize)>,
     ) {
+        self.insert_unit_with_provenance(address, content, author, dot, lineage, anchor, None)
+    }
+
+    /// FR-51 C-1: insert with provenance (the C-1 entry point).
+    pub fn insert_unit_with_provenance(
+        &mut self,
+        address: Sequence,
+        content: String,
+        author: u64,
+        dot: Dot,
+        lineage: Option<(Dot, usize, usize)>,
+        anchor: Option<(Dot, usize)>,
+        provenance: Option<LatticeProvenance>,
+    ) {
         let len = content.chars().count();
         self.units.insert(
             dot,
             LatticeUnit {
+                provenance,
                 address,
                 content,
                 author,
@@ -1259,6 +1329,7 @@ impl LatticeDoc {
                 dot,
                 lineage: None,
                 anchor: None,
+                provenance: None,
             },
         );
         let u = &self.units[&dot];
@@ -1314,6 +1385,7 @@ impl LatticeDoc {
                 dot,
                 lineage: Some((root, range.0, range.1)),
                 anchor: None,
+                provenance: None,
             },
         );
         let u = &self.units[&dot];

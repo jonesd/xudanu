@@ -92,6 +92,9 @@ pub fn split_at(doc: &mut LatticeDoc, offset: u64) -> Boundary {
 /// root ranges mint the same part dots). `sync` delivers the shared
 /// state to a session's view.
 pub struct MultiWriter {
+    /// FR-51 C-1: provenance to stamp on units created by the
+    /// current apply_with_provenance call. Cleared after.
+    pending_provenance: Option<super::lattice::LatticeProvenance>,
     /// 0 = single-instance (plain dense ids); non-zero = federation
     /// namespace folded into dots so cross-instance sync cannot
     /// collide.
@@ -118,6 +121,7 @@ impl MultiWriter {
         let mut doc = LatticeDoc::new(0);
         doc.seed_shared_unit(Sequence::from_numbers(vec![1, 9, 1]), base, 9, (9, 1));
         MultiWriter {
+            pending_provenance: None,
             namespace,
             doc,
             views: std::collections::HashMap::new(),
@@ -268,6 +272,22 @@ impl MultiWriter {
         self.apply_ns += t0.elapsed().as_nanos();
     }
 
+    /// FR-51 C-1: apply with provenance. Provenance stamps every
+    /// unit created by this op's Insert actions. The provenance is
+    /// IMMUTABLE once set — the lattice is append-only.
+    pub fn apply_with_provenance(
+        &mut self,
+        author: u64,
+        ops: &[LatOp],
+        provenance: super::lattice::LatticeProvenance,
+    ) {
+        let t0 = std::time::Instant::now();
+        self.pending_provenance = Some(provenance);
+        self.apply_inner(author, ops);
+        self.pending_provenance = None;
+        self.apply_ns += t0.elapsed().as_nanos();
+    }
+
     fn apply_inner(&mut self, author: u64, ops: &[LatOp]) {
         let mut view = match self.views.remove(&author) {
             Some(v) => v,
@@ -302,13 +322,14 @@ impl MultiWriter {
                         (ns * 1_000_000_000 + dense, *counter)
                     };
                     let (prev, next) = b.prev_next();
-                    self.doc.insert_at_with_dot(
+                    self.doc.insert_at_with_dot_and_prov(
                         prev.cloned().as_ref(),
                         next.cloned().as_ref(),
                         text.clone(),
                         author,
                         b.anchor,
                         dot,
+                        self.pending_provenance.clone(),
                     );
                     view.insert_at_with_dot(prev, next, text.clone(), author, b.anchor, dot);
                     offset += text.chars().count() as u64;
@@ -373,5 +394,112 @@ impl MultiWriter {
             Some(v) => v.render(),
             None => String::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod c1_provenance_tests {
+    use super::*;
+
+    fn prov(name: &str, club: u64) -> super::super::lattice::LatticeProvenance {
+        super::super::lattice::LatticeProvenance {
+            author_public_key: [7u8; 32],
+            author_display_name: name.to_string(),
+            author_club_id: club,
+            timestamp: 1000,
+            author_type: crate::edition::provenance::AuthorType::Human,
+            llm_model: None,
+            signature: None,
+        }
+    }
+
+    /// C-1 armor: provenance stamped at insert survives read-back
+    /// and is immutable (concurrent merges don't overwrite it).
+    #[test]
+    fn c1_provenance_survives_insert_and_merge() {
+        let mut a = MultiWriter::with_namespace("base text for provenance test", 1);
+        a.open_session(1);
+        let p = prov("alice", 42);
+        a.apply_with_provenance(
+            1,
+            &[
+                LatOp::Retain { count: 5 },
+                LatOp::Insert {
+                    text: "HELLO".into(),
+                },
+            ],
+            p.clone(),
+        );
+
+        // Read back: every unit containing "HELLO" has the provenance.
+        let text = a.text();
+        assert!(text.contains("HELLO"));
+        let doc = a.debug_doc_clone();
+        let provenance_count = doc.live().iter().filter(|u| u.provenance.is_some()).count();
+        assert!(provenance_count > 0, "at least one unit carries provenance");
+
+        // Every provenance-carrying unit has the right author.
+        for u in doc.live() {
+            if let Some(p) = &u.provenance {
+                assert_eq!(p.author_display_name, "alice");
+                assert_eq!(p.author_club_id, 42);
+            }
+        }
+
+        // Doc-level pull: provenance rides with the unit (C-1 core).
+        let mut b = LatticeDoc::new(99);
+        b.seed_shared_unit(
+            crate::space::sequence::Sequence::from_numbers(vec![1, 9, 1]),
+            "base text for provenance test",
+            9,
+            (9, 1),
+        );
+        let prov_dots: Vec<_> = a
+            .debug_doc_clone()
+            .live()
+            .iter()
+            .filter(|u| u.provenance.is_some())
+            .map(|u| u.dot)
+            .collect();
+        assert!(!prov_dots.is_empty());
+        b.pull_from(&a.debug_doc_clone(), &prov_dots);
+        let bdoc = b;
+        let merged_prov = bdoc
+            .live()
+            .iter()
+            .filter(|u| u.provenance.is_some())
+            .count();
+        assert_eq!(
+            provenance_count, merged_prov,
+            "provenance count survives the pull"
+        );
+    }
+
+    /// C-1 armor: unsigned edits (plain apply) carry no provenance.
+    #[test]
+    fn c1_unsigned_edits_have_no_provenance() {
+        let mut a = MultiWriter::with_namespace("plain base", 1);
+        a.open_session(1);
+        a.apply(
+            1,
+            &[
+                LatOp::Retain { count: 5 },
+                LatOp::Insert { text: "X".into() },
+            ],
+        );
+        let doc = a.debug_doc_clone();
+        let count = doc.live().iter().filter(|u| u.provenance.is_some()).count();
+        assert_eq!(count, 0, "plain apply does not stamp provenance");
+    }
+
+    /// C-1 armor: the signing payload is deterministic.
+    #[test]
+    fn c1_signing_payload_deterministic() {
+        let addr = crate::space::sequence::Sequence::from_numbers(vec![1, 2, 3]);
+        let a = super::super::lattice::LatticeProvenance::signing_payload("hello", &addr);
+        let b = super::super::lattice::LatticeProvenance::signing_payload("hello", &addr);
+        assert_eq!(a, b, "same content + address = same payload");
+        let c = super::super::lattice::LatticeProvenance::signing_payload("world", &addr);
+        assert_ne!(a, c, "different content = different payload");
     }
 }
