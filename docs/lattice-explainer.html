@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Lattice — Xudanu's Next-Generation CRDT</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+.example-block{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin:16px 0}
+.example-block .example-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#484f58;margin-bottom:8px;font-weight:600}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.accent-cyan{color:#39d2c0}
+.accent-purple{color:#a371f7}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+ul{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:4px}
+.good{color:#3fb950;font-weight:500}
+.bad{color:#f85149;font-weight:500}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>The Lattice</h1>
+<p class="subtitle">Xudanu's next-generation CRDT — why it exists, what it can and cannot do today, and the path to making it the primary engine.</p>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. The Problem: Why the O-Tree Is Slow</a>
+  <a class="toc-section" href="#s2">2. The Thesis: Write-Once Is Convergent by Construction</a>
+  <a class="toc-section" href="#s3">3. What the Lattice Is</a>
+  <a class="toc-section" href="#s4">4. The Shadow: What Runs Today</a>
+  <a class="toc-section" href="#s5">5. The Gap: What the O-Tree Has That the Lattice Doesn't</a>
+  <a class="toc-section" href="#s6">6. The Cutover: The Six-Phase Plan</a>
+  <a class="toc-section" href="#s7">7. Timeline and Priorities</a>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. The Problem: Why the O-Tree Is Slow</h2>
+
+<p>
+Xudanu's live editing engine is the <strong>O-tree CRDT</strong> — a purpose-built
+collaborative editor that operates on the enfilade (the Gold-inherited Loaf
+tree). It works. It carries the full content model. But under heavy concurrent
+editing, it hits a structural ceiling.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="la1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#f85149"/></marker>
+    <marker id="la2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+  </defs>
+
+  <!-- Single user: fast -->
+  <rect x="40" y="20" width="200" height="70" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="2"/>
+  <text x="140" y="45" text-anchor="middle" fill="#3fb950" font-size="14" font-weight="700">Single User</text>
+  <text x="140" y="65" text-anchor="middle" fill="#c9d1d9" font-size="12" font-weight="600">~60µs/op</text>
+  <text x="140" y="80" text-anchor="middle" fill="#8b949e" font-size="10">fast path — no merge needed</text>
+
+  <!-- Two users alternating: slow -->
+  <rect x="40" y="110" width="200" height="90" rx="10" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="2"/>
+  <text x="140" y="135" text-anchor="middle" fill="#f85149" font-size="14" font-weight="700">Two Users Alternating</text>
+  <text x="140" y="155" text-anchor="middle" fill="#c9d1d9" font-size="12" font-weight="600">~50ms/op (flat)</text>
+  <text x="140" y="170" text-anchor="middle" fill="#8b949e" font-size="10">three-way merge every op</text>
+  <text x="140" y="184" text-anchor="middle" fill="#8b949e" font-size="10">(was 14.8s/op before F10 fix)</text>
+
+  <!-- Arrow: the gap -->
+  <line x1="250" y1="155" x2="400" y2="155" stroke="#f85149" stroke-width="2" marker-end="url(#la1)"/>
+  <text x="325" y="145" text-anchor="middle" fill="#f85149" font-size="12" font-weight="700">~1000×</text>
+
+  <!-- Lattice: fast always -->
+  <rect x="410" y="20" width="200" height="70" rx="10" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="2"/>
+  <text x="510" y="45" text-anchor="middle" fill="#39d2c0" font-size="14" font-weight="700">Lattice (1 user)</text>
+  <text x="510" y="65" text-anchor="middle" fill="#c9d1d9" font-size="12" font-weight="600">~4µs/op</text>
+  <text x="510" y="80" text-anchor="middle" fill="#8b949e" font-size="10">same speed as O-tree fast path</text>
+
+  <rect x="410" y="110" width="200" height="90" rx="10" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="2"/>
+  <text x="510" y="135" text-anchor="middle" fill="#39d2c0" font-size="14" font-weight="700">Lattice (alternating)</text>
+  <text x="510" y="155" text-anchor="middle" fill="#c9d1d9" font-size="12" font-weight="600">~80-150µs/op</text>
+  <text x="510" y="170" text-anchor="middle" fill="#8b949e" font-size="10">NO three-way merge</text>
+  <text x="510" y="184" text-anchor="middle" fill="#3fb950" font-size="10">flat regardless of concurrency</text>
+
+  <!-- The structural reason -->
+  <rect x="660" y="20" width="180" height="180" rx="10" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="750" y="45" text-anchor="middle" fill="#d29922" font-size="12" font-weight="700">WHY?</text>
+  <text x="750" y="65" text-anchor="middle" fill="#c9d1d9" font-size="10">The O-tree must</text>
+  <text x="750" y="80" text-anchor="middle" fill="#c9d1d9" font-size="10">RECONCILE divergent</text>
+  <text x="750" y="95" text-anchor="middle" fill="#c9d1d9" font-size="10">copies (three-way merge)</text>
+  <text x="750" y="115" text-anchor="middle" fill="#c9d1d9" font-size="10">The lattice never</text>
+  <text x="750" y="130" text-anchor="middle" fill="#c9d1d9" font-size="10">overwrites — it appends</text>
+  <text x="750" y="145" text-anchor="middle" fill="#c9d1d9" font-size="10">immutable dots</text>
+  <text x="750" y="165" text-anchor="middle" fill="#3fb950" font-size="10">no merge = no merge cost</text>
+</svg>
+</div>
+<p class="diagram-caption">The O-tree's cost under concurrency vs the lattice. The structural difference: reconciliation vs append.</p>
+
+<div class="gold">
+<strong>The FR-50 audit found the pattern:</strong> every measured performance
+defect lived at the <em>seam</em> between the CRDT layer and the
+Gold-inherited document model — span migration over char offsets,
+edition materialization per op, fingerprint reconciliation. The patches
+worked, but the pattern said the seam itself was the recurring cost.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. The Thesis: Write-Once Is Convergent by Construction</h2>
+
+<p>
+The lattice's core insight: if storage is <strong>write-once and
+content-addressed</strong>, convergence is automatic. No merge algorithm
+can garble because there's nothing to reconcile:
+</p>
+
+<ul>
+  <li>Concurrent writers mint new <strong>dots</strong> (immutable units with unique IDs)</li>
+  <li>Nobody overwrites — old units become <strong>tombstones</strong> (still immutable)</li>
+  <li>Replicas sync by exchanging crum diffs — O(changes), already implemented in FR-34</li>
+  <li>The <strong>view</strong> (what the user sees) is a projection: live dots minus tombstones</li>
+</ul>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 220" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="la3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+    <marker id="la4" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#f85149"/></marker>
+  </defs>
+
+  <!-- User A -->
+  <rect x="40" y="20" width="150" height="45" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="115" y="42" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="600">User A</text>
+  <text x="115" y="56" text-anchor="middle" fill="#8b949e" font-size="9">inserts "Hello"</text>
+
+  <!-- User B -->
+  <rect x="40" y="80" width="150" height="45" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="115" y="102" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="600">User B</text>
+  <text x="115" y="116" text-anchor="middle" fill="#8b949e" font-size="9">inserts "World"</text>
+
+  <!-- Dots -->
+  <line x1="190" y1="42" x2="280" y2="90" stroke="#3fb950" stroke-width="1.5" marker-end="url(#la3)"/>
+  <line x1="190" y1="102" x2="280" y2="100" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#la3)"/>
+
+  <!-- The lattice (append-only) -->
+  <rect x="280" y="70" width="300" height="70" rx="10" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="2"/>
+  <text x="430" y="95" text-anchor="middle" fill="#39d2c0" font-size="13" font-weight="700">The Lattice</text>
+  <text x="430" y="112" text-anchor="middle" fill="#c9d1d9" font-size="10" font-weight="600">dot(a,"Hello") · dot(b,"World")</text>
+  <text x="430" y="128" text-anchor="middle" fill="#8b949e" font-size="9">both dots exist — no conflict, no merge</text>
+
+  <!-- View -->
+  <line x1="580" y1="105" x2="650" y2="105" stroke="#39d2c0" stroke-width="1.5" marker-end="url(#la3)"/>
+  <rect x="650" y="85" width="110" height="40" rx="8" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="705" y="105" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="600">"HelloWorld"</text>
+  <text x="705" y="118" text-anchor="middle" fill="#8b949e" font-size="9">the view</text>
+
+  <!-- Contrast: merge -->
+  <rect x="280" y="155" width="300" height="50" rx="10" fill="rgba(248,81,73,0.04)" stroke="#f85149" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="430" y="175" text-anchor="middle" fill="#f85149" font-size="10" font-weight="600">O-tree equivalent: three-way merge</text>
+  <text x="430" y="190" text-anchor="middle" fill="#8b949e" font-size="9">align fingerprints, classify segments, reconcile positions</text>
+</svg>
+</div>
+<p class="diagram-caption">Two concurrent inserts: the lattice appends dots (no merge); the O-tree reconciles copies (three-way merge).</p>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. What the Lattice Is</h2>
+
+<p>
+Concretely, the lattice is a <strong>weight-balanced binary search tree</strong>
+keyed by <strong>Sequence positions</strong> — the same tumbler-derived
+addressing that Gold used. Each node is either a live unit (a dot with
+content and an author) or a tombstone (a marked deletion).
+</p>
+
+<table>
+<tr><th>Component</th><th>What</th><th>Location</th></tr>
+<tr><td><span class="accent-cyan">LatticeDoc</span></td><td>The tree: live units + tombstones + weight balancing</td><td><code class="mono">src/space/lattice.rs</code></td></tr>
+<tr><td><span class="accent-blue">MultiWriter</span></td><td>Per-session views, author-minted dots, seen-set deletes</td><td><code class="mono">src/space/lattice_multi.rs</code></td></tr>
+<tr><td><span class="accent-green">Crum</span></td><td>BLAKE3 hash per subtree — O(1) equality, O(changes) diff</td><td>Same file</td></tr>
+<tr><td><span class="accent-amber">Wire payloads</span></td><td>Serialized anti-entropy traffic (units + tombstones)</td><td><code class="mono">src/space/lattice_wire.rs</code></td></tr>
+<tr><td><span class="accent-purple">Sequence</span></td><td>The tumbler ordering — native key space</td><td><code class="mono">src/space/sequence.rs</code></td></tr>
+</table>
+
+<h3>Key properties</h3>
+<ul>
+  <li><strong>Write-once:</strong> units are immutable; deletion = tombstone (also immutable)</li>
+  <li><strong>Content-addressed:</strong> every subtree carries a BLAKE3 crum</li>
+  <li><strong>Concurrent-safe:</strong> no overwrites, no merge algorithm, convergence by construction</li>
+  <li><strong>Sequence-native:</strong> positions are tumblers, not char offsets — the Gold addressing model</li>
+  <li><strong>O(log n) operations:</strong> insert, delete, lookup — the tree is weight-balanced</li>
+  <li><strong>O(changes) sync:</strong> replicas exchange crum diffs, not full state</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. The Shadow: What Runs Today</h2>
+
+<p>
+The lattice is running <strong>inside the production server</strong> as a
+dual-write shadow (FR-51 Phase 4):
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 260" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="la5" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#f85149"/></marker>
+    <marker id="la6" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#39d2c0"/></marker>
+    <marker id="la7" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#a371f7"/></marker>
+  </defs>
+
+  <!-- Incoming edit -->
+  <rect x="40" y="100" width="120" height="50" rx="8" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="2"/>
+  <text x="100" y="122" text-anchor="middle" fill="#a371f7" font-size="12" font-weight="700">Edit Arrives</text>
+  <text x="100" y="138" text-anchor="middle" fill="#8b949e" font-size="9">text_delta op</text>
+
+  <!-- Split -->
+  <line x1="160" y1="115" x2="280" y2="50" stroke="#f85149" stroke-width="2" marker-end="url(#la5)"/>
+  <line x1="160" y1="135" x2="280" y2="200" stroke="#39d2c0" stroke-width="2" marker-end="url(#la6)"/>
+
+  <!-- O-tree (live) -->
+  <rect x="280" y="20" width="220" height="70" rx="10" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="2"/>
+  <text x="390" y="45" text-anchor="middle" fill="#f85149" font-size="14" font-weight="700">O-Tree (LIVE ENGINE)</text>
+  <text x="390" y="63" text-anchor="middle" fill="#c9d1d9" font-size="10">three-way merge → enfilade</text>
+  <text x="390" y="78" text-anchor="middle" fill="#8b949e" font-size="9">provenance, transclusion, migration, annotations</text>
+
+  <!-- Lattice (shadow) -->
+  <rect x="280" y="170" width="220" height="70" rx="10" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="390" y="195" text-anchor="middle" fill="#39d2c0" font-size="14" font-weight="700">Lattice (SHADOW)</text>
+  <text x="390" y="213" text-anchor="middle" fill="#c9d1d9" font-size="10">append dot → weight-balanced tree</text>
+  <text x="390" y="228" text-anchor="middle" fill="#8b949e" font-size="9">default OFF, ephemeral, enrolled per-work</text>
+
+  <!-- Comparison -->
+  <line x1="500" y1="55" x2="570" y2="110" stroke="#a371f7" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#la7)"/>
+  <line x1="500" y1="205" x2="570" y2="150" stroke="#a371f7" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#la7)"/>
+
+  <rect x="570" y="100" width="190" height="60" rx="10" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="665" y="122" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="600">Shadow Comparison</text>
+  <text x="665" y="138" text-anchor="middle" fill="#c9d1d9" font-size="9">assert shadow_text == live_text</text>
+  <text x="665" y="150" text-anchor="middle" fill="#3fb950" font-size="9">catches bugs (F6, F10 proven)</text>
+</svg>
+</div>
+<p class="diagram-caption">The dual-write shadow: every edit goes to both engines; the shadow asserts text equality after every delta.</p>
+
+<div class="note">
+<strong>What the shadow has already accomplished:</strong>
+it caught the F6 duplication bug (the O-tree was silently duplicating
+~100 chars under interleaving) and the F10 compounding bug (per-op
+cost doubling). Both were fixed because the shadow was the oracle —
+the lattice was right, the O-tree was wrong. This is why the FR-51
+doc says "divergence may be the shadow being right."
+</div>
+
+<h3>How to enable it</h3>
+<div class="example-block">
+<div class="example-label">Run the server with the shadow</div>
+<pre>
+xudanu-server run <addr> <dir> --lattice-shadow
+
+# Then enroll works (admin op via WebSocket):
+# 0x0353: LatticeShadowEnroll { work_id }
+# 0x0354: LatticeShadowStatus (telemetry: enrolled/ops/matches)
+# 0x0355: LatticeShadowClear { work_id } (rollback)
+</pre>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. The Gap: What the O-Tree Has That the Lattice Doesn't</h2>
+
+<p>
+The lattice is a <strong>text-editing engine</strong>. The O-tree is a
+<strong>document system</strong>. This is the entire gap:
+</p>
+
+<table>
+<tr><th>Feature</th><th>O-Tree</th><th>Lattice</th><th>Cutover Phase</th></tr>
+<tr><td>Text insert/delete</td><td class="good">✓</td><td class="good">✓</td><td>—</td></tr>
+<tr><td>Concurrent merge</td><td class="good">✓ three-way</td><td class="good">✓ dot-based</td><td>—</td></tr>
+<tr><td><strong>Provenance</strong> (Ed25519 signatures)</td><td class="good">✓</td><td class="bad">✗</td><td>C-1</td></tr>
+<tr><td><strong>Transclusion</strong> (inline shared content)</td><td class="good">✓</td><td class="bad">✗</td><td>C-2</td></tr>
+<tr><td><strong>Span migration</strong> (links follow edits)</td><td class="good">✓</td><td class="bad">✗</td><td>C-3</td></tr>
+<tr><td><strong>Annotations</strong> (char ranges)</td><td class="good">✓</td><td class="bad">✗</td><td>C-3</td></tr>
+<tr><td><strong>Structural elements</strong> (blobs, sets, paths)</td><td class="good">✓</td><td class="bad">✗</td><td>C-2</td></tr>
+<tr><td><strong>Crums/OwnerSet</strong> (canopy queries)</td><td class="good">✓</td><td class="bad">✗</td><td>C-4</td></tr>
+<tr><td><strong>Federation</strong> (anti-entropy replication)</td><td class="good">✓</td><td class="bad">Partial</td><td>C-4</td></tr>
+</table>
+
+<div class="warning">
+<strong>The 300-700× speed gap is real but not urgent.</strong> The O-tree's
+compounding is FIXED (F10) — it runs flat at ~50ms/op. The gap only
+matters under heavy interleaving on large documents. If that's not
+your current bottleneck, the cutover isn't urgent.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. The Cutover: The Six-Phase Plan</h2>
+
+<p>
+The full plan is in <code class="mono">docs/dev/FR-51-cutover-plan.md</code>.
+Summary:
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 860 200" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="la8" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#8b949e"/></marker>
+  </defs>
+
+  <!-- Timeline -->
+  <line x1="40" y1="100" x2="820" y2="100" stroke="#30363d" stroke-width="3"/>
+
+  <!-- C-0 -->
+  <circle cx="80" cy="100" r="8" fill="#f85149" stroke="#f85149" stroke-width="2"/>
+  <text x="80" y="80" text-anchor="middle" fill="#f85149" font-size="12" font-weight="700">C-0</text>
+  <text x="80" y="130" text-anchor="middle" fill="#c9d1d9" font-size="10">Adjudication</text>
+  <text x="80" y="145" text-anchor="middle" fill="#8b949e" font-size="9">resolve divergences</text>
+  <text x="80" y="160" text-anchor="middle" fill="#8b949e" font-size="9">which engine is right?</text>
+
+  <line x1="95" y1="100" x2="220" y2="100" stroke="#8b949e" stroke-width="1.5" marker-end="url(#la8)"/>
+
+  <!-- C-1 -->
+  <circle cx="235" cy="100" r="8" fill="#d29922" stroke="#d29922" stroke-width="2"/>
+  <text x="235" y="80" text-anchor="middle" fill="#d29922" font-size="12" font-weight="700">C-1</text>
+  <text x="235" y="130" text-anchor="middle" fill="#c9d1d9" font-size="10">Provenance</text>
+  <text x="235" y="145" text-anchor="middle" fill="#8b949e" font-size="9">signatures on dots</text>
+  <text x="235" y="160" text-anchor="middle" fill="#8b949e" font-size="9">~1 week</text>
+
+  <line x1="250" y1="100" x2="375" y2="100" stroke="#8b949e" stroke-width="1.5" marker-end="url(#la8)"/>
+
+  <!-- C-2 -->
+  <circle cx="390" cy="100" r="8" fill="#58a6ff" stroke="#58a6ff" stroke-width="2"/>
+  <text x="390" y="80" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="700">C-2</text>
+  <text x="390" y="130" text-anchor="middle" fill="#c9d1d9" font-size="10">Element Model</text>
+  <text x="390" y="145" text-anchor="middle" fill="#8b949e" font-size="9">transclusion, blobs, sets</text>
+  <text x="390" y="160" text-anchor="middle" fill="#8b949e" font-size="9">~2-3 weeks (hard)</text>
+
+  <line x1="405" y1="100" x2="530" y2="100" stroke="#8b949e" stroke-width="1.5" marker-end="url(#la8)"/>
+
+  <!-- C-3 -->
+  <circle cx="545" cy="100" r="8" fill="#3fb950" stroke="#3fb950" stroke-width="2"/>
+  <text x="545" y="80" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700">C-3</text>
+  <text x="545" y="130" text-anchor="middle" fill="#c9d1d9" font-size="10">Migration</text>
+  <text x="545" y="145" text-anchor="middle" fill="#8b949e" font-size="9">links + annotations</text>
+  <text x="545" y="160" text-anchor="middle" fill="#8b949e" font-size="9">~1 week</text>
+
+  <line x1="560" y1="100" x2="685" y2="100" stroke="#8b949e" stroke-width="1.5" marker-end="url(#la8)"/>
+
+  <!-- C-4 -->
+  <circle cx="700" cy="100" r="8" fill="#a371f7" stroke="#a371f7" stroke-width="2"/>
+  <text x="700" y="80" text-anchor="middle" fill="#a371f7" font-size="12" font-weight="700">C-4</text>
+  <text x="700" y="130" text-anchor="middle" fill="#c9d1d9" font-size="10">Crums + Fed</text>
+  <text x="700" y="145" text-anchor="middle" fill="#8b949e" font-size="9">canopy, replication</text>
+  <text x="700" y="160" text-anchor="middle" fill="#8b949e" font-size="9">~1 week</text>
+
+  <line x1="715" y1="100" x2="790" y2="100" stroke="#8b949e" stroke-width="1.5" marker-end="url(#la8)"/>
+
+  <!-- C-5 -->
+  <circle cx="810" cy="100" r="10" fill="#39d2c0" stroke="#39d2c0" stroke-width="3"/>
+  <text x="810" y="80" text-anchor="middle" fill="#39d2c0" font-size="12" font-weight="700">C-5</text>
+  <text x="810" y="130" text-anchor="middle" fill="#39d2c0" font-size="10">THE SWITCH</text>
+  <text x="810" y="145" text-anchor="middle" fill="#8b949e" font-size="9">per-work, reversible</text>
+  <text x="810" y="160" text-anchor="middle" fill="#8b949e" font-size="9">~1 week/batch</text>
+</svg>
+</div>
+<p class="diagram-caption">The six phases. C-0 is the precondition; C-2 is the hard part; C-5 is the switch. Total ~6-8 weeks.</p>
+
+<div class="gold">
+<strong>Not scheduled.</strong> The cutover is a roadmap for when the
+timing is right. The shadow serves as the correctness oracle and the
+performance target today. When a concrete need for the lattice's speed
+emerges (heavy collaborative editing, federation at scale, or the
+CrossSpace2 compound documents that want a lattice substrate), the
+plan is ready.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. Timeline and Priorities</h2>
+
+<table>
+<tr><th>Phase</th><th>Est. Time</th><th>Prerequisite</th><th>Independently Valuable?</th></tr>
+<tr><td>C-0 Adjudication</td><td>1 week</td><td>Shadow running under real traffic</td><td><span class="good">Yes</span> — documents the normative semantics</td></tr>
+<tr><td>C-1 Provenance</td><td>1 week</td><td>C-0</td><td><span class="good">Yes</span> — improves the shadow even without cutover</td></tr>
+<tr><td>C-2 Elements</td><td>2-3 weeks</td><td>C-1</td><td><span class="good">Yes</span> — transclusion on lattice enables CrossSpace2</td></tr>
+<tr><td>C-3 Migration</td><td>1 week</td><td>C-2</td><td><span class="good">Yes</span> — fixes the O-tree's migration path too</td></tr>
+<tr><td>C-4 Crums + Fed</td><td>1 week</td><td>parallel with C-3</td><td><span class="good">Yes</span> — lattice serves license queries</td></tr>
+<tr><td>C-5 The Switch</td><td>1 week/batch</td><td>C-0 through C-4</td><td>The cutover itself</td></tr>
+</table>
+
+<h3>When should you start?</h3>
+<p>
+When one of these becomes a real need:
+</p>
+<ul>
+  <li><strong>Heavy collaborative editing</strong> — multiple concurrent editors on large documents where 50ms/op is felt</li>
+  <li><strong>Federation at scale</strong> — the lattice's O(changes) sync is the right substrate for multi-server replication</li>
+  <li><strong>CrossSpace2 compound documents</strong> — FR-40 A-4 wants the lattice as its position space</li>
+  <li><strong>When the O-tree's remaining issues</strong> (placement divergence, migration cost) become blocking</li>
+</ul>
+
+<p>
+Until then, the shadow runs, the plan is documented, and the path is clear.
+</p>
+
+<div class="footer">
+Xudanu Lattice Explainer · 2026-09-05 · <a href="https://dgjones.info/xudanu/">dgjones.info/xudanu</a>
+</div>
+
+</div>
+</body>
+</html>
