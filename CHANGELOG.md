@@ -6,6 +6,90 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.11.0] — 2026-09-05
+
+The **links-and-gold** release: the complete Gold link model
+shipped end-to-end, the Gold tree fully adopted, and the demo
+that teaches it — inside the binary.
+
+### FR-40: Links complete (the Gold/Green link model)
+- **Multi-ended links** — any number of named ends, wire ops
+  0x0707/0x0708, persisted with WAL
+- **Gathered end-sets** (FR-40 S6) — one END holds multiple
+  passages; `link_end_add_attachment`/remove (0x0709/0x070A);
+  per-attachment matching; the "sentence with blanks" model
+- **Links-to-links** (FR-40 S7) — `HyperRefKind::LinkAttachment`;
+  cycle detection at create/add
+- **Enfiladic matching** — `LinkCanopy`: work-range arena tree
+  with OR-ed type bits; link queries prune subtrees (3x measured
+  at 3k links); equivalence-proven vs scan
+- **Home documents** (FR-40 S3) — links live in works
+- **Four-set query** (FR-40 S4) — from/to/type/home matching
+- **Descriptor ends** — winfe FELink:Descriptor pattern; tooltips
+  fall back to descriptor text
+- **Solo/focus mode** — hover dims every other link's rendering
+- Frontend: gathered markers share one colour, gutter badges
+  ("i/N"), bottom-bar with jump buttons, span-level Gather from
+  the selection bar, comment-on-link, comparison view with
+  gathered-end awareness
+- Links Course ships inside the binary: `--seed-links-demo`
+
+### FR-52: Gold core adoption (the dormant machinery activated)
+- **A-2: Set/Path range elements** — `RangeElement::Set/Path`,
+  `SpanRef`; wire transport; CRDT alignment tests
+- **A-3: canopy on the enfilade** — `OwnerSet` crums on every
+  Loaf; enfiladic descent for license queries; flat-overlay cache
+  retired; equivalence-proven; P4 closed by design (copy-on-write
+  subsumes widdershin)
+- **A-1 P1/P2: fulltrace** — every work gets a TracePosition;
+  club branches (works under a club = subtree visibility query);
+  DagWood serialization (snapshot/restore); persistence through
+  manifest → checkpoint payload → root chunk → restore
+- Final Gold tree sweep: urdi/stubble/infra rejected with
+  rationale; the tree is exhausted — every concept has a verdict
+
+### Gold link model archaeology
+- `docs/gold-link-model.md` — the complete model from source
+  (FeHyperLink, FeMultiRef, IDSpace end-sets, descriptor ends,
+  winfe application patterns)
+- FR-40 UX feedback log — the hands-on session findings (label
+  overlap fix, colour identity, solo/focus, blanks vocabulary)
+
+### Demo & docs
+- `--seed-links-demo` — five-lesson course + sandbox + published
+  trail, seeded natively at startup, idempotent
+- `demo-links-reset.sh` — one command to a fresh demo
+- `docs/links-gallery.md` + `screenshot-links.mjs` — progressive
+  visual introduction with collector
+- `docs/architecture.html` — styled architecture guide with SVG
+  diagrams (runtime, modules, enfilade, link model, fulltrace,
+  data flow)
+- `docs/headless-guide.html` — running without a UI
+- Nelson's 17 rules: 8 Done, 9 Partial, 0 Not Started
+  (upgraded from 6/9/2 after the code audit)
+
+### Fixes
+- Label overlap: deterministic pairwise-disjoint placement
+- Gather button: green, discoverable, legible disabled state
+- Label boxes: adaptive fill (opaque in margin, translucent over
+  text)
+- Pre-existing wasm regression (lattice_wire postcard gating)
+- Abbreviated persistent ID with click-to-copy full xan:// URI
+
+### Performance
+- Link queries: enfiladic matching (3x at 3k links, pruning widens
+  with corpus size)
+- License queries: O(log n) descent replaces O(n) overlay rebuild
+- Attribution: span migration O(E²) → O(E) per link per delta
+
+### Design decisions recorded
+- Domain tumblers confirmed; numeric conversion rejected
+- Widdershin closed by design (copy-on-write subsumes incremental
+  patching for the enfilade)
+- Regrid deferred post-FR-51-cutover
+- Docs-site rule: fancy HTML docs are HTML-only, never create a
+  matching .md
+
 ## [v1.9.0] — 2026-08-30
 
 The performance-and-correctness release, driven by the FR-50
