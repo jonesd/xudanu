@@ -535,6 +535,94 @@ impl LatticeProvenance {
     }
 }
 
+/// FR-51 C-2: a non-text element anchored at a lattice position.
+/// The overlay-layer design (cutover plan Option B): the lattice
+/// stays pure text; elements live in a side-table keyed by the
+/// Sequence position where they sit in the reading order. Elements
+/// occupy ZERO characters in the text stream (same semantics as
+/// zero-char RangeElements in the O-tree).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LatticeElement {
+    /// The Sequence address this element sits at (between text
+    /// units — reading order position, not a char offset).
+    pub address: Sequence,
+    /// The element payload — reuses the O-tree's RangeElement
+    /// (Transclusion, Blob, Set, Path, etc.) so both engines
+    /// share the same element vocabulary.
+    pub element: crate::edition::RangeElement,
+    /// FR-51 C-1 provenance (who placed this element).
+    pub provenance: Option<LatticeProvenance>,
+}
+
+/// FR-51 C-2: the element overlay — a sorted collection of
+/// LatticeElements keyed by their lattice address. Maintained
+/// alongside the text tree; survives anti-entropy sync as part of
+/// the unit payload (elements ride with the dot that anchors them).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LatticeOverlay {
+    /// Sorted by address (reading order).
+    elements: Vec<LatticeElement>,
+}
+
+impl LatticeOverlay {
+    pub fn new() -> Self {
+        LatticeOverlay {
+            elements: Vec::new(),
+        }
+    }
+
+    /// Insert an element at a position. Maintains sort order.
+    /// Returns the insertion index (useful for identity).
+    pub fn insert(
+        &mut self,
+        address: Sequence,
+        element: crate::edition::RangeElement,
+        provenance: Option<LatticeProvenance>,
+    ) -> usize {
+        let idx = self
+            .elements
+            .partition_point(|e| e.address.compare_to(&address) == std::cmp::Ordering::Less);
+        let le = LatticeElement {
+            address,
+            element,
+            provenance,
+        };
+        self.elements.insert(idx, le);
+        idx
+    }
+
+    /// All elements in reading order.
+    pub fn elements(&self) -> &[LatticeElement] {
+        &self.elements
+    }
+
+    /// Elements within an address range [lo, hi).
+    pub fn elements_between(&self, lo: &Sequence, hi: &Sequence) -> Vec<&LatticeElement> {
+        self.elements
+            .iter()
+            .filter(|e| {
+                e.address.compare_to(lo) != std::cmp::Ordering::Less
+                    && e.address.compare_to(hi) == std::cmp::Ordering::Less
+            })
+            .collect()
+    }
+
+    /// Remove elements at a specific address. Returns count removed.
+    pub fn remove_at(&mut self, address: &Sequence) -> usize {
+        let before = self.elements.len();
+        self.elements.retain(|e| &e.address != address);
+        before - self.elements.len()
+    }
+
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegionTombstone {
     pub region: SequenceRegion,
@@ -643,6 +731,8 @@ pub struct LatticeDoc {
     units: HashMap<Dot, LatticeUnit>,
     tombstones: Vec<RegionTombstone>,
     index: LiveIndex,
+    /// FR-51 C-2: non-text elements (overlay layer).
+    pub overlay: LatticeOverlay,
 }
 
 impl LatticeDoc {
@@ -653,6 +743,7 @@ impl LatticeDoc {
             units: HashMap::new(),
             tombstones: Vec::new(),
             index: LiveIndex::new(),
+            overlay: LatticeOverlay::new(),
         }
     }
 

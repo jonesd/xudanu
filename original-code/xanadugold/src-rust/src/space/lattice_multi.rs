@@ -503,3 +503,99 @@ mod c1_provenance_tests {
         assert_ne!(a, c, "different content = different payload");
     }
 }
+
+#[cfg(test)]
+mod c2_element_tests {
+    use super::*;
+
+    /// C-2 armor: elements insert into the overlay at the right
+    /// position, survive in reading order, and don't affect text.
+    #[test]
+    fn c2_overlay_insert_and_read() {
+        use crate::space::lattice::LatticeProvenance;
+        let mut mw = MultiWriter::with_namespace("hello world", 1);
+        mw.open_session(1);
+
+        // Insert an element at position after "hello" (address-wise
+        // between the "hello " unit and "world" unit).
+        let addr = crate::space::sequence::Sequence::from_numbers(vec![1, 3]);
+        mw.doc.overlay.insert(
+            addr.clone(),
+            crate::edition::RangeElement::text("ELEM"),
+            None,
+        );
+        assert_eq!(mw.doc.overlay.len(), 1);
+
+        // Text is unaffected.
+        assert_eq!(mw.text(), "hello world");
+
+        // Element readable from the overlay.
+        let elems = mw.doc.overlay.elements();
+        assert_eq!(elems[0].element.as_text(), Some("ELEM"));
+
+        // Insert more — reading order maintained.
+        let addr2 = crate::space::sequence::Sequence::from_numbers(vec![1, 1]);
+        mw.doc
+            .overlay
+            .insert(addr2, crate::edition::RangeElement::text("FIRST"), None);
+        assert_eq!(mw.doc.overlay.len(), 2);
+        let elems = mw.doc.overlay.elements();
+        assert!(elems[0].address.compare_to(&elems[1].address) == std::cmp::Ordering::Less);
+        // Wait — we can't use < on Sequence. Use compare_to.
+        assert_eq!(
+            elems[0].address.compare_to(&elems[1].address),
+            std::cmp::Ordering::Less,
+            "elements in reading order"
+        );
+    }
+
+    /// C-2 armor: elements with provenance carry it.
+    #[test]
+    fn c2_elements_carry_provenance() {
+        let mut doc = crate::space::lattice::LatticeDoc::new(1);
+        let prov = crate::space::lattice::LatticeProvenance {
+            author_public_key: [9u8; 32],
+            author_display_name: "alice".to_string(),
+            author_club_id: 42,
+            timestamp: 100,
+            author_type: crate::edition::provenance::AuthorType::Human,
+            llm_model: None,
+            signature: None,
+        };
+        let addr = crate::space::sequence::Sequence::from_numbers(vec![1, 5]);
+        doc.overlay.insert(
+            addr,
+            crate::edition::RangeElement::text("tagged"),
+            Some(prov),
+        );
+        let elems = doc.overlay.elements();
+        assert_eq!(elems.len(), 1);
+        assert!(elems[0].provenance.is_some());
+        assert_eq!(
+            elems[0].provenance.as_ref().unwrap().author_display_name,
+            "alice"
+        );
+    }
+
+    /// C-2 armor: elements_between filters by address range.
+    #[test]
+    fn c2_elements_between() {
+        let mut doc = crate::space::lattice::LatticeDoc::new(1);
+        let lo = crate::space::sequence::Sequence::from_numbers(vec![1, 1]);
+        let mid = crate::space::sequence::Sequence::from_numbers(vec![1, 5]);
+        let hi = crate::space::sequence::Sequence::from_numbers(vec![1, 9]);
+        doc.overlay
+            .insert(lo, crate::edition::RangeElement::text("lo"), None);
+        doc.overlay
+            .insert(mid.clone(), crate::edition::RangeElement::text("mid"), None);
+        doc.overlay
+            .insert(hi, crate::edition::RangeElement::text("hi"), None);
+
+        // Elements between mid (inclusive) and end
+        let end = crate::space::sequence::Sequence::from_numbers(vec![2]);
+        let between = doc.overlay.elements_between(&mid, &end);
+        assert_eq!(between.len(), 2, "mid + hi are in [mid, 2)");
+        assert!(between.iter().any(|e| e.element.as_text() == Some("mid")));
+        assert!(between.iter().any(|e| e.element.as_text() == Some("hi")));
+    }
+}
