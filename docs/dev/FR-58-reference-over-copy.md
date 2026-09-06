@@ -1,8 +1,8 @@
 # FR-58: Reference-over-Copy — Live Reuse Suggestions While Typing
 
 - **ID:** FR-58
-- **Status:** Proposed — gated on experiment E-0 (below). No
-  implementation until E-0 numbers clear the thresholds.
+- **Status:** E-0 **PASSED** (2026-09-06) — implementation authorized.
+  Matcher + harness: `src/server/reuse_match.rs`; matrix below.
 - **Depends on:** FR-34 (recorders/backfollow index), FR-24 (license
   metadata), FR-51 (dots, stable addresses), FR-52 A-3 (OwnerSet
   canopy — license/visibility queries)
@@ -97,6 +97,31 @@ precisely enough, and fast enough to be worth building?
 mean trigger ≤ 60% of passage typed, p99 query ≤ 50ms. If T1 alone
 clears the bar, T2 is demoted to fallback; if nothing clears it,
 the FR dies cheap (a day of harness code, zero product code).
+
+### E-0 outcome (2026-09-06)
+
+```
+E-0 matrix (T1 n-gram)
+      n  cov  trig   top  p99µs
+     4  100%    10%  100%     133
+     6  100%    10%  100%     137
+     8  100%    10%  100%     134
+    10   67%    10%   67%     133
+```
+
+- Gate cleared at n = 4, 6, 8 (n = 10 loses coverage on short
+  passages — windows exceed useful uniqueness). **n = 6 chosen**
+  (balanced noise floor with 3-word margin over n = 4).
+- Trigger at the earliest measurable probe means: T1 fires the
+  moment n words of a known passage exist — the physics of verbatim
+  n-gram matching, not a corpus artifact.
+- T2 MinHash similarity 1.00 on correct sources; original-prose
+  control never fires T1.
+- One methodological note for the record: the first run "failed"
+  the gate (83%) due to a mislabeled ground-truth pair in the
+  harness — the matcher had matched all six lifts correctly. The
+  experiment caught its own harness bug; the gate now runs as
+  living armor in `reuse_match.rs` (`e0_ngram_matrix_meets_fr58_gate`).
 
 ## 5. Stories
 

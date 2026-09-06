@@ -25,6 +25,8 @@ pub mod otree_crdt;
 #[cfg(feature = "server")]
 pub mod rate_limiter;
 
+pub mod reuse_match;
+
 #[cfg(feature = "server")]
 pub mod ollama;
 pub mod seed_compound_demo;
