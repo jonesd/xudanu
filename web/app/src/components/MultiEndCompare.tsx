@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import type { CrdtSyncClient, WorkListEntry, SharedRegion } from "../api/crdt_sync";
 import { highlightRegions } from "./ComparePanel";
+import { diffTexts, renderDiffSideHtml } from "../text-diff";
 
 const PAIR_COLORS = [
   "#d29922", "#56b4e9", "#009e73", "#cc79a7",
@@ -88,7 +89,15 @@ export function MultiEndCompare({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addWorkId, setAddWorkId] = useState<number | "">("");
-  const [viewMode, setViewMode] = useState<"shared" | "unique">("shared");
+  const [viewMode, setViewMode] = useState<"auto" | "diff" | "shared" | "unique">("auto");
+  // Pairwise aligned diff (Myers over words) — the mode that reads
+  // like a code compare when the texts are versions of one thing.
+  const pairDiff = useMemo(
+    () => (columns.length === 2 ? diffTexts(columns[0].text, columns[1].text) : null),
+    [columns],
+  );
+  const autoMode: "diff" | "shared" = pairDiff && pairDiff.matchRatio >= 0.3 ? "diff" : "shared";
+  const effMode = viewMode === "auto" ? autoMode : viewMode;
 
   const uniqueIds = useMemo(() => {
     const seen = new Set<number>();
@@ -286,25 +295,31 @@ export function MultiEndCompare({
         )}
         {!loading && columns.length >= 2 && (
           <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
-            {(["shared", "unique"] as const).map((m) => (
+            {([
+              ...(pairDiff ? ([["diff", `Aligned diff (${Math.round(pairDiff.matchRatio * 100)}%)`]] as const) : []),
+              ["shared", "Shared passages"],
+              ["unique", "What differs"],
+            ] as const).map(([m, label]) => (
               <button
                 key={m}
                 type="button"
-                className={`ws-link-filter-btn ${viewMode === m ? "active" : ""}`}
+                className={`ws-link-filter-btn ${effMode === m ? "active" : ""}`}
                 style={{
                   fontSize: 11,
                   padding: "2px 10px",
-                  background: viewMode === m ? "#58a6ff" : "transparent",
-                  color: viewMode === m ? "#fff" : "#8b949e",
-                  borderColor: viewMode === m ? "#58a6ff" : "#30363d",
+                  background: effMode === m ? "#58a6ff" : "transparent",
+                  color: effMode === m ? "#fff" : "#8b949e",
+                  borderColor: effMode === m ? "#58a6ff" : "#30363d",
                 }}
-                onClick={() => setViewMode(m)}
+                onClick={() => setViewMode(m as "diff" | "shared" | "unique")}
               >
-                {m === "shared" ? "Shared passages" : "What differs"}
+                {label}
               </button>
             ))}
             <span style={{ fontSize: 11, color: "#8b949e", marginLeft: 8, alignSelf: "center" }}>
-              {viewMode === "shared"
+              {effMode === "diff"
+                ? "aligned word-by-word — red = only left · green = only right · collapsed grey = matched"
+                : effMode === "shared"
                 ? "coloured highlight = this passage also appears in the work with that colour"
                 : "green = only in this work · grey struck-out = also in the other work(s)"}
             </span>
@@ -312,7 +327,7 @@ export function MultiEndCompare({
         )}
         {!loading && columns.length >= 2 && (
           <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(columns.length, maxCols)}, 1fr)`, gap: 8, flex: fullscreen ? 1 : undefined, minHeight: fullscreen ? 0 : undefined }}>
-            {columns.map((col) => (
+            {columns.map((col, colIndex) => (
               <div
                 key={col.workId}
                 style={{
@@ -360,7 +375,9 @@ export function MultiEndCompare({
                   className="compare-hl"
                   style={fullscreen ? { flex: 1, minHeight: 0 } : undefined}
                   dangerouslySetInnerHTML={{
-                    __html: viewMode === "shared"
+                    __html: effMode === "diff" && pairDiff
+                      ? renderDiffSideHtml(pairDiff, colIndex === 0 ? "a" : "b")
+                      : effMode === "shared"
                       ? highlightRegions(col.text, col.regions, "compare-hl")
                       : highlightComplement(col.text, col.regions),
                   }}
