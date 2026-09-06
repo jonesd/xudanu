@@ -999,6 +999,16 @@ fn dispatch_inner(
             srv.lattice_primary_demote(work_id);
             Ok(ResponseValue::Void)
         }
+        WireRequest::SuggestionQuery { work_id, text } => {
+            let cards = srv.reuse_suggest(session_id, work_id, &text)?;
+            let json =
+                serde_json::to_value(&cards).map_err(|e| ServerError::Internal(e.to_string()))?;
+            Ok(ResponseValue::Json(json))
+        }
+        WireRequest::SuggestionConfigSet { enabled } => {
+            srv.reuse_suggestions_set_enabled(session_id, enabled)?;
+            Ok(ResponseValue::Void)
+        }
         WireRequest::WorkSetTitle { work_id, title } => {
             srv.ensure_can_edit(session_id, work_id)?;
             srv.set_work_title(work_id, title);

@@ -102,6 +102,133 @@ pub fn paragraphs(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// FR-58 S1: one suggestion card — a work whose text contains
+/// n-grams of the typed prefix, with the best-matching paragraph
+/// as the snippet.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SuggestionCard {
+    pub work_id: u64,
+    pub title: String,
+    pub snippet: String,
+    pub windows: usize,
+}
+
+/// FR-58 S1: the per-server reuse index. Works are reindexed
+/// lazily — `touch` on materialization, rebuild on next query —
+/// so edits never pay index cost until someone asks for
+/// suggestions.
+#[derive(Debug)]
+pub struct ReuseService {
+    n: usize,
+    stale: std::collections::HashSet<u64>,
+    paras: std::collections::HashMap<u64, Vec<String>>,
+    index: std::collections::HashMap<u64, Vec<(u64, usize)>>,
+}
+
+impl ReuseService {
+    /// n = 6 per the E-0 matrix (FR-58 doc, 2026-09-06).
+    pub fn new() -> Self {
+        ReuseService {
+            n: 6,
+            stale: Default::default(),
+            paras: Default::default(),
+            index: Default::default(),
+        }
+    }
+
+    pub fn touch(&mut self, work_id: u64) {
+        self.stale.insert(work_id);
+    }
+
+    /// A work needs (re)indexing if touched or never seen.
+    pub fn needs_rebuild(&self, work_id: u64) -> bool {
+        self.stale.contains(&work_id) || !self.paras.contains_key(&work_id)
+    }
+
+    /// Swap a work's paragraphs: remove its old postings, add the
+    /// new ones.
+    pub fn rebuild(&mut self, work_id: u64, paras: Vec<String>) {
+        if let Some(old) = self.paras.remove(&work_id) {
+            for p in &old {
+                for h in word_ngram_hashes(p, self.n) {
+                    if let Some(posts) = self.index.get_mut(&h) {
+                        posts.retain(|(w, _)| *w != work_id);
+                        if posts.is_empty() {
+                            self.index.remove(&h);
+                        }
+                    }
+                }
+            }
+        }
+        for (i, p) in paras.iter().enumerate() {
+            for h in word_ngram_hashes(p, self.n) {
+                self.index.entry(h).or_default().push((work_id, i));
+            }
+        }
+        self.paras.insert(work_id, paras);
+        self.stale.remove(&work_id);
+    }
+
+    pub fn remove(&mut self, work_id: u64) {
+        self.rebuild(work_id, Vec::new());
+        self.paras.remove(&work_id);
+    }
+
+    /// Rank works whose paragraphs share n-grams with the typed
+    /// prefix. The querying work is excluded (suggestions come from
+    /// elsewhere). One card per work: the paragraph with the most
+    /// matched windows is the snippet.
+    pub fn query(&self, exclude_work: u64, prefix: &str) -> Vec<SuggestionCard> {
+        let mut para_hits: std::collections::HashMap<(u64, usize), usize> =
+            std::collections::HashMap::new();
+        for h in word_ngram_hashes(prefix, self.n) {
+            if let Some(posts) = self.index.get(&h) {
+                for &(w, i) in posts {
+                    if w != exclude_work {
+                        *para_hits.entry((w, i)).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+        let mut best: std::collections::HashMap<u64, (usize, usize, usize)> =
+            std::collections::HashMap::new();
+        for ((w, i), windows) in para_hits {
+            let e = best.entry(w).or_insert((0, usize::MAX, 0));
+            if windows > e.0 {
+                e.0 = windows;
+                e.1 = i;
+            }
+            e.2 += windows;
+        }
+        let mut cards: Vec<SuggestionCard> = best
+            .into_iter()
+            .map(|(w, (_best_count, best_idx, total))| {
+                let snippet = self
+                    .paras
+                    .get(&w)
+                    .and_then(|v| v.get(best_idx))
+                    .map(|p| p.chars().take(140).collect())
+                    .unwrap_or_default();
+                SuggestionCard {
+                    work_id: w,
+                    title: String::new(),
+                    snippet,
+                    windows: total,
+                }
+            })
+            .collect();
+        cards.sort_by(|a, b| b.windows.cmp(&a.windows).then(a.work_id.cmp(&b.work_id)));
+        cards
+    }
+}
+
+impl Default for ReuseService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ── E-0: the replay experiment (FR-58 gate) ────────────────────────────────
 #[cfg(test)]
 mod e0 {
@@ -295,5 +422,84 @@ mod e0 {
             best_n
         );
         let _ = index;
+    }
+}
+
+/// FR-58 S1 service armor: build, query, exclusion, stale
+/// reindexing.
+#[cfg(test)]
+mod service_tests {
+    use super::*;
+
+    fn para(text: &str) -> Vec<String> {
+        paragraphs(text)
+    }
+
+    #[test]
+    fn query_finds_source_and_excludes_self() {
+        let mut svc = ReuseService::new();
+        svc.rebuild(
+            1,
+            para("A garden is not a photograph; it is a performance that repeats daily."),
+        );
+        svc.rebuild(2, para("Unrelated notes about tides and ferries."));
+
+        let cards = svc.query(3, "it is a performance that repeats daily");
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].work_id, 1);
+        assert!(cards[0].snippet.contains("garden"));
+
+        // The querying work itself is never suggested.
+        let cards = svc.query(1, "it is a performance that repeats daily");
+        assert!(cards.is_empty(), "self must be excluded");
+    }
+
+    #[test]
+    fn touch_then_rebuild_replaces_postings() {
+        let mut svc = ReuseService::new();
+        svc.rebuild(1, para("The original sentence about orchards and apples."));
+        assert!(!svc.needs_rebuild(1));
+        assert!(svc.needs_rebuild(2), "never-indexed work needs rebuild");
+
+        svc.touch(1);
+        assert!(svc.needs_rebuild(1));
+
+        // Reindex with different text: old n-grams must not linger.
+        svc.rebuild(
+            1,
+            para("Completely different content about harbors and their keepers today."),
+        );
+        let cards = svc.query(3, "the original sentence about orchards and apples");
+        assert!(
+            cards.is_empty(),
+            "stale postings must be gone after rebuild"
+        );
+        let cards = svc.query(3, "different content about harbors and their keepers");
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].work_id, 1);
+    }
+
+    #[test]
+    fn ranking_prefers_more_matched_windows() {
+        let mut svc = ReuseService::new();
+        svc.rebuild(1, para("alpha beta gamma delta epsilon zeta eta theta."));
+        svc.rebuild(
+            2,
+            para("alpha beta gamma delta epsilon zeta eta theta and again alpha beta gamma delta epsilon zeta eta once more."),
+        );
+        let cards = svc.query(3, "alpha beta gamma delta epsilon zeta eta");
+        assert_eq!(cards.len(), 2);
+        assert_eq!(cards[0].work_id, 2, "more matched windows ranks first");
+        assert!(cards[0].windows > cards[1].windows);
+    }
+
+    #[test]
+    fn remove_drops_work_entirely() {
+        let mut svc = ReuseService::new();
+        svc.rebuild(1, para("A unique sentence about moonlit meadows."));
+        svc.remove(1);
+        assert!(svc
+            .query(2, "a unique sentence about moonlit meadows")
+            .is_empty());
     }
 }

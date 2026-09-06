@@ -186,6 +186,8 @@ pub enum OperationCode {
     LatticeShadowClear,
     LatticePrimaryPromote,
     LatticePrimaryDemote,
+    SuggestionQuery,
+    SuggestionConfigSet,
     WorkUnstar,
     WorkIsStarred,
     ConnectionPinSet,
@@ -570,6 +572,8 @@ impl OperationCode {
             0x0355 => Some(OperationCode::LatticeShadowClear),
             0x0356 => Some(OperationCode::LatticePrimaryPromote),
             0x0357 => Some(OperationCode::LatticePrimaryDemote),
+            0x0358 => Some(OperationCode::SuggestionQuery),
+            0x0359 => Some(OperationCode::SuggestionConfigSet),
             0x0336 => Some(OperationCode::WorkUnstar),
             0x0337 => Some(OperationCode::WorkIsStarred),
             0x0338 => Some(OperationCode::WorkGraph),
@@ -910,6 +914,8 @@ impl OperationCode {
             OperationCode::LatticeShadowClear => 0x0355,
             OperationCode::LatticePrimaryPromote => 0x0356,
             OperationCode::LatticePrimaryDemote => 0x0357,
+            OperationCode::SuggestionQuery => 0x0358,
+            OperationCode::SuggestionConfigSet => 0x0359,
             OperationCode::WorkUnstar => 0x0336,
             OperationCode::WorkIsStarred => 0x0337,
             OperationCode::WorkGraph => 0x0338,
@@ -1391,6 +1397,13 @@ pub enum WireRequest {
     },
     LatticePrimaryDemote {
         work_id: BeId,
+    },
+    SuggestionQuery {
+        work_id: BeId,
+        text: String,
+    },
+    SuggestionConfigSet {
+        enabled: bool,
     },
     WorkUnstar {
         work_id: BeId,
@@ -5152,6 +5165,8 @@ mod lattice_shadow_wire_tests {
             OperationCode::LatticeShadowClear,
             OperationCode::LatticePrimaryPromote,
             OperationCode::LatticePrimaryDemote,
+            OperationCode::SuggestionQuery,
+            OperationCode::SuggestionConfigSet,
         ] {
             let wire = code.to_u16();
             let back = OperationCode::from_u16(wire).expect("decode");
@@ -5168,6 +5183,8 @@ mod lattice_shadow_wire_tests {
             (0x0355, OperationCode::LatticeShadowClear),
             (0x0356, OperationCode::LatticePrimaryPromote),
             (0x0357, OperationCode::LatticePrimaryDemote),
+            (0x0358, OperationCode::SuggestionQuery),
+            (0x0359, OperationCode::SuggestionConfigSet),
         ];
         for (wire, want) in targets {
             assert_eq!(OperationCode::from_u16(wire), Some(want));
