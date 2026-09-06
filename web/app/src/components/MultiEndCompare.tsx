@@ -12,32 +12,30 @@ function highlightComplement(
   text: string,
   regions: { start: number; end: number }[],
 ): string {
-  // "What differs" view: shared passages are dimmed/struck; the
-  // text UNIQUE to this work renders full-contrast. The difference
-  // is what's NOT colored.
+  // "What differs" view — read it like a diff:
+  //   green wash   = unique to THIS work (its own contribution)
+  //   grey + strike = also present in the other work(s) — skip these
+  // Background washes (not bars/shadows) so wrapped lines render
+  // cleanly with no fragmentation artifacts.
   if (!regions.length) {
-    return `<span>${text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c))}</span>`;
+    return `<span class="cmp-unique">${text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c))}</span>`;
   }
   const sorted = [...regions].sort((a, b) => a.start - b.start);
   const esc = (t: string) =>
     t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c));
   let html = "";
   let pos = 0;
-  // Shared: greyed + struck-through + faint red wash = "identical to
-  // the others — skip this". Unique: full-contrast text with a green
-  // left bar = "this is THIS work's contribution". Colorblind-safe:
-  // two encodings (color + strike/bar) per state.
   for (const r of sorted) {
     if (r.end <= pos) continue;
     const start = Math.max(r.start, pos);
     if (start > pos) {
-      html += `<span style="box-shadow:inset 3px 0 0 #3fb950;padding-left:6px">${esc(text.slice(pos, start))}</span>`;
+      html += `<span class="cmp-unique">${esc(text.slice(pos, start))}</span>`;
     }
-    html += `<span style="opacity:0.45;text-decoration:line-through;text-decoration-color:#f85149;background:rgba(248,81,73,0.08)">${esc(text.slice(start, r.end))}</span>`;
+    html += `<span class="cmp-shared">${esc(text.slice(start, r.end))}</span>`;
     pos = r.end;
   }
   if (pos < text.length) {
-    html += `<span style="box-shadow:inset 3px 0 0 #3fb950;padding-left:6px">${esc(text.slice(pos))}</span>`;
+    html += `<span class="cmp-unique">${esc(text.slice(pos))}</span>`;
   }
   return html;
 }
@@ -282,10 +280,10 @@ export function MultiEndCompare({
                 {m === "shared" ? "Shared passages" : "What differs"}
               </button>
             ))}
-            <span style={{ fontSize: 10, color: "#8b949e", marginLeft: 8, alignSelf: "center" }}>
+            <span style={{ fontSize: 11, color: "#8b949e", marginLeft: 8, alignSelf: "center" }}>
               {viewMode === "shared"
-                ? "coloured = shared with the matching colour's work"
-                : "green bar = unique to this work · struck-through grey = shared (identical in the others)"}
+                ? "coloured highlight = this passage also appears in the work with that colour"
+                : "green = only in this work · grey struck-out = also in the other work(s)"}
             </span>
           </div>
         )}
@@ -323,6 +321,18 @@ export function MultiEndCompare({
                     >×</button>
                   )}
                 </div>
+                {(() => {
+                  const sharedChars = col.regions.reduce((n, r) => n + Math.max(0, r.end - r.start), 0);
+                  const total = Math.max(1, col.text.length);
+                  const pctShared = Math.round((sharedChars / total) * 100);
+                  return (
+                    <div style={{ fontSize: 10, color: "#8b949e", marginBottom: 6 }}>
+                      {sharedChars === 0
+                        ? "nothing shared with the others"
+                        : `${pctShared}% also in the other work(s) · ${100 - pctShared}% only here (${col.regions.length} shared passage${col.regions.length === 1 ? "" : "s"})`}
+                    </div>
+                  );
+                })()}
                 <div
                   className="compare-hl"
                   style={fullscreen ? { flex: 1, minHeight: 0 } : undefined}

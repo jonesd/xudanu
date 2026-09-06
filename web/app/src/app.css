@@ -2864,6 +2864,20 @@ body {
 .compare-hl:hover {
   filter: brightness(1.4);
 }
+.cmp-unique {
+  background: rgba(63, 185, 80, 0.18);
+  border-bottom: 1px solid rgba(63, 185, 80, 0.45);
+  border-radius: 2px;
+  color: #e6edf3;
+}
+.cmp-shared {
+  opacity: 0.55;
+  text-decoration: line-through;
+  text-decoration-color: rgba(248, 81, 73, 0.75);
+  text-decoration-thickness: 2px;
+  background: rgba(248, 81, 73, 0.07);
+  border-radius: 2px;
+}
 .compare-unique-left {
   background: rgba(86, 180, 233, 0.12);
 }
