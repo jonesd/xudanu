@@ -19,7 +19,7 @@
     "@fontsource/orbitron": "^5.3.0",
     "@fontsource/source-serif-4": "^5.3.0",
     "@uiw/react-md-editor": "^4.1.1",
-    "react": "^19.2.4",
+    "react": "^19.2.8",
     "react-dom": "^19.2.7",
     "ws": "^8.21.3",
     "zustand": "^5.0.14"
@@ -31,7 +31,7 @@
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/node": "^24.12.2",
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "@vitest/coverage-v8": "^4.1.11",
