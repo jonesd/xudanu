@@ -977,11 +977,26 @@ fn dispatch_inner(
                 "enrolled": matches.is_some(),
                 "ops_mirrored": ops.unwrap_or(0),
                 "matches_live": matches,
+                "lattice_primary": srv.lattice_is_primary(work_id),
             })))
         }
         WireRequest::LatticeShadowClear {} => {
             srv.ensure_admin(session_id)?;
             srv.clear_lattice_shadows();
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::LatticePrimaryPromote { work_id } => {
+            srv.ensure_admin(session_id)?;
+            if !srv.lattice_primary_promote(work_id) {
+                return Err(ServerError::InvalidArgument(
+                    "work not enrolled in lattice shadow; enroll first".into(),
+                ));
+            }
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::LatticePrimaryDemote { work_id } => {
+            srv.ensure_admin(session_id)?;
+            srv.lattice_primary_demote(work_id);
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkSetTitle { work_id, title } => {
