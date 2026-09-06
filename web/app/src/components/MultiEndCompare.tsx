@@ -262,6 +262,29 @@ export function MultiEndCompare({
           </div>
         )}
         {!loading && columns.length >= 2 && (
+          (() => {
+            const anyShared = columns.some((c) => c.regions.length > 0);
+            const totalShared = columns.reduce((n, c) => n + c.regions.length, 0);
+            return (
+              <div
+                style={{
+                  fontSize: 12,
+                  padding: "6px 10px",
+                  marginBottom: 8,
+                  borderRadius: 6,
+                  background: anyShared ? "rgba(88,166,255,0.07)" : "rgba(139,148,158,0.08)",
+                  border: `1px solid ${anyShared ? "rgba(88,166,255,0.35)" : "#30363d"}`,
+                  color: "#c9d1d9",
+                }}
+              >
+                {anyShared
+                  ? `${columns.length} works compared · ${Math.round(totalShared / columns.length)} shared passage${Math.round(totalShared / columns.length) === 1 ? "" : "s"} on average — switch between “Shared passages” and “What differs” above`
+                  : `${columns.length} works compared · they share no passages — these are independent texts. Every word is unique to its own work.`}
+              </div>
+            );
+          })()
+        )}
+        {!loading && columns.length >= 2 && (
           <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
             {(["shared", "unique"] as const).map((m) => (
               <button
