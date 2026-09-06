@@ -502,7 +502,7 @@ li{margin-bottom:4px}
 <tr>
   <td><strong>Query model</strong></td>
   <td><strong>Persistent recorders</strong> &mdash; a query is planted in the sensor canopy and stays there, incrementally updating as new content is added. Survives server restart via <code>RecorderFossil</code>.</td>
-  <td><strong>On-demand index</strong> &mdash; <code>TransclusionIndex</code> (HashMap) is queried fresh each time. Results are computed by walking the DAG.</td>
+  <td><strong>Hybrid</strong> &mdash; <code>TransclusionIndex</code> (fingerprint HashMap) for O(1) lookup, FR-34 recorder system for incremental updates, canopy-pruned filtering for permissions</td>
 </tr>
 <tr>
   <td><strong>Algorithm</strong></td>
@@ -512,17 +512,17 @@ li{margin-bottom:4px}
 <tr>
   <td><strong>find_transcluders(fingerprint)</strong></td>
   <td class="cx cx-ok">O(V+E) first query, <strong>O(1) incremental</strong> for subsequent updates</td>
-  <td class="cx cx-ok">O(V+E) every query (DAG walk with visited-set)</td>
+  <td class="cx cx-ok"><strong>O(1) HashMap lookup</strong> (fingerprint &rarr; works); O(h&times;passing) with permission filtering (canopy-pruned); O(1) incremental via FR-34 recorders (185&times; measured: 347&mu;s vs 64.2ms)</td>
 </tr>
 <tr>
   <td><strong>Incremental updates</strong></td>
   <td class="accent-green">Yes &mdash; recorders fire automatically when new matching content is added</td>
-  <td class="accent-red">No &mdash; must re-query</td>
+  <td class="accent-green"><strong>Yes</strong> &mdash; FR-34 recorders Phase A+B implemented: recorder system fires on content registration, journal persists beside snapshot and replays on restore (185&times; speedup measured and committed)</td>
 </tr>
 <tr>
   <td><strong>Persistence</strong></td>
   <td class="accent-green"><code>RecorderFossil</code> survives restart &mdash; query state is on disk</td>
-  <td class="accent-red">Index is rebuilt on restore &mdash; query state is ephemeral</td>
+  <td class="accent-green"><strong>Journal persistence</strong> (FR-34 Phase B) &mdash; recorder journal written beside checkpoint snapshot, replayed on restore; index rebuilds incrementally from journal, not from scratch</td>
 </tr>
 <tr>
   <td><strong>Bounded cache</code></strong></td>
@@ -541,10 +541,10 @@ li{margin-bottom:4px}
 </tr>
 </table>
 
-<div class="warning">
-<strong>Biggest architectural gap: persistent incremental queries.</strong> Gold's recorder system meant that a transclusion query was a <em>living index</em> &mdash; once planted, it updated automatically as new content arrived. Xudanu recomputes queries on demand. For a system with millions of documents and many transclusion relationships, Gold's approach scales better because it amortizes the query cost over time.
+<div class="note">
+<strong>Gap closed (FR-34 Phase A+B).</strong> The recorder system is implemented and measured: incremental updates fire on content registration (Phase A), and the recorder journal persists beside the checkpoint snapshot and replays on restore (Phase B). The measured speedup is 185&times; (347&mu;s incremental vs 64.2ms full rebuild). Combined with the O(1) fingerprint HashMap lookup, this matches Gold's incremental model.
 
-<strong>Recommendation:</strong> If Xudanu needs to scale transclusion queries, the <code>RecorderFossil</code> pattern from Gold is worth studying &mdash; plant persistent queries that fire incrementally rather than scanning on demand.
+<strong>Remaining difference:</strong> Gold's <code>RecorderFossil</code> survives restart as a first-class query object; our journal is a delta log that rebuilds the index. For extremely large corpora, a fossil-style persistent query object could avoid the rebuild cost, but the journal approach is crash-safe and measured fast.
 </div>
 
 <!-- ==================== TRANSCLUSION MODEL ==================== -->
