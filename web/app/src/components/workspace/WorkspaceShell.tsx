@@ -11,6 +11,9 @@ import { authorColorPair } from "../../author-color";
 import { CollaborativeEditor } from "../CollaborativeEditor";
 import { EasyMDEEditor } from "../EasyMDEEditor";
 import { TransclusionBadge } from "../TransclusionBadge";
+import { SuggestionCardList } from "../SuggestionCardList";
+import { useReuseSuggestions } from "../../hooks/useReuseSuggestions";
+import type { SuggestionCardPayload } from "../../api/crdt_sync";
 import { IdentityPanel } from "../IdentityPanel";
 import { DocumentMapPanel } from "../DocumentMapPanel";
 import { TrailsPanel } from "../TrailsPanel";
@@ -392,6 +395,32 @@ export function WorkspaceShell() {
     switchingWork,
     publicClubId,
   } = crdt;
+  const [suggestBusy, setSuggestBusy] = useState(false);
+  const reuse = useReuseSuggestions(
+    canEdit ? (clientRef.current ?? null) : null,
+    workBeId,
+    text,
+    cursorPos ?? 0,
+  );
+  const handleAcceptSuggestion = async (card: SuggestionCardPayload) => {
+    const client = clientRef.current;
+    if (!client || workBeId === null) return;
+    setSuggestBusy(true);
+    try {
+      await client.elementInsert(workBeId, cursorPos ?? text.length, {
+        type: "transclusion",
+        transclusion_source: card.work_id,
+        transclusion_start: card.span_start,
+        transclusion_end: card.span_end,
+      });
+      reuse.dismiss(card.work_id);
+      reuse.refresh(cursorPos ?? 0);
+    } catch {
+      reuse.dismiss(card.work_id);
+    } finally {
+      setSuggestBusy(false);
+    }
+  };
 
   // FR-41 S1: directory snapshot for the network search tab.
   const [serverDirectoryForSearch, setServerDirectoryForSearch] = useState<
@@ -4317,6 +4346,12 @@ export function WorkspaceShell() {
                   />
                 )}
                 {remoteViewOverlay}
+                <SuggestionCardList
+                  cards={reuse.cards}
+                  onAccept={handleAcceptSuggestion}
+                  onDismiss={reuse.dismiss}
+                  busy={suggestBusy}
+                />
                 <div className="ws-phone-reader">{text || "Loading…"}</div>
                 {useMDE ? (
                   <EasyMDEEditor

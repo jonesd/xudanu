@@ -8557,7 +8557,8 @@ impl Server {
             if self.reuse.needs_rebuild(id) {
                 match self.work_edition(id) {
                     Ok(ed) => {
-                        let paras = crate::server::reuse_match::paragraphs(&ed.to_text());
+                        let paras =
+                            crate::server::reuse_match::paragraphs_with_spans(&ed.to_text());
                         self.reuse.rebuild(id, paras);
                     }
                     Err(_) => self.reuse.remove(id),

@@ -212,6 +212,15 @@ export type RangeElementPayload =
   | { type: "virtual"; virtual_source: number; virtual_revision: number; transclusion_start: number; transclusion_end: number }
   | { type: "blob"; blob_hash: string; blob_mime: string; blob_size: number; blob_width?: number; blob_height?: number; blob_caption?: string };
 
+export interface SuggestionCardPayload {
+  work_id: number;
+  title: string;
+  snippet: string;
+  windows: number;
+  span_start: number;
+  span_end: number;
+}
+
 export interface AuthorContribution {
   club_id: number;
   display_name: string;
@@ -1425,6 +1434,16 @@ export class CrdtSyncClient {
     const resp = await this.sendRequest("element_insert", { work_id: workId, position, element });
     const val = extractValue(resp) as Record<string, unknown>;
     return (val.revision as number) || 0;
+  }
+
+  async suggestionQuery(workId: number, text: string): Promise<SuggestionCardPayload[]> {
+    const resp = await this.sendRequest("suggestion_query", { work_id: workId, text });
+    const val = extractValue(resp) as SuggestionCardPayload[];
+    return Array.isArray(val) ? val : [];
+  }
+
+  async suggestionConfigSet(enabled: boolean): Promise<void> {
+    await this.sendRequest("suggestion_config_set", { enabled });
   }
 
   async elementUpdate(workId: number, charPosition: number, element: RangeElementPayload): Promise<number> {

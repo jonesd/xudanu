@@ -102,9 +102,31 @@ pub fn paragraphs(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// FR-58 S4: paragraphs with their byte spans in the work text —
+/// the accept-as-transclusion coordinates (consistent with link
+/// span semantics, which are byte-based).
+pub fn paragraphs_with_spans(text: &str) -> Vec<(i64, i64, String)> {
+    let mut out = Vec::new();
+    let mut offset = 0usize;
+    for line in text.split('\n') {
+        let trimmed_start = line.trim_start();
+        let lead = line.len() - trimmed_start.len();
+        let t = trimmed_start.trim_end();
+        if !t.is_empty() {
+            out.push((
+                (offset + lead) as i64,
+                (offset + lead + t.len()) as i64,
+                t.to_string(),
+            ));
+        }
+        offset += line.len() + 1;
+    }
+    out
+}
+
 /// FR-58 S1: one suggestion card — a work whose text contains
 /// n-grams of the typed prefix, with the best-matching paragraph
-/// as the snippet.
+/// as the snippet and its span for accept-as-transclusion.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SuggestionCard {
@@ -112,6 +134,10 @@ pub struct SuggestionCard {
     pub title: String,
     pub snippet: String,
     pub windows: usize,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub span_start: i64,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub span_end: i64,
 }
 
 /// FR-58 S1: the per-server reuse index. Works are reindexed
@@ -122,7 +148,7 @@ pub struct SuggestionCard {
 pub struct ReuseService {
     n: usize,
     stale: std::collections::HashSet<u64>,
-    paras: std::collections::HashMap<u64, Vec<String>>,
+    paras: std::collections::HashMap<u64, Vec<(i64, i64, String)>>,
     index: std::collections::HashMap<u64, Vec<(u64, usize)>>,
 }
 
@@ -148,9 +174,9 @@ impl ReuseService {
 
     /// Swap a work's paragraphs: remove its old postings, add the
     /// new ones.
-    pub fn rebuild(&mut self, work_id: u64, paras: Vec<String>) {
+    pub fn rebuild(&mut self, work_id: u64, paras: Vec<(i64, i64, String)>) {
         if let Some(old) = self.paras.remove(&work_id) {
-            for p in &old {
+            for (_, _, p) in &old {
                 for h in word_ngram_hashes(p, self.n) {
                     if let Some(posts) = self.index.get_mut(&h) {
                         posts.retain(|(w, _)| *w != work_id);
@@ -161,7 +187,7 @@ impl ReuseService {
                 }
             }
         }
-        for (i, p) in paras.iter().enumerate() {
+        for (i, (_, _, p)) in paras.iter().enumerate() {
             for h in word_ngram_hashes(p, self.n) {
                 self.index.entry(h).or_default().push((work_id, i));
             }
@@ -204,17 +230,18 @@ impl ReuseService {
         let mut cards: Vec<SuggestionCard> = best
             .into_iter()
             .map(|(w, (_best_count, best_idx, total))| {
-                let snippet = self
-                    .paras
-                    .get(&w)
-                    .and_then(|v| v.get(best_idx))
-                    .map(|p| p.chars().take(140).collect())
+                let para = self.paras.get(&w).and_then(|v| v.get(best_idx));
+                let snippet = para
+                    .map(|(_, _, p)| p.chars().take(140).collect())
                     .unwrap_or_default();
+                let (span_start, span_end) = para.map(|(s, e, _)| (*s, *e)).unwrap_or((0, 0));
                 SuggestionCard {
                     work_id: w,
                     title: String::new(),
                     snippet,
                     windows: total,
+                    span_start,
+                    span_end,
                 }
             })
             .collect();
@@ -431,8 +458,8 @@ mod e0 {
 mod service_tests {
     use super::*;
 
-    fn para(text: &str) -> Vec<String> {
-        paragraphs(text)
+    fn para(text: &str) -> Vec<(i64, i64, String)> {
+        paragraphs_with_spans(text)
     }
 
     #[test]
@@ -452,6 +479,22 @@ mod service_tests {
         // The querying work itself is never suggested.
         let cards = svc.query(1, "it is a performance that repeats daily");
         assert!(cards.is_empty(), "self must be excluded");
+
+        // Spans address the matched paragraph inside the source work
+        // (byte offsets, same convention as link spans). Rebuild with
+        // a two-paragraph text so the offset math is exercised:
+        // "Title Line" (10) + "\n\n" -> paragraph 2 starts at 12.
+        let para_text =
+            "Title Line\n\nA garden is not a photograph; it is a performance that repeats daily.";
+        svc.rebuild(9, para(para_text));
+        let cards = svc.query(3, "it is a performance that repeats daily");
+        let card = cards
+            .iter()
+            .find(|c| c.work_id == 9)
+            .expect("work 9 suggested");
+        assert_eq!(card.span_start, 12);
+        let body = "A garden is not a photograph; it is a performance that repeats daily.";
+        assert_eq!(card.span_end as usize, 12 + body.len());
     }
 
     #[test]
