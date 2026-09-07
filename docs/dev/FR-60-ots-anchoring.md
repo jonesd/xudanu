@@ -130,6 +130,28 @@ needs its upgrade fetch (until confirmed, ~1–2 blocks). Confirmed
 and unchanged = silent. Steady state with edits ≈ one POST per edit
 epoch; idle = zero traffic.
 
+## 7. Deployment anchor policy (decided 2026-09-07)
+
+Every serious deployment makes ONE deliberate anchor choice rather
+than drifting into none. Client production environments: **TSA
+first, Bitcoin beside** — two receipts for the same chain head from
+different trust domains.
+
+| Deployment | Anchor | Rationale |
+|---|---|---|
+| xudanu.com, engagement servers | OTS (`--ots-anchor`) | public claims, free floor, zero privacy cost |
+| **Client production** | **their TSA (S5) primary + OTS beside** | stays in their trust domain; eIDAS legal presumption; openssl-verifiable by their team; Bitcoin adds the trust-minimized corroboration |
+| Throwaway sandboxes | optional | history not worth proving; wipe kills the chain |
+| Air-gapped / no-outbound-ever | none, or internal TSA | the single-player default is a promise — keep it |
+
+Client-prod shape when S5 lands: `--tsa-url https://their-tsa…`
+beside `--ots-anchor`; both receipts stored under `anchoring/`;
+reports state both ("eIDAS-qualified timestamp says WHEN; Bitcoin
+says EXISTED-BY"). The institution vouches the clock, proof-of-work
+vouches existence — neither trusts the other, both cover the head.
+
+S5 builds only when a client names their TSA (FR-61 discipline).
+
 ## 5. Acceptance criteria
 
 - With anchoring enabled, one checkpoint + calendar round-trip
