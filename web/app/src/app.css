@@ -2864,6 +2864,49 @@ body {
 .compare-hl:hover {
   filter: brightness(1.4);
 }
+.cmp-unique {
+  background: rgba(63, 185, 80, 0.18);
+  border-bottom: 1px solid rgba(63, 185, 80, 0.45);
+  border-radius: 2px;
+  color: #e6edf3;
+}
+.cmp-shared {
+  opacity: 0.55;
+  text-decoration: line-through;
+  text-decoration-color: rgba(248, 81, 73, 0.75);
+  text-decoration-thickness: 2px;
+  background: rgba(248, 81, 73, 0.07);
+  border-radius: 2px;
+}
+.cmp-ins {
+  background: rgba(63, 185, 80, 0.20);
+  border-bottom: 1px solid rgba(63, 185, 80, 0.5);
+  border-radius: 2px;
+}
+.cmp-del {
+  background: rgba(248, 81, 73, 0.16);
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  text-decoration-color: rgba(248, 81, 73, 0.8);
+  border-radius: 2px;
+}
+.cmp-eq {
+  color: #c9d1d9;
+}
+.cmp-ctx {
+  color: #8b949e;
+  background: rgba(139, 148, 158, 0.10);
+  border-radius: 4px;
+  font-size: 0.92em;
+  padding: 0 4px;
+}
+.cmp-gap {
+  display: inline-block;
+  min-width: 18px;
+  height: 1em;
+  vertical-align: middle;
+  border-left: 2px dotted #30363d;
+}
 .compare-unique-left {
   background: rgba(86, 180, 233, 0.12);
 }

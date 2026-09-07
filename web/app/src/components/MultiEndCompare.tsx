@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import type { CrdtSyncClient, WorkListEntry, SharedRegion } from "../api/crdt_sync";
 import { highlightRegions } from "./ComparePanel";
+import { diffTexts, renderDiffSideHtml } from "../text-diff";
 
 const PAIR_COLORS = [
   "#d29922", "#56b4e9", "#009e73", "#cc79a7",
@@ -12,32 +13,30 @@ function highlightComplement(
   text: string,
   regions: { start: number; end: number }[],
 ): string {
-  // "What differs" view: shared passages are dimmed/struck; the
-  // text UNIQUE to this work renders full-contrast. The difference
-  // is what's NOT colored.
+  // "What differs" view — read it like a diff:
+  //   green wash   = unique to THIS work (its own contribution)
+  //   grey + strike = also present in the other work(s) — skip these
+  // Background washes (not bars/shadows) so wrapped lines render
+  // cleanly with no fragmentation artifacts.
   if (!regions.length) {
-    return `<span>${text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c))}</span>`;
+    return `<span class="cmp-unique">${text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c))}</span>`;
   }
   const sorted = [...regions].sort((a, b) => a.start - b.start);
   const esc = (t: string) =>
     t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c));
   let html = "";
   let pos = 0;
-  // Shared: greyed + struck-through + faint red wash = "identical to
-  // the others — skip this". Unique: full-contrast text with a green
-  // left bar = "this is THIS work's contribution". Colorblind-safe:
-  // two encodings (color + strike/bar) per state.
   for (const r of sorted) {
     if (r.end <= pos) continue;
     const start = Math.max(r.start, pos);
     if (start > pos) {
-      html += `<span style="box-shadow:inset 3px 0 0 #3fb950;padding-left:6px">${esc(text.slice(pos, start))}</span>`;
+      html += `<span class="cmp-unique">${esc(text.slice(pos, start))}</span>`;
     }
-    html += `<span style="opacity:0.45;text-decoration:line-through;text-decoration-color:#f85149;background:rgba(248,81,73,0.08)">${esc(text.slice(start, r.end))}</span>`;
+    html += `<span class="cmp-shared">${esc(text.slice(start, r.end))}</span>`;
     pos = r.end;
   }
   if (pos < text.length) {
-    html += `<span style="box-shadow:inset 3px 0 0 #3fb950;padding-left:6px">${esc(text.slice(pos))}</span>`;
+    html += `<span class="cmp-unique">${esc(text.slice(pos))}</span>`;
   }
   return html;
 }
@@ -90,7 +89,15 @@ export function MultiEndCompare({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addWorkId, setAddWorkId] = useState<number | "">("");
-  const [viewMode, setViewMode] = useState<"shared" | "unique">("shared");
+  const [viewMode, setViewMode] = useState<"auto" | "diff" | "shared" | "unique">("auto");
+  // Pairwise aligned diff (Myers over words) — the mode that reads
+  // like a code compare when the texts are versions of one thing.
+  const pairDiff = useMemo(
+    () => (columns.length === 2 ? diffTexts(columns[0].text, columns[1].text) : null),
+    [columns],
+  );
+  const autoMode: "diff" | "shared" = pairDiff && pairDiff.matchRatio >= 0.3 ? "diff" : "shared";
+  const effMode = viewMode === "auto" ? autoMode : viewMode;
 
   const uniqueIds = useMemo(() => {
     const seen = new Set<number>();
@@ -264,34 +271,63 @@ export function MultiEndCompare({
           </div>
         )}
         {!loading && columns.length >= 2 && (
+          (() => {
+            const anyShared = columns.some((c) => c.regions.length > 0);
+            const totalShared = columns.reduce((n, c) => n + c.regions.length, 0);
+            return (
+              <div
+                style={{
+                  fontSize: 12,
+                  padding: "6px 10px",
+                  marginBottom: 8,
+                  borderRadius: 6,
+                  background: anyShared ? "rgba(88,166,255,0.07)" : "rgba(139,148,158,0.08)",
+                  border: `1px solid ${anyShared ? "rgba(88,166,255,0.35)" : "#30363d"}`,
+                  color: "#c9d1d9",
+                }}
+              >
+                {anyShared
+                  ? `${columns.length} works compared · ${Math.round(totalShared / columns.length)} shared passage${Math.round(totalShared / columns.length) === 1 ? "" : "s"} on average — switch between “Shared passages” and “What differs” above`
+                  : `${columns.length} works compared · they share no passages — these are independent texts. Every word is unique to its own work.`}
+              </div>
+            );
+          })()
+        )}
+        {!loading && columns.length >= 2 && (
           <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
-            {(["shared", "unique"] as const).map((m) => (
+            {([
+              ...(pairDiff ? ([["diff", `Aligned diff (${Math.round(pairDiff.matchRatio * 100)}%)`]] as const) : []),
+              ["shared", "Shared passages"],
+              ["unique", "What differs"],
+            ] as const).map(([m, label]) => (
               <button
                 key={m}
                 type="button"
-                className={`ws-link-filter-btn ${viewMode === m ? "active" : ""}`}
+                className={`ws-link-filter-btn ${effMode === m ? "active" : ""}`}
                 style={{
                   fontSize: 11,
                   padding: "2px 10px",
-                  background: viewMode === m ? "#58a6ff" : "transparent",
-                  color: viewMode === m ? "#fff" : "#8b949e",
-                  borderColor: viewMode === m ? "#58a6ff" : "#30363d",
+                  background: effMode === m ? "#58a6ff" : "transparent",
+                  color: effMode === m ? "#fff" : "#8b949e",
+                  borderColor: effMode === m ? "#58a6ff" : "#30363d",
                 }}
-                onClick={() => setViewMode(m)}
+                onClick={() => setViewMode(m as "diff" | "shared" | "unique")}
               >
-                {m === "shared" ? "Shared passages" : "What differs"}
+                {label}
               </button>
             ))}
-            <span style={{ fontSize: 10, color: "#8b949e", marginLeft: 8, alignSelf: "center" }}>
-              {viewMode === "shared"
-                ? "coloured = shared with the matching colour's work"
-                : "green bar = unique to this work · struck-through grey = shared (identical in the others)"}
+            <span style={{ fontSize: 11, color: "#8b949e", marginLeft: 8, alignSelf: "center" }}>
+              {effMode === "diff"
+                ? "aligned word-by-word — red = only left · green = only right · collapsed grey = matched"
+                : effMode === "shared"
+                ? "coloured highlight = this passage also appears in the work with that colour"
+                : "green = only in this work · grey struck-out = also in the other work(s)"}
             </span>
           </div>
         )}
         {!loading && columns.length >= 2 && (
           <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(columns.length, maxCols)}, 1fr)`, gap: 8, flex: fullscreen ? 1 : undefined, minHeight: fullscreen ? 0 : undefined }}>
-            {columns.map((col) => (
+            {columns.map((col, colIndex) => (
               <div
                 key={col.workId}
                 style={{
@@ -323,11 +359,25 @@ export function MultiEndCompare({
                     >×</button>
                   )}
                 </div>
+                {(() => {
+                  const sharedChars = col.regions.reduce((n, r) => n + Math.max(0, r.end - r.start), 0);
+                  const total = Math.max(1, col.text.length);
+                  const pctShared = Math.round((sharedChars / total) * 100);
+                  return (
+                    <div style={{ fontSize: 10, color: "#8b949e", marginBottom: 6 }}>
+                      {sharedChars === 0
+                        ? "nothing shared with the others"
+                        : `${pctShared}% also in the other work(s) · ${100 - pctShared}% only here (${col.regions.length} shared passage${col.regions.length === 1 ? "" : "s"})`}
+                    </div>
+                  );
+                })()}
                 <div
                   className="compare-hl"
                   style={fullscreen ? { flex: 1, minHeight: 0 } : undefined}
                   dangerouslySetInnerHTML={{
-                    __html: viewMode === "shared"
+                    __html: effMode === "diff" && pairDiff
+                      ? renderDiffSideHtml(pairDiff, colIndex === 0 ? "a" : "b")
+                      : effMode === "shared"
                       ? highlightRegions(col.text, col.regions, "compare-hl")
                       : highlightComplement(col.text, col.regions),
                   }}
