@@ -48520,3 +48520,79 @@ mod revision_compare_tests {
         );
     }
 }
+
+/// FR-60 armor: chain-head extraction + snapshot/store/status lifecycle.
+#[cfg(test)]
+mod ots_anchor_tests {
+    use super::*;
+
+    #[test]
+    fn chain_head_grows_with_appends() {
+        let mut server = Server::new();
+        assert!(
+            server.attribution_log.head_hash_hex().is_none(),
+            "empty log has no head"
+        );
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let work = server
+            .create_work(sid, Edition::from_text("anchorable"))
+            .unwrap();
+        server
+            .revise_work(work, sid, Edition::from_text("anchorable v2"), None)
+            .unwrap();
+        let head = server
+            .attribution_log
+            .head_hash_hex()
+            .expect("head after revisions");
+        assert_eq!(head.len(), 64, "sha256 hex");
+        // Head is stable absent new entries.
+        assert_eq!(
+            server.attribution_log.head_hash_hex().as_deref(),
+            Some(head.as_str())
+        );
+    }
+
+    #[test]
+    fn snapshot_disabled_by_default_and_enabled_gates() {
+        let mut server = Server::new();
+        // Disabled: snapshot never runs (even with a data dir).
+        server.data_dir = Some(std::env::temp_dir());
+        assert!(server.ots_anchor_snapshot().is_none());
+        server.ots_anchor_bootstrap_enable();
+        assert!(server.ots_anchor_status()["enabled"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn store_round_persists_receipt_and_status_reads_it() {
+        let dir = std::env::temp_dir().join(format!(
+            "xudanu-ots-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut server = Server::new();
+        server.data_dir = Some(dir.clone());
+        server.ots_anchor_bootstrap_enable();
+
+        let digest = [3u8; 32];
+        let stream = crate::server::ots_anchor::tests_support::pending_stream();
+        let round = crate::server::ots_anchor::AnchorRound {
+            digest_hex: digest.iter().map(|b| format!("{:02x}", b)).collect(),
+            status: "pending",
+            bitcoin_height: None,
+            calendars: vec!["https://alice.btc.calendar.opentimestamps.org".into()],
+        };
+        server.ots_store_round(&digest, &stream, &round);
+
+        let status = server.ots_anchor_status();
+        assert_eq!(status["last_round"]["status"], "pending");
+        let receipt = std::fs::read(dir.join("anchoring").join("receipt.ots")).unwrap();
+        // Framed: 31-byte magic + version + sha256 tag + digest.
+        assert_eq!(receipt.len(), 31 + 1 + 1 + 32 + stream.len());
+        assert_eq!(&receipt[33..65], &digest[..]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

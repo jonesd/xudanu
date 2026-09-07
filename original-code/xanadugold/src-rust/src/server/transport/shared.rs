@@ -318,13 +318,58 @@ impl ServerHandle {
                 .await
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))??;
 
-        self.with_server(|srv| srv.checkpoint_commit_no_wal_truncate(result))
+        self.with_server(|srv| srv.checkpoint_commit_no_wal_truncate(result))?;
+        self.ots_anchor_round().await;
+        Ok(())
     }
 
     /// Lightweight ticket-only save. Writes just the ticket nonces to a
     /// sidecar JSON file — no full checkpoint, no server-wide serialization.
     pub fn save_ticket_nonces(&self) -> std::io::Result<()> {
         self.with_server(|srv| srv.persist_ticket_nonces())
+    }
+
+    /// FR-60: one OpenTimestamps anchor round. Network runs on the
+    /// blocking pool; the server lock is held only for the snapshot
+    /// and the store. Best-effort: failures log and leave the
+    /// previous receipt untouched (the floor never regresses).
+    pub async fn ots_anchor_round(&self) {
+        use crate::server::ots_anchor::{
+            anchor_round, HttpOtsTransport, OtsTransport, DEFAULT_CALENDARS,
+        };
+        let snapshot = self.with_server(|srv| {
+            let _force = srv.ots_take_request();
+            srv.ots_anchor_snapshot()
+        });
+        let Some((head, prev)) = snapshot else {
+            return;
+        };
+        let result = tokio::task::spawn_blocking(move || {
+            let t = HttpOtsTransport::new();
+            let _ = &t as &dyn OtsTransport;
+            anchor_round(&t, &DEFAULT_CALENDARS, head, prev.as_deref())
+        })
+        .await;
+        match result {
+            Ok(Ok((stream, round))) => {
+                tracing::info!(
+                    "[ots] anchored head={} status={} height={:?}",
+                    &round.digest_hex[..8.min(round.digest_hex.len())],
+                    round.status,
+                    round.bitcoin_height
+                );
+                self.with_server(|srv| srv.ots_store_round(&head, &stream, &round));
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(
+                    "[ots] anchor round failed (best-effort, floor unchanged): {}",
+                    e
+                );
+            }
+            Err(e) => {
+                tracing::warn!("[ots] anchor task panicked: {}", e);
+            }
+        }
     }
 }
 
