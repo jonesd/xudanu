@@ -1009,6 +1009,16 @@ fn dispatch_inner(
             srv.reuse_suggestions_set_enabled(session_id, enabled)?;
             Ok(ResponseValue::Void)
         }
+        WireRequest::RevisionCompare {
+            work_id,
+            rev_a,
+            rev_b,
+        } => {
+            let result = srv.revision_compare(session_id, work_id, rev_a, rev_b)?;
+            let json =
+                serde_json::to_value(&result).map_err(|e| ServerError::Internal(e.to_string()))?;
+            Ok(ResponseValue::Json(json))
+        }
         WireRequest::WorkSetTitle { work_id, title } => {
             srv.ensure_can_edit(session_id, work_id)?;
             srv.set_work_title(work_id, title);

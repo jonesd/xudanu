@@ -212,6 +212,21 @@ export type RangeElementPayload =
   | { type: "virtual"; virtual_source: number; virtual_revision: number; transclusion_start: number; transclusion_end: number }
   | { type: "blob"; blob_hash: string; blob_mime: string; blob_size: number; blob_width?: number; blob_height?: number; blob_caption?: string };
 
+export interface RevisionHunkPayload {
+  start: number;
+  end: number;
+  text: string;
+  author_pk_hex: string;
+  timestamp: number;
+}
+
+export interface RevisionComparePayload {
+  inserted: RevisionHunkPayload[];
+  deleted: RevisionHunkPayload[];
+  unchanged_ratio: number;
+  source: string;
+}
+
 export interface SuggestionCardPayload {
   work_id: number;
   title: string;
@@ -1434,6 +1449,11 @@ export class CrdtSyncClient {
     const resp = await this.sendRequest("element_insert", { work_id: workId, position, element });
     const val = extractValue(resp) as Record<string, unknown>;
     return (val.revision as number) || 0;
+  }
+
+  async revisionCompare(workId: number, revA: number, revB: number): Promise<RevisionComparePayload> {
+    const resp = await this.sendRequest("revision_compare", { work_id: workId, rev_a: revA, rev_b: revB });
+    return extractValue(resp) as RevisionComparePayload;
   }
 
   async suggestionQuery(workId: number, text: string): Promise<SuggestionCardPayload[]> {

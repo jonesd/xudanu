@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import type { CrdtSyncClient, RevisionMeta, AttributionSpan } from "../api/crdt_sync";
+import type { CrdtSyncClient, RevisionMeta, AttributionSpan, RevisionComparePayload } from "../api/crdt_sync";
 import { authorColor } from "../author-color";
 
 interface RevisionTimelineProps {
@@ -15,6 +15,10 @@ function formatDate(ts: number): string {
 
 export function RevisionTimeline({ workId, client, onViewRevision }: RevisionTimelineProps) {
   const [revisions, setRevisions] = useState<RevisionMeta[]>([]);
+  const [cmpA, setCmpA] = useState<number | null>(null);
+  const [cmpB, setCmpB] = useState<number | null>(null);
+  const [cmpResult, setCmpResult] = useState<RevisionComparePayload | null>(null);
+  const [cmpBusy, setCmpBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingDesc, setEditingDesc] = useState<number | null>(null);
@@ -277,6 +281,91 @@ export function RevisionTimeline({ workId, client, onViewRevision }: RevisionTim
           </div>
         );
       })}
+      {sorted.length < 2 && (
+        <div style={{ marginTop: 10, fontSize: 11, color: "#8b949e" }}>
+          Compare needs two or more revisions — this work has one. Edit it (edits become revisions automatically) and the comparison appears here.
+        </div>
+      )}
+      {sorted.length >= 2 && (
+        <div style={{ marginTop: 10, borderTop: "1px solid var(--border, #30363d)", paddingTop: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, color: "#8b949e", marginBottom: 4 }}>
+            Compare revisions (FR-59)
+          </div>
+          <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+            <select
+              className="ws-filter-select"
+              value={cmpA ?? ""}
+              onChange={(e) => setCmpA(e.target.value === "" ? null : Number(e.target.value))}
+              style={{ fontSize: 11 }}
+              aria-label="Compare from revision"
+            >
+              <option value="">from…</option>
+              {sorted.map((r) => (
+                <option key={r.revision} value={r.revision}>r{r.revision}</option>
+              ))}
+            </select>
+            <select
+              className="ws-filter-select"
+              value={cmpB ?? ""}
+              onChange={(e) => setCmpB(e.target.value === "" ? null : Number(e.target.value))}
+              style={{ fontSize: 11 }}
+              aria-label="Compare to revision"
+            >
+              <option value="">to…</option>
+              {sorted.map((r) => (
+                <option key={r.revision} value={r.revision}>r{r.revision}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="ws-link-filter-btn"
+              disabled={cmpA === null || cmpB === null || cmpA === cmpB || cmpBusy}
+              style={{ fontSize: 11, padding: "2px 10px" }}
+              onClick={async () => {
+                if (cmpA === null || cmpB === null || !client || workId === null) return;
+                setCmpBusy(true);
+                setCmpResult(null);
+                try {
+                  setCmpResult(await client.revisionCompare(workId, cmpA, cmpB));
+                } catch {
+                  setCmpResult(null);
+                } finally {
+                  setCmpBusy(false);
+                }
+              }}
+            >
+              {cmpBusy ? "comparing…" : "compare"}
+            </button>
+          </div>
+          {cmpResult && (
+            <div style={{ marginTop: 6, fontSize: 11 }}>
+              <div style={{ color: "#8b949e", marginBottom: 4 }}>
+                {cmpResult.source === "crum" ? "structural (crum)" : cmpResult.source} ·{" "}
+                {Math.round(cmpResult.unchanged_ratio * 100)}% unchanged ·{" "}
+                {cmpResult.deleted.length} deleted · {cmpResult.inserted.length} inserted
+              </div>
+              {cmpResult.deleted.map((h, i) => (
+                <div key={`d${i}`} className="cmp-del" style={{ marginBottom: 3, padding: "2px 4px" }}>
+                  − {h.text}
+                  <span style={{ color: "#8b949e", fontSize: 10, marginLeft: 6 }}>
+                    {h.author_pk_hex ? `${h.author_pk_hex.slice(0, 8)} · ` : ""}
+                    {h.timestamp ? new Date(h.timestamp * 1000).toLocaleString() : ""}
+                  </span>
+                </div>
+              ))}
+              {cmpResult.inserted.map((h, i) => (
+                <div key={`i${i}`} className="cmp-ins" style={{ marginBottom: 3, padding: "2px 4px" }}>
+                  + {h.text}
+                  <span style={{ color: "#8b949e", fontSize: 10, marginLeft: 6 }}>
+                    {h.author_pk_hex ? `${h.author_pk_hex.slice(0, 8)} · ` : ""}
+                    {h.timestamp ? new Date(h.timestamp * 1000).toLocaleString() : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
