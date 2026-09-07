@@ -1009,6 +1009,18 @@ fn dispatch_inner(
             srv.reuse_suggestions_set_enabled(session_id, enabled)?;
             Ok(ResponseValue::Void)
         }
+        WireRequest::OtsAnchorStatus {} => {
+            srv.ensure_admin(session_id)?;
+            Ok(ResponseValue::Json(srv.ots_anchor_status()))
+        }
+        WireRequest::OtsAnchorSetEnabled { enabled } => {
+            srv.ots_anchor_set_enabled(session_id, enabled)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::OtsAnchorRequest {} => {
+            srv.ots_anchor_request(session_id)?;
+            Ok(ResponseValue::Void)
+        }
         WireRequest::RevisionCompare {
             work_id,
             rev_a,

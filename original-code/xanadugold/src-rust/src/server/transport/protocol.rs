@@ -189,6 +189,9 @@ pub enum OperationCode {
     SuggestionQuery,
     SuggestionConfigSet,
     RevisionCompare,
+    OtsAnchorStatus,
+    OtsAnchorSetEnabled,
+    OtsAnchorRequest,
     WorkUnstar,
     WorkIsStarred,
     ConnectionPinSet,
@@ -576,6 +579,9 @@ impl OperationCode {
             0x0358 => Some(OperationCode::SuggestionQuery),
             0x0359 => Some(OperationCode::SuggestionConfigSet),
             0x035A => Some(OperationCode::RevisionCompare),
+            0x035B => Some(OperationCode::OtsAnchorStatus),
+            0x035C => Some(OperationCode::OtsAnchorSetEnabled),
+            0x035D => Some(OperationCode::OtsAnchorRequest),
             0x0336 => Some(OperationCode::WorkUnstar),
             0x0337 => Some(OperationCode::WorkIsStarred),
             0x0338 => Some(OperationCode::WorkGraph),
@@ -919,6 +925,9 @@ impl OperationCode {
             OperationCode::SuggestionQuery => 0x0358,
             OperationCode::SuggestionConfigSet => 0x0359,
             OperationCode::RevisionCompare => 0x035A,
+            OperationCode::OtsAnchorStatus => 0x035B,
+            OperationCode::OtsAnchorSetEnabled => 0x035C,
+            OperationCode::OtsAnchorRequest => 0x035D,
             OperationCode::WorkUnstar => 0x0336,
             OperationCode::WorkIsStarred => 0x0337,
             OperationCode::WorkGraph => 0x0338,
@@ -1413,6 +1422,11 @@ pub enum WireRequest {
         rev_a: u64,
         rev_b: u64,
     },
+    OtsAnchorStatus {},
+    OtsAnchorSetEnabled {
+        enabled: bool,
+    },
+    OtsAnchorRequest {},
     WorkUnstar {
         work_id: BeId,
     },
@@ -5176,6 +5190,9 @@ mod lattice_shadow_wire_tests {
             OperationCode::SuggestionQuery,
             OperationCode::SuggestionConfigSet,
             OperationCode::RevisionCompare,
+            OperationCode::OtsAnchorStatus,
+            OperationCode::OtsAnchorSetEnabled,
+            OperationCode::OtsAnchorRequest,
         ] {
             let wire = code.to_u16();
             let back = OperationCode::from_u16(wire).expect("decode");
@@ -5195,6 +5212,9 @@ mod lattice_shadow_wire_tests {
             (0x0358, OperationCode::SuggestionQuery),
             (0x0359, OperationCode::SuggestionConfigSet),
             (0x035A, OperationCode::RevisionCompare),
+            (0x035B, OperationCode::OtsAnchorStatus),
+            (0x035C, OperationCode::OtsAnchorSetEnabled),
+            (0x035D, OperationCode::OtsAnchorRequest),
         ];
         for (wire, want) in targets {
             assert_eq!(OperationCode::from_u16(wire), Some(want));

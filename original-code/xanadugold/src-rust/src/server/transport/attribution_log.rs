@@ -116,6 +116,27 @@ impl AttributionLog {
     pub fn is_in_memory(&self) -> bool {
         matches!(self, AttributionLog::InMemory(_))
     }
+
+    /// FR-60: the current chain head (sha256 hex). None when no
+    /// entries have been appended (nothing to anchor yet).
+    pub fn head_hash_hex(&self) -> Option<String> {
+        match self {
+            AttributionLog::File(log) => log.head_hash_hex(),
+            AttributionLog::InMemory(log) => log.head_hash_hex(),
+        }
+    }
+}
+
+impl FileAttributionLog {
+    pub fn head_hash_hex(&self) -> Option<String> {
+        (self.sequence > 0).then(|| self.prev_hash.clone())
+    }
+}
+
+impl InMemoryAttributionLog {
+    pub fn head_hash_hex(&self) -> Option<String> {
+        (self.sequence > 0).then(|| self.prev_hash.clone())
+    }
 }
 
 impl FileAttributionLog {

@@ -129,6 +129,30 @@ fn cmd_init(data_dir: &str, passphrase: Option<&[u8]>) {
 
 fn cmd_verify(data_dir: &str) {
     let path = PathBuf::from(data_dir);
+    // FR-60: anchoring section first — cheap, informative.
+    let anchoring = path.join("anchoring");
+    if let Ok(meta) = std::fs::read(anchoring.join("meta.json")) {
+        if let Ok(m) = serde_json::from_slice::<serde_json::Value>(&meta) {
+            println!("Timestamp anchoring (OpenTimestamps):");
+            println!(
+                "  status: {} (bitcoin_height: {})",
+                m.get("status").and_then(|v| v.as_str()).unwrap_or("?"),
+                m.get("bitcoin_height")
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "none yet".into())
+            );
+            println!(
+                "  anchored chain head: {}",
+                m.get("digest").and_then(|v| v.as_str()).unwrap_or("?")
+            );
+            println!(
+                "  receipt: {} (verify externally with the `ots` tool + Bitcoin headers)",
+                anchoring.join("receipt.ots").display()
+            );
+        }
+    } else {
+        println!("Timestamp anchoring: none (disabled or not yet run)");
+    }
     if !path.join("manifest.json").exists() {
         eprintln!(
             "Error: no manifest.json found at {}",
@@ -568,6 +592,7 @@ async fn main() {
             let mut csrf_enabled = false;
             let mut lattice_shadow_enabled = false;
             let mut dev_mode = false;
+            let mut ots_anchor = false;
             let mut key_passphrase: Option<String> = std::env::var("XUDANU_KEY_PASSPHRASE").ok();
             let mut github_client_id: Option<String> =
                 std::env::var("XUDANU_GITHUB_CLIENT_ID").ok();
@@ -690,6 +715,9 @@ async fn main() {
                     }
                     "--dev" => {
                         dev_mode = true;
+                    }
+                    "--ots-anchor" => {
+                        ots_anchor = true;
                     }
                     "--key-passphrase" => {
                         i += 1;
@@ -1048,6 +1076,12 @@ async fn main() {
                 if dev_mode {
                     server.dev_mode = true;
                 }
+                if ots_anchor {
+                    server.ots_anchor_bootstrap_enable();
+                    tracing::info!(
+                        "[ots] OpenTimestamps anchoring enabled (attribution chain head -> Bitcoin)"
+                    );
+                }
                 let app = AppState::new(server);
                 let app = match static_dir {
                     Some(ref dir) => {
@@ -1169,6 +1203,14 @@ async fn main() {
             });
 
             {
+                let ots_state = state.clone();
+                tokio::spawn(async move {
+                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+                    loop {
+                        interval.tick().await;
+                        ots_state.server.ots_anchor_round().await;
+                    }
+                });
                 let autosave_state = state.clone();
                 tokio::spawn(async move {
                     let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));

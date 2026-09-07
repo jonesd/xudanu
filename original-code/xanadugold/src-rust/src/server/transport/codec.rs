@@ -1200,6 +1200,19 @@ impl JsonCodec {
                     enabled: args.enabled,
                 })
             }
+            OperationCode::OtsAnchorStatus => Ok(WireRequest::OtsAnchorStatus {}),
+            OperationCode::OtsAnchorRequest => Ok(WireRequest::OtsAnchorRequest {}),
+            OperationCode::OtsAnchorSetEnabled => {
+                #[derive(Deserialize)]
+                struct Args {
+                    enabled: bool,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::OtsAnchorSetEnabled {
+                    enabled: args.enabled,
+                })
+            }
             OperationCode::RevisionCompare => {
                 #[derive(Deserialize)]
                 struct Args {

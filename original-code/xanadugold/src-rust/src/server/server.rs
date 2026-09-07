@@ -714,6 +714,11 @@ pub struct Server {
     reuse_suggestions_enabled: bool,
     /// FR-58 S1: the reuse n-gram index (lazy per-work reindex).
     pub(crate) reuse: crate::server::reuse_match::ReuseService,
+    /// FR-60: OpenTimestamps anchoring of the attribution chain head
+    /// (default off — the single-player no-outbound stance).
+    ots_anchor_enabled: bool,
+    /// FR-60: an admin requested an anchor round.
+    ots_anchor_requested: bool,
     pub(crate) personal_club_count: usize,
     pub(crate) max_personal_clubs: usize,
     pub(crate) login_attempts: HashMap<BeId, crate::server::identity::ClubAttemptTracker>,
@@ -1398,6 +1403,8 @@ impl Server {
             lattice_shadow_enabled: false,
             reuse_suggestions_enabled: false,
             reuse: crate::server::reuse_match::ReuseService::new(),
+            ots_anchor_enabled: false,
+            ots_anchor_requested: false,
             personal_club_count: 0,
             max_personal_clubs: 10_000,
             login_attempts: HashMap::new(),
@@ -8561,6 +8568,100 @@ impl Server {
 
     pub fn reuse_suggestions_enabled(&self) -> bool {
         self.reuse_suggestions_enabled
+    }
+
+    /// FR-60: admin toggle for OTS anchoring.
+    pub fn ots_anchor_set_enabled(
+        &mut self,
+        session_id: SessionId,
+        enabled: bool,
+    ) -> Result<(), ServerError> {
+        self.ensure_admin(session_id)?;
+        self.ots_anchor_enabled = enabled;
+        Ok(())
+    }
+
+    /// FR-60: bootstrap enable from the run flag (no session).
+    pub fn ots_anchor_bootstrap_enable(&mut self) {
+        self.ots_anchor_enabled = true;
+    }
+
+    /// FR-60: admin request for an immediate anchor round.
+    pub fn ots_anchor_request(&mut self, session_id: SessionId) -> Result<(), ServerError> {
+        self.ensure_admin(session_id)?;
+        if !self.ots_anchor_enabled {
+            return Err(ServerError::InvalidArgument(
+                "OTS anchoring is disabled".into(),
+            ));
+        }
+        self.ots_anchor_requested = true;
+        Ok(())
+    }
+
+    /// FR-60: consume a pending round request (interval task).
+    pub fn ots_take_request(&mut self) -> bool {
+        self.ots_anchor_requested && self.ots_anchor_enabled
+    }
+
+    /// FR-60: everything an anchor round needs, snapshot under one
+    /// lock pass: current chain head digest + previous stream.
+    pub fn ots_anchor_snapshot(&self) -> Option<([u8; 32], Option<Vec<u8>>)> {
+        if !self.ots_anchor_enabled {
+            return None;
+        }
+        let head_hex = self.attribution_log.head_hash_hex()?;
+        let digest: [u8; 32] = hex::decode(&head_hex).ok()?.try_into().ok()?;
+        let dir = self.data_dir.as_ref()?.join("anchoring");
+        let prev = std::fs::read(dir.join("receipt-stream.bin")).ok();
+        Some((digest, prev))
+    }
+
+    /// FR-60: persist a round's outcome (receipt + meta). Failures
+    /// are caller-logged; anchoring is best-effort by design.
+    pub fn ots_store_round(
+        &self,
+        digest: &[u8; 32],
+        stream: &[u8],
+        round: &crate::server::ots_anchor::AnchorRound,
+    ) {
+        let Some(dir) = self.data_dir.as_ref().map(|d| d.join("anchoring")) else {
+            return;
+        };
+        if std::fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let _ = std::fs::write(
+            dir.join("receipt.ots"),
+            crate::server::ots_anchor::frame_ots_file(digest, stream),
+        );
+        let _ = std::fs::write(dir.join("receipt-stream.bin"), stream);
+        let meta = serde_json::json!({
+            "digest": round.digest_hex,
+            "status": round.status,
+            "bitcoin_height": round.bitcoin_height,
+            "calendars": round.calendars,
+            "updated_at": Self::current_timestamp_secs(),
+        });
+        let _ = std::fs::write(
+            dir.join("meta.json"),
+            serde_json::to_vec_pretty(&meta).unwrap_or_default(),
+        );
+    }
+
+    /// FR-60: status for the admin op and the verify subcommand.
+    pub fn ots_anchor_status(&self) -> serde_json::Value {
+        let mut v = serde_json::json!({ "enabled": self.ots_anchor_enabled });
+        if let Some(head) = self.attribution_log.head_hash_hex() {
+            v["chain_head"] = serde_json::json!(head);
+        }
+        if let Some(dir) = self.data_dir.as_ref().map(|d| d.join("anchoring")) {
+            if let Ok(meta) = std::fs::read(dir.join("meta.json")) {
+                if let Ok(m) = serde_json::from_slice::<serde_json::Value>(&meta) {
+                    v["last_round"] = m;
+                }
+            }
+        }
+        v
     }
 
     /// FR-58 S1+S2: suggest works whose text contains n-grams of the
@@ -22725,6 +22826,8 @@ pub(crate) mod persist_snapshot {
                 lattice_shadow_enabled: false,
                 reuse_suggestions_enabled: false,
                 reuse: crate::server::reuse_match::ReuseService::new(),
+                ots_anchor_enabled: false,
+                ots_anchor_requested: false,
                 personal_club_count: 0,
                 max_personal_clubs: 10_000,
                 login_attempts: HashMap::new(),
@@ -48415,5 +48518,81 @@ mod revision_compare_tests {
             server.revision_compare(sid, work, 0, 9).is_err(),
             "unretained revision errors"
         );
+    }
+}
+
+/// FR-60 armor: chain-head extraction + snapshot/store/status lifecycle.
+#[cfg(test)]
+mod ots_anchor_tests {
+    use super::*;
+
+    #[test]
+    fn chain_head_grows_with_appends() {
+        let mut server = Server::new();
+        assert!(
+            server.attribution_log.head_hash_hex().is_none(),
+            "empty log has no head"
+        );
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let work = server
+            .create_work(sid, Edition::from_text("anchorable"))
+            .unwrap();
+        server
+            .revise_work(work, sid, Edition::from_text("anchorable v2"), None)
+            .unwrap();
+        let head = server
+            .attribution_log
+            .head_hash_hex()
+            .expect("head after revisions");
+        assert_eq!(head.len(), 64, "sha256 hex");
+        // Head is stable absent new entries.
+        assert_eq!(
+            server.attribution_log.head_hash_hex().as_deref(),
+            Some(head.as_str())
+        );
+    }
+
+    #[test]
+    fn snapshot_disabled_by_default_and_enabled_gates() {
+        let mut server = Server::new();
+        // Disabled: snapshot never runs (even with a data dir).
+        server.data_dir = Some(std::env::temp_dir());
+        assert!(server.ots_anchor_snapshot().is_none());
+        server.ots_anchor_bootstrap_enable();
+        assert!(server.ots_anchor_status()["enabled"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn store_round_persists_receipt_and_status_reads_it() {
+        let dir = std::env::temp_dir().join(format!(
+            "xudanu-ots-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut server = Server::new();
+        server.data_dir = Some(dir.clone());
+        server.ots_anchor_bootstrap_enable();
+
+        let digest = [3u8; 32];
+        let stream = crate::server::ots_anchor::tests_support::pending_stream();
+        let round = crate::server::ots_anchor::AnchorRound {
+            digest_hex: digest.iter().map(|b| format!("{:02x}", b)).collect(),
+            status: "pending",
+            bitcoin_height: None,
+            calendars: vec!["https://alice.btc.calendar.opentimestamps.org".into()],
+        };
+        server.ots_store_round(&digest, &stream, &round);
+
+        let status = server.ots_anchor_status();
+        assert_eq!(status["last_round"]["status"], "pending");
+        let receipt = std::fs::read(dir.join("anchoring").join("receipt.ots")).unwrap();
+        // Framed: 31-byte magic + version + sha256 tag + digest.
+        assert_eq!(receipt.len(), 31 + 1 + 1 + 32 + stream.len());
+        assert_eq!(&receipt[33..65], &digest[..]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
