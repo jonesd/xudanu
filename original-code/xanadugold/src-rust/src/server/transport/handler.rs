@@ -211,6 +211,12 @@ async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
                 "google": state.oauth_config.google_enabled(),
             }),
         );
+        // FR-60: anchoring status in /health so external monitors can
+        // watch staleness (enabled / pending / confirmed + age).
+        obj.insert(
+            "anchoring".into(),
+            state.server.with_server(|srv| srv.ots_anchor_status()),
+        );
     }
     (
         [(axum::http::header::CONTENT_TYPE, "application/json")],
