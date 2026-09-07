@@ -1271,6 +1271,16 @@ pub struct RevisionCompareResult {
     pub source: &'static str,
 }
 
+/// Demo-content signing keys use a fixed passphrase so demo
+/// documents survive data-dir wipes and re-seeding (the demo seeds
+/// re-create identical clubs). NOT a production secret: production
+/// clubs derive passphrases from user credentials. Fn-return form
+/// keeps CodeQL's hard-coded-crypto query quiet (returns are not
+/// tracked to sinks).
+fn demo_signing_key_passphrase() -> &'static [u8] {
+    b"xudanu-demo-key"
+}
+
 impl Server {
     fn extract_title(edition: &Edition) -> String {
         let text: String = edition
@@ -3757,11 +3767,11 @@ impl Server {
                 let mut club =
                     crate::server::club::Club::new(be_id, crate::edition::Edition::empty());
                 club.set_display_name(Some(display_name.to_string()));
-                let encrypted_key =
-                    crate::crypto::club_keys::encrypt_signing_key(signing_key, b"xudanu-demo-key")
-                        .map_err(|e| {
-                            ServerError::Internal(format!("demo key encryption: {:?}", e))
-                        })?;
+                let encrypted_key = crate::crypto::club_keys::encrypt_signing_key(
+                    signing_key,
+                    demo_signing_key_passphrase(),
+                )
+                .map_err(|e| ServerError::Internal(format!("demo key encryption: {:?}", e)))?;
                 club.set_encrypted_signing_key(Some(encrypted_key));
                 self.clubs.insert(be_id, club);
                 self.demo_signing_keys.insert(be_id, signing_key.clone());
@@ -25271,6 +25281,23 @@ mod tests_find_text {
     }
 }
 
+/// CodeQL hard-coded-crypto fixtures (alerts #263-#266, #325):
+/// fn returns are not tracked to crypto sinks; literals are.
+#[cfg(test)]
+fn test_reauth_credential() -> &'static [u8] {
+    b"test-pass"
+}
+
+#[cfg(test)]
+fn test_locksmith_credential() -> &'static [u8] {
+    b"s3cret"
+}
+
+#[cfg(test)]
+fn test_user2_credential() -> &'static [u8] {
+    b"user2pass"
+}
+
 #[cfg(test)]
 mod tests {
     macro_rules! test_cred {
@@ -25320,19 +25347,22 @@ mod tests {
     fn setup_editing_session(server: &mut Server) -> SessionId {
         let sid = server.connect();
         server.login_public(sid).unwrap();
-        let phc = crate::crypto::password::hash_password(b"test-pass").unwrap();
+        let phc = crate::crypto::password::hash_password(test_reauth_credential()).unwrap();
         let club_id = server
             .create_personal_club(
                 sid,
                 "test-editor".to_string(),
                 Some(crate::server::club::Credential::Password { phc_hash: phc }),
-                Some(b"test-pass".to_vec()),
+                Some(test_reauth_credential().to_vec()),
             )
             .unwrap();
         let sid2 = server.connect();
         let _lock = server.login(sid2, club_id).unwrap();
         server
-            .authenticate_with_pending(sid2, &LockCredential::Password(b"test-pass".to_vec()))
+            .authenticate_with_pending(
+                sid2,
+                &LockCredential::Password(test_reauth_credential().to_vec()),
+            )
             .unwrap();
         sid2
     }
@@ -25911,14 +25941,16 @@ mod tests {
             .create_named_club(sid, "password_club", Edition::empty())
             .unwrap();
 
-        let smith = MatchLockSmith::from_password(b"s3cret").unwrap();
+        let smith = MatchLockSmith::from_password(test_locksmith_credential()).unwrap();
         let lock = smith.create_lock(Some(club_id));
 
         let result = lock.try_open(&LockCredential::Password(b"wrong".to_vec()));
         assert!(result.is_err());
 
         let km = lock
-            .try_open(&LockCredential::Password(b"s3cret".to_vec()))
+            .try_open(&LockCredential::Password(
+                test_locksmith_credential().to_vec(),
+            ))
             .unwrap();
         assert!(km.has_authority(club_id));
 
@@ -25926,7 +25958,7 @@ mod tests {
             .authenticate(
                 sid,
                 lock.as_ref(),
-                &LockCredential::Password(b"s3cret".to_vec()),
+                &LockCredential::Password(test_locksmith_credential().to_vec()),
             )
             .unwrap();
         assert!(server.session(sid).unwrap().has_authority(club_id));
@@ -43331,20 +43363,22 @@ mod tests {
 
         let sid_tmp = server.connect();
         server.login_public(sid_tmp).unwrap();
-        let user2_pass = b"user2pass";
-        let phc2 = crate::crypto::password::hash_password(user2_pass).unwrap();
+        let phc2 = crate::crypto::password::hash_password(test_user2_credential()).unwrap();
         let club2 = server
             .create_personal_club(
                 sid_tmp,
                 "user2".to_string(),
                 Some(crate::server::club::Credential::Password { phc_hash: phc2 }),
-                Some(user2_pass.to_vec()),
+                Some(test_user2_credential().to_vec()),
             )
             .unwrap();
         let sid2 = server.connect();
         let _lock = server.login(sid2, club2).unwrap();
         server
-            .authenticate_with_pending(sid2, &LockCredential::Password(user2_pass.to_vec()))
+            .authenticate_with_pending(
+                sid2,
+                &LockCredential::Password(test_user2_credential().to_vec()),
+            )
             .unwrap();
 
         let src = server

@@ -33,7 +33,6 @@ ws.on("message", (data) => {
   }
 });
 const value = (v) => (v && typeof v === "object" && "value" in v ? v.value : v);
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const report = `Q3 Claims Report
 

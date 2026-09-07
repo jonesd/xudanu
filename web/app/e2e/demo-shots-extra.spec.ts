@@ -1,4 +1,4 @@
-import { test, chromium } from "@playwright/test";
+import { test } from "@playwright/test";
 
 const DIR = "../../docs/screenshots/compound-demo";
 const BASE = "http://localhost:5173";
