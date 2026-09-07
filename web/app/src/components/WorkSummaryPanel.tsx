@@ -3,6 +3,7 @@ import type {
   CrdtSyncClient,
   WorkSummary as WorkSummaryData,
   WorkVersionTimeline,
+  RevisionComparePayload,
   RevisionMeta,
   ReusedInDoc,
 } from "../api/crdt_sync";
@@ -54,6 +55,10 @@ export function WorkSummaryPanel({
 }: WorkSummaryPanelProps) {
   const [summary, setSummary] = useState<WorkSummaryData | null>(null);
   const [timeline, setTimeline] = useState<WorkVersionTimeline | null>(null);
+  const [revA, setRevA] = useState<number | null>(null);
+  const [revB, setRevB] = useState<number | null>(null);
+  const [revDiff, setRevDiff] = useState<RevisionComparePayload | null>(null);
+  const [revDiffBusy, setRevDiffBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -207,6 +212,82 @@ export function WorkSummaryPanel({
                       );
                     })}
                 </ul>
+                {timeline.revisions.length >= 2 && (
+                  <div style={{ marginTop: 8, display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+                    <select
+                      className="ws-filter-select"
+                      value={revA ?? ""}
+                      onChange={(e) => setRevA(e.target.value === "" ? null : Number(e.target.value))}
+                      style={{ fontSize: 11 }}
+                      aria-label="Compare from revision"
+                    >
+                      <option value="">from…</option>
+                      {timeline.revisions.map((r) => (
+                        <option key={r.revision} value={r.revision}>r{r.revision}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="ws-filter-select"
+                      value={revB ?? ""}
+                      onChange={(e) => setRevB(e.target.value === "" ? null : Number(e.target.value))}
+                      style={{ fontSize: 11 }}
+                      aria-label="Compare to revision"
+                    >
+                      <option value="">to…</option>
+                      {timeline.revisions.map((r) => (
+                        <option key={r.revision} value={r.revision}>r{r.revision}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="ws-link-filter-btn"
+                      disabled={revA === null || revB === null || revA === revB || revDiffBusy}
+                      style={{ fontSize: 11, padding: "2px 10px" }}
+                      onClick={async () => {
+                        const client = clientRef.current;
+                        if (revA === null || revB === null || !client) return;
+                        setRevDiffBusy(true);
+                        setRevDiff(null);
+                        try {
+                          setRevDiff(await client.revisionCompare(workBeId, revA, revB));
+                        } catch {
+                          setRevDiff(null);
+                        } finally {
+                          setRevDiffBusy(false);
+                        }
+                      }}
+                    >
+                      {revDiffBusy ? "comparing…" : "compare"}
+                    </button>
+                  </div>
+                )}
+                {revDiff && (
+                  <div style={{ marginTop: 8, fontSize: 11 }}>
+                    <div style={{ color: "#8b949e", marginBottom: 4 }}>
+                      {revDiff.source === "crum" ? "structural (crum) · " : `${revDiff.source} · `}
+                      {Math.round(revDiff.unchanged_ratio * 100)}% unchanged ·{" "}
+                      {revDiff.deleted.length} deleted · {revDiff.inserted.length} inserted
+                    </div>
+                    {revDiff.deleted.map((h, i) => (
+                      <div key={`d${i}`} className="cmp-del" style={{ marginBottom: 3, padding: "2px 4px" }}>
+                        − {h.text}
+                        <span style={{ color: "#8b949e", fontSize: 10, marginLeft: 6 }}>
+                          {h.author_pk_hex ? `${h.author_pk_hex.slice(0, 8)} · ` : ""}
+                          {h.timestamp ? new Date(h.timestamp * 1000).toLocaleString() : ""}
+                        </span>
+                      </div>
+                    ))}
+                    {revDiff.inserted.map((h, i) => (
+                      <div key={`i${i}`} className="cmp-ins" style={{ marginBottom: 3, padding: "2px 4px" }}>
+                        + {h.text}
+                        <span style={{ color: "#8b949e", fontSize: 10, marginLeft: 6 }}>
+                          {h.author_pk_hex ? `${h.author_pk_hex.slice(0, 8)} · ` : ""}
+                          {h.timestamp ? new Date(h.timestamp * 1000).toLocaleString() : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </>

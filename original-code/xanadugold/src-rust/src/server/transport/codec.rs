@@ -1200,6 +1200,21 @@ impl JsonCodec {
                     enabled: args.enabled,
                 })
             }
+            OperationCode::RevisionCompare => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    rev_a: u64,
+                    rev_b: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::RevisionCompare {
+                    work_id: args.work_id,
+                    rev_a: args.rev_a,
+                    rev_b: args.rev_b,
+                })
+            }
             OperationCode::WorkAutoTag => {
                 #[derive(Deserialize)]
                 struct Args {
