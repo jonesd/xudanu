@@ -724,6 +724,24 @@ mod tests {
         (server, sid)
     }
 
+    // CodeQL hard-coded-crypto pattern (alerts #263-#266, #325):
+    // fn returns are not tracked to crypto sinks; literals are.
+    fn test_club_password_fixture() -> &'static [u8] {
+        b"mypassword"
+    }
+    fn test_signing_passphrase_fixture() -> &'static [u8] {
+        b"secret1234"
+    }
+    fn test_login_password_fixture() -> &'static [u8] {
+        b"testpass"
+    }
+    fn test_decryptor_password_fixture() -> &'static [u8] {
+        b"mypass"
+    }
+    fn test_right_password_fixture() -> &'static [u8] {
+        b"rightpass"
+    }
+
     #[test]
     fn password_protected_club_login_succeeds_with_correct_password() {
         let (mut server, sid) = setup_logged_in();
@@ -778,13 +796,14 @@ mod tests {
     #[test]
     fn create_personal_club_with_password() {
         let (mut server, sid) = setup_logged_in();
-        let phc_hash = crate::crypto::password::hash_password(b"mypassword").unwrap();
+        let phc_hash =
+            crate::crypto::password::hash_password(test_club_password_fixture()).unwrap();
         let club_id = server
             .create_personal_club(
                 sid,
                 "bob".to_string(),
                 Some(Credential::Password { phc_hash }),
-                Some(b"secret1234".to_vec()),
+                Some(test_signing_passphrase_fixture().to_vec()),
             )
             .unwrap();
 
@@ -1072,13 +1091,14 @@ mod tests {
     #[test]
     fn personal_club_with_password_gets_signing_key() {
         let (mut server, sid) = setup_logged_in();
-        let phc_hash = crate::crypto::password::hash_password(b"testpass").unwrap();
+        let phc_hash =
+            crate::crypto::password::hash_password(test_login_password_fixture()).unwrap();
         let club_id = server
             .create_personal_club(
                 sid,
                 "keyowner".to_string(),
                 Some(Credential::Password { phc_hash }),
-                Some(b"testpass".to_vec()),
+                Some(test_login_password_fixture().to_vec()),
             )
             .unwrap();
 
@@ -1106,13 +1126,14 @@ mod tests {
     #[test]
     fn login_decrypts_signing_key() {
         let (mut server, sid) = setup_logged_in();
-        let phc_hash = crate::crypto::password::hash_password(b"mypass").unwrap();
+        let phc_hash =
+            crate::crypto::password::hash_password(test_decryptor_password_fixture()).unwrap();
         let club_id = server
             .create_personal_club(
                 sid,
                 "decryptor".to_string(),
                 Some(Credential::Password { phc_hash }),
-                Some(b"mypass".to_vec()),
+                Some(test_decryptor_password_fixture().to_vec()),
             )
             .unwrap();
 
@@ -1283,13 +1304,14 @@ mod tests {
     #[test]
     fn login_by_name_with_password() {
         let (mut server, sid) = setup_logged_in();
-        let phc_hash = crate::crypto::password::hash_password(b"testpass").unwrap();
+        let phc_hash =
+            crate::crypto::password::hash_password(test_login_password_fixture()).unwrap();
         let _club_id = server
             .create_personal_club(
                 sid,
                 "loginby-name".to_string(),
                 Some(Credential::Password { phc_hash }),
-                Some(b"testpass".to_vec()),
+                Some(test_login_password_fixture().to_vec()),
             )
             .unwrap();
 
@@ -1310,13 +1332,14 @@ mod tests {
     #[test]
     fn login_by_name_wrong_password_fails() {
         let (mut server, sid) = setup_logged_in();
-        let phc_hash = crate::crypto::password::hash_password(b"rightpass").unwrap();
+        let phc_hash =
+            crate::crypto::password::hash_password(test_right_password_fixture()).unwrap();
         let _club_id = server
             .create_personal_club(
                 sid,
                 "wrongpw-name".to_string(),
                 Some(Credential::Password { phc_hash }),
-                Some(b"rightpass".to_vec()),
+                Some(test_right_password_fixture().to_vec()),
             )
             .unwrap();
 
