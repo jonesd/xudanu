@@ -188,6 +188,7 @@ pub enum OperationCode {
     LatticePrimaryDemote,
     SuggestionQuery,
     SuggestionConfigSet,
+    RevisionCompare,
     WorkUnstar,
     WorkIsStarred,
     ConnectionPinSet,
@@ -574,6 +575,7 @@ impl OperationCode {
             0x0357 => Some(OperationCode::LatticePrimaryDemote),
             0x0358 => Some(OperationCode::SuggestionQuery),
             0x0359 => Some(OperationCode::SuggestionConfigSet),
+            0x035A => Some(OperationCode::RevisionCompare),
             0x0336 => Some(OperationCode::WorkUnstar),
             0x0337 => Some(OperationCode::WorkIsStarred),
             0x0338 => Some(OperationCode::WorkGraph),
@@ -916,6 +918,7 @@ impl OperationCode {
             OperationCode::LatticePrimaryDemote => 0x0357,
             OperationCode::SuggestionQuery => 0x0358,
             OperationCode::SuggestionConfigSet => 0x0359,
+            OperationCode::RevisionCompare => 0x035A,
             OperationCode::WorkUnstar => 0x0336,
             OperationCode::WorkIsStarred => 0x0337,
             OperationCode::WorkGraph => 0x0338,
@@ -1404,6 +1407,11 @@ pub enum WireRequest {
     },
     SuggestionConfigSet {
         enabled: bool,
+    },
+    RevisionCompare {
+        work_id: BeId,
+        rev_a: u64,
+        rev_b: u64,
     },
     WorkUnstar {
         work_id: BeId,
@@ -5167,6 +5175,7 @@ mod lattice_shadow_wire_tests {
             OperationCode::LatticePrimaryDemote,
             OperationCode::SuggestionQuery,
             OperationCode::SuggestionConfigSet,
+            OperationCode::RevisionCompare,
         ] {
             let wire = code.to_u16();
             let back = OperationCode::from_u16(wire).expect("decode");
@@ -5185,6 +5194,7 @@ mod lattice_shadow_wire_tests {
             (0x0357, OperationCode::LatticePrimaryDemote),
             (0x0358, OperationCode::SuggestionQuery),
             (0x0359, OperationCode::SuggestionConfigSet),
+            (0x035A, OperationCode::RevisionCompare),
         ];
         for (wire, want) in targets {
             assert_eq!(OperationCode::from_u16(wire), Some(want));

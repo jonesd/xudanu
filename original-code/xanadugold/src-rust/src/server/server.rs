@@ -1255,6 +1255,27 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
     })
 }
 
+/// FR-59: one hunk of a revision compare — an inserted or deleted
+/// span with its provenance.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RevisionHunk {
+    pub start: i64,
+    pub end: i64,
+    pub text: String,
+    pub author_pk_hex: String,
+    pub timestamp: u64,
+}
+
+/// FR-59: provenance-based revision compare result. `source` labels
+/// the tier ("crum" — structural; fallbacks must say so).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RevisionCompareResult {
+    pub inserted: Vec<RevisionHunk>,
+    pub deleted: Vec<RevisionHunk>,
+    pub unchanged_ratio: f32,
+    pub source: &'static str,
+}
+
 /// Demo-content signing keys use a fixed passphrase so demo
 /// documents survive data-dir wipes and re-seeding (the demo seeds
 /// re-create identical clubs). NOT a production secret: production
@@ -16513,6 +16534,157 @@ impl Server {
         }
 
         Ok(rendered)
+    }
+
+    fn edition_at_revision(work: &crate::edition::work::Work, rev: u64) -> Option<Edition> {
+        let count = work.revision_count();
+        if rev == count {
+            Some(work.current_edition().clone())
+        } else {
+            work.revision_history().get(&rev).cloned()
+        }
+    }
+
+    /// FR-59: compare two revisions of one work. Deletions are spans
+    /// in rev_a absent from rev_b; insertions the reverse. Author and
+    /// timestamp come from the editions' span provenance (the
+    /// deletion's author is who wrote the now-gone text, from rev_a).
+    pub fn revision_compare(
+        &self,
+        session_id: SessionId,
+        work_be_id: BeId,
+        rev_a: u64,
+        rev_b: u64,
+    ) -> Result<RevisionCompareResult, ServerError> {
+        self.ensure_can_read_history(session_id, work_be_id)?;
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+        if rev_a == rev_b {
+            return Err(ServerError::InvalidArgument("revisions must differ".into()));
+        }
+        let (lo, hi) = if rev_a < rev_b {
+            (rev_a, rev_b)
+        } else {
+            (rev_b, rev_a)
+        };
+        let ed_lo = Self::edition_at_revision(&ws.work, lo)
+            .ok_or_else(|| ServerError::InvalidArgument(format!("revision {} not retained", lo)))?;
+        let ed_hi = Self::edition_at_revision(&ws.work, hi)
+            .ok_or_else(|| ServerError::InvalidArgument(format!("revision {} not retained", hi)))?;
+        let text_lo = ed_lo.to_text();
+        let text_hi = ed_hi.to_text();
+
+        let diff = ed_lo.crum_diff(&ed_hi);
+
+        // The fingerprint tier reports 2-3 char junk matches that
+        // fragment real hunks ("alph" + "a "). Re-derive the gap
+        // structure from SUBSTANTIVE matches only (>= 4 chars) —
+        // hunk boundaries at word-ish scale, noise discarded.
+        let min_match = 4i64;
+        let sig_a: Vec<(i64, i64)> = diff
+            .matched
+            .iter()
+            .filter(|&&(a, b, _, _)| b - a >= min_match)
+            .map(|&(a, b, _, _)| (a, b))
+            .collect();
+        let mut sig_b: Vec<(i64, i64)> = diff
+            .matched
+            .iter()
+            .filter(|&&(_, _, c, d)| d - c >= min_match)
+            .map(|&(_, _, c, d)| (c, d))
+            .collect();
+        sig_b.sort();
+        let gaps = |len: i64, m: &[(i64, i64)]| -> Vec<(i64, i64)> {
+            let mut out = Vec::new();
+            let mut pos = 0i64;
+            for &(s, e) in m {
+                if s > pos {
+                    out.push((pos, s));
+                }
+                pos = pos.max(e);
+            }
+            if pos < len {
+                out.push((pos, len));
+            }
+            out
+        };
+        let only_a = gaps(text_lo.chars().count() as i64, &sig_a);
+        let only_b = gaps(text_hi.chars().count() as i64, &sig_b);
+
+        let slice = |text: &str, s: i64, e: i64| -> String {
+            let s = (s.max(0) as usize).min(text.len());
+            let e = (e.max(0) as usize).min(text.len()).max(s);
+            let mut out: String = text.chars().skip(s).take(e - s).collect();
+            if out.chars().count() > 200 {
+                out = out.chars().take(200).collect();
+                out.push('…');
+            }
+            out
+        };
+        let prov_for = |ed: &Edition, s: i64, e: i64| -> (String, u64) {
+            let mut best: Option<(i64, &crate::edition::provenance::SpanProvenance)> = None;
+            for sp in &ed.span_provenance {
+                let overlap = (sp.end.min(e) - sp.start.max(s)).max(0);
+                if overlap > 0 && best.map_or(true, |(b, _)| overlap > b) {
+                    best = Some((overlap, sp));
+                }
+            }
+            match best {
+                Some((_, sp)) => (
+                    crate::server::crdt_manager::bytes_to_hex(&sp.provenance.author_public_key),
+                    sp.provenance.timestamp,
+                ),
+                None => (String::new(), 0),
+            }
+        };
+
+        let deleted = only_a
+            .iter()
+            .map(|&(s, e)| {
+                let (pk, ts) = prov_for(&ed_lo, s, e);
+                RevisionHunk {
+                    start: s,
+                    end: e,
+                    text: slice(&text_lo, s, e),
+                    author_pk_hex: pk,
+                    timestamp: ts,
+                }
+            })
+            .collect();
+        let inserted = only_b
+            .iter()
+            .map(|&(s, e)| {
+                let (pk, ts) = prov_for(&ed_hi, s, e);
+                RevisionHunk {
+                    start: s,
+                    end: e,
+                    text: slice(&text_hi, s, e),
+                    author_pk_hex: pk,
+                    timestamp: ts,
+                }
+            })
+            .collect();
+
+        let matched_chars: i64 = diff
+            .matched
+            .iter()
+            .map(|&(a, b, _, _)| (b - a).max(a - b))
+            .sum();
+        let total = (text_hi.chars().count() as i64).max(text_lo.chars().count() as i64);
+        let unchanged_ratio = if total == 0 {
+            1.0
+        } else {
+            (matched_chars as f32 / total as f32).clamp(0.0, 1.0)
+        };
+
+        Ok(super::server::RevisionCompareResult {
+            inserted,
+            deleted,
+            unchanged_ratio,
+            source: "crum",
+        })
     }
 
     pub fn find_shared_regions(
@@ -48197,5 +48369,154 @@ mod reuse_suggestion_tests {
             .unwrap();
         assert_eq!(cards.len(), 1);
         assert_eq!(cards[0].work_id, src);
+    }
+}
+
+/// FR-59 armor: revision compare against known ground truth.
+#[cfg(test)]
+mod revision_compare_tests {
+    use super::*;
+
+    const PARA1: &str = "The lighthouse keeper counted seventeen ships before noon and recorded each hull shape in the margin of the tide log.";
+    const PARA2: &str = "Gulls argued over the breakwater while the lamp cooled, and the keeper drank his tea in the wind shadow of the tower.";
+    const PARA3: &str = "By evening the fog arrived without ceremony, erasing the harbor one mast at a time until only the bell remained.";
+
+    #[test]
+    fn hunks_exact_at_paragraph_scale() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let v0 = format!("{}\n\n{}\n\n{}", PARA1, PARA2, PARA3);
+        let work = server.create_work(sid, Edition::from_text(&v0)).unwrap();
+
+        // rev 1: replace PARA2's opening sentence, keep the rest.
+        let para2b = "Gulls argued over the breakwater while the lamp burned low, and the keeper refilled his tea from a dented kettle.";
+        let v1 = format!("{}\n\n{}\n\n{}", PARA1, para2b, PARA3);
+        server
+            .revise_work(work, sid, Edition::from_text(&v1), None)
+            .unwrap();
+
+        let r = server.revision_compare(sid, work, 0, 1).unwrap();
+        assert_eq!(r.source, "crum");
+        // Word-scale hunks: exactly the changed phrases. (The
+        // matcher aligns common words; gaps are the edits.)
+        let del = r
+            .deleted
+            .iter()
+            .map(|h| h.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        let ins = r
+            .inserted
+            .iter()
+            .map(|h| h.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(del.contains("cooled"), "deleted covers 'cooled': {:?}", del);
+        assert!(
+            del.contains("wind shadow"),
+            "deleted covers 'wind shadow': {:?}",
+            del
+        );
+        assert!(
+            ins.contains("burned low"),
+            "inserted covers 'burned low': {:?}",
+            ins
+        );
+        assert!(
+            ins.contains("kettle"),
+            "inserted covers 'kettle': {:?}",
+            ins
+        );
+        assert!(
+            r.deleted.len() <= 6,
+            "word-scale hunks, not shrapnel: {:?}",
+            del
+        );
+        // Provenance rides every hunk.
+        assert!(!r.deleted[0].author_pk_hex.is_empty());
+        assert!(r.inserted[0].timestamp > 0);
+        assert!(r.unchanged_ratio > 0.3 && r.unchanged_ratio < 0.9);
+
+        // rev 2: append a paragraph (insertion only).
+        let v2 = format!("{}\n\nNobody wrote down what the bell said.", v1);
+        server
+            .revise_work(work, sid, Edition::from_text(&v2), None)
+            .unwrap();
+        let r = server.revision_compare(sid, work, 1, 2).unwrap();
+        let ins2 = r
+            .inserted
+            .iter()
+            .map(|h| h.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(r.deleted.is_empty(), "no deletions 1->2: {:?}", r.deleted);
+        assert!(
+            ins2.contains("what the bell said"),
+            "append is inserted: {:?}",
+            ins2
+        );
+
+        // Order normalization: 2 -> 0 equals 0 -> 2.
+        let fwd = server.revision_compare(sid, work, 0, 2).unwrap();
+        let rev = server.revision_compare(sid, work, 2, 0).unwrap();
+        assert_eq!(fwd.deleted.len(), rev.deleted.len());
+        assert_eq!(fwd.inserted.len(), rev.inserted.len());
+    }
+
+    #[test]
+    fn micro_text_covers_the_edits() {
+        // Sub-word matcher noise makes 5-word fixtures fragment;
+        // assert coverage (the edits are found), not boundaries.
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let work = server
+            .create_work(sid, Edition::from_text("alpha beta gamma delta epsilon"))
+            .unwrap();
+        server
+            .revise_work(
+                work,
+                sid,
+                Edition::from_text("beta GAMMA delta epsilon zeta"),
+                None,
+            )
+            .unwrap();
+        let r = server.revision_compare(sid, work, 0, 1).unwrap();
+        let del: String = r
+            .deleted
+            .iter()
+            .map(|h| h.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let ins: String = r
+            .inserted
+            .iter()
+            .map(|h| h.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(del.contains("alph"), "deleted covers alpha: {:?}", del);
+        assert!(del.contains("gamma"), "deleted covers gamma: {:?}", del);
+        assert!(ins.contains("GAMMA"), "inserted covers GAMMA: {:?}", ins);
+        assert!(ins.contains("zeta"), "inserted covers zeta: {:?}", ins);
+    }
+
+    #[test]
+    fn revision_compare_validates_input() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let work = server
+            .create_work(sid, Edition::from_text("only revision"))
+            .unwrap();
+
+        assert!(
+            server.revision_compare(sid, work, 0, 0).is_err(),
+            "same revision"
+        );
+        assert!(
+            server.revision_compare(sid, work, 0, 9).is_err(),
+            "unretained revision errors"
+        );
     }
 }
