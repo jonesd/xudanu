@@ -6,6 +6,62 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.12.0] — 2026-09-07
+
+The **provenance** release: the lattice cutover completes, reuse
+suggestions arrive, revision compare goes structural, and every
+timestamp claim gets a Bitcoin floor.
+
+### FR-51: lattice cutover complete
+- All six phases (C-0..C-5) merged; the switch is operable:
+  lattice-primary reads on every text path (current text, ranges,
+  the flat-text helper behind transclusion sources/diff/search)
+- Promotion set persists across restarts (root chunk + snapshot +
+  manifest); shadows rebuild from editions at restore
+- Wire ops `lattice_primary_promote/demote` (0x0356/0x0357),
+  admin-gated; shadow status reports `lattice_primary`
+
+### FR-58: reference-over-copy suggestions
+- E-0 experiment passed (n=6 word n-grams: fires at first probe,
+  p99 ~130µs); gate runs as living armor
+- Reuse index service (lazy per-work reindex) + suggestion wire ops
+  (0x0358/0x0359); unreadable works never surfaced
+- Frontend: ghost-text card, accept-as-transclusion (reuses inline
+  transclusion machinery verbatim), Settings toggle, off by default
+- Seeded corpus pair (essay + critique) and multi-revision doc for
+  trying it
+
+### FR-59: provenance-based revision compare
+- `revision_compare` (0x035A): hunks from crum_diff between
+  historical editions — structural, exact, no text alignment;
+  author + timestamp per hunk from span provenance
+- History tab two-revision picker with attribution chips
+
+### FR-60: OpenTimestamps anchoring
+- The attribution chain head anchors to Bitcoin via OTS calendars
+  (default OFF: `--ots-anchor`); receipts stored, upgraded
+  pending→confirmed, `/health` exposes status for monitoring
+- Full OTS binary-format parser, live-verified against the real
+  calendar; admin ops 0x035B–0x035D; `verify` reports the floor
+- Deployment anchor policy documented: client prod = TSA primary +
+  Bitcoin beside (S5 when a client names their TSA)
+
+### Compare overhaul
+- Readable What-differs encoding (diff washes + per-column stats),
+  verdict banners, word-level Myers aligned-diff fallback with
+  auto mode selection
+
+### Security & hygiene
+- 41 CodeQL hard-coded-crypto alerts cleared (fn-return fixture
+  pattern; derived near-miss tests); 2 JS alerts fixed, 2 dismissed
+  as false positives; browserslist bumped (Dependabot)
+- ws-link-probe.mjs committed (was referenced but untracked)
+
+### Docs
+- Provenance flow + claim-strength analysis (the honest claims
+  table + landscape check); 5-minute demo script; FR-57 (tombstone
+  GC), FR-61 (validation kit) specs
+
 ## [v1.11.0] — 2026-09-05
 
 The **links-and-gold** release: the complete Gold link model
