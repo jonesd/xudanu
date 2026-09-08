@@ -4022,7 +4022,19 @@ impl Server {
 
         let is_public_session = owner == Some(self.system_clubs.public_club);
         if is_public_session {
-            if self.edit_policy == EditPolicy::OwnerOnly {
+            // OwnerOnly refuses anonymous creation — unless the
+            // session carries admin authority (the boot-time demo
+            // seeder grants it; admin sessions are not anonymous).
+            if self.edit_policy == EditPolicy::OwnerOnly
+                && !self
+                    .sessions
+                    .get(&session_id)
+                    .map(|s| {
+                        s.has_authority(self.system_clubs.admin_club)
+                            || s.has_authority(self.system_clubs.access_club)
+                    })
+                    .unwrap_or(false)
+            {
                 return Err(ServerError::NotAuthorized);
             }
             work.set_read_club(Some(self.system_clubs.public_club));
