@@ -2,6 +2,7 @@
 
 ![Xudanu — documents with visible connections](docs/screenshots/hero.png)
 
+> **[Try it live](https://xudanu.com)** — a running server with the interactive Links Course: typed and multi-ended links, gathered end-sets, and live transclusions.
 > **[Read the documentation](https://dgjones.info/xudanu/)** — user guides, technical architecture, and visual diagrams.
 > **[Source on GitHub](https://github.com/jonesd/xudanu)** — releases with static binaries for Linux, macOS, and Windows.
 > **[Docker image](https://github.com/jonesd/xudanu/pkgs/container/xudanu)** — `ghcr.io/jonesd/xudanu`, multi-arch, rebuilt on every release.
