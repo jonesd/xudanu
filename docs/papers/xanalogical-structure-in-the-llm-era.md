@@ -25,6 +25,9 @@ one line.
       endorsement system; an existing cs.HY/cs.DL author vouches)
 - [ ] Decide author name + affiliation (independent researcher is
       legitimate; ORCID recommended)
+- [ ] Attribution sweep: roster-only framing in body text; any
+      individual binding requires a primary-evidence footnote
+      (source header / FEBE manual / release notes)
 - [ ] ACM Hypertext 2027 CFP — note deadlines; format the LaTeX to
       ACM `sigconf` from the start, arXiv takes the same source
 - [ ] Trademark disclaimer in acknowledgments (same wording as the
@@ -89,12 +92,26 @@ lattice-explainer (deployed), this repo's AGENTS.md lineage notes.
 - Tumblers: hierarchical universal addresses
 - The ent: version-forking as structure (Drexler)
 - Honest archaeology: what the 1999 release contains, what the
-  literature says, attribution per structure
-  (enfilade: Miller/Greene/Gregory ~1980; tumblers: Gregory/Miller;
-  ent: Drexler; Gold design: Miller/Tribble/Pandya)
+  literature says
 
-**Feeds:** docs/gold-link-model.md, the Lineage page content
-(seed_demo.rs), gold-xudanu-complexity.html, udanax-to-xudanu.html.
+**Attribution policy (decided 2026-09-08):** name the TEAM,
+collectively — the 1988–92 Autodesk-era implementers (Gregory,
+Miller, Greene, Drexler, Tribble, Pandya, King, Hill, working with
+Nelson), cited to the release and the primary literature. Do NOT
+bind specific structures to specific individuals unless verified
+against primary evidence (source-file headers, the FEBE manual,
+release notes — all present in this repo's inherited tree under
+`original-code/xanadugold/src/` and `docs/`). Unverified bindings
+from secondary summaries stay out of the paper; the verified tier
+gets a footnote naming its evidence. Rationale: individual
+attributions in our archaeology notes are inferred, and a printed
+misattribution is both a scholarly error and a diplomatic one.
+
+**Feeds:** docs/gold-link-model.md, gold-xudanu-complexity.html,
+udanax-to-xudanu.html (the lineage-attribution tables there are
+INFERRED — re-verify against the source tree before any binding
+survives into the paper), the inherited source tree for primary
+verification.
 
 ## 3. System architecture
 
