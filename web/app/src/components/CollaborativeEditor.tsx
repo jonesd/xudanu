@@ -746,11 +746,16 @@ function drawOverlay(
       // visible — the overlap itself only happens when the text
       // column reaches past where the box would sit.
       const fitsInMargin = desc.textRightX + 12 <= boxX;
-      const fillA = fitsInMargin ? (isResolved ? "CC" : "E6") : "B3";
+      // Demo feedback (2026-09-08): boxes over text dropped to 70%
+      // still drowned the passage. Now: a faint wash (~10%) keeps
+      // the text readable, and a THICK solid border carries the type
+      // color identity. Clear-margin boxes stay near-opaque with a
+      // matching border weight.
+      const fillA = fitsInMargin ? (isResolved ? "CC" : "E6") : "1A";
       ctx.fillStyle = color + fillA;
-      ctx.strokeStyle = isResolved ? color + "30" : color + "90";
+      ctx.strokeStyle = isResolved ? color + "60" : color + "F0";
       if (isResolved) ctx.setLineDash([3, 2]);
-      ctx.lineWidth = 1;
+      ctx.lineWidth = fitsInMargin ? 1.5 : 3;
       ctx.beginPath();
       const r = 4;
       ctx.moveTo(boxX + r, boxY);

@@ -65,6 +65,25 @@ async function main() {
   const essayW = await mk("essay", ESSAY);
   const critiqueW = await mk("critique", CRITIQUE);
 
+  // A third work containing a REAL inline transclusion of an essay
+  // paragraph — editing the essay updates this work live (the
+  // reference-over-copy story, made visible).
+  const anthology = await mk("anthology",
+    "The Docuverse Anthology\n\nIncluded by reference from A Short History:\n\n");
+  const para = ESSAY.indexOf("The design took three decades");
+  const paraEnd = ESSAY.indexOf("\n\n", para);
+  await request("element_insert", {
+    work_id: anthology,
+    position: 74,
+    element: {
+      type: "transclusion",
+      transclusion_source: essayW,
+      transclusion_start: para,
+      transclusion_end: paraEnd,
+    },
+  });
+  console.log(`anthology = ${anthology} (inline transclusion of essay [${para}:${paraEnd}])`);
+
   // A Disagreement link between them: the critique's thesis passage
   // against the essay's thesis passage.
   const eSpan = (t) => {

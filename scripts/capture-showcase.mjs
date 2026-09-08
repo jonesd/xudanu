@@ -125,20 +125,25 @@ await flow("compare", async () => {
   await shot(page, "compare-essay-critique");
 });
 
-// ── 7. Transclusion live-update flow (2 shots) ──────────────────────
+// ── 7. REAL transclusion live-update flow (3 shots) ─────────────────
 await flow("transclusion-flow", async () => {
+  await openWork("The Docuverse Anthology");
+  await page.waitForTimeout(600);
+  await shot(page, "transclusion-included-view");
   await openWork("The Docuverse Idea");
-  await shot(page, "transclusion-source-before");
   const editor = page.locator(".editor-content");
   await editor.click();
-  // put caret in the quoted sentence, then type a marker word
-  const quoted = page.locator(".editor-content", { hasText: "performance that repeats daily" });
+  await page.keyboard.press("Control+Home");
+  // edit INSIDE the transcluded paragraph ("The design took three decades")
+  // click directly into the paragraph text, then jump to line end
+  await page.getByText("three decades to reach implementation").first().click({ timeout: 4000 }).catch(() => {});
   await page.keyboard.press("End");
-  await page.keyboard.type(" EDITED-LIVE");
-  await page.waitForTimeout(1500);
-  await openWork("Black Swan — The Critique");
-  const body = await page.locator(".editor-content").innerText();
-  await shot(page, "transclusion-dest-updated");
+  await page.keyboard.type(" — amended live");
+  await page.waitForTimeout(1800);
+  await shot(page, "transclusion-source-edited");
+  await openWork("The Docuverse Anthology");
+  await page.waitForTimeout(1200);
+  await shot(page, "transclusion-updated-by-reference");
 });
 
 // ── 8. Provenance: Harbor Log + attribution colors ──────────────────
