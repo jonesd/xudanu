@@ -715,7 +715,16 @@ function drawOverlay(
     for (const { desc, y: boxY } of placedDescs) {
       ctx.globalAlpha = markerFocusAlpha(desc.marker, focusLinkId);
       if (desc.firstTop + DESC_BOX_HEIGHT < viewportTop || desc.firstTop > viewportBottom) continue;
-      const boxH = DESC_BOX_HEIGHT;
+      // Demo feedback round 3: the fixed-height box bottom border sat
+      // ON the last baseline — descenders (g/y/p) crossed the thick
+      // border and read as a clipping bug. Size the box to the span
+      // with breathing room instead: 3px above the first line, 7px
+      // below the last baseline so descenders clear the border.
+      const boxH = Math.max(
+        DESC_BOX_HEIGHT,
+        desc.height + 10,
+      );
+      const boxTop = boxY < desc.firstTop ? boxY : desc.firstTop - 3;
 
       const boxX = rect.width - DESC_BOX_WIDTH - DESC_BOX_RIGHT_MARGIN;
       const color = desc.typeStyle.color;
@@ -730,7 +739,7 @@ function drawOverlay(
       const startX = desc.textRightX + 4;
       const endX = boxX;
       const lineY = desc.firstTop + desc.height - 1 + desc.lane * 2;
-      const boxMidY = boxY + boxH / 2;
+      const boxMidY = boxTop + boxH / 2;
       const elbowX = endX - 20 - desc.lane * 5;
       ctx.moveTo(startX, lineY);
       ctx.lineTo(elbowX, lineY);
@@ -752,20 +761,20 @@ function drawOverlay(
       // legible over the wash.
       const fillA = "22";
       ctx.fillStyle = color + fillA;
-      ctx.strokeStyle = isResolved ? color + "60" : color + "F0";
+      ctx.strokeStyle = isResolved ? color + "50" : color + "C0";
       if (isResolved) ctx.setLineDash([3, 2]);
       ctx.lineWidth = 3;
       ctx.beginPath();
       const r = 4;
-      ctx.moveTo(boxX + r, boxY);
-      ctx.lineTo(boxX + DESC_BOX_WIDTH - r, boxY);
-      ctx.arcTo(boxX + DESC_BOX_WIDTH, boxY, boxX + DESC_BOX_WIDTH, boxY + r, r);
-      ctx.lineTo(boxX + DESC_BOX_WIDTH, boxY + boxH - r);
-      ctx.arcTo(boxX + DESC_BOX_WIDTH, boxY + boxH, boxX + DESC_BOX_WIDTH - r, boxY + boxH, r);
-      ctx.lineTo(boxX + r, boxY + boxH);
-      ctx.arcTo(boxX, boxY + boxH, boxX, boxY + boxH - r, r);
-      ctx.lineTo(boxX, boxY + r);
-      ctx.arcTo(boxX, boxY, boxX + r, boxY, r);
+      ctx.moveTo(boxX + r, boxTop);
+      ctx.lineTo(boxX + DESC_BOX_WIDTH - r, boxTop);
+      ctx.arcTo(boxX + DESC_BOX_WIDTH, boxTop, boxX + DESC_BOX_WIDTH, boxTop + r, r);
+      ctx.lineTo(boxX + DESC_BOX_WIDTH, boxTop + boxH - r);
+      ctx.arcTo(boxX + DESC_BOX_WIDTH, boxTop + boxH, boxX + DESC_BOX_WIDTH - r, boxTop + boxH, r);
+      ctx.lineTo(boxX + r, boxTop + boxH);
+      ctx.arcTo(boxX, boxTop + boxH, boxX, boxTop + boxH - r, r);
+      ctx.lineTo(boxX, boxTop + r);
+      ctx.arcTo(boxX, boxTop, boxX + r, boxTop, r);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
@@ -779,10 +788,10 @@ function drawOverlay(
       const tw = ctx.measureText(label).width;
       ctx.fillStyle = "#0d1117e6";
       ctx.beginPath();
-      ctx.roundRect(boxX + 5, boxY + 3, tw + 6, 14, 3);
+      ctx.roundRect(boxX + 5, boxTop + 3, tw + 6, 14, 3);
       ctx.fill();
       ctx.fillStyle = isResolved ? color + "60" : color;
-      ctx.fillText(label, boxX + 8, boxY + 5);
+      ctx.fillText(label, boxX + 8, boxTop + 5);
 
       ctx.fillStyle = isResolved ? "#484f58" : "#8b949e";
       ctx.font = `${isResolved ? "italic " : ""}11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
