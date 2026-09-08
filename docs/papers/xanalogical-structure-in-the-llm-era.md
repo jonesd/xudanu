@@ -1,0 +1,223 @@
+# Paper Skeleton — Xanalogical Structure in the LLM Era
+
+Working draft plan. Target: arXiv (cs.HC / cs.DL) for priority, then
+ACM Hypertext for the credential. Every section below names the repo
+documentation that feeds it, so the draft assembles from material
+that already exists. Measurements quoted are from the verification
+ledger; re-verify before submission.
+
+---
+
+## Title (candidates)
+
+1. **Xanalogical Structure in the LLM Era: A Working Implementation
+   of Transclusion, Typed Links, and Per-Passage Provenance**
+2. The Docuverse, Reimplemented: Enfilades, CRDTs, and Machine
+   Assistance in a Modern Xanalogical System
+3. From Udanax Gold to Convergent Editing: An Implementation Report
+
+Candidate 1 recommended: states model, era-thesis, and evidence in
+one line.
+
+## Authorship + venue checklist (before writing)
+
+- [ ] arXiv account + endorsement for cs.HC (request via arXiv's
+      endorsement system; an existing cs.HY/cs.DL author vouches)
+- [ ] Decide author name + affiliation (independent researcher is
+      legitimate; ORCID recommended)
+- [ ] ACM Hypertext 2027 CFP — note deadlines; format the LaTeX to
+      ACM `sigconf` from the start, arXiv takes the same source
+- [ ] Trademark disclaimer in acknowledgments (same wording as the
+      repo's) — required: the paper cites Project Xanadu heavily
+
+## Abstract (draft — ~200 words)
+
+The xanalogical model of literature — transclusion of content by
+reference, unbreakable typed connections between specific passages,
+and authorship traceable to the character — was designed in the
+1960s and implemented in 1988–1992, but never reached users. We
+argue the barrier was never the model's value but its cost of
+manipulation: the mechanisms demanded expertise no reader could be
+expected to have. We report on Xudanu, an open-source system that
+implements the inherited model (enfilades with content-addressed
+crums, tumbler-derived addressing, typed multi-ended links,
+gathered end-sets) on modern infrastructure: a purpose-built
+write-once CRDT for collaborative editing, per-passage Ed25519
+attribution with an externally-anchored hash chain, and LLM-era
+interaction in which the system itself detects re-typing of
+existing content and offers it as a live transclusion. We measure
+the editing engine against the system's earlier operational-
+transform-style engine: under concurrent interleaving, the
+write-once engine sustains ~80µs/op where the earlier engine
+sustains 62–74ms/op (~900×), with convergence by construction.
+Reuse detection fires within microseconds of six typed words. We
+contribute an implementation report, honest claim-strength
+boundaries for provenance systems, and a position: the xanalogical
+barrier has moved from mechanism to interaction, and machine
+assistance is what moves it.
+
+## 1. Introduction
+
+- The xanalogical thesis in one paragraph (Nelson's coinage,
+  "quoted material knows its history" — cite Literary Machines,
+  the 1999 "Xanalogical structure" essay if locatable)
+- The two barriers: (a) implementation complexity (enfilades,
+  divergence before CRDT theory existed), (b) user manipulation
+  cost (readers could not operate the machinery)
+- Claim: both barriers have moved. (a) → CRDT theory + content
+  addressing + modern crypto; (b) → systems can now detect intent
+  (reference-over-copy) and machine agents can operate the model
+  as first-class editors
+- Contribution list: (1) full working implementation of the
+  inherited model; (2) write-once lattice engine with measured
+  900× under interleaving; (3) per-passage provenance with external
+  anchoring and an explicit claim-strength analysis; (4) the
+  reference-over-copy interaction loop with measured matching
+  quality; (5) an implementation report genre for lineage systems
+
+**Feeds:** docs/dev/provenance-flow-and-claims.md §1,
+lattice-explainer (deployed), this repo's AGENTS.md lineage notes.
+
+## 2. The inherited model (Xanadu, 1960–1999)
+
+- Transclusion: inclusion by reference; the passage's identity
+  travels with it
+- Typed, multi-ended links as "sentences with blanks"; gathered
+  end-sets filling one blank jointly
+- Enfilades: dual-purpose trees (index + container); crums as
+  subtree identities
+- Tumblers: hierarchical universal addresses
+- The ent: version-forking as structure (Drexler)
+- Honest archaeology: what the 1999 release contains, what the
+  literature says, attribution per structure
+  (enfilade: Miller/Greene/Gregory ~1980; tumblers: Gregory/Miller;
+  ent: Drexler; Gold design: Miller/Tribble/Pandya)
+
+**Feeds:** docs/gold-link-model.md, the Lineage page content
+(seed_demo.rs), gold-xudanu-complexity.html, udanax-to-xudanu.html.
+
+## 3. System architecture
+
+- One substrate, two engines: the enfilade as persistence layer;
+  the editing engine replaceable (the cutover method)
+- The O-tree engine (operational, three-way merge) — the baseline
+- The lattice engine: Sequence-keyed write-once units, region
+  tombstones with causal context (OR-set rule over the region
+  algebra), merge as union — commutative, associative, idempotent
+- Dual-write shadow as migration and correctness oracle (it caught
+  merge-garbling defects the primary engine hid — F6, F10)
+
+**Feeds:** FR-51-enfilade-native-crdt.md (design + phase logs),
+architecture.html, lattice-explainer.html.
+
+## 4. The lattice in measurement
+
+Table 1 (from the verification ledger):
+
+| scenario | O-tree | lattice | ratio |
+|---|---|---|---|
+| single-user edit | ~60µs/op | ~4µs/op | 15× |
+| two-session interleaved | 62–74 ms/op | ~80µs/op | **~900×** |
+| 16k-char doc, alternating | quadratic (F10, fixed to 634µs after fix) | flat | — |
+
+- Flat under interleaving: no merge pass exists to pay
+- Memory: per-session views; the honest cost side
+  (O(sessions × doc size)); tombstone accumulation bounded by
+  process lifetime, GC design specified (FR-57)
+
+**Feeds:** FR-50-performance-verification.md (ledger, scenarios
+dual-engine-interleaved), FR-51 measurements.
+
+## 5. Provenance, and how strong the claims are
+
+- Per-span Ed25519 signatures over domain-separated content
+  fingerprint folds; three verification states (verified /
+  author-maintained / unsigned)
+- Hash-chained attribution log; OpenTimestamps anchoring of chain
+  heads to Bitcoin — trust-minimized existence floor; the
+  walkthrough composition (one 32-byte anchor covers unbounded
+  history)
+- Range notarization: prove a quote existed without the document
+- **Claim-strength table as a contribution**: what is
+  cryptographically backed vs server-conditioned vs gap — the
+  honesty analysis as a reusable pattern
+- Landscape: C2PA is asset-granularity; PROV is a model without
+  crypto; per-passage signatures over mutable collaborative text
+  with cross-document travel is the gap this fills
+
+**Feeds:** provenance-flow-and-claims.md (whole doc),
+FR-60-ots-anchoring.md.
+
+## 6. LLM-era manipulation
+
+- The reference-over-copy loop: type a passage that exists →
+  n-gram probe → suggestion card → accept inserts a live
+  transclusion with attribution
+- Measured matching: 6-word window; fires at first completed
+  window; top-rank precision 100% on the corpus; p99 ~130µs
+  (E-0 matrix); the honest noise analysis
+- Authorship typing: human / machine / transcluded as
+  first-class provenance classes (the disclosure-report substrate)
+- The interaction grammar: hover = peek, click = travel to the
+  passage's document, gather = passages jointly filling a blank;
+  LLM assistance as authoring layer, never as content provenance
+  (phrasing only — machine text never enters documents through
+  the suggestion path)
+
+**Feeds:** FR-58 spec + E-0 matrix in reuse_match.rs, the
+navigation-demo corpus design, demo-script.md.
+
+## 7. Related work
+
+- CRDTs: Shapiro et al. (composable CRDTs), Kleppmann (CRDT apps),
+  Attiya et al. (bounds); the lattice as a purpose-built text CRDT
+  on Gold-derived addressing
+- Operational transformation (Ellis/Revot); why the seam cost
+  recurs
+- Content provenance: C2PA/CAI (asset-level), W3C PROV (model)
+- Hypertext history: Engelbart, Nelson, the 1999 Udanax release,
+  modern Green/Gold restorations and formal-spec work in the
+  lineage community (credit per repo conventions)
+- Collaborative editors: Wiki lineage (weak links, copies);
+  block-reference tools (Roam/Obsidian embeds — vault-local
+  references, not content identity)
+
+## 8. Discussion: what remains hard
+
+- Transclusion placement UX (the open interaction problem)
+- Federation of provenance across trust domains (TSA beside
+  Bitcoin; cross-org key discovery)
+- The server-as-CA boundary; key receipts as mitigation
+- Honest limits: tombstone growth, view memory, single-server
+  scale ceilings
+
+## 9. Conclusion
+
+The model was never wrong about literature; the machinery was too
+heavy for readers. The machinery is now cheap, and the reader has
+an assistant. Reproduction: everything cited is open source.
+
+## Citation list to assemble (verify each before submission)
+
+- Nelson, Literary Machines (editions) — transclusion, xanalogical
+- Nelson, "Xanalogical structure: Needed now more than ever" (1997)
+- Udanax Gold/Green source release (1999) + release notes
+- Gregory/Miller/Greene lineage (enfilade origin — locate primary
+  documentation or cite via Nelson/historians)
+- Shapiro, Preguiça, Baquero, Zawirski, "Conflict-free replicated
+  data types" (2011) + "Composition" (SQPZ 11)
+- Kleppmann et al., "Moving fast with software correctness" /
+  CRDT text editors work; Attiya et al. lower bounds (2016)
+- C2PA specification; W3C PROV-DM; OpenTimestamps (Todd, 2016)
+- ACM Hypertext precedent papers for genre calibration
+
+## Mechanics
+
+- LaTeX, ACM sigconf template, same source to arXiv
+- Figures: architecture diagram (from docs/architecture.html),
+  lattice comparison chart (rebuild from Table 1 numbers),
+  suggestion-card flow, claim-strength table
+- Length target: 10–12 pages HT format
+- Anonymization: NOT needed for arXiv; check HT 2027 policy for
+  the submission track (likely not anonymized for the
+  implementation track — verify)
