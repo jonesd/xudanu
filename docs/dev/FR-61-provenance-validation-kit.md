@@ -4,7 +4,7 @@
 - **Status:** Proposed — V0 (validation) gates all build stories; nothing
   below is built until the practice-lead signal comes back
 - **Depends on:** existing machinery only (see inventory); FR-60 landed
-- **Siblings:** FR-62 (federation feature-gate, sketched separately)
+- **Siblings:** FR-63 (federation feature-gate, sketched separately; renumbered from FR-62)
 
 ## 1. Context
 
