@@ -214,6 +214,40 @@ The model was never wrong about literature; the machinery was too
 heavy for readers. The machinery is now cheap, and the reader has
 an assistant. Reproduction: everything cited is open source.
 
+## HT '26 intelligence (London, proceedings live — mined 2026-09-08)
+
+52 papers, 4 demos, 5 workshops. The community is actively in our
+thesis-space but is position/theory-heavy — NO paper implements
+transclusion or provenance as a working system; "enfilade" and
+"content-addressing" appear nowhere. Our implementation report fills
+the exact gap. Key citations and neighbors:
+
+- **Beaumont & Anderson, "The Emergence of Shared Meaning in
+  Hypermedia Networks with No Central Gravity"** — transclusion,
+  provenance, versioning, decentralised authorship. CLOSEST
+  neighbor; must cite and differentiate (they theorize; we ship).
+- **Adamski, Błocki, Pisarski & Szewczyk, "Hypertext as the Native
+  Architecture of Reality"** — H(G) hypertextuality profile with
+  transclusion as a measured dimension; rereads Xanadu as "not a
+  failed project." Direct support for the renaissance framing.
+- **Lupi et al., "From Gardens to Landscapes"** — hypertext
+  foundation for the agentic-LLM era. The era-claim, theorized.
+- **Rahdari, Raj & Brusilovsky, "Hyperlayered Hypertext"** —
+  agents + documents without dissolving reader inspection.
+  (Adjacent to sisbell's direction — no Isbell in the list.)
+- **Sharma et al., "Edit-Distance Links"** — CRDTs and version
+  control diffs as link semantics.
+- **Millard, "Permanently Under Construction"** — friction in
+  AI-augmented Zettelkasten.
+- **Revere & Blustein, "Transhierarchy redux" (demo)** —
+  transclusion in outline processors.
+- **Bernstein** ("A Reader's Workbench"; "The Link and the
+  Journey" civic scale) — the community's voice; cite for genre
+  calibration.
+
+Track fit: "Systems, Protocols & Data Architectures" session is
+our home. HT '27 is the target; watch for the CFP (~spring 2027).
+
 ## Citation list to assemble (verify each before submission)
 
 - Nelson, Literary Machines (editions) — transclusion, xanalogical
