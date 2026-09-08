@@ -745,17 +745,16 @@ function drawOverlay(
       // forced OVER text it drops to ~70% so the lines beneath stay
       // visible — the overlap itself only happens when the text
       // column reaches past where the box would sit.
-      const fitsInMargin = desc.textRightX + 12 <= boxX;
-      // Demo feedback (2026-09-08): boxes over text dropped to 70%
-      // still drowned the passage. Now: a faint wash (~10%) keeps
-      // the text readable, and a THICK solid border carries the type
-      // color identity. Clear-margin boxes stay near-opaque with a
-      // matching border weight.
-      const fillA = fitsInMargin ? (isResolved ? "CC" : "E6") : "1A";
+      // Demo feedback (2026-09-08), universal treatment: the box is
+      // ALWAYS a faint wash — document text and box interior both
+      // readable — and the type-color identity rides a thick solid
+      // border. The type label gets its own dark chip so it stays
+      // legible over the wash.
+      const fillA = "22";
       ctx.fillStyle = color + fillA;
       ctx.strokeStyle = isResolved ? color + "60" : color + "F0";
       if (isResolved) ctx.setLineDash([3, 2]);
-      ctx.lineWidth = fitsInMargin ? 1.5 : 3;
+      ctx.lineWidth = 3;
       ctx.beginPath();
       const r = 4;
       ctx.moveTo(boxX + r, boxY);
@@ -773,11 +772,17 @@ function drawOverlay(
       ctx.restore();
 
       ctx.save();
-      ctx.fillStyle = isResolved ? color + "60" : color;
       ctx.font = `${isResolved ? "400" : "600"} 10px ui-monospace, SFMono-Regular, monospace`;
       ctx.textBaseline = "top";
       const typeName = LINK_TYPE_NAMES[desc.marker.linkTypeId!] ?? "Link";
-      ctx.fillText((isResolved ? "\u2713 " : "") + typeName.toUpperCase(), boxX + 8, boxY + 5);
+      const label = (isResolved ? "\u2713 " : "") + typeName.toUpperCase();
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = "#0d1117e6";
+      ctx.beginPath();
+      ctx.roundRect(boxX + 5, boxY + 3, tw + 6, 14, 3);
+      ctx.fill();
+      ctx.fillStyle = isResolved ? color + "60" : color;
+      ctx.fillText(label, boxX + 8, boxY + 5);
 
       ctx.fillStyle = isResolved ? "#484f58" : "#8b949e";
       ctx.font = `${isResolved ? "italic " : ""}11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
