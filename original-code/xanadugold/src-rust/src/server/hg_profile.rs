@@ -30,7 +30,27 @@ pub struct HgProfile {
     pub xudanu_version: String,
     /// H(G) Q4 (Adamski et al.): author-type-labeled content counts.
     pub author_type_counts: BTreeMap<String, usize>,
+    /// H(G) Q4: per-author-type sub-graph profiles. Key = "human",
+    /// "llm:model-name", "historical", or "unattributed".
+    pub hg_by_author: BTreeMap<String, HgSubProfile>,
     pub methodology: BTreeMap<&'static str, String>,
+}
+
+/// Per-author-type sub-profile: the same core coordinates computed
+/// on the edge partition attributed to that author type. Nodes are
+/// shared across all partitions; only edges differ.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct HgSubProfile {
+    pub edge_count: usize,
+    pub relation_density: f64,
+    pub reverse_traversability_mutual: f64,
+    pub decentralisation: f64,
+    pub modularity: f64,
+    pub relation_type_heterogeneity: f64,
+    pub structural_entropy: f64,
+    pub path_compactness: f64,
+    pub structural_robustness: f64,
+    pub node_count: usize,
 }
 
 fn shannon_entropy_normalized(counts: &[usize]) -> f64 {
@@ -483,6 +503,248 @@ pub fn hg_profile(server: &Server) -> HgProfile {
         "fraction of works with revision_count > 1 (static-corpus lower bound of the live property)".into(),
     );
 
+    // H(G) Q4: per-author-type sub-graph profiles.
+    // Step 1: resolve each work's dominant author type.
+    let work_author: HashMap<u64, String> = {
+        let mut m = HashMap::new();
+        for &wid in &nodes {
+            let Ok(ed) = server.work_edition(wid) else {
+                continue;
+            };
+            let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+            for (_, carrier) in ed.all_entries() {
+                if let Some(prov) = &carrier.provenance {
+                    let key = match prov.author_type {
+                        crate::edition::provenance::AuthorType::Human => "human".to_string(),
+                        crate::edition::provenance::AuthorType::Llm => {
+                            format!("llm:{}", prov.llm_model.as_deref().unwrap_or("unknown"))
+                        }
+                        crate::edition::provenance::AuthorType::Historical => {
+                            "historical".to_string()
+                        }
+                    };
+                    *counts.entry(key).or_insert(0) += 1;
+                }
+            }
+            if let Some((dominant, _)) = counts.iter().max_by_key(|(_, c)| **c) {
+                m.insert(wid, dominant.clone());
+            }
+        }
+        m
+    };
+
+    // Step 2: collect all edges with their origin-work attribution.
+    // (Re-scan links + transclusions, tagging each edge.)
+    let mut edges_by_author: BTreeMap<String, Vec<(u64, u64, String)>> = BTreeMap::new();
+    let author_of = |wid: u64| -> String {
+        work_author
+            .get(&wid)
+            .cloned()
+            .unwrap_or_else(|| "unattributed".to_string())
+    };
+
+    for ls in server.links.values() {
+        let link = &ls.link;
+        let label = type_label(link.link_types());
+        let mut srcs: Vec<u64> = Vec::new();
+        for atts in link.ends().values() {
+            for r in atts {
+                if let Some(w) = r.work_context() {
+                    srcs.push(w);
+                }
+            }
+        }
+        // Link creator = the LEFT end's work (where the link was
+        // authored). Attribute the edge to the LEFT-end work's
+        // author, not the sorted-first (which loses creator info).
+        let origin_wid = link
+            .ends()
+            .get("LeftEnd")
+            .and_then(|v| v.first())
+            .and_then(|r| r.work_context())
+            .or_else(|| srcs.first().copied());
+        let creator_author = origin_wid
+            .map(|w| author_of(w))
+            .unwrap_or_else(|| "unattributed".to_string());
+        srcs.sort_unstable();
+        srcs.dedup();
+        for (i, &a) in srcs.iter().enumerate() {
+            for &b in &srcs[i + 1..] {
+                let key = creator_author.clone();
+                edges_by_author
+                    .entry(key)
+                    .or_default()
+                    .push((a, b, label.clone()));
+            }
+        }
+    }
+    for &wid in &nodes {
+        let Ok(ed) = server.work_edition(wid) else {
+            continue;
+        };
+        for (_, carrier) in ed.all_entries() {
+            if let crate::edition::range_element::RangeElement::Transclusion {
+                source_work_id,
+                ..
+            } = &carrier.element
+            {
+                let key = author_of(wid);
+                edges_by_author.entry(key).or_default().push((
+                    wid,
+                    *source_work_id,
+                    "transclusion".to_string(),
+                ));
+            }
+        }
+    }
+
+    // Step 3: compute sub-profiles per author type.
+    let mut hg_by_author: BTreeMap<String, HgSubProfile> = BTreeMap::new();
+    for (author_key, edges) in &edges_by_author {
+        if edges.is_empty() {
+            continue;
+        }
+        let mut sg = Graph {
+            nodes: nodes.clone(),
+            adj: HashMap::new(),
+            labels: Vec::new(),
+            label_counts: Vec::new(),
+            directed: HashSet::new(),
+            edge_count: 0,
+            self_edges: 0,
+        };
+        for (a, b, label) in edges {
+            sg.add(*a, *b, label);
+        }
+        let sv = nodes.len().max(1);
+        let se = sg.edge_count;
+        let sub = HgSubProfile {
+            edge_count: se,
+            relation_density: if sv > 1 {
+                se as f64 / (sv * (sv - 1)) as f64
+            } else {
+                0.0
+            },
+            reverse_traversability_mutual: {
+                let mut count = 0;
+                for (a, b) in &sg.directed {
+                    if sg.directed.contains(&(*b, *a)) {
+                        count += 1;
+                    }
+                }
+                if se > 0 {
+                    count as f64 / se as f64
+                } else {
+                    0.0
+                }
+            },
+            decentralisation: {
+                let degrees: Vec<usize> = nodes.iter().map(|n| sg.degree(n)).collect();
+                let total: usize = degrees.iter().sum();
+                if total > 0 {
+                    let hhi: f64 = degrees
+                        .iter()
+                        .map(|&d| {
+                            let s = d as f64 / total as f64;
+                            s * s
+                        })
+                        .sum();
+                    (1.0 - hhi).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                }
+            },
+            modularity: {
+                let m = se;
+                if m > 0 {
+                    let comms = sg.communities();
+                    let mut q = 0.0;
+                    for comp in &comms {
+                        let set: HashSet<u64> = comp.iter().copied().collect();
+                        let mut e_c = 0usize;
+                        let mut deg_c = 0usize;
+                        for &n in comp {
+                            if let Some(nbrs) = sg.adj.get(&n) {
+                                for &(nb, w, _) in nbrs {
+                                    deg_c += w;
+                                    if set.contains(&nb) {
+                                        e_c += w;
+                                    }
+                                }
+                            }
+                        }
+                        q +=
+                            (e_c / 2) as f64 / m as f64 - (deg_c as f64 / (2.0 * m as f64)).powi(2);
+                    }
+                    q.clamp(-0.5, 1.0)
+                } else {
+                    0.0
+                }
+            },
+            relation_type_heterogeneity: shannon_entropy_normalized(&sg.label_counts),
+            structural_entropy: {
+                let degrees: Vec<usize> = nodes.iter().map(|n| sg.degree(n)).collect();
+                let mut dvc: BTreeMap<usize, usize> = BTreeMap::new();
+                for &d in &degrees {
+                    *dvc.entry(d).or_insert(0) += 1;
+                }
+                shannon_entropy_normalized(&dvc.values().copied().collect::<Vec<_>>())
+            },
+            path_compactness: {
+                let mp = sg.mean_shortest_path();
+                1.0 / (1.0 + mp)
+            },
+            structural_robustness: {
+                let comps = sg.connected_components();
+                let giant = comps.iter().map(|c| c.len()).max().unwrap_or(0);
+                if giant == 0 {
+                    0.0
+                } else {
+                    let mut by_deg: Vec<(u64, usize)> =
+                        nodes.iter().map(|&n| (n, sg.degree(&n))).collect();
+                    by_deg.sort_by(|a, b| b.1.cmp(&a.1));
+                    let rm = (sv.max(100) / 100).max(1);
+                    let removed: HashSet<u64> = by_deg.iter().take(rm).map(|(n, _)| *n).collect();
+                    let mut adj2: HashMap<u64, Vec<u64>> = HashMap::new();
+                    for (n, nbrs) in &sg.adj {
+                        if removed.contains(n) {
+                            continue;
+                        }
+                        for &(nb, _, _) in nbrs {
+                            if !removed.contains(&nb) {
+                                adj2.entry(*n).or_default().push(nb);
+                            }
+                        }
+                    }
+                    let mut seen = HashSet::new();
+                    let mut giant_after = 0;
+                    for &n in nodes.iter().filter(|n| !removed.contains(n)) {
+                        if seen.contains(&n) {
+                            continue;
+                        }
+                        let mut size = 0;
+                        let mut stack = vec![n];
+                        seen.insert(n);
+                        while let Some(c) = stack.pop() {
+                            size += 1;
+                            if let Some(nbrs) = adj2.get(&c) {
+                                for &nb in nbrs {
+                                    if seen.insert(nb) {
+                                        stack.push(nb);
+                                    }
+                                }
+                            }
+                        }
+                        giant_after = giant_after.max(size);
+                    }
+                    giant_after as f64 / giant as f64
+                }
+            },
+            node_count: sv,
+        };
+        hg_by_author.insert(author_key.clone(), sub);
+    }
+
     HgProfile {
         relation_density,
         reverse_traversability,
@@ -504,6 +766,7 @@ pub fn hg_profile(server: &Server) -> HgProfile {
         mean_contexts_per_source,
         xudanu_version: env!("CARGO_PKG_VERSION").to_string(),
         author_type_counts,
+        hg_by_author,
         methodology,
     }
 }
@@ -607,5 +870,131 @@ mod tests {
             "1 of 2 works transcluded"
         );
         assert_eq!(p.label_histogram.get("transclusion"), Some(&1));
+    }
+}
+
+/// H(G) Q4 armor: per-author sub-profiles computed correctly.
+#[cfg(test)]
+mod hg_author_tests {
+    use super::*;
+    use crate::edition::Edition;
+
+    #[test]
+    fn per_author_partitioned() {
+        let mut server = Server::new();
+        let human = server.connect();
+        server.login_public(human).unwrap();
+        let a = server
+            .create_work(human, Edition::from_text("human work a"))
+            .unwrap();
+        let b = server
+            .create_work(human, Edition::from_text("human work b"))
+            .unwrap();
+        // Element provenance stamps on first revise; create alone doesn't.
+        server.work_grab(human, a).unwrap();
+        server
+            .work_revise(human, a, Edition::from_text("human work a"))
+            .unwrap();
+        server.work_grab(human, b).unwrap();
+        server
+            .work_revise(human, b, Edition::from_text("human work b"))
+            .unwrap();
+
+        // LLM session creates work c
+        let llm = server.connect();
+        server.login_public(llm).unwrap();
+        server
+            .session_set_author_type(
+                llm,
+                crate::edition::provenance::AuthorType::Llm,
+                Some("test-model".to_string()),
+            )
+            .unwrap();
+        let c = server
+            .create_work(llm, Edition::from_text("llm work c"))
+            .unwrap();
+        // Use the public API: grab + revise
+        server.work_grab(llm, c).unwrap();
+        server
+            .work_revise(llm, c, Edition::from_text("llm work c, revised"))
+            .unwrap();
+
+        // Human links a↔b, LLM links c→a
+        server
+            .create_link_with_hyperlink_homed(
+                human,
+                crate::edition::links::HyperLink::make(
+                    vec![2],
+                    crate::edition::links::HyperRef::single(None, Some(a), None, None),
+                    crate::edition::links::HyperRef::single(None, Some(b), None, None),
+                ),
+                None,
+            )
+            .unwrap();
+        server
+            .create_link_with_hyperlink_homed(
+                llm,
+                crate::edition::links::HyperLink::make(
+                    vec![1],
+                    crate::edition::links::HyperRef::single(None, Some(c), None, None),
+                    crate::edition::links::HyperRef::single(None, Some(a), None, None),
+                ),
+                None,
+            )
+            .unwrap();
+
+        let p = hg_profile(&server);
+        // Debug: check the element-level census first
+        assert!(
+            p.author_type_counts.contains_key("llm"),
+            "LLM tagged in element census: {:?}",
+            p.author_type_counts
+        );
+        assert!(
+            p.hg_by_author.contains_key("human"),
+            "human sub-profile present: {:?}",
+            p.hg_by_author.keys()
+        );
+        assert!(
+            p.hg_by_author.contains_key("llm:test-model"),
+            "llm sub-profile present: {:?}",
+            p.hg_by_author.keys()
+        );
+        let human_sub = &p.hg_by_author["human"];
+        assert!(human_sub.edge_count >= 1, "human edges partitioned");
+        let llm_sub = &p.hg_by_author["llm:test-model"];
+        assert!(llm_sub.edge_count >= 1, "llm edges partitioned");
+    }
+
+    #[test]
+    fn unattributed_works_bucketed() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let a = server
+            .create_work(sid, Edition::from_text("work a"))
+            .unwrap();
+        let b = server
+            .create_work(sid, Edition::from_text("work b"))
+            .unwrap();
+        server
+            .create_link_with_hyperlink_homed(
+                sid,
+                crate::edition::links::HyperLink::make(
+                    vec![2],
+                    crate::edition::links::HyperRef::single(None, Some(a), None, None),
+                    crate::edition::links::HyperRef::single(None, Some(b), None, None),
+                ),
+                None,
+            )
+            .unwrap();
+        let p = hg_profile(&server);
+        // Works created without revise_work carry no ElementProvenance,
+        // so they're unattributed (create_work doesn't stamp elements).
+        assert!(
+            !p.hg_by_author.is_empty(),
+            "at least one sub-profile exists: {:?}",
+            p.hg_by_author.keys()
+        );
     }
 }
