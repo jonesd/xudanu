@@ -108,18 +108,100 @@ Region 2: "ai-assisted" (LLM agents tagged and editing)
 H(G_AI) vs H(G_human) computed on real regions, not just edge
 partitions. Clean separation, meaningful comparison.
 
-## Relationship to Gold
+## Tumblers ARE the region mechanism
 
-Gold's tumbler addressing was designed for hierarchical scoping.
-A tumbler like `1.5.3.2` naturally scopes to `1.5` (the parent).
-Regions exploit this: a region's tumbler prefix IS its scope.
-Cross-server tumblers (FR-6) already use domain prefixes; regions
-are the intra-server analogue.
+This is the part that makes regions native rather than bolted-on.
+The tumbler system (FR-34 D-F, `XudanuTumbler`) was designed for
+exactly this: hierarchical universal addresses where the prefix
+IS the scope.
 
-The enfilade's subtree operations (crum matching, splicing, descent)
-are naturally scoped — operating on a subtree doesn't affect siblings.
-Regions map cleanly onto this: each region is a subtree, and the
-enfilade's structural operations work within subtrees.
+### The tumbler-region correspondence
+
+```
+Tumbler:  "alice.com" . 2 . 1 . 5 . 3
+                         └───┬───┘
+                        region "2.1"
+                             └─┬─┘
+                          work 5.3 in that region
+```
+
+- A region's tumbler prefix IS its boundary: `starts_with_path(&[2, 1])`
+  already exists on `XudanuTumbler` (line 173)
+- Region containment = tumbler prefix containment: region `2` contains
+  `2.1` contains `2.1.5` — the hierarchy gives nesting for free
+- Cross-server regions: `"alice.com".2.1.5` scopes to `"alice.com".2`
+  — region boundaries cross server boundaries naturally (FR-6
+  domain tumblers compose with region tumblers)
+
+### What tumblers add over "just use club branches"
+
+| Feature | Club branches alone | With tumblers |
+|---|---|---|
+| Scope query | `fulltrace.is_le(branch, trace)` | `tumbler.starts_with_path(prefix)` — both work, tumbler is addressable |
+| Region has an address | No — just a club ID | Yes — the region's tumbler prefix is a writable, shareable, universal address |
+| Nested regions | Via fulltrace hierarchy | Via tumbler hierarchy — SAME thing, but the address encodes it |
+| Cross-server scoping | N/A | `"alice.com".2.1` — domain prefix + region prefix compose |
+| Address says where you are | No | Yes — `"alice.com".2.1.5.3` tells you the server, the region, and the work |
+| Region is first-class | Implementation detail | The tumbler IS the region; no separate entity needed |
+
+### The realization
+
+Gold designed tumblers so that the ADDRESS encodes the ORGANIZATION.
+We implemented tumblers (FR-34) without fully activating this — they
+were addressing machinery, not scoping machinery. Regions are what
+happens when you ask "what does the tumbler hierarchy MEAN for how
+users experience the space?"
+
+The answer: the tumbler prefix is the user's WORLD. When I'm in
+region `2.1`, I see works whose tumblers start with `2.1`. When I
+transclude from outside, the source tumbler carries its region's
+prefix — provenance includes where the content CAME FROM, not just
+who wrote it.
+
+### Concrete tumbler-region flows
+
+```
+# Region creation: admin assigns tumbler prefix to a club
+region_create(club_id, tumbler_prefix=[2, 1])
+
+# Work creation in region context
+# (trace placed under branch, tumbler allocated under prefix)
+work_create(session_in_region_2_1, ...)
+→ work tumbler: "".2.1.3.10.7   (local server, region 2.1)
+
+# Cross-region transclusion
+# (source tumbler carries the other region's prefix)
+transclude(work_in_region_2_1, source_in_region_3)
+→ source tumbler: "".3.5.2.1  (different region, provenance-tracked)
+
+# Cross-server region reference
+# (domain + region + work, fully qualified)
+resolve_tumbler("alice.com".2.1.5.3)
+→ work 5.3 in region 2.1 on server alice.com
+
+# H(G) per region
+# (filter by tumbler prefix)
+hg_profile_region(prefix=[2, 1])
+→ computes ten coordinates on the sub-graph where all works
+  have tumblers starting with [2, 1]
+```
+
+### What this means for the paper
+
+The regions section of the paper writes itself:
+
+> "Tumblers, Nelson's hierarchical universal addresses, were
+> designed so that the address encodes the organization. Regions
+> activate this design: each region IS a tumbler prefix, and the
+> prefix defines what a user sees, what they can link to, and where
+> their transclusions come from. This is not a permissions overlay
+> on a flat space; it is the hierarchical addressing system doing
+> what it was designed to do."
+
+And the Adamski et al. H(G) connection: region profiles computed
+via tumbler prefix filtering give exactly the comparative table,
+with the added elegance that the region's address tells you where
+in the hierarchy the data lives.
 
 ## What it's NOT
 

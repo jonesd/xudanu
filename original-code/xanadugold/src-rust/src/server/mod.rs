@@ -25,6 +25,7 @@ pub mod otree_crdt;
 #[cfg(feature = "server")]
 pub mod rate_limiter;
 
+pub mod daily_history;
 pub mod hg_profile;
 pub mod ots_anchor;
 pub mod reuse_match;

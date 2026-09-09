@@ -13358,6 +13358,46 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        // Daily narrative history: generate if there are changes
+        // and today's entry doesn't exist yet. Best-effort — a
+        // failure never blocks the checkpoint.
+        self.maybe_generate_daily_history();
+    }
+
+    /// FR-61 #2: generate the daily history work if warranted.
+    fn maybe_generate_daily_history(&mut self) {
+        if let Some((text, touched_works)) =
+            crate::server::daily_history::generate_daily_history(self)
+        {
+            let sid = self.connect();
+            let _ = self.login_public(sid);
+            // System authority: the history generator is server-side
+            // code, not a remote user — it must work under any edit
+            // policy (same rationale as the demo seeder).
+            let sc = *self.system_clubs();
+            let mut clubs = std::collections::HashSet::new();
+            clubs.insert(sc.admin_club);
+            if let Some(sess) = self.sessions.get_mut(&sid) {
+                sess.set_key_master(crate::server::keymaster::KeyMaster::make_all(clubs));
+            }
+            if let Ok(hw) = self.create_work(sid, crate::edition::Edition::from_text(&text)) {
+                // Link back to every mentioned work.
+                for wid in &touched_works {
+                    let link = crate::edition::links::HyperLink::make(
+                        vec![5],
+                        crate::edition::links::HyperRef::single(None, Some(hw), None, None),
+                        crate::edition::links::HyperRef::single(None, Some(*wid), None, None),
+                    );
+                    let _ = self.create_link_with_hyperlink_homed(sid, link, None);
+                }
+                tracing::info!(
+                    "[daily-history] created {} ({} works, {} backlinks)",
+                    hw,
+                    touched_works.len(),
+                    touched_works.len()
+                );
+            }
+        }
     }
 
     /// Clears restore errors, re-enabling auto_checkpoint.

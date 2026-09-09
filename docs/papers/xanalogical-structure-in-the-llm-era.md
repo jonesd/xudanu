@@ -63,7 +63,7 @@ assistance is what moves it.
 
 - The xanalogical thesis in one paragraph (Nelson's coinage,
   "quoted material knows its history" — cite Literary Machines,
-  the 1999 "Xanalogical structure" essay if locatable)
+  the 1999 "Xanalogical structure" essay)
 - The two barriers: (a) implementation complexity (enfilades,
   divergence before CRDT theory existed), (b) user manipulation
   cost (readers could not operate the machinery)
@@ -71,6 +71,37 @@ assistance is what moves it.
   addressing + modern crypto; (b) → systems can now detect intent
   (reference-over-copy) and machine agents can operate the model
   as first-class editors
+
+### Quotable passages from HT '26 (cite directly in §1, §7)
+
+**On the renaissance (Adamski et al., §5.3):**
+"Xanadu is reread not as a failed project but as an uncompromising
+attempt to make high-dimensional hypertextality an explicit design
+goal." — cite for the premise that the model was right.
+
+**On the field's blindness to prior art (Anderson, §6.1):**
+"Current TfT have rediscovered, unknowingly, ideas already known
+in the hypertext community, while remaining blind both to that
+prior art and to these alternative traditions." — cite for the gap
+we fill.
+
+**On the substrate being ready (Beaumont & Anderson, §2.4):**
+"Recent advances in distributed systems, cryptographic identity,
+version control algorithms, and peer-to-peer networking make it
+possible to revisit long-standing hypertext and decentralisation
+ambitions with new practical realism." — cite for the timing.
+
+**On hypertext vs AI (Millard, §7.4):**
+"Hypertext's foundational role — scaffolding structured thinking,
+making connections visible, producing persistent artefacts — is
+not diminished but amplified by generative AI." — cite for the
+thesis alignment.
+
+**On the engine/server positioning (Beaumont & Anderson, §2.5):**
+"Hypermedia servers are not centres of control, but points of
+authority for provenance, where authorship and licensing are
+persistently maintained." — cite when positioning the hub.
+
 - Contribution list: (1) full working implementation of the
   inherited model; (2) write-once lattice engine with measured
   900× under interleaving; (3) per-passage provenance with external
