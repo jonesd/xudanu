@@ -248,7 +248,48 @@ the exact gap. Key citations and neighbors:
 Track fit: "Systems, Protocols & Data Architectures" session is
 our home. HT '27 is the target; watch for the CFP (~spring 2027).
 
+## Seed Hypermedia — closest neighbor, differentiation notes (2026-09-08)
+
+Full text clipped: docs/papers/ht26/pdfs/beaumont-anderson-2026-seed-hypermedia.md
+
+The overlap is real and the separation is clean. Seed: decentralised
+P2P network of open hypertext documents, block-level addressing,
+embeds-as-transclusion, capability permissions, CC BY default — a
+NETWORK-layer xanalogical system (Web-native, no Gold lineage).
+Xudanu: single-server hub implementing the FULL Gold-lineage model —
+enfilades, tumblers, CHARACTER-granularity, typed MULTI-ended links,
+gathered end-sets, per-work licensing — with a measured CRDT engine
+and Bitcoin-anchored per-span provenance. Cite as siblings answering
+the same call (both root in Nelson '99 "Xanalogical Structure,
+Needed Now More Than Ever"): Seed federates the documents; Xudanu
+implements the engine. Their evaluation is prospective; ours is
+measured. Their footnote 2 (Anderson/Carr/Millard HT'17 Wikipedia
+transclusion study) is another citation for us.
+
+Strategic note: Seed was DEPLOYED AT HT '26 as the conference's
+experimental medium — the community literally ran a federated-
+transclusion experiment on itself. An HT '27 implementation report
+speaks directly into a primed room.
+
+BONUS: their §2.5 sentence — "hypermedia servers are not centres of
+control, but points of authority for provenance" — is the exact
+Xudanu server model, published. Quote it when positioning the hub.
+
 ## Citation list to assemble (verify each before submission)
+
+VERIFIED (from Seed's reference list):
+- Nelson, T.H. "The Heart of Connection: Hypermedia Unified by
+  Transclusion." CACM 38(8), 1995, 31–33.
+- Nelson, T.H. "Xanalogical Structure, Needed Now More Than Ever:
+  Parallel Documents, Deep Links to Content, Deep Versioning, and
+  Deep Re-use." ACM Computing Surveys 31(4es), 1999, Article 33.
+- Shapiro, Preguiça, Baquero, Zawirski. "A comprehensive study of
+  convergent and commutative replicated data types." Inria TR, 2011.
+- Anderson, Carr, Millard. "There and Here: Patterns of Content
+  Transclusion in Wikipedia." HT '17, 115–124.
+- Beaumont et al. "Seed Hypermedia." HT '24, 351–356.
+- Beaumont & Anderson. "The Emergence of Shared Meaning in
+  Hypermedia Networks with No Central Gravity." HT '26, 262–269.
 
 - Nelson, Literary Machines (editions) — transclusion, xanalogical
 - Nelson, "Xanalogical structure: Needed now more than ever" (1997)
