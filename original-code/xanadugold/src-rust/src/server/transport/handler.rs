@@ -217,6 +217,12 @@ async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
             "anchoring".into(),
             state.server.with_server(|srv| srv.ots_anchor_status()),
         );
+        // Off-machine backup status (backup-offsite.sh writes the
+        // file; staleness is the signal, same contract as anchoring).
+        obj.insert(
+            "backup".into(),
+            state.server.with_server(|srv| srv.backup_status()),
+        );
     }
     (
         [(axum::http::header::CONTENT_TYPE, "application/json")],

@@ -65,6 +65,7 @@ fn usage() {
     eprintln!("  init <data-dir>          Initialize a new data directory");
     eprintln!("  run [addr] [data-dir]    Run the server (default: 127.0.0.1:8080)");
     eprintln!("  verify <data-dir>        Verify data integrity");
+    eprintln!("  hg-profile <data-dir>    Print the H(G) hypertextuality profile as JSON");
     eprintln!("  rebuild-manifest <dir>   Rebuild manifest from chunks");
     eprintln!("  verify-security-log <dir> Verify security log chain integrity");
     eprintln!("  preflight <data-dir>     Check data dir is safe to start (no port binding)");
@@ -124,6 +125,27 @@ fn cmd_init(data_dir: &str, passphrase: Option<&[u8]>) {
         eprintln!("Warning: demo seed checkpoint failed: {}", e);
     } else {
         tracing::info!("Seeded interactive demo work (published, public-read)");
+    }
+}
+
+fn cmd_hg_profile(data_dir: &str) {
+    let path = PathBuf::from(data_dir);
+    if !path.join("root_manifest.json").exists() && !path.join("manifest.json").exists() {
+        eprintln!("Error: no manifest found at {}", path.display());
+        std::process::exit(1);
+    }
+    let mut server = xudanu::server::server::Server::new();
+    if let Err(e) = server.restore_from_data_dir(&path, None) {
+        eprintln!("Error: restore failed: {}", e);
+        std::process::exit(1);
+    }
+    let profile = xudanu::server::hg_profile::hg_profile(&server);
+    match serde_json::to_string_pretty(&profile) {
+        Ok(json) => println!("{}", json),
+        Err(e) => {
+            eprintln!("Error: serializing profile: {}", e);
+            std::process::exit(1);
+        }
     }
 }
 
@@ -550,6 +572,7 @@ async fn main() {
             let passphrase = std::env::var("XUDANU_KEY_PASSPHRASE").ok();
             cmd_init(data_dir, passphrase.as_deref().map(|s| s.as_bytes()));
         }
+        "hg-profile" => cmd_hg_profile(args.get(2).map(String::as_str).unwrap_or("")),
         "verify" => {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
             cmd_verify(data_dir);

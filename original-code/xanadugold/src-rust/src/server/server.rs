@@ -8660,6 +8660,31 @@ impl Server {
         );
     }
 
+    /// Off-machine backup status from data_dir/backup-status.json
+    /// (written by scripts/backup-offsite.sh every run). Staleness
+    /// is the monitoring signal; missing file = never backed up.
+    pub fn backup_status(&self) -> serde_json::Value {
+        let mut v = serde_json::json!({ "status": "never" });
+        let Some(dir) = self.data_dir.as_ref() else {
+            return v;
+        };
+        let Ok(raw) = std::fs::read(dir.join("backup-status.json")) else {
+            return v;
+        };
+        let Ok(mut m) = serde_json::from_slice::<serde_json::Value>(&raw) else {
+            v["status"] = serde_json::json!("unreadable");
+            return v;
+        };
+        if let Some(ts) = m.get("last_run").and_then(|t| t.as_str()) {
+            if let Ok(t) = chrono::DateTime::parse_from_rfc3339(ts) {
+                let age =
+                    Self::current_timestamp_secs().saturating_sub(t.timestamp().max(0) as u64);
+                m["age_secs"] = serde_json::json!(age);
+            }
+        }
+        m
+    }
+
     /// FR-60: status for the admin op and the verify subcommand.
     pub fn ots_anchor_status(&self) -> serde_json::Value {
         let mut v = serde_json::json!({ "enabled": self.ots_anchor_enabled });
