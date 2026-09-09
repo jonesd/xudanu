@@ -28,6 +28,8 @@ pub struct HgProfile {
     pub transcluded_sources: usize,
     pub mean_contexts_per_source: f64,
     pub xudanu_version: String,
+    /// H(G) Q4 (Adamski et al.): author-type-labeled content counts.
+    pub author_type_counts: BTreeMap<String, usize>,
     pub methodology: BTreeMap<&'static str, String>,
 }
 
@@ -198,15 +200,14 @@ const TYPE_NAMES: &[(u64, &str)] = &[
 ];
 
 fn type_label(types: &[u64]) -> String {
-    types
-        .first()
-        .and_then(|t| {
-            TYPE_NAMES
-                .iter()
-                .find(|(id, _)| id == t)
-                .map(|(_, n)| n.to_string())
-        })
-        .unwrap_or_else(|| "custom".to_string())
+    match types.first() {
+        Some(t) => TYPE_NAMES
+            .iter()
+            .find(|(id, _)| id == t)
+            .map(|(_, n)| n.to_string())
+            .unwrap_or_else(|| format!("type-{}", t)),
+        None => "untyped".to_string(),
+    }
 }
 
 pub fn hg_profile(server: &Server) -> HgProfile {
@@ -244,10 +245,11 @@ pub fn hg_profile(server: &Server) -> HgProfile {
         }
     }
 
-    // Transclusion edges: includer -> source.
+    // Transclusion edges + author-type census (H(G) Q4).
     let mut trans_sources: HashSet<u64> = HashSet::new();
     let mut trans_contexts: HashMap<u64, usize> = HashMap::new();
     let mut transclusion_count = 0usize;
+    let mut author_type_counts: BTreeMap<String, usize> = BTreeMap::new();
     for &wid in &nodes {
         let Ok(ed) = server.work_edition(wid) else {
             continue;
@@ -262,6 +264,14 @@ pub fn hg_profile(server: &Server) -> HgProfile {
                 trans_sources.insert(*source_work_id);
                 *trans_contexts.entry(*source_work_id).or_insert(0) += 1;
                 g.add(wid, *source_work_id, "transclusion");
+            }
+            if let Some(prov) = &carrier.provenance {
+                let key = match prov.author_type {
+                    crate::edition::provenance::AuthorType::Human => "human",
+                    crate::edition::provenance::AuthorType::Llm => "llm",
+                    crate::edition::provenance::AuthorType::Historical => "historical",
+                };
+                *author_type_counts.entry(key.to_string()).or_insert(0) += 1;
             }
         }
     }
@@ -493,6 +503,7 @@ pub fn hg_profile(server: &Server) -> HgProfile {
         transcluded_sources: trans_sources.len(),
         mean_contexts_per_source,
         xudanu_version: env!("CARGO_PKG_VERSION").to_string(),
+        author_type_counts,
         methodology,
     }
 }

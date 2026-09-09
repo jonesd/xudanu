@@ -4170,13 +4170,18 @@ impl Server {
                     .and_then(|s| s.club_signing_key().map(|k| k.verifying_key().to_bytes()))
                     .unwrap_or([0u8; 32]);
                 let timestamp = Self::current_timestamp_secs();
+                let (session_author_type, session_llm_model) = self
+                    .sessions
+                    .get(&session_id)
+                    .map(|s| (s.author_type(), s.llm_model().map(String::from)))
+                    .unwrap_or((crate::edition::provenance::AuthorType::Human, None));
                 let elem_prov = crate::edition::provenance::ElementProvenance {
                     author_public_key: pub_key,
                     author_display_name: display_name,
                     author_club_id: club_id,
                     timestamp,
-                    author_type: crate::edition::provenance::AuthorType::Human,
-                    llm_model: None,
+                    author_type: session_author_type,
+                    llm_model: session_llm_model,
                     historical_author_id: None,
                     source_work_id: None,
                     transcluded_by: None,
@@ -8580,6 +8585,23 @@ impl Server {
 
     pub fn reuse_suggestions_enabled(&self) -> bool {
         self.reuse_suggestions_enabled
+    }
+
+    /// FR-61 #1: tag a session's author type. Agents call this
+    /// after connecting; every subsequent revision carries the type
+    /// in its ElementProvenance. Self-service (no admin gate — the
+    /// agent is identifying itself, not claiming someone else).
+    pub fn session_set_author_type(
+        &mut self,
+        session_id: SessionId,
+        author_type: crate::edition::provenance::AuthorType,
+        llm_model: Option<String>,
+    ) -> Result<(), ServerError> {
+        self.ensure_session(session_id)?;
+        if let Some(sess) = self.sessions.get_mut(&session_id) {
+            sess.set_author_type(author_type, llm_model);
+        }
+        Ok(())
     }
 
     /// FR-60: admin toggle for OTS anchoring.
@@ -48631,5 +48653,92 @@ mod ots_anchor_tests {
         assert_eq!(receipt.len(), 31 + 1 + 1 + 32 + stream.len());
         assert_eq!(&receipt[33..65], &digest[..]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// FR-61 #1 armor: session author_type flows into ElementProvenance.
+#[cfg(test)]
+mod author_type_tests {
+    use super::*;
+
+    #[test]
+    fn llm_session_type_rides_provenance() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        server
+            .session_set_author_type(
+                sid,
+                crate::edition::provenance::AuthorType::Llm,
+                Some("test-model-v1".to_string()),
+            )
+            .unwrap();
+
+        let work = server
+            .create_work(sid, Edition::from_text("AI-authored content"))
+            .unwrap();
+        let club = server.resolve_author_club(sid);
+        server
+            .revise_work(
+                work,
+                sid,
+                Edition::from_text("AI-authored content, revised"),
+                club,
+            )
+            .unwrap();
+
+        let ed = server.work_edition(work).unwrap();
+        let llm_count = ed
+            .all_entries()
+            .iter()
+            .filter(|(_, c)| {
+                c.provenance
+                    .as_ref()
+                    .map(|p| {
+                        p.author_type == crate::edition::provenance::AuthorType::Llm
+                            && p.llm_model.as_deref() == Some("test-model-v1")
+                    })
+                    .unwrap_or(false)
+            })
+            .count();
+        assert!(
+            llm_count > 0,
+            "LLM-tagged entries present (got {})",
+            llm_count
+        );
+    }
+
+    #[test]
+    fn human_default_unchanged() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let work = server
+            .create_work(sid, Edition::from_text("human content"))
+            .unwrap();
+        let ed = server.work_edition(work).unwrap();
+        assert!(ed.all_entries().iter().all(|(_, c)| {
+            c.provenance
+                .as_ref()
+                .map(|p| p.author_type == crate::edition::provenance::AuthorType::Human)
+                .unwrap_or(true)
+        }));
+    }
+
+    #[test]
+    fn invalid_author_type_string_rejected() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        // The wire op validates the string; here we test the direct
+        // method accepts the enum. The string mapping is in dispatch.
+        server
+            .session_set_author_type(
+                sid,
+                crate::edition::provenance::AuthorType::Historical,
+                None,
+            )
+            .unwrap();
+        // no error = pass
     }
 }

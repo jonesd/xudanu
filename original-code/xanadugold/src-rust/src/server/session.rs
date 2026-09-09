@@ -42,6 +42,12 @@ pub struct Session {
     pending_lock_club: Option<BeId>,
     expires_at: Option<Instant>,
     club_signing_key: Option<SigningKey>,
+    /// FR-61 #1: the author-type for all content created through
+    /// this session. Agents set this after connecting; humans stay
+    /// the default. Rides into every ElementProvenance stamp.
+    author_type: crate::edition::provenance::AuthorType,
+    /// FR-61 #1: optional model identifier when author_type is Llm.
+    llm_model: Option<String>,
 }
 
 impl Session {
@@ -58,7 +64,27 @@ impl Session {
             pending_lock_club: None,
             expires_at: Some(Instant::now() + DEFAULT_SESSION_TIMEOUT),
             club_signing_key: None,
+            author_type: crate::edition::provenance::AuthorType::Human,
+            llm_model: None,
         }
+    }
+
+    /// FR-61 #1: tag this session's author type (agent identity).
+    pub fn set_author_type(
+        &mut self,
+        author_type: crate::edition::provenance::AuthorType,
+        llm_model: Option<String>,
+    ) {
+        self.author_type = author_type;
+        self.llm_model = llm_model;
+    }
+
+    pub fn author_type(&self) -> crate::edition::provenance::AuthorType {
+        self.author_type
+    }
+
+    pub fn llm_model(&self) -> Option<&str> {
+        self.llm_model.as_deref()
     }
 
     pub fn new_with_timeout(id: SessionId, timeout: Duration) -> Self {

@@ -1021,6 +1021,24 @@ fn dispatch_inner(
             srv.ots_anchor_request(session_id)?;
             Ok(ResponseValue::Void)
         }
+        WireRequest::SessionSetAuthorType {
+            author_type,
+            llm_model,
+        } => {
+            let at = match author_type.as_str() {
+                "human" => crate::edition::provenance::AuthorType::Human,
+                "llm" => crate::edition::provenance::AuthorType::Llm,
+                "historical" => crate::edition::provenance::AuthorType::Historical,
+                _ => {
+                    return Err(ServerError::InvalidArgument(format!(
+                        "unknown author_type: {}",
+                        author_type
+                    )))
+                }
+            };
+            srv.session_set_author_type(session_id, at, llm_model)?;
+            Ok(ResponseValue::Void)
+        }
         WireRequest::RevisionCompare {
             work_id,
             rev_a,
