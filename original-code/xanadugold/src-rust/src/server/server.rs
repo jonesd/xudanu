@@ -83,6 +83,10 @@ pub(crate) struct WorkState {
     work: Work,
     /// FR-52 A-1 P1: the work's place in the server fulltrace.
     trace: crate::ent::trace::TracePosition,
+    /// Regions Phase 1: the club that owns this work's region.
+    /// None = the global region (visible to all). A session in a
+    /// region context sees only works whose region matches.
+    pub(crate) region: Option<BeId>,
     chunk_ref: Option<crate::persist::edition_chunks::WorkChunkRef>,
     /// Preserved chunk history from before mark_dirty cleared chunk_ref.
     /// Used by checkpoint to merge old revisions with new ones.
@@ -4068,6 +4072,7 @@ impl Server {
         let ws = WorkState {
             work,
             trace,
+            region: self.sessions.get(&session_id).and_then(|s| s.region()),
             chunk_ref: None,
             prev_chunk_history: None,
             dirty_gen: 0,
@@ -6486,6 +6491,7 @@ impl Server {
         let ws = WorkState {
             work,
             trace: self.fulltrace.new_trace(),
+            region: None,
             chunk_ref: None,
             prev_chunk_history: None,
             dirty_gen: 0,
@@ -8602,6 +8608,48 @@ impl Server {
             sess.set_author_type(author_type, llm_model);
         }
         Ok(())
+    }
+
+    /// Regions Phase 1: set the session's region context. The
+    /// session will see only works in this region. None = global.
+    pub fn session_set_region(
+        &mut self,
+        session_id: SessionId,
+        club_id: Option<BeId>,
+    ) -> Result<(), ServerError> {
+        self.ensure_session(session_id)?;
+        if let Some(cid) = club_id {
+            // The club must exist (you can't scope to a phantom region).
+            if !self.clubs.contains_key(&cid) {
+                return Err(ServerError::ClubNotFound(cid));
+            }
+        }
+        if let Some(sess) = self.sessions.get_mut(&session_id) {
+            sess.set_region(club_id);
+        }
+        Ok(())
+    }
+
+    /// Regions Phase 1: the session's region (None = global).
+    pub fn session_region(&self, session_id: SessionId) -> Result<Option<BeId>, ServerError> {
+        self.ensure_session(session_id)?;
+        Ok(self.sessions.get(&session_id).and_then(|s| s.region()))
+    }
+
+    /// Regions Phase 1: filter works by the session's region.
+    /// Admin sessions (region=None) see all works.
+    pub fn region_visible_works(&self, session_id: SessionId) -> Result<Vec<BeId>, ServerError> {
+        self.ensure_session(session_id)?;
+        let region = self.sessions.get(&session_id).and_then(|s| s.region());
+        Ok(self
+            .works
+            .iter()
+            .filter(|(_, ws)| match region {
+                Some(r) => ws.region == Some(r),
+                None => true,
+            })
+            .map(|(id, _)| *id)
+            .collect())
     }
 
     /// FR-60: admin toggle for OTS anchoring.
@@ -11843,6 +11891,7 @@ impl Server {
         let ws = WorkState {
             work: work.clone(),
             trace: self.fulltrace.new_trace(),
+            region: None,
             chunk_ref: None,
             prev_chunk_history: None,
             dirty_gen: 0,
@@ -12574,6 +12623,7 @@ impl Server {
                     let ws = WorkState {
                         work: work.clone(),
                         trace,
+                        region: None,
                         chunk_ref: Some(work_entry.work_ref.clone()),
                         prev_chunk_history: None,
                         dirty_gen: 0,
@@ -20669,6 +20719,7 @@ impl Server {
                 let ws = WorkState {
                     work,
                     trace: self.fulltrace.new_trace(),
+                    region: None,
                     chunk_ref: None,
                     prev_chunk_history: None,
                     dirty_gen: 0,
@@ -23045,6 +23096,7 @@ pub(crate) mod persist_snapshot {
                 let ws = WorkState {
                     work: work.clone(),
                     trace: server.fulltrace.new_trace(),
+                    region: None,
                     chunk_ref: None,
                     prev_chunk_history: None,
                     dirty_gen: 0,
@@ -48068,6 +48120,7 @@ mod a1_p2_club_branch_tests {
             let ws = WorkState {
                 work,
                 trace,
+                region: None,
                 chunk_ref: None,
                 prev_chunk_history: None,
                 dirty_gen: 0,
@@ -48780,5 +48833,96 @@ mod author_type_tests {
             )
             .unwrap();
         // no error = pass
+    }
+}
+
+/// Regions Phase 1 armor: session region context scopes the work list.
+#[cfg(test)]
+mod region_tests {
+    use super::*;
+
+    #[test]
+    fn region_scopes_work_list() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        // Create a club for region A
+        let region_a_club = server
+            .create_named_club(sid, "region-a", crate::edition::Edition::empty())
+            .unwrap();
+
+        // Create a club for region B
+        let region_b_club = server
+            .create_named_club(sid, "region-b", crate::edition::Edition::empty())
+            .unwrap();
+
+        // Global works (no region)
+        let global_work = server
+            .create_work(sid, Edition::from_text("global work"))
+            .unwrap();
+
+        // Region A session creates works
+        let sid_a = server.connect();
+        server.login_public(sid_a).unwrap();
+        server
+            .session_set_region(sid_a, Some(region_a_club))
+            .unwrap();
+        let a1 = server
+            .create_work(sid_a, Edition::from_text("region A work 1"))
+            .unwrap();
+        let a2 = server
+            .create_work(sid_a, Edition::from_text("region A work 2"))
+            .unwrap();
+
+        // Region B session creates works
+        let sid_b = server.connect();
+        server.login_public(sid_b).unwrap();
+        server
+            .session_set_region(sid_b, Some(region_b_club))
+            .unwrap();
+        let b1 = server
+            .create_work(sid_b, Edition::from_text("region B work 1"))
+            .unwrap();
+
+        // Region A sees only its works
+        let visible_a = server.region_visible_works(sid_a).unwrap();
+        assert!(visible_a.contains(&a1) && visible_a.contains(&a2));
+        assert!(!visible_a.contains(&b1), "region B work invisible to A");
+        assert!(
+            !visible_a.contains(&global_work),
+            "global work invisible to A"
+        );
+
+        // Region B sees only its works
+        let visible_b = server.region_visible_works(sid_b).unwrap();
+        assert!(visible_b.contains(&b1));
+        assert!(!visible_b.contains(&a1), "region A work invisible to B");
+
+        // Admin (no region) sees everything
+        let visible_admin = server.region_visible_works(sid).unwrap();
+        assert!(visible_admin.contains(&a1));
+        assert!(visible_admin.contains(&b1));
+        assert!(visible_admin.contains(&global_work));
+    }
+
+    #[test]
+    fn region_cannot_be_set_to_phantom_club() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        assert!(server.session_set_region(sid, Some(999_999)).is_err());
+    }
+
+    #[test]
+    fn region_none_is_global() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let w = server
+            .create_work(sid, Edition::from_text("global"))
+            .unwrap();
+        let visible = server.region_visible_works(sid).unwrap();
+        assert!(visible.contains(&w));
     }
 }

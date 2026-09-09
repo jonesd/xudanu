@@ -1201,6 +1201,18 @@ impl JsonCodec {
                 })
             }
             OperationCode::OtsAnchorStatus => Ok(WireRequest::OtsAnchorStatus {}),
+            OperationCode::SessionSetRegion => {
+                #[derive(Deserialize)]
+                struct Args {
+                    #[serde(default)]
+                    club_id: Option<BeId>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::SessionSetRegion {
+                    club_id: args.club_id,
+                })
+            }
             OperationCode::SessionSetAuthorType => {
                 #[derive(Deserialize)]
                 struct Args {

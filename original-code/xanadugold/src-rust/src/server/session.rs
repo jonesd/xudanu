@@ -48,6 +48,9 @@ pub struct Session {
     author_type: crate::edition::provenance::AuthorType,
     /// FR-61 #1: optional model identifier when author_type is Llm.
     llm_model: Option<String>,
+    /// Regions Phase 1: the club whose region this session operates
+    /// in. None = global (admin/all works). Set via wire op.
+    region: Option<BeId>,
 }
 
 impl Session {
@@ -66,7 +69,17 @@ impl Session {
             club_signing_key: None,
             author_type: crate::edition::provenance::AuthorType::Human,
             llm_model: None,
+            region: None,
         }
+    }
+
+    /// Regions Phase 1: set the session's region context.
+    pub fn set_region(&mut self, region: Option<BeId>) {
+        self.region = region;
+    }
+
+    pub fn region(&self) -> Option<BeId> {
+        self.region
     }
 
     /// FR-61 #1: tag this session's author type (agent identity).

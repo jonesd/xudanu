@@ -1021,6 +1021,10 @@ fn dispatch_inner(
             srv.ots_anchor_request(session_id)?;
             Ok(ResponseValue::Void)
         }
+        WireRequest::SessionSetRegion { club_id } => {
+            srv.session_set_region(session_id, club_id)?;
+            Ok(ResponseValue::Void)
+        }
         WireRequest::SessionSetAuthorType {
             author_type,
             llm_model,
@@ -1694,8 +1698,14 @@ fn dispatch_inner(
             let limit_val = limit.unwrap_or(100).min(1000) as usize;
             let offset_val = offset.unwrap_or(0) as usize;
             let mut total: u64 = 0;
+            let session_region = srv.session_region(session_id).unwrap_or(None);
             let mut entries: Vec<super::protocol::WorkListEntry> = Vec::new();
             for (id, ws) in srv.works_iter() {
+                if let Some(region) = session_region {
+                    if ws.region != Some(region) {
+                        continue;
+                    }
+                }
                 if ws.work().is_archived() {
                     if *id == 0x586 {
                         tracing::info!("[worklist] 0x586 is ARCHIVED");
