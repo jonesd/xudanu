@@ -275,6 +275,44 @@ BONUS: their §2.5 sentence — "hypermedia servers are not centres of
 control, but points of authority for provenance" — is the exact
 Xudanu server model, published. Quote it when positioning the hub.
 
+## Millard digest — friction as architecture vs friction as workflow (2026-09-08)
+
+Full text: docs/papers/ht26/pdfs/millard-2026-hypertextual-friction.md
+
+Autoethnography of an Obsidian Zettelkasten co-constructed with
+Claude Code over 6 months (steering chair's own practice!). Key
+findings: hypertextual friction (AI proposes, human curates) is
+intrinsically rewarding, not cost; builder's advantage = hypertext's
+existentialist demand; persistent hypertext beats ephemeral chat.
+
+THREE DIRECT HOOKS FOR US:
+
+1. His §7.3 design consideration — "Systems for scholarly knowledge
+   work should encode provenance at finer granularity than
+   'AI-generated' versus 'human-written'" — Xudanu HAS this:
+   AuthorType (human/llm/historical/machine) per span, signed.
+   Cite as the community asking for what we shipped.
+2. The #human tag — manual, paragraph-level, trust-based provenance
+   marking. Our per-span signatures + disclosure reports make the
+   tag unnecessary: provenance is native, automatic, cryptographic.
+   His is workflow discipline; ours is architecture.
+3. The AI Memory Gap [Zindulka et al.] — attribution drift over
+   time; his history entries as hedge. Our attribution log + Bitcoin
+   anchoring is that hedge, permanent. "The persistent artefact
+   remembers what the human mind does not" — our chained log IS
+   that artefact.
+
+FR-58 POSITIONING UPGRADE: reference-over-copy is hypertextual
+friction at the CONTENT-MODEL level. Millard's friction lives in
+workflow checkpoints (suggest-only); ours is structural — the
+suggestion card demands a curatorial choice, and accepting creates
+a signed, attributed transclusion (provenance by construction, not
+by tagging). The decision itself lands in the anchored attribution
+log. Friction that leaves a cryptographic record.
+
+His suggest-only workflow = our suggestion card accept/decline.
+Same principle, deeper substrate.
+
 ## Citation list to assemble (verify each before submission)
 
 VERIFIED (from Seed's reference list):
