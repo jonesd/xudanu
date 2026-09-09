@@ -313,6 +313,36 @@ log. Friction that leaves a cryptographic record.
 His suggest-only workflow = our suggestion card accept/decline.
 Same principle, deeper substrate.
 
+## H(G) digest — the invitation we were built to answer (2026-09-08)
+
+Full text: docs/papers/ht26/pdfs/adamski-2026-hg-native-architecture.md
+
+Ten-dimensional hypertextuality profile; Xanadu reread as "explicit
+design telos: ρrt → 1, θ → 1, η high"; stress-tested on IRA tweets
+(θ=0.119 — near-zero transclusion, like every corpus they could
+test). §5.4 explicitly INVITES: "validate the profile against real
+corpora."
+
+THE OPPORTUNITY, precisely: their θ (transclusion) and ρrt
+(reverse-traversability) coordinates have never been measured on a
+system that actually realises them — Xanadu remains a "regulative
+ideal... never measured because no implementation existed."
+Xudanu IS the implementation: bidirectional typed links by
+construction (ρrt = 1 exactly), real inline transclusions (θ
+measurable and nonzero for the first time), η across 5+ link types,
+AuthorType enabling their open Q4 (H(GAI) vs H(Ghuman)) on real
+data. H(Xudanu docuverse) is a figure nobody else can produce, it
+validates their framework exactly where they asked, and it turns
+our §4 from "our engine is fast" into "our docuverse occupies the
+corner of H(G)-space the field has only theorised." Plan: compute
+the ten coordinates over the seeded docuverse + navigation-tour
+corpus; one figure + one table in §4 or §6.
+
+Also quotable for §1: the Xanadu-reread sentence, and their framing
+of the AI question ("phantom nodes: σ without genuine τ") connects
+to our provenance typing (machine-authored spans are marked, signed
+— never phantom).
+
 ## Citation list to assemble (verify each before submission)
 
 VERIFIED (from Seed's reference list):
