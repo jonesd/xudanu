@@ -690,7 +690,7 @@ pub struct Server {
     pub allow_loopback_cross_server: bool,
     edit_policy: EditPolicy,
     checkpoint_path: Option<std::path::PathBuf>,
-    data_dir: Option<std::path::PathBuf>,
+    pub(crate) data_dir: Option<std::path::PathBuf>,
     chunk_store: Option<Arc<crate::persist::chunk_store::ChunkStore>>,
     manifest_sequence: u64,
     manifest_slot: char,

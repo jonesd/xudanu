@@ -580,6 +580,27 @@ async fn main() {
                 .and_then(|v| v.parse::<u64>().ok());
             cmd_hg_profile(args.get(2).map(String::as_str).unwrap_or(""), region);
         }
+        "forensics" => {
+            let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
+            let path = PathBuf::from(data_dir);
+            if !path.join("root_manifest.json").exists() && !path.join("manifest.json").exists() {
+                eprintln!("Error: no manifest found at {}", path.display());
+                std::process::exit(1);
+            }
+            let mut server = xudanu::server::server::Server::new();
+            if let Err(e) = server.restore_from_data_dir(&path, None) {
+                eprintln!("Error: restore failed: {}", e);
+                std::process::exit(1);
+            }
+            let report = xudanu::server::forensics::forensics(&server);
+            match serde_json::to_string_pretty(&report) {
+                Ok(json) => println!("{}", json),
+                Err(e) => {
+                    eprintln!("Error: serializing report: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
         "verify" => {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
             cmd_verify(data_dir);
