@@ -230,12 +230,45 @@ fn type_label(types: &[u64]) -> String {
     }
 }
 
-/// H(G) profile scoped to a region (None = all works).
+/// H(G) profile scoped to a region (None = all works). Regions Phase C:
+/// when the region club carries a tumbler prefix, membership is
+/// prefix-based (nested); legacy club matching still includes Phase 1
+/// works stamped with the region club.
 pub fn hg_profile_region(server: &Server, region: Option<u64>) -> HgProfile {
+    let prefix = region.and_then(|club| server.club_region_prefix(club));
     let nodes: Vec<u64> = server
         .works
         .iter()
-        .filter(|(_, ws)| region.is_none() || ws.region == region)
+        .filter(|(_, ws)| {
+            region.is_none()
+                || ws.region == region
+                || prefix
+                    .as_deref()
+                    .map(|p| {
+                        ws.work()
+                            .tumbler_path_override()
+                            .map(|t| t.starts_with(p))
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false)
+        })
+        .map(|(id, _)| *id)
+        .collect();
+    hg_profile_nodes(server, nodes)
+}
+
+/// H(G) profile scoped to a tumbler prefix (regions Phase C): all works
+/// whose tumbler paths fall under the prefix.
+pub fn hg_profile_prefix(server: &Server, prefix: &[u64]) -> HgProfile {
+    let nodes: Vec<u64> = server
+        .works
+        .iter()
+        .filter(|(_, ws)| {
+            ws.work()
+                .tumbler_path_override()
+                .map(|t| t.starts_with(prefix))
+                .unwrap_or(false)
+        })
         .map(|(id, _)| *id)
         .collect();
     hg_profile_nodes(server, nodes)
@@ -253,6 +286,11 @@ pub fn hg_profile(server: &Server) -> HgProfile {
 }
 
 fn hg_profile_impl(server: &Server, nodes: Vec<u64>) -> HgProfile {
+    // Induced subgraph: edges count only when BOTH endpoints are in the
+    // node set. For the full profile this is a no-op; for region
+    // sub-profiles it keeps cross-region edges out (the per-region
+    // edge-leak bug).
+    let node_set: std::collections::HashSet<u64> = nodes.iter().copied().collect();
     let mut g = Graph {
         nodes: nodes.clone(),
         adj: HashMap::new(),
@@ -273,7 +311,9 @@ fn hg_profile_impl(server: &Server, nodes: Vec<u64>) -> HgProfile {
         for atts in link.ends().values() {
             for r in atts {
                 if let Some(w) = r.work_context() {
-                    srcs.push(w);
+                    if node_set.contains(&w) {
+                        srcs.push(w);
+                    }
                 }
             }
         }
@@ -302,9 +342,11 @@ fn hg_profile_impl(server: &Server, nodes: Vec<u64>) -> HgProfile {
             } = &carrier.element
             {
                 transclusion_count += 1;
-                trans_sources.insert(*source_work_id);
-                *trans_contexts.entry(*source_work_id).or_insert(0) += 1;
-                g.add(wid, *source_work_id, "transclusion");
+                if node_set.contains(source_work_id) {
+                    trans_sources.insert(*source_work_id);
+                    *trans_contexts.entry(*source_work_id).or_insert(0) += 1;
+                    g.add(wid, *source_work_id, "transclusion");
+                }
             }
             if let Some(prov) = &carrier.provenance {
                 let key = match prov.author_type {
@@ -571,7 +613,9 @@ fn hg_profile_impl(server: &Server, nodes: Vec<u64>) -> HgProfile {
         for atts in link.ends().values() {
             for r in atts {
                 if let Some(w) = r.work_context() {
-                    srcs.push(w);
+                    if node_set.contains(&w) {
+                        srcs.push(w);
+                    }
                 }
             }
         }
@@ -609,6 +653,9 @@ fn hg_profile_impl(server: &Server, nodes: Vec<u64>) -> HgProfile {
                 ..
             } = &carrier.element
             {
+                if !node_set.contains(source_work_id) {
+                    continue;
+                }
                 let key = author_of(wid);
                 edges_by_author.entry(key).or_default().push((
                     wid,
@@ -806,6 +853,65 @@ mod tests {
             .create_work(sid, Edition::from_text("second work for profiling"))
             .unwrap();
         (server, sid, a, b)
+    }
+
+    #[test]
+    fn prefix_profile_is_induced_subgraph() {
+        // Regions Phase C + edge-leak regression: a region's profile must
+        // count only edges whose BOTH endpoints are in the region —
+        // cross-region links belong to no single region's subgraph.
+        let mut server = Server::new();
+        let admin = server.connect();
+        server.login_public(admin).unwrap();
+        server.grant_admin_authority(admin).unwrap();
+        let club_a = server
+            .create_named_club(admin, "region-a", Edition::empty())
+            .unwrap();
+        let club_b = server
+            .create_named_club(admin, "region-b", Edition::empty())
+            .unwrap();
+        server.region_create(admin, club_a, None).unwrap();
+        server.region_create(admin, club_b, None).unwrap();
+
+        let sid_a = server.connect();
+        server.login_public(sid_a).unwrap();
+        server.session_set_region(sid_a, Some(club_a)).unwrap();
+        let a1 = server.create_work(sid_a, Edition::from_text("a1")).unwrap();
+        let a2 = server.create_work(sid_a, Edition::from_text("a2")).unwrap();
+
+        let sid_b = server.connect();
+        server.login_public(sid_b).unwrap();
+        server.session_set_region(sid_b, Some(club_b)).unwrap();
+        let b1 = server.create_work(sid_b, Edition::from_text("b1")).unwrap();
+
+        let link = |server: &mut Server, sid, x, y| {
+            server
+                .create_link_with_hyperlink_homed(
+                    sid,
+                    crate::edition::links::HyperLink::make(
+                        vec![1],
+                        crate::edition::links::HyperRef::single(None, Some(x), None, None),
+                        crate::edition::links::HyperRef::single(None, Some(y), None, None),
+                    ),
+                    None,
+                )
+                .unwrap();
+        };
+        // Internal A link, and a cross link a1—b1.
+        link(&mut server, sid_a, a1, a2);
+        link(&mut server, sid_a, a1, b1);
+
+        let full = hg_profile(&server);
+        let region_a = hg_profile_prefix(&server, &[1]);
+        assert_eq!(region_a.node_count, 2);
+        assert!(
+            region_a.edge_count < full.edge_count,
+            "region sub-profile must exclude the cross-region edge"
+        );
+        assert_eq!(
+            region_a.edge_count, 1,
+            "exactly the one internal edge remains"
+        );
     }
 
     #[test]

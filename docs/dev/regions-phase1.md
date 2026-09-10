@@ -1,5 +1,14 @@
 # Regions Phase 1 — minimal implementation
 
+> **Status: Phase 3 (tumbler prefixes) SHIPPED September 2026.**
+> Clubs carry `region_prefix` (persisted in ClubChunkRef +
+> ClubStateChunk); `region_create` (0x0360) allocates hierarchical
+> prefixes; works created in region context get tumbler paths
+> `[prefix, be_id]`; visibility is prefix-based (nested — region [2]
+> sees [2,1] works); `xan://server/1` resolves to region info;
+> H(G) has `hg_profile_prefix` and the induced-subgraph edge fix.
+> The text below is the original Phase 1 scope, kept for history.
+
 ## What we're building (now)
 
 Region = a club ID. Works belong to at most one region. Sessions

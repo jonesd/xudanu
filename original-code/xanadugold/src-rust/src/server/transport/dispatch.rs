@@ -1025,6 +1025,27 @@ fn dispatch_inner(
             srv.session_set_region(session_id, club_id)?;
             Ok(ResponseValue::Void)
         }
+        WireRequest::RegionCreate { club_id, parent } => {
+            let prefix = srv.region_create(session_id, club_id, parent)?;
+            Ok(ResponseValue::Json(serde_json::json!({
+                "prefix": prefix,
+            })))
+        }
+        WireRequest::RegionList {} => {
+            let regions = srv.regions();
+            Ok(ResponseValue::Json(serde_json::json!({
+                "regions": regions
+                    .into_iter()
+                    .map(|(club, prefix, name)| {
+                        serde_json::json!({
+                            "club": format!("{:04x}", club),
+                            "prefix": prefix,
+                            "name": name,
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            })))
+        }
         WireRequest::SessionSetAuthorType {
             author_type,
             llm_model,
@@ -1699,10 +1720,25 @@ fn dispatch_inner(
             let offset_val = offset.unwrap_or(0) as usize;
             let mut total: u64 = 0;
             let session_region = srv.session_region(session_id).unwrap_or(None);
+            let region_prefix = session_region.and_then(|r| srv.club_region_prefix(r));
             let mut entries: Vec<super::protocol::WorkListEntry> = Vec::new();
             for (id, ws) in srv.works_iter() {
                 if let Some(region) = session_region {
-                    if ws.region != Some(region) {
+                    // Regions Phase C: prefix-based nested visibility —
+                    // a session in region [2] sees works in [2], [2,1],
+                    // [2,1,x]… Clubs without prefixes keep the Phase 1
+                    // exact-club match (same rule as region_visible_works).
+                    let in_region = match &region_prefix {
+                        Some(p) if !p.is_empty() => {
+                            ws.work()
+                                .tumbler_path_override()
+                                .map(|t| t.starts_with(p.as_slice()))
+                                .unwrap_or(false)
+                                || ws.region == Some(region)
+                        }
+                        _ => ws.region == Some(region),
+                    };
+                    if !in_region {
                         continue;
                     }
                 }

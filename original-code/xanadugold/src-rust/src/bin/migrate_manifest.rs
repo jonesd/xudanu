@@ -390,6 +390,7 @@ fn build_club_state_chunk(club_ref: &ClubChunkRef) -> ClubStateChunk {
         encrypted_signing_key: club_ref.encrypted_signing_key.clone(),
         email: club_ref.email.clone(),
         verified: club_ref.verified,
+        region_prefix: club_ref.region_prefix.clone(),
         members: club_ref.members.clone(),
         sponsored_works: club_ref.sponsored_works.clone(),
     }

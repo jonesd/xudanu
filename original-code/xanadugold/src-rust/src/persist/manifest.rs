@@ -28,6 +28,8 @@ pub struct ClubChunkRef {
     #[cfg_attr(feature = "serde", serde(default))]
     pub verified: bool,
     #[cfg_attr(feature = "serde", serde(default))]
+    pub region_prefix: Option<Vec<u64>>,
+    #[cfg_attr(feature = "serde", serde(default))]
     pub members: Vec<BeId>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub sponsored_works: Vec<BeId>,

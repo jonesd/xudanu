@@ -25,6 +25,7 @@ pub struct Club {
     encrypted_signing_key: Option<crate::crypto::club_keys::EncryptedSigningKey>,
     email: Option<String>,
     verified: bool,
+    region_prefix: Option<Vec<u64>>,
 }
 
 impl Club {
@@ -44,6 +45,7 @@ impl Club {
             encrypted_signing_key: None,
             email: None,
             verified: false,
+            region_prefix: None,
         }
     }
 
@@ -63,6 +65,7 @@ impl Club {
             encrypted_signing_key: None,
             email: None,
             verified: false,
+            region_prefix: None,
         }
     }
 
@@ -88,6 +91,7 @@ impl Club {
             encrypted_signing_key: None,
             email: None,
             verified: false,
+            region_prefix: None,
         }
     }
 
@@ -141,6 +145,17 @@ impl Club {
 
     pub fn set_verified(&mut self, verified: bool) {
         self.verified = verified;
+    }
+
+    /// Regions Phase C: this club's tumbler prefix — the club IS a
+    /// region when set. Works created in this region context get
+    /// tumbler paths under the prefix (hierarchical scoping).
+    pub fn region_prefix(&self) -> Option<&[u64]> {
+        self.region_prefix.as_deref()
+    }
+
+    pub fn set_region_prefix(&mut self, prefix: Option<Vec<u64>>) {
+        self.region_prefix = prefix;
     }
 
     pub fn owner(&self) -> Option<BeId> {

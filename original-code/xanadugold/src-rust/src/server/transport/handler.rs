@@ -403,6 +403,18 @@ async fn xan_resolve_handler(
                 "origin_work_id": origin_work_id,
                 "known_peer": known_peer,
             }),
+            Ok(crate::server::server::XanResolution::Region {
+                prefix,
+                name,
+                club,
+                work_count,
+            }) => serde_json::json!({
+                "status": "region",
+                "prefix": prefix,
+                "name": name,
+                "club": format!("{:04x}", club),
+                "work_count": work_count,
+            }),
             Err(e) => {
                 return (
                     axum::http::StatusCode::BAD_REQUEST,

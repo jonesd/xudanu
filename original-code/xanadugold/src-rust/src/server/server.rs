@@ -47,6 +47,13 @@ pub enum XanResolution {
         origin_work_id: Option<u64>,
         known_peer: bool,
     },
+    /// A region address: the path names a region (club tumbler prefix).
+    Region {
+        prefix: Vec<u64>,
+        name: String,
+        club: BeId,
+        work_count: usize,
+    },
 }
 
 impl CrossServerResolution {
@@ -1115,6 +1122,7 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
             encrypted_signing_key: club.encrypted_signing_key().cloned(),
             email: club.email().map(|s| s.to_string()),
             verified: club.is_verified(),
+            region_prefix: club.region_prefix().map(|p| p.to_vec()),
             members: club.members().iter().copied().collect(),
             sponsored_works: club.sponsored_works().iter().copied().collect(),
         };
@@ -1822,7 +1830,44 @@ impl Server {
             }
         }
 
-        // 3. Remote: report origin server and directory knowledge.
+        // 3. Region address: the path names a region prefix exactly.
+        if tumbler.is_local() || self.owns_tumbler(&tumbler) {
+            let path = tumbler.path();
+            if let Some((club, name)) = self
+                .clubs
+                .values()
+                .find_map(|c| c.region_prefix().filter(|p| *p == path).map(|_| c))
+                .map(|c| {
+                    (
+                        c.be_id(),
+                        c.display_name()
+                            .or(c.name())
+                            .unwrap_or("unnamed region")
+                            .to_string(),
+                    )
+                })
+            {
+                let work_count = self
+                    .works
+                    .values()
+                    .filter(|ws| {
+                        ws.work
+                            .tumbler_path_override()
+                            .map(|p| p.starts_with(path))
+                            .unwrap_or(false)
+                            || ws.region == Some(club)
+                    })
+                    .count();
+                return Ok(XanResolution::Region {
+                    prefix: path.to_vec(),
+                    name,
+                    club,
+                    work_count,
+                });
+            }
+        }
+
+        // 4. Remote: report origin server and directory knowledge.
         let server = tumbler.server().to_string();
         let known_peer = self
             .server_directory
@@ -4148,6 +4193,23 @@ impl Server {
         }
         let mut work = Work::new_with_owner(be_id, owner, edition);
         work.set_tumbler_server(Some(self.tumbler_server_identity()));
+        // Regions Phase C: a session in region context whose club carries
+        // a tumbler prefix allocates the work's path UNDER the prefix —
+        // hierarchical addressing (region [2,1] → work path [2,1,be_id]).
+        // Source is the session's region context (same as ws.region).
+        if let Some(region_club) = self.sessions.get(&session_id).and_then(|s| s.region()) {
+            if let Some(prefix) = self
+                .clubs
+                .get(&region_club)
+                .and_then(|c| c.region_prefix().map(|p| p.to_vec()))
+            {
+                if !prefix.is_empty() {
+                    let mut path = prefix;
+                    path.push(be_id as u64);
+                    work.set_tumbler_path_override(Some(path));
+                }
+            }
+        }
 
         let is_public_session = owner == Some(self.system_clubs.public_club);
         if is_public_session {
@@ -8761,6 +8823,117 @@ impl Server {
         Ok(())
     }
 
+    /// Regions Phase C: make a club a region by allocating it a tumbler
+    /// prefix. Parent = another region club (nesting) or None (root).
+    /// The allocated element is one past the largest sibling. Admin-only.
+    pub fn region_create(
+        &mut self,
+        session_id: SessionId,
+        club_id: BeId,
+        parent: Option<BeId>,
+    ) -> Result<Vec<u64>, ServerError> {
+        self.ensure_session(session_id)?;
+        let is_admin = self
+            .sessions
+            .get(&session_id)
+            .map(|s| s.has_authority(self.system_clubs.admin_club))
+            .unwrap_or(false);
+        if !is_admin {
+            return Err(ServerError::NotAuthorized);
+        }
+        let parent_prefix = match parent {
+            Some(p) => {
+                let pp = self
+                    .clubs
+                    .get(&p)
+                    .and_then(|c| c.region_prefix().map(|p| p.to_vec()))
+                    .ok_or_else(|| {
+                        ServerError::InvalidArgument(format!("parent club {} is not a region", p))
+                    })?;
+                pp
+            }
+            None => Vec::new(),
+        };
+        let club = self
+            .clubs
+            .get_mut(&club_id)
+            .ok_or(ServerError::ClubNotFound(club_id))?;
+        if club.region_prefix().is_some() {
+            return Err(ServerError::InvalidArgument(format!(
+                "club {} is already a region",
+                club_id
+            )));
+        }
+        // Allocate next element under the parent prefix: one past the
+        // largest existing sibling's last element.
+        let next = self
+            .clubs
+            .values()
+            .filter_map(|c| c.region_prefix())
+            .filter(|p| {
+                p.len() == parent_prefix.len() + 1 && p[..parent_prefix.len()] == parent_prefix[..]
+            })
+            .map(|p| p[parent_prefix.len()])
+            .max()
+            .unwrap_or(0)
+            + 1;
+        let mut prefix = parent_prefix;
+        prefix.push(next);
+        let club = self.clubs.get_mut(&club_id).unwrap();
+        club.set_region_prefix(Some(prefix.clone()));
+        self.dirty_clubs.insert(club_id);
+        Ok(prefix)
+    }
+
+    /// Regions Phase C: all regions — clubs carrying tumbler prefixes.
+    pub fn regions(&self) -> Vec<(BeId, Vec<u64>, String)> {
+        let mut out: Vec<(BeId, Vec<u64>, String)> = self
+            .clubs
+            .values()
+            .filter_map(|c| {
+                c.region_prefix().map(|p| {
+                    (
+                        c.be_id(),
+                        p.to_vec(),
+                        c.display_name()
+                            .or(c.name())
+                            .unwrap_or("unnamed region")
+                            .to_string(),
+                    )
+                })
+            })
+            .collect();
+        out.sort_by_key(|(_, p, _)| p.clone());
+        out
+    }
+
+    /// The region prefix carried by a club, if it is a region.
+    pub fn club_region_prefix(&self, club_id: BeId) -> Option<Vec<u64>> {
+        self.clubs
+            .get(&club_id)
+            .and_then(|c| c.region_prefix().map(|p| p.to_vec()))
+    }
+
+    /// Works whose tumbler paths fall under a region prefix (nested:
+    /// prefix [2] matches [2], [2,1], [2,1,x]…). Legacy works stamped
+    /// with the region club (Phase 1) are included via `legacy_club`.
+    pub fn works_in_region(&self, prefix: &[u64], legacy_club: Option<BeId>) -> Vec<BeId> {
+        self.works
+            .iter()
+            .filter(|(_, ws)| {
+                if !prefix.is_empty() {
+                    if let Some(p) = ws.work.tumbler_path_override() {
+                        if p.starts_with(prefix) {
+                            return true;
+                        }
+                    }
+                }
+                legacy_club.is_some() && ws.region == legacy_club
+            })
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
     /// Regions Phase 1: the session's region (None = global).
     pub fn session_region(&self, session_id: SessionId) -> Result<Option<BeId>, ServerError> {
         self.ensure_session(session_id)?;
@@ -8772,11 +8945,27 @@ impl Server {
     pub fn region_visible_works(&self, session_id: SessionId) -> Result<Vec<BeId>, ServerError> {
         self.ensure_session(session_id)?;
         let region = self.sessions.get(&session_id).and_then(|s| s.region());
+        let prefix = region.and_then(|r| self.club_region_prefix(r));
         Ok(self
             .works
             .iter()
             .filter(|(_, ws)| match region {
-                Some(r) => ws.region == Some(r),
+                Some(r) => {
+                    // Regions Phase C: prefix-based nested visibility —
+                    // region [2] sees [2], [2,1], [2,1,x]… Clubs without
+                    // prefixes keep the Phase 1 exact-club match.
+                    prefix
+                        .as_deref()
+                        .filter(|p| !p.is_empty())
+                        .map(|p| {
+                            ws.work()
+                                .tumbler_path_override()
+                                .map(|t| t.starts_with(p))
+                                .unwrap_or(false)
+                        })
+                        .unwrap_or(false)
+                        || ws.region == Some(r)
+                }
                 None => true,
             })
             .map(|(id, _)| *id)
@@ -12686,6 +12875,7 @@ impl Server {
                     club.set_encrypted_signing_key(club_ref.encrypted_signing_key.clone());
                     club.set_email(club_ref.email.clone());
                     club.set_verified(club_ref.verified);
+                    club.set_region_prefix(club_ref.region_prefix.clone());
                     for member_id in &club_ref.members {
                         club.add_member(*member_id);
                     }
@@ -22661,6 +22851,8 @@ pub(crate) mod persist_snapshot {
         #[cfg_attr(feature = "serde", serde(default))]
         verified: bool,
         #[cfg_attr(feature = "serde", serde(default))]
+        region_prefix: Option<Vec<u64>>,
+        #[cfg_attr(feature = "serde", serde(default))]
         members: Vec<BeId>,
         #[cfg_attr(feature = "serde", serde(default))]
         sponsored_works: Vec<BeId>,
@@ -22864,6 +23056,7 @@ pub(crate) mod persist_snapshot {
                     encrypted_signing_key: club.encrypted_signing_key().cloned(),
                     email: club.email().map(|s| s.to_string()),
                     verified: club.is_verified(),
+                    region_prefix: club.region_prefix().map(|p| p.to_vec()),
                     members: club.members().iter().copied().collect(),
                     sponsored_works: club.sponsored_works().iter().copied().collect(),
                 })
@@ -23213,6 +23406,7 @@ pub(crate) mod persist_snapshot {
                 club.set_encrypted_signing_key(club_snap.encrypted_signing_key.clone());
                 club.set_email(club_snap.email.clone());
                 club.set_verified(club_snap.verified);
+                club.set_region_prefix(club_snap.region_prefix.clone());
                 for member_id in &club_snap.members {
                     club.add_member(*member_id);
                 }
@@ -24073,6 +24267,7 @@ pub(crate) mod persist_snapshot {
                     encrypted_signing_key: club.encrypted_signing_key().cloned(),
                     email: club.email().map(|s| s.to_string()),
                     verified: club.is_verified(),
+                    region_prefix: club.region_prefix().map(|p| p.to_vec()),
                     members: club.members().iter().copied().collect(),
                     sponsored_works: club.sponsored_works().iter().copied().collect(),
                 };
@@ -49289,5 +49484,256 @@ mod region_tests {
             .unwrap();
         let visible = server.region_visible_works(sid).unwrap();
         assert!(visible.contains(&w));
+    }
+
+    #[test]
+    fn region_create_allocates_hierarchical_prefixes() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let club_a = server
+            .create_named_club(sid, "region-a", crate::edition::Edition::empty())
+            .unwrap();
+        let club_b = server
+            .create_named_club(sid, "region-b", crate::edition::Edition::empty())
+            .unwrap();
+        let club_a1 = server
+            .create_named_club(sid, "region-a1", crate::edition::Edition::empty())
+            .unwrap();
+
+        // Non-admin cannot create regions.
+        assert!(server.region_create(sid, club_a, None).is_err());
+
+        server.grant_admin_authority(sid).unwrap();
+        let p_a = server.region_create(sid, club_a, None).unwrap();
+        assert_eq!(p_a, vec![1]);
+        let p_b = server.region_create(sid, club_b, None).unwrap();
+        assert_eq!(p_b, vec![2]);
+        let p_a1 = server.region_create(sid, club_a1, Some(club_a)).unwrap();
+        assert_eq!(p_a1, vec![1, 1], "nested region allocates under parent");
+
+        // Double-region rejected; phantom parent rejected;
+        // non-region parent rejected.
+        assert!(server.region_create(sid, club_a, None).is_err());
+        assert!(server.region_create(sid, club_b, Some(999_999)).is_err());
+        let club_plain = server
+            .create_named_club(sid, "plain", crate::edition::Edition::empty())
+            .unwrap();
+        let club_orphan = server
+            .create_named_club(sid, "orphan", crate::edition::Edition::empty())
+            .unwrap();
+        assert!(
+            server
+                .region_create(sid, club_orphan, Some(club_plain))
+                .is_err(),
+            "parent must itself be a region"
+        );
+
+        let regions = server.regions();
+        assert_eq!(regions.len(), 3);
+        assert_eq!(regions[0].1, vec![1]);
+        assert_eq!(regions[1].1, vec![1, 1]);
+        assert_eq!(regions[2].1, vec![2]);
+    }
+
+    #[test]
+    fn create_work_allocates_under_region_prefix() {
+        let mut server = Server::new();
+        let admin = server.connect();
+        server.login_public(admin).unwrap();
+        server.grant_admin_authority(admin).unwrap();
+        let region_club = server
+            .create_named_club(admin, "essays", crate::edition::Edition::empty())
+            .unwrap();
+        server.region_create(admin, region_club, None).unwrap();
+
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        server.session_set_region(sid, Some(region_club)).unwrap();
+        let wid = server
+            .create_work(sid, Edition::from_text("in region"))
+            .unwrap();
+        let global_wid = server
+            .create_work(admin, Edition::from_text("global"))
+            .unwrap();
+
+        let ws = server.works.get(&wid).unwrap();
+        assert_eq!(
+            ws.work.tumbler_path_override(),
+            Some(&[1u64, wid as u64][..]),
+            "region work path = [region prefix, be_id]"
+        );
+        let t = ws.work.tumbler();
+        assert_eq!(t.path(), &[1, wid as u64]);
+        let addr = server.work_xan_address(wid).unwrap();
+        assert_eq!(
+            addr,
+            format!("xan://{}/1.{}", server.tumbler_server_identity(), wid)
+        );
+
+        let global = server.works.get(&global_wid).unwrap();
+        assert_eq!(
+            global.work.tumbler_path_override(),
+            None,
+            "global works keep flat [be_id] paths"
+        );
+    }
+
+    #[test]
+    fn nested_region_visibility() {
+        let mut server = Server::new();
+        let admin = server.connect();
+        server.login_public(admin).unwrap();
+        server.grant_admin_authority(admin).unwrap();
+        let parent_club = server
+            .create_named_club(admin, "parent", crate::edition::Edition::empty())
+            .unwrap();
+        let child_club = server
+            .create_named_club(admin, "child", crate::edition::Edition::empty())
+            .unwrap();
+        server.region_create(admin, parent_club, None).unwrap();
+        server
+            .region_create(admin, child_club, Some(parent_club))
+            .unwrap();
+
+        let sid_parent = server.connect();
+        server.login_public(sid_parent).unwrap();
+        server
+            .session_set_region(sid_parent, Some(parent_club))
+            .unwrap();
+        let parent_work = server
+            .create_work(sid_parent, Edition::from_text("parent work"))
+            .unwrap();
+
+        let sid_child = server.connect();
+        server.login_public(sid_child).unwrap();
+        server
+            .session_set_region(sid_child, Some(child_club))
+            .unwrap();
+        let child_work = server
+            .create_work(sid_child, Edition::from_text("child work"))
+            .unwrap();
+
+        // Parent region sees its own works AND nested child works.
+        let visible_parent = server.region_visible_works(sid_parent).unwrap();
+        assert!(visible_parent.contains(&parent_work));
+        assert!(
+            visible_parent.contains(&child_work),
+            "nested visibility: region [1] sees [1,1] works"
+        );
+
+        // Child region sees only its own works.
+        let visible_child = server.region_visible_works(sid_child).unwrap();
+        assert!(visible_child.contains(&child_work));
+        assert!(
+            !visible_child.contains(&parent_work),
+            "child region [1,1] must not see parent's [1] works"
+        );
+    }
+
+    #[test]
+    fn resolve_xan_region_address() {
+        let mut server = Server::new();
+        let admin = server.connect();
+        server.login_public(admin).unwrap();
+        server.grant_admin_authority(admin).unwrap();
+        let region_club = server
+            .create_named_club(admin, "seminar", crate::edition::Edition::empty())
+            .unwrap();
+        server.region_create(admin, region_club, None).unwrap();
+
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        server.session_set_region(sid, Some(region_club)).unwrap();
+        server.create_work(sid, Edition::from_text("one")).unwrap();
+        server.create_work(sid, Edition::from_text("two")).unwrap();
+
+        let ident = server.tumbler_server_identity();
+        match server
+            .resolve_xan_address(&format!("xan://{}/1", ident))
+            .unwrap()
+        {
+            XanResolution::Region {
+                prefix,
+                work_count,
+                club,
+                ..
+            } => {
+                assert_eq!(prefix, vec![1]);
+                assert_eq!(work_count, 2);
+                assert_eq!(club, region_club);
+            }
+            other => panic!("expected Region, got {:?}", other),
+        }
+
+        // A region work address still resolves to the work (branch 1
+        // fires before the region branch).
+        let ws = server
+            .works
+            .values()
+            .find(|ws| ws.work.tumbler_path_override().is_some())
+            .unwrap();
+        let t = ws.work.tumbler();
+        let uri = t.to_xan_uri().unwrap();
+        match server.resolve_xan_address(&uri).unwrap() {
+            XanResolution::Local { .. } => {}
+            other => panic!("expected Local, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn region_prefix_survives_checkpoint_restore() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_region_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let region_club;
+        let region_work;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let admin = server.connect();
+            server.login_public(admin).unwrap();
+            server.grant_admin_authority(admin).unwrap();
+            region_club = server
+                .create_named_club(admin, "persisted", crate::edition::Edition::empty())
+                .unwrap();
+            let prefix = server.region_create(admin, region_club, None).unwrap();
+            assert_eq!(prefix, vec![1]);
+
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            server.session_set_region(sid, Some(region_club)).unwrap();
+            region_work = server
+                .create_work(sid, Edition::from_text("region content"))
+                .unwrap();
+
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert_eq!(
+                server.club_region_prefix(region_club),
+                Some(vec![1]),
+                "club region prefix survives checkpoint/restore"
+            );
+            let ws = server.works.get(&region_work).unwrap();
+            assert_eq!(
+                ws.work.tumbler_path_override(),
+                Some(&[1u64, region_work as u64][..]),
+                "region work path survives checkpoint/restore"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 }

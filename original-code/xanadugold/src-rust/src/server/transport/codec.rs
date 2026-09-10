@@ -1213,6 +1213,21 @@ impl JsonCodec {
                     club_id: args.club_id,
                 })
             }
+            OperationCode::RegionCreate => {
+                #[derive(Deserialize)]
+                struct Args {
+                    club_id: BeId,
+                    #[serde(default)]
+                    parent: Option<BeId>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::RegionCreate {
+                    club_id: args.club_id,
+                    parent: args.parent,
+                })
+            }
+            OperationCode::RegionList => Ok(WireRequest::RegionList {}),
             OperationCode::SessionSetAuthorType => {
                 #[derive(Deserialize)]
                 struct Args {

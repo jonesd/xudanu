@@ -177,6 +177,8 @@ pub struct ClubStateChunk {
     pub encrypted_signing_key: Option<crate::crypto::club_keys::EncryptedSigningKey>,
     pub email: Option<String>,
     pub verified: bool,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub region_prefix: Option<Vec<u64>>,
     pub members: Vec<BeId>,
     pub sponsored_works: Vec<BeId>,
 }
@@ -519,6 +521,7 @@ pub fn checkpoint_write_root(
             encrypted_signing_key: club_ref.encrypted_signing_key.clone(),
             email: club_ref.email.clone(),
             verified: club_ref.verified,
+            region_prefix: club_ref.region_prefix.clone(),
             members: club_ref.members.clone(),
             sponsored_works: club_ref.sponsored_works.clone(),
         };
@@ -840,6 +843,7 @@ pub fn read_root_as_manifest(
                 encrypted_signing_key: cs.encrypted_signing_key,
                 email: cs.email,
                 verified: cs.verified,
+                region_prefix: cs.region_prefix.clone(),
                 members: cs.members,
                 sponsored_works: cs.sponsored_works,
             };

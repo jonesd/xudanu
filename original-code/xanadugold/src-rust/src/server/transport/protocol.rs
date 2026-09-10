@@ -194,6 +194,8 @@ pub enum OperationCode {
     OtsAnchorRequest,
     SessionSetAuthorType,
     SessionSetRegion,
+    RegionCreate,
+    RegionList,
     WorkUnstar,
     WorkIsStarred,
     ConnectionPinSet,
@@ -586,6 +588,8 @@ impl OperationCode {
             0x035D => Some(OperationCode::OtsAnchorRequest),
             0x035E => Some(OperationCode::SessionSetAuthorType),
             0x035F => Some(OperationCode::SessionSetRegion),
+            0x0360 => Some(OperationCode::RegionCreate),
+            0x0361 => Some(OperationCode::RegionList),
             0x0336 => Some(OperationCode::WorkUnstar),
             0x0337 => Some(OperationCode::WorkIsStarred),
             0x0338 => Some(OperationCode::WorkGraph),
@@ -934,6 +938,8 @@ impl OperationCode {
             OperationCode::OtsAnchorRequest => 0x035D,
             OperationCode::SessionSetAuthorType => 0x035E,
             OperationCode::SessionSetRegion => 0x035F,
+            OperationCode::RegionCreate => 0x0360,
+            OperationCode::RegionList => 0x0361,
             OperationCode::WorkUnstar => 0x0336,
             OperationCode::WorkIsStarred => 0x0337,
             OperationCode::WorkGraph => 0x0338,
@@ -1440,6 +1446,11 @@ pub enum WireRequest {
     SessionSetRegion {
         club_id: Option<BeId>,
     },
+    RegionCreate {
+        club_id: BeId,
+        parent: Option<BeId>,
+    },
+    RegionList {},
     WorkUnstar {
         work_id: BeId,
     },
@@ -5208,6 +5219,8 @@ mod lattice_shadow_wire_tests {
             OperationCode::OtsAnchorRequest,
             OperationCode::SessionSetAuthorType,
             OperationCode::SessionSetRegion,
+            OperationCode::RegionCreate,
+            OperationCode::RegionList,
         ] {
             let wire = code.to_u16();
             let back = OperationCode::from_u16(wire).expect("decode");
@@ -5232,6 +5245,8 @@ mod lattice_shadow_wire_tests {
             (0x035D, OperationCode::OtsAnchorRequest),
             (0x035E, OperationCode::SessionSetAuthorType),
             (0x035F, OperationCode::SessionSetRegion),
+            (0x0360, OperationCode::RegionCreate),
+            (0x0361, OperationCode::RegionList),
         ];
         for (wire, want) in targets {
             assert_eq!(OperationCode::from_u16(wire), Some(want));
