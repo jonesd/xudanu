@@ -128,7 +128,7 @@ fn cmd_init(data_dir: &str, passphrase: Option<&[u8]>) {
     }
 }
 
-fn cmd_hg_profile(data_dir: &str) {
+fn cmd_hg_profile(data_dir: &str, region: Option<u64>) {
     let path = PathBuf::from(data_dir);
     if !path.join("root_manifest.json").exists() && !path.join("manifest.json").exists() {
         eprintln!("Error: no manifest found at {}", path.display());
@@ -139,7 +139,7 @@ fn cmd_hg_profile(data_dir: &str) {
         eprintln!("Error: restore failed: {}", e);
         std::process::exit(1);
     }
-    let profile = xudanu::server::hg_profile::hg_profile(&server);
+    let profile = xudanu::server::hg_profile::hg_profile_region(&server, region);
     match serde_json::to_string_pretty(&profile) {
         Ok(json) => println!("{}", json),
         Err(e) => {
@@ -572,7 +572,14 @@ async fn main() {
             let passphrase = std::env::var("XUDANU_KEY_PASSPHRASE").ok();
             cmd_init(data_dir, passphrase.as_deref().map(|s| s.as_bytes()));
         }
-        "hg-profile" => cmd_hg_profile(args.get(2).map(String::as_str).unwrap_or("")),
+        "hg-profile" => {
+            let region = args
+                .iter()
+                .position(|a| a == "--region")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|v| v.parse::<u64>().ok());
+            cmd_hg_profile(args.get(2).map(String::as_str).unwrap_or(""), region);
+        }
         "verify" => {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
             cmd_verify(data_dir);

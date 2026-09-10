@@ -37,7 +37,7 @@ fn make_work(server: &mut Server, sid: SessionId, text: &str) -> u64 {
     // so the public course cannot be defaced. (Practice happens on
     // public-sandbox servers; production shows the course.)
     let admin = server.system_clubs().admin_club;
-    let _ = server.work_set_edit_club(sid, id, Some(admin));
+    server.work_set_edit_club_force(id, Some(admin));
     id
 }
 

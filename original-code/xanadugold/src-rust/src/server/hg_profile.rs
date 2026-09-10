@@ -230,8 +230,29 @@ fn type_label(types: &[u64]) -> String {
     }
 }
 
+/// H(G) profile scoped to a region (None = all works).
+pub fn hg_profile_region(server: &Server, region: Option<u64>) -> HgProfile {
+    let nodes: Vec<u64> = server
+        .works
+        .iter()
+        .filter(|(_, ws)| region.is_none() || ws.region == region)
+        .map(|(id, _)| *id)
+        .collect();
+    hg_profile_nodes(server, nodes)
+}
+
+/// H(G) profile on a specific set of works (the nodes are the
+/// works; edges are derived from links/transclusions between them).
+pub fn hg_profile_nodes(server: &Server, nodes: Vec<u64>) -> HgProfile {
+    hg_profile_impl(server, nodes)
+}
+
 pub fn hg_profile(server: &Server) -> HgProfile {
     let nodes: Vec<u64> = server.works.keys().copied().collect();
+    hg_profile_impl(server, nodes)
+}
+
+fn hg_profile_impl(server: &Server, nodes: Vec<u64>) -> HgProfile {
     let mut g = Graph {
         nodes: nodes.clone(),
         adj: HashMap::new(),

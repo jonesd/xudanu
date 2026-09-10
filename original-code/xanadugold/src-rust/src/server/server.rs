@@ -4724,13 +4724,18 @@ impl Server {
         club_id: Option<BeId>,
     ) -> Result<(), ServerError> {
         self.ensure_can_edit(session_id, work_be_id)?;
-        let ws = self
-            .works
-            .get_mut(&work_be_id)
-            .ok_or(ServerError::WorkNotFound(work_be_id))?;
-        ws.work.set_edit_club(club_id);
-        ws.mark_dirty();
+        self.work_set_edit_club_force(work_be_id, club_id);
         Ok(())
+    }
+
+    /// Boot-time variant: no permission check (the seeder has system
+    /// authority; the permission gate can fail under owner-only for
+    /// freshly-created public-club works).
+    pub(crate) fn work_set_edit_club_force(&mut self, work_be_id: BeId, club_id: Option<BeId>) {
+        if let Some(ws) = self.works.get_mut(&work_be_id) {
+            ws.work.set_edit_club(club_id);
+            ws.mark_dirty();
+        }
     }
 
     /// Set the history club — controls who can access revision history.
