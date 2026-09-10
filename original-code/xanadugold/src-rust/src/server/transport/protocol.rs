@@ -192,6 +192,8 @@ pub enum OperationCode {
     OtsAnchorStatus,
     OtsAnchorSetEnabled,
     OtsAnchorRequest,
+    SessionSetAuthorType,
+    SessionSetRegion,
     WorkUnstar,
     WorkIsStarred,
     ConnectionPinSet,
@@ -582,6 +584,8 @@ impl OperationCode {
             0x035B => Some(OperationCode::OtsAnchorStatus),
             0x035C => Some(OperationCode::OtsAnchorSetEnabled),
             0x035D => Some(OperationCode::OtsAnchorRequest),
+            0x035E => Some(OperationCode::SessionSetAuthorType),
+            0x035F => Some(OperationCode::SessionSetRegion),
             0x0336 => Some(OperationCode::WorkUnstar),
             0x0337 => Some(OperationCode::WorkIsStarred),
             0x0338 => Some(OperationCode::WorkGraph),
@@ -928,6 +932,8 @@ impl OperationCode {
             OperationCode::OtsAnchorStatus => 0x035B,
             OperationCode::OtsAnchorSetEnabled => 0x035C,
             OperationCode::OtsAnchorRequest => 0x035D,
+            OperationCode::SessionSetAuthorType => 0x035E,
+            OperationCode::SessionSetRegion => 0x035F,
             OperationCode::WorkUnstar => 0x0336,
             OperationCode::WorkIsStarred => 0x0337,
             OperationCode::WorkGraph => 0x0338,
@@ -1427,6 +1433,13 @@ pub enum WireRequest {
         enabled: bool,
     },
     OtsAnchorRequest {},
+    SessionSetAuthorType {
+        author_type: String,
+        llm_model: Option<String>,
+    },
+    SessionSetRegion {
+        club_id: Option<BeId>,
+    },
     WorkUnstar {
         work_id: BeId,
     },
@@ -5193,6 +5206,8 @@ mod lattice_shadow_wire_tests {
             OperationCode::OtsAnchorStatus,
             OperationCode::OtsAnchorSetEnabled,
             OperationCode::OtsAnchorRequest,
+            OperationCode::SessionSetAuthorType,
+            OperationCode::SessionSetRegion,
         ] {
             let wire = code.to_u16();
             let back = OperationCode::from_u16(wire).expect("decode");
@@ -5215,6 +5230,8 @@ mod lattice_shadow_wire_tests {
             (0x035B, OperationCode::OtsAnchorStatus),
             (0x035C, OperationCode::OtsAnchorSetEnabled),
             (0x035D, OperationCode::OtsAnchorRequest),
+            (0x035E, OperationCode::SessionSetAuthorType),
+            (0x035F, OperationCode::SessionSetRegion),
         ];
         for (wire, want) in targets {
             assert_eq!(OperationCode::from_u16(wire), Some(want));

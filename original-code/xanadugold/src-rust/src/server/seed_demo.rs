@@ -30,9 +30,15 @@ fn ref_at(work: u64, text: &str, marker: &str, excerpt: &str) -> HyperRef {
 }
 
 fn make_work(server: &mut Server, sid: SessionId, text: &str) -> u64 {
-    server
+    let id = server
         .create_work(sid, Edition::from_text(text))
-        .expect("demo: work_create")
+        .expect("demo: work_create");
+    // Showcase works are read-only: editing locked to the admin club
+    // so the public course cannot be defaced. (Practice happens on
+    // public-sandbox servers; production shows the course.)
+    let admin = server.system_clubs().admin_club;
+    server.work_set_edit_club_force(id, Some(admin));
+    id
 }
 
 fn make_link(
@@ -75,6 +81,24 @@ const COMPANION: &str = "Lesson Companion\n\nA garden is not a photograph; it is
 
 const COMPANION_B: &str = "Second Companion\n\nTide tables are predictions wearing the costume of memories.\n\nThe ferry schedule survived three administrations because nobody dared own it.";
 
+const LINEAGE: &str = "Xanadu Lineage — What Xudanu Inherited, and What It Built
+
+Ted Nelson conceived hypertext in the 1960s and spent the following decades designing a literature that would not break: documents connected by unbreakable links, content included by reference rather than copy, every quotation traceable to its source. He named the deep version of reference transclusion, and the project he built around it Project Xanadu.
+
+The implementation era came late. From 1988, an Autodesk-funded team — Roger Gregory, Mark S. Miller, Stuart Greene, K. Eric Drexler, Eric Dean Tribble, Ravi Pandya and others, working with Nelson — built the systems now known as Udanax Green (1988) and Udanax Gold (1992). The enfilade (the dual-purpose tree at the heart of both) was invented around 1980 by Miller, Greene, and Gregory; tumblers, the hierarchical universal addresses, by Gregory and Miller; the ent, Drexler's version-forking structure, became Gold's reconciliation core. Gold shipped as Xanadu 92.1 — incomplete, but real.
+
+In 1999 the code was released as open source. It has run ever since in laboratories, classrooms, and careful hands — including the modernized Green test harness and formal specification work by independent researchers in the lineage community.
+
+What Xudanu inherited: the concepts that made Gold Gold. Enfilades with content-addressed crums. Tumbler-derived addressing. Typed, multi-ended links between specific passages — the sentence-with-blanks model. Transclusion as inclusion-by-reference with provenance. Deep respect for the original architecture, studied directly from the open-sourced code.
+
+What Xudanu built anew: everything the 1990s could not. A real-time collaborative CRDT editing engine. Modern cryptography — per-passage Ed25519 authorship signatures, hash-chained attribution, range notarization, and externally-anchored timestamps. A web-native frontend. The reference-over-copy writing experience: the system notices when you retype what already exists and offers it as a live inclusion.
+
+Two trees, one lineage: the Gold data model, finished with 2026 convergence theory.
+
+Disclaimer: Xudanu is an independent, open-source project (Apache 2.0). It is not affiliated with, endorsed by, or sponsored by Ted Nelson, Project Xanadu, the Xanadu Operating Company, Autodesk Inc., or the Udanax development team. Xudanu implements concepts from the open-sourced Udanax-Gold codebase using original code. All trademarks belong to their respective owners.
+
+Credits: the 1988-1992 implementation team for the architecture; the 1999 open-source release that made study possible; the modern Green test harness and formal specification work in the lineage community, which proved the old code still runs; and every careful reader who checked whether we understood it.";
+
 const L1_TEXT: &str = "Links Lesson 1 — The Simple Link\n\nA link is a typed connection between two passages. This sentence is a live one: its underline connects to a line in the Lesson Companion. Single-click the underline to jump there; hover it to see what kind of connection it is.\n\nYour task: Select this sentence and click the Link button, choose any type, and pick Lesson Companion as the target.\n\nWhen your own underline appears, you have made a link. That is the whole primitive — everything fancier is more of these, arranged with intent.";
 
 const L2_TEXT: &str = "Links Lesson 2 — Three Ends on One Connection\n\nThe link you made had two ends. A link can have any number: this sentence is one end of a THREE-ended connection whose other ends live in both companions. One connection, three places.\n\nYour task: Select this sentence, click Link, and on the final step use Additional ends to add a second target — you will have made a three-ended connection.\n\nThree ends is not a chain and not a list — it is one claim involving several places at once, like a comparison. Read every link as a sentence with blanks: the type is the verb, and each end fills one blank.";
@@ -91,9 +115,17 @@ const SANDBOX_TEXT: &str = "Links Sandbox — Make Your Own\n\nNo tasks here, on
 /// a lesson work already exists (works are titled by first line).
 pub fn seed_links_demo(server: &mut Server) {
     let sid = server.connect();
-    if server.login_public(sid).is_err() {
-        tracing::warn!("[seed-links-demo] public login refused (owner-only policy?) — skipping");
-        return;
+    let _ = server.login_public(sid);
+    // Seed with system authority: the seeder is boot-time server
+    // code, not a remote user — the edit policy must not gate it
+    // (owner-only servers refuse public work_create otherwise).
+    let sc = *server.system_clubs();
+    let mut clubs = std::collections::HashSet::new();
+    clubs.insert(sc.admin_club);
+    clubs.insert(sc.access_club);
+    clubs.insert(sc.public_club);
+    if let Some(sess) = server.sessions.get_mut(&sid) {
+        sess.set_key_master(crate::server::keymaster::KeyMaster::make_all(clubs));
     }
     // Idempotency: lesson 1's title already present -> already seeded.
     let marker = "Links Lesson 1 — The Simple Link";
@@ -106,6 +138,8 @@ pub fn seed_links_demo(server: &mut Server) {
         return;
     }
 
+    let lineage = make_work(server, sid, LINEAGE);
+    tracing::info!("[seed-links-demo] lineage page = {:x}", lineage);
     let companion = make_work(server, sid, COMPANION);
     let companion_b = make_work(server, sid, COMPANION_B);
 
@@ -249,6 +283,40 @@ pub fn seed_links_demo(server: &mut Server) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn seeds_under_owner_only_policy_without_panic() {
+        // The production failure (2026-09-08): boot-time seeding via
+        // a public session panicked at work_create when the server
+        // ran owner-only. The seeder now carries system authority,
+        // and every seeded work is locked read-only.
+        let mut server = Server::new();
+        server.set_edit_policy(crate::server::server::EditPolicy::OwnerOnly);
+        seed_links_demo(&mut server);
+        assert!(
+            server
+                .works
+                .values()
+                .any(|ws| ws.cached_title().contains("Links Lesson 1")),
+            "course seeded under owner-only"
+        );
+        let admin = server.system_clubs().admin_club;
+        let course = server
+            .works
+            .values()
+            .find(|ws| ws.cached_title().contains("Links Lesson 1"))
+            .expect("lesson 1");
+        for (id, ws) in server.works.iter() {
+            if ws.cached_title().contains("Links Lesson") {
+                assert_eq!(
+                    server.work_edit_club(*id).unwrap_or(None),
+                    Some(admin),
+                    "seeded work {:?} is read-only",
+                    ws.cached_title()
+                );
+            }
+        }
+    }
 
     #[test]
     fn seed_creates_course_and_trail() {

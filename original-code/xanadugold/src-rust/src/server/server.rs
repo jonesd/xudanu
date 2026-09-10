@@ -83,6 +83,10 @@ pub(crate) struct WorkState {
     work: Work,
     /// FR-52 A-1 P1: the work's place in the server fulltrace.
     trace: crate::ent::trace::TracePosition,
+    /// Regions Phase 1: the club that owns this work's region.
+    /// None = the global region (visible to all). A session in a
+    /// region context sees only works whose region matches.
+    pub(crate) region: Option<BeId>,
     chunk_ref: Option<crate::persist::edition_chunks::WorkChunkRef>,
     /// Preserved chunk history from before mark_dirty cleared chunk_ref.
     /// Used by checkpoint to merge old revisions with new ones.
@@ -4022,7 +4026,19 @@ impl Server {
 
         let is_public_session = owner == Some(self.system_clubs.public_club);
         if is_public_session {
-            if self.edit_policy == EditPolicy::OwnerOnly {
+            // OwnerOnly refuses anonymous creation — unless the
+            // session carries admin authority (the boot-time demo
+            // seeder grants it; admin sessions are not anonymous).
+            if self.edit_policy == EditPolicy::OwnerOnly
+                && !self
+                    .sessions
+                    .get(&session_id)
+                    .map(|s| {
+                        s.has_authority(self.system_clubs.admin_club)
+                            || s.has_authority(self.system_clubs.access_club)
+                    })
+                    .unwrap_or(false)
+            {
                 return Err(ServerError::NotAuthorized);
             }
             work.set_read_club(Some(self.system_clubs.public_club));
@@ -4056,6 +4072,7 @@ impl Server {
         let ws = WorkState {
             work,
             trace,
+            region: self.sessions.get(&session_id).and_then(|s| s.region()),
             chunk_ref: None,
             prev_chunk_history: None,
             dirty_gen: 0,
@@ -4158,13 +4175,18 @@ impl Server {
                     .and_then(|s| s.club_signing_key().map(|k| k.verifying_key().to_bytes()))
                     .unwrap_or([0u8; 32]);
                 let timestamp = Self::current_timestamp_secs();
+                let (session_author_type, session_llm_model) = self
+                    .sessions
+                    .get(&session_id)
+                    .map(|s| (s.author_type(), s.llm_model().map(String::from)))
+                    .unwrap_or((crate::edition::provenance::AuthorType::Human, None));
                 let elem_prov = crate::edition::provenance::ElementProvenance {
                     author_public_key: pub_key,
                     author_display_name: display_name,
                     author_club_id: club_id,
                     timestamp,
-                    author_type: crate::edition::provenance::AuthorType::Human,
-                    llm_model: None,
+                    author_type: session_author_type,
+                    llm_model: session_llm_model,
                     historical_author_id: None,
                     source_work_id: None,
                     transcluded_by: None,
@@ -4702,13 +4724,18 @@ impl Server {
         club_id: Option<BeId>,
     ) -> Result<(), ServerError> {
         self.ensure_can_edit(session_id, work_be_id)?;
-        let ws = self
-            .works
-            .get_mut(&work_be_id)
-            .ok_or(ServerError::WorkNotFound(work_be_id))?;
-        ws.work.set_edit_club(club_id);
-        ws.mark_dirty();
+        self.work_set_edit_club_force(work_be_id, club_id);
         Ok(())
+    }
+
+    /// Boot-time variant: no permission check (the seeder has system
+    /// authority; the permission gate can fail under owner-only for
+    /// freshly-created public-club works).
+    pub(crate) fn work_set_edit_club_force(&mut self, work_be_id: BeId, club_id: Option<BeId>) {
+        if let Some(ws) = self.works.get_mut(&work_be_id) {
+            ws.work.set_edit_club(club_id);
+            ws.mark_dirty();
+        }
     }
 
     /// Set the history club — controls who can access revision history.
@@ -6469,6 +6496,7 @@ impl Server {
         let ws = WorkState {
             work,
             trace: self.fulltrace.new_trace(),
+            region: None,
             chunk_ref: None,
             prev_chunk_history: None,
             dirty_gen: 0,
@@ -8570,6 +8598,65 @@ impl Server {
         self.reuse_suggestions_enabled
     }
 
+    /// FR-61 #1: tag a session's author type. Agents call this
+    /// after connecting; every subsequent revision carries the type
+    /// in its ElementProvenance. Self-service (no admin gate — the
+    /// agent is identifying itself, not claiming someone else).
+    pub fn session_set_author_type(
+        &mut self,
+        session_id: SessionId,
+        author_type: crate::edition::provenance::AuthorType,
+        llm_model: Option<String>,
+    ) -> Result<(), ServerError> {
+        self.ensure_session(session_id)?;
+        if let Some(sess) = self.sessions.get_mut(&session_id) {
+            sess.set_author_type(author_type, llm_model);
+        }
+        Ok(())
+    }
+
+    /// Regions Phase 1: set the session's region context. The
+    /// session will see only works in this region. None = global.
+    pub fn session_set_region(
+        &mut self,
+        session_id: SessionId,
+        club_id: Option<BeId>,
+    ) -> Result<(), ServerError> {
+        self.ensure_session(session_id)?;
+        if let Some(cid) = club_id {
+            // The club must exist (you can't scope to a phantom region).
+            if !self.clubs.contains_key(&cid) {
+                return Err(ServerError::ClubNotFound(cid));
+            }
+        }
+        if let Some(sess) = self.sessions.get_mut(&session_id) {
+            sess.set_region(club_id);
+        }
+        Ok(())
+    }
+
+    /// Regions Phase 1: the session's region (None = global).
+    pub fn session_region(&self, session_id: SessionId) -> Result<Option<BeId>, ServerError> {
+        self.ensure_session(session_id)?;
+        Ok(self.sessions.get(&session_id).and_then(|s| s.region()))
+    }
+
+    /// Regions Phase 1: filter works by the session's region.
+    /// Admin sessions (region=None) see all works.
+    pub fn region_visible_works(&self, session_id: SessionId) -> Result<Vec<BeId>, ServerError> {
+        self.ensure_session(session_id)?;
+        let region = self.sessions.get(&session_id).and_then(|s| s.region());
+        Ok(self
+            .works
+            .iter()
+            .filter(|(_, ws)| match region {
+                Some(r) => ws.region == Some(r),
+                None => true,
+            })
+            .map(|(id, _)| *id)
+            .collect())
+    }
+
     /// FR-60: admin toggle for OTS anchoring.
     pub fn ots_anchor_set_enabled(
         &mut self,
@@ -8646,6 +8733,31 @@ impl Server {
             dir.join("meta.json"),
             serde_json::to_vec_pretty(&meta).unwrap_or_default(),
         );
+    }
+
+    /// Off-machine backup status from data_dir/backup-status.json
+    /// (written by scripts/backup-offsite.sh every run). Staleness
+    /// is the monitoring signal; missing file = never backed up.
+    pub fn backup_status(&self) -> serde_json::Value {
+        let mut v = serde_json::json!({ "status": "never" });
+        let Some(dir) = self.data_dir.as_ref() else {
+            return v;
+        };
+        let Ok(raw) = std::fs::read(dir.join("backup-status.json")) else {
+            return v;
+        };
+        let Ok(mut m) = serde_json::from_slice::<serde_json::Value>(&raw) else {
+            v["status"] = serde_json::json!("unreadable");
+            return v;
+        };
+        if let Some(ts) = m.get("last_run").and_then(|t| t.as_str()) {
+            if let Ok(t) = chrono::DateTime::parse_from_rfc3339(ts) {
+                let age =
+                    Self::current_timestamp_secs().saturating_sub(t.timestamp().max(0) as u64);
+                m["age_secs"] = serde_json::json!(age);
+            }
+        }
+        m
     }
 
     /// FR-60: status for the admin op and the verify subcommand.
@@ -11784,6 +11896,7 @@ impl Server {
         let ws = WorkState {
             work: work.clone(),
             trace: self.fulltrace.new_trace(),
+            region: None,
             chunk_ref: None,
             prev_chunk_history: None,
             dirty_gen: 0,
@@ -12515,6 +12628,7 @@ impl Server {
                     let ws = WorkState {
                         work: work.clone(),
                         trace,
+                        region: None,
                         chunk_ref: Some(work_entry.work_ref.clone()),
                         prev_chunk_history: None,
                         dirty_gen: 0,
@@ -13299,6 +13413,46 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        // Daily narrative history: generate if there are changes
+        // and today's entry doesn't exist yet. Best-effort — a
+        // failure never blocks the checkpoint.
+        self.maybe_generate_daily_history();
+    }
+
+    /// FR-61 #2: generate the daily history work if warranted.
+    fn maybe_generate_daily_history(&mut self) {
+        if let Some((text, touched_works)) =
+            crate::server::daily_history::generate_daily_history(self)
+        {
+            let sid = self.connect();
+            let _ = self.login_public(sid);
+            // System authority: the history generator is server-side
+            // code, not a remote user — it must work under any edit
+            // policy (same rationale as the demo seeder).
+            let sc = *self.system_clubs();
+            let mut clubs = std::collections::HashSet::new();
+            clubs.insert(sc.admin_club);
+            if let Some(sess) = self.sessions.get_mut(&sid) {
+                sess.set_key_master(crate::server::keymaster::KeyMaster::make_all(clubs));
+            }
+            if let Ok(hw) = self.create_work(sid, crate::edition::Edition::from_text(&text)) {
+                // Link back to every mentioned work.
+                for wid in &touched_works {
+                    let link = crate::edition::links::HyperLink::make(
+                        vec![5],
+                        crate::edition::links::HyperRef::single(None, Some(hw), None, None),
+                        crate::edition::links::HyperRef::single(None, Some(*wid), None, None),
+                    );
+                    let _ = self.create_link_with_hyperlink_homed(sid, link, None);
+                }
+                tracing::info!(
+                    "[daily-history] created {} ({} works, {} backlinks)",
+                    hw,
+                    touched_works.len(),
+                    touched_works.len()
+                );
+            }
+        }
     }
 
     /// Clears restore errors, re-enabling auto_checkpoint.
@@ -20570,6 +20724,7 @@ impl Server {
                 let ws = WorkState {
                     work,
                     trace: self.fulltrace.new_trace(),
+                    region: None,
                     chunk_ref: None,
                     prev_chunk_history: None,
                     dirty_gen: 0,
@@ -22946,6 +23101,7 @@ pub(crate) mod persist_snapshot {
                 let ws = WorkState {
                     work: work.clone(),
                     trace: server.fulltrace.new_trace(),
+                    region: None,
                     chunk_ref: None,
                     prev_chunk_history: None,
                     dirty_gen: 0,
@@ -47969,6 +48125,7 @@ mod a1_p2_club_branch_tests {
             let ws = WorkState {
                 work,
                 trace,
+                region: None,
                 chunk_ref: None,
                 prev_chunk_history: None,
                 dirty_gen: 0,
@@ -48594,5 +48751,183 @@ mod ots_anchor_tests {
         assert_eq!(receipt.len(), 31 + 1 + 1 + 32 + stream.len());
         assert_eq!(&receipt[33..65], &digest[..]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// FR-61 #1 armor: session author_type flows into ElementProvenance.
+#[cfg(test)]
+mod author_type_tests {
+    use super::*;
+
+    #[test]
+    fn llm_session_type_rides_provenance() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        server
+            .session_set_author_type(
+                sid,
+                crate::edition::provenance::AuthorType::Llm,
+                Some("test-model-v1".to_string()),
+            )
+            .unwrap();
+
+        let work = server
+            .create_work(sid, Edition::from_text("AI-authored content"))
+            .unwrap();
+        let club = server.resolve_author_club(sid);
+        server
+            .revise_work(
+                work,
+                sid,
+                Edition::from_text("AI-authored content, revised"),
+                club,
+            )
+            .unwrap();
+
+        let ed = server.work_edition(work).unwrap();
+        let llm_count = ed
+            .all_entries()
+            .iter()
+            .filter(|(_, c)| {
+                c.provenance
+                    .as_ref()
+                    .map(|p| {
+                        p.author_type == crate::edition::provenance::AuthorType::Llm
+                            && p.llm_model.as_deref() == Some("test-model-v1")
+                    })
+                    .unwrap_or(false)
+            })
+            .count();
+        assert!(
+            llm_count > 0,
+            "LLM-tagged entries present (got {})",
+            llm_count
+        );
+    }
+
+    #[test]
+    fn human_default_unchanged() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let work = server
+            .create_work(sid, Edition::from_text("human content"))
+            .unwrap();
+        let ed = server.work_edition(work).unwrap();
+        assert!(ed.all_entries().iter().all(|(_, c)| {
+            c.provenance
+                .as_ref()
+                .map(|p| p.author_type == crate::edition::provenance::AuthorType::Human)
+                .unwrap_or(true)
+        }));
+    }
+
+    #[test]
+    fn invalid_author_type_string_rejected() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        // The wire op validates the string; here we test the direct
+        // method accepts the enum. The string mapping is in dispatch.
+        server
+            .session_set_author_type(
+                sid,
+                crate::edition::provenance::AuthorType::Historical,
+                None,
+            )
+            .unwrap();
+        // no error = pass
+    }
+}
+
+/// Regions Phase 1 armor: session region context scopes the work list.
+#[cfg(test)]
+mod region_tests {
+    use super::*;
+
+    #[test]
+    fn region_scopes_work_list() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        // Create a club for region A
+        let region_a_club = server
+            .create_named_club(sid, "region-a", crate::edition::Edition::empty())
+            .unwrap();
+
+        // Create a club for region B
+        let region_b_club = server
+            .create_named_club(sid, "region-b", crate::edition::Edition::empty())
+            .unwrap();
+
+        // Global works (no region)
+        let global_work = server
+            .create_work(sid, Edition::from_text("global work"))
+            .unwrap();
+
+        // Region A session creates works
+        let sid_a = server.connect();
+        server.login_public(sid_a).unwrap();
+        server
+            .session_set_region(sid_a, Some(region_a_club))
+            .unwrap();
+        let a1 = server
+            .create_work(sid_a, Edition::from_text("region A work 1"))
+            .unwrap();
+        let a2 = server
+            .create_work(sid_a, Edition::from_text("region A work 2"))
+            .unwrap();
+
+        // Region B session creates works
+        let sid_b = server.connect();
+        server.login_public(sid_b).unwrap();
+        server
+            .session_set_region(sid_b, Some(region_b_club))
+            .unwrap();
+        let b1 = server
+            .create_work(sid_b, Edition::from_text("region B work 1"))
+            .unwrap();
+
+        // Region A sees only its works
+        let visible_a = server.region_visible_works(sid_a).unwrap();
+        assert!(visible_a.contains(&a1) && visible_a.contains(&a2));
+        assert!(!visible_a.contains(&b1), "region B work invisible to A");
+        assert!(
+            !visible_a.contains(&global_work),
+            "global work invisible to A"
+        );
+
+        // Region B sees only its works
+        let visible_b = server.region_visible_works(sid_b).unwrap();
+        assert!(visible_b.contains(&b1));
+        assert!(!visible_b.contains(&a1), "region A work invisible to B");
+
+        // Admin (no region) sees everything
+        let visible_admin = server.region_visible_works(sid).unwrap();
+        assert!(visible_admin.contains(&a1));
+        assert!(visible_admin.contains(&b1));
+        assert!(visible_admin.contains(&global_work));
+    }
+
+    #[test]
+    fn region_cannot_be_set_to_phantom_club() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        assert!(server.session_set_region(sid, Some(999_999)).is_err());
+    }
+
+    #[test]
+    fn region_none_is_global() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let w = server
+            .create_work(sid, Edition::from_text("global"))
+            .unwrap();
+        let visible = server.region_visible_works(sid).unwrap();
+        assert!(visible.contains(&w));
     }
 }

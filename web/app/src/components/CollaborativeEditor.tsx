@@ -715,7 +715,16 @@ function drawOverlay(
     for (const { desc, y: boxY } of placedDescs) {
       ctx.globalAlpha = markerFocusAlpha(desc.marker, focusLinkId);
       if (desc.firstTop + DESC_BOX_HEIGHT < viewportTop || desc.firstTop > viewportBottom) continue;
-      const boxH = DESC_BOX_HEIGHT;
+      // Demo feedback round 3: the fixed-height box bottom border sat
+      // ON the last baseline — descenders (g/y/p) crossed the thick
+      // border and read as a clipping bug. Size the box to the span
+      // with breathing room instead: 3px above the first line, 7px
+      // below the last baseline so descenders clear the border.
+      const boxH = Math.max(
+        DESC_BOX_HEIGHT,
+        desc.height + 10,
+      );
+      const boxTop = boxY < desc.firstTop ? boxY : desc.firstTop - 3;
 
       const boxX = rect.width - DESC_BOX_WIDTH - DESC_BOX_RIGHT_MARGIN;
       const color = desc.typeStyle.color;
@@ -730,7 +739,7 @@ function drawOverlay(
       const startX = desc.textRightX + 4;
       const endX = boxX;
       const lineY = desc.firstTop + desc.height - 1 + desc.lane * 2;
-      const boxMidY = boxY + boxH / 2;
+      const boxMidY = boxTop + boxH / 2;
       const elbowX = endX - 20 - desc.lane * 5;
       ctx.moveTo(startX, lineY);
       ctx.lineTo(elbowX, lineY);
@@ -745,34 +754,44 @@ function drawOverlay(
       // forced OVER text it drops to ~70% so the lines beneath stay
       // visible — the overlap itself only happens when the text
       // column reaches past where the box would sit.
-      const fitsInMargin = desc.textRightX + 12 <= boxX;
-      const fillA = fitsInMargin ? (isResolved ? "CC" : "E6") : "B3";
+      // Demo feedback (2026-09-08), universal treatment: the box is
+      // ALWAYS a faint wash — document text and box interior both
+      // readable — and the type-color identity rides a thick solid
+      // border. The type label gets its own dark chip so it stays
+      // legible over the wash.
+      const fillA = "22";
       ctx.fillStyle = color + fillA;
-      ctx.strokeStyle = isResolved ? color + "30" : color + "90";
+      ctx.strokeStyle = isResolved ? color + "50" : color + "C0";
       if (isResolved) ctx.setLineDash([3, 2]);
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 3;
       ctx.beginPath();
       const r = 4;
-      ctx.moveTo(boxX + r, boxY);
-      ctx.lineTo(boxX + DESC_BOX_WIDTH - r, boxY);
-      ctx.arcTo(boxX + DESC_BOX_WIDTH, boxY, boxX + DESC_BOX_WIDTH, boxY + r, r);
-      ctx.lineTo(boxX + DESC_BOX_WIDTH, boxY + boxH - r);
-      ctx.arcTo(boxX + DESC_BOX_WIDTH, boxY + boxH, boxX + DESC_BOX_WIDTH - r, boxY + boxH, r);
-      ctx.lineTo(boxX + r, boxY + boxH);
-      ctx.arcTo(boxX, boxY + boxH, boxX, boxY + boxH - r, r);
-      ctx.lineTo(boxX, boxY + r);
-      ctx.arcTo(boxX, boxY, boxX + r, boxY, r);
+      ctx.moveTo(boxX + r, boxTop);
+      ctx.lineTo(boxX + DESC_BOX_WIDTH - r, boxTop);
+      ctx.arcTo(boxX + DESC_BOX_WIDTH, boxTop, boxX + DESC_BOX_WIDTH, boxTop + r, r);
+      ctx.lineTo(boxX + DESC_BOX_WIDTH, boxTop + boxH - r);
+      ctx.arcTo(boxX + DESC_BOX_WIDTH, boxTop + boxH, boxX + DESC_BOX_WIDTH - r, boxTop + boxH, r);
+      ctx.lineTo(boxX + r, boxTop + boxH);
+      ctx.arcTo(boxX, boxTop + boxH, boxX, boxTop + boxH - r, r);
+      ctx.lineTo(boxX, boxTop + r);
+      ctx.arcTo(boxX, boxTop, boxX + r, boxTop, r);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
       ctx.restore();
 
       ctx.save();
-      ctx.fillStyle = isResolved ? color + "60" : color;
       ctx.font = `${isResolved ? "400" : "600"} 10px ui-monospace, SFMono-Regular, monospace`;
       ctx.textBaseline = "top";
       const typeName = LINK_TYPE_NAMES[desc.marker.linkTypeId!] ?? "Link";
-      ctx.fillText((isResolved ? "\u2713 " : "") + typeName.toUpperCase(), boxX + 8, boxY + 5);
+      const label = (isResolved ? "\u2713 " : "") + typeName.toUpperCase();
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = "#0d1117e6";
+      ctx.beginPath();
+      ctx.roundRect(boxX + 5, boxTop + 3, tw + 6, 14, 3);
+      ctx.fill();
+      ctx.fillStyle = isResolved ? color + "60" : color;
+      ctx.fillText(label, boxX + 8, boxTop + 5);
 
       ctx.fillStyle = isResolved ? "#484f58" : "#8b949e";
       ctx.font = `${isResolved ? "italic " : ""}11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
