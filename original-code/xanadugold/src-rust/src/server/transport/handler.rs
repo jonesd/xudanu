@@ -61,6 +61,7 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/api/public/works", get(public_works_list_handler))
         .route("/api/bloom-filter", get(bloom_filter_handler))
         .route("/api/public/identity", get(public_identity_handler))
+        .route("/api/public/resolve", get(xan_resolve_handler))
         .route(
             "/api/public/work/{work_id}/range/{start}/{end}",
             get(public_work_range_handler),
@@ -353,6 +354,117 @@ async fn public_work_handler(
 #[derive(Debug, serde::Deserialize)]
 pub struct IdentityQuery {
     pub q: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct ResolveQuery {
+    /// An `xan://` address (or bare tumbler) to resolve to a work.
+    pub tumbler: Option<String>,
+    /// A work id (hex `0x..` or decimal) to get the canonical `xan://`
+    /// address for.
+    pub work: Option<String>,
+}
+
+async fn xan_resolve_handler(
+    State(state): State<SharedState>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    Query(query): Query<ResolveQuery>,
+) -> axum::response::Response {
+    if !state.rate_limiter.check_get(addr.ip()) {
+        return (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            "rate limit exceeded",
+        )
+            .into_response();
+    }
+
+    if let Some(uri) = query.tumbler {
+        let result = state
+            .server
+            .with_server_ref(|srv| srv.resolve_xan_address(&uri));
+        let body = match result {
+            Ok(crate::server::server::XanResolution::Local {
+                work_id,
+                position,
+                title,
+            }) => serde_json::json!({
+                "status": "local",
+                "work_id": format!("{:04x}", work_id),
+                "position": position,
+                "title": title,
+            }),
+            Ok(crate::server::server::XanResolution::Remote {
+                server,
+                origin_work_id,
+                known_peer,
+            }) => serde_json::json!({
+                "status": "remote",
+                "server": server,
+                "origin_work_id": origin_work_id,
+                "known_peer": known_peer,
+            }),
+            Err(e) => {
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    serde_json::json!({ "error": format!("{:?}", e) }).to_string(),
+                )
+                    .into_response();
+            }
+        };
+        return (
+            [
+                (
+                    axum::http::header::CONTENT_TYPE,
+                    "application/json; charset=utf-8",
+                ),
+                (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+            ],
+            body.to_string(),
+        )
+            .into_response();
+    }
+
+    if let Some(work_str) = query.work {
+        let parsed = if let Some(hex) = work_str.strip_prefix("0x") {
+            u64::from_str_radix(hex, 16).ok()
+        } else {
+            work_str.parse::<u64>().ok()
+        };
+        let address = parsed.and_then(|id| {
+            state
+                .server
+                .with_server_ref(|srv| srv.work_xan_address(id as crate::edition::backend::BeId))
+        });
+        return match address {
+            Some(xan) => (
+                [
+                    (
+                        axum::http::header::CONTENT_TYPE,
+                        "application/json; charset=utf-8",
+                    ),
+                    (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+                ],
+                serde_json::json!({
+                    "status": "address",
+                    "work_id": work_str,
+                    "xan": xan,
+                })
+                .to_string(),
+            )
+                .into_response(),
+            None => (
+                axum::http::StatusCode::NOT_FOUND,
+                format!("unknown work: {}", work_str),
+            )
+                .into_response(),
+        };
+    }
+
+    (
+        axum::http::StatusCode::BAD_REQUEST,
+        "missing ?tumbler= or ?work= parameter",
+    )
+        .into_response()
 }
 
 async fn bloom_filter_handler(State(state): State<SharedState>) -> axum::response::Response {

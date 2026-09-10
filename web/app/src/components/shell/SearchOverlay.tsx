@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import type { CrdtSyncClient, WorkListEntry, FederatedSearchResultEntry } from "../../api/crdt_sync";
 
 interface SearchOverlayProps {
@@ -117,6 +117,14 @@ function RemotePreview({
   );
 }
 
+type XanResolutionState =
+  | { kind: "resolving" }
+  | { kind: "local"; workId: number; title: string; position: number | null }
+  | { kind: "remote"; server: string; originWorkId: number | null; knownPeer: boolean }
+  | { kind: "error"; message: string };
+
+const XAN_COMPLETE = /^xan:\/\/[^\s/]+\/\d+(\.\d+)*$/;
+
 export function SearchOverlay({
   onClose,
   clientRef,
@@ -134,7 +142,12 @@ export function SearchOverlay({
   const [netError, setNetError] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ server: { address: string; port?: number | null; name: string }; workId: number } | null>(null);
   const [searching, setSearching] = useState(false);
+  const [xanState, setXanState] = useState<XanResolutionState | null>(null);
+  const [currentXan, setCurrentXan] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const trimmedQuery = query.trim();
+  const isXanAddress = trimmedQuery.startsWith("xan://");
 
   const serverByName = useMemo(() => {
     const map = new Map<string, { address: string; port?: number | null; name: string }>();
@@ -175,8 +188,44 @@ export function SearchOverlay({
     });
   }, [query, scope, currentWorkId, works]);
 
+  const resolveXan = useCallback(async (addr: string) => {
+    setXanState({ kind: "resolving" });
+    try {
+      const resp = await fetch(`/api/public/resolve?tumbler=${encodeURIComponent(addr)}`);
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        setXanState({ kind: "error", message: typeof data.error === "string" ? data.error : `HTTP ${resp.status}` });
+        return;
+      }
+      if (data.status === "local") {
+        setXanState({
+          kind: "local",
+          workId: parseInt(data.work_id, 16),
+          title: typeof data.title === "string" && data.title ? data.title : "untitled",
+          position: typeof data.position === "number" ? data.position : null,
+        });
+      } else if (data.status === "remote") {
+        setXanState({
+          kind: "remote",
+          server: String(data.server),
+          originWorkId: typeof data.origin_work_id === "number" ? data.origin_work_id : null,
+          knownPeer: Boolean(data.known_peer),
+        });
+      } else {
+        setXanState({ kind: "error", message: "unexpected response from resolver" });
+      }
+    } catch (e) {
+      setXanState({ kind: "error", message: e instanceof Error ? e.message : "address resolution failed" });
+    }
+  }, []);
+
   const handleSearch = useCallback(async () => {
-    if (!query.trim() || !clientRef.current) return;
+    if (!trimmedQuery || !clientRef.current) return;
+    if (isXanAddress) {
+      resolveXan(trimmedQuery);
+      return;
+    }
+    setXanState(null);
     if (scope === "network") {
       setNetSearching(true);
       setNetError(null);
@@ -217,13 +266,35 @@ export function SearchOverlay({
     } finally {
       setSearching(false);
     }
-  }, [query, scope, currentWorkId, works, clientRef, titleMatches]);
+  }, [query, scope, currentWorkId, works, clientRef, titleMatches, trimmedQuery, isXanAddress, resolveXan]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       handleSearch();
     }
   };
+
+  useEffect(() => {
+    if (isXanAddress && XAN_COMPLETE.test(trimmedQuery)) {
+      resolveXan(trimmedQuery);
+    } else if (!isXanAddress) {
+      setXanState(null);
+    }
+  }, [trimmedQuery, isXanAddress, resolveXan]);
+
+  useEffect(() => {
+    if (currentWorkId == null) return;
+    let cancelled = false;
+    fetch(`/api/public/resolve?work=0x${currentWorkId.toString(16)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d && typeof d.xan === "string") setCurrentXan(d.xan);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [currentWorkId]);
 
   const localHits = netResults.filter((r) => r.local && !r.unreachable);
   const remoteHits = netResults.filter((r) => !r.local && !r.unreachable);
@@ -244,14 +315,97 @@ export function SearchOverlay({
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search the docuverse…"
+            placeholder="Search the docuverse, or paste an xan:// address…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             autoFocus
           />
-          {(searching || netSearching) && <span style={{ fontSize: 11, color: "var(--text-dim)" }}>…</span>}
+          {(searching || netSearching || xanState?.kind === "resolving") && <span style={{ fontSize: 11, color: "var(--text-dim)" }}>…</span>}
         </div>
+        {isXanAddress ? (
+          <div className="search-results-container">
+            <div className="search-group-label">Address</div>
+            {xanState === null && (
+              <div style={{ padding: "20px 10px", fontSize: 13, color: "var(--text-dim)", textAlign: "center" }}>
+                Press Enter to resolve {trimmedQuery}
+              </div>
+            )}
+            {xanState?.kind === "resolving" && (
+              <div style={{ padding: "20px 10px", fontSize: 13, color: "var(--text-dim)", textAlign: "center" }}>
+                Resolving…
+              </div>
+            )}
+            {xanState?.kind === "error" && (
+              <div style={{ padding: "20px 10px", fontSize: 13, color: "var(--red)", textAlign: "center" }}>
+                {xanState.message}
+              </div>
+            )}
+            {xanState?.kind === "local" && (
+              <div className="search-result-item" onClick={() => onSelectWork(xanState.workId)}>
+                <div className="sr-icon" style={{ background: "rgba(217, 119, 6, 0.12)", color: "var(--amber)" }}>
+                  ⌖
+                </div>
+                <div className="sr-body">
+                  <div className="sr-title">{xanState.title}</div>
+                  <div className="sr-excerpt">
+                    {xanState.position != null ? `passage ${xanState.position}` : "document"}
+                  </div>
+                </div>
+                <span className="sr-match" style={{ background: "rgba(34, 197, 94, 0.12)", color: "var(--green)", borderRadius: 4, padding: "1px 6px", fontSize: 10 }}>
+                  this server
+                </span>
+              </div>
+            )}
+            {xanState?.kind === "remote" && (
+              <div
+                className="search-result-item"
+                onClick={async () => {
+                  const { server, originWorkId } = xanState;
+                  if (originWorkId == null) return;
+                  const entry = serverByName.get(server);
+                  const address = entry?.address ?? server;
+                  const port = entry?.port ?? null;
+                  const base = `http://${address}${port ? `:${port}` : ""}`;
+                  try {
+                    const resp = await fetch(`${base}/api/public/work/${originWorkId.toString(16)}`);
+                    if (!resp.ok) {
+                      setXanState({ kind: "error", message: `origin returned ${resp.status}` });
+                      return;
+                    }
+                    const data = await resp.json();
+                    onViewRemoteWork({
+                      title: typeof data.title === "string" ? data.title : `Work 0x${originWorkId.toString(16)}`,
+                      text: typeof data.text === "string" ? data.text : "",
+                      originServerName: server,
+                      license: typeof data.license === "string" ? data.license : "all-rights-reserved",
+                      tumbler: typeof data.tumbler === "string" ? data.tumbler : "",
+                      workId: originWorkId.toString(16),
+                      serverId: server,
+                    });
+                    onClose();
+                  } catch (e) {
+                    setXanState({ kind: "error", message: e instanceof Error ? e.message : "failed to reach origin server" });
+                  }
+                }}
+              >
+                <div className="sr-icon" style={{ background: "rgba(59, 130, 246, 0.12)", color: "var(--blue, #3b82f6)" }}>
+                  ⌾
+                </div>
+                <div className="sr-body">
+                  <div className="sr-title">work 0x{xanState.originWorkId?.toString(16) ?? "?"} on {xanState.server}</div>
+                  <div className="sr-excerpt">
+                    {xanState.knownPeer ? "known peer — fetch on open" : "server not in directory; will try direct"}
+                  </div>
+                </div>
+                <span className="sr-match" style={{ background: "rgba(59, 130, 246, 0.12)", color: "var(--blue, #3b82f6)", borderRadius: 4, padding: "1px 6px", fontSize: 10 }}>
+                  remote
+                </span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
         <div className="search-scope-tabs">
           <button className={`scope-tab ${scope === "all" ? "active" : ""}`} onClick={() => setScope("all")}>
             All works
@@ -424,9 +578,20 @@ export function SearchOverlay({
             </div>
           )}
         </div>
+        </>
+        )}
         <div className="search-footer">
           <span><kbd style={{ fontFamily: "monospace", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 3, padding: "1px 5px", fontSize: 10 }}>↵</kbd> search</span>
           <span><kbd style={{ fontFamily: "monospace", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 3, padding: "1px 5px", fontSize: 10 }}>esc</kbd> close</span>
+          {currentXan && (
+            <span
+              title="click to copy this document's permanent address"
+              onClick={() => navigator.clipboard?.writeText(currentXan).catch(() => {})}
+              style={{ cursor: "pointer", fontFamily: "monospace", fontSize: 10, color: "var(--text-dim)", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            >
+              {currentXan}
+            </span>
+          )}
         </div>
       </div>
     </>

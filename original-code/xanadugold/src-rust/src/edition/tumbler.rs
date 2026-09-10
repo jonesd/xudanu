@@ -113,6 +113,57 @@ impl XudanuTumbler {
         }
     }
 
+    /// Parse from `xan://` URI form: `xan://alice.com/5.3` →
+    /// cross("alice.com", [5, 3]). Also accepts the bare display forms
+    /// handled by `parse`. Returns None for malformed input (empty
+    /// host or non-numeric path elements).
+    pub fn from_xan_uri(uri: &str) -> Option<Self> {
+        let s = uri.trim();
+        let rest = s.strip_prefix("xan://")?;
+        if rest.is_empty() {
+            return None;
+        }
+        // Fall back to display-format parsing when there is no '/'.
+        // Require a non-empty path: garbage input parses to an empty
+        // path and must not resolve.
+        let (host, path_str) = match rest.split_once('/') {
+            Some((h, p)) => (h, p),
+            None => {
+                let t = Self::parse(rest);
+                return (!t.path().is_empty()).then_some(t);
+            }
+        };
+        if host.is_empty() {
+            return None;
+        }
+        let mut path = Vec::new();
+        for elem in path_str.split('.') {
+            if elem.is_empty() {
+                continue;
+            }
+            path.push(elem.parse::<u64>().ok()?);
+        }
+        if path.is_empty() {
+            return None;
+        }
+        Some(XudanuTumbler::cross(host, path))
+    }
+
+    /// Render as an `xan://` URI: `xan://alice.com/5.3`. Legacy local
+    /// tumblers (no server) have no URI form — returns None.
+    pub fn to_xan_uri(&self) -> Option<String> {
+        if self.server.is_empty() {
+            return None;
+        }
+        let path = self
+            .path
+            .iter()
+            .map(|p| p.to_string())
+            .collect::<Vec<_>>()
+            .join(".");
+        Some(format!("xan://{}/{}", self.server, path))
+    }
+
     /// Server identity (domain or numeric string). Empty for local.
     pub fn server(&self) -> &str {
         &self.server
@@ -393,6 +444,37 @@ mod tests {
         assert_eq!(t.server(), "alice.example.com");
         assert_eq!(t.path(), &[5, 3, 10, 7]);
         assert!(t.is_cross_server());
+    }
+
+    #[test]
+    fn xan_uri_roundtrip() {
+        let t = XudanuTumbler::cross("alice.example.com", vec![5, 3, 10]);
+        let uri = t.to_xan_uri().unwrap();
+        assert_eq!(uri, "xan://alice.example.com/5.3.10");
+        let back = XudanuTumbler::from_xan_uri(&uri).unwrap();
+        assert_eq!(back, t);
+
+        let ns = XudanuTumbler::cross("ns-00123456789abcdef", vec![1004]);
+        let uri = ns.to_xan_uri().unwrap();
+        assert_eq!(uri, "xan://ns-00123456789abcdef/1004");
+        assert_eq!(XudanuTumbler::from_xan_uri(&uri).unwrap(), ns);
+    }
+
+    #[test]
+    fn xan_uri_edge_cases() {
+        // Display form inside the scheme: xan://"alice.com".5
+        let t = XudanuTumbler::from_xan_uri("xan://\"alice.com\".5").unwrap();
+        assert_eq!(t.server(), "alice.com");
+        assert_eq!(t.path(), &[5]);
+
+        // Malformed: no host, no path, non-numeric elements.
+        assert!(XudanuTumbler::from_xan_uri("xan:///5").is_none());
+        assert!(XudanuTumbler::from_xan_uri("xan://alice.com/").is_none());
+        assert!(XudanuTumbler::from_xan_uri("xan://alice.com/abc").is_none());
+        assert!(XudanuTumbler::from_xan_uri("xan://").is_none());
+
+        // Local tumblers have no URI form.
+        assert!(XudanuTumbler::local(vec![5]).to_xan_uri().is_none());
     }
 
     #[test]

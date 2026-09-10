@@ -29,6 +29,26 @@ pub enum CrossServerResolution {
     },
 }
 
+/// Navigation target for an `xan://` address.
+#[derive(Debug, Clone)]
+pub enum XanResolution {
+    /// A local work (created here, or a replica). `position` is the
+    /// tumbler's second path element when present (passage address).
+    Local {
+        work_id: BeId,
+        position: Option<i64>,
+        title: String,
+    },
+    /// A foreign address: origin server identity, the origin work id
+    /// (first path element) when present, and whether the server
+    /// directory knows the peer.
+    Remote {
+        server: String,
+        origin_work_id: Option<u64>,
+        known_peer: bool,
+    },
+}
+
 impl CrossServerResolution {
     pub fn text(&self) -> &str {
         match self {
@@ -1755,6 +1775,80 @@ impl Server {
         } else {
             None
         }
+    }
+
+    /// Resolve an `xan://` URI (or bare tumbler) to a navigation target.
+    /// Precedence: exact stamp match (stamped works and local replicas
+    /// of foreign works) → legacy derivation → remote directory info.
+    pub fn resolve_xan_address(&self, uri: &str) -> Result<XanResolution, ServerError> {
+        let tumbler =
+            crate::edition::tumbler::XudanuTumbler::from_xan_uri(uri).ok_or_else(|| {
+                ServerError::InvalidArgument(format!("malformed xan address: {}", uri))
+            })?;
+
+        // 1. Exact stamp match — includes replicas of foreign works.
+        if let Some(work_id) = self
+            .works
+            .iter()
+            .find_map(|(id, ws)| (ws.work.tumbler() == tumbler).then_some(*id))
+        {
+            let title = self
+                .works
+                .get(&work_id)
+                .map(|ws| ws.cached_title().to_string())
+                .unwrap_or_default();
+            let position = tumbler.path().get(1).map(|&p| p as i64);
+            return Ok(XanResolution::Local {
+                work_id,
+                position,
+                title,
+            });
+        }
+
+        // 2. Owned server form with legacy (unstamped) works.
+        if self.owns_tumbler(&tumbler) {
+            if let Some(work_id) = self.resolve_local_tumbler(&tumbler) {
+                let title = self
+                    .works
+                    .get(&work_id)
+                    .map(|ws| ws.cached_title().to_string())
+                    .unwrap_or_default();
+                let position = tumbler.path().get(1).map(|&p| p as i64);
+                return Ok(XanResolution::Local {
+                    work_id,
+                    position,
+                    title,
+                });
+            }
+        }
+
+        // 3. Remote: report origin server and directory knowledge.
+        let server = tumbler.server().to_string();
+        let known_peer = self
+            .server_directory
+            .list()
+            .iter()
+            .any(|e| e.address == server || e.name == server);
+        Ok(XanResolution::Remote {
+            server,
+            origin_work_id: tumbler.first(),
+            known_peer,
+        })
+    }
+
+    /// The canonical `xan://` address for a local work (from its
+    /// creation stamp). Legacy unstamped works get the current
+    /// server identity.
+    pub fn work_xan_address(&self, work_be_id: BeId) -> Option<String> {
+        let ws = self.works.get(&work_be_id)?;
+        let tumbler = match ws.work.tumbler_server() {
+            Some(_) => ws.work.tumbler(),
+            None => crate::edition::tumbler::XudanuTumbler::cross(
+                &self.tumbler_server_identity(),
+                vec![work_be_id as u64],
+            ),
+        };
+        tumbler.to_xan_uri()
     }
 
     /// Find all local works that match a tumbler prefix.
@@ -46752,6 +46846,93 @@ mod tests_security_tracker {
         );
         assert!(!bob.owns_tumbler(&t), "bob must not own alice's address");
         assert!(alice.owns_tumbler(&t));
+    }
+
+    #[test]
+    fn resolve_xan_address_local_stamped() {
+        let (mut server, sid) = tumbler_test_server();
+        server.public_address = Some("alice.com".to_string());
+        let wid = server
+            .create_work(sid, Edition::from_text("addressable"))
+            .unwrap();
+
+        let addr = server.work_xan_address(wid).unwrap();
+        assert_eq!(addr, format!("xan://alice.com/{}", wid));
+
+        match server.resolve_xan_address(&addr).unwrap() {
+            XanResolution::Local {
+                work_id,
+                position,
+                title,
+            } => {
+                assert_eq!(work_id, wid);
+                assert_eq!(position, None);
+                assert_eq!(title, "addressable");
+            }
+            other => panic!("expected Local, got {:?}", other),
+        }
+
+        let with_pos = format!("xan://alice.com/{}.42", wid);
+        match server.resolve_xan_address(&with_pos).unwrap() {
+            XanResolution::Local { position, .. } => assert_eq!(position, Some(42)),
+            other => panic!("expected Local, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn resolve_xan_address_legacy_work() {
+        let (mut server, sid) = tumbler_test_server();
+        let wid = server.create_work(sid, Edition::from_text("old")).unwrap();
+
+        // Legacy work has no stamp; its address uses the current identity.
+        let addr = server.work_xan_address(wid).unwrap();
+        let ns = format!("ns-{:016x}", server.server_namespace_id());
+        assert_eq!(addr, format!("xan://{}/{}", ns, wid));
+        assert!(server.resolve_xan_address(&addr).is_ok());
+    }
+
+    #[test]
+    fn resolve_xan_address_prefers_local_replica() {
+        let (mut alice, sid) = tumbler_test_server();
+        alice.public_address = Some("alice.com".to_string());
+        let origin_wid = alice
+            .create_work(sid, Edition::from_text("origin"))
+            .unwrap();
+        let entries = alice.federation_export_works();
+
+        let (mut bob, bob_sid) = tumbler_test_server();
+        let _ = bob
+            .create_work(bob_sid, Edition::from_text("local"))
+            .unwrap();
+        let bob_id = bob.federation_server_id();
+        bob.federation_import_works(&entries, &bob_id);
+
+        // Alice's address on bob's server resolves to the LOCAL REPLICA,
+        // not a remote referral.
+        let addr = format!("xan://alice.com/{}", origin_wid);
+        match bob.resolve_xan_address(&addr).unwrap() {
+            XanResolution::Local { title, .. } => assert_eq!(title, "origin"),
+            other => panic!("expected Local replica, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn resolve_xan_address_remote_unknown() {
+        let (server, _sid) = tumbler_test_server();
+        match server.resolve_xan_address("xan://bob.com/5").unwrap() {
+            XanResolution::Remote {
+                server,
+                origin_work_id,
+                known_peer,
+            } => {
+                assert_eq!(server, "bob.com");
+                assert_eq!(origin_work_id, Some(5));
+                assert!(!known_peer);
+            }
+            other => panic!("expected Remote, got {:?}", other),
+        }
+
+        assert!(server.resolve_xan_address("xan://").is_err());
     }
 
     #[test]
