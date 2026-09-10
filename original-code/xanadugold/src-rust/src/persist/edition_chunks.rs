@@ -29,6 +29,10 @@ pub struct WorkChunkRef {
     pub sponsors: Vec<BeId>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub endorsements: Vec<(u64, u64)>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub tumbler_server: Option<String>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub tumbler_path: Option<Vec<u64>>,
 }
 
 const EDITION_CHUNK_FORMAT_VERSION: u32 = 1;
@@ -390,6 +394,8 @@ pub fn work_to_chunks_with_history(
             .iter()
             .map(|e| (e.club_id(), e.token_id()))
             .collect(),
+        tumbler_server: work.tumbler_server().map(|s| s.to_string()),
+        tumbler_path: work.tumbler_path_override().map(|p| p.to_vec()),
     })
 }
 
@@ -402,6 +408,8 @@ pub fn work_from_chunks_current(
     work.set_owner(chunk_ref.owner);
     work.set_read_club(chunk_ref.read_club);
     work.set_edit_club(chunk_ref.edit_club);
+    work.set_tumbler_server(chunk_ref.tumbler_server.clone());
+    work.set_tumbler_path_override(chunk_ref.tumbler_path.clone());
     for s in &chunk_ref.sponsors {
         work.add_sponsor(*s);
     }
@@ -581,6 +589,30 @@ mod tests {
         let restored = work_from_chunks_current(&chunk_ref, &store).unwrap();
         assert_eq!(restored.be_id(), 42);
         assert_eq!(restored.edition().to_text(), "my document");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn work_tumbler_stamp_roundtrip() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = ChunkStore::open(&dir).unwrap();
+
+        let mut work = Work::new(7, Edition::from_text("stamped"));
+        work.set_tumbler_server(Some("alice.com".to_string()));
+        work.set_tumbler_path_override(Some(vec![99]));
+
+        let chunk_ref = work_to_chunks(&work, &store).unwrap();
+        assert_eq!(chunk_ref.tumbler_server.as_deref(), Some("alice.com"));
+        assert_eq!(chunk_ref.tumbler_path.as_deref(), Some(&[99u64][..]));
+
+        let restored = work_from_chunks_current(&chunk_ref, &store).unwrap();
+        assert_eq!(restored.tumbler_server(), Some("alice.com"));
+        assert_eq!(restored.tumbler_path_override(), Some(&[99u64][..]));
+        let t = restored.tumbler();
+        assert_eq!(t.server(), "alice.com");
+        assert_eq!(t.path(), &[99]);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

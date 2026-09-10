@@ -205,6 +205,8 @@ pub struct Work {
     lifecycle_history: Vec<WorkLifecycleEvent>,
     kind: WorkKind,
     license: License,
+    tumbler_server: Option<String>,
+    tumbler_path: Option<Vec<u64>>,
 }
 
 impl Work {
@@ -224,6 +226,8 @@ impl Work {
             lifecycle_history: Vec::new(),
             kind: WorkKind::Document,
             license: License::AllRightsReserved,
+            tumbler_server: None,
+            tumbler_path: None,
         }
     }
 
@@ -243,11 +247,51 @@ impl Work {
             lifecycle_history: Vec::new(),
             kind: WorkKind::Document,
             license: License::AllRightsReserved,
+            tumbler_server: None,
+            tumbler_path: None,
         }
     }
 
     pub fn be_id(&self) -> BeId {
         self.be_id
+    }
+
+    /// The server identity stamped at creation. `None` for legacy works
+    /// created before tumbler allocation (derive locally on read).
+    /// Never changes after creation — tumbler addresses are permanent.
+    pub fn tumbler_server(&self) -> Option<&str> {
+        self.tumbler_server.as_deref()
+    }
+
+    pub fn set_tumbler_server(&mut self, server: Option<String>) {
+        self.tumbler_server = server;
+    }
+
+    /// Path override for replicated works: the tumbler path at the ORIGIN,
+    /// which differs from the local BeId minted for the replica. None for
+    /// locally created works (path derives from be_id).
+    pub fn tumbler_path_override(&self) -> Option<&[u64]> {
+        self.tumbler_path.as_deref()
+    }
+
+    pub fn set_tumbler_path_override(&mut self, path: Option<Vec<u64>>) {
+        self.tumbler_path = path;
+    }
+
+    /// The work's tumbler address: `[be_id]` under the creation server's
+    /// identity. Domain form (`"alice.com".5`) when created with a public
+    /// address; `ns-` form (`"ns-<hex16>".5`) when key-derived; legacy
+    /// local form (`.5`) when unstamped. Replicated works carry the
+    /// origin's full address (server + path override).
+    pub fn tumbler(&self) -> crate::edition::tumbler::XudanuTumbler {
+        let path = match &self.tumbler_path {
+            Some(p) => p.clone(),
+            None => vec![self.be_id as u64],
+        };
+        match &self.tumbler_server {
+            Some(server) => crate::edition::tumbler::XudanuTumbler::cross(server, path),
+            None => crate::edition::tumbler::XudanuTumbler::local(path),
+        }
     }
 
     pub fn owner(&self) -> Option<BeId> {
@@ -531,6 +575,22 @@ mod tests {
         work.set_edit_club(Some(20));
         assert_eq!(work.read_club(), Some(10));
         assert_eq!(work.edit_club(), Some(20));
+    }
+
+    #[test]
+    fn work_tumbler_derivation() {
+        let mut work = Work::new(5, Edition::empty());
+        assert!(work.tumbler_server().is_none());
+        assert!(work.tumbler().is_local());
+        assert_eq!(work.tumbler().path(), &[5]);
+
+        work.set_tumbler_server(Some("alice.com".to_string()));
+        assert_eq!(work.tumbler().server(), "alice.com");
+        assert_eq!(work.tumbler().path(), &[5]);
+
+        work.set_tumbler_path_override(Some(vec![42, 7]));
+        assert_eq!(work.tumbler().server(), "alice.com");
+        assert_eq!(work.tumbler().path(), &[42, 7]);
     }
 
     #[test]

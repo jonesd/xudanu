@@ -110,6 +110,10 @@ pub struct WorkStateChunk {
     pub license: License,
     pub custom_title: Option<String>,
     #[cfg_attr(feature = "serde", serde(default))]
+    pub tumbler_server: Option<String>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub tumbler_path: Option<Vec<u64>>,
+    #[cfg_attr(feature = "serde", serde(default))]
     pub is_source: bool,
     pub source_edition_info: Option<String>,
     pub content_start_line: Option<u64>,
@@ -461,6 +465,8 @@ pub fn checkpoint_write_root(
             kind: entry.kind,
             license: entry.license,
             custom_title: entry.custom_title.clone(),
+            tumbler_server: entry.work_ref.tumbler_server.clone(),
+            tumbler_path: entry.work_ref.tumbler_path.clone(),
             is_source: entry.is_source,
             source_edition_info: entry.source_edition_info.clone(),
             content_start_line: entry.content_start_line,
@@ -790,6 +796,8 @@ pub fn read_root_as_manifest(
                 edit_club: ws.edit_club,
                 sponsors: ws.sponsors,
                 endorsements: ws.endorsements,
+                tumbler_server: ws.tumbler_server.clone(),
+                tumbler_path: ws.tumbler_path.clone(),
             };
             let work_entry = crate::persist::manifest::WorkEntry {
                 trace_branch: ws.trace_branch,
@@ -1387,6 +1395,8 @@ mod tests {
             kind: WorkKind::Document,
             license: License::AllRightsReserved,
             custom_title: Some("My Doc".to_string()),
+            tumbler_server: Some("alice.com".to_string()),
+            tumbler_path: Some(vec![42]),
             is_source: true,
             source_edition_info: None,
             content_start_line: Some(1),
@@ -1409,6 +1419,8 @@ mod tests {
         assert_eq!(restored.history.len(), 3);
         assert_eq!(restored.is_source, true);
         assert_eq!(restored.custom_title, Some("My Doc".to_string()));
+        assert_eq!(restored.tumbler_server, Some("alice.com".to_string()));
+        assert_eq!(restored.tumbler_path, Some(vec![42]));
         assert_eq!(restored.is_archived, false);
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -1446,6 +1458,8 @@ mod tests {
             content_start_line: None,
             content_end_line: None,
             custom_title: None,
+            tumbler_server: None,
+            tumbler_path: None,
         };
 
         let hash = write_work_state_chunk(&chunk, &store).unwrap();
@@ -1846,6 +1860,8 @@ mod tests {
                 edit_club: None,
                 sponsors: Vec::new(),
                 endorsements: Vec::new(),
+                tumbler_server: None,
+                tumbler_path: None,
             },
             is_source: false,
             source_author_id: None,
@@ -2136,6 +2152,8 @@ mod tests {
             kind: WorkKind::Document,
             license: License::CreativeCommonsBy,
             custom_title: Some("Doc One".to_string()),
+            tumbler_server: None,
+            tumbler_path: None,
             is_source: false,
             is_archived: false,
             endorsements: vec![],
@@ -2179,6 +2197,8 @@ mod tests {
             content_start_line: None,
             content_end_line: None,
             custom_title: None,
+            tumbler_server: None,
+            tumbler_path: None,
         };
 
         let work3 = WorkStateChunk {
@@ -2207,6 +2227,8 @@ mod tests {
             content_start_line: None,
             content_end_line: None,
             custom_title: None,
+            tumbler_server: None,
+            tumbler_path: None,
         };
 
         let h1 = write_work_state_chunk(&work1, &store).unwrap();

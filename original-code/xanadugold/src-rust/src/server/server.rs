@@ -1672,19 +1672,37 @@ impl Server {
         if let Some(ref addr) = self.public_address {
             format!("\"{}\"", addr)
         } else {
-            self.server_namespace_id().to_string()
+            format!("\"ns-{:016x}\"", self.server_namespace_id())
+        }
+    }
+
+    /// The identity stamped into tumblers allocated for works created on
+    /// this server: the public address when configured (DNS-resolvable),
+    /// otherwise a key-derived namespace name (unique, not resolvable).
+    /// Every tumbler entering the network is fully qualified — no
+    /// ambiguous empty-server addresses.
+    pub fn tumbler_server_identity(&self) -> String {
+        match &self.public_address {
+            Some(addr) => addr.clone(),
+            None => format!("ns-{:016x}", self.server_namespace_id()),
         }
     }
 
     /// Create a DocumentArrangement for a work on this server.
     /// Enables typed tumbler addressing: position ↔ tumbler conversion,
     /// parent navigation, prefix queries, Sequence algebra.
+    /// Uses the work's creation stamp when present (permanent identity);
+    /// falls back to the server's current identity for legacy works.
     pub fn document_arrangement(
         &self,
         work_be_id: BeId,
     ) -> crate::edition::tumbler::DocumentArrangement {
-        let server = self.public_address.as_deref().unwrap_or("localhost");
-        crate::edition::tumbler::DocumentArrangement::new(server, work_be_id as u64)
+        let server = self
+            .works
+            .get(&work_be_id)
+            .and_then(|ws| ws.work.tumbler_server().map(|s| s.to_string()))
+            .unwrap_or_else(|| self.tumbler_server_identity());
+        crate::edition::tumbler::DocumentArrangement::new(&server, work_be_id as u64)
     }
 
     /// Generate a typed tumbler for a specific work + revision.
@@ -1704,14 +1722,21 @@ impl Server {
     }
 
     /// Check if a tumbler references a work on this server.
+    /// Accepts three forms: legacy local (empty server — pre-stamp works),
+    /// the current identity (domain or ns-), and the ns- form always
+    /// (works stamped before a domain was configured coexist with
+    /// domain-stamped ones).
     pub fn owns_tumbler(&self, tumbler: &crate::edition::tumbler::XudanuTumbler) -> bool {
         if tumbler.is_local() {
             return true;
         }
-        match &self.public_address {
-            Some(addr) => tumbler.server() == addr,
-            None => false,
+        let server = tumbler.server();
+        if let Some(addr) = &self.public_address {
+            if server == addr {
+                return true;
+            }
         }
+        server == format!("ns-{:016x}", self.server_namespace_id())
     }
 
     /// Resolve a tumbler to a local work ID.
@@ -1755,12 +1780,17 @@ impl Server {
     pub fn list_work_tumblers(
         &self,
     ) -> Vec<(BeId, String, crate::edition::tumbler::XudanuTumbler)> {
-        let server = self.public_address.as_deref().unwrap_or("localhost");
+        let fallback = self.tumbler_server_identity();
         self.works
             .iter()
             .map(|(work_id, ws)| {
-                let tumbler =
-                    crate::edition::tumbler::XudanuTumbler::cross(server, vec![*work_id as u64]);
+                let tumbler = match ws.work.tumbler_server() {
+                    Some(_) => ws.work.tumbler(),
+                    None => crate::edition::tumbler::XudanuTumbler::cross(
+                        &fallback,
+                        vec![*work_id as u64],
+                    ),
+                };
                 (*work_id, ws.cached_title().to_string(), tumbler)
             })
             .collect()
@@ -4023,6 +4053,7 @@ impl Server {
             edition.span_provenance = sp;
         }
         let mut work = Work::new_with_owner(be_id, owner, edition);
+        work.set_tumbler_server(Some(self.tumbler_server_identity()));
 
         let is_public_session = owner == Some(self.system_clubs.public_club);
         if is_public_session {
@@ -6485,6 +6516,7 @@ impl Server {
         }
 
         let mut work = Work::new_with_owner(be_id, importer, edition);
+        work.set_tumbler_server(Some(self.tumbler_server_identity()));
         work.set_read_club(Some(self.system_clubs.public_club));
 
         let auto_title = Self::extract_title(work.edition());
@@ -11891,6 +11923,7 @@ impl Server {
         let (be_id, elem) = self.grand_map.new_work_element(None);
         self.grand_map.assign_new_id(elem);
         let mut work = Work::new(be_id, edition);
+        work.set_tumbler_server(Some(self.tumbler_server_identity()));
         work.set_owner(Some(self.system_clubs.admin_club));
         work.set_read_club(Some(self.system_clubs.public_club));
         let ws = WorkState {
@@ -20609,6 +20642,13 @@ impl Server {
                     ws.work.current_edition(),
                 ),
                 span_provenance: ws.work.current_edition().span_provenance.clone(),
+                origin_tumbler_server: Some(
+                    ws.work
+                        .tumbler_server()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| self.tumbler_server_identity()),
+                ),
+                origin_tumbler_path: Some(ws.work.tumbler().path().to_vec()),
             })
             .collect()
     }
@@ -20721,6 +20761,8 @@ impl Server {
                 let title = Self::extract_title(&edition);
                 let mut work = crate::edition::Work::new_with_owner(be_id, None, edition);
                 work.set_read_club(Some(self.system_clubs.public_club));
+                work.set_tumbler_server(entry.origin_tumbler_server.clone());
+                work.set_tumbler_path_override(entry.origin_tumbler_path.clone());
                 let ws = WorkState {
                     work,
                     trace: self.fulltrace.new_trace(),
@@ -27015,6 +27057,8 @@ mod tests {
                 "hello world".to_string(),
             ),
             span_provenance: vec![],
+            origin_tumbler_server: None,
+            origin_tumbler_path: None,
         }];
         let my_id = server.federation_server_id();
         let (imported, _) = server.federation_import_works(&push, &my_id);
@@ -27032,6 +27076,8 @@ mod tests {
                 "hi".to_string(),
             ),
             span_provenance: vec![],
+            origin_tumbler_server: None,
+            origin_tumbler_path: None,
         }];
         let my_id = server.federation_server_id();
         let (imported, already) = server.federation_import_works(&push, &my_id);
@@ -27107,6 +27153,8 @@ mod tests {
                 "hello".to_string(),
             ),
             span_provenance: vec![],
+            origin_tumbler_server: None,
+            origin_tumbler_path: None,
         };
         let my_id = server.federation_server_id();
 
@@ -46559,7 +46607,8 @@ mod tests_security_tracker {
     fn server_document_arrangement_no_public_address() {
         let server = Server::new();
         let arr = server.document_arrangement(1);
-        assert_eq!(arr.server(), "localhost");
+        let expected = format!("ns-{:016x}", server.server_namespace_id());
+        assert_eq!(arr.server(), expected);
     }
 
     #[test]
@@ -46573,6 +46622,136 @@ mod tests_security_tracker {
         let recovered = arr.from_tumbler(&tumbler);
         assert_eq!(recovered, Some(pos));
         assert!(arr.owns_tumbler(&tumbler));
+    }
+
+    fn tumbler_test_server() -> (Server, SessionId) {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        (server, sid)
+    }
+
+    #[test]
+    fn create_work_stamps_ns_tumbler_identity() {
+        let (mut server, sid) = tumbler_test_server();
+        let wid = server
+            .create_work(sid, Edition::from_text("unstamped server"))
+            .unwrap();
+        let ws = server.works.get(&wid).unwrap();
+        let expected = format!("ns-{:016x}", server.server_namespace_id());
+        assert_eq!(ws.work.tumbler_server(), Some(expected.as_str()));
+        let t = ws.work.tumbler();
+        assert_eq!(t.server(), expected);
+        assert_eq!(t.path(), &[wid as u64]);
+        assert!(server.owns_tumbler(&t));
+        assert_eq!(
+            server.resolve_local_tumbler(&t),
+            Some(wid),
+            "stamped ns- tumbler must resolve to its work"
+        );
+    }
+
+    #[test]
+    fn create_work_stamps_domain_tumbler_identity() {
+        let (mut server, sid) = tumbler_test_server();
+        server.public_address = Some("alice.com".to_string());
+        let wid = server
+            .create_work(sid, Edition::from_text("domain server"))
+            .unwrap();
+        let ws = server.works.get(&wid).unwrap();
+        assert_eq!(ws.work.tumbler_server(), Some("alice.com"));
+        let t = ws.work.tumbler();
+        assert_eq!(t.server(), "alice.com");
+        assert_eq!(t.path(), &[wid as u64]);
+    }
+
+    #[test]
+    fn owns_tumbler_identity_forms() {
+        let mut server = Server::new();
+
+        assert!(server.owns_tumbler(&crate::edition::tumbler::XudanuTumbler::local(vec![5, 3])));
+
+        let ns = format!("ns-{:016x}", server.server_namespace_id());
+        assert!(server.owns_tumbler(&crate::edition::tumbler::XudanuTumbler::cross(&ns, vec![5])));
+
+        assert!(
+            !server.owns_tumbler(&crate::edition::tumbler::XudanuTumbler::cross(
+                "alice.com",
+                vec![5]
+            ))
+        );
+
+        server.public_address = Some("alice.com".to_string());
+        assert!(
+            server.owns_tumbler(&crate::edition::tumbler::XudanuTumbler::cross(
+                "alice.com",
+                vec![5]
+            ))
+        );
+        assert!(
+            server.owns_tumbler(&crate::edition::tumbler::XudanuTumbler::cross(&ns, vec![5])),
+            "ns- form must stay owned after a domain is configured: works stamped before coexist"
+        );
+        assert!(
+            !server.owns_tumbler(&crate::edition::tumbler::XudanuTumbler::cross(
+                "bob.com",
+                vec![5]
+            ))
+        );
+    }
+
+    #[test]
+    fn federation_replica_preserves_origin_tumbler() {
+        let (mut alice, sid) = tumbler_test_server();
+        alice.public_address = Some("alice.com".to_string());
+        let origin_wid = alice
+            .create_work(sid, Edition::from_text("origin content"))
+            .unwrap();
+
+        let entries = alice.federation_export_works();
+        let origin_entry = entries
+            .iter()
+            .find(|e| e.work_id == origin_wid as u64)
+            .expect("origin work exported");
+        assert_eq!(
+            origin_entry.origin_tumbler_server.as_deref(),
+            Some("alice.com")
+        );
+        assert_eq!(
+            origin_entry.origin_tumbler_path.as_deref(),
+            Some(&[origin_wid as u64][..])
+        );
+
+        // Bob creates a local work FIRST so his minted ids diverge from
+        // alice's — cross-server BeId collision is normal (same starting
+        // counters), which is exactly the ambiguity the stamp resolves.
+        let (mut bob, bob_sid) = tumbler_test_server();
+        let _local = bob
+            .create_work(bob_sid, Edition::from_text("bob local"))
+            .unwrap();
+        let bob_id = bob.federation_server_id();
+        let (imported, _) = bob.federation_import_works(&entries, &bob_id);
+        assert!(imported >= 1);
+
+        let replica = bob
+            .works
+            .values()
+            .find(|ws| ws.work.tumbler_server() == Some("alice.com"))
+            .expect("replica carries the origin identity");
+        let t = replica.work.tumbler();
+        assert_eq!(t.server(), "alice.com");
+        assert_eq!(
+            t.path(),
+            &[origin_wid as u64],
+            "replica path is the origin's address, not the local minted id"
+        );
+        assert_ne!(
+            replica.work.be_id(),
+            origin_wid,
+            "precondition: bob's counter diverged, replica got a fresh local id"
+        );
+        assert!(!bob.owns_tumbler(&t), "bob must not own alice's address");
+        assert!(alice.owns_tumbler(&t));
     }
 
     #[test]

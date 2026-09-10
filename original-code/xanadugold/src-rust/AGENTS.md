@@ -310,6 +310,13 @@ Vite proxy config (`vite.config.ts`): `/api`, `/xudanu` (WS), `/csrf-token`,
   XCP repo terminology note.
 - Match existing style: `tracing::` for logging, postcard for binary wire
   formats, serde_json for human-facing manifests.
+- **Postcard serialization rule**: NEVER use `skip_serializing_if` on structs
+  that go through postcard (wire ops, chunks, federation entries). Postcard is
+  positional — skipping bytes on serialize misaligns deserialize (surfaces as
+  `Found a bool that wasn't 0 or 1`). The safe additive-field pattern is
+  `#[cfg_attr(feature = "serde", serde(default))]` alone (see
+  `WorkChunkRef.tumbler_server`, edition_chunks.rs). `skip_serializing_if` is
+  fine for serde_json-only structs (manifests, HTTP JSON).
 - Test passwords: use the fn-return pattern (`fn test_x_credential() -> &'static [u8] { b"..." }`),
   never a `const` — CodeQL flags const-declared password literals as
   hard-coded crypto but not function returns (alerts #263-#266, #325;

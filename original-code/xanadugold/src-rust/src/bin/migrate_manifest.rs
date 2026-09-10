@@ -364,6 +364,8 @@ fn build_work_state_chunk(entry: &manifest::WorkEntry) -> WorkStateChunk {
         kind: entry.kind,
         license: entry.license,
         custom_title: entry.custom_title.clone(),
+        tumbler_server: entry.work_ref.tumbler_server.clone(),
+        tumbler_path: entry.work_ref.tumbler_path.clone(),
         is_source: entry.is_source,
         source_edition_info: entry.source_edition_info.clone(),
         content_start_line: entry.content_start_line,

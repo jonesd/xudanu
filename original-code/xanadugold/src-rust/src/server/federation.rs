@@ -577,6 +577,10 @@ pub struct SyncWorkEntry {
     pub edition_payload: crate::server::transport::protocol::EditionPayload,
     #[cfg_attr(feature = "serde", serde(default))]
     pub span_provenance: Vec<crate::edition::SpanProvenance>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub origin_tumbler_server: Option<String>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub origin_tumbler_path: Option<Vec<u64>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
