@@ -57,7 +57,12 @@ CRDT theory [24] provides convergence guarantees that Nelson's team
 could only have dreamed of; content addressing (BLAKE3, IPFS,
 Bitcoin) gives immutable identity to every unit; modern cryptography
 (ECC signatures, timestamp anchoring) provides authorship
-verification at the passage level. The second barrier is falling to
+verification at the passage level. What changed is not whether a
+lone builder could attempt the model — independent
+single-implementer systems predate the LLM era [29] — but the depth
+reachable per person-year: the substrate machinery the 1988–92 team
+of seven built over years is now a one-person, months-scale project.
+The second barrier is falling to
 machine assistance: systems can now detect when a user is retyping
 existing content and offer to complete it as a live reference, and
 AI agents can operate the model as first-class editors with their
@@ -72,8 +77,15 @@ contemporary tools-for-thought have "rediscovered, unknowingly,
 ideas already known in the hypertext community" [2]. What the
 community describes, no member has built: across 52 papers at
 HT '26, zero implemented working transclusion engines; the terms
-"enfilade" and "content-addressing" appear nowhere. This paper is
-an implementation report from the destination they describe.
+"enfilade" and "content-addressing" appear nowhere. Working systems
+do exist outside the proceedings — Alph, a single-implementer project
+under continuous development since 2016, implements transclusion,
+visible links, and authorship queries as an overlay on the existing
+Web [29] — but none implements the substrate beneath the Web:
+content-addressed storage, convergent collaborative editing,
+passage-level cryptographic provenance. This paper is an
+implementation report from that substrate, and from the depth of
+system a single implementer can now reach.
 
 **Contributions.** (1) A full working implementation of the
 inherited xanalogical model — enfilades, tumblers, typed
@@ -345,6 +357,20 @@ rediscovered hypertext concepts unknowingly. Our system is what
 those tools would be if they had known about forty years of
 hypertext research.
 
+**Single-implementer systems.** Alph [29], built by one person
+since 2016, is the closest working sibling outside academia:
+transclusion via an HTML element, visible links, and authorship
+queries — implemented as an overlay on the existing Web, using
+URL-based selectors and JSON-LD link documents. The choice is
+deliberate interoperability at the cost of web-conditional
+addressing: when a page moves, its references break. Xudanu
+differs in layer, not spirit: a content-addressed substrate whose
+addresses are permanent by construction, with convergent editing
+and cryptographic provenance beneath. That a web overlay and a
+rebuilt substrate now coexist as independent single-implementer
+projects — from different eras — is itself evidence that the
+model's time has returned.
+
 **Implementation reports.** The genre is underrepresented at
 Hypertext. Bernstein's Tinderbox papers [4, 5] are the model: a
 system described honestly, with what works and what does not. We
@@ -373,6 +399,18 @@ web-of-trust model is the long-term answer.
 **Tombstone growth.** The lattice's append-only model means
 tombstones accumulate. GC is decidable (the server knows all
 views' counters) but not yet implemented [FR-57].
+
+**Permanence is untested at its own timescale.** The oldest
+functioning web links date to 1991–93 and survive by continuous
+institutional service — W3C, archives, stubborn administrators —
+not by architecture. The oldest functioning xanalogical links are
+golden-scenario fixtures from the 1990–92 Green test suite, alive
+today because a modern harness replays them. The creation dates
+are contemporaneous; the difference is thirty-five years of
+continuous service against none. Tumbler addressing promises what
+URLs failed to deliver, but architectural permanence is a design
+property until proven by decades of operation. Closing that gap
+is the timescale this system must now survive.
 
 ---
 
@@ -449,3 +487,6 @@ respective owners.
 [27] Todd. "OpenTimestamps." https://opentimestamps.org, 2016.
 
 [28] C2PA Specification. https://c2pa.org, 2023.
+
+[29] Moore, A. (LÆMEUR). "The Alph Hypertext System Project."
+     https://alph.io/, 2016–2025. Accessed September 2026.
