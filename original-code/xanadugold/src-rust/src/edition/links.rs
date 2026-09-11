@@ -306,6 +306,12 @@ pub struct HyperRef {
     start_position: Option<i64>,
     end_position: Option<i64>,
     cross_server_ref: Option<CrossServerRef>,
+    /// Phase D (tumbler link targets): the end's permanent address —
+    /// the target work's creation-stamped tumbler with span elements
+    /// appended, in wire format (`"alice.com".2.1.1004.15.42`).
+    /// Authoritative when present; `work_context` is the local
+    /// fast-path cache and is remapped freely (e.g. on replication).
+    origin_tumbler: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -536,6 +542,7 @@ impl HyperRef {
             start_position: None,
             end_position: None,
             cross_server_ref: None,
+            origin_tumbler: None,
         }
     }
 
@@ -554,6 +561,7 @@ impl HyperRef {
             start_position: None,
             end_position: None,
             cross_server_ref: None,
+            origin_tumbler: None,
         }
     }
 
@@ -594,6 +602,7 @@ impl HyperRef {
             start_position: None,
             end_position: None,
             cross_server_ref: None,
+            origin_tumbler: None,
         }
     }
 
@@ -615,6 +624,19 @@ impl HyperRef {
 
     pub fn work_context(&self) -> Option<u64> {
         self.work_context
+    }
+
+    /// Phase D: the end's permanent address (wire-format string),
+    /// stamped at creation from the target work's tumbler. See
+    /// `HyperRef.origin_tumbler`.
+    pub fn origin_tumbler(&self) -> Option<&str> {
+        self.origin_tumbler.as_deref()
+    }
+
+    pub fn with_origin_tumbler(&self, tumbler: Option<String>) -> Self {
+        let mut hr = self.clone();
+        hr.origin_tumbler = tumbler;
+        hr
     }
 
     pub fn original_context(&self) -> Option<u64> {
@@ -647,6 +669,7 @@ impl HyperRef {
             start_position: self.start_position,
             end_position: self.end_position,
             cross_server_ref: Some(csr),
+            origin_tumbler: self.origin_tumbler.clone(),
         }
     }
 
@@ -668,6 +691,7 @@ impl HyperRef {
             start_position: self.start_position,
             end_position: self.end_position,
             cross_server_ref: self.cross_server_ref.clone(),
+            origin_tumbler: self.origin_tumbler.clone(),
         }
     }
 
@@ -683,6 +707,7 @@ impl HyperRef {
             start_position: self.start_position,
             end_position: self.end_position,
             cross_server_ref: self.cross_server_ref.clone(),
+            origin_tumbler: self.origin_tumbler.clone(),
         }
     }
 
@@ -696,6 +721,7 @@ impl HyperRef {
             start_position: self.start_position,
             end_position: self.end_position,
             cross_server_ref: self.cross_server_ref.clone(),
+            origin_tumbler: self.origin_tumbler.clone(),
         }
     }
 
@@ -709,6 +735,7 @@ impl HyperRef {
             start_position: self.start_position,
             end_position: self.end_position,
             cross_server_ref: self.cross_server_ref.clone(),
+            origin_tumbler: self.origin_tumbler.clone(),
         }
     }
 
@@ -722,6 +749,7 @@ impl HyperRef {
             start_position: self.start_position,
             end_position: self.end_position,
             cross_server_ref: self.cross_server_ref.clone(),
+            origin_tumbler: self.origin_tumbler.clone(),
         }
     }
 
@@ -735,6 +763,7 @@ impl HyperRef {
             start_position: start,
             end_position: end,
             cross_server_ref: self.cross_server_ref.clone(),
+            origin_tumbler: self.origin_tumbler.clone(),
         }
     }
 
@@ -744,6 +773,12 @@ impl HyperRef {
     pub fn tumbler_address(&self) -> Option<super::tumbler::XudanuTumbler> {
         if let Some(csr) = &self.cross_server_ref {
             return Some(csr.parsed_tumbler());
+        }
+        if let Some(t) = &self.origin_tumbler {
+            let parsed = super::tumbler::XudanuTumbler::parse(t);
+            if !parsed.path().is_empty() {
+                return Some(parsed);
+            }
         }
         let work_id = self.work_context?;
         let start = self.start_position.unwrap_or(0);
@@ -789,6 +824,7 @@ impl HyperRef {
                     start_position: self.start_position,
                     end_position: self.end_position,
                     cross_server_ref: self.cross_server_ref.clone(),
+                    origin_tumbler: self.origin_tumbler.clone(),
                 }
             }
             HyperRefKind::Single { .. } | HyperRefKind::LinkAttachment { .. } => self.clone(),
@@ -809,6 +845,7 @@ impl HyperRef {
                     start_position: self.start_position,
                     end_position: self.end_position,
                     cross_server_ref: self.cross_server_ref.clone(),
+                    origin_tumbler: self.origin_tumbler.clone(),
                 }
             }
             HyperRefKind::Single { .. } | HyperRefKind::LinkAttachment { .. } => self.clone(),
@@ -833,6 +870,7 @@ impl HyperRef {
                     start_position: self.start_position,
                     end_position: self.end_position,
                     cross_server_ref: self.cross_server_ref.clone(),
+                    origin_tumbler: self.origin_tumbler.clone(),
                 }
             }
             _ => self.clone(),
@@ -856,6 +894,7 @@ impl HyperRef {
                     start_position: self.start_position,
                     end_position: self.end_position,
                     cross_server_ref: self.cross_server_ref.clone(),
+                    origin_tumbler: self.origin_tumbler.clone(),
                 }
             }
             _ => self.clone(),
@@ -879,6 +918,7 @@ impl HyperRef {
                     start_position: self.start_position,
                     end_position: self.end_position,
                     cross_server_ref: self.cross_server_ref.clone(),
+                    origin_tumbler: self.origin_tumbler.clone(),
                 }
             }
             _ => self.clone(),
@@ -1097,6 +1137,54 @@ impl HyperLink {
 
     pub fn ends(&self) -> &HashMap<String, Vec<HyperRef>> {
         &self.ends
+    }
+
+    /// Phase D (tumbler link targets): stamp every work-addressed end
+    /// with its permanent tumbler address. The resolver maps a local
+    /// work id to its creation-stamped tumbler (span appended by the
+    /// caller side via the end's positions). Idempotent: ends that
+    /// already carry an origin tumbler (or a cross-server ref, which
+    /// holds its own) are left untouched.
+    pub fn stamp_origin_tumblers<F>(&mut self, resolver: F)
+    where
+        F: Fn(u64, Option<i64>, Option<i64>) -> Option<String>,
+    {
+        for atts in self.ends.values_mut() {
+            for hr in atts.iter_mut() {
+                if hr.origin_tumbler().is_some() || hr.cross_server_ref().is_some() {
+                    continue;
+                }
+                if let Some(wid) = hr.work_context() {
+                    if let Some(t) = resolver(wid, hr.start_position(), hr.end_position()) {
+                        hr.origin_tumbler = Some(t);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Phase D: remap work contexts from origin tumblers on arrival —
+    /// a link created on another server carries the ORIGIN's local
+    /// be_id in work_context; any server holding the work (original or
+    /// replica) resolves the tumbler to ITS local id. The tumbler is
+    /// authoritative; work_context is the remappable cache.
+    pub fn remap_local_contexts<F>(&mut self, resolver: F)
+    where
+        F: Fn(&str) -> Option<u64>,
+    {
+        for atts in self.ends.values_mut() {
+            for hr in atts.iter_mut() {
+                if let Some(t) = hr.origin_tumbler() {
+                    if !t.is_empty() {
+                        if let Some(local_id) = resolver(t) {
+                            if hr.work_context != Some(local_id) {
+                                hr.work_context = Some(local_id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub fn end_count(&self) -> usize {

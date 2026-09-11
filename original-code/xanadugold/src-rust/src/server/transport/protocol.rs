@@ -3886,6 +3886,14 @@ pub struct HyperRefPayload {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub cross_server_ref: Option<CrossServerRefPayload>,
+    /// Phase D (tumbler link targets): the end's permanent address in
+    /// wire format, stamped at creation. JSON-only path (link chunks
+    /// are JSON-tagged), so skip_serializing_if is safe here.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub origin_tumbler: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4567,6 +4575,7 @@ impl HyperRefPayload {
             cross_server_ref: hr
                 .cross_server_ref()
                 .map(CrossServerRefPayload::from_cross_server_ref),
+            origin_tumbler: hr.origin_tumbler().map(|s| s.to_string()),
         }
     }
 
@@ -4613,6 +4622,9 @@ impl HyperRefPayload {
             if let Some(csr) = csr_payload.to_cross_server_ref() {
                 hr = hr.with_cross_server_ref(csr);
             }
+        }
+        if let Some(t) = &self.origin_tumbler {
+            hr = hr.with_origin_tumbler(Some(t.clone()));
         }
         hr
     }

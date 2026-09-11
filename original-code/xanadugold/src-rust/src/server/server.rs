@@ -1793,12 +1793,20 @@ impl Server {
             crate::edition::tumbler::XudanuTumbler::from_xan_uri(uri).ok_or_else(|| {
                 ServerError::InvalidArgument(format!("malformed xan address: {}", uri))
             })?;
+        Ok(self.resolve_tumbler(&tumbler))
+    }
 
+    /// Tumbler-typed resolution shared by xan:// lookup and Phase D
+    /// link-end resolution.
+    pub fn resolve_tumbler(
+        &self,
+        tumbler: &crate::edition::tumbler::XudanuTumbler,
+    ) -> XanResolution {
         // 1. Exact stamp match — includes replicas of foreign works.
         if let Some(work_id) = self
             .works
             .iter()
-            .find_map(|(id, ws)| (ws.work.tumbler() == tumbler).then_some(*id))
+            .find_map(|(id, ws)| (ws.work.tumbler() == *tumbler).then_some(*id))
         {
             let title = self
                 .works
@@ -1806,11 +1814,11 @@ impl Server {
                 .map(|ws| ws.cached_title().to_string())
                 .unwrap_or_default();
             let position = tumbler.path().get(1).map(|&p| p as i64);
-            return Ok(XanResolution::Local {
+            return XanResolution::Local {
                 work_id,
                 position,
                 title,
-            });
+            };
         }
 
         // 2. Owned server form with legacy (unstamped) works.
@@ -1822,11 +1830,11 @@ impl Server {
                     .map(|ws| ws.cached_title().to_string())
                     .unwrap_or_default();
                 let position = tumbler.path().get(1).map(|&p| p as i64);
-                return Ok(XanResolution::Local {
+                return XanResolution::Local {
                     work_id,
                     position,
                     title,
-                });
+                };
             }
         }
 
@@ -1858,12 +1866,12 @@ impl Server {
                             || ws.region == Some(club)
                     })
                     .count();
-                return Ok(XanResolution::Region {
+                return XanResolution::Region {
                     prefix: path.to_vec(),
                     name,
                     club,
                     work_count,
-                });
+                };
             }
         }
 
@@ -1874,11 +1882,33 @@ impl Server {
             .list()
             .iter()
             .any(|e| e.address == server || e.name == server);
-        Ok(XanResolution::Remote {
+        XanResolution::Remote {
             server,
             origin_work_id: tumbler.first(),
             known_peer,
-        })
+        }
+    }
+
+    /// Phase D: resolve a link end to a local work id. The origin
+    /// tumbler is authoritative (stamp match → replica → legacy
+    /// derivation); a bare work_context (legacy links) is the
+    /// fallback. Returns None when the end targets something this
+    /// server does not hold.
+    pub fn resolve_link_end(&self, hr: &HyperRef) -> Option<BeId> {
+        if let Some(ts) = hr.origin_tumbler() {
+            if !ts.is_empty() {
+                let tumbler = crate::edition::tumbler::XudanuTumbler::parse(ts);
+                if !tumbler.path().is_empty() {
+                    if let XanResolution::Local { work_id, .. } = self.resolve_tumbler(&tumbler) {
+                        return Some(work_id);
+                    }
+                    return None;
+                }
+            }
+        }
+        hr.work_context()
+            .filter(|&wid| self.works.contains_key(&(wid as BeId)))
+            .map(|wid| wid as BeId)
     }
 
     /// The canonical `xan://` address for a local work (from its
@@ -14277,6 +14307,49 @@ impl Server {
             self.consequence_tracker.begin_operation(),
         );
         self.ensure_session(_session_id)?;
+
+        let mut link = link;
+
+        // Phase D: a link arriving from another server carries the
+        // ORIGIN's local ids in work_context — remap to ours wherever
+        // the origin tumbler resolves locally (original or replica).
+        {
+            let resolve_from = |ts: &str| -> Option<u64> {
+                let tumbler = crate::edition::tumbler::XudanuTumbler::parse(ts);
+                if tumbler.path().is_empty() {
+                    return None;
+                }
+                match self.resolve_tumbler(&tumbler) {
+                    XanResolution::Local { work_id, .. } => Some(work_id as u64),
+                    _ => None,
+                }
+            };
+            link.remap_local_contexts(resolve_from);
+        }
+
+        // Phase D: stamp every work-addressed end with its permanent
+        // tumbler address (creation stamp + span elements). Legacy
+        // unstamped works get the server's current identity.
+        {
+            let identity = self.tumbler_server_identity();
+            let works = &self.works;
+            let stamp = |wid: u64, start: Option<i64>, end: Option<i64>| -> Option<String> {
+                let ws = works.get(&(wid as BeId))?;
+                let mut t = match ws.work.tumbler_server() {
+                    Some(_) => ws.work.tumbler(),
+                    None => crate::edition::tumbler::XudanuTumbler::cross(
+                        &identity,
+                        ws.work.tumbler().path().to_vec(),
+                    ),
+                };
+                if let Some(s) = start {
+                    let e = end.unwrap_or(s);
+                    t = t.append(s as u64).append(e as u64);
+                }
+                Some(t.to_wire_string())
+            };
+            link.stamp_origin_tumblers(stamp);
+        }
 
         let origin = link
             .end_at("LeftEnd")
@@ -41905,6 +41978,7 @@ mod tests {
             end_position: Some(20),
             link_attachment: None,
             cross_server_ref: None,
+            origin_tumbler: None,
         };
 
         let hr = payload.to_hyper_ref(100);
@@ -47128,6 +47202,166 @@ mod tests_security_tracker {
         }
 
         assert!(server.resolve_xan_address("xan://").is_err());
+    }
+
+    #[test]
+    fn link_ends_stamped_at_creation() {
+        let (mut server, sid) = tumbler_test_server();
+        server.public_address = Some("alice.com".to_string());
+        let a = server
+            .create_work(sid, Edition::from_text("alpha"))
+            .unwrap();
+        let b = server.create_work(sid, Edition::from_text("beta")).unwrap();
+
+        server
+            .create_link_with_hyperlink_homed(
+                sid,
+                crate::edition::links::HyperLink::make(
+                    vec![1],
+                    crate::edition::links::HyperRef::single(None, Some(a), None, None)
+                        .with_span(Some(2), Some(7)),
+                    crate::edition::links::HyperRef::single(None, Some(b), None, None),
+                ),
+                None,
+            )
+            .unwrap();
+
+        let ls = server.links.values().next().unwrap();
+        for (name, atts) in ls.link.ends() {
+            for hr in atts {
+                let t = hr.origin_tumbler().expect("end stamped");
+                let parsed = crate::edition::tumbler::XudanuTumbler::parse(t);
+                assert_eq!(parsed.server(), "alice.com");
+                match name.as_str() {
+                    "LeftEnd" => {
+                        assert_eq!(parsed.path(), &[a as u64, 2, 7], "span elements appended");
+                    }
+                    "RightEnd" => {
+                        assert_eq!(parsed.path(), &[b as u64]);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn link_end_survives_replica_migration() {
+        // THE anti-fork test: alice links to her work; bob later holds
+        // a replica. The link end (arriving with alice's local id in
+        // work_context) must resolve on bob to HIS replica via the
+        // origin tumbler.
+        let (mut alice, sid) = tumbler_test_server();
+        alice.public_address = Some("alice.com".to_string());
+        let a = alice
+            .create_work(sid, Edition::from_text("origin"))
+            .unwrap();
+        let b = alice
+            .create_work(sid, Edition::from_text("target"))
+            .unwrap();
+        alice
+            .create_link_with_hyperlink_homed(
+                sid,
+                crate::edition::links::HyperLink::make(
+                    vec![1],
+                    crate::edition::links::HyperRef::single(None, Some(a), None, None),
+                    crate::edition::links::HyperRef::single(None, Some(b), None, None),
+                ),
+                None,
+            )
+            .unwrap();
+
+        // Wire form of the link ends as they would arrive elsewhere.
+        let end_payload = crate::server::transport::protocol::HyperRefPayload::from_hyper_ref(
+            alice
+                .links
+                .values()
+                .next()
+                .unwrap()
+                .link
+                .end_at("RightEnd")
+                .unwrap(),
+        );
+        assert_eq!(
+            end_payload.origin_tumbler.as_deref(),
+            Some(format!("\"alice.com\".{}", b).as_str())
+        );
+
+        // Bob imports alice's works (replicas get fresh local ids).
+        let entries = alice.federation_export_works();
+        let (mut bob, bob_sid) = tumbler_test_server();
+        let _local = bob.create_work(bob_sid, Edition::from_text("bob")).unwrap();
+        let bob_id = bob.federation_server_id();
+        bob.federation_import_works(&entries, &bob_id);
+
+        // Arrival: payload → HyperRef still carries alice's local id in
+        // work_context — foreign on bob.
+        let hr = end_payload.to_hyper_ref(0);
+        assert_eq!(hr.work_context(), Some(b), "arrival keeps origin's id");
+        let replica_id = bob.resolve_link_end(&hr).expect("resolves via tumbler");
+        let replica = bob.works.get(&replica_id).unwrap();
+        assert_eq!(replica.work.tumbler_server(), Some("alice.com"));
+        assert_ne!(
+            replica_id, b,
+            "resolved to bob's replica, not the foreign id"
+        );
+    }
+
+    #[test]
+    fn resolve_link_end_legacy_fallback() {
+        let (mut server, sid) = tumbler_test_server();
+        let w = server
+            .create_work(sid, Edition::from_text("legacy"))
+            .unwrap();
+        // Legacy end: no origin tumbler, BeId only.
+        let hr = crate::edition::links::HyperRef::single(None, Some(w), None, None);
+        assert_eq!(server.resolve_link_end(&hr), Some(w));
+        // Unknown BeId without tumbler: unresolved.
+        let ghost = crate::edition::links::HyperRef::single(None, Some(987_654), None, None);
+        assert_eq!(server.resolve_link_end(&ghost), None);
+    }
+
+    #[test]
+    fn region_link_address_carries_prefix() {
+        let mut server = Server::new();
+        let admin = server.connect();
+        server.login_public(admin).unwrap();
+        server.grant_admin_authority(admin).unwrap();
+        let region_club = server
+            .create_named_club(admin, "essays", crate::edition::Edition::empty())
+            .unwrap();
+        server.region_create(admin, region_club, None).unwrap();
+
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        server.session_set_region(sid, Some(region_club)).unwrap();
+        let inner = server
+            .create_work(sid, Edition::from_text("inner"))
+            .unwrap();
+        let outer = server
+            .create_work(admin, Edition::from_text("outer"))
+            .unwrap();
+
+        server
+            .create_link_with_hyperlink_homed(
+                sid,
+                crate::edition::links::HyperLink::make(
+                    vec![1],
+                    crate::edition::links::HyperRef::single(None, Some(inner), None, None),
+                    crate::edition::links::HyperRef::single(None, Some(outer), None, None),
+                ),
+                None,
+            )
+            .unwrap();
+
+        let ls = server.links.values().next().unwrap();
+        let inner_end = ls.link.end_at("LeftEnd").unwrap();
+        let t = crate::edition::tumbler::XudanuTumbler::parse(inner_end.origin_tumbler().unwrap());
+        assert_eq!(
+            t.path(),
+            &[1, inner as u64],
+            "region work's link address carries the region prefix"
+        );
     }
 
     #[test]
