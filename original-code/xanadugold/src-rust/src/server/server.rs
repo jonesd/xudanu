@@ -9020,21 +9020,39 @@ impl Server {
     /// Works whose tumbler paths fall under a region prefix (nested:
     /// prefix [2] matches [2], [2,1], [2,1,x]…). Legacy works stamped
     /// with the region club (Phase 1) are included via `legacy_club`.
+    /// Phase F: containment runs through the Sequence space algebra —
+    /// the region IS a `SequenceRegion::prefixed_by` and works are
+    /// Sequences, the Gold-native scoping operation.
     pub fn works_in_region(&self, prefix: &[u64], legacy_club: Option<BeId>) -> Vec<BeId> {
-        self.works
+        if prefix.is_empty() {
+            return self
+                .works
+                .iter()
+                .filter(|(_, ws)| legacy_club.is_some() && ws.region == legacy_club)
+                .map(|(id, _)| *id)
+                .collect();
+        }
+        let region_seq =
+            crate::space::Sequence::from_numbers(prefix.iter().map(|&n| n as i64).collect());
+        let region =
+            crate::space::SequenceRegion::prefixed_by(&region_seq, prefix.len() as i64 - 1);
+        let mut ids: Vec<(crate::space::Sequence, BeId)> = self
+            .works
             .iter()
-            .filter(|(_, ws)| {
-                if !prefix.is_empty() {
-                    if let Some(p) = ws.work.tumbler_path_override() {
-                        if p.starts_with(prefix) {
-                            return true;
-                        }
-                    }
+            .filter_map(|(id, ws)| {
+                if region.contains_sequence(&ws.work.tumbler().to_sequence()) {
+                    return Some((ws.work.tumbler().to_sequence(), *id));
                 }
-                legacy_club.is_some() && ws.region == legacy_club
+                if legacy_club.is_some() && ws.region == legacy_club {
+                    return Some((ws.work.tumbler().to_sequence(), *id));
+                }
+                None
             })
-            .map(|(id, _)| *id)
-            .collect()
+            .collect();
+        // Phase F: region members in tumbler order (the address space's
+        // own sequence ordering — hierarchical, not insertion order).
+        ids.sort_by(|a, b| a.0.compare_to(&b.0));
+        ids.into_iter().map(|(_, id)| id).collect()
     }
 
     /// Regions Phase 1: the session's region (None = global).
@@ -47443,9 +47461,11 @@ mod tests_security_tracker {
         let replica_id = bob.resolve_link_end(&hr).expect("resolves via tumbler");
         let replica = bob.works.get(&replica_id).unwrap();
         assert_eq!(replica.work.tumbler_server(), Some("alice.com"));
-        assert_ne!(
-            replica_id, b,
-            "resolved to bob's replica, not the foreign id"
+        assert_eq!(
+            replica.work.tumbler().path(),
+            &[b],
+            "resolution found the work whose ADDRESS matches — the replica of alice's {}, whatever local id it landed on (import order is nondeterministic; local ids are caches, the tumbler is the identity)",
+            b
         );
     }
 
@@ -50157,6 +50177,65 @@ mod region_tests {
         assert!(
             !visible_child.contains(&parent_work),
             "child region [1,1] must not see parent's [1] works"
+        );
+    }
+
+    #[test]
+    fn works_in_region_sorted_by_sequence_order() {
+        let mut server = Server::new();
+        let admin = server.connect();
+        server.login_public(admin).unwrap();
+        server.grant_admin_authority(admin).unwrap();
+        let region_club = server
+            .create_named_club(admin, "ordered", crate::edition::Edition::empty())
+            .unwrap();
+        server.region_create(admin, region_club, None).unwrap();
+
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        server.session_set_region(sid, Some(region_club)).unwrap();
+        // Create several works — insertion order and be_id order agree
+        // here, so also add a nested child whose works interleave in
+        // the address space.
+        let w1 = server.create_work(sid, Edition::from_text("one")).unwrap();
+        let w2 = server.create_work(sid, Edition::from_text("two")).unwrap();
+
+        let child_club = server
+            .create_named_club(admin, "child", crate::edition::Edition::empty())
+            .unwrap();
+        server
+            .region_create(admin, child_club, Some(region_club))
+            .unwrap();
+        let sid_child = server.connect();
+        server.login_public(sid_child).unwrap();
+        server
+            .session_set_region(sid_child, Some(child_club))
+            .unwrap();
+        let w3 = server
+            .create_work(sid_child, Edition::from_text("three"))
+            .unwrap();
+
+        let members = server.works_in_region(&[1], Some(region_club));
+        assert!(members.contains(&w1) && members.contains(&w2) && members.contains(&w3));
+
+        // Phase F: members come back in tumbler (Sequence) order —
+        // [1, w1] < [1, w2] < [1, 1, w3].
+        let seq_of = |wid: BeId| server.works.get(&wid).unwrap().work.tumbler().to_sequence();
+        for pair in members.windows(2) {
+            assert!(
+                seq_of(pair[0]).compare_to(&seq_of(pair[1])) != std::cmp::Ordering::Greater,
+                "region members must be sequence-ordered"
+            );
+        }
+        // The child's works ([1,1,w3]) sort BEFORE parent-level works
+        // ([1,w2]): region elements are small (1, 2, …) while be_ids
+        // start ~1004, so nested prefixes precede siblings at the
+        // parent level in sequence order.
+        let pos_w2 = members.iter().position(|&w| w == w2).unwrap();
+        let pos_w3 = members.iter().position(|&w| w == w3).unwrap();
+        assert!(
+            pos_w3 < pos_w2,
+            "hierarchical address order: [1,1,w3] < [1,w2]"
         );
     }
 

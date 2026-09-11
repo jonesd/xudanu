@@ -175,6 +175,65 @@ impl Sequence {
         Ordering::Equal
     }
 
+    /// Between-allocation (Gold's Sequence purpose): a sequence
+    /// strictly between `a` and `b` (requires a < b). Sequences are
+    /// infinitely refinable — between any two distinct positions
+    /// another always exists, which is what makes hierarchical
+    /// addresses allocatable between existing ones WITHOUT renumbering
+    /// (the property flat ids can't have). Deterministic in (a, b):
+    /// 1. integer midpoint at the first differing element when the
+    ///    gap allows it (truncating the rest),
+    /// 2. else `a` extended by a trailing 1,
+    /// 3. else (b is exactly a+1 by pure extension) `b`'s prefix
+    ///    lowered at the differing element and extended by a trailing 1.
+    pub fn between(a: &Sequence, b: &Sequence) -> Option<Sequence> {
+        if a.compare_to(b) != Ordering::Less {
+            return None;
+        }
+        let min_idx = a
+            .first_index()
+            .unwrap_or(0)
+            .min(b.first_index().unwrap_or(0));
+        let max_idx = a
+            .last_index()
+            .unwrap_or(-1)
+            .max(b.last_index().unwrap_or(-1));
+        let mut diff_idx = max_idx;
+        for i in min_idx..=max_idx {
+            if a.at(i) != b.at(i) {
+                diff_idx = i;
+                break;
+            }
+        }
+        let (av, bv) = (a.at(diff_idx), b.at(diff_idx));
+        if bv - av >= 2 {
+            let mut nums = Vec::with_capacity((diff_idx - min_idx + 1) as usize);
+            for i in min_idx..=diff_idx {
+                nums.push(if i == diff_idx {
+                    av + (bv - av) / 2
+                } else {
+                    a.at(i)
+                });
+            }
+            return Some(Sequence::from_numbers_with_shift(nums, min_idx));
+        }
+        // Adjacent at diff_idx: extend a with a trailing 1.
+        let mut extended = a.numbers().to_vec();
+        extended.push(1);
+        let extended = Sequence::from_numbers_with_shift(extended, a.first_index().unwrap_or(0));
+        if extended.compare_to(b) == Ordering::Less {
+            return Some(extended);
+        }
+        // b is exactly a extended by 1: lower b's differing element and
+        // refine below it.
+        let mut nums = Vec::with_capacity((diff_idx - min_idx + 2) as usize);
+        for i in min_idx..=diff_idx {
+            nums.push(if i == diff_idx { bv - 1 } else { b.at(i) });
+        }
+        nums.push(1);
+        Some(Sequence::from_numbers_with_shift(nums, min_idx))
+    }
+
     pub fn first(&self) -> Sequence {
         for (i, &v) in self.numbers.iter().enumerate() {
             if v == 0 {
@@ -852,6 +911,7 @@ impl OrderSpec for SequenceDescending {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn sequence_zero() {
@@ -895,6 +955,122 @@ mod tests {
         assert_eq!(b.compare_to(&a), Ordering::Greater);
         assert_eq!(a.compare_to(&a), Ordering::Equal);
         assert_eq!(c.compare_to(&a), Ordering::Greater);
+    }
+
+    #[test]
+    fn between_gap_midpoint() {
+        // Gap ≥ 2 at the differing element: integer midpoint,
+        // truncating the rest.
+        let a = Sequence::one(1);
+        let b = Sequence::one(9);
+        let c = Sequence::between(&a, &b).unwrap();
+        assert_eq!(c.numbers(), &[5]);
+        assert_eq!(a.compare_to(&c), Ordering::Less);
+        assert_eq!(c.compare_to(&b), Ordering::Less);
+
+        // Truncation: a's tail is dropped when the midpoint lands
+        // before it.
+        let a = Sequence::two(1, 5);
+        let b = Sequence::two(9, 0);
+        let c = Sequence::between(&a, &b).unwrap();
+        assert_eq!(c.numbers(), &[5]);
+        assert!(a.compare_to(&c) == Ordering::Less);
+        assert!(c.compare_to(&b) == Ordering::Less);
+    }
+
+    #[test]
+    fn between_adjacent_extends() {
+        // Adjacent at the element: extend a with a trailing 1.
+        let a = Sequence::one(1);
+        let b = Sequence::one(2);
+        let c = Sequence::between(&a, &b).unwrap();
+        assert_eq!(c.numbers(), &[1, 1]);
+        assert!(a.compare_to(&c) == Ordering::Less);
+        assert!(c.compare_to(&b) == Ordering::Less);
+
+        // With a's tail intact.
+        let a = Sequence::two(1, 5);
+        let b = Sequence::two(1, 6);
+        let c = Sequence::between(&a, &b).unwrap();
+        assert_eq!(c.numbers(), &[1, 5, 1]);
+        assert!(a.compare_to(&c) == Ordering::Less);
+        assert!(c.compare_to(&b) == Ordering::Less);
+    }
+
+    #[test]
+    fn between_pure_extension_refines() {
+        // b is exactly a extended by 1: the refine case.
+        let a = Sequence::one(1);
+        let b = Sequence::two(1, 1);
+        let c = Sequence::between(&a, &b).unwrap();
+        assert!(a.compare_to(&c) == Ordering::Less, "a < c");
+        assert!(c.compare_to(&b) == Ordering::Less, "c < b");
+        // [1,0,1] shape (middle zero retained, only outer zeros trim).
+        assert_eq!(c.numbers(), &[1, 0, 1]);
+    }
+
+    #[test]
+    fn between_rejects_invalid_order() {
+        let a = Sequence::two(2, 1);
+        let b = Sequence::one(1);
+        assert!(Sequence::between(&a, &b).is_none());
+        assert!(Sequence::between(&a, &a).is_none());
+    }
+
+    #[test]
+    fn between_iterated_refinement_is_always_valid() {
+        // Between-ness is infinitely refinable: repeatedly halving the
+        // interval keeps producing valid strictly-between positions.
+        // This is the never-renumber allocation property.
+        let mut lo = Sequence::one(1);
+        let mut hi = Sequence::one(2);
+        for _ in 0..64 {
+            let mid = Sequence::between(&lo, &hi).expect("between always exists for lo < hi");
+            assert!(lo.compare_to(&mid) == Ordering::Less);
+            assert!(mid.compare_to(&hi) == Ordering::Less);
+            lo = mid;
+        }
+        // 64 refinements deep and still distinct from both ends.
+        assert!(lo.compare_to(&hi) == Ordering::Less);
+        assert_ne!(lo.numbers(), hi.numbers());
+    }
+
+    proptest! {
+        #[test]
+        fn between_property_random_pairs(
+            a in prop::collection::vec(1i64..1_000_000, 1..6),
+            b in prop::collection::vec(1i64..1_000_000, 1..6),
+        ) {
+            let sa = Sequence::from_numbers(a);
+            let sb = Sequence::from_numbers(b);
+            match sa.compare_to(&sb) {
+                Ordering::Less => {
+                    let c = Sequence::between(&sa, &sb).unwrap();
+                    prop_assert!(sa.compare_to(&c) == Ordering::Less);
+                    prop_assert!(c.compare_to(&sb) == Ordering::Less);
+                }
+                Ordering::Greater => {
+                    let c = Sequence::between(&sb, &sa).unwrap();
+                    prop_assert!(sb.compare_to(&c) == Ordering::Less);
+                    prop_assert!(c.compare_to(&sa) == Ordering::Less);
+                }
+                Ordering::Equal => {
+                    prop_assert!(Sequence::between(&sa, &sb).is_none());
+                }
+            }
+        }
+
+        #[test]
+        fn tumbler_ordering_matches_sequence(
+            p1 in prop::collection::vec(1u64..1_000_000, 1..5),
+            p2 in prop::collection::vec(1u64..1_000_000, 1..5),
+        ) {
+            let t1 = crate::edition::tumbler::XudanuTumbler::cross("s", p1);
+            let t2 = crate::edition::tumbler::XudanuTumbler::cross("s", p2);
+            let via_seq = t1.to_sequence().compare_to(&t2.to_sequence());
+            prop_assert_eq!(t1.cmp(&t2), via_seq);
+            prop_assert_eq!(t1.cmp(&t2).reverse(), t2.cmp(&t1));
+        }
     }
 
     #[test]

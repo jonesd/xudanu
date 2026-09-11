@@ -41,11 +41,14 @@ frontend. The project is split across two trees:
   `docs/dev/FR-34-enfilade-native.md` for the full roadmap.
 - **Tumbler addressing (FR-34 Phase D-F)**: `XudanuTumbler` provides typed
   hierarchical addresses (`"alice.com".5.3.10.7`). `DocumentArrangement`
-  bridges i64 document positions to global tumbler addresses. Connected to
-  the dormant `space/sequence.rs` (1248 lines) Sequence algebra via
-  `to_sequence()` / `from_sequence()`. Typed accessors on `CrossServerRef`
+  bridges i64 document positions to global tumbler addresses. **Phase F
+  (active)**: the `space/sequence.rs` (1294 lines) Sequence algebra is
+  load-bearing — `Sequence::between` (Gold's never-renumber allocation),
+  `Ord` on tumblers via Sequence ordering, region containment via
+  `SequenceRegion::prefixed_by`, region members returned in sequence order.
+  Typed accessors on `CrossServerRef`
   (`work_id()`, `char_range()`, `parent_tumbler()`, `same_server_as()`).
-  `HyperRef::tumbler_address()` and `for_tumbler_span()` enable tumbler-based
+  `HyperLink::tumbler_address()` and `for_tumbler_span()` enable tumbler-based
   link addressing. `CompoundSpan::to_tumbler()` / `from_tumbler()` for
   transclusion coordinates.
 - **Compound documents**: inline `RangeElement::Transclusion` in the O-tree
