@@ -897,9 +897,12 @@ mod tests {
                 )
                 .unwrap();
         };
-        // Internal A link, and a cross link a1—b1.
+        // Internal A link, and a cross link a1—b1. The cross link is
+        // authored by the region-less admin session — region write
+        // enforcement (Phase C permeability) forbids region sessions
+        // from linking across regions.
         link(&mut server, sid_a, a1, a2);
-        link(&mut server, sid_a, a1, b1);
+        link(&mut server, admin, a1, b1);
 
         let full = hg_profile(&server);
         let region_a = hg_profile_prefix(&server, &[1]);
