@@ -410,6 +410,75 @@ async fn run_command(
             })?;
             println!("Logged in as admin.");
         }
+        "show" => {
+            // Phase B/F: resolve an xan:// address (tumbler navigation
+            // from the command line). `show xan://ns-…/1004.42?rev=1`
+            let address = args.first().ok_or("usage: show <xan://address>")?;
+            let resp = client
+                .request(
+                    "xan_resolve",
+                    Some(serde_json::json!({ "address": address })),
+                )
+                .await;
+            if resp["type"] == "error" {
+                eprintln!("Error: {}", resp["message"].as_str().unwrap_or("unknown"));
+            } else {
+                let v = extract_value(&resp);
+                // The response nests: {value: {type: json, value: {...}}}
+                let inner = &v["value"];
+                let value = if !inner.is_null() {
+                    inner
+                } else if !v.is_null() {
+                    v
+                } else {
+                    &resp
+                };
+                match value["status"].as_str() {
+                    Some("local") => {
+                        println!(
+                            "local: work {:04x} — {} (rev {}/{}){}",
+                            value["work_id"].as_u64().unwrap_or(0),
+                            value["title"].as_str().unwrap_or("untitled"),
+                            value["revision"].as_u64().unwrap_or(0),
+                            value["latest"].as_u64().unwrap_or(0),
+                            value["position"]
+                                .as_u64()
+                                .map(|p| format!(", position {}", p))
+                                .unwrap_or_default()
+                        );
+                    }
+                    Some("region") => {
+                        println!(
+                            "region {} ({}) — {} work(s)",
+                            value["prefix"]
+                                .as_array()
+                                .map(|s| s
+                                    .iter()
+                                    .filter_map(|n| n.as_u64())
+                                    .map(|n| n.to_string())
+                                    .collect::<Vec<_>>()
+                                    .join("."))
+                                .unwrap_or_default(),
+                            value["name"].as_str().unwrap_or("?"),
+                            value["work_count"].as_u64().unwrap_or(0)
+                        );
+                    }
+                    Some("remote") => {
+                        println!(
+                            "remote: server {} (work {:?}, {})",
+                            value["server"].as_str().unwrap_or("?"),
+                            value["origin_work_id"],
+                            if value["known_peer"].as_bool().unwrap_or(false) {
+                                "known peer"
+                            } else {
+                                "not in directory"
+                            }
+                        );
+                    }
+                    _ => println!("{}", serde_json::to_string_pretty(value)?),
+                }
+            }
+        }
         "create-work" => {
             client.ensure_login().await;
             let text = if args.is_empty() {

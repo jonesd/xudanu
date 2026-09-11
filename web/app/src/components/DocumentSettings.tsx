@@ -39,6 +39,8 @@ interface DocumentSettingsProps {
   visible: boolean;
   onClose: () => void;
   prefs: DocPreferences;
+  /** Current work id — used to show the document's permanent address. */
+  workId?: number | null;
   onPrefsChange: (prefs: DocPreferences) => void;
   networkEnabled: boolean;
   externalLinksEnabled: boolean;
@@ -49,15 +51,34 @@ interface DocumentSettingsProps {
   onSetSuggestionsEnabled: (enabled: boolean) => Promise<void>;
 }
 
-export function DocumentSettings({ visible, onClose, prefs, onPrefsChange, networkEnabled, externalLinksEnabled, suggestionsEnabled, isAdmin, onSetNetworkEnabled, onSetExternalLinksEnabled, onSetSuggestionsEnabled }: DocumentSettingsProps) {
+export function DocumentSettings({ visible, onClose, prefs, workId, onPrefsChange, networkEnabled, externalLinksEnabled, suggestionsEnabled, isAdmin, onSetNetworkEnabled, onSetExternalLinksEnabled, onSetSuggestionsEnabled }: DocumentSettingsProps) {
   const [local, setLocal] = useState(prefs);
   const [netBusy, setNetBusy] = useState(false);
   const [cacheLimit, setCacheLimit] = useState(getCacheLimitMb());
   const [stats, setStats] = useState<CacheStats | null>(null);
+  const [xanAddress, setXanAddress] = useState<string | null>(null);
 
   const refreshStats = useCallback(() => {
     cacheStats().then(setStats).catch(() => setStats(null));
   }, []);
+
+  // Phase B surface: the document's permanent xan:// address.
+  useEffect(() => {
+    if (!visible || workId == null) {
+      setXanAddress(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/public/resolve?work=0x${workId.toString(16)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d && typeof d.xan === "string") setXanAddress(d.xan);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, workId]);
 
   useEffect(() => {
     if (visible) refreshStats();
@@ -88,6 +109,22 @@ export function DocumentSettings({ visible, onClose, prefs, onPrefsChange, netwo
           <h2>Settings</h2>
           <button type="button" className="settings-close" onClick={onClose}>×</button>
         </div>
+        {xanAddress && (
+          <div
+            title="click to copy this document's permanent address"
+            onClick={() => navigator.clipboard?.writeText(xanAddress).catch(() => {})}
+            style={{
+              display: "flex", alignItems: "center", gap: 6, cursor: "copy",
+              padding: "6px 10px", margin: "0 0 8px",
+              background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6,
+            }}
+          >
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{"\u2316"} address</span>
+            <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {xanAddress}
+            </span>
+          </div>
+        )}
 
         <div className="settings-body">
           <div className="settings-section">

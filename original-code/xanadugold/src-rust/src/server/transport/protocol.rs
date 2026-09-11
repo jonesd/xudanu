@@ -196,6 +196,8 @@ pub enum OperationCode {
     SessionSetRegion,
     RegionCreate,
     RegionList,
+    RegionInsertBetween,
+    XanResolve,
     WorkUnstar,
     WorkIsStarred,
     ConnectionPinSet,
@@ -590,6 +592,8 @@ impl OperationCode {
             0x035F => Some(OperationCode::SessionSetRegion),
             0x0360 => Some(OperationCode::RegionCreate),
             0x0361 => Some(OperationCode::RegionList),
+            0x0362 => Some(OperationCode::RegionInsertBetween),
+            0x0363 => Some(OperationCode::XanResolve),
             0x0336 => Some(OperationCode::WorkUnstar),
             0x0337 => Some(OperationCode::WorkIsStarred),
             0x0338 => Some(OperationCode::WorkGraph),
@@ -940,6 +944,8 @@ impl OperationCode {
             OperationCode::SessionSetRegion => 0x035F,
             OperationCode::RegionCreate => 0x0360,
             OperationCode::RegionList => 0x0361,
+            OperationCode::RegionInsertBetween => 0x0362,
+            OperationCode::XanResolve => 0x0363,
             OperationCode::WorkUnstar => 0x0336,
             OperationCode::WorkIsStarred => 0x0337,
             OperationCode::WorkGraph => 0x0338,
@@ -1451,6 +1457,14 @@ pub enum WireRequest {
         parent: Option<BeId>,
     },
     RegionList {},
+    RegionInsertBetween {
+        club_id: BeId,
+        before: Vec<u64>,
+        after: Vec<u64>,
+    },
+    XanResolve {
+        address: String,
+    },
     WorkUnstar {
         work_id: BeId,
     },
@@ -5238,6 +5252,8 @@ mod lattice_shadow_wire_tests {
             OperationCode::SessionSetRegion,
             OperationCode::RegionCreate,
             OperationCode::RegionList,
+            OperationCode::RegionInsertBetween,
+            OperationCode::XanResolve,
         ] {
             let wire = code.to_u16();
             let back = OperationCode::from_u16(wire).expect("decode");
@@ -5264,6 +5280,8 @@ mod lattice_shadow_wire_tests {
             (0x035F, OperationCode::SessionSetRegion),
             (0x0360, OperationCode::RegionCreate),
             (0x0361, OperationCode::RegionList),
+            (0x0362, OperationCode::RegionInsertBetween),
+            (0x0363, OperationCode::XanResolve),
         ];
         for (wire, want) in targets {
             assert_eq!(OperationCode::from_u16(wire), Some(want));

@@ -66,6 +66,7 @@ fn usage() {
     eprintln!("  run [addr] [data-dir]    Run the server (default: 127.0.0.1:8080)");
     eprintln!("  verify <data-dir>        Verify data integrity");
     eprintln!("  hg-profile <data-dir>    Print the H(G) hypertextuality profile as JSON");
+    eprintln!("      [--region <club-id>] [--region-prefix 2.1]  scope to a region");
     eprintln!("  rebuild-manifest <dir>   Rebuild manifest from chunks");
     eprintln!("  verify-security-log <dir> Verify security log chain integrity");
     eprintln!("  preflight <data-dir>     Check data dir is safe to start (no port binding)");
@@ -128,7 +129,7 @@ fn cmd_init(data_dir: &str, passphrase: Option<&[u8]>) {
     }
 }
 
-fn cmd_hg_profile(data_dir: &str, region: Option<u64>) {
+fn cmd_hg_profile(data_dir: &str, region: Option<u64>, region_prefix: Option<Vec<u64>>) {
     let path = PathBuf::from(data_dir);
     if !path.join("root_manifest.json").exists() && !path.join("manifest.json").exists() {
         eprintln!("Error: no manifest found at {}", path.display());
@@ -139,7 +140,11 @@ fn cmd_hg_profile(data_dir: &str, region: Option<u64>) {
         eprintln!("Error: restore failed: {}", e);
         std::process::exit(1);
     }
-    let profile = xudanu::server::hg_profile::hg_profile_region(&server, region);
+    let profile = if let Some(prefix) = region_prefix {
+        xudanu::server::hg_profile::hg_profile_prefix(&server, &prefix)
+    } else {
+        xudanu::server::hg_profile::hg_profile_region(&server, region)
+    };
     match serde_json::to_string_pretty(&profile) {
         Ok(json) => println!("{}", json),
         Err(e) => {
@@ -578,7 +583,21 @@ async fn main() {
                 .position(|a| a == "--region")
                 .and_then(|i| args.get(i + 1))
                 .and_then(|v| v.parse::<u64>().ok());
-            cmd_hg_profile(args.get(2).map(String::as_str).unwrap_or(""), region);
+            let region_prefix = args
+                .iter()
+                .position(|a| a == "--region-prefix")
+                .and_then(|i| args.get(i + 1))
+                .map(|v| {
+                    v.split('.')
+                        .filter_map(|p| p.parse::<u64>().ok())
+                        .collect::<Vec<u64>>()
+                })
+                .filter(|v| !v.is_empty());
+            cmd_hg_profile(
+                args.get(2).map(String::as_str).unwrap_or(""),
+                region,
+                region_prefix,
+            );
         }
         "forensics" => {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");

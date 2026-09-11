@@ -64,6 +64,9 @@ export function ConnectionsSection({
     transclusionSource?: number;
     transclusionStart?: number;
     transclusionEnd?: number;
+    // Phase D surface: the row target's permanent address (from the
+    // link end's origin_tumbler), for copy-to-clipboard.
+    address?: string;
   };
 
   const items: ConnItem[] = [];
@@ -124,6 +127,9 @@ export function ConnectionsSection({
       excerpt: excerpt.slice(0, 80),
       meta,
       workId: isOutgoing ? link.destination : link.origin,
+      address:
+        (isOutgoing ? link.destination_ref : link.origin_ref)?.origin_tumbler ||
+        undefined,
       linkId: link.link_id,
       linkTypeId: typeId,
       // Outgoing with an anchored excerpt: the underline lives on
@@ -261,6 +267,41 @@ export function ConnectionsSection({
             >
               {pinnedKeys.has(item.key) ? "\u2605" : "\u2606"}
             </span>
+            {item.address && (
+              <span
+                title={`copy address: ${item.address}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigator.clipboard?.writeText(item.address!).catch(() => {});
+                }}
+                style={{ color: "var(--text-dim)", cursor: "copy", fontSize: 11 }}
+              >
+                {"\u2316"}
+              </span>
+            )}
+            {!item.address && item.type === "transclusion" && item.transclusionSource !== undefined && (
+              <span
+                title="copy source address (with span)"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    const r = await fetch(
+                      `/api/public/resolve?work=0x${item.transclusionSource!.toString(16)}`,
+                    );
+                    const d = await r.json();
+                    if (d?.xan) {
+                      const addr = `${d.xan}.${item.transclusionStart}.${item.transclusionEnd}`;
+                      navigator.clipboard?.writeText(addr).catch(() => {});
+                    }
+                  } catch {
+                    /* no-op */
+                  }
+                }}
+                style={{ color: "var(--text-dim)", cursor: "copy", fontSize: 11 }}
+              >
+                {"\u2316"}
+              </span>
+            )}
             <span className={`conn-type-label ${item.type}`}>{item.type}</span>
             <span>{item.type === "transclusion" ? "\u2192" : item.type === "backlink" ? "\u2190" : "\u21c4"} {item.title}</span>
             {canManage && item.linkId !== undefined && (

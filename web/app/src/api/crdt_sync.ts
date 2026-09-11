@@ -311,6 +311,9 @@ export interface HyperRefPayload {
   // FR-40 S7: the targeted link id when kind == "link_attachment".
   link_attachment?: number | null;
   cross_server_ref?: CrossServerRefPayload | null;
+  // Phase D (tumbler link targets): the end's permanent address in
+  // wire format, stamped at creation.
+  origin_tumbler?: string | null;
 }
 
 export interface SharedRegion {

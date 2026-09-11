@@ -9017,6 +9017,82 @@ impl Server {
             .and_then(|c| c.region_prefix().map(|p| p.to_vec()))
     }
 
+    /// Phase F: insert a region between two existing regions — the
+    /// production use of `Sequence::between`, the never-renumber
+    /// allocation. Given two existing region prefixes with before <
+    /// after, the new region's prefix is the Sequence strictly between
+    /// them. NOTE the semantics Gold intended: the between-address may
+    /// be DEEPER than the operands (between [1] and [2] is [1,1]) — it
+    /// sorts between them in the address space while nesting under
+    /// `before`'s chain. No existing region is renumbered. Admin-only.
+    pub fn region_insert_between(
+        &mut self,
+        session_id: SessionId,
+        club_id: BeId,
+        before: &[u64],
+        after: &[u64],
+    ) -> Result<Vec<u64>, ServerError> {
+        self.ensure_session(session_id)?;
+        let is_admin = self
+            .sessions
+            .get(&session_id)
+            .map(|s| s.has_authority(self.system_clubs.admin_club))
+            .unwrap_or(false);
+        if !is_admin {
+            return Err(ServerError::NotAuthorized);
+        }
+        let before_seq =
+            crate::space::Sequence::from_numbers(before.iter().map(|&n| n as i64).collect());
+        let after_seq =
+            crate::space::Sequence::from_numbers(after.iter().map(|&n| n as i64).collect());
+        // Both must be existing region prefixes.
+        let existing: Vec<Vec<u64>> = self
+            .clubs
+            .values()
+            .filter_map(|c| c.region_prefix().map(|p| p.to_vec()))
+            .collect();
+        if !existing.iter().any(|p| p.as_slice() == before) {
+            return Err(ServerError::InvalidArgument(format!(
+                "before {:?} is not an existing region",
+                before
+            )));
+        }
+        if !existing.iter().any(|p| p.as_slice() == after) {
+            return Err(ServerError::InvalidArgument(format!(
+                "after {:?} is not an existing region",
+                after
+            )));
+        }
+        let mid = crate::space::Sequence::between(&before_seq, &after_seq).ok_or_else(|| {
+            ServerError::InvalidArgument("before must sort before after".to_string())
+        })?;
+        let prefix: Vec<u64> = mid
+            .numbers()
+            .iter()
+            .map(|&n| u64::try_from(n))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| ServerError::Internal("between produced a negative element".into()))?;
+        if existing.iter().any(|p| *p == prefix) {
+            return Err(ServerError::Internal(
+                "between produced an existing prefix".into(),
+            ));
+        }
+        let club = self
+            .clubs
+            .get_mut(&club_id)
+            .ok_or(ServerError::ClubNotFound(club_id))?;
+        if club.region_prefix().is_some() {
+            return Err(ServerError::InvalidArgument(format!(
+                "club {} is already a region",
+                club_id
+            )));
+        }
+        let club = self.clubs.get_mut(&club_id).unwrap();
+        club.set_region_prefix(Some(prefix.clone()));
+        self.dirty_clubs.insert(club_id);
+        Ok(prefix)
+    }
+
     /// Works whose tumbler paths fall under a region prefix (nested:
     /// prefix [2] matches [2], [2,1], [2,1,x]…). Legacy works stamped
     /// with the region club (Phase 1) are included via `legacy_club`.
@@ -9063,6 +9139,30 @@ impl Server {
 
     /// Regions Phase 1: filter works by the session's region.
     /// Admin sessions (region=None) see all works.
+    /// Regions Phase C: is this work in the given region? Prefix
+    /// containment (tumbler path under the region prefix) or legacy
+    /// club stamp. Shared by visibility and write enforcement — the
+    /// permeability rule is "you cannot write into what you cannot
+    /// see."
+    pub fn work_in_region(
+        &self,
+        work_id: BeId,
+        region_club: BeId,
+        region_prefix: Option<&[u64]>,
+    ) -> bool {
+        let Some(ws) = self.works.get(&work_id) else {
+            return false;
+        };
+        if let Some(prefix) = region_prefix.filter(|p| !p.is_empty()) {
+            if let Some(p) = ws.work.tumbler_path_override() {
+                if p.starts_with(prefix) {
+                    return true;
+                }
+            }
+        }
+        ws.region == Some(region_club)
+    }
+
     pub fn region_visible_works(&self, session_id: SessionId) -> Result<Vec<BeId>, ServerError> {
         self.ensure_session(session_id)?;
         let region = self.sessions.get(&session_id).and_then(|s| s.region());
@@ -14313,6 +14413,20 @@ impl Server {
             let _ = self.work(home)?;
         }
 
+        // Regions Phase C (permeability principle): reads and
+        // transclusions cross regions; WRITES do not. A session in
+        // region context may only link to works in its region — you
+        // cannot link to what your region cannot see. Sessions without
+        // a region context are unrestricted.
+        if let Some(region_club) = self.sessions.get(&_session_id).and_then(|s| s.region()) {
+            let region_prefix = self.club_region_prefix(region_club);
+            for wid in [origin, destination] {
+                if !self.work_in_region(wid, region_club, region_prefix.as_deref()) {
+                    return Err(ServerError::NotAuthorized);
+                }
+            }
+        }
+
         self.link_counter += 1;
         let link_id = self.link_counter;
 
@@ -14459,6 +14573,20 @@ impl Server {
         let _ = self.work(destination)?;
         if let Some(home) = home_document {
             let _ = self.work(home)?;
+        }
+
+        // Regions Phase C (permeability principle): reads and
+        // transclusions cross regions; WRITES do not. A session in
+        // region context may only link to works in its region — you
+        // cannot link to what your region cannot see. Sessions without
+        // a region context are unrestricted.
+        if let Some(region_club) = self.sessions.get(&_session_id).and_then(|s| s.region()) {
+            let region_prefix = self.club_region_prefix(region_club);
+            for wid in [origin, destination] {
+                if !self.work_in_region(wid, region_club, region_prefix.as_deref()) {
+                    return Err(ServerError::NotAuthorized);
+                }
+            }
         }
 
         self.link_counter += 1;
@@ -47500,8 +47628,10 @@ mod tests_security_tracker {
         let inner = server
             .create_work(sid, Edition::from_text("inner"))
             .unwrap();
+        // Region write enforcement: both ends must be in the session's
+        // region — create the second end in-region too.
         let outer = server
-            .create_work(admin, Edition::from_text("outer"))
+            .create_work(sid, Edition::from_text("outer"))
             .unwrap();
 
         server
@@ -50013,6 +50143,127 @@ mod region_tests {
         assert!(visible_admin.contains(&a1));
         assert!(visible_admin.contains(&b1));
         assert!(visible_admin.contains(&global_work));
+    }
+
+    #[test]
+    fn region_write_enforcement() {
+        let mut server = Server::new();
+        let admin = server.connect();
+        server.login_public(admin).unwrap();
+        server.grant_admin_authority(admin).unwrap();
+        let club_a = server
+            .create_named_club(admin, "alpha", crate::edition::Edition::empty())
+            .unwrap();
+        let club_b = server
+            .create_named_club(admin, "beta", crate::edition::Edition::empty())
+            .unwrap();
+        server.region_create(admin, club_a, None).unwrap();
+        server.region_create(admin, club_b, None).unwrap();
+
+        let sid_a = server.connect();
+        server.login_public(sid_a).unwrap();
+        server.session_set_region(sid_a, Some(club_a)).unwrap();
+        let a_work = server
+            .create_work(sid_a, Edition::from_text("in a"))
+            .unwrap();
+        let global_work = server
+            .create_work(admin, Edition::from_text("global"))
+            .unwrap();
+
+        let sid_b = server.connect();
+        server.login_public(sid_b).unwrap();
+        server.session_set_region(sid_b, Some(club_b)).unwrap();
+        let b_work = server
+            .create_work(sid_b, Edition::from_text("in b"))
+            .unwrap();
+
+        let mklink = |o: u64, d: u64| {
+            crate::edition::links::HyperLink::make(
+                vec![1],
+                crate::edition::links::HyperRef::single(None, Some(o), None, None),
+                crate::edition::links::HyperRef::single(None, Some(d), None, None),
+            )
+        };
+
+        // Within own region: allowed.
+        assert!(server
+            .create_link_with_hyperlink_homed(sid_a, mklink(a_work, a_work), None)
+            .is_ok());
+
+        // Into another region: denied (permeability principle).
+        assert!(
+            server
+                .create_link_with_hyperlink_homed(sid_a, mklink(a_work, b_work), None)
+                .is_err(),
+            "region A session cannot link into region B"
+        );
+
+        // Into the global pool: denied (invisible to the region session).
+        assert!(
+            server
+                .create_link_with_hyperlink_homed(sid_a, mklink(a_work, global_work), None)
+                .is_err(),
+            "region session cannot link into the global pool"
+        );
+
+        // Region-less sessions are unrestricted (matches visibility).
+        assert!(server
+            .create_link_with_hyperlink_homed(admin, mklink(global_work, b_work), None)
+            .is_ok());
+    }
+
+    #[test]
+    fn region_insert_between_allocates_ordered_prefix() {
+        let mut server = Server::new();
+        let admin = server.connect();
+        server.login_public(admin).unwrap();
+        server.grant_admin_authority(admin).unwrap();
+        let club_1 = server
+            .create_named_club(admin, "one", crate::edition::Edition::empty())
+            .unwrap();
+        let club_2 = server
+            .create_named_club(admin, "two", crate::edition::Edition::empty())
+            .unwrap();
+        let club_mid = server
+            .create_named_club(admin, "middle", crate::edition::Edition::empty())
+            .unwrap();
+        server.region_create(admin, club_1, None).unwrap();
+        server.region_create(admin, club_2, None).unwrap();
+
+        // Non-admin denied; bogus operands denied.
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        assert!(server
+            .region_insert_between(sid, club_mid, &[1], &[2])
+            .is_err());
+        assert!(server
+            .region_insert_between(admin, club_mid, &[9], &[2])
+            .is_err());
+
+        // Between [1] and [2]: the between-address [1,1] — deeper than
+        // the operands, sorts between them, nothing renumbered.
+        let prefix = server
+            .region_insert_between(admin, club_mid, &[1], &[2])
+            .unwrap();
+        assert_eq!(prefix, vec![1, 1]);
+
+        let regions = server.regions();
+        assert_eq!(regions.len(), 3);
+        // Sequence order: [1] < [1,1] < [2].
+        let seq =
+            |p: &[u64]| crate::space::Sequence::from_numbers(p.iter().map(|&n| n as i64).collect());
+        let prefixes: Vec<Vec<u64>> = regions.iter().map(|r| r.1.clone()).collect();
+        assert!(seq(&prefixes[0]).compare_to(&seq(&prefixes[1])) == std::cmp::Ordering::Less);
+        assert!(seq(&prefixes[1]).compare_to(&seq(&prefixes[2])) == std::cmp::Ordering::Less);
+
+        // Already-region club rejected.
+        let club_extra = server
+            .create_named_club(admin, "extra", crate::edition::Edition::empty())
+            .unwrap();
+        assert!(server
+            .region_insert_between(admin, club_1, &[1], &[2])
+            .is_err());
+        let _ = club_extra;
     }
 
     #[test]

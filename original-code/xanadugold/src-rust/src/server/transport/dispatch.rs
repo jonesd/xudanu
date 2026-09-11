@@ -1046,6 +1046,58 @@ fn dispatch_inner(
                     .collect::<Vec<_>>(),
             })))
         }
+        WireRequest::RegionInsertBetween {
+            club_id,
+            before,
+            after,
+        } => {
+            let prefix = srv.region_insert_between(session_id, club_id, &before, &after)?;
+            Ok(ResponseValue::Json(serde_json::json!({
+                "prefix": prefix,
+            })))
+        }
+        WireRequest::XanResolve { address } => {
+            use crate::server::server::XanResolution;
+            match srv.resolve_xan_address(&address) {
+                Ok(XanResolution::Local {
+                    work_id,
+                    position,
+                    title,
+                    revision,
+                    latest,
+                }) => Ok(ResponseValue::Json(serde_json::json!({
+                    "status": "local",
+                    "work_id": work_id,
+                    "position": position,
+                    "title": title,
+                    "revision": revision,
+                    "latest": latest,
+                }))),
+                Ok(XanResolution::Remote {
+                    server,
+                    origin_work_id,
+                    known_peer,
+                }) => Ok(ResponseValue::Json(serde_json::json!({
+                    "status": "remote",
+                    "server": server,
+                    "origin_work_id": origin_work_id,
+                    "known_peer": known_peer,
+                }))),
+                Ok(XanResolution::Region {
+                    prefix,
+                    name,
+                    club,
+                    work_count,
+                }) => Ok(ResponseValue::Json(serde_json::json!({
+                    "status": "region",
+                    "prefix": prefix,
+                    "name": name,
+                    "club": club,
+                    "work_count": work_count,
+                }))),
+                Err(e) => Err(e),
+            }
+        }
         WireRequest::SessionSetAuthorType {
             author_type,
             llm_model,

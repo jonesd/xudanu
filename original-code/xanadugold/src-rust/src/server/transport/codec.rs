@@ -1228,6 +1228,34 @@ impl JsonCodec {
                 })
             }
             OperationCode::RegionList => Ok(WireRequest::RegionList {}),
+            OperationCode::RegionInsertBetween => {
+                #[derive(Deserialize)]
+                struct Args {
+                    club_id: BeId,
+                    #[serde(default)]
+                    before: Vec<u64>,
+                    #[serde(default)]
+                    after: Vec<u64>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::RegionInsertBetween {
+                    club_id: args.club_id,
+                    before: args.before,
+                    after: args.after,
+                })
+            }
+            OperationCode::XanResolve => {
+                #[derive(Deserialize)]
+                struct Args {
+                    address: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::XanResolve {
+                    address: args.address,
+                })
+            }
             OperationCode::SessionSetAuthorType => {
                 #[derive(Deserialize)]
                 struct Args {

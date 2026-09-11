@@ -5246,6 +5246,7 @@ export function WorkspaceShell() {
         <DocumentSettings
           visible={true}
           prefs={docPrefs}
+          workId={workBeId}
           onPrefsChange={setDocPrefs}
           onClose={() => setShowSettings(false)}
            networkEnabled={networkEnabled}
