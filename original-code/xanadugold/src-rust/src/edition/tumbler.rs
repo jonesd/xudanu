@@ -119,7 +119,10 @@ impl XudanuTumbler {
     /// host or non-numeric path elements).
     pub fn from_xan_uri(uri: &str) -> Option<Self> {
         let s = uri.trim();
-        let rest = s.strip_prefix("xan://")?;
+        // Phase E: a trailing ?rev=N is the version dimension — strip
+        // it before path parsing (see xan_uri_revision).
+        let path_part = s.split("?rev=").next().unwrap_or(s);
+        let rest = path_part.strip_prefix("xan://")?;
         if rest.is_empty() {
             return None;
         }
@@ -162,6 +165,14 @@ impl XudanuTumbler {
             .collect::<Vec<_>>()
             .join(".");
         Some(format!("xan://{}/{}", self.server, path))
+    }
+
+    /// Phase E: the version dimension of an `xan://` URI — a trailing
+    /// `?rev=N` qualifying the address to a specific revision. None
+    /// for live (current) addresses.
+    pub fn xan_uri_revision(uri: &str) -> Option<u64> {
+        let (_, rev) = uri.trim().split_once("?rev=")?;
+        rev.parse::<u64>().ok()
     }
 
     /// Server identity (domain or numeric string). Empty for local.

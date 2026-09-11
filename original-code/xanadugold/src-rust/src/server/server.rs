@@ -33,11 +33,15 @@ pub enum CrossServerResolution {
 #[derive(Debug, Clone)]
 pub enum XanResolution {
     /// A local work (created here, or a replica). `position` is the
-    /// tumbler's second path element when present (passage address).
+    /// tumbler's second path element when present (passage address);
+    /// `revision` is the requested version (None = live), `latest`
+    /// the work's current revision count.
     Local {
         work_id: BeId,
         position: Option<i64>,
         title: String,
+        revision: Option<u64>,
+        latest: u64,
     },
     /// A foreign address: origin server identity, the origin work id
     /// (first path element) when present, and whether the server
@@ -54,6 +58,31 @@ pub enum XanResolution {
         club: BeId,
         work_count: usize,
     },
+}
+
+impl XanResolution {
+    /// Phase E: attach a requested revision (from a `?rev=N`
+    /// qualified address) to a Local resolution. Remote and Region
+    /// addresses pass through unchanged (version qualification is a
+    /// local-read concern).
+    pub fn with_revision(self, revision: Option<u64>) -> Self {
+        match self {
+            XanResolution::Local {
+                work_id,
+                position,
+                title,
+                revision: _,
+                latest,
+            } => XanResolution::Local {
+                work_id,
+                position,
+                title,
+                revision,
+                latest,
+            },
+            other => other,
+        }
+    }
 }
 
 impl CrossServerResolution {
@@ -1733,15 +1762,43 @@ impl Server {
         crate::edition::tumbler::DocumentArrangement::new(&server, work_be_id as u64)
     }
 
-    /// Generate a typed tumbler for a specific work + revision.
-    pub fn work_tumbler(
+    /// Generate a typed tumbler for a specific work.
+    pub fn work_tumbler(&self, work_be_id: BeId) -> crate::edition::tumbler::XudanuTumbler {
+        self.document_arrangement(work_be_id).work_tumbler()
+    }
+
+    /// Phase E: version-qualified `xan://` address — `?rev=N` rides
+    /// the URI layer; the path stays purely positional (no
+    /// span/revision collision). A pinned transclusion's source is
+    /// addressable as `xan://server/1004.0.5?rev=7`.
+    pub fn work_xan_address_at(&self, work_be_id: BeId, revision: u64) -> Option<String> {
+        let base = self.work_xan_address(work_be_id)?;
+        Some(format!("{}?rev={}", base, revision))
+    }
+
+    /// Phase E: the version-qualified source address of a transclusion
+    /// element (span + pinned revision when present, live otherwise).
+    pub fn transclusion_source_address(
         &self,
-        work_be_id: BeId,
-        revision: u64,
-    ) -> crate::edition::tumbler::XudanuTumbler {
-        self.document_arrangement(work_be_id)
-            .work_tumbler()
-            .append(revision)
+        source_work_id: BeId,
+        char_start: i64,
+        char_end: i64,
+        revision: Option<u64>,
+    ) -> Option<String> {
+        let ws = self.works.get(&source_work_id)?;
+        let tumbler = match ws.work.tumbler_server() {
+            Some(_) => ws.work.tumbler(),
+            None => crate::edition::tumbler::XudanuTumbler::cross(
+                &self.tumbler_server_identity(),
+                vec![source_work_id as u64],
+            ),
+        };
+        let with_span = tumbler.append(char_start as u64).append(char_end as u64);
+        let uri = with_span.to_xan_uri()?;
+        Some(match revision {
+            Some(r) => format!("{}?rev={}", uri, r),
+            None => uri,
+        })
     }
 
     /// Extract work ID from a typed tumbler.
@@ -1793,7 +1850,8 @@ impl Server {
             crate::edition::tumbler::XudanuTumbler::from_xan_uri(uri).ok_or_else(|| {
                 ServerError::InvalidArgument(format!("malformed xan address: {}", uri))
             })?;
-        Ok(self.resolve_tumbler(&tumbler))
+        let revision = crate::edition::tumbler::XudanuTumbler::xan_uri_revision(uri);
+        Ok(self.resolve_tumbler(&tumbler).with_revision(revision))
     }
 
     /// Tumbler-typed resolution shared by xan:// lookup and Phase D
@@ -1814,10 +1872,17 @@ impl Server {
                 .map(|ws| ws.cached_title().to_string())
                 .unwrap_or_default();
             let position = tumbler.path().get(1).map(|&p| p as i64);
+            let latest = self
+                .works
+                .get(&work_id)
+                .map(|ws| ws.work.revision_count())
+                .unwrap_or(0);
             return XanResolution::Local {
                 work_id,
                 position,
                 title,
+                revision: None,
+                latest,
             };
         }
 
@@ -1830,10 +1895,17 @@ impl Server {
                     .map(|ws| ws.cached_title().to_string())
                     .unwrap_or_default();
                 let position = tumbler.path().get(1).map(|&p| p as i64);
+                let latest = self
+                    .works
+                    .get(&work_id)
+                    .map(|ws| ws.work.revision_count())
+                    .unwrap_or(0);
                 return XanResolution::Local {
                     work_id,
                     position,
                     title,
+                    revision: None,
+                    latest,
                 };
             }
         }
@@ -7330,6 +7402,7 @@ impl Server {
                     "title": title,
                     "revision": revision,
                     "char_count": char_count,
+                    "tumbler": self.work_xan_address(*id).unwrap_or_default(),
                 })
             })
             .collect()
@@ -23705,6 +23778,7 @@ pub(crate) mod persist_snapshot {
         }
 
         pub fn checkpoint_prepare(&mut self) -> std::io::Result<CheckpointPayload> {
+            self.backfill_tumbler_stamps();
             let mut partial = CheckpointPartial::default();
             let (work_ids, club_ids, edition_ids) = self.checkpoint_id_lists();
             self.checkpoint_visit_works(&work_ids, &mut partial);
@@ -24216,6 +24290,63 @@ pub(crate) mod persist_snapshot {
             Ok(())
         }
 
+        /// Phase E gap-fill: stamp legacy works and link ends created
+        /// before tumbler stamps existed. Idempotent — only fills None,
+        /// never overwrites. Called at checkpoint so pre-A/D data becomes
+        /// addressable with true (server) identity after one cycle.
+        /// Stamping with the CURRENT identity is correct for works created
+        /// on this server; the only imprecision is retroactivity (works
+        /// predate the stamp, not the identity).
+        pub(crate) fn backfill_tumbler_stamps(&mut self) {
+            let identity = self.tumbler_server_identity();
+            let mut stamped_works = 0usize;
+            for (_id, ws) in self.works.iter_mut() {
+                if ws.work.tumbler_server().is_none() {
+                    ws.work.set_tumbler_server(Some(identity.clone()));
+                    // Force re-persist: a clean chunk_ref would skip
+                    // serialization and lose the new stamp.
+                    ws.chunk_ref = None;
+                    stamped_works += 1;
+                }
+            }
+            let mut stamped_ends = 0usize;
+            for (_lid, ls) in self.links.iter_mut() {
+                let works = &self.works;
+                let stamp = |wid: u64, start: Option<i64>, end: Option<i64>| -> Option<String> {
+                    let ws = works.get(&(wid as BeId))?;
+                    let mut t = ws.work.tumbler();
+                    if let Some(s) = start {
+                        let e = end.unwrap_or(s);
+                        t = t.append(s as u64).append(e as u64);
+                    }
+                    Some(t.to_wire_string())
+                };
+                let before = ls
+                    .link
+                    .ends()
+                    .values()
+                    .flatten()
+                    .filter(|hr| hr.origin_tumbler().is_some())
+                    .count();
+                ls.link.stamp_origin_tumblers(stamp);
+                let after = ls
+                    .link
+                    .ends()
+                    .values()
+                    .flatten()
+                    .filter(|hr| hr.origin_tumbler().is_some())
+                    .count();
+                stamped_ends += after.saturating_sub(before);
+            }
+            if stamped_works > 0 || stamped_ends > 0 {
+                tracing::info!(
+                    "[backfill] stamped {} legacy works, {} legacy link ends",
+                    stamped_works,
+                    stamped_ends
+                );
+            }
+        }
+
         pub fn checkpoint_to_store(&mut self) -> std::io::Result<()> {
             let _wg = WriteGuard::new(self.write_barrier.clone());
             let has_chunk_store = self.chunk_store.is_some();
@@ -24225,6 +24356,7 @@ pub(crate) mod persist_snapshot {
                     "no chunk store configured",
                 ));
             }
+            self.backfill_tumbler_stamps();
             if self.checkpoint_path.is_none() {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::Other,
@@ -46956,14 +47088,23 @@ mod tests_security_tracker {
 
     #[test]
     fn server_work_tumbler() {
-        let mut server = Server::new();
+        let (mut server, sid) = tumbler_test_server();
         server.public_address = Some("bob.com".to_string());
-        let tumbler = server.work_tumbler(5, 3);
+        let wid = server.create_work(sid, Edition::from_text("t")).unwrap();
+        let tumbler = server.work_tumbler(wid);
         assert_eq!(tumbler.server(), "bob.com");
-        assert_eq!(tumbler.path(), &[5, 3]);
+        assert_eq!(tumbler.path(), &[wid as u64]);
 
-        let parent = tumbler.parent().unwrap();
-        assert_eq!(parent.path(), &[5]);
+        // Phase E: version-qualified address rides ?rev=, path stays
+        // positional — no [work, rev] collision.
+        let addr = server.work_xan_address_at(wid, 3).unwrap();
+        assert_eq!(addr, format!("xan://bob.com/{}?rev=3", wid));
+        let parsed = crate::edition::tumbler::XudanuTumbler::from_xan_uri(&addr).unwrap();
+        assert_eq!(parsed.path(), &[wid as u64], "rev is not a path element");
+        assert_eq!(
+            crate::edition::tumbler::XudanuTumbler::xan_uri_revision(&addr),
+            Some(3)
+        );
     }
 
     #[test]
@@ -47133,6 +47274,7 @@ mod tests_security_tracker {
                 work_id,
                 position,
                 title,
+                ..
             } => {
                 assert_eq!(work_id, wid);
                 assert_eq!(position, None);
@@ -47365,6 +47507,159 @@ mod tests_security_tracker {
     }
 
     #[test]
+    fn resolve_version_qualified_address() {
+        let (mut server, sid) = tumbler_test_server();
+        server.public_address = Some("alice.com".to_string());
+        let wid = server
+            .create_work(sid, Edition::from_text("v0 content"))
+            .unwrap();
+        server.work_grab(sid, wid).unwrap();
+        server
+            .work_revise(sid, wid, Edition::from_text("v1 content"))
+            .unwrap();
+        server
+            .work_revise(sid, wid, Edition::from_text("v2 content"))
+            .unwrap();
+
+        // Live address: no revision, latest reported.
+        let base = server.work_xan_address(wid).unwrap();
+        match server.resolve_xan_address(&base).unwrap() {
+            XanResolution::Local {
+                revision, latest, ..
+            } => {
+                assert_eq!(revision, None);
+                assert_eq!(latest, 2);
+            }
+            other => panic!("expected Local, got {:?}", other),
+        }
+
+        // Version-qualified: ?rev=1 pins the read.
+        let pinned = format!("{}?rev=1", base);
+        match server.resolve_xan_address(&pinned).unwrap() {
+            XanResolution::Local {
+                work_id,
+                revision,
+                latest,
+                ..
+            } => {
+                assert_eq!(work_id, wid);
+                assert_eq!(revision, Some(1));
+                assert_eq!(latest, 2);
+            }
+            other => panic!("expected Local, got {:?}", other),
+        }
+
+        // Round-trip: reverse resolve with rev.
+        assert_eq!(server.work_xan_address_at(wid, 1).unwrap(), pinned,);
+
+        // Position + revision compose: the path is positional, rev
+        // rides the query.
+        let pos_rev = format!("xan://alice.com/{}.42?rev=1", wid);
+        match server.resolve_xan_address(&pos_rev).unwrap() {
+            XanResolution::Local {
+                position, revision, ..
+            } => {
+                assert_eq!(position, Some(42));
+                assert_eq!(revision, Some(1));
+            }
+            other => panic!("expected Local, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn transclusion_source_address_pins_revision() {
+        let (mut server, sid) = tumbler_test_server();
+        server.public_address = Some("alice.com".to_string());
+        let src = server
+            .create_work(sid, Edition::from_text("source text"))
+            .unwrap();
+
+        let live = server.transclusion_source_address(src, 0, 5, None).unwrap();
+        assert_eq!(live, format!("xan://alice.com/{}.0.5", src));
+
+        let pinned = server
+            .transclusion_source_address(src, 0, 5, Some(3))
+            .unwrap();
+        assert_eq!(pinned, format!("xan://alice.com/{}.0.5?rev=3", src));
+
+        // The pinned form resolves back with the revision attached.
+        match server.resolve_xan_address(&pinned).unwrap() {
+            XanResolution::Local {
+                position, revision, ..
+            } => {
+                assert_eq!(position, Some(0));
+                assert_eq!(revision, Some(3));
+            }
+            other => panic!("expected Local, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn backfill_stamps_legacy_works_and_links() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_backfill_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let (mut server, sid) = tumbler_test_server();
+        server.init_data_dir(&data_dir, None).unwrap();
+        let a = server
+            .create_work(sid, Edition::from_text("legacy a"))
+            .unwrap();
+        let b = server
+            .create_work(sid, Edition::from_text("legacy b"))
+            .unwrap();
+
+        // Simulate pre-A data: clear the stamps.
+        for ws in server.works.values_mut() {
+            ws.work.set_tumbler_server(None);
+        }
+        // Pre-D link: created before stamps existed (the create-time
+        // stamping already ran — clear the ends).
+        server
+            .create_link_with_hyperlink_homed(
+                sid,
+                crate::edition::links::HyperLink::make(
+                    vec![1],
+                    crate::edition::links::HyperRef::single(None, Some(a), None, None),
+                    crate::edition::links::HyperRef::single(None, Some(b), None, None),
+                ),
+                None,
+            )
+            .unwrap();
+
+        server.backfill_tumbler_stamps();
+
+        // Works now carry the identity stamp; ends are tumbler-addressed.
+        for ws in server.works.values() {
+            assert!(ws.work.tumbler_server().is_some(), "work stamped");
+        }
+        let ls = server.links.values().next().unwrap();
+        for atts in ls.link.ends().values() {
+            for hr in atts {
+                assert!(hr.origin_tumbler().is_some(), "link end stamped");
+            }
+        }
+
+        // Persisted through checkpoint/restore.
+        server.checkpoint_to_store().unwrap();
+        drop(server);
+        let mut restored = Server::new();
+        restored.restore_from_data_dir(&data_dir, None).unwrap();
+        for ws in restored.works.values() {
+            assert!(ws.work.tumbler_server().is_some(), "stamp persisted");
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
     fn server_resolve_local_tumbler() {
         let mut server = Server::new();
         server.public_address = Some("alice.com".to_string());
@@ -47374,7 +47669,7 @@ mod tests_security_tracker {
             .create_work(sid, crate::edition::Edition::from_text("hello"))
             .unwrap();
 
-        let tumbler = server.work_tumbler(work_id, 0);
+        let tumbler = server.work_tumbler(work_id);
         let resolved = server.resolve_local_tumbler(&tumbler);
         assert_eq!(resolved, Some(work_id));
     }

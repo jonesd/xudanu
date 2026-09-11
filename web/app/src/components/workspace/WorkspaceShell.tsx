@@ -580,6 +580,35 @@ export function WorkspaceShell() {
     window.history.replaceState({}, "", url.toString());
   }, [navTab]);
 
+  // Phase B deep link: ?tumbler=xan://server/5.3[?rev=N] resolves on
+  // mount and navigates to the work (a ?work= param takes precedence).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tumbler = params.get("tumbler");
+    if (!tumbler || params.get("work")) return;
+    let cancelled = false;
+    fetch(`/api/public/resolve?tumbler=${encodeURIComponent(tumbler)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled || !d) return;
+        if (d.status === "local" && typeof d.work_id === "string") {
+          const id = parseInt(d.work_id, 16);
+          if (!isNaN(id)) {
+            selectWork(id);
+            const url = new URL(window.location.href);
+            url.searchParams.delete("tumbler");
+            window.history.replaceState({}, "", url.toString());
+          }
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // Mount-once deep-link navigation; selectWork is stable per navTab.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Home landing: import a .md/.txt file as a new work (Design A card 3).
   const importFileAsWork = useCallback(async (file: File): Promise<number | null> => {
     const client = clientRef.current;

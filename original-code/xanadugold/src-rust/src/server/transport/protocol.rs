@@ -3492,6 +3492,11 @@ pub struct WorkListEntry {
         serde(default, skip_serializing_if = "String::is_empty")
     )]
     pub title: String,
+    /// Phase B/D surface: the work's canonical xan:// address.
+    /// Plain String with default — always present in server-built
+    /// entries, empty only in hand-built payloads.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub tumbler: String,
     #[cfg_attr(feature = "serde", serde(default))]
     pub read_club: Option<BeId>,
     #[cfg_attr(feature = "serde", serde(default))]

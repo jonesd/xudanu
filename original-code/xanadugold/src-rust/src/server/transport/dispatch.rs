@@ -1480,6 +1480,7 @@ fn dispatch_inner(
                         source_edition_info,
                     )| {
                         super::protocol::WorkListEntry {
+                            tumbler: String::new(),
                             work_id,
                             owner,
                             revision_count,
@@ -1771,6 +1772,7 @@ fn dispatch_inner(
                         is_grabbed: ws.grabber().is_some(),
                         char_count: ws.work().current_edition().to_text().len() as u64,
                         title: ws.cached_title().to_string(),
+                        tumbler: srv.work_xan_address(*id).unwrap_or_default(),
                         read_club,
                         is_source: ws.is_source(),
                         content_start_line: ws.content_start_line(),
@@ -1816,6 +1818,7 @@ fn dispatch_inner(
                         is_grabbed,
                         char_count: 0,
                         title: String::new(),
+                        tumbler: String::new(),
                         read_club,
                         is_source: false,
                         content_start_line: None,
@@ -3923,6 +3926,7 @@ fn dispatch_inner(
                         source_edition_info,
                     )| {
                         super::protocol::WorkListEntry {
+                            tumbler: String::new(),
                             work_id,
                             owner,
                             revision_count,
@@ -4666,6 +4670,7 @@ fn dispatch_inner_read(
                         source_edition_info,
                     )| {
                         super::protocol::WorkListEntry {
+                            tumbler: String::new(),
                             work_id,
                             owner,
                             revision_count,
@@ -4866,6 +4871,7 @@ fn dispatch_inner_read(
                         is_grabbed: ws.grabber().is_some(),
                         char_count: ws.work().current_edition().to_text().len() as u64,
                         title: ws.cached_title().to_string(),
+                        tumbler: srv.work_xan_address(*id).unwrap_or_default(),
                         read_club,
                         is_source: ws.is_source(),
                         content_start_line: ws.content_start_line(),
@@ -4911,6 +4917,7 @@ fn dispatch_inner_read(
                         is_grabbed,
                         char_count: 0,
                         title: String::new(),
+                        tumbler: String::new(),
                         read_club,
                         is_source: false,
                         content_start_line: None,

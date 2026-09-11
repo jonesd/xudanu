@@ -363,6 +363,9 @@ pub struct ResolveQuery {
     /// A work id (hex `0x..` or decimal) to get the canonical `xan://`
     /// address for.
     pub work: Option<String>,
+    /// Optional revision qualifier for ?work= lookups (Phase E):
+    /// produces a `?rev=N`-qualified address.
+    pub rev: Option<u64>,
 }
 
 async fn xan_resolve_handler(
@@ -387,11 +390,15 @@ async fn xan_resolve_handler(
                 work_id,
                 position,
                 title,
+                revision,
+                latest,
             }) => serde_json::json!({
                 "status": "local",
                 "work_id": format!("{:04x}", work_id),
                 "position": position,
                 "title": title,
+                "revision": revision,
+                "latest": latest,
             }),
             Ok(crate::server::server::XanResolution::Remote {
                 server,
@@ -446,6 +453,10 @@ async fn xan_resolve_handler(
             state
                 .server
                 .with_server_ref(|srv| srv.work_xan_address(id as crate::edition::backend::BeId))
+                .map(|base| match query.rev {
+                    Some(r) => format!("{}?rev={}", base, r),
+                    None => base,
+                })
         });
         return match address {
             Some(xan) => (
