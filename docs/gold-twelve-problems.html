@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Twelve Problems — How Udanax Gold Solved Hypertext's Hard Parts</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.fast{color:#3fb950;font-family:'JetBrains Mono',monospace;font-weight:600}
+.naive{color:#f85149;font-family:'JetBrains Mono',monospace}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.problem{margin-top:56px;padding-top:24px;border-top:1px solid #21262d}
+.problem-num{font-family:'JetBrains Mono',monospace;font-size:13px;color:#d29922;letter-spacing:2px;text-transform:uppercase}
+.problem h2{margin-top:4px;border-bottom:none;padding-bottom:0}
+.tagline{font-size:15px;color:#8b949e;font-style:italic;margin-bottom:20px;max-width:780px}
+.summary-box{background:rgba(63,185,80,0.05);border:1px solid rgba(63,185,80,0.25);border-radius:8px;padding:16px 20px;margin:20px 0;font-size:14px}
+.summary-box .sb-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#3fb950;font-weight:600;margin-bottom:6px}
+.footer-note{margin-top:72px;padding-top:24px;border-top:1px solid #21262d;font-size:13px;color:#484f58}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>The Twelve Problems</h1>
+<p class="subtitle">How Udanax Gold solved hypertext's hard parts — and where a modern engine takes them further</p>
+
+<p>In 1988, a small Autodesk-funded team set out to build Ted Nelson's
+deep hypertext system for real. The design — tumblers, enfilades,
+transclusion, unbreakable links — was decades ahead of what hardware
+and infrastructure could support. What the team produced, released
+as open source in 1999 under the names Udanax Green and Gold, was a
+set of solutions to twelve genuinely difficult problems. The web
+shipped the simple versions instead and won. But the twelve problems
+never went away: every document system that wants quoting without
+drifting, links without rotting, or history without archaeology
+eventually hits them.</p>
+
+<p>This document walks through each problem the way a developer meets
+it: the naive approach, why it fails at scale, what the Gold team
+invented instead, and — where it exists — how a modern implementation
+(<strong>Xudanu</strong>, an independent open-source engine in Rust)
+extends the solution with machinery the 1980s didn't have: CRDTs,
+content-addressed storage, modern cryptography, and Bitcoin
+timestamping.</p>
+
+<div class="toc">
+<div class="toc-section">The Twelve Problems</div>
+<a href="#p1">1. Editing Without Shifting Everything</a>
+<a href="#p2">2. Comparing Documents Without Reading Them</a>
+<a href="#p3">3. Addresses That Never Renumber</a>
+<a href="#p4">4. Edits That Don't Chase Pointers</a>
+<a href="#p5">5. Scoping Without Scanning</a>
+<a href="#p6">6. Quoting Without Copying</a>
+<a href="#p7">7. Backlinks Without Searching</a>
+<a href="#p8">8. A Page That Isn't Ten Thousand Nodes</a>
+<a href="#p9">9. Syncing Only What Changed</a>
+<a href="#p10">10. Identity That Can't Be Forged</a>
+<a href="#p11">11. Fast Where It Matters</a>
+<a href="#p12">12. History as a Data Structure</a>
+</div>
+
+<!-- ══════════════════════ PROBLEM 1 ══════════════════════ -->
+
+<div class="problem" id="p1">
+<div class="problem-num">Problem 1</div>
+<h2>Editing Without Shifting Everything</h2>
+<p class="tagline">You insert one character at the top of a book. Why should the other million characters care?</p>
+
+<h3>The naive approach</h3>
+<p>Store text as an array. Every insertion at position <code>p</code> shifts
+all <code>n − p</code> elements after it. Insert at the front of a large
+document and you touch the entire buffer:
+<span class="naive">O(n)</span> per edit, <span class="naive">O(n²)</span>
+to build a document by repeated insertion.</p>
+
+<h3>What Gold invented: the enfilade</h3>
+<p>A balanced tree where <em>every</em> node carries a summary of its
+subtree — the total width (character count) below it. To find or
+insert at a position, you descend from the root, subtracting widths
+as you go; only the O(log n) nodes on one path are ever touched.</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg">
+<style>.lbl{fill:#c9d1d9;font:12px 'JetBrains Mono',monospace}.dim{fill:#484f58}</style>
+<text x="20" y="24" class="lbl" fill="#f85149">Naive array: insert at 2</text>
+<rect x="20" y="40" width="52" height="30" fill="#21262d" stroke="#30363d" rx="4"/><text x="38" y="60" class="lbl">A</text>
+<rect x="76" y="40" width="52" height="30" fill="#2ea04366" stroke="#2ea043" rx="4"/><text x="94" y="60" class="lbl">B</text>
+<rect x="132" y="40" width="52" height="30" fill="#f8514933" stroke="#f85149" rx="4"/><text x="146" y="60" class="lbl">X?</text>
+<text x="196" y="60" class="lbl dim">C D E F G … everything shifts →</text>
+<text x="20" y="110" class="lbl" fill="#3fb950">Enfilade: insert at 2 — one path touched</text>
+<circle cx="120" cy="150" r="16" fill="#21262d" stroke="#d29922"/><text x="114" y="155" class="lbl" fill="#d29922">Σ</text>
+<circle cx="60" cy="210" r="16" fill="#21262d" stroke="#30363d"/><text x="54" y="215" class="lbl">A</text>
+<circle cx="110" cy="210" r="16" fill="#21262d" stroke="#3fb950"/><text x="104" y="215" class="lbl">B</text>
+<circle cx="170" cy="210" r="16" fill="#21262d" stroke="#30363d"/><text x="164" y="215" class="lbl">C</text>
+<circle cx="220" cy="210" r="16" fill="#21262d" stroke="#30363d"/><text x="214" y="215" class="lbl">D</text>
+<line x1="108" y1="162" x2="70" y2="196" stroke="#30363d"/><line x1="116" y1="164" x2="106" y2="194" stroke="#3fb950" stroke-width="2"/><line x1="126" y1="164" x2="176" y2="194" stroke="#30363d"/><line x1="132" y1="160" x2="216" y2="196" stroke="#30363d"/>
+<rect x="96" y="230" width="28" height="18" fill="#3fb95033" rx="3"/><text x="98" y="244" class="lbl" fill="#3fb950" font-size="10">X ↴</text>
+<text x="330" y="150" class="lbl dim">Each Σ node knows its subtree width.</text>
+<text x="330" y="172" class="lbl dim">Descend: subtract widths, pick a child.</text>
+<text x="330" y="194" class="lbl dim">Insert: split one leaf, update the path.</text>
+<text x="330" y="222" class="lbl" fill="#3fb950">O(log n) — always.</text>
+</svg>
+<div class="diagram-caption">Top: array insert shifts everything after it. Bottom: the enfilade touches one root-to-leaf path.</div>
+</div>
+
+<p>The trick isn't the tree — it's the <em>discipline</em>: the width
+summaries must stay exact no matter what happens below. That
+invariant is what makes everything downstream (positions, mappings,
+links) work without fixups.</p>
+
+<h3>Where Xudanu takes it further</h3>
+<p>The enfilade lives on (<code>edition/orgl.rs</code>), but the editing layer
+is a purpose-built CRDT — so concurrent edits from different machines
+<em>converge by construction</em> instead of requiring locks or a
+coordinator. Gold had no answer for simultaneous distributed editing;
+the modern engine measures <span class="fast">~80µs/op</span> under
+concurrent interleaving, roughly 900× the throughput of an earlier
+operational-transform-style engine.</p>
+
+<div class="summary-box">
+<div class="sb-label">Summary</div>
+Naive <span class="naive">O(n)</span> insert → Gold enfilade
+<span class="fast">O(log n)</span> → Xudanu CRDT-enfilade:
+<span class="fast">O(log n) + convergence by construction</span>.
+</div>
+</div>
+
+<!-- ══════════════════════ PROBLEM 2 ══════════════════════ -->
+
+<div class="problem" id="p2">
+<div class="problem-num">Problem 2</div>
+<h2>Comparing Documents Without Reading Them</h2>
+<p class="tagline">Are these two 2-million-character documents identical? The honest answer shouldn't take two million comparisons.</p>
+
+<h3>The naive approach</h3>
+<p>Walk both documents element by element:
+<span class="naive">O(n)</span> to say "identical," and a full diff
+walk to find where they diverge — every comparison, every time,
+forever.</p>
+
+<h3>What Gold invented: crums</h3>
+<p>Each subtree carries a content summary — a <em>crum</em> (Nelson's
+word for a crumb). Equal crums mean identical subtrees, full stop:
+equality becomes <span class="fast">O(1)</span>. And diffing descends
+only where crums disagree:
+<span class="fast">O(size of the difference)</span>, not
+O(size of the documents).</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg">
+<style>.lbl2{fill:#c9d1d9;font:11px 'JetBrains Mono',monospace}</style>
+<text x="20" y="22" class="lbl2">Doc A</text>
+<circle cx="100" cy="60" r="22" fill="#21262d" stroke="#3fb950"/><text x="82" y="65" class="lbl2" fill="#3fb950">#a41f</text>
+<circle cx="50" cy="140" r="22" fill="#21262d" stroke="#3fb950"/><text x="32" y="145" class="lbl2" fill="#3fb950">#77c0</text>
+<circle cx="150" cy="140" r="22" fill="#21262d" stroke="#3fb950"/><text x="132" y="145" class="lbl2" fill="#3fb950">#99d2</text>
+<line x1="88" y1="76" x2="56" y2="122" stroke="#30363d"/><line x1="112" y1="76" x2="144" y2="122" stroke="#30363d"/>
+<text x="240" y="22" class="lbl2">Doc B</text>
+<circle cx="320" cy="60" r="22" fill="#21262d" stroke="#f85149"/><text x="302" y="65" class="lbl2" fill="#f85149">#b0e7</text>
+<circle cx="270" cy="140" r="22" fill="#21262d" stroke="#3fb950"/><text x="252" y="145" class="lbl2" fill="#3fb950">#77c0</text>
+<circle cx="370" cy="140" r="22" fill="#21262d" stroke="#f85149"/><text x="352" y="145" class="lbl2" fill="#f85149">#12aa</text>
+<line x1="308" y1="76" x2="276" y2="122" stroke="#30363d"/><line x1="332" y1="76" x2="364" y2="122" stroke="#30363d"/>
+<text x="450" y="55" class="lbl2">Root crums differ → descend</text>
+<text x="450" y="75" class="lbl2" fill="#3fb950">Left subtrees match → skip entirely</text>
+<text x="450" y="95" class="lbl2" fill="#f85149">Right differ → the diff lives here</text>
+<text x="450" y="130" class="lbl2">Equality: one hash compare.</text>
+<text x="450" y="150" class="lbl2">Diff: proportional to the delta,</text>
+<text x="450" y="170" class="lbl2">not the document size.</text>
+</svg>
+<div class="diagram-caption">Crum comparison: identical subtrees are never entered.</div>
+</div>
+
+<h3>Where Xudanu takes it further</h3>
+<p>The crum is a BLAKE3 hash, computed incrementally and verified by
+test armor. Subtree crums power revision compare (jump to the first
+divergent chunk), the change-detection used by collaborative sync,
+and content-addressed identity (Problem 10). One idea, everywhere.</p>
+
+<div class="summary-box">
+<div class="sb-label">Summary</div>
+Naive equality <span class="naive">O(n)</span> → Gold crums
+<span class="fast">O(1)</span> equality,
+<span class="fast">O(Δ)</span> diff — same today, now with
+cryptographically strong BLAKE3 crums.
+</div>
+</div>
+
+<!-- ══════════════════════ PROBLEM 3 ══════════════════════ -->
+
+<div class="problem" id="p3">
+<div class="problem-num">Problem 3</div>
+<h2>Addresses That Never Renumber</h2>
+<p class="tagline">Insert a paragraph between section 2 and section 3. Now every "section 4" reference in the world is wrong.</p>
+
+<h3>The naive approach</h3>
+<p>Number things sequentially. Any insertion renumbers everything
+after it, and every external reference to a renumbered thing breaks.
+The web's answer — URLs naming a <em>location</em> — rots when the
+location changes. Either way, the address is a hostage to the
+content's arrangement.</p>
+
+<h3>What Gold invented: tumblers + between-allocation</h3>
+<p>A tumbler is a hierarchical address —
+<code>"server".2.1.1004.15.42</code> — with one crucial property:
+<b>between any two tumblers there is always another one</b>. Need an
+address between <code>[1]</code> and <code>[2]</code>? Take
+<code>[1,1]</code>. Between <code>[1]</code> and <code>[1,1]</code>?
+<code>[1,0,1]</code>. The space is infinitely refinable, so new
+content allocates <em>between</em> existing content and nothing ever
+renumbers.</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg">
+<style>.lbl3{fill:#c9d1d9;font:12px 'JetBrains Mono',monospace}</style>
+<line x1="40" y1="80" x2="680" y2="80" stroke="#30363d" stroke-width="2"/>
+<circle cx="100" cy="80" r="7" fill="#d29922"/><text x="72" y="55" class="lbl3">[1]</text>
+<circle cx="600" cy="80" r="7" fill="#d29922"/><text x="586" y="55" class="lbl3">[2]</text>
+<circle cx="350" cy="80" r="6" fill="#3fb950"/><text x="332" y="55" class="lbl3" fill="#3fb950">[1,1]</text>
+<circle x="0" cy="0" r="0"/>
+<circle cx="225" cy="80" r="5" fill="#58a6ff"/><text x="205" y="55" class="lbl3" fill="#58a6ff">[1,0,1]</text>
+<circle cx="475" cy="80" r="5" fill="#58a6ff"/><text x="458" y="55" class="lbl3" fill="#58a6ff">[1,1,1]</text>
+<text x="40" y="130" class="lbl3">allocate between [1] and [1,1] → [1,0,1]</text>
+<text x="40" y="152" class="lbl3">allocate between [1,1] and [2] → [1,1,1]</text>
+<text x="430" y="130" class="lbl3" fill="#3fb950">forever — nothing ever moves</text>
+</svg>
+<div class="diagram-caption">Between-allocation: the address space is dense; insertion never renumbers.</div>
+</div>
+
+<h3>Where Xudanu takes it further</h3>
+<p>Tumblers are fully activated as <code>xan://</code> URIs —
+server identity, region prefix, work, span, and a
+<code>?rev=N</code> version qualifier on the query layer (paths stay
+purely positional — no span/revision ambiguity). Between-allocation
+(<code>Sequence::between</code>) is property-tested and backs
+<code>region_insert_between</code>. And every work's address carries
+its creating server's cryptographic identity, so addresses survive
+replication: a replica answers for the origin's address.</p>
+
+<div class="summary-box">
+<div class="sb-label">Summary</div>
+Naive: renumber or rot. Gold: infinite refinement between addresses.
+Xudanu: <code>xan://</code> URIs with version qualification and
+replication-proof server identity.
+</div>
+</div>
+
+<!-- ══════════════════════ PROBLEM 4 ══════════════════════ -->
+
+<div class="problem" id="p4">
+<div class="problem-num">Problem 4</div>
+<h2>Edits That Don't Chase Pointers</h2>
+<p class="tagline">A million stored pointers point into your document. You insert one paragraph. How many pointers must you fix?</p>
+
+<h3>The naive approach</h3>
+<p>All of them. Every link target, every quotation range, every
+bookmark shifts with the insert, so the system must find and adjust
+each one: <span class="naive">O(pointers)</span> per edit, and woe
+to the pointer you didn't know about.</p>
+
+<h3>What Gold invented: displacements (wids/ispans)</h3>
+<p>Store edits as <em>displacements</em> — "everything after
+position p moves by δ" — attached to enfilade nodes. Positions below
+stay valid because they're interpreted <em>relative</em> to the
+displacement, which propagates lazily down the tree only when
+touched. Better: displacements <em>compose</em> — five sequential
+inserts become one composed mapping instead of five pointer-fixing
+sweeps.</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg">
+<style>.lbl4{fill:#c9d1d9;font:12px 'JetBrains Mono',monospace}.dim4{fill:#484f58}</style>
+<rect x="30" y="60" width="60" height="34" fill="#21262d" stroke="#30363d" rx="4"/><text x="44" y="82" class="lbl4">text</text>
+<rect x="94" y="60" width="40" height="34" fill="#2ea04366" stroke="#2ea043" rx="4"/><text x="102" y="82" class="lbl4" fill="#3fb950">+Δ</text>
+<rect x="138" y="60" width="120" height="34" fill="#21262d" stroke="#30363d" rx="4"/><text x="152" y="82" class="lbl4">rest, unbothered</text>
+<text x="30" y="130" class="lbl4 dim4">One displacement node: "after p, shift by Δ"</text>
+<text x="30" y="152" class="lbl4 dim4">Pointers below read through it — lazily.</text>
+<text x="30" y="174" class="lbl4" fill="#3fb950">No pointer chase. Compose: Δ₁ ∘ Δ₂ ∘ Δ₃ = one mapping.</text>
+<text x="420" y="130" class="lbl4 dim4">Xudanu today: mapping composition +</text>
+<text x="420" y="152" class="lbl4 dim4">span migration (links/transclusions</text>
+<text x="420" y="174" class="lbl4 dim4">survive edits through arbitrary deltas).</text>
+</svg>
+<div class="diagram-caption">A displacement carries the correction so pointers don't move.</div>
+</div>
+
+<h3>Where Xudanu stands — honestly partial</h3>
+<p>Mapping composition and span migration cover the practical cases:
+links, transclusions, and annotations survive edits. Full wid
+semantics — lazy in-tree propagation, relative positions in every
+node — is tracked as deferred work (FR-64-D3), triggered if profiling
+ever shows migration sweeps becoming hot. Gold's solution was deeper
+than current need.</p>
+
+<div class="summary-box">
+<div class="sb-label">Summary</div>
+Naive: fix <span class="naive">every pointer</span> per edit. Gold:
+one composing displacement. Xudanu: span migration + composed
+mappings today; full laziness deferred with a trigger.
+</div>
+</div>
+
+<!-- ══════════════════════ PROBLEM 5 ══════════════════════ -->
+
+<div class="problem" id="p5">
+<div class="problem-num">Problem 5</div>
+<h2>Scoping Without Scanning</h2>
+<p class="tagline">"Everything in this project / collection / client's space" — without filtering the whole store every time.</p>
+
+<h3>The naive approach</h3>
+<p>Tag everything with a collection ID and filter on every query:
+<span class="naive">O(store)</span> per question, forever, and the
+tags themselves are a parallel structure that drifts.</p>
+
+<h3>What Gold designed: the prefix IS the scope</h3>
+<p>Because addresses are hierarchical, a scope is just an address
+prefix: region <code>2.1</code> is every tumbler starting
+<code>2.1…</code>. Containment is a prefix test on the address
+itself — no tags, no scanning, and nesting falls out for free
+(region 2 contains 2.1 contains 2.1.5). The hierarchy prunes the
+search space physically.</p>
+
+<h3>Where Xudanu takes it further</h3>
+<p>Regions are live server semantics: works created in a region
+context allocate their addresses under the region prefix;
+containment runs through the Sequence space algebra
+(<code>prefixed_by</code>); region members list in address order;
+and — beyond Gold's design — <em>write enforcement</em> implements
+the permeability principle: reads and transclusions cross region
+boundaries, writes don't. One server hosts N isolated docuverses
+(classes, clients, experiments) with visible boundaries.</p>
+
+<div class="summary-box">
+<div class="sb-label">Summary</div>
+Naive: tag-and-filter <span class="naive">O(store)</span>. Gold:
+prefix containment, nesting for free. Xudanu: enforced, algebraic
+regions with nested visibility.
+</div>
+</div>
+
+<!-- ══════════════════════ PROBLEM 6 ══════════════════════ -->
+
+<div class="problem" id="p6">
+<div class="problem-num">Problem 6</div>
+<h2>Quoting Without Copying</h2>
+<p class="tagline">The quotation that updates when its source is corrected — Nelson called this transclusion, and it's the economic heart of the design.</p>
+
+<h3>The naive approach</h3>
+<p>Copy-paste. The copy is dead: when the source is edited or
+deleted, the quotation silently stops being what it claimed. Every
+copy is also new storage — the same passage stored a thousand times
+costs a thousand passages.</p>
+
+<h3>What Gold designed</h3>
+<p>Content included <em>by reference</em>: a quotation is an address
+range pointing into the original. Stored once, live everywhere.
+Nelson's canonical demo was two windows side by side, the same
+passage highlighted in each, in different documents — one fact, many
+homes.</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 720 210" xmlns="http://www.w3.org/2000/svg">
+<style>.lbl6{fill:#c9d1d9;font:12px 'JetBrains Mono',monospace}</style>
+<rect x="30" y="30" width="300" height="40" fill="#21262d" stroke="#30363d" rx="6"/><text x="44" y="55" class="lbl6">Doc A  ▸ …see [source passage]…</text>
+<rect x="30" y="120" width="300" height="40" fill="#21262d" stroke="#30363d" rx="6"/><text x="44" y="145" class="lbl6">Doc B  ▸ [source passage] argues…</text>
+<rect x="450" y="72" width="240" height="46" fill="#2ea04322" stroke="#2ea043" rx="6"/><text x="464" y="94" class="lbl6" fill="#3fb950">SOURCE — stored once</text><text x="464" y="110" class="lbl6 dim6" fill="#8b949e">editable, versioned</text>
+<path d="M 335 50 C 420 50 420 88 445 92" fill="none" stroke="#58a6ff" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#arr)"/>
+<path d="M 335 140 C 420 140 420 100 445 97" fill="none" stroke="#58a6ff" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#arr)"/>
+<defs><marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="none" stroke="#58a6ff"/></marker></defs>
+<text x="360" y="185" class="lbl6" fill="#8b949e">live references — edit source, both quotations update</text>
+</svg>
+<div class="diagram-caption">Transclusion: both documents point at the one stored source.</div>
+</div>
+
+<h3>Where Xudanu takes it further</h3>
+<p>Transclusion is an inline element with per-span provenance and
+optional BLAKE3 content-hash pinning; <em>cross-server</em>
+transclusion fetches from the origin's public API and verifies the
+hash (tamper-evident quotation across trust domains). Two things
+Gold never had: frozen quotation mode (pin to a revision for
+citation-stability, with explicit re-fetch), and
+<em>reference-over-copy suggestions</em> — the system notices when
+you re-type existing content (within microseconds of six typed
+words) and offers to turn it into a live transclusion. The discipline
+becomes an interaction.</p>
+
+<div class="summary-box">
+<div class="sb-label">Summary</div>
+Naive: copies drift. Gold: live references, stored once. Xudanu:
+cross-server + hash-verified + revision-pinnable + suggested
+at typing time.
+</div>
+</div>
+
+<!-- ══════════════════════ PROBLEM 7 ══════════════════════ -->
+
+<div class="problem" id="p7">
+<div class="problem-num">Problem 7</div>
+<h2>Backlinks Without Searching</h2>
+<p class="tagline">"Who links to this passage?" The question that made the web one-way and the wiki a query.</p>
+
+<h3>The naive approach</h3>
+<p>Scan every document for links pointing at the target:
+<span class="naive">O(entire store)</span> per question — which is
+why the web never answered it at all, and search engines
+approximate it with crawls.</p>
+
+<h3>What Gold invented: end-sets</h3>
+<p>A link is stored once, as a set of ends — each end an address
+range in a specific document. Because the link is registered with
+<em>every</em> work it touches, each end can enumerate its links
+directly: <span class="fast">O(1)-ish lookup from either side</span>.
+Bidirectionality is a storage property, not a query.</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg">
+<style>.lbl7{fill:#c9d1d9;font:12px 'JetBrains Mono',monospace}</style>
+<ellipse cx="360" cy="90" rx="70" ry="34" fill="#d2992211" stroke="#d29922"/><text x="322" y="95" class="lbl7" fill="#d29922">LINK</text>
+<rect x="30" y="24" width="150" height="30" fill="#21262d" stroke="#30363d" rx="4"/><text x="42" y="44" class="lbl7">Doc A §3</text>
+<rect x="540" y="24" width="150" height="30" fill="#21262d" stroke="#30363d" rx="4"/><text x="552" y="44" class="lbl7">Doc B §7</text>
+<rect x="30" y="126" width="150" height="30" fill="#21262d" stroke="#30363d" rx="4"/><text x="42" y="146" class="lbl7">Doc C §1</text>
+<line x1="180" y1="42" x2="300" y2="72" stroke="#58a6ff" stroke-width="2"/>
+<line x1="540" y1="42" x2="420" y2="72" stroke="#58a6ff" stroke-width="2"/>
+<line x1="180" y1="138" x2="300" y2="108" stroke="#58a6ff" stroke-width="2"/>
+<text x="230" y="170" class="lbl7" fill="#8b949e">three-ended, typed — every end knows the link</text>
+</svg>
+<div class="diagram-caption">A three-ended link: registration is storage, not search.</div>
+</div>
+
+<h3>Where Xudanu takes it further</h3>
+<p>Five built-in link types (comment, reference, disagreement,
+quotation, see-also) with a type registry; gathered end-sets (one
+end holds many passages — Gold's FeMultiRef shape); links that can
+attach to <em>other links</em> (comment-on-connection); and link
+ends now carry their target's permanent tumbler address, so links
+survive replication and server boundaries.</p>
+
+<div class="summary-box">
+<div class="sb-label">Summary</div>
+Naive: <span class="naive">O(store)</span> crawl. Gold: registered
+end-sets, O(1) both directions. Xudanu: typed, gathered,
+link-attachable, replication-proof.
+</div>
+</div>
+
+<!-- ══════════════════════ PROBLEM 8 ══════════════════════ -->
+
+<div class="problem" id="p8">
+<div class="problem-num">Problem 8</div>
+<h2>A Page That Isn't Ten Thousand Nodes</h2>
+<p class="tagline">Tree nodes per character: 10,000-character page, 10,000 nodes, 10,000 allocations. The tree eats the machine.</p>
+
+<h3>The naive approach</h3>
+<p>One element per character — the "pure" fine-grained model.
+Correct, and ruinous: memory and constant factors make real
+documents impractical.</p>
+
+<h3>What Gold did: inline coalescing</h3>
+<p>Adjacent same-kind elements merge into runs. Steady-state text is
+a handful of nodes covering whole paragraphs; splits happen only at
+edit boundaries, and coalescing re-forms runs as edits settle. The
+fine-grained model survives logically while the physical storage is
+coarse.</p>
+
+<h3>Where Xudanu takes it further</h3>
+<p>Inline coalescing with transclusion-boundary awareness (a
+transclusion never merges into surrounding text — the reference edge
+is structural), plus chunk-level storage so runs serialize as
+blocks. The Coles-notes version: logic fine-grained, storage coarse,
+both true at once.</p>
+
+<div class="summary-box">
+<div class="sb-label">Summary</div>
+Naive: node-per-character. Gold: runs that split at edits and
+re-form. Xudanu: same, with reference-aware boundaries.
+</div>
+</div>
+
+<!-- ══════════════════════ PROBLEM 9 ══════════════════════ -->
+
+<div class="problem" id="p9">
+<div class="problem-num">Problem 9</div>
+<h2>Syncing Only What Changed</h2>
+<p class="tagline">Two servers hold the same 2GB docuverse. One paragraph changed. What must cross the wire?</p>
+
+<h3>The naive approach</h3>
+<p>The document — or at best a byte diff of serialized forms:
+<span class="naive">O(document)</span> either way, format-fragile,
+and meaningless across structural changes.</p>
+
+<h3>What Gold designed: crum-level diff</h3>
+<p>Compare subtree crums at the coarsest level first; descend only
+where they disagree. Sync cost is proportional to the
+<span class="fast">difference</span>, not the corpus.</p>
+
+<h3>Where Xudanu takes it further</h3>
+<p>Chunk-level crum diff drives revision compare (per-hunk author and
+time from provenance), collaborative state exchange, and the
+forensic chain checks. Content-addressed chunks mean the wire carries
+hashes first, bytes only for misses — the same idea Git uses for
+objects, applied to document structure.</p>
+
+<div class="summary-box">
+<div class="sb-label">Summary</div>
+Naive: <span class="naive">O(document)</span> sync. Gold:
+<span class="fast">O(Δ)</span> crum descent. Xudanu: hashes-first
+chunk sync + structural compare with provenance.
+</div>
+</div>
+
+<!-- ══════════════════════ PROBLEM 10 ══════════════════════ -->
+
+<div class="problem" id="p10">
+<div class="problem-num">Problem 10</div>
+<h2>Identity That Can't Be Forged</h2>
+<p class="tagline">"Is this the same passage?" — answered by the address, not by trust in whoever's serving it.</p>
+
+<h3>The naive approach</h3>
+<p>Identity by ID number or URL — minted by whoever mints first,
+meaningless across systems, forgeable by anyone who controls the
+server. The web's identity crisis in one sentence.</p>
+
+<h3>What Gold designed</h3>
+<p>Identity <em>is</em> content: the crum (hash) of a passage is its
+identity. Replication dedupes for free — two servers holding the
+same content agree it's the same content, no authority required.</p>
+
+<h3>Where Xudanu takes it further — this is where modernity pays</h3>
+<p>BLAKE3 content addressing throughout; per-passage authorship with
+Ed25519 signatures (who wrote what, character by character); server
+identity in every address (domain, or a key-derived
+<code>ns-</code> name — so even a server with no domain has an
+unforgeable identity); and the whole provenance record can be
+anchored into Bitcoin via OpenTimestamps, making
+<i>"this passage existed at this time"</i> checkable without
+trusting anyone's server. Gold designed verifiable identity;
+Xudanu adds cryptographic teeth and a timestamp floor.</p>
+
+<div class="summary-box">
+<div class="sb-label">Summary</div>
+Naive: minted, forgeable IDs. Gold: content-is-identity. Xudanu:
++ per-passage signatures, server identity in addresses, Bitcoin
+anchoring.
+</div>
+</div>
+
+<!-- ══════════════════════ PROBLEM 11 ══════════════════════ -->
+
+<div class="problem" id="p11">
+<div class="problem-num">Problem 11</div>
+<h2>Fast Where It Matters</h2>
+<p class="tagline">Users don't read documents uniformly — they work in one region for an hour. The machine shouldn't treat all bytes equally.</p>
+
+<h3>The naive approach</h3>
+<p>Uniform access cost everywhere: the passage you're editing is as
+expensive as the archive nobody's opened in a year.</p>
+
+<h3>What Gold used: splay exposure</h3>
+<p>Self-adjusting tree behavior: frequently-touched nodes migrate
+toward the root, so the working set enjoys amortized near-constant
+access while cold content stays deep. The tree <em>learns</em> the
+hot path from use itself.</p>
+
+<h3>Where Xudanu stands</h3>
+<p>Splay-style exposure exists at the Edition level; the modern
+addition is the reuse-detection index (n-gram + MinHash tiers),
+which lazily builds exactly where editing happens. Partial parity —
+an optimization with headroom.</p>
+
+<div class="summary-box">
+<div class="sb-label">Summary</div>
+Uniform cost → Gold: the tree adapts to use. Xudanu: edition-level
+exposure + lazy indexes where editing happens.
+</div>
+</div>
+
+<!-- ══════════════════════ PROBLEM 12 ══════════════════════ -->
+
+<div class="problem" id="p12">
+<div class="problem-num">Problem 12</div>
+<h2>History as a Data Structure</h2>
+<p class="tagline">Undo, audit, versioning, recovery — four features in most systems, one mechanism in this one.</p>
+
+<h3>The naive approach</h3>
+<p>Rewrite files in place and bolt on separate mechanisms: an undo
+stack, an audit log, a backup regime, a version-control side-system.
+Each drifts from the truth; none compose.</p>
+
+<h3>What Gold designed</h3>
+<p>Write-once storage: chunks are immutable, editions are trees of
+chunk references, history is the sequence of references — not
+copies. Undo, audit, and versioning become <em>views</em> of the
+same structure.</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 720 190" xmlns="http://www.w3.org/2000/svg">
+<style>.lbl12{fill:#c9d1d9;font:12px 'JetBrains Mono',monospace}</style>
+<rect x="30" y="60" width="150" height="36" fill="#21262d" stroke="#30363d" rx="5"/><text x="44" y="83" class="lbl12">rev 3  Σ#c1</text>
+<rect x="200" y="60" width="150" height="36" fill="#21262d" stroke="#30363d" rx="5"/><text x="214" y="83" class="lbl12">rev 2  Σ#9f0</text>
+<rect x="370" y="60" width="150" height="36" fill="#21262d" stroke="#30363d" rx="5"/><text x="384" y="83" class="lbl12">rev 1  Σ#77c</text>
+<line x1="200" y1="78" x2="182" y2="78" stroke="#58a6ff" stroke-width="2"/>
+<line x1="370" y1="78" x2="352" y2="78" stroke="#58a6ff" stroke-width="2"/>
+<rect x="560" y="60" width="130" height="36" fill="#d2992211" stroke="#d29922" rx="5"/><text x="572" y="83" class="lbl12" fill="#d29922">⏓ Bitcoin</text>
+<line x1="520" y1="78" x2="558" y2="78" stroke="#d29922" stroke-width="2" stroke-dasharray="4 3"/>
+<text x="30" y="130" class="lbl12" fill="#8b949e">each revision: a tree of immutable chunk refs — shared chunks stored once</text>
+<text x="30" y="155" class="lbl12" fill="#8b949e">the chain of roots IS the history; anchoring the head pins it in time</text>
+</svg>
+<div class="diagram-caption">Editions as chunk-reference trees; history as the root chain.</div>
+</div>
+
+<h3>Where Xudanu takes it further</h3>
+<p>The same write-once discipline, extended: a WAL between
+checkpoints, a tamper-evident chained security log, manifest
+history with hash-chained slots, garbage collection that preserves
+referenced history, forensic checks over the chain (FR-63), and the
+OTS anchoring from Problem 10. History, audit, backup, and
+timestamp-proof are one mechanism with four names.</p>
+
+<div class="summary-box">
+<div class="sb-label">Summary</div>
+Naive: four bolted-on mechanisms. Gold: write-once chunks, history
+as references. Xudanu: + WAL, chained logs, forensics, anchoring.
+</div>
+</div>
+
+<!-- ══════════════════════ CLOSING ══════════════════════ -->
+
+<h2>The pattern behind all twelve</h2>
+<p>None of the twelve solutions is "do the naive thing, faster."
+Each one changes the <em>structure</em> so the work disappears:
+summaries make comparison unnecessary, hierarchy makes scanning
+unnecessary, references make copying unnecessary, registration makes
+searching unnecessary, immutability makes repair unnecessary.
+<strong>Gold never fixes up data it can make structurally
+unnecessary.</strong> That is the through-line, and it's why the
+solutions still read as modern forty years later.</p>
+
+<h2>Where to see it running</h2>
+<p>The demo lives at <a href="https://xudanu.com">xudanu.com</a> —
+transclusion, typed links, provenance, and versioned addressing in a
+browser. The source is Apache-2.0 at
+<a href="https://github.com/jonesd/xudanu">github.com/jonesd/xudanu</a>.
+For the condensed version of this document, see
+<a href="gold-optimizations-coles-notes.html">the Coles Notes</a>;
+for the full modern spec, FR-64 in the repository docs.</p>
+
+<div class="footer-note">
+The mechanisms described are inherited from the Udanax Green/Gold
+implementation (open-sourced 1999) and its design literature;
+descriptions, diagrams, and the modern extensions are Xudanu's.
+Xudanu is an independent, open-source project — not affiliated with,
+endorsed by, or sponsored by Ted Nelson, Project Xanadu, the Xanadu
+Operating Company, or Autodesk. All trademarks belong to their
+respective owners.
+</div>
+
+</div>
+</body>
+</html>
