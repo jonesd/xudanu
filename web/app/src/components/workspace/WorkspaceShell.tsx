@@ -3111,17 +3111,12 @@ export function WorkspaceShell() {
           data-drawer="left"
         >
           {studioActive && (
-            <>
-              <div className="ws-studio-brand">
-                <span className="ws-studio-brand-name">xudanu</span>
-              </div>
-              <button
-                className="ws-studio-rail-newdoc"
-                onClick={() => (identity ? void createAndSelectWork() : setShowIdentity(true))}
-              >
-                ＋ New document
-              </button>
-            </>
+            <button
+              className="ws-studio-rail-newdoc"
+              onClick={() => (identity ? void createAndSelectWork() : setShowIdentity(true))}
+            >
+              ＋ New document
+            </button>
           )}
           <div className="ws-rail-toggle">
             <button

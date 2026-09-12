@@ -3939,24 +3939,12 @@
 }
 
 /* Rail brand + new-doc (studio) */
-.ws-studio-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px 14px;
-}
-.ws-studio-brand-name {
-  font-weight: 700;
-  font-size: 16px;
-  letter-spacing: 1px;
-  color: var(--amber);
-}
 .ws-studio-rail-newdoc {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: var(--amber);
+  background: var(--accent-blue, #58a6ff);
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -4018,7 +4006,7 @@
   border-radius: 6px;
   cursor: pointer;
 }
-.ws-studio-newdoc:hover { border-color: var(--amber); color: var(--amber); }
+.ws-studio-newdoc:hover { border-color: var(--accent-blue, #58a6ff); color: var(--accent-blue, #58a6ff); }
 .ws-studio-filters {
   display: flex;
   gap: 6px;
