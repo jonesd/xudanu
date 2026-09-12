@@ -84,13 +84,15 @@ export function WelcomeScreen({
             {"\u2197 Learn in five lessons"}
           </button>
         )}
-        <button
-          className="welcome-btn"
-          style={{ borderColor: "var(--accent-blue)", color: "var(--accent-blue)", cursor: "pointer" }}
-          onClick={onDemo}
-        >
-          {"\u25B6 Try the Interactive Demo"}
-        </button>
+        {!hasCourse && (
+          <button
+            className="welcome-btn"
+            style={{ borderColor: "var(--accent-blue)", color: "var(--accent-blue)", cursor: "pointer" }}
+            onClick={onDemo}
+          >
+            {"\u25B6 Try the Interactive Demo"}
+          </button>
+        )}
         <button
           className="welcome-btn"
           style={{ borderColor: "var(--accent-blue)", color: "var(--accent-blue)", cursor: "pointer" }}
