@@ -301,6 +301,15 @@ __tests__/                        vitest specs (246 tests)
 Vite proxy config (`vite.config.ts`): `/api`, `/xudanu` (WS), `/csrf-token`,
 `/health`, `/auth` → `http://localhost:8080`.
 
+## History note
+
+In mid-2026 an early Xudanu build and the project URL were shared
+with the Xanadu organization (forwarded with help from Xanadu
+Australia). David Jones corresponded with Roger Gregory for a
+couple of days afterward — mostly chitchat, and a few interesting
+stories. Xudanu remains an independent project, as the disclaimer
+throughout this repo maintains.
+
 ## Conventions
 
 - Rust: keep new code under the `server` feature-gated modules if it needs
