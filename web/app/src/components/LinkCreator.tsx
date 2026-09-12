@@ -372,6 +372,23 @@ export function LinkCreator({
       >
         <div className="link-creator-header">
           <h3>Create Link</h3>
+          <a
+            href="https://dgjones.info/xudanu/links-guide.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Link types, end-sets, and how connections work — opens in a new tab"
+            style={{
+              marginLeft: "auto",
+              marginRight: 12,
+              fontSize: 12,
+              color: "var(--text-dim, #8b949e)",
+              textDecoration: "none",
+              alignSelf: "center",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {"Learn about links \u2197"}
+          </a>
           <button type="button" className="link-creator-close" onClick={handleClose}>
             {"\u00d7"}
           </button>
