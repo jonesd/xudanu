@@ -598,10 +598,9 @@ export function WorkspaceShell() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("work") || params.get("tumbler")) return;
     if (localStorage.getItem("xudanu_intro_done") === "1") return;
+    if (courseEntryId === null) return; // flag only counts once opened
     localStorage.setItem("xudanu_intro_done", "1");
-    if (courseEntryId !== null) {
-      selectWork(courseEntryId);
-    }
+    selectWork(courseEntryId);
   }, [works.length, courseEntryId, selectWork]);
 
   // Phase B deep link: ?tumbler=xan://server/5.3[?rev=N] resolves on
