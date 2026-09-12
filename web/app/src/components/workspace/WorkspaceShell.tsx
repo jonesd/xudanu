@@ -589,6 +589,21 @@ export function WorkspaceShell() {
     [works],
   );
 
+  // First-visit onboarding: when the Links Course is present and this
+  // browser hasn't seen the intro, open Lesson 1 directly — a fresh
+  // server (course seeded, few works) shouldn't wait for the click.
+  // Once per browser; explicit deep links always win.
+  useEffect(() => {
+    if (works.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("work") || params.get("tumbler")) return;
+    if (localStorage.getItem("xudanu_intro_done") === "1") return;
+    localStorage.setItem("xudanu_intro_done", "1");
+    if (courseEntryId !== null) {
+      selectWork(courseEntryId);
+    }
+  }, [works.length, courseEntryId, selectWork]);
+
   // Phase B deep link: ?tumbler=xan://server/5.3[?rev=N] resolves on
   // mount and navigates to the work (a ?work= param takes precedence).
   useEffect(() => {
