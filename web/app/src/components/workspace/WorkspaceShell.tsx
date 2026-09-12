@@ -812,6 +812,11 @@ export function WorkspaceShell() {
     const newId = await createWork();
     if (typeof newId === "number") {
       selectWork(newId);
+    } else if (!identity) {
+      // Creation was denied and we have no identity — the silent no-op
+      // on the welcome screen was a reported bug. Open the identity
+      // dialog instead so the click always goes somewhere.
+      setShowIdentity(true);
     }
     if (fetchWorkList) {
       try {
@@ -3337,7 +3342,7 @@ export function WorkspaceShell() {
             <WelcomeScreen
               workCount={works.length}
               hasIdentity={!!identity}
-              onNewDocument={() => handleCreateWork()}
+              onNewDocument={() => (identity ? handleCreateWork() : setShowIdentity(true))}
               onBrowseLibrary={() => setNavTab("library")}
               onImport={() => setShowImport(true)}
               onDemo={() => {
