@@ -27,6 +27,7 @@ interface ContextPanelProps {
   pinnedKeys: Set<string>;
   onTogglePin: (key: string, pinned: boolean) => void;
   crossServerBacklinks?: CrossServerBacklinkPayload[];
+  onOpenCourse?: () => void;
 }
 
 export function ContextPanel(props: ContextPanelProps) {
@@ -54,6 +55,7 @@ export function ContextPanel(props: ContextPanelProps) {
         pinnedKeys={props.pinnedKeys}
         onTogglePin={props.onTogglePin}
         crossServerBacklinks={props.crossServerBacklinks}
+        onOpenCourse={props.onOpenCourse}
       />
       <AttributionSection attributionSpans={props.attributionSpans} attributionLogStatus={props.attributionLogStatus} onOpenFullView={props.onOpenProvenance} onExportReport={props.onExportReport} onExportProvJson={props.onExportProvJson} currentWorkId={props.currentWorkId} documentLength={props.documentLength} />
     </div>

@@ -1,6 +1,10 @@
 interface WelcomeScreenProps {
   workCount: number;
   hasIdentity: boolean;
+  /** Links Course seeded on this server — the guided path for learning
+   *  the paradigm. Absent on unseeded servers; nothing renders. */
+  hasCourse?: boolean;
+  onLearnLinks?: () => void;
   onNewDocument: () => void;
   onBrowseLibrary: () => void;
   onImport: () => void;
@@ -10,6 +14,8 @@ interface WelcomeScreenProps {
 export function WelcomeScreen({
   workCount,
   hasIdentity,
+  hasCourse,
+  onLearnLinks,
   onNewDocument,
   onBrowseLibrary,
   onImport,
@@ -68,6 +74,16 @@ export function WelcomeScreen({
         </button>
       </div>
       <div className="welcome-actions">
+        {hasCourse && onLearnLinks && (
+          <button
+            className="welcome-btn"
+            style={{ borderColor: "var(--green, #3fb950)", color: "var(--green, #3fb950)", cursor: "pointer" }}
+            onClick={onLearnLinks}
+            title="Five short lessons on the real editor — links, ends, gathering, commenting, reading"
+          >
+            {"\u2197 Learn in five lessons"}
+          </button>
+        )}
         <button
           className="welcome-btn"
           style={{ borderColor: "var(--accent-blue)", color: "var(--accent-blue)", cursor: "pointer" }}

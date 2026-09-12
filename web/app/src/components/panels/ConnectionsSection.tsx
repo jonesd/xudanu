@@ -25,6 +25,9 @@ interface ConnectionsSectionProps {
   onCommentOnLink?: (linkId: number) => void;
   onRemoveTransclusion?: (sourceWorkId: number, charStart: number, charEnd: number) => void;
   pinnedKeys: Set<string>;
+  /** Course pointer: shown in the empty state when the Links Course
+   *  is seeded on this server ("Links Lesson 1" work present). */
+  onOpenCourse?: () => void;
   onTogglePin: (key: string, pinned: boolean) => void;
   crossServerBacklinks?: CrossServerBacklinkPayload[];
 }
@@ -41,6 +44,7 @@ export function ConnectionsSection({
   onCommentOnLink,
   onRemoveTransclusion,
   pinnedKeys,
+  onOpenCourse,
   onTogglePin,
   crossServerBacklinks = [],
 }: ConnectionsSectionProps) {
@@ -185,7 +189,26 @@ export function ConnectionsSection({
     return typeOrder[a.type] - typeOrder[b.type];
   });
 
-  if (items.length === 0) return null;
+  if (items.length === 0) {
+    if (!onOpenCourse) return null;
+    return (
+      <div className="ctx-section">
+        <div className="ctx-header">
+          <div className="ctx-title">Connections</div>
+        </div>
+        <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--text-dim, #8b949e)" }}>
+          No connections yet — the person who wrote this one made their first link in a five-lesson course.
+          {" "}
+          <a
+            onClick={(e) => { e.stopPropagation(); onOpenCourse(); }}
+            style={{ color: "var(--accent-blue, #58a6ff)", cursor: "pointer", textDecoration: "underline" }}
+          >
+            Learn in five lessons {"\u2192"}
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   const pinnedCount = [...pinnedKeys].filter((k) => items.some((i) => i.key === k)).length;
   const canManage = onDeleteLink !== undefined;

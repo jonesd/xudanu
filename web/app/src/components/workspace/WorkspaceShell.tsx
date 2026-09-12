@@ -580,6 +580,15 @@ export function WorkspaceShell() {
     window.history.replaceState({}, "", url.toString());
   }, [navTab]);
 
+  // Links Course detection: the seeded course's first lesson carries a
+  // fixed title; its presence means "Learn in five lessons" surfaces.
+  const courseEntryId = useMemo(
+    () =>
+      works.find((w) => (w.title || "").startsWith("Links Lesson 1"))?.work_id ??
+      null,
+    [works],
+  );
+
   // Phase B deep link: ?tumbler=xan://server/5.3[?rev=N] resolves on
   // mount and navigates to the work (a ?work= param takes precedence).
   useEffect(() => {
@@ -2480,7 +2489,26 @@ export function WorkspaceShell() {
                       ? transclusion.links
                       : transclusion.links.filter((l) => (l.link_types || []).some((t) => activeLinkTypes.has(t)));
                     return filteredLinks.length === 0 ? (
-                      <div className="ws-conn-empty">{transclusion.links.length === 0 ? 'No outbound links. Select text and click "Link" to create one.' : 'No links match the active filter.'}</div>
+                      <div className="ws-conn-empty">
+                        {transclusion.links.length === 0 ? (
+                          <>
+                            {"No outbound links. Select text and click \u201cLink\u201d to create one."}
+                            {courseEntryId !== null && (
+                              <>
+                                {" New here? "}
+                                <a
+                                  onClick={() => selectWork(courseEntryId)}
+                                  style={{ color: "var(--accent-blue, #58a6ff)", cursor: "pointer", textDecoration: "underline" }}
+                                >
+                                  Learn in five lessons {"\u2192"}
+                                </a>
+                              </>
+                            )}
+                          </>
+                        ) : (
+                          "No links match the active filter."
+                        )}
+                      </div>
                     ) : (
                       filteredLinks.map((link) => {
                       const isWebLink = (link.link_types || []).includes(6);
@@ -3342,6 +3370,8 @@ export function WorkspaceShell() {
             <WelcomeScreen
               workCount={works.length}
               hasIdentity={!!identity}
+              hasCourse={courseEntryId !== null}
+              onLearnLinks={() => courseEntryId !== null && selectWork(courseEntryId)}
               onNewDocument={() => (identity ? handleCreateWork() : setShowIdentity(true))}
               onBrowseLibrary={() => setNavTab("library")}
               onImport={() => setShowImport(true)}
