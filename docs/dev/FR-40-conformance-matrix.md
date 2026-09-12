@@ -131,9 +131,6 @@ statements files.
 - Spec reviewed 2026-08-20/21 from
   github.com/sisbell/xanadu-spec (commit history through
   2026-06-17; statements files through 2026-05-31/06-11 extracts).
-- Outreach: github.com/sisbell/xanadu-spec issue #1 (2026-08-21),
-  incl. the offer to run udanax-test-harness goldens as a
-  differential suite (pending reply; Docker suite prerequisite).
 - Xudanu implementation state: commit 88c9e1e ("feat(links): FR-40
   Green link constructs + FR-39 registration hardening", v1.7.0
   branch state).

@@ -63,7 +63,7 @@ done
 
 ## H(G) calibration use
 
-The killer feature for the Adamski et al. outreach: run a
+The killer feature for the H(G) calibration analysis: run a
 parameter sweep varying one dimension at a time, profile each
 corpus, and show how each H(G) coordinate responds:
 
@@ -112,4 +112,4 @@ tweets — and can't vary its structure).
 ```
 
 This output IS the calibration data point. Collect many → the
-calibration table for the paper and for the outreach email.
+calibration table for the paper.
