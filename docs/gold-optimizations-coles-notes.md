@@ -27,6 +27,10 @@ the work.
 
 ## Attribution
 
+For the full expanded version — every problem worked through with
+diagrams and where a modern engine takes each further — see [The
+Twelve Problems](https://dgjones.info/xudanu/gold-twelve-problems.html).
+
 The mechanisms are inherited from the 1988–92 Udanax Gold implementation
 (open-sourced 1999) and its design literature; the descriptions and the
 naive-vs-Gold framing are ours. See FR-34 (`docs/dev/FR-34-enfilade-native.md`)

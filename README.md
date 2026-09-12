@@ -326,6 +326,7 @@ LLM-authored text is tagged with gold/amber attribution in the provenance panel.
 
 ### Next steps
 
+- **[The Twelve Problems](https://dgjones.info/xudanu/gold-twelve-problems.html)** — how Udanax Gold solved hypertext's hard parts (enfilades, crums, tumblers, displacements), with diagrams and where Xudanu extends each; the [Coles Notes](https://dgjones.info/xudanu/gold-optimizations-coles-notes.html) are the condensed version.
 - **[Technical Architecture](http://dgjones.info/xudanu/technical-architecture.html)** — a detailed walkthrough of the core data structures, algorithms, and performance characteristics (O-trees, GrandMap, Canopy pruning, H-trees, transclusion queries, DagWood concurrent edits). Recommended for all developers and architects.
 - [Xudanu in One Page](http://dgjones.info/xudanu/xudanu-in-one-page.html) — a concise overview of the entire system.
 - [30 Years of Hypertext Innovation](http://dgjones.info/xudanu/30-years-of-hypertext-innovation.html) — historical context connecting Xanadu to modern hypertext.
