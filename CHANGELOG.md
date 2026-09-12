@@ -6,6 +6,74 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.13.0] — 2026-09-12
+
+The **tumbler** release: hierarchical universal addresses become
+load-bearing end to end — every work has a permanent identity,
+regions ARE address prefixes, links address tumblers, versions are
+addressable, and Gold's Sequence algebra is active. Also: H(G)
+profiling, regions, forensics, and daily history from the interim
+tag. *(Supersedes the interim `v1.12.1` tag, which was cut before
+the version files were bumped — this entry covers everything since
+v1.12.0.)*
+
+### Tumbler arc (Phases A–F)
+- **A — identity stamps**: every work carries its creating server's
+  identity (public address, or key-derived `ns-` form); replicas
+  preserve the ORIGIN's full tumbler transitively; stamps persist
+  through checkpoint/restore; legacy backfill at checkpoint makes
+  pre-existing works addressable after one cycle
+- **B — `xan://` navigation**: URI codec (`xan://host/path`,
+  `?rev=N` qualification on the query layer — paths stay purely
+  positional); `GET /api/public/resolve` resolves addresses to
+  works (and works to addresses); search-overlay address mode;
+  `?tumbler=` deep links; CLI `show <address>`
+- **C — prefix regions**: clubs carry tumbler prefixes;
+  `region_create`/`region_list` (0x0360/0x0361); works in region
+  context allocate `[prefix, be_id]` paths; nested visibility
+  (region [2] sees [2,1] works); region addresses resolve
+- **D — tumbler link targets**: link ends carry permanent origin
+  tumblers; BeIds become remappable caches; cross-server arrival
+  remaps to local works (original or replica) — the anti-fork
+  property, tested
+- **E — version dimension**: `?rev=N` qualified addresses; pinned
+  transclusion sources addressable (`xan://server/1004.0.5?rev=7`);
+  reverse resolution with revision; work list + public API carry
+  addresses
+- **F — Sequence algebra activation**: `Sequence::between` (the
+  never-renumber allocation primitive, property-tested);
+  `region_insert_between` (0x0362) its production caller; tumblers
+  totally ordered via Sequence comparison; region containment via
+  `SequenceRegion::prefixed_by`; region members returned in address
+  order
+- **Usage layer**: region write enforcement (permeability principle
+  — reads/transclusions cross regions, writes don't); `xan_resolve`
+  wire op (0x0363); addresses surfaced in Settings, connections
+  panel, and transclusion sources (copy affordances)
+- Postcard serialization rule learned and codified in AGENTS.md:
+  `serde(default)` only, never `skip_serializing_if` on positional
+  formats
+
+### From the interim (v1.12.1-tagged) work
+- **H(G) profiling**: `hg-profile` subcommand (10 coordinates,
+  per-author sub-profiles — first measured θ > 0);
+  `--region`/`--region-prefix` scoping; induced-subgraph fix
+  (per-region profiles exclude cross-region edges)
+- **Regions Phase 1**: session region context (0x035F), work region
+  stamping, region-scoped work lists
+- **FR-63 forensics Phase 1**: chain probe, generation anomalies,
+  orphan scan, anchor verification
+- **Daily narrative history**: topic-clustered summaries on
+  checkpoint
+- **Session author_type** (0x035E): provenance carries
+  Human/Llm/Historical per span
+- Representative corpora + docuverse synthesizer generators
+- Paper draft (`docs/papers/xanalogical-paper-draft.md`)
+- Repo hygiene: public tree kept technical; working notes moved
+  local (gitignored)
+
+---
+
 ## [v1.12.0] — 2026-09-07
 
 The **provenance** release: the lattice cutover completes, reuse

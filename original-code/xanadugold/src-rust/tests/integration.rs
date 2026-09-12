@@ -6939,6 +6939,8 @@ async fn evil_peer_sync_filtered_by_invariant_gate() {
             work_id: 9001,
             edition_payload: EditionPayload::Text("legitimate content".to_string()),
             span_provenance: vec![],
+            origin_tumbler_server: None,
+            origin_tumbler_path: None,
         },
         // Reversed transclusion range (deserialization-bypass form).
         SyncWorkEntry {
@@ -6957,6 +6959,8 @@ async fn evil_peer_sync_filtered_by_invariant_gate() {
                 },
             )]),
             span_provenance: vec![],
+            origin_tumbler_server: None,
+            origin_tumbler_path: None,
         },
         // Control characters in text.
         SyncWorkEntry {
@@ -6964,6 +6968,8 @@ async fn evil_peer_sync_filtered_by_invariant_gate() {
             work_id: 9003,
             edition_payload: EditionPayload::Text("bad\u{0}nul".to_string()),
             span_provenance: vec![],
+            origin_tumbler_server: None,
+            origin_tumbler_path: None,
         },
         // Implausible blob.
         SyncWorkEntry {
@@ -6981,6 +6987,8 @@ async fn evil_peer_sync_filtered_by_invariant_gate() {
                 },
             )]),
             span_provenance: vec![],
+            origin_tumbler_server: None,
+            origin_tumbler_path: None,
         },
     ];
 
