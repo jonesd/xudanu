@@ -150,10 +150,51 @@ tests on `between` and tumbler ordering; checkpoint/restore round
 trips at both persistence layers; live end-to-end verification of
 resolution including restart.
 
-## What's deliberately not here
+## Deferred work (tracked)
 
-Cross-server region semantics (replicas don't carry region
-membership — a future design question), OS-level `xan://` protocol
-registration (browsers don't support custom schemes), and full wid-
-semantics lazy displacement propagation (span migration covers the
-practical cases; see the Gold optimizations notes).
+Three items deliberately out of scope for this FR. Each is a real
+design question, not just unfinished work.
+
+### FR-64-D1: cross-server region semantics
+
+Replicas do not carry region membership: when alice's work replicates
+to bob, the origin tumbler (and its region *prefix*) travels, but the
+work's region *club* association does not — so bob's replica is not a
+member of any region on bob's server. The design question: what does
+region membership even mean across servers? Candidate semantics —
+(a) prefix-only: a replica's region is read from its tumbler prefix
+(scoping works, ACLs don't travel); (b) region-as-first-class-cross-
+server-entity (directory entry with its own identity, membership
+synced); (c) imported-region shadowing (bob's admin maps alice's
+prefix onto a local club, explicit bridge). The regions design doc's
+"cross-server regions compose naturally" claim (FR-6 domain tumblers
++ region prefixes) covers addressing only; membership and policy are
+open. **Trigger:** first multi-server deployment that actually wants
+shared regions.
+
+### FR-64-D2: OS-level `xan://` protocol registration
+
+Browsers do not support custom URL schemes without deprecated APIs
+(`registerProtocolHandler` covers `web+` schemes only) or an OS-level
+handler registration per client machine. Current scope is honest:
+`xan://` works as text — paste into the app's search, copy from any
+address affordance, type in the CLI. **Trigger:** if/when a desktop
+client exists (Electron/Tauri-style), register the scheme there where
+it's actually supported; revisit deep-linking server-side (`?tumbler=`
+on the web app covers the browser case meanwhile).
+
+### FR-64-D3: full wid-semantics lazy displacement propagation
+
+Gold's displacements (wids/ispans) propagate lazily down the enfilade
+— a single displacement at a node keeps every position below valid
+without pointer fixups, and displacements *compose*. Xudanu has the
+composition layer (`space/mapping.rs`) and span migration (links and
+transclusions survive edits through arbitrary deltas), which covers
+the practical cases — but positions are recomputed on access rather
+than carried relatively, and there is no lazy propagation of edits
+into untouched subtrees. Cost/benefit: matters at document scales and
+edit patterns where span-migration sweeps become hot; not observed
+hot yet. See the Gold optimizations notes (rows 4 and 12) for the
+full naive-vs-Gold contrast. **Trigger:** profiling shows span
+migration dominating under load, or lattice work requires in-tree
+relative positions.
