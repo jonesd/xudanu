@@ -158,8 +158,10 @@ export function LinkCreator({
       handleClose();
       onSelectTextInOtherDoc();
     } else if (mode === "same-doc") {
-      handleClose();
-      onSelectTextInOtherDoc();
+      // Keep the wizard open — show a target text input instead of
+      // the dead-end close-and-wait flow (onSelectTextInOtherDoc was
+      // a no-op; the wizard never re-opened).
+      setStep("type"); // go directly to type picker; destination = this work
     } else if (mode === "remote") {
       setStep("remote");
     } else if (mode === "web") {
@@ -190,6 +192,33 @@ export function LinkCreator({
     setCreating(true);
     setError(null);
     try {
+      if (targetMode === "same-doc") {
+        // Same-doc link: destination is the same work, destination span
+        // points at the target text (found by excerpt match or 0,0 for
+        // whole-work). For now: whole-work same-doc (the title pick is
+        // a UI affordance; the link targets the whole document).
+        const linkId = await client.linkCreate(
+          source.workId,
+          source.workId,
+          { excerpt: source.text, start: source.start, end: source.end },
+          { excerpt: "", start: 0, end: 0 },
+          homeDocument === "" ? undefined : Number(homeDocument),
+        );
+        if (selectedTypeIds.size > 0) {
+          await client.linkSetTypes(linkId, Array.from(selectedTypeIds));
+        }
+        if (description.trim()) {
+          await client.annotationCreate(
+            source.workId, 0, "link-description",
+            JSON.stringify({ text: description.trim(), link_id: linkId }),
+            source.start, source.end,
+          );
+        }
+        setCreating(false);
+        reset();
+        onClose();
+        return;
+      }
       if (targetMode === "whole-work" && selectedWorkId !== null) {
         const linkId = await client.linkCreate(
           source.workId,
@@ -498,6 +527,79 @@ export function LinkCreator({
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {step === "type" && targetMode === "same-doc" && (
+          <div className="link-creator-body">
+            <div className="link-creator-step-title">
+              What kind of connection is this?
+              <span style={{ fontSize: 11, color: "#8b949e", marginLeft: 8 }}>
+                the type is the verb
+              </span>
+              <button
+                type="button"
+                className="link-back-btn"
+                onClick={() => { setStep("target"); setSelectedTypeIds(new Set()); }}
+              >
+                {"\u2190"} back
+              </button>
+            </div>
+            <div className="link-target-preview" style={{ marginBottom: 8 }}>
+              Linking within: <strong>this document</strong>
+            </div>
+            <div className="link-type-grid">
+              {allTypes.map((t) => {
+                const selected = selectedTypeIds.has(t.type_id);
+                return (
+                  <button
+                    key={t.type_id}
+                    type="button"
+                    className={`link-type-card ${selected ? "selected" : ""}`}
+                    style={{ borderColor: selected ? t.color : undefined }}
+                    onClick={() => toggleType(t.type_id)}
+                  >
+                    <div className="link-type-preview-line">
+                      <svg width="60" height="8">
+                        <line
+                          x1="0" y1="4" x2="60" y2="4"
+                          stroke={t.color}
+                          strokeWidth="2"
+                          strokeDasharray={t.lineStyle === "solid" ? undefined : t.lineStyle === "dashed" ? "4,3" : t.lineStyle === "dotted" ? "1,3" : t.lineStyle === "underline" ? "8,3" : "6,2,1,2"}
+                        />
+                      </svg>
+                    </div>
+                    <div className="link-type-card-name" style={{ color: t.color }}>{t.name}</div>
+                    <div className="link-type-card-desc">{typeDesc(t.type_id)}</div>
+                  </button>
+                );
+              })}
+            </div>
+            {selectedTypeIds.size > 0 && (
+              <>
+                <div className="link-form-label" style={{ marginTop: 12 }}>
+                  Description (optional)
+                  <textarea
+                    className="link-form-input"
+                    placeholder="Explain why this link exists"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={2}
+                    style={{ resize: "vertical", fontFamily: "inherit", fontSize: 13 }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="link-create-submit"
+                  style={{ marginTop: 8 }}
+                  disabled={creating}
+                  onClick={handleCreate}
+                >
+                  {creating ? "Creating\u2026" : "Create Same-Document Link"}
+                </button>
+              </>
+            )}
+            {error && <div className="link-creator-error">{error}</div>}
           </div>
         )}
 
