@@ -29,6 +29,10 @@ interface LinkCreatorProps {
   currentWorkId: number | null;
   clientRef: React.MutableRefObject<CrdtSyncClient | null>;
   onLinkCreated: () => void;
+  /** FR-40 S6: gather multiple passages into one end. Called when the
+   *  user clicks "Gather more passages" — the wizard closes and the
+   *  parent watches for additional text selections. */
+  onGatherPassages?: (destWorkId: number, typeIds: number[]) => void;
   onSelectTextInOtherDoc: () => void;
 }
 
@@ -48,6 +52,7 @@ export function LinkCreator({
   currentWorkId,
   clientRef,
   onLinkCreated,
+  onGatherPassages,
   onSelectTextInOtherDoc,
 }: LinkCreatorProps) {
   const [step, setStep] = useState<Step>("target");
@@ -722,6 +727,26 @@ export function LinkCreator({
                       </div>
                     </details>
                   )}
+                  <details style={{ marginTop: 4 }}>
+                    <summary style={{ fontSize: 12, color: "#8b949e", cursor: "pointer", padding: "6px 0", userSelect: "none" }}>
+                      {"\u25b8 Gather multiple passages into one end"}
+                    </summary>
+                    <div style={{ fontSize: 12, color: "#8b949e", padding: "4px 0 8px" }}>
+                      Several passages jointly filling ONE blank — three quotes forming one
+                      argument, not three separate links.{" "}
+                      <button
+                        type="button"
+                        style={{ background: "none", border: "none", color: "#58a6ff", cursor: "pointer", fontSize: 12, padding: 0, textDecoration: "underline" }}
+                        onClick={() => {
+                          if (onGatherPassages && selectedWorkId !== null) {
+                            onGatherPassages(selectedWorkId, Array.from(selectedTypeIds));
+                          }
+                        }}
+                      >
+                        Gather passages {"\u2192"}
+                      </button>
+                    </div>
+                  </details>
                 </div>
                 <button
                   type="button"

@@ -115,7 +115,7 @@ describe("LinkCreator", () => {
     renderCreator();
     fireEvent.click(screen.getByText("Link to an entire document"));
     fireEvent.click(screen.getByText("Reviewer Notes"));
-    expect(screen.getByText("Link type")).toBeTruthy();
+    expect(screen.getByText(/kind of connection/i)).toBeTruthy();
     expect(screen.getByText("Comment")).toBeTruthy();
     expect(screen.getByText("Reference")).toBeTruthy();
     expect(screen.getByText("Disagreement")).toBeTruthy();

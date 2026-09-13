@@ -250,6 +250,16 @@ export function WorkspaceShell() {
     end: number;
     text: string;
   } | null>(null);
+  const [gatherPending, setGatherPending] = useState<{
+    sourceWorkId: number;
+    sourceStart: number;
+    sourceEnd: number;
+    sourceText: string;
+    destWorkId: number;
+    destWorkTitle: string;
+    typeIds: number[];
+    gathered: { start: number; end: number; text: string }[];
+  } | null>(null);
   const [sameDocDestCaptured, setSameDocDestCaptured] = useState<{
     sourceStart: number;
     sourceEnd: number;
@@ -4471,6 +4481,15 @@ export function WorkspaceShell() {
                 // Same-doc link destination: when the user selects text
                 // while waiting for a destination, capture it and re-open
                 // the wizard at the type step.
+                if (gatherPending && s !== null && e !== null && s !== e) {
+                  const gatherText = text.slice(s, e);
+                  if (gatherText.trim().length > 0) {
+                    setGatherPending(prev => prev ? {
+                      ...prev,
+                      gathered: [...prev.gathered, { start: s, end: e, text: gatherText }],
+                    } : null);
+                  }
+                }
                 if (sameDocDestPending && s !== null && e !== null && s !== e) {
                   const destText = text.slice(s, e);
                   if (destText.trim().length > 0) {
@@ -5079,6 +5098,22 @@ export function WorkspaceShell() {
               void loadLinks(clientRef.current, workBeId, works);
             }
           }}
+          onGatherPassages={(destWorkId, typeIds) => {
+            if (transclusion.pendingLink) {
+              setGatherPending({
+                sourceWorkId: transclusion.pendingLink.sourceWorkId,
+                sourceStart: transclusion.pendingLink.start,
+                sourceEnd: transclusion.pendingLink.end,
+                sourceText: transclusion.pendingLink.text,
+                destWorkId,
+                destWorkTitle: works.find(w => w.work_id === destWorkId)?.title || "Unknown",
+                typeIds,
+                gathered: [],
+              });
+              transclusion.clearPendingLink();
+              showToast("Select the next passage to gather...");
+            }
+          }}
           onSelectTextInOtherDoc={() => {
             if (transclusion.pendingLink) {
               setSameDocDestPending({
@@ -5181,6 +5216,120 @@ export function WorkspaceShell() {
           >
             cancel
           </button>
+        </div>
+      )}
+
+      {gatherPending && gatherPending.gathered.length > 0 && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 80,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "var(--bg-elevated, #161b22)",
+            border: "1px solid var(--border, #30363d)",
+            borderRadius: 10,
+            padding: "14px 18px",
+            zIndex: 60,
+            maxWidth: 520,
+            boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+          }}
+        >
+          <div style={{ fontSize: 13, color: "var(--text)", marginBottom: 8, fontWeight: 600 }}>
+            Gathered {gatherPending.gathered.length + 1} passages
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 4 }}>
+            <strong>1:</strong> "{gatherPending.sourceText.slice(0, 50)}{gatherPending.sourceText.length > 50 ? "\u2026" : ""}"
+          </div>
+          {gatherPending.gathered.map((g, i) => (
+            <div key={i} style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 4 }}>
+              <strong>{i + 2}:</strong> "{g.text.slice(0, 50)}{g.text.length > 50 ? "\u2026" : ""}"
+            </div>
+          ))}
+          <div style={{ fontSize: 11, color: "var(--text-dim)", margin: "8px 0", fontStyle: "italic" }}>
+            Together these form one end of a single link to {gatherPending.destWorkTitle}.
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              style={{
+                padding: "6px 14px",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                background: "transparent",
+                color: "var(--text-dim)",
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+              onClick={() => {
+                showToast("Select the next passage to gather...");
+              }}
+            >
+              + Gather more
+            </button>
+            <button
+              type="button"
+              style={{
+                padding: "6px 14px",
+                border: "none",
+                borderRadius: 6,
+                background: "var(--accent-blue, #58a6ff)",
+                color: "#fff",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+              onClick={() => {
+                if (!clientRef.current) return;
+                const g = gatherPending;
+                setGatherPending(null);
+                const client = clientRef.current;
+                void client.linkCreate(
+                  g.sourceWorkId,
+                  g.destWorkId,
+                  { excerpt: g.sourceText, start: g.sourceStart, end: g.sourceEnd },
+                  { excerpt: "", start: 0, end: 0 },
+                ).then(async (r) => {
+                  const linkId = typeof r === "number" ? r : (r as { link_id?: number })?.link_id;
+                  if (!linkId) return;
+                  if (g.typeIds.length > 0) {
+                    await client.linkSetTypes(linkId, g.typeIds);
+                  }
+                  for (const passage of g.gathered) {
+                    await client.linkEndAddAttachment(linkId, "LeftEnd", {
+                      workContext: g.sourceWorkId,
+                      excerpt: passage.text,
+                      start: passage.start,
+                      end: passage.end,
+                    });
+                  }
+                  if (workBeId !== null) {
+                    void loadLinks(client, workBeId, works);
+                  }
+                  showToast("\u2713 Gathered link created (" + (g.gathered.length + 1) + " passages)");
+                }).catch(() => {
+                  showToast("Gathered link creation failed");
+                });
+              }}
+            >
+              Create Gathered Link
+            </button>
+            <button
+              type="button"
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--text-dim)",
+                fontSize: 12,
+                cursor: "pointer",
+                textDecoration: "underline",
+                marginLeft: "auto",
+              }}
+              onClick={() => setGatherPending(null)}
+            >
+              cancel
+            </button>
+          </div>
         </div>
       )}
 
