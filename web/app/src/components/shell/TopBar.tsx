@@ -98,7 +98,7 @@ export function TopBar({
         }}
       >
         <Logo size={18} />
-        <span>xudanu</span>
+        <span className="ws-brand-text">Xuda<span className="ws-brand-nu">nu</span></span>
       </div>
       <div className="search-trigger" onClick={onOpenSearch}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

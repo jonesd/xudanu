@@ -214,7 +214,7 @@ export function BeamsView({ client, currentWorkId, works, links, onClose }: Beam
   return (
     <div className="ws-beams" role="dialog" aria-label="Beams view">
       <div className="ws-beams-topbar">
-        <span className="ws-beams-brand">xudanu</span>
+        <span className="ws-beams-brand">Xuda<span className="ws-brand-nu">nu</span></span>
         <span className="ws-beams-crumb">
           Beams — <b>{columns.length} documents</b> · {links.length} links ·{" "}
           {links.reduce((n, l) => n + linkEnds(l).length, 0)} ends
