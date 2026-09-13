@@ -158,10 +158,10 @@ export function LinkCreator({
       handleClose();
       onSelectTextInOtherDoc();
     } else if (mode === "same-doc") {
-      // Keep the wizard open — show a target text input instead of
-      // the dead-end close-and-wait flow (onSelectTextInOtherDoc was
-      // a no-op; the wizard never re-opened).
-      setStep("type"); // go directly to type picker; destination = this work
+      // Close the wizard; the parent shows a hint banner and watches
+      // for the user's next text selection as the link destination.
+      onSelectTextInOtherDoc();
+      onClose();
     } else if (mode === "remote") {
       setStep("remote");
     } else if (mode === "web") {

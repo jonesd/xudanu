@@ -243,6 +243,21 @@ export function WorkspaceShell() {
   const [tagResult, setTagResult] = useState<{ new: Array<{name: string; id: number}>; linked: Array<{name: string; id: number}> } | null>(null);
   const [epubImporting, setEpubImporting] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [sameDocDestPending, setSameDocDestPending] = useState<{
+    sourceWorkId: number;
+    sourceWorkTitle: string;
+    start: number;
+    end: number;
+    text: string;
+  } | null>(null);
+  const [sameDocDestCaptured, setSameDocDestCaptured] = useState<{
+    sourceStart: number;
+    sourceEnd: number;
+    sourceText: string;
+    destStart: number;
+    destEnd: number;
+    destText: string;
+  } | null>(null);
   const [demoTrigger, setDemoTrigger] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
   const [isFrozen, setIsFrozen] = useState(false);
@@ -4453,6 +4468,23 @@ export function WorkspaceShell() {
                     sendSelection(s, e);
                     if (s !== null && e !== null && s !== e) setSelectionRange({ start: s, end: e });
                     else setSelectionRange(null);
+                // Same-doc link destination: when the user selects text
+                // while waiting for a destination, capture it and re-open
+                // the wizard at the type step.
+                if (sameDocDestPending && s !== null && e !== null && s !== e) {
+                  const destText = text.slice(s, e);
+                  if (destText.trim().length > 0) {
+                    setSameDocDestCaptured({
+                      sourceStart: sameDocDestPending.start,
+                      sourceEnd: sameDocDestPending.end,
+                      sourceText: sameDocDestPending.text,
+                      destStart: s,
+                      destEnd: e,
+                      destText,
+                    });
+                    setSameDocDestPending(null);
+                  }
+                }
                   }}
                   connected={connected}
                   attributionSpans={resolvedAttributionSpans}
@@ -5047,8 +5079,109 @@ export function WorkspaceShell() {
               void loadLinks(clientRef.current, workBeId, works);
             }
           }}
-          onSelectTextInOtherDoc={() => {}}
+          onSelectTextInOtherDoc={() => {
+            if (transclusion.pendingLink) {
+              setSameDocDestPending({
+                sourceWorkId: transclusion.pendingLink.sourceWorkId,
+                sourceWorkTitle: transclusion.pendingLink.sourceWorkTitle,
+                start: transclusion.pendingLink.start,
+                end: transclusion.pendingLink.end,
+                text: transclusion.pendingLink.text,
+              });
+              showToast("Now select the text you want to link TO...");
+            }
+          }}
         />
+      )}
+
+      {sameDocDestCaptured && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 80,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "var(--bg-elevated, #161b22)",
+            border: "1px solid var(--border, #30363d)",
+            borderRadius: 10,
+            padding: "14px 18px",
+            zIndex: 60,
+            maxWidth: 520,
+            boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+          }}
+        >
+          <div style={{ fontSize: 13, color: "var(--text)", marginBottom: 8, fontWeight: 600 }}>
+            Create same-document link
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 4 }}>
+            <strong>From:</strong> "{sameDocDestCaptured.sourceText.slice(0, 50)}{sameDocDestCaptured.sourceText.length > 50 ? "…" : ""}"
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 12 }}>
+            <strong>To:</strong> "{sameDocDestCaptured.destText.slice(0, 50)}{sameDocDestCaptured.destText.length > 50 ? "…" : ""}"
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+            {[
+              { id: 1, name: "Comment", color: "#d29922" },
+              { id: 2, name: "Reference", color: "#58a6ff" },
+              { id: 3, name: "Disagreement", color: "#f85149" },
+              { id: 5, name: "See Also", color: "#3fb950" },
+            ].map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                style={{
+                  padding: "5px 12px",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  background: "transparent",
+                  color: t.color,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+                onClick={() => {
+                  if (!clientRef.current || workBeId === null) return;
+                  const c = sameDocDestCaptured;
+                  setSameDocDestCaptured(null);
+                  void clientRef.current.linkCreate(
+                    workBeId,
+                    workBeId,
+                    { excerpt: c.sourceText, start: c.sourceStart, end: c.sourceEnd },
+                    { excerpt: c.destText, start: c.destStart, end: c.destEnd },
+                  ).then((r) => {
+                    const linkId = typeof r === "number" ? r : (r as { link_id?: number })?.link_id;
+                    if (linkId && clientRef.current) {
+                      void clientRef.current.linkSetTypes(linkId, [t.id]).then(() => {
+                        if (clientRef.current && workBeId !== null) {
+                          void loadLinks(clientRef.current, workBeId, works);
+                        }
+                        showToast("\u2713 " + t.name + " link created");
+                      });
+                    }
+                  }).catch(() => {
+                    showToast("Link creation failed");
+                  });
+                }}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "var(--text-dim)",
+              fontSize: 12,
+              cursor: "pointer",
+              textDecoration: "underline",
+            }}
+            onClick={() => setSameDocDestCaptured(null)}
+          >
+            cancel
+          </button>
+        </div>
       )}
 
       {toast && (
@@ -5291,6 +5424,22 @@ export function WorkspaceShell() {
           visible={true}
           prefs={docPrefs}
           workId={workBeId}
+          onDuplicate={
+            workBeId != null && clientRef.current
+              ? () => {
+                  void clientRef.current!.duplicateWork(workBeId)
+                    .then((newId) => {
+                      setShowSettings(false);
+                      if (typeof newId === "number" && newId > 0) {
+                        selectWork(newId);
+                      }
+                    })
+                    .catch(() => {
+                      /* creation failed — the settings stays open */
+                    });
+                }
+              : undefined
+          }
           onPrefsChange={setDocPrefs}
           onClose={() => setShowSettings(false)}
            networkEnabled={networkEnabled}
