@@ -1200,6 +1200,22 @@ export class CrdtSyncClient {
     return extractValue(resp) as LinkEntry;
   }
 
+  async duplicateWork(workId: number): Promise<number> {
+    const resp: unknown = await this.sendRequest("work_duplicate", { work_id: workId });
+    const r = resp as { value?: { value?: { work_id?: number } | number } | number } | number;
+    const outer = (r as { value?: { value?: unknown } | unknown })?.value;
+    const inner =
+      typeof outer === "object" && outer !== null
+        ? (outer as { value?: unknown }).value ?? outer
+        : outer;
+    if (typeof inner === "number") return inner;
+    if (typeof inner === "object" && inner !== null) {
+      const wid = (inner as { work_id?: unknown }).work_id;
+      if (typeof wid === "number") return wid;
+    }
+    throw new Error("duplicateWork: unexpected response");
+  }
+
   async linkListForWork(workId: number): Promise<LinkEntry[]> {
     const resp = await this.sendRequest("link_list_for_work", { work_id: workId });
     const val = extractValue(resp);

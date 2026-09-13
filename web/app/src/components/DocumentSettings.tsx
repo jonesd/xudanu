@@ -41,6 +41,8 @@ interface DocumentSettingsProps {
   prefs: DocPreferences;
   /** Current work id — used to show the document's permanent address. */
   workId?: number | null;
+  /** FR-67: duplicate this document (content + links) into your own copy. */
+  onDuplicate?: () => void;
   onPrefsChange: (prefs: DocPreferences) => void;
   networkEnabled: boolean;
   externalLinksEnabled: boolean;
@@ -51,7 +53,7 @@ interface DocumentSettingsProps {
   onSetSuggestionsEnabled: (enabled: boolean) => Promise<void>;
 }
 
-export function DocumentSettings({ visible, onClose, prefs, workId, onPrefsChange, networkEnabled, externalLinksEnabled, suggestionsEnabled, isAdmin, onSetNetworkEnabled, onSetExternalLinksEnabled, onSetSuggestionsEnabled }: DocumentSettingsProps) {
+export function DocumentSettings({ visible, onClose, prefs, workId, onDuplicate, onPrefsChange, networkEnabled, externalLinksEnabled, suggestionsEnabled, isAdmin, onSetNetworkEnabled, onSetExternalLinksEnabled, onSetSuggestionsEnabled }: DocumentSettingsProps) {
   const [local, setLocal] = useState(prefs);
   const [netBusy, setNetBusy] = useState(false);
   const [cacheLimit, setCacheLimit] = useState(getCacheLimitMb());
@@ -109,6 +111,20 @@ export function DocumentSettings({ visible, onClose, prefs, workId, onPrefsChang
           <h2>Settings</h2>
           <button type="button" className="settings-close" onClick={onClose}>×</button>
         </div>
+        {onDuplicate && workId != null && (
+          <button
+            type="button"
+            onClick={onDuplicate}
+            style={{
+              width: "100%", padding: "8px 10px", margin: "0 0 8px",
+              background: "var(--accent-blue, #58a6ff)", color: "#fff",
+              border: "none", borderRadius: 6, cursor: "pointer",
+              fontSize: 13, fontWeight: 600,
+            }}
+          >
+            {"\u29c9 Make this page yours — duplicate with links"}
+          </button>
+        )}
         {xanAddress && (
           <div
             title="click to copy this document's permanent address"

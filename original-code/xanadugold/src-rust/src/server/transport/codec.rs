@@ -1245,6 +1245,20 @@ impl JsonCodec {
                     after: args.after,
                 })
             }
+            OperationCode::WorkDuplicate => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    #[serde(default)]
+                    title: Option<String>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkDuplicate {
+                    work_id: args.work_id,
+                    title: args.title,
+                })
+            }
             OperationCode::XanResolve => {
                 #[derive(Deserialize)]
                 struct Args {

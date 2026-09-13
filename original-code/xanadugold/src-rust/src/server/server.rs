@@ -4253,6 +4253,192 @@ impl Server {
     /// deployments (the 10MB-paste scenario). Sibling of MAX_BLOB_SIZE.
     pub const MAX_TEXT_LEN: usize = 1024 * 1024;
 
+    /// FR-67: duplicate a work — content + span provenance + every
+    /// link touching it — into a fully independent copy owned by the
+    /// duplicating session. Ends attached to the source remap to the
+    /// copy at identical positions (identical text = spans are their
+    /// own remap); ends attached to other works are untouched. The
+    /// source is not modified in any way. See docs/dev/FR-67.
+    pub fn work_duplicate(
+        &mut self,
+        session_id: SessionId,
+        source_id: BeId,
+        title_override: Option<String>,
+    ) -> Result<BeId, ServerError> {
+        let _guard = OperationGuard::new(
+            self.consequence_tracker.clone(),
+            self.consequence_tracker.begin_operation(),
+        );
+        self.ensure_logged_in(session_id)?;
+        const MAX_WORK_COUNT: usize = 100_000;
+        if self.work_count() >= MAX_WORK_COUNT {
+            return Err(ServerError::InvalidArgument(format!(
+                "work limit reached (max {})",
+                MAX_WORK_COUNT
+            )));
+        }
+
+        // Read permission on the source.
+        let source_ws = self
+            .works
+            .get(&source_id)
+            .ok_or_else(|| ServerError::NotFound(format!("work {}", source_id)))?;
+        if !self.work_is_readable(session_id, &source_ws.work) {
+            return Err(ServerError::NotAuthorized);
+        }
+        let source_edition = source_ws.work.current_edition().clone();
+
+        // Identify the links that touch the source (at least one
+        // attachment whose work is the source).
+        let touching: Vec<(BeId, crate::edition::links::HyperLink)> = self
+            .links
+            .iter()
+            .filter(|(_, ls)| {
+                ls.link
+                    .ends()
+                    .values()
+                    .flatten()
+                    .any(|hr| hr.work_context() == Some(source_id as u64))
+            })
+            .map(|(id, ls)| (*id, ls.link.clone()))
+            .collect();
+        let cloned_ids: std::collections::HashSet<BeId> =
+            touching.iter().map(|(id, _)| *id).collect();
+
+        // Build the new work: same edition (provenance travels with
+        // content — the original authors keep credit), fresh identity.
+        let (be_id, elem) = self.grand_map.new_work_element(None);
+        self.grand_map.assign_new_id(elem);
+        let owner = self
+            .session(session_id)?
+            .authority_clubs()
+            .iter()
+            .next()
+            .copied();
+        let _ = &title_override; // v1: title derives from content, as create_work
+        let mut work = Work::new_with_owner(be_id, owner, source_edition);
+        work.set_tumbler_server(Some(self.tumbler_server_identity()));
+        if let Some(region_club) = self.sessions.get(&session_id).and_then(|s| s.region()) {
+            if let Some(prefix) = self
+                .clubs
+                .get(&region_club)
+                .and_then(|c| c.region_prefix().map(|p| p.to_vec()))
+            {
+                if !prefix.is_empty() {
+                    let mut path = prefix;
+                    path.push(be_id as u64);
+                    work.set_tumbler_path_override(Some(path));
+                }
+            }
+        }
+        let is_public_session = owner == Some(self.system_clubs.public_club);
+        if is_public_session {
+            if self.edit_policy == EditPolicy::OwnerOnly
+                && !self
+                    .sessions
+                    .get(&session_id)
+                    .map(|s| {
+                        s.has_authority(self.system_clubs.admin_club)
+                            || s.has_authority(self.system_clubs.access_club)
+                    })
+                    .unwrap_or(false)
+            {
+                return Err(ServerError::NotAuthorized);
+            }
+            work.set_read_club(Some(self.system_clubs.public_club));
+            work.set_edit_club(Some(self.system_clubs.public_club));
+        } else if let Some(owner_id) = owner {
+            if let Some(club) = self.clubs.get(&owner_id) {
+                work.set_read_club(club.default_read_club().or(Some(owner_id)));
+                work.set_edit_club(club.default_edit_club().or(Some(owner_id)));
+            } else {
+                work.set_read_club(Some(owner_id));
+                work.set_edit_club(Some(owner_id));
+            }
+        } else {
+            return Err(ServerError::NotAuthorized);
+        }
+        let author_club = self.resolve_author_club(session_id);
+        if let Some(ac) = author_club {
+            work.add_sponsor(ac);
+        }
+        let title = Self::extract_title(work.current_edition());
+        let ws = WorkState {
+            work,
+            trace: self.fulltrace.new_trace(),
+            region: None,
+            chunk_ref: None,
+            prev_chunk_history: None,
+            dirty_gen: 0,
+            grabber: None,
+            grabbed_at: None,
+            grab_waiters: Vec::new(),
+            last_revision_author: None,
+            revision_authors: std::collections::HashMap::new(),
+            revision_timestamps: std::collections::HashMap::new(),
+            status_detectors: DetectorList::new(),
+            revision_detectors: DetectorList::new(),
+            cached_title: title,
+            is_source: false,
+            source_author_id: None,
+            source_edition_info: None,
+            imported_by: None,
+            content_start_line: None,
+            content_end_line: None,
+            source_fingerprint: None,
+        };
+        self.works.insert(be_id, ws);
+        self.span_key_map_init(be_id);
+
+        // Clone the links. Two passes: first map old link ids to new
+        // ones by cloning through create_link (which stamps tumblers
+        // and runs enforcement), then remap link-attachments to the
+        // new ids. Region enforcement: duplication copies existing
+        // structure; a region-context session duplicating a work
+        // whose link ends target works outside its region would be
+        // denied by create-time enforcement — acceptable and honest
+        // (v1: document; the workshop use-case has all ends on the
+        // source or readable public companions).
+        let mut id_map: std::collections::HashMap<BeId, BeId> = std::collections::HashMap::new();
+        for (old_id, mut link) in touching {
+            for atts in link.ends_mut().values_mut() {
+                for hr in atts.iter_mut() {
+                    if hr.work_context() == Some(source_id as u64) {
+                        hr.remap_work_context(be_id);
+                    }
+                }
+            }
+            match self.create_link_with_hyperlink_homed(session_id, link, None) {
+                Ok(new_id) => {
+                    id_map.insert(old_id, new_id);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "[work_duplicate] link {} not cloned: {}",
+                        old_id,
+                        e
+                    );
+                }
+            }
+        }
+        // Remap link-attachments to the cloned links.
+        for (_, new_id) in id_map.iter() {
+            if let Some(ls) = self.links.get_mut(new_id) {
+                ls.link.remap_link_attachments(&id_map);
+            }
+        }
+        let _ = &cloned_ids;
+
+        tracing::info!(
+            "[work_duplicate] {} -> {} ({} links cloned)",
+            source_id,
+            be_id,
+            id_map.len()
+        );
+        self.auto_checkpoint();
+        Ok(be_id)
+    }
+
     pub fn create_work(
         &mut self,
         session_id: SessionId,
@@ -47612,6 +47798,169 @@ mod tests_security_tracker {
     }
 
     #[test]
+    fn work_duplicate_clones_all_shapes_and_is_independent() {
+        // Build a source with every link shape: two-ended typed,
+        // multi-ended (custom end name), gathered end-set, and a
+        // comment-on-link whose attachment targets the gathered link.
+        let mut server = Server::new();
+        let admin = server.connect();
+        server.login_public(admin).unwrap();
+        server.grant_admin_authority(admin).unwrap();
+        let src = server
+            .create_work(admin, Edition::from_text(
+                "Source page.\n\nAlpha passage here.\n\nBeta passage here.\n\nGamma passage here.\n\nDelta passage here.\n\nEpsilon passage here.\n\nZeta passage here."))
+            .unwrap();
+        let other = server
+            .create_work(admin, Edition::from_text(
+                "Other work.\n\nFar end one.\n\nFar end two.\n\nFar end three."))
+            .unwrap();
+
+        fn text(srv: &Server, w: BeId, needle: &str) -> (i64, i64) {
+            let t = srv.work(w).unwrap().current_edition().to_text();
+            let i = t.find(needle).unwrap() as i64;
+            (i, i + needle.len() as i64)
+        }
+        fn mklink(srv: &mut Server, admin: SessionId, o: BeId, os: (i64, i64), d: BeId, ds: (i64, i64), ty: u64) -> BeId {
+            let link = crate::edition::links::HyperLink::make(
+                vec![ty],
+                crate::edition::links::HyperRef::single(None, Some(o), None, None)
+                    .with_span(Some(os.0), Some(os.1)),
+                crate::edition::links::HyperRef::single(None, Some(d), None, None)
+                    .with_span(Some(ds.0), Some(ds.1)),
+            );
+            srv.create_link_with_hyperlink_homed(admin, link, None).unwrap()
+        }
+
+        let a1 = text(&server, src, "Alpha passage");
+        let b1 = text(&server, src, "Beta passage");
+        let f1 = text(&server, other, "Far end one");
+        let f2 = text(&server, other, "Far end two");
+        let l1 = mklink(&mut server, admin, src, a1, other, f1, 1);
+        let l2 = mklink(&mut server, admin, src, b1, other, f2, 2);
+        let _ = l2;
+
+        // Multi-ended: add "Context" end to l1 targeting src at Gamma
+        {
+        {
+            let sp = text(&server, src, "Gamma passage");
+            let ls = server.links.get_mut(&l1).unwrap();
+            ls.link.ends_mut().entry("Context".to_string()).or_default().push(
+                crate::edition::links::HyperRef::single(None, Some(src), None, None)
+                    .with_span(Some(sp.0), Some(sp.1)));
+        }
+        }
+
+        // Gathered: l3 LeftEnd holds three source passages, RightEnd -> other Far end three
+        let a2 = text(&server, src, "Alpha passage");
+        let f3 = text(&server, other, "Far end three");
+        let l3 = mklink(&mut server, admin, src, a2, other, f3, 3);
+        for needle in ["Beta passage", "Gamma passage"] {
+            let sp = text(&server, src, needle);
+            let ls = server.links.get_mut(&l3).unwrap();
+            ls.link.ends_mut().entry("LeftEnd".to_string()).or_default().push(
+                crate::edition::links::HyperRef::single(None, Some(src), None, None)
+                    .with_span(Some(sp.0), Some(sp.1)));
+        }
+
+        // Comment-on-link: a new note work whose link attaches to l3
+        let note = server
+            .create_work(admin, Edition::from_text("Note about the disagreement."))
+            .unwrap();
+        let nspan = text(&server, note, "the disagreement");
+        let note_link = crate::edition::links::HyperLink::make(
+            vec![1],
+            crate::edition::links::HyperRef::single(None, Some(note), None, None)
+                .with_span(Some(nspan.0), Some(nspan.1)),
+            crate::edition::links::HyperRef::single(None, Some(src), None, None),
+        );
+        let nl = server.create_link_with_hyperlink_homed(admin, note_link, None).unwrap();
+        {
+            let ls = server.links.get_mut(&nl).unwrap();
+            ls.link.ends_mut().entry("Connection".to_string()).or_default().push(
+                crate::edition::links::HyperRef::link_attachment(l3, Some(src)));
+        }
+
+        // Snapshot the original's link ids
+        let orig_links: Vec<BeId> = server.links.keys().copied().collect();
+        let orig_count = orig_links.len();
+
+        // ---- Duplicate ----
+        let dup = server.work_duplicate(admin, src, None).unwrap();
+        assert_ne!(dup, src);
+
+        // Same text
+        assert_eq!(
+            server.work(dup).unwrap().current_edition().to_text(),
+            server.work(src).unwrap().current_edition().to_text(),
+        );
+
+        // Fresh tumbler stamp, not the source's
+        assert_ne!(
+            server.work(dup).unwrap().tumbler(),
+            server.work(src).unwrap().tumbler()
+        );
+
+        // Links touching src were cloned: l1, l2, l3, nl all have src
+        // ends — 4 clones (8 = 4 original + 4 cloned)
+        assert_eq!(server.links.len(), orig_count + 4);
+
+        // l1 clone: multi-ended (3 ends), same type, src ends remapped to dup
+        let dup_l1 = server.links.values()
+            .find(|ls| ls.link != server.links.get(&l1).unwrap().link
+                && ls.link.ends().len() == 3
+                && ls.link.ends().values().flatten()
+                    .any(|hr| hr.work_context() == Some(dup as u64)))
+            .expect("multi-ended clone exists");
+
+        // l3 clone: gathered (LeftEnd holds 3 attachments), remapped to dup
+        let dup_l3 = server.links.values()
+            .find(|ls| {
+                ls.link.ends().get("LeftEnd")
+                    .map(|v| v.len() == 3)
+                    .unwrap_or(false)
+                    && ls.link.ends()["LeftEnd"].iter()
+                        .all(|hr| hr.work_context() == Some(dup as u64))
+            })
+            .expect("gathered clone exists");
+
+        // nl clone: attachment remapped to the cloned l3
+        let dup_nl = server.links.values()
+            .find(|ls| {
+                ls.link.ends().values().flatten().any(|hr| {
+                    hr.link_attachment_target().is_some()
+                        && hr.link_attachment_target() != Some(l3)
+                })
+            })
+            .expect("comment-on-link clone with remapped attachment");
+        let _ = dup_l1;
+        let _ = dup_nl;
+
+        // ---- Independence: delete a clone; original survives ----
+        let clone_id = server.links.iter()
+            .find(|(_, ls)| {
+                ls.link.ends().get("LeftEnd").map(|v| v.len() == 3).unwrap_or(false)
+                    && ls.link.ends()["LeftEnd"][0].work_context() == Some(dup as u64)
+            })
+            .map(|(id, _)| *id).unwrap();
+        server.delete_link(admin, clone_id).unwrap();
+        assert!(server.links.get(&l3).is_some(), "original gathered link survives");
+        assert_eq!(
+            server.links.get(&l3).unwrap().link.ends()["LeftEnd"].len(),
+            3,
+            "original gathered end still holds 3"
+        );
+
+        // ---- Original untouched: same work count minus dup, same rev ----
+        assert_eq!(server.work(src).unwrap().revision_count(), 0);
+
+        // ---- Authorization: phantom work denied ----
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let result = server.work_duplicate(sid, 999_999, None);
+        assert!(result.is_err(), "nonexistent source must be denied");
+    }
+
+#[test]
     fn region_link_address_carries_prefix() {
         let mut server = Server::new();
         let admin = server.connect();

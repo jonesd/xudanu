@@ -198,6 +198,7 @@ pub enum OperationCode {
     RegionList,
     RegionInsertBetween,
     XanResolve,
+    WorkDuplicate,
     WorkUnstar,
     WorkIsStarred,
     ConnectionPinSet,
@@ -594,6 +595,7 @@ impl OperationCode {
             0x0361 => Some(OperationCode::RegionList),
             0x0362 => Some(OperationCode::RegionInsertBetween),
             0x0363 => Some(OperationCode::XanResolve),
+            0x0364 => Some(OperationCode::WorkDuplicate),
             0x0336 => Some(OperationCode::WorkUnstar),
             0x0337 => Some(OperationCode::WorkIsStarred),
             0x0338 => Some(OperationCode::WorkGraph),
@@ -946,6 +948,7 @@ impl OperationCode {
             OperationCode::RegionList => 0x0361,
             OperationCode::RegionInsertBetween => 0x0362,
             OperationCode::XanResolve => 0x0363,
+            OperationCode::WorkDuplicate => 0x0364,
             OperationCode::WorkUnstar => 0x0336,
             OperationCode::WorkIsStarred => 0x0337,
             OperationCode::WorkGraph => 0x0338,
@@ -1464,6 +1467,11 @@ pub enum WireRequest {
     },
     XanResolve {
         address: String,
+    },
+    WorkDuplicate {
+        work_id: BeId,
+        #[serde(default)]
+        title: Option<String>,
     },
     WorkUnstar {
         work_id: BeId,
@@ -5254,6 +5262,7 @@ mod lattice_shadow_wire_tests {
             OperationCode::RegionList,
             OperationCode::RegionInsertBetween,
             OperationCode::XanResolve,
+            OperationCode::WorkDuplicate,
         ] {
             let wire = code.to_u16();
             let back = OperationCode::from_u16(wire).expect("decode");
@@ -5282,6 +5291,7 @@ mod lattice_shadow_wire_tests {
             (0x0361, OperationCode::RegionList),
             (0x0362, OperationCode::RegionInsertBetween),
             (0x0363, OperationCode::XanResolve),
+            (0x0364, OperationCode::WorkDuplicate),
         ];
         for (wire, want) in targets {
             assert_eq!(OperationCode::from_u16(wire), Some(want));

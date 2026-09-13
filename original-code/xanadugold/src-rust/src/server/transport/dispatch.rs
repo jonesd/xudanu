@@ -1046,6 +1046,12 @@ fn dispatch_inner(
                     .collect::<Vec<_>>(),
             })))
         }
+        WireRequest::WorkDuplicate { work_id, title } => {
+            let new_id = srv.work_duplicate(session_id, work_id, title)?;
+            Ok(ResponseValue::Json(serde_json::json!({
+                "work_id": new_id,
+            })))
+        }
         WireRequest::RegionInsertBetween {
             club_id,
             before,

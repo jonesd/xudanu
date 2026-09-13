@@ -633,10 +633,23 @@ impl HyperRef {
         self.origin_tumbler.as_deref()
     }
 
+    pub fn set_link_attachment_target(&mut self, new_target: u64) {
+        if let crate::edition::links::HyperRefKind::LinkAttachment { link_id } = &mut self.kind {
+            *link_id = new_target;
+        }
+    }
+
     pub fn with_origin_tumbler(&self, tumbler: Option<String>) -> Self {
         let mut hr = self.clone();
         hr.origin_tumbler = tumbler;
         hr
+    }
+
+    /// FR-67: remap this end's target to a different work (same
+    /// positions — identical text, spans carry over verbatim).
+    pub fn remap_work_context(&mut self, new_work: u64) {
+        self.work_context = Some(new_work);
+        self.origin_tumbler = None; // stale address of the old work
     }
 
     pub fn original_context(&self) -> Option<u64> {
@@ -1139,6 +1152,10 @@ impl HyperLink {
         &self.ends
     }
 
+    pub fn ends_mut(&mut self) -> &mut HashMap<String, Vec<HyperRef>> {
+        &mut self.ends
+    }
+
     /// Phase D (tumbler link targets): stamp every work-addressed end
     /// with its permanent tumbler address. The resolver maps a local
     /// work id to its creation-stamped tumbler (span appended by the
@@ -1157,6 +1174,21 @@ impl HyperLink {
                 if let Some(wid) = hr.work_context() {
                     if let Some(t) = resolver(wid, hr.start_position(), hr.end_position()) {
                         hr.origin_tumbler = Some(t);
+                    }
+                }
+            }
+        }
+    }
+
+    /// FR-67: remap link-attachment targets after duplication —
+    /// attachments referencing an original link now reference its
+    /// clone (id_map: old link id -> new link id).
+    pub fn remap_link_attachments(&mut self, id_map: &std::collections::HashMap<u64, u64>) {
+        for atts in self.ends.values_mut() {
+            for hr in atts.iter_mut() {
+                if let Some(target) = hr.link_attachment_target() {
+                    if let Some(&new_target) = id_map.get(&target) {
+                        hr.set_link_attachment_target(new_target);
                     }
                 }
             }
