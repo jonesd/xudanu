@@ -644,6 +644,50 @@ function drawOverlay(
       const pattern = getHatchPattern(ctx, marker.otherWorkId);
       ctx.fillStyle = pattern || marker.color + "60";
     }
+    // Same-doc links: draw a thin bar at the DESTINATION span too,
+    // so both ends are visible in the margin without clicking.
+    if (marker.sourceSpanStart != null && marker.sourceSpanEnd != null && marker.direction === "outgoing") {
+      {
+        const destStart = Math.max(marker.sourceSpanStart, 0);
+        const destEnd = Math.min(marker.sourceSpanEnd, textLen);
+        if (destStart < destEnd) {
+          try {
+            const dRange = document.createRange();
+            if (singleNode) {
+              dRange.setStart(textNode as Text, destStart);
+              dRange.setEnd(textNode as Text, destEnd);
+            } else {
+              const dsn = findTextNodeAt(editor, destStart, false);
+              const den = findTextNodeAt(editor, destEnd - 1, false);
+              if (dsn && den) {
+                dRange.setStart(dsn.node, dsn.offset);
+                dRange.setEnd(den.node, den.offset + 1);
+              }
+            }
+            const dRects = dRange.getClientRects();
+            if (dRects.length > 0) {
+              const dFirst = dRects[0].top - rect.top;
+              const dLast = dRects[dRects.length - 1].bottom - rect.top;
+              // Thin hollow bar on the left margin at the destination
+              ctx.strokeStyle = barColor + "88";
+              ctx.lineWidth = 1.5;
+              ctx.setLineDash([3, 3]);
+              ctx.strokeRect(2, dFirst, 4, dLast - dFirst);
+              ctx.setLineDash([]);
+              // Hit zone for the destination bar (click = jump to source)
+              hitZones.push({
+                marker: marker,
+                x: 0,
+                y: dFirst,
+                width: 10,
+                height: dLast - dFirst,
+              });
+            }
+          } catch { /* range error — skip */ }
+        }
+      }
+    }
+
     // FR-4.5: stack margin bars per lane (left outgoing / right incoming).
     if (isIncoming && typeStyle) {
       const rightX = rect.width - 3 - lane * 4;
