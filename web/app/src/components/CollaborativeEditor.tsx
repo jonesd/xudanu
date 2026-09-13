@@ -353,8 +353,8 @@ function drawOverlay(
         range.setStart(textNode as Text, drawStart);
         range.setEnd(textNode as Text, drawEnd);
       } else {
-        const sn = findTextNodeAt(editor, drawStart);
-        const en = findTextNodeAt(editor, drawEnd - 1);
+        const sn = findTextNodeAt(editor, drawStart, false);
+        const en = findTextNodeAt(editor, drawEnd - 1, false);
         if (!sn || !en) continue;
         range.setStart(sn.node, sn.offset);
         range.setEnd(en.node, en.offset + 1);
@@ -509,8 +509,8 @@ function drawOverlay(
         range.setStart(textNode as Text, drawStart);
         range.setEnd(textNode as Text, drawEnd);
       } else {
-        const sn = findTextNodeAt(editor, drawStart);
-        const en = findTextNodeAt(editor, drawEnd - 1);
+        const sn = findTextNodeAt(editor, drawStart, false);
+        const en = findTextNodeAt(editor, drawEnd - 1, false);
         if (!sn || !en) continue;
         range.setStart(sn.node, sn.offset);
         range.setEnd(en.node, en.offset + 1);
@@ -597,8 +597,8 @@ function drawOverlay(
         range.setStart(textNode as Text, drawStart);
         range.setEnd(textNode as Text, drawEnd);
       } else {
-        const sn = findTextNodeAt(editor, drawStart);
-        const en = findTextNodeAt(editor, drawEnd - 1);
+        const sn = findTextNodeAt(editor, drawStart, false);
+        const en = findTextNodeAt(editor, drawEnd - 1, false);
         if (!sn || !en) continue;
         range.setStart(sn.node, sn.offset);
         range.setEnd(en.node, en.offset + 1);
@@ -831,8 +831,8 @@ function drawOverlay(
         range.setStart(textNode as Text, drawStart);
         range.setEnd(textNode as Text, drawEnd);
       } else {
-        const sn = findTextNodeAt(editor, drawStart);
-        const en = findTextNodeAt(editor, drawEnd - 1);
+        const sn = findTextNodeAt(editor, drawStart, false);
+        const en = findTextNodeAt(editor, drawEnd - 1, false);
         if (!sn || !en) continue;
         range.setStart(sn.node, sn.offset);
         range.setEnd(en.node, en.offset + 1);
@@ -882,8 +882,8 @@ function drawOverlay(
         range.setStart(textNode as Text, drawStart);
         range.setEnd(textNode as Text, drawEnd);
       } else {
-        const sn = findTextNodeAt(editor, drawStart);
-        const en = findTextNodeAt(editor, drawEnd - 1);
+        const sn = findTextNodeAt(editor, drawStart, false);
+        const en = findTextNodeAt(editor, drawEnd - 1, false);
         if (!sn || !en) continue;
         range.setStart(sn.node, sn.offset);
         range.setEnd(en.node, en.offset + 1);
@@ -916,8 +916,8 @@ function drawOverlay(
         range.setStart(textNode as Text, drawStart);
         range.setEnd(textNode as Text, drawEnd);
       } else {
-        const sn = findTextNodeAt(editor, drawStart);
-        const en = findTextNodeAt(editor, drawEnd - 1);
+        const sn = findTextNodeAt(editor, drawStart, false);
+        const en = findTextNodeAt(editor, drawEnd - 1, false);
         if (!sn || !en) continue;
         range.setStart(sn.node, sn.offset);
         range.setEnd(en.node, en.offset + 1);
