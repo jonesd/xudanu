@@ -215,6 +215,7 @@ export function LinkCreator({
           );
         }
         setCreating(false);
+        onLinkCreated();
         reset();
         onClose();
         return;
