@@ -51,6 +51,7 @@ export function LinkCreator({
   onSelectTextInOtherDoc,
 }: LinkCreatorProps) {
   const [step, setStep] = useState<Step>("target");
+  const [workSearch, setWorkSearch] = useState("");
   const [targetMode, setTargetMode] = useState<TargetMode>(null);
   const [selectedWorkId, setSelectedWorkId] = useState<number | null>(null);
   const [selectedTypeIds, setSelectedTypeIds] = useState<Set<number>>(new Set());
@@ -509,11 +510,22 @@ export function LinkCreator({
             {targetMode === "whole-work" && (
               <div className="link-work-picker">
                 <div className="link-work-picker-label">Select a document:</div>
+                <input
+                  type="text"
+                  className="link-form-input"
+                  placeholder="Search documents..."
+                  value={workSearch}
+                  onChange={(e) => setWorkSearch(e.target.value)}
+                  style={{ marginBottom: 8, fontSize: 13, padding: "6px 10px" }}
+                />
                 <div className="link-work-list">
                   {otherWorks.length === 0 ? (
                     <div className="link-work-empty">No other documents available</div>
                   ) : (
-                    otherWorks.map((w) => (
+                    otherWorks
+                    .filter((w) => !workSearch || (w.title || "").toLowerCase().includes(workSearch.toLowerCase()))
+                    .sort((a, b) => (a.title || "").localeCompare(b.title || ""))
+                    .map((w) => (
                       <button
                         key={w.work_id}
                         type="button"
