@@ -4,13 +4,13 @@ import { DEFAULT_LINK_TYPES } from "../hooks/useTransclusion";
 import { planEndSetOperations } from "../link-ends";
 
 const LINK_TYPE_DESCRIPTIONS: Record<number, string> = {
-  1: "Annotate a passage or add a scholarly note",
-  2: "Cross-reference, citation, or 'see this'",
-  3: "Mark a contested claim or counter-argument",
-  4: "This passage quotes another source",
-  5: "Related reading path or similar work",
-  6: "External web link",
-  7: "This passage is part of a curated trail",
+  1: "This [remarks on] that passage — your observation, living beside the text",
+  2: "This [cites] that source — supporting or related material, neutrally",
+  3: "This [opposes] those exact words — not the whole work, this passage",
+  4: "This [quotes] that source — the formal citation relationship",
+  5: "These [belong in one conversation] — related treatments, same topic",
+  6: "This [links out] to the web — the familiar one-way escape hatch",
+  7: "This passage [is part of] a curated trail",
 };
 
 export interface LinkCreatorSource {
@@ -402,6 +402,9 @@ export function LinkCreator({
         {step === "target" && (
           <div className="link-creator-body">
             <div className="link-creator-step-title">What do you want to link this to?</div>
+            <div style={{ fontSize: 12, color: "#8b949e", margin: "4px 0 12px", fontStyle: "italic" }}>
+              A link is a sentence with blanks — the type is the verb, each end fills a blank.
+            </div>
             <div className="link-target-options">
               <button
                 type="button"
@@ -501,9 +504,9 @@ export function LinkCreator({
         {step === "type" && targetMode === "whole-work" && selectedWorkId !== null && (
           <div className="link-creator-body">
             <div className="link-creator-step-title">
-              Link type
+              What kind of connection is this?
               <span style={{ fontSize: 11, color: "#8b949e", marginLeft: 8 }}>
-                toggle one or more
+                the type is the verb
               </span>
               <button
                 type="button"
@@ -576,16 +579,34 @@ export function LinkCreator({
                   </select>
                 </div>
                 <div style={{ marginTop: 8 }}>
-                  <button
-                    type="button"
-                    className="link-create-submit"
-                    style={{ background: "transparent", border: "1px solid #30363d", color: "#8b949e", width: "100%", marginBottom: extraEnds.length > 0 ? 8 : 0 }}
-                    disabled={creating}
-                    onClick={() => setStep("extra-ends")}
-                  >
-                    + Add another end (multi-ended link)
-                    {extraEnds.length > 0 && ` — ${extraEnds.length} added`}
-                  </button>
+                  {extraEnds.length > 0 ? (
+                    <button
+                      type="button"
+                      className="link-create-submit"
+                      style={{ background: "transparent", border: "1px solid #30363d", color: "#8b949e", width: "100%", marginBottom: 8 }}
+                      disabled={creating}
+                      onClick={() => setStep("extra-ends")}
+                    >
+                      Additional ends — {extraEnds.length} added
+                    </button>
+                  ) : (
+                    <details style={{ marginTop: 4 }}>
+                      <summary style={{ fontSize: 12, color: "#8b949e", cursor: "pointer", padding: "6px 0", userSelect: "none" }}>
+                        {"\u25b8 Advanced: connect three or more places"}
+                      </summary>
+                      <div style={{ fontSize: 12, color: "#8b949e", padding: "4px 0 8px" }}>
+                        Most links have two ends. Add a third only when ONE claim involves
+                        several places — a comparison, not a chain.{" "}
+                        <button
+                          type="button"
+                          style={{ background: "none", border: "none", color: "#58a6ff", cursor: "pointer", fontSize: 12, padding: 0, textDecoration: "underline" }}
+                          onClick={() => setStep("extra-ends")}
+                        >
+                          Add another end {"\u2192"}
+                        </button>
+                      </div>
+                    </details>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -614,9 +635,10 @@ export function LinkCreator({
               </button>
             </div>
             <div className="link-form-hint">
-              A multi-ended link is ONE connection between several places — "A, B and C form a
-              comparison." Each extra end is clickable in Connections and joinable from every
-              end's work.
+              One claim, several blanks. This link now connects{" "}
+              <strong>{extraEnds.length + 1} places</strong> — every end is reachable from
+              every other end, and the Connections panel shows the full committee. Use the
+              compare button ({"\u21c4"}) on the row to see all ends side by side.
             </div>
             {extraEnds.length > 0 && (
               <div style={{ margin: "8px 0" }}>
