@@ -250,6 +250,7 @@ export function WorkspaceShell() {
     end: number;
     text: string;
   } | null>(null);
+  const gatherDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [gatherPending, setGatherPending] = useState<{
     sourceWorkId: number;
     sourceStart: number;
@@ -4482,13 +4483,19 @@ export function WorkspaceShell() {
                 // while waiting for a destination, capture it and re-open
                 // the wizard at the type step.
                 if (gatherPending && s !== null && e !== null && s !== e) {
-                  const gatherText = text.slice(s, e);
-                  if (gatherText.trim().length > 0) {
-                    setGatherPending(prev => prev ? {
-                      ...prev,
-                      gathered: [...prev.gathered, { start: s, end: e, text: gatherText }],
-                    } : null);
-                  }
+                  // Debounce: selection change fires on every character
+                  // during drag — wait for the selection to settle before
+                  // capturing, or we get 18 partial passages instead of 1.
+                  if (gatherDebounceRef.current) clearTimeout(gatherDebounceRef.current);
+                  const gathered = { start: s, end: e, text: text.slice(s, e) };
+                  gatherDebounceRef.current = setTimeout(() => {
+                    if (gathered.text.trim().length > 0) {
+                      setGatherPending(prev => prev ? {
+                        ...prev,
+                        gathered: [...prev.gathered, gathered],
+                      } : null);
+                    }
+                  }, 400);
                 }
                 if (sameDocDestPending && s !== null && e !== null && s !== e) {
                   const destText = text.slice(s, e);
