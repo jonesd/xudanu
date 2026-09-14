@@ -846,22 +846,20 @@ function drawOverlay(
     const lastRect = rr[rr.length - 1];
     const height = Math.max((lastRect.bottom - rect.top) - firstTop, 14);
 
-    // Draw a clear badge centered on the text line, not hidden in the margin
+    // Draw a clear badge centered on the text line
     const centerX = rr.length > 0 ? (rr[0].left + rr[0].width / 2) - rect.left : 100;
     const pillW = 34;
     const pillH = 18;
     const pillY = firstTop + Math.max(0, (height - pillH) / 2);
 
     ctx.save();
-    // Rounded pill with border
     ctx.beginPath();
-    ctx.roundRect(centerX - pillW / 2, pillY, pillW, pillH, 9);
+    ctx.rect(centerX - pillW / 2, pillY, pillW, pillH);
     ctx.fillStyle = "rgba(210, 153, 34, 0.92)";
     ctx.fill();
     ctx.strokeStyle = "#d29922";
     ctx.lineWidth = 1;
     ctx.stroke();
-    // Count text centered
     ctx.fillStyle = "#0d1117";
     ctx.font = "bold 11px ui-monospace, SFMono-Regular, monospace";
     ctx.textAlign = "center";
