@@ -847,8 +847,8 @@ function drawOverlay(
     const height = Math.max((lastRect.bottom - rect.top) - firstTop, 14);
 
     // Draw a clear badge centered on the text line
-    const pillX = 4;
-    const pillW = 34;
+    const pillX = 0;
+    const pillW = 18;
     const pillH = 18;
     const pillY = firstTop + Math.max(0, (height - pillH) / 2);
 
