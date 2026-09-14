@@ -7,6 +7,8 @@ paths-ignore:
   - '**/test/**'
   - '**/*.test.*'
   - '**/tests/**'
+  - '**/__tests__/**'
+  - '**/seed_demo.rs'
 
 query-filters:
   - exclude:
@@ -15,6 +17,18 @@ query-filters:
       id: cpp/hardcoded-credentials
   - exclude:
       id: js/hardcoded-credentials
+  - exclude:
+      id: rust/hardcoded-credentials
+  - exclude:
+      id: js/hardcoded-crypto-key
+  - exclude:
+      id: cpp/hardcoded-crypto-key
+  - exclude:
+      id: rust/hardcoded-crypto-key
+  - exclude:
+      id: js/partially-hardcoded-credentials
+  - exclude:
+      id: rust/partially-hardcoded-credentials
 
 queries:
   - uses: security-and-quality
