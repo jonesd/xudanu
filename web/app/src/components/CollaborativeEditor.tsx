@@ -155,7 +155,7 @@ const LINK_TYPE_NAMES: Record<number, string> = {
 
 const DESC_BOX_WIDTH = 210;
 const DESC_BOX_HEIGHT = 46;
-const DESC_BOX_GAP = 4;
+const DESC_BOX_GAP = 10;
 const DESC_BOX_RIGHT_MARGIN = 8;
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
@@ -846,21 +846,35 @@ function drawOverlay(
     const lastRect = rr[rr.length - 1];
     const height = Math.max((lastRect.bottom - rect.top) - firstTop, 14);
 
+    // Draw a clear badge centered on the text line, not hidden in the margin
+    const centerX = rr.length > 0 ? (rr[0].left + rr[0].width / 2) - rect.left : 100;
+    const pillW = 34;
+    const pillH = 18;
+    const pillY = firstTop + Math.max(0, (height - pillH) / 2);
+
     ctx.save();
-    ctx.fillStyle = "#d29922";
-    ctx.fillRect(0, firstTop, 18, height);
+    // Rounded pill with border
+    ctx.beginPath();
+    ctx.roundRect(centerX - pillW / 2, pillY, pillW, pillH, 9);
+    ctx.fillStyle = "rgba(210, 153, 34, 0.92)";
+    ctx.fill();
+    ctx.strokeStyle = "#d29922";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // Count text centered
     ctx.fillStyle = "#0d1117";
-    ctx.font = "bold 10px ui-monospace, SFMono-Regular, monospace";
-    ctx.textBaseline = "top";
-    ctx.fillText(String(pill.count), 5, firstTop + 2);
+    ctx.font = "bold 11px ui-monospace, SFMono-Regular, monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(pill.count), centerX, pillY + pillH / 2 + 0.5);
     ctx.restore();
 
     hitZones.push({
       marker: pill.first,
-      x: 0,
-      y: firstTop,
-      width: 18,
-      height,
+      x: centerX - pillW / 2,
+      y: pillY,
+      width: pillW,
+      height: pillH,
       densityCluster: pill.clusterIndex,
       densityCount: pill.count,
     });
