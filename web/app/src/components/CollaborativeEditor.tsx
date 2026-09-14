@@ -847,14 +847,14 @@ function drawOverlay(
     const height = Math.max((lastRect.bottom - rect.top) - firstTop, 14);
 
     // Draw a clear badge centered on the text line
-    const centerX = rr.length > 0 ? (rr[0].left + rr[0].width / 2) - rect.left : 100;
+    const pillX = 4;
     const pillW = 34;
     const pillH = 18;
     const pillY = firstTop + Math.max(0, (height - pillH) / 2);
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(centerX - pillW / 2, pillY, pillW, pillH);
+    ctx.rect(pillX, pillY, pillW, pillH);
     ctx.fillStyle = "rgba(210, 153, 34, 0.92)";
     ctx.fill();
     ctx.strokeStyle = "#d29922";
@@ -864,12 +864,12 @@ function drawOverlay(
     ctx.font = "bold 11px ui-monospace, SFMono-Regular, monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(String(pill.count), centerX, pillY + pillH / 2 + 0.5);
+    ctx.fillText(String(pill.count), pillX + pillW / 2, pillY + pillH / 2 + 0.5);
     ctx.restore();
 
     hitZones.push({
       marker: pill.first,
-      x: centerX - pillW / 2,
+      x: pillX,
       y: pillY,
       width: pillW,
       height: pillH,

@@ -335,7 +335,7 @@ export function WorkspaceShell() {
       setShowCompoundBuilder(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navTab]);
+  }, [navTab, workBeId, works]);
   const [showMerge, setShowMerge] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   // FR-42/45 network toggle state — mirrored from /health (default off).
@@ -580,6 +580,7 @@ export function WorkspaceShell() {
   );
 
   const recentWorkIds = useRef<number[]>([]);
+  const [prevWork, setPrevWork] = useState<{ id: number; title: string } | null>(null);
 
   const prevSaveState = useRef(saveState);
 
@@ -596,6 +597,12 @@ export function WorkspaceShell() {
   const getSourceText = useCallback(() => compound.resolvedText || text, [compound.resolvedText, text]);
 
   const selectWork = useCallback((id: number) => {
+    if (workBeId !== null && workBeId !== id) {
+      setPrevWork({
+        id: workBeId,
+        title: works.find(w => w.work_id === workBeId)?.title || `work 0x${workBeId.toString(16)}`,
+      });
+    }
     setWorkBeId(id);
     setImageEntries([]);
     recentWorkIds.current = recentWorkIds.current.filter((r) => r !== id);
@@ -3082,6 +3089,10 @@ export function WorkspaceShell() {
         identityColor={identityColor}
         activeNav={navTab}
         onNavChange={setNavTab}
+        onGoBack={prevWork && workBeId !== prevWork.id ? () => {
+          if (prevWork) selectWork(prevWork.id);
+        } : undefined}
+        backToTitle={prevWork && workBeId !== prevWork.id ? prevWork.title : null}
         onHome={() => {
           setWorkBeId(null);
           setImageEntries([]);
@@ -5100,10 +5111,15 @@ export function WorkspaceShell() {
           clientRef={clientRef}
           onLinkCreated={() => {
             transclusion.clearPendingLink();
-            // Always reload links so colored underlines appear immediately
-            if (clientRef.current && workBeId !== null) {
-              void loadLinks(clientRef.current, workBeId, works);
-            }
+            // Reload links after a short delay to let the server finish
+            // indexing the new link in work_to_links. Without this,
+            // loadLinks returns stale data and the underline doesn't
+            // render until a manual refresh.
+            setTimeout(() => {
+              if (clientRef.current && workBeId !== null) {
+                void loadLinks(clientRef.current, workBeId, works);
+              }
+            }, 300);
           }}
           onGatherPassages={(destWorkId, typeIds) => {
             if (transclusion.pendingLink) {

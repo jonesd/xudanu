@@ -8,6 +8,11 @@ interface BottomBarProps {
   wordCount: number;
   chainValid: boolean;
   lastSavedSeconds: number | null;
+  /** Navigate back to the previously viewed work (null = nothing to go back to) */
+  onGoBack?: () => void;
+  /** Display name of the previous work (shown on the back button)
+   */
+  backToTitle?: string | null;
 }
 
 export function BottomBar({
@@ -18,6 +23,8 @@ export function BottomBar({
   wordCount,
   chainValid,
   lastSavedSeconds,
+  onGoBack,
+  backToTitle,
 }: BottomBarProps) {
   const [healthDegraded, setHealthDegraded] = useState(false);
 
@@ -40,6 +47,16 @@ export function BottomBar({
 
   return (
     <div className="bottom-bar">
+      {onGoBack && backToTitle && (
+        <div
+          className="bb-item"
+          onClick={onGoBack}
+          style={{ cursor: "pointer", fontWeight: 600, color: "var(--accent-blue, #58a6ff)" }}
+          title={`Go back to ${backToTitle}`}
+        >
+          {"\u2190"} {backToTitle.length > 20 ? backToTitle.slice(0, 20) + "\u2026" : backToTitle}
+        </div>
+      )}
       <div className="bb-item">
         <div className="connection-dot" style={{ width: 6, height: 6, background: connected ? "var(--green)" : "var(--red)" }} />
         {connected ? `Connected · ${sessionCount} session${sessionCount !== 1 ? "s" : ""}` : "Offline"}

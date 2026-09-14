@@ -16,6 +16,8 @@ interface WorkspaceTopBarProps {
   onOpenAdmin: () => void;
   onHome: () => void;
   isAdmin: boolean;
+  onGoBack?: () => void;
+  backToTitle?: string | null;
   onCreateWork: () => void;
   themeMode: ThemeMode;
   themePickerOpen: boolean;
