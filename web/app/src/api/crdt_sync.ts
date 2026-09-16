@@ -638,6 +638,12 @@ export class CrdtSyncClient {
   private openWorkTitle = "";
   private currentStarred = false;
   private skipCrdt = false;
+  /** FR-69 S2: last known edit permission — survives disconnects. */
+  private lastCanEdit = false;
+  /** FR-69 S2: true between a user edit (setText) and its server
+   * acknowledgement — protects offline-typed text from being
+   * clobbered by full-state broadcasts. */
+  private hasUnsyncedLocalEdits = false;
 
   constructor(url: string, workBeId: number) {
     this.url = url;
@@ -732,6 +738,7 @@ export class CrdtSyncClient {
     const oldText = this.text;
     if (newText === oldText) return;
     this.text = newText;
+    this.hasUnsyncedLocalEdits = true;
 
     if (this.crdtReady) {
       this.sendTextDelta(oldText, newText);
@@ -1879,8 +1886,18 @@ export class CrdtSyncClient {
     try {
       const resp = await this.sendRequest("work_can_revise", { work_id: workId });
       const val = extractValue(resp);
-      return val === true;
+      const ok = val === true;
+      this.lastCanEdit = ok;
+      return ok;
     } catch {
+      // FR-69 S2: while disconnected, keep the last known permission —
+      // dropping to false on a network gap blanks and locks the
+      // editor mid-session, and offline-typed edits never enter the
+      // sync layer. A genuine denial arrives on the next probe once
+      // the wire is back.
+      if (!this.isConnected()) {
+        return this.lastCanEdit;
+      }
       return false;
     }
   }
@@ -2183,10 +2200,13 @@ export class CrdtSyncClient {
 
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
+        console.log(`[crdt] session setup attempt ${attempt + 1}`);
         const resp = await this.sendRequest("session_connect");
         this.sessionId = extractValue(resp) as number;
+        console.log(`[crdt] session_connect ok (id ${this.sessionId})`);
 
         const ticketOk = await this.tryTicketAuth();
+        console.log(`[crdt] ticket auth done (ok=${ticketOk})`);
 
         const who = await this.checkWhoAmI();
         if (!who && !ticketOk) {
@@ -2194,6 +2214,7 @@ export class CrdtSyncClient {
         }
 
         await this.tryOpenWork();
+        console.log(`[crdt] tryOpenWork done`);
         this.checkAdminStatus().catch(() => {});
 
         this.connected = true;
@@ -2223,16 +2244,21 @@ export class CrdtSyncClient {
           setTimeout(() => reject(new Error("crdt_sync_open timeout")), 5000)
         );
         const openResp = await Promise.race([openPromise, timeoutPromise]);
-        const inner = extractValue(openResp) as Record<string, unknown>;
 
+        // Mark this connection's initial open only AFTER a successful
+        // response: a timed-out open left the flag set and the
+        // reconnect merge (offline-edit push) skipped forever on
+        // that connection (FR-69 S2).
         const wasInitialOpen = !this.crdtOpenedThisConnection;
         if (wasInitialOpen) {
           this.crdtOpenedThisConnection = true;
         }
+        const inner = extractValue(openResp) as Record<string, unknown>;
 
         if (wasInitialOpen) {
           const serverText = (inner.current_text as string) || "";
           const localText = this.text;
+          console.log(`[crdt] initial open: local=${localText.length} chars, server=${serverText.length} chars, unsynced=${this.hasUnsyncedLocalEdits}`);
 
           if (localText && localText !== serverText) {
             // Reconnect recovery: the client has unsynced edits (server
@@ -2245,8 +2271,12 @@ export class CrdtSyncClient {
             );
             this.sendTextDelta(serverText, localText);
             this.text = localText;
+            // Pushed but not yet acked: the unacked guard stays armed
+            // until the real acknowledgement lands (FR-69 S2).
           } else {
             this.text = serverText;
+            // Adopting the server view: this IS the acknowledged state.
+            this.hasUnsyncedLocalEdits = false;
           }
           // Offline mirror: every successful read is a cache candidate
           // (starred pinning + LRU budget handled inside).
@@ -2341,7 +2371,11 @@ export class CrdtSyncClient {
     }
     // Offline: the wire is down and no in-memory text loaded — serve
     // the cached mirror read-only, marked so the UI can say so.
-    if (!loaded && !this.connected) {
+    // FR-69 S2: never over unsynced local edits — this branch runs
+    // mid-outage, and adopting a stale/empty cache entry over
+    // offline-typed text silently destroyed it (observed as
+    // local=0/unsynced=true at reopen).
+    if (!loaded && !this.connected && !this.hasUnsyncedLocalEdits) {
       const cached = await getCachedDocument(this.workBeId);
       if (cached) {
         this.text = cached.text;
@@ -2360,7 +2394,12 @@ export class CrdtSyncClient {
     * while one is in progress, the latest request is queued.
     */
   async switchWork(newWorkId: number): Promise<void> {
-    if (this.workBeId === newWorkId && this.crdtReady) return;
+    // Re-selecting the CURRENT work is always a no-op. The old guard
+    // required crdtReady, so a reconnect-time re-select (crdtReady
+    // false) fell through and cleared this.text — destroying
+    // offline-typed edits before the initial-open merge could push
+    // them (FR-69 S2: local=0/unsynced=true at reopen).
+    if (this.workBeId === newWorkId) return;
     if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
     if (this.switching) {
@@ -2469,6 +2508,17 @@ export class CrdtSyncClient {
               len: newText.length,
               ackedLen: this.lastAckedLocalText?.length,
             });
+          } else if (this.hasUnsyncedLocalEdits) {
+            // FR-69 S2: local edits exist that the server has NEVER
+            // acknowledged (typed during an outage). A full-state
+            // broadcast here is the server's pre-offline view;
+            // adopting it would clobber unsynced work. Keep local
+            // and push a delta to converge the server to us.
+            console.warn(
+              "[crdt] server full-state differs while local edits are unacked — pushing local",
+              { localLen: this.text.length, serverLen: newText.length },
+            );
+            this.sendTextDelta(newText, this.text);
           } else {
             this.text = newText;
             this.textListeners.forEach((cb) => cb(newText));
@@ -2692,6 +2742,7 @@ export class CrdtSyncClient {
       this.deltaInFlight = false;
       this.lastAckedLocalText = newText;
       this.lastAckedAt = Date.now();
+      this.hasUnsyncedLocalEdits = false;
       this.setSaveState("saved");
       this.saveStateTimer = setTimeout(() => this.setSaveState("idle"), 2000);
       if (this.pendingServerText !== null) {

@@ -33,8 +33,9 @@ async function startServer(dataDir) {
      "run", `127.0.0.1:${PORT}`, dataDir, "--static-dir", DIST],
     { cwd: SRC, detached: true, stdio: ["ignore", "pipe", "pipe"] },
   );
-  serverProc.stderr.on("data", () => {});
-  serverProc.stdout.on("data", () => {});
+  const serverLog = fs.openSync("/tmp/stress-server.log", "a");
+  serverProc.stderr.on("data", (d) => fs.writeSync(serverLog, d));
+  serverProc.stdout.on("data", (d) => fs.writeSync(serverLog, d));
   const t0 = Date.now();
   for (let i = 0; i < 60; i++) {
     await sleep(1000);
@@ -187,6 +188,12 @@ async function scenarioS2() {
   const browser = await chromium.launch({ headless: true });
   try {
     const { page, wsOpens } = await openClient(browser);
+    page.on("console", (m) => {
+      const t = m.text();
+      if (process.env.STRESS_VERBOSE ? true : /crdt|reconnect|offline|sync/i.test(t)) {
+        log(`  [page] ${t.slice(0, 200)}`);
+      }
+    });
 
     // Dismiss the welcome landing (blocks pointer events until skipped)
     await page.locator(".ws-home-skip, [aria-label='Skip welcome']").first().click({ timeout: 8000 });
@@ -232,19 +239,51 @@ async function scenarioS2() {
     await startServer(dataDir);
     const opensBefore = wsOpens.length;
     await waitFor(page, async () => wsOpens.length > opensBefore, 90000, "reconnect after long outage");
-    await page.waitForTimeout(4000); // allow reconnect-push
 
-    // SERVER truth: read the work text via a fresh client
-    const check = await (async () => {
-      const r = await fetch(`${BASE}/api/public/works`, {}).catch(() => null);
-      return r;
-    })();
-    const afterHeal = await editor.textContent();
+    // Patient heal: poll for the offline edit itself (session setup
+    // can lag the socket open; churn may cycle connections).
+    let healed = false;
+    let healMs = -1;
+    const healStart = Date.now();
+    while (Date.now() - healStart < 90000) {
+      const txt = await page.locator(".editor-content").first().textContent().catch(() => null);
+      if (txt && txt.includes("and after the outage")) { healed = true; healMs = Date.now() - healStart; break; }
+      await sleep(3000);
+    }
+    log(`patient heal: ${healed ? `offline text VISIBLE after ${healMs}ms` : "offline text never reappeared"}`);
+
+    // SERVER truth: poll the public read API until the offline edit
+    // lands server-side (the reconnect push can lag the editor heal).
+    const workPath = await page.evaluate(() => location.search);
+    const widMatch = workPath.match(/work=0x([0-9a-f]+)/i);
+    const wid = widMatch ? parseInt(widMatch[1], 16) : null;
+    let serverHas = false;
+    const serverStart = Date.now();
+    while (wid && Date.now() - serverStart < 60000) {
+      try {
+        const r = await fetch(`${BASE}/api/public/work/${wid}`, { signal: AbortSignal.timeout(2000) });
+        if (r.ok) {
+          const j = await r.json();
+          const txt = JSON.stringify(j);
+          if (txt.includes("and after the outage")) { serverHas = true; break; }
+        }
+      } catch {}
+      await sleep(3000);
+    }
+    log(`server received offline edit: ${serverHas}${serverHas ? ` (after ${Date.now() - serverStart}ms)` : ""}`);
+
+    const healState = await page.evaluate(() => ({
+      url: location.href.slice(-60),
+      editorExists: !!document.querySelector(".editor-content"),
+      editorText: (document.querySelector(".editor-content")?.textContent ?? "").slice(-60),
+      bodyHasOffline: document.body.innerText.includes("after the outage"),
+    }));
+    log(`post-heal state: ${JSON.stringify(healState)}`);
+
+    const afterHeal = await page.locator(".editor-content").textContent().catch(() => null);
     const survived = (afterHeal ?? "").includes("and after the outage");
     log(`editor after heal: "${(afterHeal ?? "").trim().slice(-50)}"`);
     log(`offline edit survived in editor: ${survived}`);
-
-    // Hard truth: reload the page and read from the server
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForTimeout(5000);
     const reloaded = await page.locator(".editor-content").first().textContent().catch(() => null);
