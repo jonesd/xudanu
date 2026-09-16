@@ -95,14 +95,18 @@ export function OriginPanel({
       setError("Not connected");
       return;
     }
-    client
-      .sendRequest("work_get_edition", { work_id: marker.otherWorkId })
-      .then((resp) => {
-        if (!cancelled) setOriginText(extractText(resp));
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
-      });
+    const fetchOrigin = () => {
+      client
+        .sendRequest("work_get_edition", { work_id: marker.otherWorkId })
+        .then((resp) => {
+          if (!cancelled) setOriginText(extractText(resp));
+        })
+        .catch((e) => {
+          if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        });
+    };
+    fetchOrigin();
+    (window as unknown as { __refetchOrigin?: () => void }).__refetchOrigin = fetchOrigin;
     return () => {
       cancelled = true;
     };
@@ -169,7 +173,44 @@ export function OriginPanel({
         {originText == null && !error && <p className="ws-origin-meta">Loading origin…</p>}
         {error && <p className="ws-origin-meta">Could not load origin: {error}</p>}
         {originText != null && !located && (
-          <p className="ws-origin-meta">The quoted span could not be located in the current revision of the origin.</p>
+          <div className="ws-origin-drift" data-testid="origin-drift">
+            <p className="ws-origin-meta">
+              The origin document has been revised since this quotation was
+              made, and the passage could not be found in its current text.
+            </p>
+            <dl className="ws-origin-drift-detail">
+              <dt>Quoted excerpt</dt>
+              <dd>{marker.excerpt ? `\u201C${marker.excerpt}\u201D` : "(no excerpt recorded)"}</dd>
+              <dt>Stored span in origin</dt>
+              <dd>
+                {marker.sourceSpanStart != null && marker.sourceSpanEnd != null
+                  ? `chars ${marker.sourceSpanStart}\u2013${marker.sourceSpanEnd}`
+                  : "not recorded"}
+              </dd>
+              <dt>Origin</dt>
+              <dd>
+                {marker.otherWorkTitle || `Work 0x${marker.otherWorkId.toString(16)}`}
+                {" "}· current revision is {originText.length.toLocaleString()} characters
+              </dd>
+            </dl>
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button
+                className="ws-origin-open"
+                onClick={() => onOpenFull(marker.otherWorkId)}
+              >
+                Open origin document
+              </button>
+              <button
+                className="ws-origin-open"
+                onClick={() => {
+                  const refetch = (window as unknown as { __refetchOrigin?: () => void }).__refetchOrigin;
+                  if (refetch) refetch();
+                }}
+              >
+                Re-check origin
+              </button>
+            </div>
+          </div>
         )}
         {originText != null && located && (
           <HighlightedOrigin text={originText} start={located.start} end={located.end} context={CONTEXT} />

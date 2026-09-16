@@ -77,7 +77,9 @@ describe("OriginPanel", () => {
   it("degrades gracefully when the span is not found in the origin", async () => {
     const client = mkClient("totally different text with no overlap");
     render(<OriginPanel client={client} marker={MARKER} links={[LINK]} onClose={() => {}} onOpenFull={() => {}} />);
-    expect(await screen.findByText(/could not be located/)).toBeTruthy();
+    expect(await screen.findByText(/has been revised since this quotation/)).toBeTruthy();
+    // Drift detail card: the quoted excerpt is shown, never a bare denial.
+    expect(await screen.findByTestId("origin-drift")).toBeTruthy();
   });
 
   it("opens the full document via callback", async () => {

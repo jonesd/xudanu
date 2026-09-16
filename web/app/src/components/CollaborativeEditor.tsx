@@ -2528,7 +2528,7 @@ export function CollaborativeEditor({
                 {hoveredMarker.linkTypeId === 6
                   ? "Web Link — one-way"
                   : hoveredMarker.linkTypeId
-                  ? `${LINK_TYPE_NAMES[hoveredMarker.linkTypeId] ?? "Link"} — ${hoveredMarker.direction === "outgoing" ? "links to" : "linked from"}`
+                  ? `${LINK_TYPE_NAMES[hoveredMarker.linkTypeId] ?? "Link"}${hoveredMarker.linkAuthorName ? ` — ${hoveredMarker.linkAuthorName}` : ""} — ${hoveredMarker.direction === "outgoing" ? "links to" : "linked from"}`
                   : hoveredMarker.linkId === 0
                     ? `Compound — transcluded from`
                     : hoveredMarker.direction === "outgoing" ? "Transcluded to" : "Transcluded from"}
@@ -2710,6 +2710,14 @@ export function CollaborativeEditor({
             >
               <div className="marker-tooltip-title" style={{ color: "#8b949e" }}>
                 {hoveredStack.markers.length} connection{hoveredStack.markers.length > 1 ? "s" : ""} on this passage
+                {(() => {
+                  const parties = new Set(
+                    hoveredStack.markers
+                      .map((m) => m.linkAuthorName ?? m.linkAuthorClub ?? null)
+                      .filter((v): v is string | number => v != null),
+                  );
+                  return parties.size >= 2 ? ` · ${parties.size} parties` : "";
+                })()}
               </div>
               {(() => {
                 const order = [3, 1, 2, 4, 5, 6, 0];
@@ -2753,6 +2761,9 @@ export function CollaborativeEditor({
                         <div key={i} style={{ marginLeft: 14, marginTop: 3 }}>
                           <div style={{ fontSize: 11, color: "#e6edf3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {m.direction === "outgoing" ? "\u2192 " : "\u2190 "}{m.otherWorkTitle}
+                            {m.linkAuthorName != null && (
+                              <span style={{ color: "#7ee787" }}>{" \u00b7 "}{m.linkAuthorName}</span>
+                            )}
                             {m.endSetTotal != null && m.endSetTotal > 1 && (
                               <span style={{ color: "#7ee787" }}>{" \u00b7 passage "}{m.endSetIndex ?? "?"}{" of "}{m.endSetTotal}</span>
                             )}

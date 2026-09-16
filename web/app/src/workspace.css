@@ -3862,6 +3862,10 @@
 }
 .ws-origin-fade { color: #8a8a8a; }
 .ws-origin-meta { color: #8a8a8a; font-style: italic; margin: 0; }
+.ws-origin-drift { border: 1px solid #d2992255; border-radius: 8px; padding: 10px 12px; background: #d299220d; }
+.ws-origin-drift-detail { margin: 8px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 12px; }
+.ws-origin-drift-detail dt { color: #8a8a8a; font-weight: 600; }
+.ws-origin-drift-detail dd { margin: 0; color: inherit; font-style: italic; }
 
 .ws-origin-chain,
 .ws-origin-ends { padding: 4px 18px 10px; }

@@ -161,6 +161,10 @@ export interface LinkEntry {
   destination_archived?: boolean;
   destination_title?: string | null;
   destination_owner?: number | null;
+  // Who created this connection (the asserter). None = legacy link
+  // created before authorship stamping.
+  author_club?: number | null;
+  author_name?: string | null;
   link_types?: number[];
   // FR-40: named ends beyond the two-ended fast path.
   named_ends?: [string, HyperRefPayload][];
@@ -414,6 +418,12 @@ export interface TransclusionMarker {
   linkTypeId?: number;
   otherWorkIsArchived?: boolean;
   otherWorkOwner?: number | null;
+  /** Who asserted this connection (the link creator's display
+   * name) — None on legacy links created before authorship
+   * stamping. Attribution matters most where multiple parties
+   * contend on one passage. */
+  linkAuthorName?: string | null;
+  linkAuthorClub?: number | null;
   crossServerRef?: { tumbler: string; contentHash: string } | null;
   /** Source-span coordinates in the OTHER work (the quoted origin) —
    * set when the link's other-side ref carries positions; enables

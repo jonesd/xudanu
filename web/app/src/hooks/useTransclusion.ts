@@ -244,6 +244,8 @@ export function useTransclusion(): TransclusionState {
                 excerpt: (member.ref.excerpt || excerpt).slice(0, 120),
                 provenanceChain: member.ref.provenance_chain || chain,
                 linkTypeId: link.link_types?.[0],
+                linkAuthorName: link.author_name ?? null,
+                linkAuthorClub: link.author_club ?? null,
                 otherWorkIsArchived: !!otherArchived,
                 otherWorkOwner: otherOwner ?? null,
                 crossServerRef: member.ref.cross_server_ref
@@ -277,6 +279,8 @@ export function useTransclusion(): TransclusionState {
               excerpt: excerpt.slice(0, 120),
               provenanceChain: chain,
               linkTypeId: link.link_types?.[0],
+              linkAuthorName: link.author_name ?? null,
+              linkAuthorClub: link.author_club ?? null,
               otherWorkIsArchived: !!otherArchived,
               otherWorkOwner: otherOwner ?? null,
               crossServerRef,
