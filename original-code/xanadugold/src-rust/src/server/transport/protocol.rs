@@ -3613,6 +3613,21 @@ pub struct LinkPayload {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub destination_owner: Option<BeId>,
+    /// Who created this connection (the asserter): the creating
+    /// session's personal club. None = legacy/replicated link.
+    /// Attribution matters most where multiple parties contend on
+    /// one passage — the reader needs to know who asserts what.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub author_club: Option<BeId>,
+    /// Display name of the asserter's club, when known.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub author_name: Option<String>,
     /// All named ends on the link (including LeftEnd/RightEnd + any custom ends).
     #[cfg_attr(
         feature = "serde",

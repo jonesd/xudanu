@@ -63,6 +63,8 @@ fn build_link_payload(
         .map(|h| srv.link_endpoint_meta(h).0)
         .unwrap_or(false);
     let notify = srv.link_cross_server_notify(link_id);
+    let author_club = srv.link_author_club(link_id);
+    let author_name = author_club.and_then(|cid| srv.club_display_name_by_id(cid));
     LinkPayload {
         link_id,
         origin,
@@ -75,6 +77,8 @@ fn build_link_payload(
         destination_archived,
         destination_title,
         destination_owner,
+        author_club,
+        author_name,
         named_ends,
         end_sets,
         link_types: link.link_types().to_vec(),

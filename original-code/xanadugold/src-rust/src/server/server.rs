@@ -931,6 +931,11 @@ pub(crate) struct LinkState {
     /// when the destination is on another server. Errors here are
     /// sender/reachability OR receiving-side rejections.
     cross_server_notify: Option<CrossServerNotifyOutcome>,
+    /// Who created this connection (the asserter): the personal club
+    /// of the session that created it. None = legacy/replicated link
+    /// created before authorship was stamped. Attribution matters
+    /// most where multiple parties contend on one passage.
+    author_club: Option<BeId>,
 }
 
 /// Persisted outcome of a cross-server backlink notification.
@@ -10622,6 +10627,9 @@ impl Server {
                     destination,
                     cross_server_notify: None,
                     home_document,
+                    // WAL records predate authorship stamping; the
+                    // manifest restore path carries the field.
+                    author_club: None,
                 },
             );
             self.work_to_links
@@ -13512,6 +13520,7 @@ impl Server {
                     destination: link.destination,
                     cross_server_notify: None,
                     home_document: link.home_document,
+                    author_club: link.author_club,
                 },
             );
             for wid in restored_works {
@@ -14637,6 +14646,7 @@ impl Server {
                 destination,
                 cross_server_notify: None,
                 home_document,
+                author_club: self.resolve_author_club(_session_id),
             },
         );
         self.work_to_links
@@ -14815,6 +14825,7 @@ impl Server {
                 destination,
                 cross_server_notify: None,
                 home_document,
+                author_club: self.resolve_author_club(_session_id),
             },
         );
         self.work_to_links
@@ -15330,6 +15341,20 @@ impl Server {
     /// Home document of a link (FR-40 Story 3); None = server-global.
     pub fn link_home_document(&self, link_id: BeId) -> Option<BeId> {
         self.links.get(&link_id).and_then(|ls| ls.home_document)
+    }
+
+    /// Who created a link (the asserter's club); None = legacy or
+    /// replicated link predating authorship stamping.
+    pub fn link_author_club(&self, link_id: BeId) -> Option<BeId> {
+        self.links.get(&link_id).and_then(|ls| ls.author_club)
+    }
+
+    /// Display name of a club, when known (for attribution surfaces).
+    pub fn club_display_name_by_id(&self, club_id: BeId) -> Option<String> {
+        self.clubs
+            .get(&club_id)
+            .map(|c| c.display_name().map(|s| s.to_string()))
+            .flatten()
     }
 
     /// True when the link's home document is archived: homed links
@@ -19262,6 +19287,56 @@ impl Server {
                                             "[FR-26] retrieved original content from revision {} for source {:x}",
                                             rev, src_id
                                         );
+                                        // Relocation heal (2026-09-16): the
+                                        // passage may have MOVED rather than
+                                        // changed. Search the current text for
+                                        // the verified original; if present,
+                                        // re-anchor live — same content at
+                                        // every step, healed coordinates.
+                                        if let Some(byte_at) = raw_src.find(&rev_content) {
+                                            let char_at = raw_src[..byte_at].chars().count();
+                                            let span_len = rev_content.chars().count();
+                                            let live_content = self.resolve_raw_range_with_nesting(
+                                                src_id,
+                                                char_at,
+                                                char_at + span_len,
+                                                cache,
+                                                raw_cache,
+                                                stack,
+                                                span_ranges,
+                                                source_titles,
+                                                transcluded_blobs,
+                                                depth + 1,
+                                            )?;
+                                            let live_len = live_content.chars().count();
+                                            tracing::info!(
+                                                "[transclusion] relocated source {:x} span [{}..{}] -> [{}..{}] — passage moved, not changed",
+                                                src_id, c_start, c_end, char_at, char_at + span_len
+                                            );
+                                            span_ranges.push(crate::edition::compound::SpanRange {
+                                                source_work_id: src_id,
+                                                char_start: char_at,
+                                                char_end: char_at + span_len,
+                                                flat_start: text_offset,
+                                                flat_end: text_offset + live_len,
+                                                content_len: live_len,
+                                                otree_position: crdt_offset,
+                                                resolved_content: live_content.clone(),
+                                                placed_at: p_at,
+                                                placed_by: p_by,
+                                                source_changed: false,
+                                            });
+                                            if !source_titles.contains_key(&src_id) {
+                                                if let Some(title) = self.compound_source_title(src_id)
+                                                {
+                                                    source_titles.insert(src_id, title);
+                                                }
+                                            }
+                                            resolved_text.push_str(&live_content);
+                                            text_offset += live_len;
+                                            continue;
+                                        }
+                                        // Not present in the current text —
                                         // Override with original content — hash now matches
                                         // (Content is shown from the pinned version)
                                         span_ranges.push(crate::edition::compound::SpanRange {
@@ -23388,6 +23463,12 @@ pub(crate) mod persist_snapshot {
             serde(default, skip_serializing_if = "Option::is_none")
         )]
         cross_server_notify: Option<CrossServerNotifyOutcome>,
+        /// Who created this connection (the asserter's club).
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        author_club: Option<BeId>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -23642,6 +23723,7 @@ pub(crate) mod persist_snapshot {
                             end_sets,
                             home_document: ls.home_document,
                             cross_server_notify: ls.cross_server_notify.clone(),
+                            author_club: ls.author_club,
                         }
                     })
                     .collect(),
@@ -23998,6 +24080,7 @@ pub(crate) mod persist_snapshot {
                         destination: ls.destination,
                         cross_server_notify: ls.cross_server_notify.clone(),
                         home_document: ls.home_document,
+                        author_club: ls.author_club,
                     },
                 );
                 server
@@ -24403,6 +24486,7 @@ pub(crate) mod persist_snapshot {
                             end_sets,
                             home_document: ls.home_document,
                             cross_server_notify: ls.cross_server_notify.clone(),
+                            author_club: ls.author_club,
                         }
                     })
                     .collect();
@@ -24916,6 +25000,7 @@ pub(crate) mod persist_snapshot {
                             end_sets,
                             home_document: ls.home_document,
                             cross_server_notify: ls.cross_server_notify.clone(),
+                            author_club: ls.author_club,
                         }
                     })
                     .collect();
@@ -41852,6 +41937,55 @@ mod tests {
             // If it fell back to live, content would be "Modified passage"
             // Either is acceptable for Phase 2
         }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn transclusion_relocation_heals_moved_passage() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let text = "alpha original passage omega";
+        let source = server
+            .create_work(sid, Edition::from_text(text))
+            .unwrap();
+        server.work_publish(sid, source).unwrap();
+        let target = server.create_work(sid, Edition::empty()).unwrap();
+        server.work_publish(sid, target).unwrap();
+        server.work_set_edit_club(sid, target, Some(1)).unwrap();
+        server.work_set_edit_club(sid, source, Some(1)).unwrap();
+
+        let start = text.find("original passage").unwrap();
+        let end = start + "original passage".len();
+        server
+            .element_insert(sid, target, 0, RangeElement::transclusion(source, start, end))
+            .unwrap();
+
+        // MOVE the passage: prepend a prologue. The quoted text is
+        // unchanged; its coordinates shift. Principle 9: the passage
+        // moved, it did not change — resolution must heal, not pin.
+        let author_club = server.resolve_author_club(sid);
+        let moved = format!("prologue {}", text);
+        server
+            .revise_work(source, sid, Edition::from_text(&moved), author_club)
+            .unwrap();
+
+        let resolution = server.resolve_inline_transclusions(target).unwrap();
+        assert_eq!(resolution.span_ranges.len(), 1);
+        let sr = &resolution.span_ranges[0];
+        assert!(
+            sr.resolved_content.contains("original passage"),
+            "moved passage should resolve live, got: {}",
+            sr.resolved_content
+        );
+        let shift = "prologue ".len();
+        assert_eq!(
+            sr.char_start,
+            start + shift,
+            "coordinates should heal to the moved location"
+        );
+        assert_eq!(sr.char_end, end + shift);
+        assert!(!sr.source_changed, "an identical moved passage is not drift");
     }
 
     #[test]

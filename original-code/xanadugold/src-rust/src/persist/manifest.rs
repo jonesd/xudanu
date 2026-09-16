@@ -101,6 +101,13 @@ pub struct LinkEntry {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub home_document: Option<BeId>,
+    /// Who created this connection (the asserter's club); None =
+    /// legacy/replicated links created before authorship stamping.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub author_club: Option<BeId>,
     /// Cross-server notify outcome, when one was attempted (FR-40
     /// sender feedback).
     #[cfg_attr(
@@ -1627,6 +1634,7 @@ mod tests {
             named_ends: Vec::new(),
             home_document: None,
             cross_server_notify: None,
+            author_club: None,
         });
         manifest.link_counter = 51;
 
