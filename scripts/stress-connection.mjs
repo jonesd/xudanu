@@ -178,9 +178,98 @@ async function scenarioS1() {
   }
 }
 
+async function scenarioS2() {
+  const dataDir = mkScratchDir();
+  log(`\n=== S2: long outage — offline edits must survive ===`);
+  log(`scratch dir: ${dataDir}`);
+  await startServer(dataDir);
+
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const { page, wsOpens } = await openClient(browser);
+
+    // Dismiss the welcome landing (blocks pointer events until skipped)
+    await page.locator(".ws-home-skip, [aria-label='Skip welcome']").first().click({ timeout: 8000 });
+    await page.waitForTimeout(800);
+
+    // Identity + a document with typed content
+    await page.locator(".identity-badge").first().click({ timeout: 10000 });
+    await page.waitForTimeout(600);
+    await page.locator("button", { hasText: /^Create Identity$/ }).first().click();
+    await page.waitForTimeout(400);
+    const modal = page.locator(".identity-modal");
+    await modal.locator("input").nth(0).fill("Stress Tester");
+    await modal.locator("input").nth(1).fill("Stress-Passphrase-1");
+    await modal.locator("form.identity-form button[type=\"submit\"]").first().click();
+    await page.waitForTimeout(2500);
+    await page.locator("button", { hasText: "Close" }).first().click().catch(() => {});
+    await page.waitForTimeout(800);
+
+    // New document via welcome/CTA
+    const newBtn = page.locator("button", { hasText: /new document|create/i }).first();
+    await newBtn.click({ timeout: 8000 });
+    await page.waitForTimeout(2500);
+    const editor = page.locator(".editor-content");
+    await editor.waitFor({ state: "visible", timeout: 10000 });
+    await editor.click();
+    await page.keyboard.type("before the outage", { delay: 15 });
+    await page.waitForTimeout(2000);
+    const beforeOffline = await editor.textContent();
+    log(`doc created; online text: "${(beforeOffline ?? "").trim().slice(0, 40)}"`);
+
+    // INJECT: kill; type OFFLINE
+    killServer("SIGKILL");
+    await waitFor(page, async () => !(await healthUp.call(null)) || true, 1000, "settle").catch(() => {});
+    await sleep(6000); // let the client notice
+    await page.keyboard.type(" and after the outage", { delay: 15 });
+    await page.waitForTimeout(1500);
+    const duringText = await editor.textContent();
+    log(`offline text typed: "${(duringText ?? "").trim().slice(-40)}"`);
+
+    // RECOVER after a LONG outage
+    await sleep(60000);
+    log("recover: restarting server after ~70s outage");
+    await startServer(dataDir);
+    const opensBefore = wsOpens.length;
+    await waitFor(page, async () => wsOpens.length > opensBefore, 90000, "reconnect after long outage");
+    await page.waitForTimeout(4000); // allow reconnect-push
+
+    // SERVER truth: read the work text via a fresh client
+    const check = await (async () => {
+      const r = await fetch(`${BASE}/api/public/works`, {}).catch(() => null);
+      return r;
+    })();
+    const afterHeal = await editor.textContent();
+    const survived = (afterHeal ?? "").includes("and after the outage");
+    log(`editor after heal: "${(afterHeal ?? "").trim().slice(-50)}"`);
+    log(`offline edit survived in editor: ${survived}`);
+
+    // Hard truth: reload the page and read from the server
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(5000);
+    const reloaded = await page.locator(".editor-content").first().textContent().catch(() => null);
+    const survivedReload = (reloaded ?? "").includes("and after the outage");
+    log(`after full reload, server-served text contains offline edit: ${survivedReload}`);
+
+    if (survivedReload) {
+      results.push(["S2", "PASS", "offline edits survived outage + reconnect + reload"]);
+    } else {
+      results.push(["S2", "FAIL", `offline edit lost (editor=${survived}, reload=${survivedReload})`]);
+    }
+    await page.close();
+  } catch (e) {
+    results.push(["S2", "FAIL", e.message]);
+  } finally {
+    await browser.close().catch(() => {});
+    killServer();
+    execSync(`rm -rf ${dataDir}`);
+  }
+}
+
 async function main() {
   const which = process.argv[2] ?? "S1";
-  await scenarioS1();
+  if (which === "S1") await scenarioS1();
+  if (which === "S2") await scenarioS2();
   log("\n=== REPORT ===");
   for (const [id, status, detail] of results) log(`${status}  ${id}: ${detail}`);
   process.exit(results.every(([, s]) => s === "PASS") ? 0 : 1);
