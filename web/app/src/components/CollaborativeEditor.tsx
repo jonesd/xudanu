@@ -124,6 +124,8 @@ interface MarkerHitZone {
   height: number;
   densityCluster?: number;
   densityCount?: number;
+  stackMarkers?: TransclusionMarker[];
+  hoverOnly?: boolean;
 }
 
 interface AuthorBarZone {
@@ -136,12 +138,15 @@ interface AuthorBarZone {
 }
 
 const LINK_TYPE_STYLES: Record<number, { color: string; dash: number[] }> = {
-  1: { color: "#58a6ff", dash: [4, 3] },      // Comment — short dashes
-  2: { color: "#3fb950", dash: [] },            // Reference — solid
-  3: { color: "#f85149", dash: [8, 3] },        // Disagreement — long dashes
-  4: { color: "#a371f7", dash: [1, 3] },        // Quotation — dotted
-  5: { color: "#d29922", dash: [6, 2, 1, 2] }, // See Also — dash-dot
-  6: { color: "#39d2c0", dash: [2, 2] },        // Web Link — short dotted
+  // Dash patterns unified to solid: color is the single type encoding.
+  // Mixed dots/dashes duplicated color without adding meaning (user
+  // feedback 2026-09-15) and made thin stacked lanes noisier.
+  1: { color: "#58a6ff", dash: [] },   // Comment
+  2: { color: "#3fb950", dash: [] },   // Reference
+  3: { color: "#f85149", dash: [] },   // Disagreement
+  4: { color: "#a371f7", dash: [] },   // Quotation
+  5: { color: "#d29922", dash: [] },   // See Also
+  6: { color: "#39d2c0", dash: [] },   // Web Link
 };
 
 const LINK_TYPE_NAMES: Record<number, string> = {
@@ -157,6 +162,21 @@ const DESC_BOX_WIDTH = 210;
 const DESC_BOX_HEIGHT = 46;
 const DESC_BOX_GAP = 10;
 const DESC_BOX_RIGHT_MARGIN = 8;
+// Descriptor box content metrics — the single source of truth for
+// how much fits inside a box. Boxes are sized FROM these numbers so
+// the line budget is known by construction; changing fonts or the
+// wrap budget here keeps text inside the border everywhere.
+const DESC_TEXT = {
+  labelTop: 3,      // type chip offset from box top
+  labelH: 14,       // type chip height
+  gapAfterLabel: 3, // space between chip and first text line
+  lineH: 13,        // wrapped line height
+  maxLines: 2,      // wrap budget (wrapText caps at this)
+  padBottom: 6,     // descender room below the last line
+};
+// Total interior height required: chip + gap + wrapped lines + pad.
+const DESC_TEXT_TOP = DESC_TEXT.labelTop + DESC_TEXT.labelH + DESC_TEXT.gapAfterLabel; // 20
+const DESC_CONTENT_H = DESC_TEXT_TOP + DESC_TEXT.maxLines * DESC_TEXT.lineH + DESC_TEXT.padBottom; // 52
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
   const words = text.split(/\s+/);
@@ -317,17 +337,22 @@ function drawOverlay(
   // Pad the canvas beyond the visible viewport so decorations that
   // extend past the last text line (e.g. the floating provenance
   // underline at line-bottom + 2px) are not clipped at the document
-  // end.
+  // end. The canvas must also cover the editor's full extent: the
+  // editor can overflow its container, and any decoration below the
+  // container height was silently drawn off-surface (invisible
+  // ribbons/pills on long documents — found via the Connection
+  // Atlas, 2026-09-16).
   const CANVAS_PAD = 8;
+  const contentH = Math.max(rect.height, editor.scrollHeight + editor.offsetTop) + CANVAS_PAD;
   canvas.width = rect.width * dpr;
-  canvas.height = (rect.height + CANVAS_PAD) * dpr;
+  canvas.height = contentH * dpr;
   canvas.style.width = rect.width + "px";
-  canvas.style.height = rect.height + CANVAS_PAD + "px";
+  canvas.style.height = contentH + "px";
 
   const ctx = canvas.getContext("2d");
   if (!ctx) return hitZones;
   ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, rect.width, rect.height + CANVAS_PAD);
+  ctx.clearRect(0, 0, rect.width, contentH);
 
   const textLen = editor.textContent?.length ?? 0;
   if (textLen === 0) return hitZones;
@@ -534,7 +559,7 @@ function drawOverlay(
   const lanes = assignLinkLanes(markers);
   const clusters = clusterOverlappingMarkers(markers);
   const collapsed = new Set<number>();
-  const densityPills: Array<{ clusterIndex: number; count: number; start: number; end: number; first: TransclusionMarker }> = [];
+  const densityPills: Array<{ clusterIndex: number; count: number; start: number; end: number; first: TransclusionMarker; markers: TransclusionMarker[] }> = [];
   clusters.forEach((c, ci) => {
     if (c.indices.length >= DENSITY_THRESHOLD && !expandedClusters.has(ci)) {
       for (const idx of c.indices) collapsed.add(idx);
@@ -544,9 +569,20 @@ function drawOverlay(
         start: c.start,
         end: c.end,
         first: markers[c.indices[0]],
+        markers: c.indices.map((i) => markers[i]),
       });
     }
   });
+
+  // Hover band regions: group markers sharing the same text span so a
+  // hover over the passage (or its stacked underline lanes) can list
+  // every connection there — the lanes alone encode color/dash but
+  // carry no readable information until hovered.
+  interface BandRegion {
+    minX: number; maxX: number; top: number; bottom: number;
+    maxLane: number; markers: TransclusionMarker[];
+  }
+  const bandRegions = new Map<string, BandRegion>();
 
   interface PendingDesc {
     firstTop: number;
@@ -559,6 +595,9 @@ function drawOverlay(
     lane: number;
   }
   const pendingDescs: PendingDesc[] = [];
+  // Ribbon pass accumulator: one ribbon per TYPE per line (segments
+  // carry multiplicity). Replaces per-marker lane underlines.
+  const ribbonLines = new Map<string, { y: number; types: Map<number, Array<{ x1: number; x2: number; marker: TransclusionMarker }>> }>();
 
   for (let mi = 0; mi < markers.length; mi++) {
     if (collapsed.has(mi)) continue;
@@ -615,24 +654,38 @@ function drawOverlay(
     const lastBottom = lastRect.bottom - rect.top;
     const height = lastBottom - firstTop;
 
+    const bandKey = `${drawStart}:${drawEnd}`;
+    let band = bandRegions.get(bandKey);
+    if (!band) {
+      band = { minX: Infinity, maxX: -Infinity, top: firstTop, bottom: lastBottom, maxLane: lane, markers: [] };
+      bandRegions.set(bandKey, band);
+    }
+    for (const r of rangeRects) {
+      band.minX = Math.min(band.minX, r.left - rect.left);
+      band.maxX = Math.max(band.maxX, r.right - rect.left);
+    }
+    band.top = Math.min(band.top, firstTop);
+    band.bottom = Math.max(band.bottom, lastBottom);
+    band.maxLane = Math.max(band.maxLane, lane);
+    band.markers.push(marker);
+
     const isIncoming = marker.direction === "incoming";
     const typeStyle = marker.linkTypeId ? LINK_TYPE_STYLES[marker.linkTypeId] : null;
     const barColor = typeStyle ? typeStyle.color : marker.color;
 
     if (typeStyle) {
-      ctx.strokeStyle = barColor + "cc";
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash(typeStyle.dash);
-      // FR-4.5: layer overlapping underlines at 2px vertical offsets.
+      const tid = marker.linkTypeId ?? 0;
       for (const r of rangeRects) {
-        const rx = r.left - rect.left;
-        const ry = r.bottom - rect.top - 1 + lane * 2;
-        ctx.beginPath();
-        ctx.moveTo(rx, ry);
-        ctx.lineTo(rx + r.width, ry);
-        ctx.stroke();
+        const key = `${Math.round(r.top - rect.top)}:${Math.round(r.bottom - rect.top)}`;
+        let line = ribbonLines.get(key);
+        if (!line) {
+          line = { y: r.bottom - rect.top, types: new Map() };
+          ribbonLines.set(key, line);
+        }
+        let segs = line.types.get(tid);
+        if (!segs) { segs = []; line.types.set(tid, segs); }
+        segs.push({ x1: r.left - rect.left, x2: r.right - rect.left, marker });
       }
-      ctx.setLineDash([]);
     }
 
     const barWidth = 3 + (marker.provenanceChain && marker.provenanceChain.length > 0
@@ -720,9 +773,14 @@ function drawOverlay(
       // border and read as a clipping bug. Size the box to the span
       // with breathing room instead: 3px above the first line, 7px
       // below the last baseline so descenders clear the border.
+      // Feedback 2026-09-16: the label chip (top 3 + 14) plus two
+      // wrapped 13px lines also must fit — short single-line spans
+      // sized the box too small and the second text line crossed the
+      // bottom border.
       const boxH = Math.max(
         DESC_BOX_HEIGHT,
         desc.height + 10,
+        DESC_CONTENT_H,
       );
       const boxTop = boxY < desc.firstTop ? boxY : desc.firstTop - 3;
 
@@ -732,20 +790,26 @@ function drawOverlay(
       const isResolved = descEntry?.resolved ?? false;
 
       ctx.save();
-      ctx.strokeStyle = color + (isResolved ? "40" : "a0");
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash(desc.typeStyle.dash.length > 0 ? desc.typeStyle.dash : [3, 3]);
-      ctx.beginPath();
-      const startX = desc.textRightX + 4;
-      const endX = boxX;
-      const lineY = desc.firstTop + desc.height - 1 + desc.lane * 2;
-      const boxMidY = boxTop + boxH / 2;
-      const elbowX = endX - 20 - desc.lane * 5;
-      ctx.moveTo(startX, lineY);
-      ctx.lineTo(elbowX, lineY);
-      ctx.lineTo(elbowX, boxMidY);
-      ctx.lineTo(endX, boxMidY);
-      ctx.stroke();
+      // Connector elbow drawn ONLY for the hovered/focused link: the
+      // passage-to-box join is carried by the shared type colour, so
+      // permanent full-width connector lines added noise without
+      // information (user feedback 2026-09-15).
+      if (desc.marker.linkId === focusLinkId) {
+        ctx.strokeStyle = color + (isResolved ? "40" : "a0");
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        const startX = desc.textRightX + 4;
+        const endX = boxX;
+        const lineY = desc.firstTop + desc.height - 1 + desc.lane * 2;
+        const boxMidY = boxTop + boxH / 2;
+        const elbowX = endX - 20 - desc.lane * 5;
+        ctx.moveTo(startX, lineY);
+        ctx.lineTo(elbowX, lineY);
+        ctx.lineTo(elbowX, boxMidY);
+        ctx.lineTo(endX, boxMidY);
+        ctx.stroke();
+      }
       ctx.restore();
 
       ctx.save();
@@ -800,9 +864,9 @@ function drawOverlay(
         || (desc.marker.excerpt ? desc.marker.excerpt.slice(0, 80) : "")
         || desc.marker.otherWorkTitle
         || "";
-      const wrapped = wrapText(ctx, descText, DESC_BOX_WIDTH - 16, 2);
+      const wrapped = wrapText(ctx, descText, DESC_BOX_WIDTH - 16, DESC_TEXT.maxLines);
       for (let li = 0; li < wrapped.length; li++) {
-        ctx.fillText(wrapped[li], boxX + 8, boxY + 20 + li * 13);
+        ctx.fillText(wrapped[li], boxX + 8, boxTop + DESC_TEXT_TOP + li * DESC_TEXT.lineH);
       }
       ctx.restore();
 
@@ -815,6 +879,31 @@ function drawOverlay(
         height: boxH,
       });
     }
+  }
+
+  // FR-4.5 ribbons (2026-09-15 design pass): one ribbon per TYPE per
+  // line — 4px band, 2px gap, capped at 5 rows; each segment is one
+  // assertion (3px gap separates same-type neighbors, so a gathered
+  // end reads as adjacent cells). Disputes sort first.
+  {
+    const ribbonTypeOrder = [3, 1, 2, 4, 5, 6, 0];
+    for (const line of ribbonLines.values()) {
+      const ordered = [...line.types.keys()].sort(
+        (a, b) => ribbonTypeOrder.indexOf(a) - ribbonTypeOrder.indexOf(b),
+      );
+      let row = 0;
+      for (const tid of ordered) {
+        if (row >= 5) break;
+        const color = tid && LINK_TYPE_STYLES[tid] ? LINK_TYPE_STYLES[tid].color : "#a371f7";
+        for (const s of line.types.get(tid)!) {
+          ctx.globalAlpha = markerFocusAlpha(s.marker, focusLinkId);
+          ctx.fillStyle = color;
+          ctx.fillRect(s.x1, line.y + 1 + row * 6, Math.max(s.x2 - s.x1 - 3, 2), 4);
+        }
+        row++;
+      }
+    }
+    ctx.globalAlpha = 1;
   }
 
   // FR-4.5: density pills collapse DENSITY_THRESHOLD+ overlapping links into
@@ -846,25 +935,49 @@ function drawOverlay(
     const lastRect = rr[rr.length - 1];
     const height = Math.max((lastRect.bottom - rect.top) - firstTop, 14);
 
-    // Draw a clear badge centered on the text line
+    // Composition pill: one small bar per assertion, colored by link
+    // type (grouped, disputes first), then the count. The mix of the
+    // debate is readable at the margin, not just its heat.
+    const typeOrder = [3, 1, 2, 4, 5, 6, 0];
+    const byType = new Map<number, number>();
+    for (const pm of pill.markers) {
+      const t = pm.linkTypeId ?? 0;
+      byType.set(t, (byType.get(t) ?? 0) + 1);
+    }
+    const segs: Array<{ color: string; dim: boolean }> = [];
+    for (const t of typeOrder) {
+      const n = byType.get(t);
+      if (!n) continue;
+      const color = t && LINK_TYPE_STYLES[t] ? LINK_TYPE_STYLES[t].color : "#a371f7";
+      for (let k = 0; k < n && segs.length < 7; k++) segs.push({ color, dim: k > 0 });
+    }
+
+    ctx.font = "bold 10px ui-monospace, SFMono-Regular, monospace";
+    const countText = String(pill.count);
+    const countW = ctx.measureText(countText).width;
     const pillX = 0;
-    const pillW = 18;
     const pillH = 18;
+    const pillW = Math.min(4 + segs.length * 6 + 4 + countW + 6, 74);
     const pillY = firstTop + Math.max(0, (height - pillH) / 2);
 
     ctx.save();
     ctx.beginPath();
     ctx.rect(pillX, pillY, pillW, pillH);
-    ctx.fillStyle = "rgba(210, 153, 34, 0.92)";
+    ctx.fillStyle = "#f6f8fa";
     ctx.fill();
-    ctx.strokeStyle = "#d29922";
+    ctx.strokeStyle = "#8b949e";
     ctx.lineWidth = 1;
     ctx.stroke();
-    ctx.fillStyle = "#0d1117";
-    ctx.font = "bold 11px ui-monospace, SFMono-Regular, monospace";
-    ctx.textAlign = "center";
+    segs.forEach((seg, si) => {
+      ctx.globalAlpha = seg.dim ? 0.55 : 1;
+      ctx.fillStyle = seg.color;
+      ctx.fillRect(pillX + 4 + si * 6, pillY + 3, 5, pillH - 6);
+    });
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#1f2328";
+    ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillText(String(pill.count), pillX + pillW / 2, pillY + pillH / 2 + 0.5);
+    ctx.fillText(countText, pillX + 4 + segs.length * 6 + 4, pillY + pillH / 2 + 0.5);
     ctx.restore();
 
     hitZones.push({
@@ -875,6 +988,24 @@ function drawOverlay(
       height: pillH,
       densityCluster: pill.clusterIndex,
       densityCount: pill.count,
+      stackMarkers: pill.markers,
+    });
+  }
+
+  // Emit hover-only band zones from the accumulated regions. These
+  // never appear in click handling (text clicks must place the cursor
+  // and make selections, not navigate) — mouse-move reads them to show
+  // the stacked-connection summary.
+  for (const band of bandRegions.values()) {
+    if (band.markers.length === 0 || !isFinite(band.minX)) continue;
+    hitZones.push({
+      marker: band.markers[0],
+      x: band.minX,
+      y: band.top - 2,
+      width: Math.max(band.maxX - band.minX, 8),
+      height: band.bottom - band.top + (band.maxLane + 1) * 2 + 6,
+      stackMarkers: band.markers,
+      hoverOnly: true,
     });
   }
 
@@ -1051,6 +1182,7 @@ export function CollaborativeEditor({
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [showBoilerplate, setShowBoilerplate] = useState(false);
   const [hoveredMarker, setHoveredMarker] = useState<TransclusionMarker | null>(null);
+  const [hoveredStack, setHoveredStack] = useState<{ markers: TransclusionMarker[]; x: number; y: number } | null>(null);
   const [hoveredAnnotation, setHoveredAnnotation] = useState<{ text: string; x: number; y: number; id: number } | null>(null);
   const annotationHitZonesRef = useRef<Array<{ x: number; y: number; width: number; height: number; text: string; id: number }>>([]);
   const [remoteContent, setRemoteContent] = useState<{ title: string; text: string; cached: boolean } | null>(null);
@@ -1541,6 +1673,7 @@ export function CollaborativeEditor({
   const scheduleHideTooltip = useCallback(() => {
     hideTooltipTimer.current = setTimeout(() => {
       setHoveredMarker(null);
+      setHoveredStack(null);
       setAuthorTooltip(null);
       setTooltipPos(null);
       hideTooltipTimer.current = null;
@@ -1584,12 +1717,21 @@ export function CollaborativeEditor({
       x >= hz.x && x <= hz.x + hz.width && y >= hz.y && y <= hz.y + hz.height
     );
     if (hit) {
+      if (hit.stackMarkers && hit.stackMarkers.length > 1) {
+        setTooltipPos({ x: e.clientX, y: e.clientY });
+        setHoveredStack({ markers: hit.stackMarkers, x: e.clientX, y: e.clientY });
+        setHoveredMarker(null);
+        setAuthorTooltip(null);
+        return;
+      }
+      setHoveredStack(null);
       const m = (hit.densityCluster != null && hit.densityCount != null)
         ? { ...hit.marker, otherWorkTitle: `${hit.densityCount} links in this region` }
         : hit.marker;
       setHoveredMarker(m);
       setTooltipPos({ x: e.clientX, y: e.clientY });
     } else {
+      setHoveredStack(null);
       // Single-author documents: the hover would only restate the
       // obvious ("you wrote everything") — suppress it. Tooltips earn
       // their interruption cost when authorship actually varies.
@@ -1620,6 +1762,7 @@ export function CollaborativeEditor({
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     const hit = hitZonesRef.current.find((hz) =>
+      !hz.hoverOnly &&
       x >= hz.x && x <= hz.x + hz.width && y >= hz.y && y <= hz.y + hz.height
     );
     if (!hit) return;
@@ -2590,6 +2733,80 @@ export function CollaborativeEditor({
                   </button>
                 </div>
               )}
+            </div>
+          )}
+          {hoveredStack && tooltipPos && !hoveredMarker && (
+            <div
+              className="marker-tooltip"
+              onMouseEnter={cancelHideTooltip}
+              onMouseLeave={scheduleHideTooltip}
+              style={{
+                position: "fixed",
+                ...(tooltipPos.x > window.innerWidth - 320
+                  ? { right: window.innerWidth - tooltipPos.x + 10 }
+                  : { left: tooltipPos.x + 10 }),
+                top: Math.min(tooltipPos.y - 10, window.innerHeight - 40 - Math.min(hoveredStack.markers.length, 8) * 22),
+                zIndex: 100,
+                minWidth: 230,
+              }}
+            >
+              <div className="marker-tooltip-title" style={{ color: "#8b949e" }}>
+                {hoveredStack.markers.length} connection{hoveredStack.markers.length > 1 ? "s" : ""} on this passage
+              </div>
+              {(() => {
+                const order = [3, 1, 2, 4, 5, 6, 0];
+                const groups = new Map<number, typeof hoveredStack.markers>();
+                for (const m of hoveredStack.markers) {
+                  const key = m.linkTypeId ?? 0;
+                  if (!groups.has(key)) groups.set(key, []);
+                  groups.get(key)!.push(m);
+                }
+                const sectionOrder = [...groups.keys()].sort((a, b) => {
+                  const ra = order.indexOf(a) < 0 ? order.length : order.indexOf(a);
+                  const rb = order.indexOf(b) < 0 ? order.length : order.indexOf(b);
+                  return ra - rb;
+                });
+                return sectionOrder.map((tid) => {
+                  const list = groups.get(tid)!;
+                  const style = tid ? LINK_TYPE_STYLES[tid] : null;
+                  const color = style ? style.color : "#a371f7";
+                  const name = tid ? (LINK_TYPE_NAMES[tid] ?? "Link") : "Transclusion";
+                  return (
+                    <div key={tid} style={{ marginTop: 7 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 4, background: color, flexShrink: 0 }} />
+                        <span className="marker-tooltip-direction" style={{ color, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em" }}>
+                          {name.toUpperCase()}{list.length > 1 ? ` (${list.length})` : ""}
+                        </span>
+                      </div>
+                      {list.slice(0, 6).map((m, i) => (
+                        <div key={i} style={{ marginLeft: 14, marginTop: 3 }}>
+                          <div style={{ fontSize: 11, color: "#e6edf3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {m.direction === "outgoing" ? "\u2192 " : "\u2190 "}{m.otherWorkTitle}
+                          </div>
+                          {m.excerpt && (
+                            <div
+                              style={{
+                                fontSize: 11, color: "#8b949e", fontStyle: "italic",
+                                maxHeight: 30, overflow: "hidden",
+                                display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                              }}
+                              title={m.excerpt}
+                            >
+                              &ldquo;{m.excerpt.slice(0, 140)}{m.excerpt.length > 140 ? "…" : ""}&rdquo;
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {list.length > 6 && (
+                        <div style={{ fontSize: 11, color: "#484f58", marginLeft: 14, marginTop: 2 }}>
+                          + {list.length - 6} more
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
             </div>
           )}
           {hoveredAnnotation && (
