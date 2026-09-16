@@ -162,44 +162,9 @@ const DESC_BOX_WIDTH = 210;
 const DESC_BOX_HEIGHT = 46;
 const DESC_BOX_GAP = 10;
 const DESC_BOX_RIGHT_MARGIN = 8;
-// Descriptor box content metrics — the single source of truth for
-// how much fits inside a box. Boxes are sized FROM these numbers so
-// the line budget is known by construction; changing fonts or the
-// wrap budget here keeps text inside the border everywhere.
-const DESC_TEXT = {
-  labelTop: 3,      // type chip offset from box top
-  labelH: 14,       // type chip height
-  gapAfterLabel: 3, // space between chip and first text line
-  lineH: 13,        // wrapped line height
-  maxLines: 2,      // wrap budget (wrapText caps at this)
-  padBottom: 6,     // descender room below the last line
-};
-// Total interior height required: chip + gap + wrapped lines + pad.
-const DESC_TEXT_TOP = DESC_TEXT.labelTop + DESC_TEXT.labelH + DESC_TEXT.gapAfterLabel; // 20
-const DESC_CONTENT_H = DESC_TEXT_TOP + DESC_TEXT.maxLines * DESC_TEXT.lineH + DESC_TEXT.padBottom; // 52
-
-function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
-  const words = text.split(/\s+/);
-  const lines: string[] = [];
-  let line = "";
-  for (const word of words) {
-    const test = line ? line + " " + word : word;
-    if (ctx.measureText(test).width > maxWidth && line) {
-      lines.push(line);
-      line = word;
-      if (lines.length >= maxLines) return lines;
-    } else {
-      line = test;
-    }
-  }
-  if (line) lines.push(line);
-  if (lines.length > maxLines) {
-    const last = lines[maxLines - 1];
-    lines.length = maxLines;
-    lines[maxLines - 1] = last.slice(0, Math.max(0, last.length - 1)) + "\u2026";
-  }
-  return lines;
-}
+// Chip-only rest state: the descriptor renders as a compact type chip
+// (fixed height); all content reads in the hover tooltip (DOM).
+const DESC_CHIP_H = 22;
 
 const COMPOUND_COLORS = [
   { bg: "rgba(0, 137, 123, 0.12)", border: "rgba(0, 137, 123, 0.35)", label: "#00897b" },
@@ -764,34 +729,32 @@ function drawOverlay(
     // FR-40 demo feedback fix: deterministic, pairwise-disjoint
     // placement (was: arbitrary tie order + single-pass push-down
     // that could land on an already-passed box).
-    const placedDescs = placeDescBoxes(pendingDescs, DESC_BOX_HEIGHT, DESC_BOX_GAP);
-    for (const { desc, y: boxY } of placedDescs) {
+    const placedDescs = placeDescBoxes(pendingDescs, DESC_CHIP_H, DESC_BOX_GAP);
+    // Draw non-focused boxes first, the focused one LAST so the
+    // hover-expanded box sits on top of anything it transiently
+    // overlaps (the others are dimmed while focused anyway).
+    const drawOrder = [
+      ...placedDescs.filter((p) => p.desc.marker.linkId !== focusLinkId),
+      ...placedDescs.filter((p) => p.desc.marker.linkId === focusLinkId),
+    ];
+    for (const { desc, y: boxY } of drawOrder) {
       ctx.globalAlpha = markerFocusAlpha(desc.marker, focusLinkId);
       if (desc.firstTop + DESC_BOX_HEIGHT < viewportTop || desc.firstTop > viewportBottom) continue;
-      // Demo feedback round 3: the fixed-height box bottom border sat
-      // ON the last baseline — descenders (g/y/p) crossed the thick
-      // border and read as a clipping bug. Size the box to the span
-      // with breathing room instead: 3px above the first line, 7px
-      // below the last baseline so descenders clear the border.
-      // Feedback 2026-09-16: the label chip (top 3 + 14) plus two
-      // wrapped 13px lines also must fit — short single-line spans
-      // sized the box too small and the second text line crossed the
-      // bottom border.
-      const boxH = Math.max(
-        DESC_BOX_HEIGHT,
-        desc.height + 10,
-        DESC_CONTENT_H,
-      );
-      const boxTop = boxY < desc.firstTop ? boxY : desc.firstTop - 3;
-
+      // Chip-only rest state (user design 2026-09-16): the box shows
+      // just the type chip — compact, fixed-height, no content text in
+      // canvas. Content (description, excerpt, far work) reads in the
+      // DOM tooltip on hover: real text layout, no wrap budgets, no
+      // overlap with document text ever.
       const boxX = rect.width - DESC_BOX_WIDTH - DESC_BOX_RIGHT_MARGIN;
       const color = desc.typeStyle.color;
       const descEntry = linkDescMap.get(desc.marker.linkId);
       const isResolved = descEntry?.resolved ?? false;
+      const boxH = DESC_CHIP_H;
+      const boxTop = boxY < desc.firstTop ? boxY : desc.firstTop - 3;
 
       ctx.save();
       // Connector elbow drawn ONLY for the hovered/focused link: the
-      // passage-to-box join is carried by the shared type colour, so
+      // passage-to-chip join is carried by the shared type colour, so
       // permanent full-width connector lines added noise without
       // information (user feedback 2026-09-15).
       if (desc.marker.linkId === focusLinkId) {
@@ -813,61 +776,38 @@ function drawOverlay(
       ctx.restore();
 
       ctx.save();
-      // Label fill, adaptive (two rounds of demo feedback): in the
-      // clear margin the box is near-opaque (labels readable); when
-      // forced OVER text it drops to ~70% so the lines beneath stay
-      // visible — the overlap itself only happens when the text
-      // column reaches past where the box would sit.
-      // Demo feedback (2026-09-08), universal treatment: the box is
-      // ALWAYS a faint wash — document text and box interior both
-      // readable — and the type-color identity rides a thick solid
-      // border. The type label gets its own dark chip so it stays
-      // legible over the wash.
-      const fillA = "22";
-      ctx.fillStyle = color + fillA;
-      ctx.strokeStyle = isResolved ? color + "50" : color + "C0";
-      if (isResolved) ctx.setLineDash([3, 2]);
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      const r = 4;
-      ctx.moveTo(boxX + r, boxTop);
-      ctx.lineTo(boxX + DESC_BOX_WIDTH - r, boxTop);
-      ctx.arcTo(boxX + DESC_BOX_WIDTH, boxTop, boxX + DESC_BOX_WIDTH, boxTop + r, r);
-      ctx.lineTo(boxX + DESC_BOX_WIDTH, boxTop + boxH - r);
-      ctx.arcTo(boxX + DESC_BOX_WIDTH, boxTop + boxH, boxX + DESC_BOX_WIDTH - r, boxTop + boxH, r);
-      ctx.lineTo(boxX + r, boxTop + boxH);
-      ctx.arcTo(boxX, boxTop + boxH, boxX, boxTop + boxH - r, r);
-      ctx.lineTo(boxX, boxTop + r);
-      ctx.arcTo(boxX, boxTop, boxX + r, boxTop, r);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.restore();
-
-      ctx.save();
       ctx.font = `${isResolved ? "400" : "600"} 10px ui-monospace, SFMono-Regular, monospace`;
       ctx.textBaseline = "top";
       const typeName = LINK_TYPE_NAMES[desc.marker.linkTypeId!] ?? "Link";
       const label = (isResolved ? "\u2713 " : "") + typeName.toUpperCase();
       const tw = ctx.measureText(label).width;
+      const chipW = tw + 16;
+
+      ctx.fillStyle = color + (isResolved ? "18" : "2a");
+      ctx.strokeStyle = isResolved ? color + "50" : color + "C0";
+      if (isResolved) ctx.setLineDash([3, 2]);
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      const r = 4;
+      ctx.moveTo(boxX + DESC_BOX_WIDTH - chipW + r, boxTop);
+      ctx.lineTo(boxX + DESC_BOX_WIDTH - r, boxTop);
+      ctx.arcTo(boxX + DESC_BOX_WIDTH, boxTop, boxX + DESC_BOX_WIDTH, boxTop + r, r);
+      ctx.lineTo(boxX + DESC_BOX_WIDTH, boxTop + boxH - r);
+      ctx.arcTo(boxX + DESC_BOX_WIDTH, boxTop + boxH, boxX + DESC_BOX_WIDTH - r, boxTop + boxH, r);
+      ctx.lineTo(boxX + DESC_BOX_WIDTH - chipW + r, boxTop + boxH);
+      ctx.arcTo(boxX + DESC_BOX_WIDTH - chipW, boxTop + boxH, boxX + DESC_BOX_WIDTH - chipW, boxTop + boxH - r, r);
+      ctx.lineTo(boxX + DESC_BOX_WIDTH - chipW, boxTop + r);
+      ctx.arcTo(boxX + DESC_BOX_WIDTH - chipW, boxTop, boxX + DESC_BOX_WIDTH - chipW + r, boxTop, r);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
       ctx.fillStyle = "#0d1117e6";
       ctx.beginPath();
-      ctx.roundRect(boxX + 5, boxTop + 3, tw + 6, 14, 3);
+      ctx.roundRect(boxX + DESC_BOX_WIDTH - chipW + 5, boxTop + 4, tw + 6, 14, 3);
       ctx.fill();
       ctx.fillStyle = isResolved ? color + "60" : color;
-      ctx.fillText(label, boxX + 8, boxTop + 5);
-
-      ctx.fillStyle = isResolved ? "#484f58" : "#8b949e";
-      ctx.font = `${isResolved ? "italic " : ""}11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
-      const descText = descEntry?.text
-        || (desc.marker.descriptorExcerpt ? desc.marker.descriptorExcerpt.slice(0, 80) : "")
-        || (desc.marker.excerpt ? desc.marker.excerpt.slice(0, 80) : "")
-        || desc.marker.otherWorkTitle
-        || "";
-      const wrapped = wrapText(ctx, descText, DESC_BOX_WIDTH - 16, DESC_TEXT.maxLines);
-      for (let li = 0; li < wrapped.length; li++) {
-        ctx.fillText(wrapped[li], boxX + 8, boxTop + DESC_TEXT_TOP + li * DESC_TEXT.lineH);
-      }
+      ctx.fillText(label, boxX + DESC_BOX_WIDTH - chipW + 8, boxTop + 6);
       ctx.restore();
 
       ctx.globalAlpha = 1;
@@ -2603,6 +2543,16 @@ export function CollaborativeEditor({
                   &ldquo;{hoveredMarker.excerpt}&rdquo;
                 </div>
               )}
+              {(() => {
+                const entry = hoveredMarker.linkTypeId != null ? linkDescMap.get(hoveredMarker.linkId) : undefined;
+                const text = entry?.text || hoveredMarker.descriptorExcerpt || "";
+                if (!text) return null;
+                return (
+                  <div className="marker-tooltip-description" style={{ fontSize: 12, color: "#e8e6e0", marginTop: 6, whiteSpace: "pre-wrap", maxHeight: 160, overflow: "hidden" }}>
+                    {text}
+                  </div>
+                );
+              })()}
               {hoveredMarker.linkTypeId !== 6 && hoveredMarker.otherWorkIsArchived && (
                 <div
                   className="marker-tooltip-archived"
@@ -2767,7 +2717,19 @@ export function CollaborativeEditor({
                   return ra - rb;
                 });
                 return sectionOrder.map((tid) => {
-                  const list = groups.get(tid)!;
+                  const raw = groups.get(tid)!;
+                  // Rows are CONNECTIONS, not markers: a link whose excerpt
+                  // matches several passages emits several markers, and the
+                  // ledger must not repeat the same connection per match.
+                  // Gathered members stay distinct (end-set index).
+                  const seen = new Set<string>();
+                  const list = raw.filter((m) => {
+                    const key = (m.linkId === 0 ? "t:" + m.excerpt : m.linkId) + ":" +
+                      (m.endSetTotal && m.endSetTotal > 1 ? (m.endSetIndex ?? "?") : "s");
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                  });
                   const style = tid ? LINK_TYPE_STYLES[tid] : null;
                   const color = style ? style.color : "#a371f7";
                   const name = tid ? (LINK_TYPE_NAMES[tid] ?? "Link") : "Transclusion";
@@ -2783,6 +2745,9 @@ export function CollaborativeEditor({
                         <div key={i} style={{ marginLeft: 14, marginTop: 3 }}>
                           <div style={{ fontSize: 11, color: "#e6edf3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {m.direction === "outgoing" ? "\u2192 " : "\u2190 "}{m.otherWorkTitle}
+                            {m.endSetTotal != null && m.endSetTotal > 1 && (
+                              <span style={{ color: "#7ee787" }}>{" \u00b7 passage "}{m.endSetIndex ?? "?"}{" of "}{m.endSetTotal}</span>
+                            )}
                           </div>
                           {m.excerpt && (
                             <div
@@ -3020,6 +2985,9 @@ export function CollaborativeEditor({
             style={{
               fontSize: fontSize ? `${fontSize}px` : undefined,
               lineHeight: lineHeight ? `${lineHeight}` : undefined,
+              ...(showLinkDescriptions && (filteredMarkers ?? []).some((m) => m.linkTypeId != null)
+                ? { paddingRight: DESC_BOX_WIDTH + DESC_BOX_RIGHT_MARGIN + 18 }
+                : {}),
             }}
           />
           <RemoteCursors editorRef={editorRef} states={remoteCursors} />
