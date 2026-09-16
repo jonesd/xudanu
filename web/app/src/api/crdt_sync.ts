@@ -2290,17 +2290,27 @@ export class CrdtSyncClient {
         });
         const edVal = extractValue(edResp) as Record<string, unknown>;
         if (edVal) {
-          const edText = (edVal as { text?: string }).text
+          let edText = (edVal as { text?: string }).text
             || (edVal as { type?: string; value?: string }).value
             || "";
+          if (!edText) {
+            const entries = (edVal as { entries?: unknown[] }).entries;
+            if (Array.isArray(entries)) {
+              edText = entries.map((e) => {
+                const el = Array.isArray(e)
+                  ? (e[1] as Record<string, unknown> | undefined)
+                  : ((e as Record<string, unknown>).element as Record<string, unknown> | undefined);
+                const textEl = el?.Text as { text?: string } | undefined;
+                return textEl?.text ?? (el?.text as string | undefined) ?? "";
+              }).join("");
+            }
+          }
           this.text = edText;
           this.textListeners.forEach((cb) => cb(this.text));
-          // Edition loaded: the work IS readable (public). Clear the
-          // accessDenied flag so the denied-screen doesn't fire after
-          // the fallback already succeeded.
-          if (edText || (edVal as Record<string, unknown>).text !== undefined) {
-            accessDenied = false;
-          }
+          // A successful edition response proves the work is readable —
+          // clear the denied flag regardless of the payload text shape
+          // (the edition may arrive as per-position entries, not text).
+          accessDenied = false;
           cacheDocument({
             work_id: this.workBeId,
             title: this.openWorkTitle || "",
