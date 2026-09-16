@@ -752,6 +752,18 @@ function drawOverlay(
       const boxH = DESC_CHIP_H;
       const boxTop = boxY < desc.firstTop ? boxY : desc.firstTop - 3;
 
+      // Chip geometry first (the connector must reach the chip's
+      // actual left edge — chips are right-aligned in the gutter, and
+      // the elbow used to stop at the old full-width box edge,
+      // falling short in empty space).
+      const typeName = LINK_TYPE_NAMES[desc.marker.linkTypeId!] ?? "Link";
+      const label = (isResolved ? "\u2713 " : "") + typeName.toUpperCase();
+      ctx.save();
+      ctx.font = `${isResolved ? "400" : "600"} 10px ui-monospace, SFMono-Regular, monospace`;
+      const chipW = ctx.measureText(label).width + 16;
+      ctx.restore();
+      const chipLeftX = boxX + DESC_BOX_WIDTH - chipW;
+
       ctx.save();
       // Connector elbow drawn ONLY for the hovered/focused link: the
       // passage-to-chip join is carried by the shared type colour, so
@@ -763,7 +775,7 @@ function drawOverlay(
         ctx.setLineDash([]);
         ctx.beginPath();
         const startX = desc.textRightX + 4;
-        const endX = boxX;
+        const endX = chipLeftX - 2;
         const lineY = desc.firstTop + desc.height - 1 + desc.lane * 2;
         const boxMidY = boxTop + boxH / 2;
         const elbowX = endX - 20 - desc.lane * 5;
@@ -778,10 +790,6 @@ function drawOverlay(
       ctx.save();
       ctx.font = `${isResolved ? "400" : "600"} 10px ui-monospace, SFMono-Regular, monospace`;
       ctx.textBaseline = "top";
-      const typeName = LINK_TYPE_NAMES[desc.marker.linkTypeId!] ?? "Link";
-      const label = (isResolved ? "\u2713 " : "") + typeName.toUpperCase();
-      const tw = ctx.measureText(label).width;
-      const chipW = tw + 16;
 
       ctx.fillStyle = color + (isResolved ? "18" : "2a");
       ctx.strokeStyle = isResolved ? color + "50" : color + "C0";
@@ -804,7 +812,7 @@ function drawOverlay(
 
       ctx.fillStyle = "#0d1117e6";
       ctx.beginPath();
-      ctx.roundRect(boxX + DESC_BOX_WIDTH - chipW + 5, boxTop + 4, tw + 6, 14, 3);
+      ctx.roundRect(boxX + DESC_BOX_WIDTH - chipW + 5, boxTop + 4, chipW - 10, 14, 3);
       ctx.fill();
       ctx.fillStyle = isResolved ? color + "60" : color;
       ctx.fillText(label, boxX + DESC_BOX_WIDTH - chipW + 8, boxTop + 6);
