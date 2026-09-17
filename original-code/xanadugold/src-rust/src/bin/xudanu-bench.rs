@@ -400,6 +400,106 @@ fn bench_dual_engine() -> Option<(f64, f64, bool, usize)> {
     Some((otree_us, lattice_us, matches, ops_count))
 }
 
+/// FR-51 C-5 W-1: the write-switch under the same interleaved load as
+/// bench_dual_engine. Edits apply to the lattice first (fast ack —
+/// this is what the client experiences); the O-tree work drains in
+/// one batch afterwards. Reports ack µs/op, drain total, and the
+/// ratio vs the sync-path O-tree mean for direct comparison.
+fn bench_write_switch() -> Option<(f64, f64, u128, f64, usize)> {
+    use std::time::Instant;
+    use xudanu::server::transport::protocol::TextDeltaOp as Op;
+
+    let base_len = SEED_SENTENCE.len();
+    let chunks = 16_000usize / base_len;
+    let mut server = Server::new();
+    let s1 = server.connect();
+    let s2 = server.connect();
+    let _ = server.login_public(s1);
+    let _ = server.login_public(s2);
+    let text: String = SEED_SENTENCE.repeat(chunks);
+    let work = server
+        .create_work(s1, Edition::from_text(&text))
+        .expect("create work");
+    server.crdt_open_session(s1, work).unwrap();
+    server.crdt_open_session(s2, work).unwrap();
+
+    server.enable_lattice_shadow();
+    server.enroll_lattice_shadow(s1, work).expect("enroll");
+    server.lattice_primary_promote(work);
+    assert!(server.lattice_write_promote(work), "write-promote");
+
+    let n = text.chars().count();
+    let mid = n / 2;
+    let d = |o: u64, ins: Option<&str>, del: u64| -> Vec<Op> {
+        let mut ops = vec![Op::Retain { count: o }];
+        if let Some(t) = ins {
+            ops.push(Op::Insert {
+                text: t.to_string(),
+            });
+        }
+        if del > 0 {
+            ops.push(Op::Delete { count: del });
+        }
+        ops
+    };
+    let script: Vec<(xudanu::server::SessionId, Vec<Op>)> = {
+        let mut v: Vec<(xudanu::server::SessionId, Vec<Op>)> = Vec::new();
+        for k in 0..40u64 {
+            let at = (mid as u64 + k * 37) % (n as u64 - 40);
+            v.push((s1, d(at, Some("A"), 0)));
+            v.push((s2, d(at.saturating_sub(20), None, 2)));
+            v.push((s2, d((at + 5) % (n as u64 - 10), Some("B"), 0)));
+        }
+        v
+    };
+    let ops_count = script.len();
+
+    let mut ack_ns: u128 = 0;
+    let mut worst_us: f64 = 0.0;
+    for (i, (sid, ops)) in script.iter().enumerate() {
+        let t = Instant::now();
+        server
+            .crdt_apply_text_delta(*sid, work, ops)
+            .expect("fast-path delta");
+        let us = t.elapsed().as_nanos() as f64 / 1000.0;
+        ack_ns += (us * 1000.0) as u128;
+        if us > worst_us {
+            worst_us = us;
+        }
+        if i % 30 == 0 {
+            eprintln!("write-switch op {} of {}: {:.1}us", i + 1, ops_count, us);
+        }
+    }
+    let deferred = server.lattice_deferred_len(work);
+    let t_drain = Instant::now();
+    let drained = server.lattice_drain_deferred();
+    let drain_ns = t_drain.elapsed().as_nanos();
+
+    let lattice_ns = server.lattice_shadow_nanos(work).unwrap();
+    let ack_us = ack_ns as f64 / ops_count as f64 / 1000.0;
+    let lattice_us = lattice_ns as f64 / ops_count as f64 / 1000.0;
+    let drain_us = drain_ns as f64 / 1000.0;
+
+    println!(
+        "\nFR-51 W-1: write-switch ({} interleaved ops, {} chars, write-promoted)",
+        ops_count, n
+    );
+    println!(
+        "  deferred-before-drain: {} (drained {})",
+        deferred, drained
+    );
+    println!("{:>26} {:>14}", "stage", "µs/op or µs total");
+    println!("{:>26} {:>14.2}", "fast-path ack (mean)", ack_us);
+    println!("{:>26} {:>14.2}", "lattice apply (mean)", lattice_us);
+    println!("{:>26} {:>14.2}", "drain (total, all ops)", drain_us);
+    println!(
+        "{:>26} {:>14.2}",
+        "ack + amortized drain",
+        ack_us + drain_us / ops_count as f64
+    );
+    Some((ack_us, lattice_us, drain_ns, worst_us, ops_count))
+}
+
 fn now_unix() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -667,6 +767,7 @@ fn main() {
 
     bench_nested_transclusion();
     let dual = bench_dual_engine();
+    let wsw = bench_write_switch();
     let lattice_rows = bench_lattice();
     println!(
         "xudanu-bench rev={} xudanu v{}",
@@ -921,8 +1022,34 @@ fn main() {
             l["proj_1m"] = serde_json::json!({"mean": lattice_us});
             emit_record(&ledger, l);
         }
+        if let Some((ack_us, lattice_us, drain_ns, worst_us, ops)) = wsw {
+            let mut w = serde_json::json!({
+                "ts": now_unix(),
+                "source": "run",
+                "env": std::env::var("XUDANU_BENCH_ENV").unwrap_or_else(|_| "dev-mac".into()),
+                "host": std::env::var("XUDANU_BENCH_HOST").unwrap_or_else(|_| "dev".into()),
+                "git": git_desc(),
+                "xudanu": env!("CARGO_PKG_VERSION"),
+                "harness_rev": HARNESS_REV,
+                "ref_n": 16000,
+                "engine": "lattice",
+                "variant": "write-switch-w1",
+                "scenario": "write-switch-interleaved",
+                "max_exp": serde_json::json!(0.0),
+                "note": format!(
+                    "{} interleaved ops fast-path; worst ack {:.0}us; drain {}us total",
+                    ops,
+                    worst_us,
+                    drain_ns / 1000
+                ),
+            });
+            w["us_at_ref"] = serde_json::json!({"ins": ack_us, "del": 0.0});
+            w["proj_1m"] = serde_json::json!({"mean": ack_us});
+            emit_record(&ledger, w);
+            let _ = lattice_us;
+        }
         println!(
-            "\nledger: 5 records appended to {} (git {})",
+            "\nledger: records appended to {} (git {})",
             ledger,
             git_desc()
         );
