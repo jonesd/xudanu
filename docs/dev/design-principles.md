@@ -61,8 +61,20 @@ competing for one job — the system behaving correctly while the user
 cannot tell why something happened is a defect (tonight: New
 Document no-op, layout FAB, dual demo buttons).
 
+## 9. The same content at every step
+
+Walking a chain — inline quote, hover, origin panel, provenance
+hops — every surface must show the same passage. Consistency across
+steps is how the system earns trust; a surface that denies what
+another just showed (a bare "span could not be located" after the
+reader SAW the quote) breaks the reader's faith in all of them.
+When drift makes exact display impossible, show what was quoted as
+it stood, marked as such — never a bare not-found. (Found in the
+wild 2026-09-16: stale workshop transclusion, OriginPanel.)
+
 ---
 
 History note: principles 2-3 trace to the compare/beams work
 (transpointing windows); 1 and 4-8 crystallized in the 2026-09-12
-walkthrough. See FR-65, FR-66 for the onboarding applications.
+walkthrough; 9 in the 2026-09-16 rendering session. See FR-65,
+FR-66 for the onboarding applications.

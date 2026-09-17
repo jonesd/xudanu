@@ -62,6 +62,15 @@ lone builder could attempt the model — independent
 single-implementer systems predate the LLM era [29] — but the depth
 reachable per person-year: the substrate machinery the 1988–92 team
 of seven built over years is now a one-person, months-scale project.
+The convergence is not confined to single implementers: as this
+paper was being prepared, Zed Industries restated the xanalogical
+rules — never copy always reference, never overwrite always version,
+both-ways connection, span-level attribution — for code
+collaboration in Delta/DeltaDB, naming AI agents as the class of
+user the model had been waiting for [30]. Independent convergence
+from the CRDT tradition, at industrial scale, is itself evidence
+for the thesis: the design's time arrived, from directions Nelson
+could not have sequenced.
 The second barrier is falling to
 machine assistance: systems can now detect when a user is retyping
 existing content and offer to complete it as a live reference, and
@@ -490,3 +499,7 @@ respective owners.
 
 [29] Moore, A. (LÆMEUR). "The Alph Hypertext System Project."
      https://alph.io/, 2016–2025. Accessed September 2026.
+
+[30] Sobo, N. "Xanadu Was Waiting for Agents." Zed Industries,
+     September 2026. https://zed.dev/blog/agentic-xanadu; Delta
+     public beta announcement: https://zed.dev/blog/delta-public-beta.
