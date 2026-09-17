@@ -20,6 +20,26 @@ Their thesis (adopted here):
 - Knowing a link has no target yet makes arriving at the empty end
   LESS disorienting, not more.
 - Tools should call open links out separately from normal links.
+  (His own wiki implements this as a CSS class on dead-end links —
+  `internal isDeadEnd`.)
+
+Further prior art from the same site, sharpening the design:
+
+- **"Interlinked Notes Self Organize"**: "topics can be defined by
+  Links to Nowhere and then perusing the backlinks to that 'empty
+  note.' This creates an implicit index of notes surrounding a topic
+  without any organizational effort." The real payoff of an open end
+  is not just future completion — its backlinks ARE the topic. An
+  open end with many tethers converges with concept works (FR-22):
+  the connection-set is a living index before the target exists.
+- **Friction lessons** ("Proper Noun References Reduce Friction",
+  "Naming Evergreen Notes is a source of Friction"): creating an
+  open end must not demand a perfect name. Rough label at creation,
+  refine at completion.
+- **The differentiator, from their weakness**: "Namespace Collision
+  is Wikilogging's Most Obvious Problem" — title-based open links
+  collide. Tumbler-addressed open ends never do: two identities can
+  reserve "the same topic" and the addresses stay distinct.
 
 Xudanu's version is stronger than the wiki's because it is
 address-based, not title-based: an open end can carry a reserved

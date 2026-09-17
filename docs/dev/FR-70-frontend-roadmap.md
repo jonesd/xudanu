@@ -82,6 +82,31 @@ xudanu.com deploy of v1.13+ remains blocked on the Hetzner machine
 password reset (recovery console, done once before). After reset:
 pull pre-built image (issue #191), reseed demos, --static-dir.
 
+## F. Reading UX inspirations (Tangent, credited prior art)
+
+From tangentnotes.com / everything-abridged.com (Taylor, Apache-2.0
+note app) — ideas worth adapting, not copying: Tangent is single-user
+markdown; Xudanu's versions below are the address-based,
+multi-user, transclusive forms.
+
+1. **Thread View → "thread-to-trail"** (the differentiator): retain
+   the link/transclusion navigation path as horizontally sliding
+   panels — explore without losing your place (a lightweight
+   transpointing-windows answer). The Xanogorical twist Tangent
+   can't do: one action saves the ad-hoc exploration thread as a
+   curated, shareable Trail — wandering becomes an artifact.
+2. **Focus Mode** — sentence-level dial-down that keeps your place;
+   deep-work UI for the editor canvas. Cheap, pairs with
+   collaboration (local focus, shared document).
+3. **Map View visited-path layer** — the Docuverse/DocumentMap graph
+   already exists; the delta is rendering the VISITED path as a
+   distinct layer ("what was I doing yesterday" as a first-class
+   view), with the thread (F1) as its linear counterpart.
+4. **Saved queries as works** (deferred) — Tangent's query language
+   allows queries referencing queries; in Xudanu a saved query is
+   just a work, which rhymes with everything-is-a-work. Low
+   priority; revisit if/when search gains structure.
+
 ## Priority order
 
 A1 → C1/C2 (cheap insurance before any crowd) → A2 → B1/B2 (the
