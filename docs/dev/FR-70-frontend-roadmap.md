@@ -110,4 +110,6 @@ multi-user, transclusive forms.
 ## Priority order
 
 A1 → C1/C2 (cheap insurance before any crowd) → A2 → B1/B2 (the
-deliberation story) → D1/D2 (positioning) → A3 → B3-B5 → E.
+deliberation story) → D1/D2 (positioning) → F1 (thread-to-trail —
+pairs with FR-71 open ends in the positioning/demo story) → A3 →
+B3-B5 → E.
