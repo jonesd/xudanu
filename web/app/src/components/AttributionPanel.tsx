@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { AttributionSpan, AttributionLogStatus, ProvenanceHop } from "../api/crdt_sync";
 
 function workIdFromUrl(): number | undefined {
@@ -98,6 +98,10 @@ interface AttributionPanelProps {
 }
 
 export function AttributionPanel({ spans, logStatus, documentLength, visible, workId }: AttributionPanelProps) {
+  // "Chain is order": the timeline defaults to SEQUENCE (authorship
+  // time — the order entities actually moved), with the CHAIN view
+  // (document position — the compiled arrangement) one click away.
+  const [timelineSort, setTimelineSort] = useState<"sequence" | "chain">("sequence");
   const authors = useMemo(() => {
     const groups = new Map<string, AuthorGroup>();
 
@@ -283,9 +287,29 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible, wo
 
       {spans.length > 0 && (
         <div className="attribution-timeline">
-          <h4>Timeline</h4>
+          <div className="attribution-timeline-head">
+            <h4>Timeline</h4>
+            <div className="timeline-sort-toggle">
+              <button
+                className={`timeline-sort-btn ${timelineSort === "sequence" ? "active" : ""}`}
+                onClick={() => setTimelineSort("sequence")}
+                title="Authorship order — the sequence the entities actually moved"
+              >
+                sequence
+              </button>
+              <button
+                className={`timeline-sort-btn ${timelineSort === "chain" ? "active" : ""}`}
+                onClick={() => setTimelineSort("chain")}
+                title="Document position order — the compiled chain arrangement"
+              >
+                chain
+              </button>
+            </div>
+          </div>
           <ul>
-            {[...spans].sort((a, b) => a.start - b.start).map((span, i) => {
+            {[...spans]
+              .sort((a, b) => (timelineSort === "sequence" ? a.timestamp - b.timestamp || a.start - b.start : a.start - b.start))
+              .map((span, i) => {
               const isHistorical = span.author_type === "historical";
               const key = isHistorical && span.historical_author_id != null
                 ? `ha:${span.historical_author_id}`

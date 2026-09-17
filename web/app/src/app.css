@@ -1840,6 +1840,37 @@ body {
   margin-top: 8px;
 }
 
+.attribution-timeline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.timeline-sort-toggle {
+  display: flex;
+  gap: 0;
+  border: 1px solid #d0d4da;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.timeline-sort-btn {
+  font-size: 10px;
+  padding: 2px 8px;
+  border: none;
+  background: transparent;
+  color: #666;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.timeline-sort-btn.active {
+  background: #4a5568;
+  color: #fff;
+}
+
 .attribution-timeline h4 {
   font-size: 13px;
   font-weight: 600;
