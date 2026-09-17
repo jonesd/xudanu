@@ -790,7 +790,13 @@ pub struct Server {
     /// Drained by the autosave tick, before checkpoints, at demote,
     /// and at session close. Durability window equals the existing
     /// debounce-materialize window (editions remain the record).
-    pub(crate) lattice_deferred: HashMap<BeId, Vec<(SessionId, Vec<crate::server::transport::protocol::TextDeltaOp>)>>,
+    pub(crate) lattice_deferred: HashMap<
+        BeId,
+        Vec<(
+            SessionId,
+            Vec<crate::server::transport::protocol::TextDeltaOp>,
+        )>,
+    >,
     lattice_shadow_enabled: bool,
     /// FR-58 S2: reference-over-copy suggestions (off by default;
     /// admin toggle, per FR-58 acceptance criteria).
@@ -4492,11 +4498,7 @@ impl Server {
                     id_map.insert(old_id, new_id);
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "[work_duplicate] link {} not cloned: {}",
-                        old_id,
-                        e
-                    );
+                    tracing::warn!("[work_duplicate] link {} not cloned: {}", old_id, e);
                 }
             }
         }
@@ -9864,10 +9866,7 @@ impl Server {
         let mut relay_to = Vec::new();
         for sid in self.sessions.keys() {
             if *sid != session_id && self.otree_crdt.is_subscriber(work_be_id, *sid) {
-                relay_to.push((
-                    *sid,
-                    super::crdt_manager::SyncSessionId::from(sid.as_u64()),
-                ));
+                relay_to.push((*sid, super::crdt_manager::SyncSessionId::from(sid.as_u64())));
             }
         }
 
@@ -19641,18 +19640,19 @@ impl Server {
                                         if let Some(byte_at) = raw_src.find(&rev_content) {
                                             let char_at = raw_src[..byte_at].chars().count();
                                             let span_len = rev_content.chars().count();
-                                            let live_content = self.resolve_raw_range_with_nesting(
-                                                src_id,
-                                                char_at,
-                                                char_at + span_len,
-                                                cache,
-                                                raw_cache,
-                                                stack,
-                                                span_ranges,
-                                                source_titles,
-                                                transcluded_blobs,
-                                                depth + 1,
-                                            )?;
+                                            let live_content = self
+                                                .resolve_raw_range_with_nesting(
+                                                    src_id,
+                                                    char_at,
+                                                    char_at + span_len,
+                                                    cache,
+                                                    raw_cache,
+                                                    stack,
+                                                    span_ranges,
+                                                    source_titles,
+                                                    transcluded_blobs,
+                                                    depth + 1,
+                                                )?;
                                             let live_len = live_content.chars().count();
                                             tracing::info!(
                                                 "[transclusion] relocated source {:x} span [{}..{}] -> [{}..{}] — passage moved, not changed",
@@ -19672,7 +19672,8 @@ impl Server {
                                                 source_changed: false,
                                             });
                                             if !source_titles.contains_key(&src_id) {
-                                                if let Some(title) = self.compound_source_title(src_id)
+                                                if let Some(title) =
+                                                    self.compound_source_title(src_id)
                                                 {
                                                     source_titles.insert(src_id, title);
                                                 }
@@ -42383,9 +42384,7 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
         let text = "alpha original passage omega";
-        let source = server
-            .create_work(sid, Edition::from_text(text))
-            .unwrap();
+        let source = server.create_work(sid, Edition::from_text(text)).unwrap();
         server.work_publish(sid, source).unwrap();
         let target = server.create_work(sid, Edition::empty()).unwrap();
         server.work_publish(sid, target).unwrap();
@@ -42395,7 +42394,12 @@ mod tests {
         let start = text.find("original passage").unwrap();
         let end = start + "original passage".len();
         server
-            .element_insert(sid, target, 0, RangeElement::transclusion(source, start, end))
+            .element_insert(
+                sid,
+                target,
+                0,
+                RangeElement::transclusion(source, start, end),
+            )
             .unwrap();
 
         // MOVE the passage: prepend a prologue. The quoted text is
@@ -42422,7 +42426,10 @@ mod tests {
             "coordinates should heal to the moved location"
         );
         assert_eq!(sr.char_end, end + shift);
-        assert!(!sr.source_changed, "an identical moved passage is not drift");
+        assert!(
+            !sr.source_changed,
+            "an identical moved passage is not drift"
+        );
     }
 
     #[test]
@@ -48382,8 +48389,10 @@ mod tests_security_tracker {
                 "Source page.\n\nAlpha passage here.\n\nBeta passage here.\n\nGamma passage here.\n\nDelta passage here.\n\nEpsilon passage here.\n\nZeta passage here."))
             .unwrap();
         let other = server
-            .create_work(admin, Edition::from_text(
-                "Other work.\n\nFar end one.\n\nFar end two.\n\nFar end three."))
+            .create_work(
+                admin,
+                Edition::from_text("Other work.\n\nFar end one.\n\nFar end two.\n\nFar end three."),
+            )
             .unwrap();
 
         fn text(srv: &Server, w: BeId, needle: &str) -> (i64, i64) {
@@ -48391,7 +48400,15 @@ mod tests_security_tracker {
             let i = t.find(needle).unwrap() as i64;
             (i, i + needle.len() as i64)
         }
-        fn mklink(srv: &mut Server, admin: SessionId, o: BeId, os: (i64, i64), d: BeId, ds: (i64, i64), ty: u64) -> BeId {
+        fn mklink(
+            srv: &mut Server,
+            admin: SessionId,
+            o: BeId,
+            os: (i64, i64),
+            d: BeId,
+            ds: (i64, i64),
+            ty: u64,
+        ) -> BeId {
             let link = crate::edition::links::HyperLink::make(
                 vec![ty],
                 crate::edition::links::HyperRef::single(None, Some(o), None, None)
@@ -48399,7 +48416,8 @@ mod tests_security_tracker {
                 crate::edition::links::HyperRef::single(None, Some(d), None, None)
                     .with_span(Some(ds.0), Some(ds.1)),
             );
-            srv.create_link_with_hyperlink_homed(admin, link, None).unwrap()
+            srv.create_link_with_hyperlink_homed(admin, link, None)
+                .unwrap()
         }
 
         let a1 = text(&server, src, "Alpha passage");
@@ -48412,13 +48430,18 @@ mod tests_security_tracker {
 
         // Multi-ended: add "Context" end to l1 targeting src at Gamma
         {
-        {
-            let sp = text(&server, src, "Gamma passage");
-            let ls = server.links.get_mut(&l1).unwrap();
-            ls.link.ends_mut().entry("Context".to_string()).or_default().push(
-                crate::edition::links::HyperRef::single(None, Some(src), None, None)
-                    .with_span(Some(sp.0), Some(sp.1)));
-        }
+            {
+                let sp = text(&server, src, "Gamma passage");
+                let ls = server.links.get_mut(&l1).unwrap();
+                ls.link
+                    .ends_mut()
+                    .entry("Context".to_string())
+                    .or_default()
+                    .push(
+                        crate::edition::links::HyperRef::single(None, Some(src), None, None)
+                            .with_span(Some(sp.0), Some(sp.1)),
+                    );
+            }
         }
 
         // Gathered: l3 LeftEnd holds three source passages, RightEnd -> other Far end three
@@ -48428,9 +48451,14 @@ mod tests_security_tracker {
         for needle in ["Beta passage", "Gamma passage"] {
             let sp = text(&server, src, needle);
             let ls = server.links.get_mut(&l3).unwrap();
-            ls.link.ends_mut().entry("LeftEnd".to_string()).or_default().push(
-                crate::edition::links::HyperRef::single(None, Some(src), None, None)
-                    .with_span(Some(sp.0), Some(sp.1)));
+            ls.link
+                .ends_mut()
+                .entry("LeftEnd".to_string())
+                .or_default()
+                .push(
+                    crate::edition::links::HyperRef::single(None, Some(src), None, None)
+                        .with_span(Some(sp.0), Some(sp.1)),
+                );
         }
 
         // Comment-on-link: a new note work whose link attaches to l3
@@ -48444,11 +48472,19 @@ mod tests_security_tracker {
                 .with_span(Some(nspan.0), Some(nspan.1)),
             crate::edition::links::HyperRef::single(None, Some(src), None, None),
         );
-        let nl = server.create_link_with_hyperlink_homed(admin, note_link, None).unwrap();
+        let nl = server
+            .create_link_with_hyperlink_homed(admin, note_link, None)
+            .unwrap();
         {
             let ls = server.links.get_mut(&nl).unwrap();
-            ls.link.ends_mut().entry("Connection".to_string()).or_default().push(
-                crate::edition::links::HyperRef::link_attachment(l3, Some(src)));
+            ls.link
+                .ends_mut()
+                .entry("Connection".to_string())
+                .or_default()
+                .push(crate::edition::links::HyperRef::link_attachment(
+                    l3,
+                    Some(src),
+                ));
         }
 
         // Snapshot the original's link ids
@@ -48476,30 +48512,44 @@ mod tests_security_tracker {
         assert_eq!(server.links.len(), orig_count + 4);
 
         // l1 clone: multi-ended (3 ends), same type, src ends remapped to dup
-        let dup_l1 = server.links.values()
-            .find(|ls| ls.link != server.links.get(&l1).unwrap().link
-                && ls.link.ends().len() == 3
-                && ls.link.ends().values().flatten()
-                    .any(|hr| hr.work_context() == Some(dup as u64)))
+        let dup_l1 = server
+            .links
+            .values()
+            .find(|ls| {
+                ls.link != server.links.get(&l1).unwrap().link
+                    && ls.link.ends().len() == 3
+                    && ls
+                        .link
+                        .ends()
+                        .values()
+                        .flatten()
+                        .any(|hr| hr.work_context() == Some(dup as u64))
+            })
             .expect("multi-ended clone exists");
 
         // l3 clone: gathered (LeftEnd holds 3 attachments), remapped to dup
-        let dup_l3 = server.links.values()
+        let dup_l3 = server
+            .links
+            .values()
             .find(|ls| {
-                ls.link.ends().get("LeftEnd")
+                ls.link
+                    .ends()
+                    .get("LeftEnd")
                     .map(|v| v.len() == 3)
                     .unwrap_or(false)
-                    && ls.link.ends()["LeftEnd"].iter()
+                    && ls.link.ends()["LeftEnd"]
+                        .iter()
                         .all(|hr| hr.work_context() == Some(dup as u64))
             })
             .expect("gathered clone exists");
 
         // nl clone: attachment remapped to the cloned l3
-        let dup_nl = server.links.values()
+        let dup_nl = server
+            .links
+            .values()
             .find(|ls| {
                 ls.link.ends().values().flatten().any(|hr| {
-                    hr.link_attachment_target().is_some()
-                        && hr.link_attachment_target() != Some(l3)
+                    hr.link_attachment_target().is_some() && hr.link_attachment_target() != Some(l3)
                 })
             })
             .expect("comment-on-link clone with remapped attachment");
@@ -48507,14 +48557,24 @@ mod tests_security_tracker {
         let _ = dup_nl;
 
         // ---- Independence: delete a clone; original survives ----
-        let clone_id = server.links.iter()
+        let clone_id = server
+            .links
+            .iter()
             .find(|(_, ls)| {
-                ls.link.ends().get("LeftEnd").map(|v| v.len() == 3).unwrap_or(false)
+                ls.link
+                    .ends()
+                    .get("LeftEnd")
+                    .map(|v| v.len() == 3)
+                    .unwrap_or(false)
                     && ls.link.ends()["LeftEnd"][0].work_context() == Some(dup as u64)
             })
-            .map(|(id, _)| *id).unwrap();
+            .map(|(id, _)| *id)
+            .unwrap();
         server.delete_link(admin, clone_id).unwrap();
-        assert!(server.links.get(&l3).is_some(), "original gathered link survives");
+        assert!(
+            server.links.get(&l3).is_some(),
+            "original gathered link survives"
+        );
         assert_eq!(
             server.links.get(&l3).unwrap().link.ends()["LeftEnd"].len(),
             3,
@@ -48531,7 +48591,7 @@ mod tests_security_tracker {
         assert!(result.is_err(), "nonexistent source must be denied");
     }
 
-#[test]
+    #[test]
     fn region_link_address_carries_prefix() {
         let mut server = Server::new();
         let admin = server.connect();
@@ -50551,9 +50611,7 @@ mod cutover_integration_tests {
         let mut server = Server::new();
         let sid = server.connect();
         server.login_public(sid).unwrap();
-        let work = server
-            .create_work(sid, Edition::from_text("gate"))
-            .unwrap();
+        let work = server.create_work(sid, Edition::from_text("gate")).unwrap();
         server.crdt_open_session(sid, work).unwrap();
 
         server.enable_lattice_shadow();
@@ -50729,7 +50787,11 @@ mod cutover_integration_tests {
             "read-demote clears write mode"
         );
         assert_eq!(server.lattice_deferred_len(work), 0);
-        assert!(server.otree_crdt.current_text(work).unwrap().starts_with('x'));
+        assert!(server
+            .otree_crdt
+            .current_text(work)
+            .unwrap()
+            .starts_with('x'));
     }
 
     /// FR-51 C-5: the write-switch set persists across a restart and
@@ -50951,9 +51013,7 @@ mod cutover_integration_tests {
         let work_a = server
             .create_work(sid, Edition::from_text("hello world"))
             .unwrap();
-        let work_b = server
-            .create_work(sid, Edition::from_text("dest"))
-            .unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("dest")).unwrap();
 
         let o_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
             .with_span(Some(0), Some(5));
@@ -51046,10 +51106,7 @@ mod cutover_integration_tests {
         assert_eq!(server.lattice_deferred_len(work), 2);
 
         let drained = server.lattice_drain_deferred();
-        assert_eq!(
-            drained, 1,
-            "dead-session op drops; live-session op applies"
-        );
+        assert_eq!(drained, 1, "dead-session op drops; live-session op applies");
         assert_eq!(server.lattice_deferred_len(work), 0);
         let text = server.otree_crdt.current_text(work).unwrap();
         assert!(text.contains('2'), "live op applied: {}", text);

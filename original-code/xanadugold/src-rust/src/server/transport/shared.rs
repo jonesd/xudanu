@@ -272,7 +272,10 @@ impl ServerHandle {
         // before the prune so queued ops still have live sessions.
         let drained = self.with_server(|srv| srv.lattice_drain_deferred());
         if drained > 0 {
-            tracing::debug!("[lattice-drain] flushed {} deferred op(s) pre-checkpoint", drained);
+            tracing::debug!(
+                "[lattice-drain] flushed {} deferred op(s) pre-checkpoint",
+                drained
+            );
         }
 
         self.with_server(|srv| srv.prune_disconnected_sessions());

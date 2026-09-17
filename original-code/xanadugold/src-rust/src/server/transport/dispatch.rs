@@ -156,7 +156,9 @@ pub fn dispatch(
     // denied for non-admin sessions in one place. Reads, sessions,
     // and tickets pass; every corpus mutation does not.
     if is_frozen_mutation(&request) {
-        let denied = state.server.with_server_ref(|srv| srv.frozen_denies(session_id));
+        let denied = state
+            .server
+            .with_server_ref(|srv| srv.frozen_denies(session_id));
         if denied {
             return Err(crate::server::ServerError::NotAuthorized);
         }
@@ -1015,14 +1017,14 @@ fn dispatch_inner(
                 Some(shadow) => Some(shadow == srv.crdt_current_text(work_id)?),
                 None => None,
             };
-             Ok(ResponseValue::Json(serde_json::json!({
-                 "enrolled": matches.is_some(),
-                 "ops_mirrored": ops.unwrap_or(0),
-                 "matches_live": matches,
-                 "lattice_primary": srv.lattice_is_primary(work_id),
-                 "lattice_write": srv.lattice_is_write_primary(work_id),
-                 "deferred_ops": srv.lattice_deferred_len(work_id),
-             })))
+            Ok(ResponseValue::Json(serde_json::json!({
+                "enrolled": matches.is_some(),
+                "ops_mirrored": ops.unwrap_or(0),
+                "matches_live": matches,
+                "lattice_primary": srv.lattice_is_primary(work_id),
+                "lattice_write": srv.lattice_is_write_primary(work_id),
+                "deferred_ops": srv.lattice_deferred_len(work_id),
+            })))
         }
         WireRequest::LatticeShadowClear {} => {
             srv.ensure_admin(session_id)?;
@@ -5720,7 +5722,15 @@ mod tests {
         .is_err());
 
         // Reads: unaffected — the museum is open.
-        assert!(dispatch(&state, sid, WireRequest::WorkList { offset: None, limit: None }).is_ok());
+        assert!(dispatch(
+            &state,
+            sid,
+            WireRequest::WorkList {
+                offset: None,
+                limit: None
+            }
+        )
+        .is_ok());
 
         // Build the exhibit while unfrozen, then freeze.
         let wid = state.server.with_server(|srv| {

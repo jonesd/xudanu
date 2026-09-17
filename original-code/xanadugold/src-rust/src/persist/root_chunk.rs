@@ -1936,7 +1936,7 @@ mod tests {
                 system_clubs_hash: None,
                 reconcile_store_hash: None,
                 lattice_primary_works: vec![],
-            lattice_write_works: vec![],
+                lattice_write_works: vec![],
             };
             let root_hash = write_root_chunk(&root, &store).unwrap();
             hash_to_hex(&root_hash)

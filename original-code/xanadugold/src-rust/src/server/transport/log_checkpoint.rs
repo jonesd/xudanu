@@ -295,9 +295,9 @@ pub fn checkpoint_security_log(
     let mut outcomes = Vec::new();
 
     let write_cp = |entries: u64,
-                        head: &str,
-                        name: String,
-                        pending: &mut Vec<LogCheckpoint>|
+                    head: &str,
+                    name: String,
+                    pending: &mut Vec<LogCheckpoint>|
      -> Result<CheckpointOutcome, String> {
         let seq = next_seq(&existing, pending);
         let cp = sign_checkpoint(
