@@ -2258,7 +2258,14 @@ export class CrdtSyncClient {
         if (wasInitialOpen) {
           const serverText = (inner.current_text as string) || "";
           const localText = this.text;
-          console.log(`[crdt] initial open: local=${localText.length} chars, server=${serverText.length} chars, unsynced=${this.hasUnsyncedLocalEdits}`);
+
+          // Register author BEFORE the merge push (FR-69 S2 / S-2): a
+          // delta from an unregistered author can be rejected, which
+          // used to fail the push and trigger the destructive rollback.
+          if (this.currentIdentity) {
+            await this.sendRequest("crdt_register_author", { work_id: this.workBeId })
+              .catch((e) => console.warn("crdt_sync: register_author failed:", e));
+          }
 
           if (localText && localText !== serverText) {
             // Reconnect recovery: the client has unsynced edits (server
@@ -2269,7 +2276,7 @@ export class CrdtSyncClient {
               "[crdt] reconnect: local state differs from server — pushing local (local=" +
                 localText.length + " chars, server=" + serverText.length + " chars)",
             );
-            this.sendTextDelta(serverText, localText);
+            this.sendTextDelta(serverText, localText, { protectLocal: true });
             this.text = localText;
             // Pushed but not yet acked: the unacked guard stays armed
             // until the real acknowledgement lands (FR-69 S2).
@@ -2292,12 +2299,6 @@ export class CrdtSyncClient {
         loaded = true;
         if (wasInitialOpen) {
           this.textListeners.forEach((cb) => cb(this.text));
-        }
-
-        // Register author non-blocking — don't delay text display
-        if (this.currentIdentity) {
-          this.sendRequest("crdt_register_author", { work_id: this.workBeId })
-            .catch((e) => console.warn("crdt_sync: register_author failed:", e));
         }
 
         this.sendRequest("crdt_awareness_get", {
@@ -2483,10 +2484,22 @@ export class CrdtSyncClient {
 
     if (eventType === "crdt_text_update") {
       const payload = event.payload as Record<string, unknown> | undefined;
-      if (payload && payload.work_id === this.workBeId && !this.skipCrdt) {
+      // FR-69 S2 ordering rule: broadcasts before the CRDT session's
+      // first open completes are meaningless — the open response is
+      // the authoritative state sync (it carries the offline-edit
+      // merge). Adopting or pushing against a pre-open broadcast
+      // raced the merge and could lose offline edits.
+      if (payload && payload.work_id === this.workBeId && !this.skipCrdt && this.crdtReady) {
         const newText = payload.text as string;
         if (this.deltaInFlight) {
-          this.pendingServerText = newText;
+          // FR-69 S2 / S-4: while an unsynced push is in flight, a
+          // broadcast is the PRE-PUSH server view — queueing it as
+          // pending would overwrite local text right after our own
+          // ack. Drop it; post-ack divergence arrives as a fresh
+          // broadcast. (Queueing stays correct for plain typing.)
+          if (!this.hasUnsyncedLocalEdits) {
+            this.pendingServerText = newText;
+          }
         } else if (newText !== this.text) {
           // Echo-race guard: shortly after OUR acked edit, a
           // broadcast whose text differs from what we sent is a
@@ -2518,7 +2531,7 @@ export class CrdtSyncClient {
               "[crdt] server full-state differs while local edits are unacked — pushing local",
               { localLen: this.text.length, serverLen: newText.length },
             );
-            this.sendTextDelta(newText, this.text);
+            this.sendTextDelta(newText, this.text, { protectLocal: true });
           } else {
             this.text = newText;
             this.textListeners.forEach((cb) => cb(newText));
@@ -2529,7 +2542,7 @@ export class CrdtSyncClient {
 
     if (eventType === "crdt_text_delta") {
       const payload = event.payload as Record<string, unknown> | undefined;
-      if (payload && payload.work_id === this.workBeId && !this.skipCrdt) {
+      if (payload && payload.work_id === this.workBeId && !this.skipCrdt && this.crdtReady) {
         const ops = payload.ops as Array<{ type: string; count?: number; text?: string }>;
         const author = (payload.author_name as string) || "unknown";
         try {
@@ -2708,7 +2721,9 @@ export class CrdtSyncClient {
     return base;
   }
 
-  private sendTextDelta(oldText: string, newText: string): void {
+  private pushRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private sendTextDelta(oldText: string, newText: string, opts?: { protectLocal?: boolean }): void {
     if (oldText === newText) return;
 
     const prefix = commonPrefix(oldText, newText);
@@ -2760,6 +2775,22 @@ export class CrdtSyncClient {
       const msg = String(e?.message || e || "");
       if (msg.includes("WebSocket not open") || msg.includes("connection closed") || msg.includes("timed out")) {
         console.warn("Text delta not sent (will sync on reconnect):", msg);
+      } else if (opts?.protectLocal) {
+        // FR-69 S2 / S-1: this delta CARRIES the user's only copy
+        // (reconnect push of offline edits). Never roll back — the
+        // oldText here is the server view, not a state the user was
+        // in. Keep local, stay dirty, retry once shortly (the merge
+        // will also re-fire on the next open).
+        console.warn("[crdt] push failed; keeping local text, will retry:", msg);
+        this.hasUnsyncedLocalEdits = true;
+        if (this.pushRetryTimer == null) {
+          this.pushRetryTimer = setTimeout(() => {
+            this.pushRetryTimer = null;
+            if (this.hasUnsyncedLocalEdits && this.crdtReady && this.isConnected()) {
+              this.sendTextDelta(oldText, this.text, { protectLocal: true });
+            }
+          }, 2000);
+        }
       } else {
         console.error("Failed to send text delta:", e);
         this.text = oldText;

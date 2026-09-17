@@ -21057,6 +21057,16 @@ impl Server {
         };
         self.ticket_nonces.insert(nonce, expires_at);
         self.tickets_dirty = true;
+        // FR-69 S2: persist synchronously. Rolling renewal hands the
+        // client a ticket whose nonce lives only in memory until the
+        // next checkpoint — a SIGKILL in that window restored a
+        // server that rejected the client's current ticket, silently
+        // degrading the session to public (edit-gated) and killing
+        // the offline-edit push. The sidecar is tiny; issuance and
+        // redemption are infrequent (login, reconnect).
+        if let Err(e) = self.persist_ticket_nonces() {
+            tracing::warn!("[tickets] sidecar persist failed after issue: {}", e);
+        }
         tracing::debug!(
             "issued session ticket for club {:x}, expires in {}s",
             club_id,
@@ -21083,6 +21093,9 @@ impl Server {
         let now = crate::server::session_ticket::now_secs();
         if ticket.is_expired(now) {
             self.ticket_nonces.remove(&ticket.claims.nonce);
+            if let Err(e) = self.persist_ticket_nonces() {
+                tracing::warn!("[tickets] sidecar persist failed after expiry: {}", e);
+            }
             return Err(ServerError::InvalidArgument("ticket expired".into()));
         }
         if !self.ticket_nonces.contains_key(&ticket.claims.nonce) {
@@ -21093,6 +21106,9 @@ impl Server {
         let club_id = ticket.claims.club_id;
         if !self.clubs.contains_key(&club_id) {
             self.ticket_nonces.remove(&ticket.claims.nonce);
+            if let Err(e) = self.persist_ticket_nonces() {
+                tracing::warn!("[tickets] sidecar persist failed after club removal: {}", e);
+            }
             return Err(ServerError::ClubNotFound(club_id));
         }
         let lock = super::lock::BooLock::new(club_id);
