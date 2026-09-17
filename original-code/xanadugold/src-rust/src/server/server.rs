@@ -30838,7 +30838,8 @@ mod tests {
     #[test]
     fn crdt_open_session_checks_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
+        let (_owner_club, owner_sid) =
+            ac_create_user(&mut server, "owner", test_owner_credential());
         let edit_club = server
             .create_named_club(owner_sid, "priv_edit", Edition::empty())
             .unwrap();
@@ -30858,7 +30859,8 @@ mod tests {
     #[test]
     fn crdt_open_session_allows_member() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
+        let (_owner_club, owner_sid) =
+            ac_create_user(&mut server, "owner", test_owner_credential());
         let edit_club = server
             .create_named_club(owner_sid, "priv_edit", Edition::empty())
             .unwrap();
@@ -31340,7 +31342,8 @@ mod tests {
     #[test]
     fn work_set_edit_club_requires_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
+        let (_owner_club, owner_sid) =
+            ac_create_user(&mut server, "owner", test_owner_credential());
         let edit_club = server
             .create_named_club(owner_sid, "edit_gate", Edition::empty())
             .unwrap();
@@ -31361,7 +31364,8 @@ mod tests {
     #[test]
     fn work_set_read_club_requires_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
+        let (_owner_club, owner_sid) =
+            ac_create_user(&mut server, "owner", test_owner_credential());
         let edit_club = server
             .create_named_club(owner_sid, "read_gate", Edition::empty())
             .unwrap();
@@ -31382,7 +31386,8 @@ mod tests {
     #[test]
     fn work_publish_requires_owner() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
+        let (_owner_club, owner_sid) =
+            ac_create_user(&mut server, "owner", test_owner_credential());
         let work_id = server
             .create_work(owner_sid, Edition::from_text("mine"))
             .unwrap();
@@ -31396,7 +31401,8 @@ mod tests {
     #[test]
     fn work_unpublish_requires_owner() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
+        let (_owner_club, owner_sid) =
+            ac_create_user(&mut server, "owner", test_owner_credential());
         let work_id = server
             .create_work(owner_sid, Edition::from_text("mine"))
             .unwrap();
@@ -31411,7 +31417,8 @@ mod tests {
     #[test]
     fn work_irrevocably_unpublish_requires_owner() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
+        let (_owner_club, owner_sid) =
+            ac_create_user(&mut server, "owner", test_owner_credential());
         let work_id = server
             .create_work(owner_sid, Edition::from_text("mine"))
             .unwrap();
@@ -31428,7 +31435,8 @@ mod tests {
     #[test]
     fn work_sponsor_requires_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
+        let (_owner_club, owner_sid) =
+            ac_create_user(&mut server, "owner", test_owner_credential());
         let edit_club = server
             .create_named_club(owner_sid, "sponsor_gate", Edition::empty())
             .unwrap();
@@ -31522,7 +31530,8 @@ mod tests {
     #[test]
     fn sponsors_publicly_queryable() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
+        let (_owner_club, owner_sid) =
+            ac_create_user(&mut server, "owner", test_owner_credential());
         let work_id = server
             .create_work(owner_sid, Edition::from_text("public sponsor"))
             .unwrap();
@@ -32346,7 +32355,8 @@ mod tests {
     #[test]
     fn read_club_restricts_visibility() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
+        let (_owner_club, owner_sid) =
+            ac_create_user(&mut server, "owner", test_owner_credential());
         let read_club = server
             .create_named_club(owner_sid, "secret_readers", Edition::empty())
             .unwrap();
@@ -32381,7 +32391,8 @@ mod tests {
     #[test]
     fn unpublish_restricts_to_owner() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
+        let (_owner_club, owner_sid) =
+            ac_create_user(&mut server, "owner", test_owner_credential());
         let work_id = server
             .create_work(owner_sid, Edition::from_text("my doc"))
             .unwrap();
@@ -32475,7 +32486,8 @@ mod tests {
     #[test]
     fn history_club_none_falls_back_to_read() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
+        let (_owner_club, owner_sid) =
+            ac_create_user(&mut server, "owner", test_owner_credential());
         let work_id = server
             .create_work(owner_sid, Edition::from_text("v1"))
             .unwrap();
@@ -33814,7 +33826,7 @@ mod tests {
     fn transclusion_attribution_uses_correct_author_for_excerpt_range() {
         let mut server = Server::new();
         let (alice_id, alice_sid) = ac_create_user(&mut server, "alice", b"pw1");
-        let (bob_id, bob_sid) = ac_create_user(&mut server, "bob", b"pw2");
+        let (bob_id, _bob_sid) = ac_create_user(&mut server, "bob", b"pw2");
         let public = server.public_club_id();
 
         let source_id = server
@@ -34829,7 +34841,7 @@ mod tests {
     #[test]
     fn work_summary_revise_stamps_element_provenance() {
         let mut server = Server::new();
-        let (alice_id, alice_sid) = ac_create_user(&mut server, "alice", b"pw1");
+        let (_alice_id, alice_sid) = ac_create_user(&mut server, "alice", b"pw1");
 
         let work_id = server
             .create_work(alice_sid, Edition::from_text("aaaa bbbb cccc"))
@@ -34942,7 +34954,7 @@ mod tests {
     #[test]
     fn work_summary_span_provenance_fallback_when_no_element_prov() {
         let mut server = Server::new();
-        let (alice_id, alice_sid) = ac_create_user(&mut server, "alice", b"pw1");
+        let (_alice_id, alice_sid) = ac_create_user(&mut server, "alice", b"pw1");
 
         let work_id = server
             .create_work(
@@ -37573,7 +37585,7 @@ mod tests {
         server.create_link(sid, a, c, None, None).unwrap();
 
         // Filter from A, max 10 nodes
-        let (nodes, edges) = server.build_work_graph_filtered(sid, Some(a), 10);
+        let (nodes, _edges) = server.build_work_graph_filtered(sid, Some(a), 10);
         let node_ids: HashSet<BeId> = nodes.iter().map(|n| n.0).collect();
 
         assert!(node_ids.contains(&a), "center work should be in graph");
@@ -46590,7 +46602,7 @@ mod tests_signature_enforcement {
     fn test_invalid_signature_rejected() {
         let (sk, vk) = make_keypair();
         let vk_hex = vk_to_hex(&vk);
-        let (body, hash) = make_signed_response("Hello world", 42, &sk, &vk_hex, 0);
+        let (body, _hash) = make_signed_response("Hello world", 42, &sk, &vk_hex, 0);
 
         let wrong_hash = [0xFFu8; 32];
         let result = verify_signed_response(&body, &wrong_hash, 42, None);

@@ -158,7 +158,6 @@ async function main() {
   // original authors (provenance rides transclusion).
   const attr = val(await req("attribution_query_resolved", { work_id: REC }).catch(() => null));
   if (attr) {
-    const s = JSON.stringify(attr);
     const authors = [...new Set((attr.entries ?? attr.spans ?? []).map(e => e.author_name ?? e.author).filter(Boolean))];
     console.log("attribution authors visible:", authors.join(", ") || "(raw parse — check panel)");
   } else {

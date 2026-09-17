@@ -16,6 +16,7 @@ const PORT = 8090;
 const BASE = `http://127.0.0.1:${PORT}`;
 const DIST = "/Users/jonesd/code/xu-gold-2026/web/app/dist";
 const SRC = "/Users/jonesd/code/xu-gold-2026/original-code/xanadugold/src-rust";
+const LOG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "xudanu-stress-log-"));
 
 const results = [];
 const log = (s) => console.log(s);
@@ -33,7 +34,8 @@ async function startServer(dataDir) {
      "run", `127.0.0.1:${PORT}`, dataDir, "--static-dir", DIST],
     { cwd: SRC, detached: true, stdio: ["ignore", "pipe", "pipe"] },
   );
-  const serverLog = fs.openSync("/tmp/stress-server.log", "a");
+  const serverLog = fs.openSync(path.join(LOG_DIR, "stress-server.log"), "a");
+  log(`server log: ${LOG_DIR}/stress-server.log`);
   serverProc.stderr.on("data", (d) => fs.writeSync(serverLog, d));
   serverProc.stdout.on("data", (d) => fs.writeSync(serverLog, d));
   const t0 = Date.now();

@@ -34,7 +34,6 @@ function sequenceSvg() {
     { id: "P", name: "Priya", role: "reviewer", x: 900 },
     { id: "A", name: "Alex", role: "evidence", x: 1190 },
   ];
-  const steps = [];
   let y = 96;
   const gap = 58;
   const push = (h) => { const at = y; y += h; return at; };

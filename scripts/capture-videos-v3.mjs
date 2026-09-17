@@ -83,7 +83,7 @@ async function main() {
 
   // ═══ V3-1: Typing content into a document ═══
   {
-    const { ctx, name } = await videoCtx(browser, "V3-1");
+    const { ctx } = await videoCtx(browser, "V3-1");
     const page = await ctx.newPage();
     try {
       // Open Multi Test (has existing content, is editable)
@@ -119,7 +119,7 @@ async function main() {
 
   // ═══ V3-2: Creating a link (full wizard) ═══
   {
-    const { ctx, name } = await videoCtx(browser, "V3-2");
+    const { ctx } = await videoCtx(browser, "V3-2");
     const page = await ctx.newPage();
     try {
       if (await openWork(page, "Multi Test")) {
@@ -168,7 +168,7 @@ async function main() {
 
   // ═══ V3-3: Hover a link + tooltip + navigate ═══
   {
-    const { ctx, name } = await videoCtx(browser, "V3-3");
+    const { ctx } = await videoCtx(browser, "V3-3");
     const page = await ctx.newPage();
     try {
       if (await openWork(page, "Multi Test")) {
@@ -254,7 +254,7 @@ async function main() {
 
   // ═══ V3-5: The Links Workshop tour ═══
   {
-    const { ctx, name } = await videoCtx(browser, "V3-5");
+    const { ctx } = await videoCtx(browser, "V3-5");
     const page = await ctx.newPage();
     try {
       if (await openWork(page, "The Links Workshop")) {

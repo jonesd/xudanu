@@ -22,7 +22,7 @@ async function main() {
   // Check if already exists
   const wl = val(await req("work_list", {}));
   const entries = Array.isArray(wl) ? wl : (wl?.works ?? wl?.entries ?? []);
-  if (entries.some(w => (w.title || "").startsWith("Transclusion Demo")) {
+  if (entries.some(w => (w.title || "").startsWith("Transclusion Demo"))) {
     console.log("already seeded"); ws.close(); return;
   }
 
