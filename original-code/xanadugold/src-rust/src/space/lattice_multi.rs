@@ -758,3 +758,69 @@ mod c4_c5_tests {
         assert!(!primary.contains(&work));
     }
 }
+
+#[cfg(test)]
+mod c0_adjudication_repro {
+    use super::*;
+
+    fn d(pos: u64, ins: Option<&str>, del: u64) -> Vec<LatOp> {
+        let mut ops = vec![LatOp::Retain { count: pos }];
+        if let Some(t) = ins {
+            ops.push(LatOp::Insert {
+                text: t.to_string(),
+            });
+        }
+        if del > 0 {
+            ops.push(LatOp::Delete { count: del });
+        }
+        ops
+    }
+
+    #[test]
+    fn c0_repro_interleaved_stale_views() {
+        let mut mw = MultiWriter::new("0123456789");
+        mw.open_session(1);
+        mw.open_session(2);
+
+        mw.apply(1, &d(0, Some("A"), 0));
+        mw.sync(1);
+        eprintln!("after op1: {}", mw.text());
+        mw.apply(2, &d(10, Some("Z"), 0));
+        mw.sync(2);
+        eprintln!("after op2: {}", mw.text());
+        mw.apply(1, &d(11, None, 1));
+        mw.sync(1);
+        eprintln!("after op3: {}", mw.text());
+        mw.apply(2, &d(5, Some("mid"), 0));
+        mw.sync(2);
+        eprintln!("after op4: {}", mw.text());
+
+        assert_eq!(mw.text(), "A0123mid456789Z");
+    }
+
+    /// C-0 companion: concurrent insert-at-0 vs delete-from-0 in the
+    /// same round — the reshape-vs-OR-set race that made the first
+    /// fix attempt (pre-splitting the root) delivery-order dependent.
+    /// The pure below-root key must keep both orders convergent.
+    #[test]
+    fn c0_concurrent_insert0_vs_delete0_both_orders() {
+        let run = |insert_first: bool| -> String {
+            let mut mw = MultiWriter::new("abcdefghij");
+            mw.open_session(1);
+            mw.open_session(2);
+            if insert_first {
+                mw.apply(1, &[LatOp::Insert { text: "X".into() }]);
+                mw.apply(2, &[LatOp::Delete { count: 3 }]);
+            } else {
+                mw.apply(2, &[LatOp::Delete { count: 3 }]);
+                mw.apply(1, &[LatOp::Insert { text: "X".into() }]);
+            }
+            mw.sync(1);
+            mw.sync(2);
+            mw.text()
+        };
+        let a = run(true);
+        let b = run(false);
+        assert_eq!(a, b, "concurrent insert@0 vs delete@3 must converge");
+    }
+}

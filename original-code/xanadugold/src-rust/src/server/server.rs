@@ -50558,16 +50558,13 @@ mod cutover_integration_tests {
 
     /// FR-51 C-5 write-switch: write-promote requires the work to be
     /// read-promoted with a live shadow.
-    /// C-0 adjudication diagnostic: the same interleaved script through
-    /// the SYNC dual-write path (write-switch off). Documents a KNOWN
-    /// pre-existing content divergence between the engines on
-    /// stale-view interleaves (length-exact, content differs; the
-    /// O-tree's answer matches OT intuition — inserts anchored at the
-    /// view position). Ignored: this is the adjudication worklist, not
-    /// a pass/fail gate. The write-switch tests assert against the
-    /// O-tree (engine of record), never against the diverging shadow.
+    /// C-0 adjudication regression: the same interleaved script
+    /// through the SYNC dual-write path (write-switch off). The
+    /// lattice formerly placed a start-of-anchored-root insert after
+    /// the root's content ("0123456789AmidZ"); fixed by the
+    /// neighbor-allocation fallback for unsplit-root start offsets.
+    /// Engines must now agree exactly.
     #[test]
-    #[ignore = "C-0 adjudication: content divergence under stale-view interleave"]
     fn lattice_write_interleaved_probe_sync_path() {
         use crate::server::transport::protocol::TextDeltaOp;
 
@@ -50615,7 +50612,11 @@ mod cutover_integration_tests {
 
         let otree = server.otree_crdt.current_text(work).unwrap();
         let lattice = server.lattice_shadow_text(work).unwrap();
-        eprintln!("SYNC-PATH otree={:?} lattice={:?}", otree, lattice);
+        assert_eq!(
+            otree, lattice,
+            "engines must agree exactly after the C-0 anchored-root fix"
+        );
+        assert_eq!(otree, "A0123mid456789Z");
     }
 
     #[test]
@@ -50954,19 +50955,14 @@ mod cutover_integration_tests {
 
         // W-1 contract: deferral changes WHEN the O-tree applies, not
         // WHAT it produces — the drained result must equal the sync
-        // path's (verified against the #[ignore] sync-path probe).
-        // Note the trailing delete clamps to a no-op on an 11-char
-        // view, so the retain-11/delete-1 pair deletes nothing.
+        // path's, and after the C-0 anchored-root fix the engines
+        // agree exactly. Note the trailing delete clamps to a no-op on
+        // an 11-char view.
         let otree = server.otree_crdt.current_text(work).unwrap();
         assert_eq!(otree, "A0123mid456789Z");
 
         let lattice = server.lattice_shadow_text(work).unwrap();
-        assert_eq!(
-            lattice.chars().count(),
-            otree.chars().count(),
-            "engines stay length-exact (content divergence on this \
-             script is the documented C-0 adjudication case)"
-        );
+        assert_eq!(lattice, otree, "engines agree exactly post C-0 fix");
     }
 
     /// FR-51 C-5: disconnect drains pending deferred ops before the

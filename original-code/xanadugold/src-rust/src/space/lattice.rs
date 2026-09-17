@@ -831,10 +831,34 @@ impl LatticeDoc {
     /// level anchored on the common prefix instead.
     #[allow(clippy::same_item_push)]
     pub fn allocate_between(&self, prev: Option<&Sequence>, next: Option<&Sequence>) -> Sequence {
+        self.allocate_between_keyed(prev, next, self.server as i64, self.counter as i64 + 1)
+    }
+
+    /// Dot-keyed allocation: concurrent inserts into the SAME slot
+    /// from different authors get distinct addresses ordered by dot
+    /// (author, counter) — delivery-order independent, the property
+    /// the anchored-key scheme provides and the doc-counter key
+    /// cannot (two authors mint the same [server, counter] address).
+    pub fn allocate_between_for_dot(
+        &self,
+        prev: Option<&Sequence>,
+        next: Option<&Sequence>,
+        dot: Dot,
+    ) -> Sequence {
+        self.allocate_between_keyed(prev, next, dot.0 as i64, dot.1 as i64)
+    }
+
+    fn allocate_between_keyed(
+        &self,
+        prev: Option<&Sequence>,
+        next: Option<&Sequence>,
+        key_a: i64,
+        key_b: i64,
+    ) -> Sequence {
         let less = |a: &Sequence, b: &Sequence| a.compare_to(b) == std::cmp::Ordering::Less;
         let candidate = match prev {
-            Some(p) => p.append_pair(self.server as i64, self.counter as i64 + 1),
-            None => Sequence::from_numbers(vec![1, self.server as i64, self.counter as i64 + 1]),
+            Some(p) => p.append_pair(key_a, key_b),
+            None => Sequence::from_numbers(vec![1, key_a, key_b]),
         };
         if let Some(n) = next {
             if !less(&candidate, n) {
@@ -853,8 +877,8 @@ impl LatticeDoc {
                     for _ in 0..zeros {
                         nums.push(0);
                     }
-                    nums.push(self.server as i64);
-                    nums.push(self.counter as i64 + 1);
+                    nums.push(key_a);
+                    nums.push(key_b);
                     let interior = Sequence::from_numbers(nums);
                     if less(&interior, n) && prev.map(|p| less(p, &interior)).unwrap_or(true) {
                         debug_assert!(zeros <= n.numbers().len() + 2, "interior depth runaway");
@@ -933,20 +957,32 @@ impl LatticeDoc {
         if dot.0 == self.server {
             self.counter = self.counter.max(dot.1);
         }
-        let address = match anchor.and_then(|(rd, o)| self.units.get(&rd).map(|ru| (ru, o))) {
-            Some((ru, offset)) => {
-                let mut nums = ru.address.numbers().to_vec();
-                // The doubled offset keys inserts strictly between
-                // parts ending at `offset` ([root.., s, offset]) and
-                // parts starting at it ([root.., offset, e]) — an
-                // author id never collides with a range end.
-                nums.push(offset as i64);
-                nums.push(offset as i64);
-                nums.push(dot.0 as i64);
-                nums.push(dot.1 as i64);
-                Sequence::from_numbers(nums)
+        let address = match anchor.and_then(|(rd, o)| self.units.get(&rd).map(|ru| (rd, ru, o))) {
+            Some((rd, ru, offset)) => {
+                let (rrd, rrs, _rre) = ru.lineage.unwrap_or((rd, 0, ru.content.chars().count()));
+                if rrd == rd && offset == rrs {
+                    // C-0: start-of-root anchor — ALWAYS the pure
+                    // below-root key (see below_root_key). The choice
+                    // must not depend on live-set state (root split?
+                    // root deleted?): delivery order changes liveness
+                    // mid-round, and mixed key schemes for the same
+                    // logical slot order differently on different
+                    // replicas. Purity beats case-splitting.
+                    Self::below_root_key(&ru.address, dot)
+                } else {
+                    let mut nums = ru.address.numbers().to_vec();
+                    // The doubled offset keys inserts strictly between
+                    // parts ending at `offset` ([root.., s, offset]) and
+                    // parts starting at it ([root.., offset, e]) — an
+                    // author id never collides with a range end.
+                    nums.push(offset as i64);
+                    nums.push(offset as i64);
+                    nums.push(dot.0 as i64);
+                    nums.push(dot.1 as i64);
+                    Sequence::from_numbers(nums)
+                }
             }
-            None => self.allocate_between(prev, next),
+            None => self.allocate_between_for_dot(prev, next, dot),
         };
         self.units.insert(
             dot,
@@ -1264,6 +1300,27 @@ impl LatticeDoc {
     /// orders correctly between its neighbors. The straddler is
     /// found by address probe ([root.., o] sorts after any part
     /// starting before o), so this is O(log L) per level.
+    /// C-0 adjudication: the deterministic key for an insert anchored
+    /// at an UNSPLIT root's start offset. The normal anchored key
+    /// extends the root's address and therefore sorts AFTER the bare
+    /// root (and after all its content) — wrong side. Restructuring
+    /// the root (splitting) to fix ordering re-mints part dots that
+    /// concurrent deletes have not seen, making outcomes
+    /// delivery-order dependent. Instead derive a PURE key just below
+    /// the root: the root's address with its last number decremented,
+    /// then the dot. That sorts before the root and every extension
+    /// of it (parts), after all content with smaller addresses, and
+    /// is a pure function of (root, dot) — same key on every replica,
+    /// every delivery order, no restructuring.
+    pub fn below_root_key(root_addr: &Sequence, dot: Dot) -> Sequence {
+        let mut nums = root_addr.numbers().to_vec();
+        let last = nums.pop().unwrap_or(1);
+        nums.push(last - 1);
+        nums.push(dot.0 as i64);
+        nums.push(dot.1 as i64);
+        Sequence::from_numbers(nums)
+    }
+
     pub fn ensure_root_boundary(&mut self, root: Dot, o: usize) {
         let Some(ru) = self.units.get(&root) else {
             return;

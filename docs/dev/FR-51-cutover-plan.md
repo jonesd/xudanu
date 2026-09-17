@@ -8,11 +8,19 @@
 > pre-checkpoint, shutdown, session close, demote). Write set persists
 > across restarts (manifest, root chunk, snapshot). Known W-1
 > limitation: interleaved-stale-sender merge corrections broadcast on
-> drain, not on ack. **Open C-0 finding:** a stale-view interleaved
-> script produces length-exact but content-divergent engines (see the
-> `#[ignore]`d `lattice_write_interleaved_probe_sync_path` test) —
-> pre-existing, not W-1; adjudication required before retiring the
-> O-tree mirror. Design note below is the original roadmap.
+> drain, not on ack. **C-0 first case adjudicated and FIXED
+> (2026-09-17)**: the lattice was wrong — an insert anchored at an
+> unsplit root's start offset landed AFTER all root content (the
+> anchored key extends the root address, and any extension sorts after
+> the bare root; compounded by trailing-zeros-are-identity in Sequence
+> comparison). Fixed with a PURE below-root key (root address with
+> last number decremented + dot) — no live-set dependence in the key
+> scheme, no restructuring, delivery-order convergent. Two failed
+> approaches documented in the regression tests: neighbor-allocation
+> fallback (position right, convergence wrong) and root pre-splitting
+> (re-minted part dots invisible to concurrent OR-set deletes). See
+> `c0_adjudication_repro` in lattice_multi.rs. Design note below is
+> the original roadmap.
 > **Created:** 2026-09-05
 > **Parent:** FR-51-enfilade-native-crdt.md (Phases 0-4.2 complete)
 > **Principle:** the shadow proves correctness first; features port
