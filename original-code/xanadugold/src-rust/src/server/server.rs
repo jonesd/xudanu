@@ -5557,6 +5557,22 @@ impl Server {
             .collect())
     }
 
+    /// FR-72: a work's title as a 60-char preview — the document
+    /// label for attribution spans and lineage rows (same preview
+    /// rules as enrich_provenance_hops).
+    fn attribution_source_title(&self, work_id: BeId) -> Option<String> {
+        let ws = self.works.get(&work_id)?;
+        let title = ws.work.current_edition().to_text();
+        let title_preview: String = title.chars().take(60).collect();
+        Some(if title.chars().count() > 60 {
+            format!("{}...", title_preview.trim_end())
+        } else if title_preview.is_empty() {
+            format!("work:{:04x}", work_id)
+        } else {
+            title_preview
+        })
+    }
+
     pub fn attribution_query(
         &self,
         work_be_id: BeId,
@@ -5746,6 +5762,7 @@ impl Server {
                 llm_model,
                 historical_author_id,
                 source_work_id,
+                source_work_title: source_work_id.and_then(|w| self.attribution_source_title(w)),
                 transcluded_by_name,
                 transcluded_by_club_id,
                 provenance_chain: span_chain,
@@ -5892,6 +5909,7 @@ impl Server {
                         llm_model: entry_prov.and_then(|ep| ep.llm_model.clone()),
                         historical_author_id: historical_id,
                         source_work_id: Some(pa.origin_work_id),
+                        source_work_title: self.attribution_source_title(pa.origin_work_id),
                         transcluded_by_name: pa.placed_by.as_ref().map(|t| t.display_name.clone()),
                         transcluded_by_club_id: pa.placed_by.as_ref().map(|t| t.club_id),
                         provenance_chain: chain_payload.clone(),
@@ -6136,6 +6154,7 @@ impl Server {
                     start: clamped_start + offset,
                     end: clamped_end + offset,
                     source_work_id: Some(sr.source_work_id),
+                    source_work_title: self.attribution_source_title(sr.source_work_id),
                     provenance_chain,
                     ..src_span.clone()
                 });
@@ -39823,6 +39842,73 @@ mod tests {
         assert_eq!(result.span_ranges[0].source_work_id, src);
         assert_eq!(result.span_ranges[0].flat_start, 7);
         assert_eq!(result.span_ranges[0].flat_end, 12);
+    }
+
+    /// FR-72: resolved attribution carries the DOCUMENT dimension —
+    /// transclusion-derived spans name their source work by id AND
+    /// title (author → document, not just author).
+    #[test]
+    fn attribution_resolved_names_source_document() {
+        let (mut server, sid) = setup_logged_in_server();
+        let club_id = server
+            .session(sid)
+            .unwrap()
+            .authority_clubs()
+            .iter()
+            .next()
+            .copied()
+            .unwrap();
+
+        let src = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+        // Author the source so its spans exist.
+        server
+            .revise_work(src, sid, Edition::from_text("Hello World"), Some(club_id))
+            .unwrap();
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("Prefix "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::transclusion(src, 0, 5),
+                )),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" Suffix"),
+                )),
+            ),
+        ];
+        let doc = server
+            .create_work(sid, Edition::from_entries(entries))
+            .unwrap();
+
+        let spans = server.attribution_query_resolved(doc).unwrap();
+        assert!(
+            spans.iter().any(|s| s.source_work_id == Some(src)),
+            "a span names the source work: {:?}",
+            spans
+                .iter()
+                .map(|s| (s.start, s.end, s.source_work_id))
+                .collect::<Vec<_>>()
+        );
+        let sourced = spans
+            .iter()
+            .find(|s| s.source_work_id == Some(src))
+            .unwrap();
+        assert_eq!(
+            sourced.source_work_title.as_deref(),
+            Some("Hello World"),
+            "the source document's title rides the span"
+        );
     }
 
     #[test]

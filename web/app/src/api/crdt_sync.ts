@@ -90,6 +90,7 @@ export interface AttributionSpan {
   llm_model: string | null;
   historical_author_id: number | null;
   source_work_id?: number | null;
+  source_work_title?: string | null;
   transcluded_by_name?: string | null;
   transcluded_by_club_id?: number | null;
   provenance_chain?: ProvenanceHop[] | null;

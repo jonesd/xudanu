@@ -57,7 +57,7 @@ export function ContextPanel(props: ContextPanelProps) {
         crossServerBacklinks={props.crossServerBacklinks}
         onOpenCourse={props.onOpenCourse}
       />
-      <AttributionSection attributionSpans={props.attributionSpans} attributionLogStatus={props.attributionLogStatus} onOpenFullView={props.onOpenProvenance} onExportReport={props.onExportReport} onExportProvJson={props.onExportProvJson} currentWorkId={props.currentWorkId} documentLength={props.documentLength} />
+      <AttributionSection attributionSpans={props.attributionSpans} attributionLogStatus={props.attributionLogStatus} onOpenFullView={props.onOpenProvenance} onExportReport={props.onExportReport} onExportProvJson={props.onExportProvJson} onOpenWork={props.onNavigateToWork} currentWorkId={props.currentWorkId} documentLength={props.documentLength} />
     </div>
   );
 }

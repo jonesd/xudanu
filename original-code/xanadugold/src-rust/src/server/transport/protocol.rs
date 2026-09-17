@@ -3408,6 +3408,13 @@ pub struct AttributionSpanPayload {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub source_work_id: Option<BeId>,
+    /// FR-72: the contributing document's title (60-char preview) —
+    /// the document dimension of attribution: author → document.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub source_work_title: Option<String>,
     #[cfg_attr(
         feature = "serde",
         serde(default, skip_serializing_if = "Option::is_none")

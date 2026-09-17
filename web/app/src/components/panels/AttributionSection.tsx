@@ -8,11 +8,70 @@ interface AttributionSectionProps {
   onOpenFullView?: () => void;
   onExportReport?: () => void;
   onExportProvJson?: () => void;
+  onOpenWork?: (workId: number) => void;
   currentWorkId?: number | null;
   documentLength: number;
 }
 
-export function AttributionSection({ attributionSpans, attributionLogStatus, onOpenFullView, onExportReport, onExportProvJson, currentWorkId, documentLength }: AttributionSectionProps) {
+interface ContributingDoc {
+  workId: number;
+  title: string;
+  dominantAuthor: string;
+  dominantAuthorType: string | null;
+  chars: number;
+  spanCount: number;
+  firstStart: number;
+}
+
+function contributingDocuments(spans: AttributionSpan[]): { docs: ContributingDoc[]; ownChars: number } {
+  const byId = new Map<number, ContributingDoc>();
+  const authorChars = new Map<number, Map<string, number>>();
+  let ownChars = 0;
+  for (const span of spans) {
+    if (span.source_work_id == null) {
+      ownChars += Math.max(0, span.end - span.start);
+      continue;
+    }
+    const id = span.source_work_id;
+    const len = Math.max(0, span.end - span.start);
+    const name = span.author_display_name || "unknown";
+    let entry = byId.get(id);
+    if (!entry) {
+      entry = {
+        workId: id,
+        title: span.source_work_title || `#${id}`,
+        dominantAuthor: name,
+        dominantAuthorType: span.author_type,
+        chars: 0,
+        spanCount: 0,
+        firstStart: span.start,
+      };
+      byId.set(id, entry);
+      authorChars.set(id, new Map());
+    }
+    entry.chars += len;
+    entry.spanCount += 1;
+    const ac = authorChars.get(id)!;
+    ac.set(name, (ac.get(name) || 0) + len);
+  }
+  const docs = [...byId.values()];
+  for (const doc of docs) {
+    const ac = authorChars.get(doc.workId)!;
+    let best = doc.dominantAuthor;
+    let bestChars = -1;
+    for (const [name, chars] of ac) {
+      if (chars > bestChars) {
+        best = name;
+        bestChars = chars;
+      }
+    }
+    doc.dominantAuthor = best;
+  }
+  docs.sort((a, b) => a.firstStart - b.firstStart);
+  return { docs, ownChars };
+}
+
+export function AttributionSection({ attributionSpans, attributionLogStatus, onOpenFullView, onExportReport, onExportProvJson, onOpenWork, currentWorkId, documentLength }: AttributionSectionProps) {
   const [expanded, setExpanded] = useState(false);
 
   const effectiveLength = attributionSpans.length > 0
@@ -142,6 +201,59 @@ export function AttributionSection({ attributionSpans, attributionLogStatus, onO
               )}
             </div>
           )}
+          {(() => {
+            const { docs, ownChars } = contributingDocuments(attributionSpans);
+            if (docs.length === 0) return null;
+            return (
+              <div style={{ marginTop: 8, padding: 8, background: "var(--bg-elevated)", borderRadius: 6 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)", marginBottom: 4, letterSpacing: 0.3 }}>
+                  CONTRIBUTING DOCUMENTS — READING ORDER
+                </div>
+                {ownChars > 0 && (
+                  <div key="own" style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0", fontSize: 11 }}>
+                    <span style={{ color: "var(--text-dim)", width: 18, textAlign: "right" }}>—</span>
+                    <span style={{ fontWeight: 500 }}>This document</span>
+                    <span style={{ color: "var(--text-dim)", marginLeft: "auto" }}>{ownChars} chars</span>
+                  </div>
+                )}
+                {docs.map((doc) => {
+                  const docColor =
+                    doc.dominantAuthorType === "historical"
+                      ? "#c4a35a"
+                      : doc.dominantAuthorType === "llm"
+                      ? "#7c4dff"
+                      : authorColor(doc.dominantAuthor);
+                  return (
+                    <div
+                      key={doc.workId}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "3px 0",
+                        fontSize: 11,
+                        cursor: onOpenWork ? "pointer" : "default",
+                        borderRadius: 4,
+                      }}
+                      onClick={() => onOpenWork?.(doc.workId)}
+                      title={onOpenWork ? `Open “${doc.title}”` : doc.title}
+                    >
+                      <span style={{ color: "var(--text-dim)", width: 18, textAlign: "right" }}>{doc.firstStart}</span>
+                      <div className="attr-author-dot" style={{ background: docColor }} />
+                      <span style={{ fontWeight: 500 }}>{doc.dominantAuthor}</span>
+                      <span style={{ color: "var(--text-dim)" }}>→</span>
+                      <span style={{ color: "var(--blue)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140 }}>
+                        {doc.title}
+                      </span>
+                      <span style={{ color: "var(--text-dim)", marginLeft: "auto", whiteSpace: "nowrap" }}>
+                        {doc.chars} chars · {doc.spanCount} span{doc.spanCount > 1 ? "s" : ""}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
           <div style={{ marginTop: 8 }}>
             {attributionSpans.length === 0 && (
               <div style={{ fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>
@@ -161,7 +273,14 @@ export function AttributionSection({ attributionSpans, attributionLogStatus, onO
                   <div className="attr-author-dot" style={{ background: color }} />
                   <span style={{ fontWeight: 500, fontSize: 12 }}>{name}</span>
                   {span.source_work_id != null && (
-                    <span className="attr-source">via work</span>
+                    <span
+                      className="attr-source"
+                      style={onOpenWork ? { cursor: "pointer" } : undefined}
+                      onClick={onOpenWork ? () => onOpenWork(span.source_work_id!) : undefined}
+                      title={span.source_work_title || `source work #${span.source_work_id}`}
+                    >
+                      via {span.source_work_title ? `“${span.source_work_title.slice(0, 24)}”` : `#${span.source_work_id}`}
+                    </span>
                   )}
                   <span className={`attr-sig ${span.signature_valid ? "signed" : "unsigned"}`}>
                     {span.signature_valid ? "ed25519" : "UNSIGNED"}
