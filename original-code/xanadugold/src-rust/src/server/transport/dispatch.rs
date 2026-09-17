@@ -90,6 +90,34 @@ fn build_link_payload(
     }
 }
 
+/// Frozen-policy (museum mode) mutation surfaces: everything a
+/// vandal (or an overenthusiastic agent) could use to alter the
+/// public corpus. Link ops matter as much as text ops — the
+/// connection-is-free principle is exactly what a link storm abuses.
+fn is_frozen_mutation(req: &WireRequest) -> bool {
+    matches!(
+        req,
+        WireRequest::WorkCreate { .. }
+            | WireRequest::WorkRevise { .. }
+            | WireRequest::WorkReviseDelta { .. }
+            | WireRequest::WorkDuplicate { .. }
+            | WireRequest::WorkPublish { .. }
+            | WireRequest::WorkSetTitle { .. }
+            | WireRequest::WorkSetEditClub { .. }
+            | WireRequest::ElementInsert { .. }
+            | WireRequest::ElementRemoveTransclusion { .. }
+            | WireRequest::LinkCreate { .. }
+            | WireRequest::LinkDelete { .. }
+            | WireRequest::LinkSetTypes { .. }
+            | WireRequest::LinkAddEnd { .. }
+            | WireRequest::LinkEndAddAttachment { .. }
+            | WireRequest::LinkEndRemoveAttachment { .. }
+            | WireRequest::AnnotationCreate { .. }
+            | WireRequest::AnnotationDelete { .. }
+            | WireRequest::ClubCreatePersonal { .. }
+    )
+}
+
 pub fn dispatch(
     state: &SharedState,
     session_id: crate::server::SessionId,
@@ -122,6 +150,16 @@ pub fn dispatch(
     };
     if matches!(request, WireRequest::WorkDiffNarration { .. }) {
         return dispatch_narration(state, session_id, request);
+    }
+
+    // Frozen policy (museum mode): the complete vandalism surface,
+    // denied for non-admin sessions in one place. Reads, sessions,
+    // and tickets pass; every corpus mutation does not.
+    if is_frozen_mutation(&request) {
+        let denied = state.server.with_server_ref(|srv| srv.frozen_denies(session_id));
+        if denied {
+            return Err(crate::server::ServerError::NotAuthorized);
+        }
     }
 
     if matches!(request, WireRequest::WorkWritingFeedback { .. }) {
@@ -4258,6 +4296,7 @@ fn dispatch_inner(
             let parsed = match policy.as_str() {
                 "owner-only" => crate::server::EditPolicy::OwnerOnly,
                 "public-sandbox" => crate::server::EditPolicy::PublicSandbox,
+                "frozen" => crate::server::EditPolicy::Frozen,
                 other => {
                     return Err(crate::server::ServerError::InvalidArgument(format!(
                         "unknown edit policy: {}",
@@ -5628,6 +5667,85 @@ mod tests {
             srv.authenticate(sid, &lock, &LockCredential::Boo).unwrap();
             sid
         })
+    }
+
+    #[test]
+    fn frozen_policy_blocks_mutations_for_non_admin() {
+        let state = make_state();
+        // A fully logged-in public session: denials below are policy
+        // driven, not auth driven.
+        let sid = public_session(&state);
+
+        state.server.with_server(|srv| {
+            srv.set_edit_policy(crate::server::EditPolicy::Frozen);
+        });
+
+        // Identity creation: denied (the flood vector).
+        assert!(dispatch(
+            &state,
+            sid,
+            WireRequest::ClubCreatePersonal {
+                display_name: "Vandal".into(),
+                password: Some(vec![b'x'; 16]),
+            },
+        )
+        .is_err());
+
+        // Work creation: denied.
+        assert!(dispatch(
+            &state,
+            sid,
+            WireRequest::WorkCreate {
+                edition: crate::server::transport::protocol::EditionPayload::from_edition(
+                    &crate::edition::Edition::from_text("graffiti"),
+                ),
+            },
+        )
+        .is_err());
+
+        // Reads: unaffected — the museum is open.
+        assert!(dispatch(&state, sid, WireRequest::WorkList { offset: None, limit: None }).is_ok());
+
+        // Build the exhibit while unfrozen, then freeze.
+        let wid = state.server.with_server(|srv| {
+            srv.set_edit_policy(crate::server::EditPolicy::PublicSandbox);
+            let wid = srv
+                .create_work(sid, crate::edition::Edition::from_text("exhibit"))
+                .unwrap();
+            srv.work_publish(sid, wid).unwrap();
+            srv.set_edit_policy(crate::server::EditPolicy::Frozen);
+            wid
+        });
+
+        // Link creation (the link-storm vector): denied.
+        assert!(dispatch(
+            &state,
+            sid,
+            WireRequest::LinkCreate {
+                origin: wid,
+                destination: wid,
+                origin_ref: None,
+                destination_ref: None,
+                link_types: vec![],
+                home_document: None,
+            },
+        )
+        .is_err());
+
+        // Admin bypass: grant, mutate, toggle back (the open house).
+        state.server.with_server(|srv| {
+            srv.grant_admin_authority(sid).unwrap();
+        });
+        assert!(dispatch(
+            &state,
+            sid,
+            WireRequest::AdminEditPolicySet {
+                policy: "owner-only".into(),
+            },
+        )
+        .is_ok());
+        let policy = state.server.with_server(|srv| srv.edit_policy());
+        assert_eq!(policy, crate::server::EditPolicy::OwnerOnly);
     }
 
     // ── Read-only operations (no auth required) ──

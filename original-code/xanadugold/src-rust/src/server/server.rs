@@ -646,6 +646,13 @@ pub struct WorkGhostInfo {
 pub enum EditPolicy {
     OwnerOnly,
     PublicSandbox,
+    /// Museum mode: reads only. ALL mutations are denied for
+    /// non-admin sessions — edits, link creation, identity creation,
+    /// duplication, annotations. The connection-is-free principle is
+    /// suspended server-wide so a public demo corpus cannot be
+    /// defaced by link storms. Admins bypass (and can toggle back
+    /// via AdminEditPolicySet — the open-house switch).
+    Frozen,
 }
 
 impl Default for EditPolicy {
@@ -661,6 +668,7 @@ impl EditPolicy {
             "public" | "public-sandbox" | "public_sandbox" | "sandbox" | "lax" => {
                 Some(EditPolicy::PublicSandbox)
             }
+            "frozen" | "read-only" | "readonly" | "museum" => Some(EditPolicy::Frozen),
             _ => None,
         }
     }
@@ -669,6 +677,7 @@ impl EditPolicy {
         match self {
             EditPolicy::OwnerOnly => "owner-only",
             EditPolicy::PublicSandbox => "public-sandbox",
+            EditPolicy::Frozen => "frozen",
         }
     }
 }
@@ -1668,6 +1677,24 @@ impl Server {
             "edit policy set"
         );
         self.edit_policy = policy;
+    }
+
+    /// Frozen-policy gate: true when the operation must be denied
+    /// (policy is Frozen and the session is not admin). Admin
+    /// detection mirrors ensure_admin without the error.
+    pub fn frozen_denies(&self, session_id: SessionId) -> bool {
+        if self.edit_policy != EditPolicy::Frozen {
+            return false;
+        }
+        if self.dev_mode {
+            return false;
+        }
+        let is_admin = self
+            .sessions
+            .get(&session_id)
+            .map(|s| s.has_authority(self.system_clubs.admin_club))
+            .unwrap_or(false);
+        !is_admin
     }
 
     /// Operator break-glass: set (or replace) the admin club's password
@@ -29195,6 +29222,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "server")]
     fn edit_policy_admin_set_persists_across_restart() {
         let data_dir = std::env::temp_dir().join(format!(
             "xudanu_edpol_{}_{}",
