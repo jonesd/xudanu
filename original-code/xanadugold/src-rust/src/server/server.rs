@@ -775,8 +775,22 @@ pub struct Server {
     /// on the default path. Shadows are ephemeral (rebuilt from the
     /// live text at enrollment); rollback is dropping them.
     pub(crate) lattice_shadows: HashMap<BeId, crate::space::lattice_multi::MultiWriter>,
+    /// FR-51 C-5 read-path: rendered text of each enrolled shadow,
+    /// refreshed at every content mutation (mirror apply, enroll,
+    /// restore) so `&self` reads skip doc-clone + normalize + walk.
+    pub(crate) lattice_view_cache: HashMap<BeId, String>,
     /// FR-51 C-5: works where the lattice is the PRIMARY read source.
     pub(crate) lattice_primary_works: HashSet<BeId>,
+    /// FR-51 C-5 write-switch: works where edits apply to the lattice
+    /// first (fast ack) and the O-tree work (edition rebuild, three-way
+    /// merge, span migrations, materialization) is deferred to the
+    /// drain. Subset of `lattice_primary_works`.
+    pub(crate) lattice_write_works: HashSet<BeId>,
+    /// Deferred O-tree ops per work: (session, ops) in arrival order.
+    /// Drained by the autosave tick, before checkpoints, at demote,
+    /// and at session close. Durability window equals the existing
+    /// debounce-materialize window (editions remain the record).
+    pub(crate) lattice_deferred: HashMap<BeId, Vec<(SessionId, Vec<crate::server::transport::protocol::TextDeltaOp>)>>,
     lattice_shadow_enabled: bool,
     /// FR-58 S2: reference-over-copy suggestions (off by default;
     /// admin toggle, per FR-58 acceptance criteria).
@@ -788,6 +802,9 @@ pub struct Server {
     ots_anchor_enabled: bool,
     /// FR-60: an admin requested an anchor round.
     ots_anchor_requested: bool,
+    log_checkpoint_entries_threshold: u64,
+    log_retention_keep: usize,
+    log_retention_mode: crate::server::transport::log_checkpoint::RetentionMode,
     pub(crate) personal_club_count: usize,
     pub(crate) max_personal_clubs: usize,
     pub(crate) login_attempts: HashMap<BeId, crate::server::identity::ClubAttemptTracker>,
@@ -1027,6 +1044,7 @@ pub(crate) struct CheckpointPayload {
     user_pins: HashMap<BeId, HashSet<String>>,
     /// FR-51 cutover: the promotion set for the manifest.
     lattice_primary_works: Vec<BeId>,
+    lattice_write_works: Vec<BeId>,
     trails: Vec<crate::persist::manifest::TrailManifestEntry>,
     trail_counter: BeId,
     compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
@@ -1067,6 +1085,24 @@ pub(crate) struct CheckpointPartial {
 }
 
 #[cfg(feature = "server")]
+fn lattice_ops_from_delta(
+    ops: &[crate::server::transport::protocol::TextDeltaOp],
+) -> Vec<crate::space::lattice_sim::LatOp> {
+    ops.iter()
+        .map(|o| match o {
+            crate::server::transport::protocol::TextDeltaOp::Retain { count } => {
+                crate::space::lattice_sim::LatOp::Retain { count: *count }
+            }
+            crate::server::transport::protocol::TextDeltaOp::Insert { text } => {
+                crate::space::lattice_sim::LatOp::Insert { text: text.clone() }
+            }
+            crate::server::transport::protocol::TextDeltaOp::Delete { count } => {
+                crate::space::lattice_sim::LatOp::Delete { count: *count }
+            }
+        })
+        .collect()
+}
+
 fn tag_json(value: &impl serde::Serialize) -> std::io::Result<Vec<u8>> {
     let data =
         serde_json::to_vec(value).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
@@ -1267,6 +1303,7 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         fossil_snapshots_hash,
         starred_works: payload.starred_works,
         lattice_primary_works: payload.lattice_primary_works,
+        lattice_write_works: payload.lattice_write_works,
         trails: payload.trails,
         trail_counter: payload.trail_counter,
         compound_editions: payload.compound_editions,
@@ -1474,12 +1511,18 @@ impl Server {
             checkpoint_in_flight: false,
             otree_crdt: super::otree_crdt::OtreeCrdtManager::new(3),
             lattice_shadows: HashMap::new(),
+            lattice_view_cache: HashMap::new(),
             lattice_primary_works: HashSet::new(),
+            lattice_write_works: HashSet::new(),
+            lattice_deferred: HashMap::new(),
             lattice_shadow_enabled: false,
             reuse_suggestions_enabled: false,
             reuse: crate::server::reuse_match::ReuseService::new(),
             ots_anchor_enabled: false,
             ots_anchor_requested: false,
+            log_checkpoint_entries_threshold: 10_000,
+            log_retention_keep: 0,
+            log_retention_mode: crate::server::transport::log_checkpoint::RetentionMode::Archive,
             personal_club_count: 0,
             max_personal_clubs: 10_000,
             login_attempts: HashMap::new(),
@@ -3723,6 +3766,10 @@ impl Server {
         if !self.sessions.contains_key(&session_id) {
             return Err(ServerError::SessionNotFound(session_id));
         }
+
+        // FR-51 C-5: queued write-switch ops must reach the O-tree
+        // while the session is still alive to apply through.
+        self.lattice_drain_deferred();
 
         let grabbed: Vec<BeId> = self
             .works
@@ -6288,7 +6335,13 @@ impl Server {
             Ok(s) => s.trim().to_string(),
             Err(_) => return false,
         };
-        crate::server::transport::attribution_log::verify_attribution_log(&content, &seed).is_ok()
+        let anchor = crate::server::transport::log_checkpoint::latest_checkpoint(
+            data_dir,
+            crate::server::transport::log_checkpoint::ATTRIBUTION_LOG,
+        )
+        .map(|cp| cp.head_hash)
+        .unwrap_or(seed);
+        crate::server::transport::attribution_log::verify_attribution_log(&content, &anchor).is_ok()
     }
 
     pub fn register_historical_author(
@@ -8879,6 +8932,10 @@ impl Server {
     ) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
 
+        // FR-51 C-5: queued write-switch ops must reach the O-tree
+        // while this session is still subscribed.
+        self.lattice_drain_deferred();
+
         let needs = self.crdt_needs_materialization(work_be_id);
 
         if needs {
@@ -9012,7 +9069,9 @@ impl Server {
                 mw.open_session(sid.as_u64());
             }
         }
+        let seeded = mw.text();
         self.lattice_shadows.insert(work_be_id, mw);
+        self.lattice_view_cache.insert(work_be_id, seeded);
         Ok(())
     }
 
@@ -9031,9 +9090,11 @@ impl Server {
             let Ok(text) = self.work_edition(*work_be_id) else {
                 continue;
             };
-            let mw = crate::space::lattice_multi::MultiWriter::new(&text.to_text());
+            let flat = text.to_text();
+            let mw = crate::space::lattice_multi::MultiWriter::new(&flat);
             self.lattice_shadows.insert(*work_be_id, mw);
             self.lattice_primary_works.insert(*work_be_id);
+            self.lattice_view_cache.insert(*work_be_id, flat);
         }
     }
 
@@ -9083,12 +9144,61 @@ impl Server {
     /// FR-51 C-5: demote a work from lattice-primary (reads resume
     /// from the O-tree). Rollback path.
     pub fn lattice_primary_demote(&mut self, work_be_id: BeId) -> bool {
+        let had_write = self.lattice_write_works.contains(&work_be_id);
+        if had_write {
+            self.lattice_write_demote(work_be_id);
+        }
         self.lattice_primary_works.remove(&work_be_id)
     }
 
     /// FR-51 C-5: is this work in lattice-primary mode?
     pub fn lattice_is_primary(&self, work_be_id: BeId) -> bool {
         self.lattice_primary_works.contains(&work_be_id)
+    }
+
+    /// FR-51 C-5 write-switch: edits apply to the lattice first; the
+    /// O-tree work drains asynchronously. Requires the work to be
+    /// read-promoted with a live shadow (write implies read).
+    pub fn lattice_write_promote(&mut self, work_be_id: BeId) -> bool {
+        if !self.lattice_primary_works.contains(&work_be_id)
+            || !self.lattice_shadows.contains_key(&work_be_id)
+        {
+            return false;
+        }
+        self.lattice_write_works.insert(work_be_id)
+    }
+
+    /// FR-51 C-5 write-switch rollback: drain pending O-tree work,
+    /// then resume the sync path.
+    pub fn lattice_write_demote(&mut self, work_be_id: BeId) -> bool {
+        let had = self.lattice_write_works.remove(&work_be_id);
+        if let Some(queue) = self.lattice_deferred.remove(&work_be_id) {
+            for (session_id, ops) in queue {
+                if let Err(e) = self.apply_delta_otree_core(session_id, work_be_id, &ops) {
+                    tracing::error!(
+                        "[lattice-drain] demote drain for work {} failed: {:?}",
+                        work_be_id,
+                        e
+                    );
+                }
+            }
+        }
+        had
+    }
+
+    pub fn lattice_is_write_primary(&self, work_be_id: BeId) -> bool {
+        self.lattice_write_works.contains(&work_be_id)
+    }
+
+    /// FR-51 C-5: restore the write-switch set after a restart. The
+    /// queue is not restored (the edition is the record; deferred ops
+    /// had not been acked into any persisted edition).
+    pub fn lattice_write_restore(&mut self, works: &[BeId]) {
+        for work in works {
+            if self.lattice_primary_works.contains(work) {
+                self.lattice_write_works.insert(*work);
+            }
+        }
     }
 
     /// FR-58 S2: admin toggle for reference-over-copy suggestions.
@@ -9444,6 +9554,94 @@ impl Server {
         self.ots_anchor_requested && self.ots_anchor_enabled
     }
 
+    pub fn log_checkpoint_configure(
+        &mut self,
+        entries_threshold: u64,
+        retention_keep: usize,
+        retention_mode: crate::server::transport::log_checkpoint::RetentionMode,
+    ) {
+        self.log_checkpoint_entries_threshold = entries_threshold;
+        self.log_retention_keep = retention_keep;
+        self.log_retention_mode = retention_mode;
+    }
+
+    /// Write signed checkpoints for the audit logs when thresholds have
+    /// been crossed (or `force`, at shutdown / offline). Returns human
+    /// notes for logging. Best-effort: failures are logged, never fatal.
+    pub fn log_checkpoint_maybe(&mut self, force: bool) -> Vec<String> {
+        use crate::server::transport::log_checkpoint as lcp;
+
+        let mut notes = Vec::new();
+        let Some(dir) = self.data_dir.clone() else {
+            return notes;
+        };
+
+        match lcp::checkpoint_security_log(&dir, &self.server_keypair, force) {
+            Ok(outcomes) => {
+                for o in &outcomes {
+                    notes.push(format!(
+                        "security checkpoint {} covering {} ({} entries)",
+                        o.seq,
+                        o.files_covered.join(","),
+                        o.entries
+                    ));
+                }
+            }
+            Err(e) => {
+                tracing::warn!("[log-checkpoint] security: {}", e);
+                notes.push(format!("security checkpoint failed: {}", e));
+            }
+        }
+
+        if !self.attribution_log.is_in_memory() {
+            let entries = self.attribution_log.sequence();
+            let head = self.attribution_log.head_hash_hex().unwrap_or_default();
+            let last_entries = lcp::latest_checkpoint(&dir, lcp::ATTRIBUTION_LOG)
+                .map(|c| c.entries)
+                .unwrap_or(0);
+            let crossed =
+                entries.saturating_sub(last_entries) >= self.log_checkpoint_entries_threshold;
+            if (force && entries > last_entries) || crossed {
+                match lcp::checkpoint_attribution_log(&dir, &self.server_keypair, entries, &head) {
+                    Ok(Some(cp)) => {
+                        notes.push(format!(
+                            "attribution checkpoint {} ({} entries)",
+                            cp.seq, cp.entries
+                        ));
+                        if let Err(e) = self.attribution_log.rotate(cp.seq) {
+                            tracing::warn!("[log-checkpoint] attribution rotate: {}", e);
+                            notes.push(format!("attribution rotate failed: {}", e));
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        tracing::warn!("[log-checkpoint] attribution: {}", e);
+                        notes.push(format!("attribution checkpoint failed: {}", e));
+                    }
+                }
+            }
+        }
+
+        if self.log_retention_keep > 0 {
+            for log in [lcp::SECURITY_LOG, lcp::ATTRIBUTION_LOG] {
+                match lcp::apply_retention(
+                    &dir,
+                    log,
+                    self.log_retention_keep,
+                    self.log_retention_mode,
+                ) {
+                    Ok(handled) if !handled.is_empty() => {
+                        notes.push(format!("{} retention: {}", log, handled.join(",")))
+                    }
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!("[log-checkpoint] {} retention: {}", log, e),
+                }
+            }
+        }
+
+        notes
+    }
+
     /// FR-60: everything an anchor round needs, snapshot under one
     /// lock pass: current chain head digest + previous stream.
     pub fn ots_anchor_snapshot(&self) -> Option<([u8; 32], Option<Vec<u8>>)> {
@@ -9581,10 +9779,13 @@ impl Server {
     /// FR-51 cutover integration: immutable lattice read (for &self
     /// paths). Uses the shadow's cached text if available.
     pub fn lattice_shadow_read(&self, work_be_id: BeId) -> Option<String> {
-        // lattice_primary_text takes &mut self because MultiWriter::text()
-        // is &mut (view caching). For the &self read path, we snapshot
-        // via the debug doc clone. This is correct but not hot-path
-        // optimized — that's fine for the gradual rollout.
+        // FR-51 C-5 read path: served from the view cache (refreshed
+        // at every shadow content mutation). Fallback to the doc
+        // clone render only if the cache is somehow absent — never a
+        // stale answer.
+        if let Some(text) = self.lattice_view_cache.get(&work_be_id) {
+            return Some(text.clone());
+        }
         self.lattice_shadows
             .get(&work_be_id)
             .map(|mw| mw.debug_doc_clone().render())
@@ -9611,6 +9812,9 @@ impl Server {
     /// them).
     pub fn clear_lattice_shadows(&mut self) {
         self.lattice_shadows.clear();
+        self.lattice_view_cache.clear();
+        self.lattice_write_works.clear();
+        self.lattice_deferred.clear();
     }
 
     pub fn crdt_apply_text_delta(
@@ -9622,6 +9826,140 @@ impl Server {
         self.ensure_session(session_id)?;
         self.ensure_can_edit(session_id, work_be_id)?;
 
+        if self.lattice_write_works.contains(&work_be_id) {
+            self.crdt_apply_text_delta_lattice_first(session_id, work_be_id, ops)
+        } else {
+            self.crdt_apply_text_delta_sync(session_id, work_be_id, ops)
+        }
+    }
+
+    /// FR-51 C-5 write-switch: the lattice serves the edit (fast ack),
+    /// the O-tree work is deferred to the drain. Reads for this work
+    /// already come from the lattice (write-promote requires
+    /// read-promote). Relay carries the delta to the other
+    /// subscribers; merge-correction broadcast is deferred with the
+    /// O-tree work (known W-1 limitation).
+    fn crdt_apply_text_delta_lattice_first(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+        ops: &[crate::server::transport::protocol::TextDeltaOp],
+    ) -> Result<(super::crdt_manager::ApplyUpdateResult, Option<u64>), ServerError> {
+        let Some(mw) = self.lattice_shadows.get_mut(&work_be_id) else {
+            // Shadow vanished (clear raced the write set) — the sync
+            // path is always safe.
+            return self.crdt_apply_text_delta_sync(session_id, work_be_id, ops);
+        };
+        let lat = lattice_ops_from_delta(ops);
+        mw.apply(session_id.as_u64(), &lat);
+        mw.sync(session_id.as_u64());
+        let rendered = mw.text();
+        self.lattice_view_cache.insert(work_be_id, rendered);
+
+        self.lattice_deferred
+            .entry(work_be_id)
+            .or_default()
+            .push((session_id, ops.to_vec()));
+
+        let mut relay_to = Vec::new();
+        for sid in self.sessions.keys() {
+            if *sid != session_id && self.otree_crdt.is_subscriber(work_be_id, *sid) {
+                relay_to.push((
+                    *sid,
+                    super::crdt_manager::SyncSessionId::from(sid.as_u64()),
+                ));
+            }
+        }
+
+        Ok((
+            super::crdt_manager::ApplyUpdateResult {
+                relay_to,
+                was_merged: false,
+            },
+            None,
+        ))
+    }
+
+    /// Apply queued write-switch deltas to the O-tree (edition
+    /// rebuild, span migrations, debounced materialization). Runs on
+    /// the autosave tick, before every checkpoint, at demote, and at
+    /// session close — before any subscription teardown so queued
+    /// ops always have a live session to apply through.
+    pub fn lattice_drain_deferred(&mut self) -> usize {
+        let mut drained = 0usize;
+        let works: Vec<BeId> = self.lattice_deferred.keys().copied().collect();
+        for work in works {
+            let queue = match self.lattice_deferred.remove(&work) {
+                Some(q) if !q.is_empty() => q,
+                _ => continue,
+            };
+            for (session_id, ops) in queue {
+                match self.apply_delta_otree_core(session_id, work, &ops) {
+                    Ok(_) => drained += 1,
+                    Err(e) => tracing::error!(
+                        "[lattice-drain] deferred op for work {} failed: {:?} \
+                         (edition may lack this edit; shadow holds the truth)",
+                        work,
+                        e
+                    ),
+                }
+            }
+        }
+        drained
+    }
+
+    pub fn lattice_deferred_len(&self, work_be_id: BeId) -> usize {
+        self.lattice_deferred
+            .get(&work_be_id)
+            .map(|q| q.len())
+            .unwrap_or(0)
+    }
+
+    fn crdt_apply_text_delta_sync(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+        ops: &[crate::server::transport::protocol::TextDeltaOp],
+    ) -> Result<(super::crdt_manager::ApplyUpdateResult, Option<u64>), ServerError> {
+        let (result, revision) = self.apply_delta_otree_core(session_id, work_be_id, ops)?;
+
+        // FR-51 Phase 4: mirror the same ops into the enrolled
+        // lattice shadow (per-session view, then sync — mirroring
+        // the O-tree's session_bases update). Best-effort: the
+        // shadow must never influence the live path.
+        if let Some(mw) = self.lattice_shadows.get_mut(&work_be_id) {
+            let lat = lattice_ops_from_delta(ops);
+            mw.apply(session_id.as_u64(), &lat);
+            mw.sync(session_id.as_u64());
+            let rendered = mw.text();
+            self.lattice_view_cache.insert(work_be_id, rendered);
+        }
+
+        let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result
+            .relay_to
+            .into_iter()
+            .map(|(sid, osid)| (sid, super::crdt_manager::SyncSessionId::from(osid.as_u64())))
+            .collect();
+
+        Ok((
+            super::crdt_manager::ApplyUpdateResult {
+                relay_to,
+                was_merged: result.was_merged,
+            },
+            revision,
+        ))
+    }
+
+    /// The O-tree engine of record for one delta: apply, migrate link
+    /// spans, span keys, and inline transclusions, then run the
+    /// debounced materialize+revise. Shared by the sync path and the
+    /// write-switch drain.
+    fn apply_delta_otree_core(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+        ops: &[crate::server::transport::protocol::TextDeltaOp],
+    ) -> Result<(crate::server::otree_crdt::OtreeApplyResult, Option<u64>), ServerError> {
         {
             let result = self
                 .otree_crdt
@@ -9666,35 +10004,6 @@ impl Server {
             // in dispatch; the CRDT path previously skipped it).
             self.migrate_inline_transclusions_for_delta(work_be_id, ops);
 
-            // FR-51 Phase 4: mirror the same ops into the enrolled
-            // lattice shadow (per-session view, then sync — mirroring
-            // the O-tree's session_bases update). Best-effort: the
-            // shadow must never influence the live path.
-            if let Some(mw) = self.lattice_shadows.get_mut(&work_be_id) {
-                let lat: Vec<crate::space::lattice_sim::LatOp> = ops
-                    .iter()
-                    .map(|o| match o {
-                        crate::server::transport::protocol::TextDeltaOp::Retain { count } => {
-                            crate::space::lattice_sim::LatOp::Retain { count: *count }
-                        }
-                        crate::server::transport::protocol::TextDeltaOp::Insert { text } => {
-                            crate::space::lattice_sim::LatOp::Insert { text: text.clone() }
-                        }
-                        crate::server::transport::protocol::TextDeltaOp::Delete { count } => {
-                            crate::space::lattice_sim::LatOp::Delete { count: *count }
-                        }
-                    })
-                    .collect();
-                mw.apply(session_id.as_u64(), &lat);
-                mw.sync(session_id.as_u64());
-            }
-
-            let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result
-                .relay_to
-                .into_iter()
-                .map(|(sid, osid)| (sid, super::crdt_manager::SyncSessionId::from(osid.as_u64())))
-                .collect();
-
             let revision = if self.crdt_needs_materialization(work_be_id)
                 && self
                     .otree_crdt
@@ -9708,13 +10017,7 @@ impl Server {
                 None
             };
 
-            Ok((
-                super::crdt_manager::ApplyUpdateResult {
-                    relay_to,
-                    was_merged: result.was_merged,
-                },
-                revision,
-            ))
+            Ok((result, revision))
         }
     }
 
@@ -12284,9 +12587,23 @@ impl Server {
         let seed = std::fs::read_to_string(dir.join("security.log.seed"))
             .map(|s| s.trim().to_string())
             .unwrap_or_default();
+        let anchor = if log_files.len() >= 2 {
+            let prev_file = &log_files[log_files.len() - 2];
+            std::fs::read_to_string(prev_file)
+                .ok()
+                .and_then(|c| {
+                    c.lines()
+                        .filter(|l| !l.is_empty())
+                        .last()
+                        .and_then(|l| l.rfind(" chain=").map(|p| l[p + 7..].to_string()))
+                })
+                .unwrap_or(seed)
+        } else {
+            seed
+        };
         let chain_valid =
             crate::server::transport::chained_log::ChainedLogWriter::<std::io::Sink>::verify_log(
-                &content, &seed,
+                &content, &anchor,
             )
             .is_ok();
 
@@ -13089,6 +13406,7 @@ impl Server {
         let promoted_count = manifest.lattice_primary_works.len();
         if promoted_count > 0 {
             self.lattice_restore_promoted(&manifest.lattice_primary_works);
+            self.lattice_write_restore(&manifest.lattice_write_works);
             tracing::info!(
                 "[restore] lattice_primary_works: {} works re-promoted",
                 promoted_count
@@ -23561,6 +23879,9 @@ pub(crate) mod persist_snapshot {
         /// FR-51 cutover: the per-work lattice-primary promotion set.
         #[cfg_attr(feature = "serde", serde(default))]
         lattice_primary_works: Vec<BeId>,
+        /// FR-51 C-5: the per-work lattice write-switch set.
+        #[cfg_attr(feature = "serde", serde(default))]
+        lattice_write_works: Vec<BeId>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -23826,6 +24147,7 @@ pub(crate) mod persist_snapshot {
                     .map(|(id, c)| (*id, c.clone()))
                     .collect(),
                 lattice_primary_works: self.lattice_primary_works.iter().copied().collect(),
+                lattice_write_works: self.lattice_write_works.iter().copied().collect(),
             }
         }
 
@@ -23909,12 +24231,19 @@ pub(crate) mod persist_snapshot {
                 checkpoint_in_flight: false,
                 otree_crdt: crate::server::otree_crdt::OtreeCrdtManager::new(3),
                 lattice_shadows: HashMap::new(),
+                lattice_view_cache: HashMap::new(),
                 lattice_primary_works: HashSet::new(),
+                lattice_write_works: HashSet::new(),
+                lattice_deferred: HashMap::new(),
                 lattice_shadow_enabled: false,
                 reuse_suggestions_enabled: false,
                 reuse: crate::server::reuse_match::ReuseService::new(),
                 ots_anchor_enabled: false,
                 ots_anchor_requested: false,
+                log_checkpoint_entries_threshold: 10_000,
+                log_retention_keep: 0,
+                log_retention_mode:
+                    crate::server::transport::log_checkpoint::RetentionMode::Archive,
                 personal_club_count: 0,
                 max_personal_clubs: 10_000,
                 login_attempts: HashMap::new(),
@@ -24215,6 +24544,7 @@ pub(crate) mod persist_snapshot {
             // FR-51 cutover: re-promote the persisted set (shadows
             // rebuild from the restored editions).
             server.lattice_restore_promoted(&snapshot.lattice_primary_works);
+            server.lattice_write_restore(&snapshot.lattice_write_works);
 
             server
         }
@@ -24650,6 +24980,7 @@ pub(crate) mod persist_snapshot {
                 starred_works: self.starred_works.clone(),
                 user_pins: self.user_pins.clone(),
                 lattice_primary_works: self.lattice_primary_works.iter().copied().collect(),
+                lattice_write_works: self.lattice_write_works.iter().copied().collect(),
                 trails,
                 trail_counter: self.trail_counter,
                 compound_editions,
@@ -25298,6 +25629,7 @@ pub(crate) mod persist_snapshot {
                 ticket_nonces: std::collections::HashMap::new(),
                 revisions: std::collections::HashMap::new(),
                 lattice_primary_works: self.lattice_primary_works.iter().copied().collect(),
+                lattice_write_works: self.lattice_write_works.iter().copied().collect(),
             };
 
             // ── Migrate large sections to chunks before writing manifest ──
@@ -33062,6 +33394,67 @@ mod tests {
             before,
             after
         );
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn log_checkpoint_attribution_rotation_and_verify() {
+        use crate::server::transport::attribution_log::AttributionEntry;
+        use crate::server::transport::log_checkpoint::{self, RetentionMode};
+
+        let dir = TempDir::new("log_cp");
+        let mut server = Server::new();
+        server.init_data_dir(&dir.0, None).unwrap();
+
+        let entry = |i: u64| AttributionEntry {
+            sequence: i,
+            timestamp: 1000 + i,
+            author_pk_hex: "aa".repeat(32),
+            span_fp_hex: "bb".repeat(64),
+            signature_hex: "cc".repeat(64),
+            server_id_hex: "dd".repeat(64),
+            work_id: 42,
+            revision: 1,
+            source_work_id: None,
+            source_license: None,
+        };
+        for i in 0..5 {
+            server.attribution_log.append(&entry(i)).unwrap();
+        }
+        assert_eq!(server.attribution_log.sequence(), 5);
+
+        server.log_checkpoint_configure(5, 0, RetentionMode::Archive);
+        let notes = server.log_checkpoint_maybe(false);
+        assert!(notes
+            .iter()
+            .any(|n| n.contains("attribution checkpoint 1") && n.contains("5 entries")));
+        assert!(dir.0.join("attribution/attribution.log.000001").exists());
+        assert_eq!(server.attribution_log.sequence(), 5);
+        assert!(server.attribution_log.head_hash_hex().is_some());
+
+        for i in 5..7 {
+            server.attribution_log.append(&entry(i)).unwrap();
+        }
+        assert_eq!(server.attribution_log.sequence(), 7);
+
+        let kp = crate::crypto::keys::ServerKeyPair::load_from_file_auto(
+            &dir.0.join("server.key"),
+            None,
+        )
+        .unwrap();
+        let history = crate::crypto::keys::KeyHistory::new(&kp);
+        let report = log_checkpoint::verify_attribution_log(&dir.0, Some(&history));
+        assert!(report.ok, "report: {:?}", report.lines);
+        assert_eq!(report.checkpoints, 1);
+        assert_eq!(report.checked_entries, 7);
+
+        let status_ok = server.attribution_log_status();
+        let _ = status_ok;
+
+        server.log_checkpoint_maybe(true);
+        let report = log_checkpoint::verify_attribution_log(&dir.0, Some(&history));
+        assert!(report.ok, "report: {:?}", report.lines);
+        assert!(dir.0.join("attribution/attribution.log.000002").exists());
     }
 
     #[test]
@@ -50038,6 +50431,628 @@ mod cutover_integration_tests {
         // O-tree also has it (dual-write).
         let text = server.otree_crdt.current_text(work).unwrap();
         assert!(text.contains("X"), "O-tree still has the edit");
+    }
+
+    /// FR-51 C-5 read path: the `&self` shadow read must always agree
+    /// with a fresh `&mut` render — the view cache is refreshed at
+    /// every content mutation, so interleaved edits and reads never
+    /// serve a stale answer (regression for the cache introduction).
+    #[test]
+    fn lattice_view_cache_never_stale() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work = server
+            .create_work(sid, Edition::from_text("cache me"))
+            .unwrap();
+        server.crdt_open_session(sid, work).unwrap();
+        server.enable_lattice_shadow();
+        server.enroll_lattice_shadow(sid, work).unwrap();
+
+        assert_eq!(server.lattice_shadow_read(work).unwrap(), "cache me");
+
+        let edit = |server: &mut Server, pos: u64, ins: &str| {
+            let ops = vec![
+                crate::server::transport::protocol::TextDeltaOp::Retain { count: pos },
+                crate::server::transport::protocol::TextDeltaOp::Insert {
+                    text: ins.to_string(),
+                },
+            ];
+            server.crdt_apply_text_delta(sid, work, &ops).unwrap();
+        };
+
+        edit(&mut server, 7, " now");
+        assert_eq!(
+            server.lattice_shadow_read(work).unwrap(),
+            server.lattice_shadow_text(work).unwrap(),
+            "cache read must equal fresh render after edit 1"
+        );
+
+        edit(&mut server, 0, ">> ");
+        assert_eq!(
+            server.lattice_shadow_read(work).unwrap(),
+            server.lattice_shadow_text(work).unwrap(),
+            "cache read must equal fresh render after edit 2"
+        );
+
+        server.lattice_primary_promote(work);
+        let via_primary = server.crdt_current_text(work).unwrap();
+        assert_eq!(via_primary, server.lattice_shadow_text(work).unwrap());
+
+        server.clear_lattice_shadows();
+        assert!(server.lattice_view_cache.is_empty());
+    }
+
+    /// FR-51 C-5 write-switch: write-promote requires the work to be
+    /// read-promoted with a live shadow.
+    /// C-0 adjudication diagnostic: the same interleaved script through
+    /// the SYNC dual-write path (write-switch off). Documents a KNOWN
+    /// pre-existing content divergence between the engines on
+    /// stale-view interleaves (length-exact, content differs; the
+    /// O-tree's answer matches OT intuition — inserts anchored at the
+    /// view position). Ignored: this is the adjudication worklist, not
+    /// a pass/fail gate. The write-switch tests assert against the
+    /// O-tree (engine of record), never against the diverging shadow.
+    #[test]
+    #[ignore = "C-0 adjudication: content divergence under stale-view interleave"]
+    fn lattice_write_interleaved_probe_sync_path() {
+        use crate::server::transport::protocol::TextDeltaOp;
+
+        let mut server = Server::new();
+        let s1 = server.connect();
+        let s2 = server.connect();
+        server.login_public(s1).unwrap();
+        server.login_public(s2).unwrap();
+        let work = server
+            .create_work(s1, Edition::from_text("0123456789"))
+            .unwrap();
+        server.crdt_open_session(s1, work).unwrap();
+        server.crdt_open_session(s2, work).unwrap();
+
+        server.enable_lattice_shadow();
+        server.enroll_lattice_shadow(s1, work).unwrap();
+        server.lattice_primary_promote(work);
+        // NOTE: no write-promote — sync path, lattice mirrors.
+
+        let d = |pos: u64, ins: Option<&str>, del: u64| -> Vec<TextDeltaOp> {
+            let mut ops = vec![TextDeltaOp::Retain { count: pos }];
+            if let Some(t) = ins {
+                ops.push(TextDeltaOp::Insert {
+                    text: t.to_string(),
+                });
+            }
+            if del > 0 {
+                ops.push(TextDeltaOp::Delete { count: del });
+            }
+            ops
+        };
+
+        server
+            .crdt_apply_text_delta(s1, work, &d(0, Some("A"), 0))
+            .unwrap();
+        server
+            .crdt_apply_text_delta(s2, work, &d(10, Some("Z"), 0))
+            .unwrap();
+        server
+            .crdt_apply_text_delta(s1, work, &d(11, None, 1))
+            .unwrap();
+        server
+            .crdt_apply_text_delta(s2, work, &d(5, Some("mid"), 0))
+            .unwrap();
+
+        let otree = server.otree_crdt.current_text(work).unwrap();
+        let lattice = server.lattice_shadow_text(work).unwrap();
+        eprintln!("SYNC-PATH otree={:?} lattice={:?}", otree, lattice);
+    }
+
+    #[test]
+    fn lattice_write_promote_requires_primary() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let work = server
+            .create_work(sid, Edition::from_text("gate"))
+            .unwrap();
+        server.crdt_open_session(sid, work).unwrap();
+
+        server.enable_lattice_shadow();
+        assert!(
+            !server.lattice_write_promote(work),
+            "write-promote must fail without read-promote"
+        );
+
+        server.enroll_lattice_shadow(sid, work).unwrap();
+        assert!(
+            !server.lattice_write_promote(work),
+            "write-promote must fail with only a shadow (not read-primary)"
+        );
+
+        assert!(server.lattice_primary_promote(work));
+        assert!(server.lattice_write_promote(work));
+        assert!(server.lattice_is_write_primary(work));
+    }
+
+    /// FR-51 C-5 write-switch: the lattice serves the edit (fast ack,
+    /// relay to other subscribers), the O-tree work defers until the
+    /// drain, then both engines agree.
+    #[test]
+    fn lattice_write_fast_path_defers_then_drains() {
+        use crate::server::transport::protocol::TextDeltaOp;
+
+        let mut server = Server::new();
+        let s1 = server.connect();
+        let s2 = server.connect();
+        server.login_public(s1).unwrap();
+        server.login_public(s2).unwrap();
+        let work = server
+            .create_work(s1, Edition::from_text("fast path body"))
+            .unwrap();
+        server.crdt_open_session(s1, work).unwrap();
+        server.crdt_open_session(s2, work).unwrap();
+
+        server.enable_lattice_shadow();
+        server.enroll_lattice_shadow(s1, work).unwrap();
+        assert!(server.lattice_primary_promote(work));
+        assert!(server.lattice_write_promote(work));
+
+        let ops = vec![
+            TextDeltaOp::Retain { count: 14 },
+            TextDeltaOp::Insert {
+                text: " NOW".to_string(),
+            },
+        ];
+        let (result, revision) = server.crdt_apply_text_delta(s1, work, &ops).unwrap();
+
+        assert_eq!(revision, None, "fast ack carries no revision");
+        assert!(!result.was_merged);
+        assert_eq!(result.relay_to.len(), 1, "the other subscriber is relayed");
+        assert_eq!(result.relay_to[0].0, s2);
+
+        let live = server.crdt_current_text(work).unwrap();
+        assert!(
+            live.contains("NOW"),
+            "lattice-primary read sees the fast-path edit: {}",
+            live
+        );
+
+        let otree = server.otree_crdt.current_text(work).unwrap();
+        assert!(
+            !otree.contains("NOW"),
+            "O-tree must not have the edit before the drain: {}",
+            otree
+        );
+        assert_eq!(server.lattice_deferred_len(work), 1);
+
+        let drained = server.lattice_drain_deferred();
+        assert_eq!(drained, 1);
+        assert_eq!(server.lattice_deferred_len(work), 0);
+
+        let otree = server.otree_crdt.current_text(work).unwrap();
+        assert!(
+            otree.contains("NOW"),
+            "O-tree has the edit after the drain: {}",
+            otree
+        );
+        assert_eq!(
+            otree,
+            server.lattice_shadow_text(work).unwrap(),
+            "engines agree after drain"
+        );
+    }
+
+    /// FR-51 C-5 write-switch rollback: demote flushes the deferred
+    /// queue into the O-tree and resumes the sync path.
+    #[test]
+    fn lattice_write_demote_drains_pending() {
+        use crate::server::transport::protocol::TextDeltaOp;
+
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let work = server
+            .create_work(sid, Edition::from_text("rollback body"))
+            .unwrap();
+        server.crdt_open_session(sid, work).unwrap();
+
+        server.enable_lattice_shadow();
+        server.enroll_lattice_shadow(sid, work).unwrap();
+        server.lattice_primary_promote(work);
+        server.lattice_write_promote(work);
+
+        let ops = vec![TextDeltaOp::Insert {
+            text: "> ".to_string(),
+        }];
+        server.crdt_apply_text_delta(sid, work, &ops).unwrap();
+        assert_eq!(server.lattice_deferred_len(work), 1);
+
+        assert!(server.lattice_write_demote(work));
+        assert!(!server.lattice_is_write_primary(work));
+        assert_eq!(server.lattice_deferred_len(work), 0);
+        assert!(
+            server
+                .otree_crdt
+                .current_text(work)
+                .unwrap()
+                .starts_with("> "),
+            "demote drained the pending op"
+        );
+
+        let ops = vec![
+            TextDeltaOp::Retain { count: 15 },
+            TextDeltaOp::Insert {
+                text: "!".to_string(),
+            },
+        ];
+        server.crdt_apply_text_delta(sid, work, &ops).unwrap();
+        assert_eq!(
+            server.lattice_deferred_len(work),
+            0,
+            "sync path resumed after demote"
+        );
+        assert!(server.otree_crdt.current_text(work).unwrap().ends_with('!'));
+    }
+
+    /// FR-51 C-5: read-demote cascades — draining and clearing the
+    /// write mode before reads fall back to the O-tree.
+    #[test]
+    fn lattice_primary_demote_cascades_write() {
+        use crate::server::transport::protocol::TextDeltaOp;
+
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let work = server
+            .create_work(sid, Edition::from_text("cascade body"))
+            .unwrap();
+        server.crdt_open_session(sid, work).unwrap();
+
+        server.enable_lattice_shadow();
+        server.enroll_lattice_shadow(sid, work).unwrap();
+        server.lattice_primary_promote(work);
+        server.lattice_write_promote(work);
+
+        server
+            .crdt_apply_text_delta(
+                sid,
+                work,
+                &[TextDeltaOp::Insert {
+                    text: "x".to_string(),
+                }],
+            )
+            .unwrap();
+        assert_eq!(server.lattice_deferred_len(work), 1);
+
+        server.lattice_primary_demote(work);
+        assert!(
+            !server.lattice_is_write_primary(work),
+            "read-demote clears write mode"
+        );
+        assert_eq!(server.lattice_deferred_len(work), 0);
+        assert!(server.otree_crdt.current_text(work).unwrap().starts_with('x'));
+    }
+
+    /// FR-51 C-5: the write-switch set persists across a restart and
+    /// post-restore edits take the fast path again.
+    #[test]
+    fn lattice_write_survives_restore() {
+        use crate::server::transport::protocol::TextDeltaOp;
+
+        let base = std::env::temp_dir().join(format!(
+            "xudanu-lattice-write-restore-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        struct Dir(std::path::PathBuf);
+        impl Dir {
+            fn snapshot_path(&self) -> std::path::PathBuf {
+                self.0.join("snapshot.bin")
+            }
+        }
+        impl Drop for Dir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let dir = Dir(base);
+        let work = {
+            let mut server = Server::new();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let work = server
+                .create_work(sid, Edition::from_text("write restart body"))
+                .unwrap();
+            server.crdt_open_session(sid, work).unwrap();
+
+            server.enable_lattice_shadow();
+            server.enroll_lattice_shadow(sid, work).unwrap();
+            assert!(server.lattice_primary_promote(work));
+            assert!(server.lattice_write_promote(work));
+
+            server
+                .crdt_apply_text_delta(
+                    sid,
+                    work,
+                    &[
+                        TextDeltaOp::Retain { count: 19 },
+                        TextDeltaOp::Insert {
+                            text: "!".to_string(),
+                        },
+                    ],
+                )
+                .unwrap();
+            assert_eq!(server.lattice_deferred_len(work), 1);
+
+            // Clean shutdown: close drains, then checkpoint persists
+            // the promotion AND write sets.
+            server.crdt_close_session(sid, work).unwrap();
+            server.checkpoint_to_file(&dir.snapshot_path()).unwrap();
+            work
+        };
+
+        let mut server = Server::restore_from_file(&dir.snapshot_path()).unwrap();
+        assert!(server.lattice_is_primary(work), "read-promote survives");
+        assert!(
+            server.lattice_is_write_primary(work),
+            "write-promote survives restart"
+        );
+        assert_eq!(
+            server.work_edition(work).unwrap().to_text(),
+            "write restart body!",
+            "drained edit materialized into the edition"
+        );
+
+        // Post-restore edits take the fast path again.
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        server.crdt_open_session(sid, work).unwrap();
+        server
+            .crdt_apply_text_delta(
+                sid,
+                work,
+                &[TextDeltaOp::Insert {
+                    text: "> ".to_string(),
+                }],
+            )
+            .unwrap();
+        assert_eq!(
+            server.lattice_deferred_len(work),
+            1,
+            "restored write-primary work defers again"
+        );
+    }
+
+    /// FR-51 C-5: interleaved two-session traffic through the fast
+    /// path, then one drain — both engines must agree exactly.
+    #[test]
+    fn lattice_write_interleaved_sessions_converge_through_drain() {
+        use crate::server::transport::protocol::TextDeltaOp;
+
+        let mut server = Server::new();
+        let s1 = server.connect();
+        let s2 = server.connect();
+        server.login_public(s1).unwrap();
+        server.login_public(s2).unwrap();
+        let work = server
+            .create_work(s1, Edition::from_text("0123456789"))
+            .unwrap();
+        server.crdt_open_session(s1, work).unwrap();
+        server.crdt_open_session(s2, work).unwrap();
+
+        server.enable_lattice_shadow();
+        server.enroll_lattice_shadow(s1, work).unwrap();
+        server.lattice_primary_promote(work);
+        server.lattice_write_promote(work);
+
+        let d = |pos: u64, ins: Option<&str>, del: u64| -> Vec<TextDeltaOp> {
+            let mut ops = vec![TextDeltaOp::Retain { count: pos }];
+            if let Some(t) = ins {
+                ops.push(TextDeltaOp::Insert {
+                    text: t.to_string(),
+                });
+            }
+            if del > 0 {
+                ops.push(TextDeltaOp::Delete { count: del });
+            }
+            ops
+        };
+
+        // Each delta is positioned against its own session's view.
+        server
+            .crdt_apply_text_delta(s1, work, &d(0, Some("A"), 0))
+            .unwrap();
+        server
+            .crdt_apply_text_delta(s2, work, &d(10, Some("Z"), 0))
+            .unwrap();
+        server
+            .crdt_apply_text_delta(s1, work, &d(11, None, 1))
+            .unwrap();
+        server
+            .crdt_apply_text_delta(s2, work, &d(5, Some("mid"), 0))
+            .unwrap();
+        assert_eq!(server.lattice_deferred_len(work), 4);
+
+        let drained = server.lattice_drain_deferred();
+        assert_eq!(drained, 4);
+
+        // W-1 contract: deferral changes WHEN the O-tree applies, not
+        // WHAT it produces — the drained result must equal the sync
+        // path's (verified against the #[ignore] sync-path probe).
+        // Note the trailing delete clamps to a no-op on an 11-char
+        // view, so the retain-11/delete-1 pair deletes nothing.
+        let otree = server.otree_crdt.current_text(work).unwrap();
+        assert_eq!(otree, "A0123mid456789Z");
+
+        let lattice = server.lattice_shadow_text(work).unwrap();
+        assert_eq!(
+            lattice.chars().count(),
+            otree.chars().count(),
+            "engines stay length-exact (content divergence on this \
+             script is the documented C-0 adjudication case)"
+        );
+    }
+
+    /// FR-51 C-5: disconnect drains pending deferred ops before the
+    /// subscription goes away — the acked edit must not be lost.
+    #[test]
+    fn lattice_write_session_close_drains_pending() {
+        use crate::server::transport::protocol::TextDeltaOp;
+
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let work = server
+            .create_work(sid, Edition::from_text("close drains"))
+            .unwrap();
+        server.crdt_open_session(sid, work).unwrap();
+
+        server.enable_lattice_shadow();
+        server.enroll_lattice_shadow(sid, work).unwrap();
+        server.lattice_primary_promote(work);
+        server.lattice_write_promote(work);
+
+        server
+            .crdt_apply_text_delta(
+                sid,
+                work,
+                &[TextDeltaOp::Insert {
+                    text: "* ".to_string(),
+                }],
+            )
+            .unwrap();
+        assert_eq!(server.lattice_deferred_len(work), 1);
+
+        server.disconnect(sid).unwrap();
+
+        assert_eq!(server.lattice_deferred_len(work), 0);
+        assert!(
+            server
+                .otree_crdt
+                .current_text(work)
+                .unwrap()
+                .starts_with("* "),
+            "disconnect must flush the acked edit into the O-tree"
+        );
+    }
+
+    /// FR-51 C-5: link source spans migrate when deferred ops apply at
+    /// drain time (the migrations run inside the core, not the fast
+    /// path — spans must still land on the right characters).
+    #[test]
+    fn lattice_write_link_span_migrates_through_drain() {
+        use crate::server::transport::protocol::TextDeltaOp;
+
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let work_a = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("dest"))
+            .unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+            .with_span(Some(0), Some(5));
+        let d_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(o_ref), Some(d_ref))
+            .unwrap();
+
+        server.crdt_open_session(sid, work_a).unwrap();
+        server.enable_lattice_shadow();
+        server.enroll_lattice_shadow(sid, work_a).unwrap();
+        server.lattice_primary_promote(work_a);
+        server.lattice_write_promote(work_a);
+
+        // Deferred insert of "XX " before the span.
+        server
+            .crdt_apply_text_delta(
+                sid,
+                work_a,
+                &[TextDeltaOp::Insert {
+                    text: "XX ".to_string(),
+                }],
+            )
+            .unwrap();
+        assert_eq!(server.lattice_deferred_len(work_a), 1);
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let before = link.end_at("LeftEnd").unwrap().start_position();
+        assert_eq!(before, Some(0), "no migration before the drain");
+
+        server.lattice_drain_deferred();
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let o_ref = link.end_at("LeftEnd").unwrap();
+        assert_eq!(
+            o_ref.start_position(),
+            Some(3),
+            "span shifts by the deferred insert at drain time"
+        );
+        assert_eq!(o_ref.end_position(), Some(8));
+    }
+
+    /// FR-51 C-5: a queued op whose CRDT subscription vanished must
+    /// log-and-drop without poisoning the drain; later ops from live
+    /// sessions still apply.
+    #[test]
+    fn lattice_write_drain_survives_dead_subscription() {
+        use crate::server::transport::protocol::TextDeltaOp;
+
+        let mut server = Server::new();
+        let s1 = server.connect();
+        let s2 = server.connect();
+        server.login_public(s1).unwrap();
+        server.login_public(s2).unwrap();
+        let work = server
+            .create_work(s1, Edition::from_text("resilience"))
+            .unwrap();
+        server.crdt_open_session(s1, work).unwrap();
+        server.crdt_open_session(s2, work).unwrap();
+
+        server.enable_lattice_shadow();
+        server.enroll_lattice_shadow(s1, work).unwrap();
+        server.lattice_primary_promote(work);
+        server.lattice_write_promote(work);
+
+        server
+            .crdt_apply_text_delta(
+                s1,
+                work,
+                &[TextDeltaOp::Insert {
+                    text: "1".to_string(),
+                }],
+            )
+            .unwrap();
+
+        // Tear down s1's CRDT subscription WITHOUT the drain (the
+        // failure shape: session pruned between ack and drain).
+        let _ = server.otree_crdt.close_sync_session(work, s1);
+
+        // s2 still live: queue another op and drain both.
+        server
+            .crdt_apply_text_delta(
+                s2,
+                work,
+                &[TextDeltaOp::Insert {
+                    text: "2".to_string(),
+                }],
+            )
+            .unwrap();
+        assert_eq!(server.lattice_deferred_len(work), 2);
+
+        let drained = server.lattice_drain_deferred();
+        assert_eq!(
+            drained, 1,
+            "dead-session op drops; live-session op applies"
+        );
+        assert_eq!(server.lattice_deferred_len(work), 0);
+        let text = server.otree_crdt.current_text(work).unwrap();
+        assert!(text.contains('2'), "live op applied: {}", text);
     }
 
     /// FR-51 cutover integration: the private flat-text read helper

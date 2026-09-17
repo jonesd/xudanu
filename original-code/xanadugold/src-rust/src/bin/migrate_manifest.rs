@@ -314,6 +314,7 @@ fn migrate_manifest(
         system_clubs_hash,
         reconcile_store_hash,
         lattice_primary_works: m.lattice_primary_works.clone(),
+        lattice_write_works: m.lattice_write_works.clone(),
     };
 
     let root_hash = root_chunk::write_root_chunk(&root, chunk_store)?;

@@ -277,6 +277,8 @@ pub struct ServerRootChunk {
     /// persists. serde(default) keeps old root chunks readable.
     #[cfg_attr(feature = "serde", serde(default))]
     pub lattice_primary_works: Vec<BeId>,
+    #[serde(default)]
+    pub lattice_write_works: Vec<BeId>,
 }
 
 // ── RootManifest (tiny bootstrap file) ───────────────────────────────────────
@@ -646,6 +648,7 @@ pub fn checkpoint_write_root(
         system_clubs_hash,
         reconcile_store_hash,
         lattice_primary_works: manifest.lattice_primary_works.clone(),
+        lattice_write_works: manifest.lattice_write_works.clone(),
     };
 
     let root_hash = write_root_chunk(&root, chunk_store)
@@ -994,6 +997,7 @@ pub fn read_root_as_manifest(
         ticket_nonces: std::collections::HashMap::new(),
         revisions: std::collections::HashMap::new(),
         lattice_primary_works: root.lattice_primary_works.clone(),
+        lattice_write_works: root.lattice_write_works.clone(),
     };
 
     Ok(manifest)
@@ -1570,6 +1574,7 @@ mod tests {
             system_clubs_hash: Some(make_test_hash(8)),
             reconcile_store_hash: Some(make_test_hash(9)),
             lattice_primary_works: vec![],
+            lattice_write_works: vec![],
         };
 
         let hash = write_root_chunk(&chunk, &store).unwrap();
@@ -1620,6 +1625,7 @@ mod tests {
             system_clubs_hash: None,
             reconcile_store_hash: None,
             lattice_primary_works: vec![],
+            lattice_write_works: vec![],
         };
 
         let hash = write_root_chunk(&chunk, &store).unwrap();
@@ -1668,6 +1674,7 @@ mod tests {
             system_clubs_hash: None,
             reconcile_store_hash: None,
             lattice_primary_works: vec![],
+            lattice_write_works: vec![],
         };
 
         let hash = write_root_chunk(&chunk, &store).unwrap();
@@ -1739,6 +1746,7 @@ mod tests {
             system_clubs_hash: None,
             reconcile_store_hash: None,
             lattice_primary_works: vec![],
+            lattice_write_works: vec![],
         };
 
         let h1 = write_root_chunk(&make_root(), &store).unwrap();
@@ -1928,6 +1936,7 @@ mod tests {
                 system_clubs_hash: None,
                 reconcile_store_hash: None,
                 lattice_primary_works: vec![],
+            lattice_write_works: vec![],
             };
             let root_hash = write_root_chunk(&root, &store).unwrap();
             hash_to_hex(&root_hash)
@@ -2045,6 +2054,7 @@ mod tests {
             system_clubs_hash: None,
             reconcile_store_hash: None,
             lattice_primary_works: vec![],
+            lattice_write_works: vec![],
         };
 
         let hash = write_root_chunk(&chunk, &store).unwrap();
@@ -2109,6 +2119,7 @@ mod tests {
             system_clubs_hash: None,
             reconcile_store_hash: None,
             lattice_primary_works: vec![],
+            lattice_write_works: vec![],
         };
 
         let prev_hash = write_root_chunk(&prev_root, &store).unwrap();
@@ -2289,6 +2300,7 @@ mod tests {
             system_clubs_hash: None,
             reconcile_store_hash: None,
             lattice_primary_works: vec![],
+            lattice_write_works: vec![],
         };
         let root_hash = write_root_chunk(&root, &store).unwrap();
 
@@ -2408,6 +2420,7 @@ mod tests {
             system_clubs_hash: Some(dummy(11)),
             reconcile_store_hash: Some(dummy(12)),
             lattice_primary_works: vec![],
+            lattice_write_works: vec![],
         };
         let root_hash = write_root_chunk(&root, &store).unwrap();
 

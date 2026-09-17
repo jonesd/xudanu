@@ -1015,12 +1015,14 @@ fn dispatch_inner(
                 Some(shadow) => Some(shadow == srv.crdt_current_text(work_id)?),
                 None => None,
             };
-            Ok(ResponseValue::Json(serde_json::json!({
-                "enrolled": matches.is_some(),
-                "ops_mirrored": ops.unwrap_or(0),
-                "matches_live": matches,
-                "lattice_primary": srv.lattice_is_primary(work_id),
-            })))
+             Ok(ResponseValue::Json(serde_json::json!({
+                 "enrolled": matches.is_some(),
+                 "ops_mirrored": ops.unwrap_or(0),
+                 "matches_live": matches,
+                 "lattice_primary": srv.lattice_is_primary(work_id),
+                 "lattice_write": srv.lattice_is_write_primary(work_id),
+                 "deferred_ops": srv.lattice_deferred_len(work_id),
+             })))
         }
         WireRequest::LatticeShadowClear {} => {
             srv.ensure_admin(session_id)?;
@@ -1039,6 +1041,20 @@ fn dispatch_inner(
         WireRequest::LatticePrimaryDemote { work_id } => {
             srv.ensure_admin(session_id)?;
             srv.lattice_primary_demote(work_id);
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::LatticeWritePromote { work_id } => {
+            srv.ensure_admin(session_id)?;
+            if !srv.lattice_write_promote(work_id) {
+                return Err(ServerError::InvalidArgument(
+                    "work not lattice-primary; promote reads first".into(),
+                ));
+            }
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::LatticeWriteDemote { work_id } => {
+            srv.ensure_admin(session_id)?;
+            srv.lattice_write_demote(work_id);
             Ok(ResponseValue::Void)
         }
         WireRequest::SuggestionQuery { work_id, text } => {

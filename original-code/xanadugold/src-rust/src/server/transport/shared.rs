@@ -267,6 +267,14 @@ impl ServerHandle {
     pub async fn checkpoint_async(&self) -> std::io::Result<()> {
         let prep_start = std::time::Instant::now();
 
+        // FR-51 C-5: write-switch deltas must reach the O-tree before
+        // materialization runs (the edition is the record). Drain
+        // before the prune so queued ops still have live sessions.
+        let drained = self.with_server(|srv| srv.lattice_drain_deferred());
+        if drained > 0 {
+            tracing::debug!("[lattice-drain] flushed {} deferred op(s) pre-checkpoint", drained);
+        }
+
         self.with_server(|srv| srv.prune_disconnected_sessions());
 
         let pending = self.with_server(|srv| srv.pending_crdt_work_ids());

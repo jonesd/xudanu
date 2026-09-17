@@ -186,6 +186,8 @@ pub enum OperationCode {
     LatticeShadowClear,
     LatticePrimaryPromote,
     LatticePrimaryDemote,
+    LatticeWritePromote,
+    LatticeWriteDemote,
     SuggestionQuery,
     SuggestionConfigSet,
     RevisionCompare,
@@ -583,6 +585,8 @@ impl OperationCode {
             0x0355 => Some(OperationCode::LatticeShadowClear),
             0x0356 => Some(OperationCode::LatticePrimaryPromote),
             0x0357 => Some(OperationCode::LatticePrimaryDemote),
+            0x0365 => Some(OperationCode::LatticeWritePromote),
+            0x0366 => Some(OperationCode::LatticeWriteDemote),
             0x0358 => Some(OperationCode::SuggestionQuery),
             0x0359 => Some(OperationCode::SuggestionConfigSet),
             0x035A => Some(OperationCode::RevisionCompare),
@@ -936,6 +940,8 @@ impl OperationCode {
             OperationCode::LatticeShadowClear => 0x0355,
             OperationCode::LatticePrimaryPromote => 0x0356,
             OperationCode::LatticePrimaryDemote => 0x0357,
+            OperationCode::LatticeWritePromote => 0x0365,
+            OperationCode::LatticeWriteDemote => 0x0366,
             OperationCode::SuggestionQuery => 0x0358,
             OperationCode::SuggestionConfigSet => 0x0359,
             OperationCode::RevisionCompare => 0x035A,
@@ -1429,6 +1435,12 @@ pub enum WireRequest {
         work_id: BeId,
     },
     LatticePrimaryDemote {
+        work_id: BeId,
+    },
+    LatticeWritePromote {
+        work_id: BeId,
+    },
+    LatticeWriteDemote {
         work_id: BeId,
     },
     SuggestionQuery {
@@ -5265,6 +5277,8 @@ mod lattice_shadow_wire_tests {
             OperationCode::LatticeShadowClear,
             OperationCode::LatticePrimaryPromote,
             OperationCode::LatticePrimaryDemote,
+            OperationCode::LatticeWritePromote,
+            OperationCode::LatticeWriteDemote,
             OperationCode::SuggestionQuery,
             OperationCode::SuggestionConfigSet,
             OperationCode::RevisionCompare,
@@ -5307,6 +5321,8 @@ mod lattice_shadow_wire_tests {
             (0x0362, OperationCode::RegionInsertBetween),
             (0x0363, OperationCode::XanResolve),
             (0x0364, OperationCode::WorkDuplicate),
+            (0x0365, OperationCode::LatticeWritePromote),
+            (0x0366, OperationCode::LatticeWriteDemote),
         ];
         for (wire, want) in targets {
             assert_eq!(OperationCode::from_u16(wire), Some(want));

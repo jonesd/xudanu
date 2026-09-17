@@ -68,7 +68,13 @@ fn usage() {
     eprintln!("  hg-profile <data-dir>    Print the H(G) hypertextuality profile as JSON");
     eprintln!("      [--region <club-id>] [--region-prefix 2.1]  scope to a region");
     eprintln!("  rebuild-manifest <dir>   Rebuild manifest from chunks");
-    eprintln!("  verify-security-log <dir> Verify security log chain integrity");
+    eprintln!(
+        "  verify-security-log <dir> Verify security + attribution log chains and checkpoints"
+    );
+    eprintln!("  checkpoint-logs <dir>    Write signed checkpoints for both audit logs now");
+    eprintln!(
+        "                           (needs --key-passphrase / XUDANU_KEY_PASSPHRASE if encrypted)"
+    );
     eprintln!("  preflight <data-dir>     Check data dir is safe to start (no port binding)");
     eprintln!("  recover <data-dir> [--list|--rollback <hash>|--unarchive]");
     eprintln!("                           Inspect recoverable state or roll back to a");
@@ -88,6 +94,9 @@ fn usage() {
     );
     eprintln!("  --csrf-token             Require CSRF token for WebSocket connections");
     eprintln!("  --lattice-shadow         Enable the FR-51 dual-write lattice shadow (admin enrolls works)");
+    eprintln!("  --log-checkpoint-entries <n> Attribution checkpoint threshold (default 10000)");
+    eprintln!("  --log-retention <n>      Keep files covered by the newest N checkpoints (default 0 = all)");
+    eprintln!("  --log-retention-mode <m> Compaction mode: archive (default) or delete");
     eprintln!("  --key-passphrase <pw>   Passphrase for encrypted server key file");
     eprintln!("                         (can also set XUDANU_KEY_PASSPHRASE env var)");
     eprintln!("  --github-client-id <id>      GitHub OAuth app client ID");
@@ -269,83 +278,131 @@ fn cmd_rebuild_manifest(data_dir: &str) {
 }
 
 fn cmd_verify_security_log(data_dir: &str) {
-    use xudanu::server::transport::chained_log::ChainedLogWriter;
-    let path = PathBuf::from(data_dir);
-    let seed_path = path.join("security.log.seed");
+    use xudanu::server::transport::log_checkpoint;
 
-    let seed = match std::fs::read_to_string(&seed_path) {
-        Ok(s) => s.trim().to_string(),
+    let path = PathBuf::from(data_dir);
+    if !path.is_dir() {
+        eprintln!("Error: not a directory: {}", path.display());
+        std::process::exit(1);
+    }
+
+    let history = match log_checkpoint::load_key_history(&path) {
+        Ok(h) => {
+            if let Err(e) = h.verify_rotation_chain() {
+                println!("key history rotation chain: FAIL ({})", e);
+                std::process::exit(1);
+            }
+            println!("key history: {} key(s), rotation chain OK", h.entry_count());
+            Some(h)
+        }
         Err(e) => {
-            eprintln!("Error: cannot read {}: {}", seed_path.display(), e);
-            std::process::exit(1);
+            println!("key history unavailable: {}", e);
+            None
         }
     };
 
-    let mut log_files: Vec<PathBuf> = std::fs::read_dir(&path)
-        .unwrap_or_else(|e| {
-            eprintln!("Error: cannot read {}: {}", path.display(), e);
-            std::process::exit(1);
-        })
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy().to_string();
-            name.starts_with("security.log") && !name.ends_with(".seed")
-        })
-        .map(|e| e.path())
-        .filter(|p| p.is_file())
-        .collect();
-
-    if log_files.is_empty() {
-        println!("No security log files found in {}", path.display());
-        return;
+    println!();
+    println!("security log:");
+    let sec = log_checkpoint::verify_security_log(&path, history.as_ref());
+    for line in &sec.lines {
+        println!("  {}", line);
     }
+    println!();
+    println!("attribution log:");
+    let attr = log_checkpoint::verify_attribution_log(&path, history.as_ref());
+    for line in &attr.lines {
+        println!("  {}", line);
+    }
+    println!();
 
-    log_files.sort();
+    if sec.ok && attr.ok {
+        println!("Verification passed");
+    } else {
+        println!("Verification FAILED");
+        std::process::exit(1);
+    }
+}
 
-    let mut total_lines = 0;
-    let mut errors = 0;
-    let mut chain_seed = seed;
-    for log_file in &log_files {
-        let content = std::fs::read_to_string(log_file).unwrap_or_else(|e| {
-            eprintln!("Error: cannot read {}: {}", log_file.display(), e);
-            std::process::exit(1);
-        });
-        match ChainedLogWriter::<std::fs::File>::verify_log(&content, &chain_seed) {
-            Ok((count, final_hash)) => {
-                println!(
-                    "  {}  {} lines  OK",
-                    log_file.file_name().unwrap_or_default().to_string_lossy(),
-                    count
-                );
-                total_lines += count;
-                chain_seed = final_hash;
-            }
+fn cmd_checkpoint_logs(data_dir: &str, passphrase: Option<&[u8]>) {
+    use xudanu::server::transport::log_checkpoint;
+
+    let path = PathBuf::from(data_dir);
+    let key_path = path.join("server.key");
+    if !key_path.exists() {
+        eprintln!("Error: no server key at {}", key_path.display());
+        std::process::exit(1);
+    }
+    let keypair =
+        match xudanu::crypto::keys::ServerKeyPair::load_from_file_auto(&key_path, passphrase) {
+            Ok(kp) => kp,
             Err(e) => {
-                println!(
-                    "  {}  FAIL at line {}",
-                    log_file.file_name().unwrap_or_default().to_string_lossy(),
-                    e.line_number
+                eprintln!(
+                    "Error: cannot load server key ({}): {}",
+                    key_path.display(),
+                    e
                 );
-                println!("    {}", e);
-                errors += 1;
+                std::process::exit(1);
             }
+        };
+
+    match log_checkpoint::checkpoint_security_log(&path, &keypair, true) {
+        Ok(outcomes) => {
+            if outcomes.is_empty() {
+                println!("security log: nothing new to checkpoint");
+            }
+            for o in &outcomes {
+                println!(
+                    "security checkpoint {} covering {} ({} entries)",
+                    o.seq,
+                    o.files_covered.join(","),
+                    o.entries
+                );
+            }
+        }
+        Err(e) => {
+            eprintln!("Error: security checkpoint failed: {}", e);
+            std::process::exit(1);
         }
     }
 
-    println!();
-    if errors == 0 {
-        println!(
-            "Verification passed: {} log lines, {} files, chain intact",
-            total_lines,
-            log_files.len()
-        );
-    } else {
-        println!(
-            "Verification FAILED: {} error(s) in {} files",
-            errors,
-            log_files.len()
-        );
-        std::process::exit(1);
+    let attr_dir = path.join("attribution");
+    let mut prev = std::fs::read_to_string(attr_dir.join("attribution.log.seed"))
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+    let mut entries = 0u64;
+    for f in log_checkpoint::attribution_files_with_archives(&path) {
+        if let Ok(content) = std::fs::read_to_string(&f) {
+            if let Ok((count, head)) = xudanu::server::transport::chained_log::ChainedLogWriter::<
+                std::fs::File,
+            >::verify_log(&content, &prev)
+            {
+                entries += count as u64;
+                prev = head;
+            } else {
+                eprintln!(
+                    "Error: attribution chain verification failed at {}",
+                    f.display()
+                );
+                std::process::exit(1);
+            }
+        }
+    }
+    match log_checkpoint::checkpoint_attribution_log(&path, &keypair, entries, &prev) {
+        Ok(Some(cp)) => {
+            println!("attribution checkpoint {} ({} entries)", cp.seq, cp.entries);
+            let archive = attr_dir.join(format!("attribution.log.{:06}", cp.seq));
+            if attr_dir.join("attribution.log").exists() && !archive.exists() {
+                if let Err(e) = std::fs::rename(attr_dir.join("attribution.log"), &archive) {
+                    eprintln!("Error: attribution rotate failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        Ok(None) => println!("attribution log: nothing to checkpoint"),
+        Err(e) => {
+            eprintln!("Error: attribution checkpoint failed: {}", e);
+            std::process::exit(1);
+        }
     }
 }
 
@@ -542,23 +599,23 @@ async fn main() {
     }
 
     let data_dir_for_tracing = match args[1].as_str() {
-        "run" => args
-            .iter()
-            .position(|a| !a.starts_with('-') && !a.contains(':'))
-            .and_then(|p| args.get(p + 1).cloned())
-            .or_else(|| {
-                args.get(2).and_then(|a| {
-                    if !a.starts_with('-') && !a.contains(':') {
-                        Some(a.clone())
-                    } else {
-                        None
-                    }
-                })
-            }),
+        "run" => match (args.get(2), args.get(3)) {
+            (Some(a), _) if a.starts_with('-') => None,
+            (Some(a), Some(d)) if a.contains(':') => {
+                if d.starts_with('-') {
+                    None
+                } else {
+                    Some(d.clone())
+                }
+            }
+            (Some(a), _) if !a.contains(':') => Some(a.clone()),
+            _ => None,
+        },
         "init"
         | "verify"
         | "rebuild-manifest"
         | "verify-security-log"
+        | "checkpoint-logs"
         | "preflight"
         | "recover" => args.get(2).cloned(),
         _ => None,
@@ -632,6 +689,11 @@ async fn main() {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
             cmd_verify_security_log(data_dir);
         }
+        "checkpoint-logs" => {
+            let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
+            let passphrase = std::env::var("XUDANU_KEY_PASSPHRASE").ok();
+            cmd_checkpoint_logs(data_dir, passphrase.as_deref().map(|s| s.as_bytes()));
+        }
         "preflight" => {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
             cmd_preflight(data_dir);
@@ -663,6 +725,9 @@ async fn main() {
             let mut lattice_shadow_enabled = false;
             let mut dev_mode = false;
             let mut ots_anchor = false;
+            let mut log_checkpoint_entries: u64 = 10_000;
+            let mut log_retention_keep: usize = 0;
+            let mut log_retention_mode = "archive".to_string();
             let mut key_passphrase: Option<String> = std::env::var("XUDANU_KEY_PASSPHRASE").ok();
             let mut github_client_id: Option<String> =
                 std::env::var("XUDANU_GITHUB_CLIENT_ID").ok();
@@ -788,6 +853,33 @@ async fn main() {
                     }
                     "--ots-anchor" => {
                         ots_anchor = true;
+                    }
+                    "--log-checkpoint-entries" => {
+                        i += 1;
+                        log_checkpoint_entries =
+                            args.get(i).and_then(|s| s.parse().ok()).unwrap_or_else(|| {
+                                eprintln!("Error: --log-checkpoint-entries requires a number");
+                                std::process::exit(1);
+                            });
+                    }
+                    "--log-retention" => {
+                        i += 1;
+                        log_retention_keep =
+                            args.get(i).and_then(|s| s.parse().ok()).unwrap_or_else(|| {
+                                eprintln!("Error: --log-retention requires a number");
+                                std::process::exit(1);
+                            });
+                    }
+                    "--log-retention-mode" => {
+                        i += 1;
+                        log_retention_mode = match args.get(i).map(|s| s.as_str()) {
+                            Some("archive") => "archive".to_string(),
+                            Some("delete") => "delete".to_string(),
+                            _ => {
+                                eprintln!("Error: --log-retention-mode must be archive or delete");
+                                std::process::exit(1);
+                            }
+                        };
                     }
                     "--key-passphrase" => {
                         i += 1;
@@ -1152,6 +1244,18 @@ async fn main() {
                         "[ots] OpenTimestamps anchoring enabled (attribution chain head -> Bitcoin)"
                     );
                 }
+                if log_checkpoint_entries != 10_000 || log_retention_keep > 0 {
+                    server.log_checkpoint_configure(
+                        log_checkpoint_entries,
+                        log_retention_keep,
+                        match log_retention_mode.as_str() {
+                            "delete" => {
+                                xudanu::server::transport::log_checkpoint::RetentionMode::Delete
+                            }
+                            _ => xudanu::server::transport::log_checkpoint::RetentionMode::Archive,
+                        },
+                    );
+                }
                 let app = AppState::new(server);
                 let app = match static_dir {
                     Some(ref dir) => {
@@ -1249,6 +1353,13 @@ async fn main() {
                 if let Some(ref _dir) = shutdown_data_dir {
                     shutdown_state.server.with_server(|server| {
                         let start = std::time::Instant::now();
+                        let drained = server.lattice_drain_deferred();
+                        if drained > 0 {
+                            tracing::info!(
+                                "[lattice-drain] flushed {} deferred op(s) at shutdown",
+                                drained
+                            );
+                        }
                         if server.chunk_store().is_some() {
                             match server.checkpoint_to_store() {
                                 Ok(()) => tracing::info!(
@@ -1267,6 +1378,9 @@ async fn main() {
                                 Err(e) => tracing::error!("Checkpoint failed: {}", e),
                             }
                         }
+                        for note in server.log_checkpoint_maybe(true) {
+                            tracing::info!("[log-checkpoint] {}", note);
+                        }
                     });
                 }
                 let _ = shutdown_tx.send(());
@@ -1281,12 +1395,32 @@ async fn main() {
                         ots_state.server.ots_anchor_round().await;
                     }
                 });
+                let lcp_state = state.clone();
+                tokio::spawn(async move {
+                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+                    loop {
+                        interval.tick().await;
+                        let notes = lcp_state
+                            .server
+                            .with_server(|srv| srv.log_checkpoint_maybe(false));
+                        for note in notes {
+                            tracing::info!("[log-checkpoint] {}", note);
+                        }
+                    }
+                });
                 let autosave_state = state.clone();
                 tokio::spawn(async move {
                     let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
                     loop {
                         interval.tick().await;
                         let saved = autosave_state.server.with_server(|srv| {
+                            let drained = srv.lattice_drain_deferred();
+                            if drained > 0 {
+                                tracing::debug!(
+                                    "[lattice-drain] applied {} deferred op(s)",
+                                    drained
+                                );
+                            }
                             let pruned = srv.prune_disconnected_sessions();
                             if pruned > 0 {
                                 tracing::debug!("pruned {} disconnected sessions", pruned);

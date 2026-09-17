@@ -8,6 +8,7 @@ pub mod dispatch_network;
 pub mod federation_active;
 pub mod federation_handler;
 pub mod handler;
+pub mod log_checkpoint;
 pub mod oauth;
 pub mod protocol;
 pub mod shared;

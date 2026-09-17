@@ -13,6 +13,7 @@ pub struct FileAttributionLog {
     inner: std::fs::File,
     prev_hash: String,
     sequence: u64,
+    dir: std::path::PathBuf,
 }
 
 pub struct InMemoryAttributionLog {
@@ -40,7 +41,7 @@ impl AttributionLog {
         std::fs::create_dir_all(&log_dir)?;
 
         let seed_path = log_dir.join(SEED_FILE);
-        let prev_hash = if seed_path.exists() {
+        let seed = if seed_path.exists() {
             std::fs::read_to_string(&seed_path)?.trim().to_string()
         } else {
             let seed = format!(
@@ -55,31 +56,51 @@ impl AttributionLog {
             hash
         };
 
+        let checkpoint = crate::server::transport::log_checkpoint::latest_checkpoint(
+            data_dir,
+            crate::server::transport::log_checkpoint::ATTRIBUTION_LOG,
+        );
+
         let log_path = log_dir.join("attribution.log");
         let file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&log_path)?;
 
-        let (sequence, prev_hash) = if log_path.exists() {
-            let content = std::fs::read_to_string(&log_path).unwrap_or_default();
-            let line_count = content.lines().filter(|l| !l.is_empty()).count() as u64;
-            let last_hash = content
-                .lines()
-                .filter(|l| !l.is_empty())
-                .last()
-                .and_then(|l| l.rfind(" chain=").map(|pos| l[pos + 7..].to_string()))
-                .unwrap_or(prev_hash);
-            (line_count, last_hash)
-        } else {
-            (0, prev_hash)
-        };
+        let mut base_entries = 0u64;
+        let mut base_head = seed.clone();
+        if let Some(cp) = &checkpoint {
+            base_entries = cp.entries;
+            base_head = cp.head_hash.clone();
+        }
+
+        let (current_lines, current_head) = scan_file_head(&log_path, &base_head);
+        let mut sequence = base_entries + current_lines as u64;
+        let mut prev_hash = current_head;
+
+        if checkpoint.is_none() {
+            for archive in attribution_archive_files(&log_dir) {
+                let (count, head) = scan_file_head(&archive, &prev_hash);
+                sequence += count as u64;
+                prev_hash = head;
+            }
+        }
 
         Ok(AttributionLog::File(FileAttributionLog {
             inner: file,
             prev_hash,
             sequence,
+            dir: log_dir,
         }))
+    }
+
+    /// Archive the current file under the checkpoint-derived name and
+    /// continue the chain in a fresh attribution.log.
+    pub fn rotate(&mut self, archive_seq: u64) -> Result<(), std::io::Error> {
+        match self {
+            AttributionLog::File(log) => log.rotate(archive_seq),
+            AttributionLog::InMemory(_) => Ok(()),
+        }
     }
 
     pub fn in_memory() -> Self {
@@ -130,6 +151,19 @@ impl AttributionLog {
 impl FileAttributionLog {
     pub fn head_hash_hex(&self) -> Option<String> {
         (self.sequence > 0).then(|| self.prev_hash.clone())
+    }
+
+    fn rotate(&mut self, archive_seq: u64) -> Result<(), std::io::Error> {
+        let current = self.dir.join("attribution.log");
+        let archive = self.dir.join(format!("attribution.log.{:06}", archive_seq));
+        if current.exists() && !archive.exists() {
+            std::fs::rename(&current, &archive)?;
+        }
+        self.inner = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&current)?;
+        Ok(())
     }
 }
 
@@ -213,6 +247,40 @@ fn sha256_hex(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
     format!("{:x}", hasher.finalize())
+}
+
+fn scan_file_head(path: &std::path::Path, default_head: &str) -> (usize, String) {
+    let content = std::fs::read_to_string(path).unwrap_or_default();
+    let mut count = 0usize;
+    let mut head = default_head.to_string();
+    for line in content.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        count += 1;
+        if let Some(pos) = line.rfind(" chain=") {
+            head = line[pos + 7..].to_string();
+        }
+    }
+    (count, head)
+}
+
+fn attribution_archive_files(log_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(log_dir) {
+        for e in rd.filter_map(|e| e.ok()) {
+            let name = e.file_name().to_string_lossy().to_string();
+            if name.starts_with("attribution.log.")
+                && name["attribution.log.".len()..]
+                    .chars()
+                    .all(|c| c.is_ascii_digit())
+            {
+                files.push(e.path());
+            }
+        }
+    }
+    files.sort();
+    files
 }
 
 pub fn verify_attribution_log(

@@ -592,6 +592,8 @@ pub struct Manifest {
         serde(default, skip_serializing_if = "Vec::is_empty")
     )]
     pub lattice_primary_works: Vec<BeId>,
+    #[serde(default)]
+    pub lattice_write_works: Vec<BeId>,
 
     // ── FR-23: revision metadata ──
     #[cfg_attr(
@@ -1400,6 +1402,7 @@ pub fn create_empty_manifest(
         ticket_nonces: std::collections::HashMap::new(),
         revisions: std::collections::HashMap::new(),
         lattice_primary_works: Vec::new(),
+        lattice_write_works: Vec::new(),
     }
 }
 

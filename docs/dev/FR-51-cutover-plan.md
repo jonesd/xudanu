@@ -1,7 +1,18 @@
 # FR-51 Cutover Plan: Migrating from the O-Tree to the Lattice
 
-> **Status:** design note (not scheduled — this is the roadmap for
-> WHEN the cutover is pursued, not a commitment to start now)
+> **Status:** C-5 read-switch shipped (v1.12.0). **C-5 write-switch
+> W-1 shipped (2026-09-17)**: per-work `lattice_write_promote/demote`
+> (wire ops 0x0365/0x0366, admin-gated) — edits apply to the lattice
+> first (fast ack), the O-tree work (edition rebuild, three-way merge,
+> span migrations, materialization) defers to a drain (autosave tick,
+> pre-checkpoint, shutdown, session close, demote). Write set persists
+> across restarts (manifest, root chunk, snapshot). Known W-1
+> limitation: interleaved-stale-sender merge corrections broadcast on
+> drain, not on ack. **Open C-0 finding:** a stale-view interleaved
+> script produces length-exact but content-divergent engines (see the
+> `#[ignore]`d `lattice_write_interleaved_probe_sync_path` test) —
+> pre-existing, not W-1; adjudication required before retiring the
+> O-tree mirror. Design note below is the original roadmap.
 > **Created:** 2026-09-05
 > **Parent:** FR-51-enfilade-native-crdt.md (Phases 0-4.2 complete)
 > **Principle:** the shadow proves correctness first; features port
