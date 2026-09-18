@@ -22,6 +22,10 @@ import "@fontsource/source-serif-4/700.css";
 
 import "./app.css";
 
+// Build marker — one glance at the console answers "is this tab
+// running current code?" (the SW-shadowing saga made this necessary).
+console.info("[xudanu-ui] build 2026-09-18c");
+
 createRoot(document.getElementById("root")!).render(
   <App />,
 );

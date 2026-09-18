@@ -258,6 +258,15 @@
 }
 /* right panel: handle on its LEFT edge; left rail: RIGHT edge */
 .ws-panel-resizer.right { left: 0; }
+
+.ws-width-menu {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  padding: 4px;
+  min-width: 130px;
+}
 .ws-panel-resizer.left { right: 0; }
 .ws-panel-resizer::after {
   content: "";
