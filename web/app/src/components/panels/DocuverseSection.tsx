@@ -54,6 +54,19 @@ export function DocuverseSection({
           .filter((link, idx, arr) => arr.findIndex((l) => l.link_id === link.link_id) === idx)
           .map((link) => {
           const isOrigin = link.origin === currentWorkId;
+          if (link.is_open || link.destination == null) {
+            return (
+              <div key={`link-${link.link_id}`} className="isDeadEnd">
+                <div className="dv-arrow" style={{ color: "var(--amber)" }}>
+                  ↳ open end — not yet connected
+                </div>
+                <div className="docuverse-node" style={{ opacity: 0.7, fontStyle: "italic" }}>
+                  <div className="dv-dot" style={{ borderColor: "var(--amber)", borderStyle: "dashed", background: "transparent" }} />
+                  <span>reserved — complete later</span>
+                </div>
+              </div>
+            );
+          }
           const otherWorkId = isOrigin ? link.destination : link.origin;
           const otherTitle = (isOrigin ? link.destination_title : link.origin_title) || `work:${otherWorkId.toString(16)}`;
           return (

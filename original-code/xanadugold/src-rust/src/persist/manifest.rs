@@ -59,7 +59,8 @@ pub struct LinkTypeRegistryEntry {
 pub struct LinkEntry {
     pub link_id: BeId,
     pub origin: BeId,
-    pub destination: BeId,
+    #[serde(default)]
+    pub destination: Option<BeId>,
     #[cfg_attr(
         feature = "serde",
         serde(default, skip_serializing_if = "Option::is_none")
@@ -1629,7 +1630,7 @@ mod tests {
         manifest.links.push(LinkEntry {
             link_id: 50,
             origin: 10,
-            destination: 11,
+            destination: Some(11),
             origin_ref: None,
             destination_ref: None,
             link_types: vec![],

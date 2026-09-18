@@ -21,14 +21,16 @@ fn build_link_payload(
     srv: &Server,
     link_id: BeId,
     origin: BeId,
-    destination: BeId,
+    destination: Option<BeId>,
     link: &crate::edition::links::HyperLink,
 ) -> LinkPayload {
     let o_ref = link.end_at("LeftEnd").map(HyperRefPayload::from_hyper_ref);
     let d_ref = link.end_at("RightEnd").map(HyperRefPayload::from_hyper_ref);
     let (origin_archived, origin_title, origin_owner) = srv.link_endpoint_meta(origin);
-    let (destination_archived, destination_title, destination_owner) =
-        srv.link_endpoint_meta(destination);
+    let is_open = destination.is_none() || d_ref.is_none();
+    let (destination_archived, destination_title, destination_owner) = destination
+        .map(|d| srv.link_endpoint_meta(d))
+        .unwrap_or((false, None, None));
     let named_ends: Vec<(String, HyperRefPayload)> = link
         .end_names()
         .into_iter()
@@ -69,6 +71,7 @@ fn build_link_payload(
         link_id,
         origin,
         destination,
+        is_open,
         origin_ref: o_ref,
         destination_ref: d_ref,
         origin_archived,
@@ -2136,7 +2139,9 @@ fn dispatch_inner(
         WireRequest::LinkGet { link_id } => {
             let (origin, destination, link) = srv.get_link(link_id)?;
             srv.ensure_can_read(session_id, origin)?;
-            srv.ensure_can_read(session_id, destination)?;
+            if let Some(destination) = destination {
+                srv.ensure_can_read(session_id, destination)?;
+            }
             Ok(ResponseValue::LinkInfo(build_link_payload(
                 srv,
                 link_id,
@@ -2156,8 +2161,8 @@ fn dispatch_inner(
                     .work(origin)
                     .map(|w| srv.check_edit_permission(session_id, w))
                     .unwrap_or(false);
-                let can_edit_destination = srv
-                    .work(destination)
+                let can_edit_destination = destination
+                    .and_then(|d| srv.work(d).ok())
                     .map(|w| srv.check_edit_permission(session_id, w))
                     .unwrap_or(false);
                 if !can_edit_origin && !can_edit_destination {
@@ -2220,8 +2225,8 @@ fn dispatch_inner(
                     .work(origin)
                     .map(|w| srv.check_edit_permission(session_id, w))
                     .unwrap_or(false);
-                let can_edit_destination = srv
-                    .work(destination)
+                let can_edit_destination = destination
+                    .and_then(|d| srv.work(d).ok())
                     .map(|w| srv.check_edit_permission(session_id, w))
                     .unwrap_or(false);
                 if !can_edit_origin && !can_edit_destination {
@@ -2257,6 +2262,19 @@ fn dispatch_inner(
                 has_more,
             })
         }
+        WireRequest::LinkCreateOpen {
+            origin,
+            origin_ref,
+            link_types,
+            home_document,
+        } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.ensure_can_edit(session_id, origin)?;
+            let o_ref = origin_ref.map(|hr| hr.to_hyper_ref(origin));
+            let link_id =
+                srv.create_open_link(session_id, origin, o_ref, link_types, home_document)?;
+            Ok(ResponseValue::Id(link_id))
+        }
         WireRequest::LinkAddEnd {
             link_id,
             end_name,
@@ -2265,7 +2283,9 @@ fn dispatch_inner(
             srv.ensure_authenticated(session_id)?;
             let (origin, destination, _) = srv.get_link(link_id)?;
             srv.ensure_can_read(session_id, origin)?;
-            srv.ensure_can_read(session_id, destination)?;
+            if let Some(destination) = destination {
+                srv.ensure_can_read(session_id, destination)?;
+            }
             let hr = end_ref.to_hyper_ref(origin);
             srv.link_add_end(session_id, link_id, &end_name, hr)?;
             Ok(ResponseValue::Void)
@@ -2283,7 +2303,9 @@ fn dispatch_inner(
             srv.ensure_authenticated(session_id)?;
             let (origin, destination, _) = srv.get_link(link_id)?;
             srv.ensure_can_read(session_id, origin)?;
-            srv.ensure_can_read(session_id, destination)?;
+            if let Some(destination) = destination {
+                srv.ensure_can_read(session_id, destination)?;
+            }
             let hr = attachment.to_hyper_ref(attachment.work_context.unwrap_or(origin));
             srv.link_end_add_attachment(session_id, link_id, &end_name, hr)?;
             Ok(ResponseValue::Void)
@@ -2296,7 +2318,9 @@ fn dispatch_inner(
             srv.ensure_authenticated(session_id)?;
             let (origin, destination, _) = srv.get_link(link_id)?;
             srv.ensure_can_read(session_id, origin)?;
-            srv.ensure_can_read(session_id, destination)?;
+            if let Some(destination) = destination {
+                srv.ensure_can_read(session_id, destination)?;
+            }
             let hr = attachment.to_hyper_ref(attachment.work_context.unwrap_or(origin));
             srv.link_end_remove_attachment(session_id, link_id, &end_name, &hr)?;
             Ok(ResponseValue::Void)
@@ -5063,7 +5087,9 @@ fn dispatch_inner_read(
         WireRequest::LinkGet { link_id } => {
             let (origin, destination, link) = srv.get_link(link_id)?;
             srv.ensure_can_read(session_id, origin)?;
-            srv.ensure_can_read(session_id, destination)?;
+            if let Some(destination) = destination {
+                srv.ensure_can_read(session_id, destination)?;
+            }
             Ok(ResponseValue::LinkInfo(build_link_payload(
                 srv,
                 link_id,

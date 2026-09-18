@@ -267,3 +267,48 @@ describe("ConnectionsSection end-sets (FR-40 S6/S7)", () => {
     expect(screen.queryByText(/connection/)).toBeNull();
   });
 });
+
+describe("FR-71 open-ended links", () => {
+  it("renders open links in the invitation section, never as normal links", () => {
+    renderSection({
+      transclusionLinks: [
+        mkLink({ link_id: 900, is_open: true, destination: null, destination_ref: null }),
+      ],
+    });
+    expect(screen.getByText(/Open ends — complete when ready/i)).toBeTruthy();
+    expect(screen.getByText(/open — not yet connected/i)).toBeTruthy();
+    // The distinct glyph, not the two-ended arrow
+    expect(screen.getByText(/\u25cb source passage/i)).toBeTruthy();
+  });
+
+  it("offers the complete affordance and fires onCompleteOpenLink", () => {
+    const onCompleteOpenLink = vi.fn();
+    render(
+      <ConnectionsSection
+        transclusionLinks={[mkLink({ link_id: 901, is_open: true, destination: null, destination_ref: null })]}
+        backlinks={[]}
+        compoundSpanRanges={[]}
+        compoundSourceTitles={{}}
+        currentWorkId={0x10}
+        onNavigateToWork={() => {}}
+        pinnedKeys={new Set()}
+        onTogglePin={() => {}}
+        onCompleteOpenLink={onCompleteOpenLink}
+      />,
+    );
+    const btn = screen.getByText(/\u2795 complete/i);
+    fireEvent.click(btn);
+    expect(onCompleteOpenLink).toHaveBeenCalledWith(901);
+  });
+
+  it("normal links keep their ordinary rendering when open links are present", () => {
+    renderSection({
+      transclusionLinks: [
+        mkLink({}),
+        mkLink({ link_id: 902, is_open: true, destination: null, destination_ref: null }),
+      ],
+    });
+    expect(screen.getByText(/Open ends — complete when ready/i)).toBeTruthy();
+    expect(screen.getByText(/Reviewer Notes/)).toBeTruthy();
+  });
+});

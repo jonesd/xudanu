@@ -1834,6 +1834,26 @@ impl JsonCodec {
                     limit: args.limit,
                 })
             }
+            OperationCode::LinkCreateOpen => {
+                #[derive(Deserialize)]
+                struct Args {
+                    origin: BeId,
+                    #[serde(default)]
+                    origin_ref: Option<super::protocol::HyperRefPayload>,
+                    #[serde(default)]
+                    link_types: Vec<u64>,
+                    #[serde(default)]
+                    home_document: Option<BeId>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LinkCreateOpen {
+                    origin: args.origin,
+                    origin_ref: args.origin_ref,
+                    link_types: args.link_types,
+                    home_document: args.home_document,
+                })
+            }
             OperationCode::LinkAddEnd => {
                 #[derive(Deserialize)]
                 struct Args {

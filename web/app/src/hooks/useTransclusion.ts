@@ -181,6 +181,7 @@ export function useTransclusion(): TransclusionState {
           const link = linkList[i];
           const isOrigin = link.origin === workId;
           const otherWorkId = isOrigin ? link.destination : link.origin;
+          if (otherWorkId == null) continue; // FR-71: open link — the editor marker rides the origin span below
           const color = markerColorForWork(otherWorkId);
           const title =
             (isOrigin ? link.destination_title : link.origin_title) ||

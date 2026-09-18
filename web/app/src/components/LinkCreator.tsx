@@ -37,7 +37,7 @@ interface LinkCreatorProps {
 }
 
 type Step = "target" | "type" | "extra-ends" | "remote" | "web" | "done";
-type TargetMode = "whole-work" | "other-doc-text" | "same-doc" | "remote" | "web" | null;
+type TargetMode = "whole-work" | "other-doc-text" | "same-doc" | "remote" | "web" | "open" | null;
 
 interface ExtraEnd {
   name: string;
@@ -213,6 +213,28 @@ export function LinkCreator({
         if (selectedTypeIds.size > 0) {
           await client.linkSetTypes(linkId, Array.from(selectedTypeIds));
         }
+        if (description.trim()) {
+          await client.annotationCreate(
+            source.workId, 0, "link-description",
+            JSON.stringify({ text: description.trim(), link_id: linkId }),
+            source.start, source.end,
+          );
+        }
+        setCreating(false);
+        onLinkCreated();
+        reset();
+        onClose();
+        return;
+      }
+      if (targetMode === "open") {
+        // FR-71: reserve the connection — tethered here, other end
+        // completed later (link_add_end on RightEnd, one or many).
+        const linkId = await client.linkCreateOpen(
+          source.workId,
+          { excerpt: source.text, start: source.start, end: source.end },
+          Array.from(selectedTypeIds),
+          homeDocument === "" ? undefined : Number(homeDocument),
+        );
         if (description.trim()) {
           await client.annotationCreate(
             source.workId, 0, "link-description",
@@ -456,6 +478,17 @@ export function LinkCreator({
               <button
                 type="button"
                 className="link-target-option"
+                onClick={() => handleChooseTarget("open")}
+              >
+                <div className="link-target-icon">{"○"}</div>
+                <div className="link-target-text">
+                  <div className="link-target-name">Leave the other end open</div>
+                  <div className="link-target-desc">Reserve the connection now — complete it later, to one or many places</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                className="link-target-option"
                 onClick={() => handleChooseTarget("other-doc-text")}
               >
                 <div className="link-target-icon">{"\u201c\u201d"}</div>
@@ -617,6 +650,65 @@ export function LinkCreator({
                 </button>
               </>
             )}
+            {error && <div className="link-creator-error">{error}</div>}
+          </div>
+        )}
+
+        {step === "type" && targetMode === "open" && (
+          <div className="link-creator-body">
+            <div className="link-creator-step-title">
+              What kind of connection is this?
+              <span style={{ fontSize: 11, color: "#8b949e", marginLeft: 8 }}>
+                the type is the verb
+              </span>
+              <button
+                type="button"
+                className="link-back-btn"
+                onClick={() => { setStep("target"); setSelectedTypeIds(new Set()); }}
+              >
+                {"\u2190"} back
+              </button>
+            </div>
+            <div className="link-target-preview" style={{ borderStyle: "dashed" }}>
+              Leaving the other end <strong>open</strong> — you can complete this connection
+              later, to one or many documents.
+            </div>
+            <div className="link-type-grid">
+              {allTypes.map((t) => {
+                const selected = selectedTypeIds.has(t.type_id);
+                return (
+                  <button
+                    key={t.type_id}
+                    type="button"
+                    className={`link-type-card ${selected ? "selected" : ""}`}
+                    style={{ borderColor: selected ? t.color : undefined }}
+                    onClick={() => toggleType(t.type_id)}
+                  >
+                    <div className="link-type-card-name" style={{ color: t.color }}>{t.name}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="link-form-label" style={{ marginTop: 12 }}>
+              Description (optional)
+              <textarea
+                className="link-form-input"
+                placeholder="Why this connection? What are you reserving it for?"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={2}
+                style={{ resize: "vertical", fontFamily: "inherit", fontSize: 13 }}
+              />
+            </div>
+            <button
+              type="button"
+              className="link-create-submit"
+              style={{ marginTop: 8 }}
+              disabled={creating || selectedTypeIds.size === 0}
+              onClick={handleCreate}
+            >
+              {creating ? "Reserving\u2026" : "Reserve Open Connection"}
+            </button>
             {error && <div className="link-creator-error">{error}</div>}
           </div>
         )}

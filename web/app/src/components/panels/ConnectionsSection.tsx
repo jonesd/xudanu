@@ -23,6 +23,10 @@ interface ConnectionsSectionProps {
   onRetypeLink?: (linkId: number, typeId: number) => void;
   /** FR-40 L4 (S7 attachLink): open the comment-on-connection composer. */
   onCommentOnLink?: (linkId: number) => void;
+  /** FR-71: complete an open-ended link by creating its target
+   *  document (the parent creates the work, completes the link via
+   *  linkAddEnd, refreshes, and navigates to it). */
+  onCompleteOpenLink?: (linkId: number) => void;
   onRemoveTransclusion?: (sourceWorkId: number, charStart: number, charEnd: number) => void;
   pinnedKeys: Set<string>;
   /** Course pointer: shown in the empty state when the Links Course
@@ -42,6 +46,7 @@ export function ConnectionsSection({
   onDeleteLink,
   onRetypeLink,
   onCommentOnLink,
+  onCompleteOpenLink,
   onRemoveTransclusion,
   pinnedKeys,
   onOpenCourse,
@@ -57,7 +62,8 @@ export function ConnectionsSection({
 
   type ConnItem = {
     key: string;
-    type: "transclusion" | "link" | "backlink";
+    type: "transclusion" | "link" | "backlink" | "open";
+    openLinkId?: number;
     title: string;
     excerpt: string;
     meta: string;
@@ -93,6 +99,25 @@ export function ConnectionsSection({
   const seenLinkIds = new Set<number>();
   for (const link of transclusionLinks) {
     if (seenLinkIds.has(link.link_id)) continue;
+    // FR-71: open-ended links get their own invitation section,
+    // never the ordinary link rendering (the acceptance criterion).
+    if (link.is_open || link.destination == null) {
+      seenLinkIds.add(link.link_id);
+      const typeId = link.link_types?.[0] ?? 0;
+      const typeName = DEFAULT_LINK_TYPE_LABELS[typeId] || "link";
+      items.push({
+        key: `open-${link.link_id}`,
+        type: "open",
+        title: (link.origin_ref?.excerpt || "").slice(0, 60) || "this connection",
+        excerpt: (link.origin_ref?.excerpt || "").slice(0, 80),
+        meta: `${typeName} · open — not yet connected`,
+        workId: link.origin,
+        linkId: link.link_id,
+        linkTypeId: typeId,
+        spanned: !!(link.origin_ref?.excerpt || "").trim(),
+      });
+      continue;
+    }
     seenLinkIds.add(link.link_id);
     if (compoundSpanRanges.some((sr) => sr.source_work_id === link.destination || sr.source_work_id === link.origin)) {
       const isTransclusionLink = !link.link_types || link.link_types.length === 0;
@@ -185,7 +210,7 @@ export function ConnectionsSection({
     const aPinned = pinnedKeys.has(a.key) ? 0 : 1;
     const bPinned = pinnedKeys.has(b.key) ? 0 : 1;
     if (aPinned !== bPinned) return aPinned - bPinned;
-    const typeOrder = { transclusion: 0, link: 1, backlink: 2 };
+    const typeOrder = { open: 0, transclusion: 1, link: 2, backlink: 3 };
     return typeOrder[a.type] - typeOrder[b.type];
   });
 
@@ -245,6 +270,7 @@ export function ConnectionsSection({
       )}
       {(() => {
         const sectionOf = (i: ConnItem): string => {
+          if (i.type === "open") return "Open ends — complete when ready";
           if (i.type === "transclusion") return "Includes content from";
           if (i.type === "backlink") return "Incoming — on other documents";
           if (i.spanned) return "On this page";
@@ -259,19 +285,24 @@ export function ConnectionsSection({
           </div>
         ) : null;
         lastSection = section;
+        const isOpen = item.type === "open";
         const borderColor =
           item.type === "transclusion" ? getTransclusionColor(item.workId) :
           item.type === "backlink" ? "var(--green)" :
+          isOpen ? "var(--amber)" :
           "var(--blue)";
         return (
-          <div key={item.key} className="conn-item-wrap">
+          <div key={item.key} className={`conn-item-wrap${isOpen ? " isDeadEnd" : ""}`}>
           {header}
         <div
           className="conn-item"
           style={{
-            borderLeft: `3px solid ${borderColor}`,
+            borderLeft: `3px ${isOpen ? "dashed" : "solid"} ${borderColor}`,
+            opacity: isOpen ? 0.85 : 1,
           }}
+          title={isOpen ? "open — this connection has no target yet" : undefined}
           onClick={() => {
+            if (isOpen) return;
             // Web links open externally — but only well-formed http(s)
             // URLs. A malformed excerpt must never reach window.open
             // (no javascript:, no relative paths hijacking the tab).
@@ -326,7 +357,26 @@ export function ConnectionsSection({
               </span>
             )}
             <span className={`conn-type-label ${item.type}`}>{item.type}</span>
-            <span>{item.type === "transclusion" ? "\u2192" : item.type === "backlink" ? "\u2190" : "\u21c4"} {item.title}</span>
+            <span>{item.type === "transclusion" ? "\u2192" : item.type === "backlink" ? "\u2190" : isOpen ? "\u25cb" : "\u21c4"} {item.title}</span>
+            {isOpen && onCompleteOpenLink && item.linkId !== undefined && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onCompleteOpenLink(item.linkId!); }}
+                style={{
+                  background: "none",
+                  border: "1px dashed var(--amber)",
+                  borderRadius: 4,
+                  color: "var(--amber)",
+                  fontSize: 10,
+                  padding: "1px 6px",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+                title="Create the target document and complete this connection"
+              >
+                {"\u2795 complete"}
+              </button>
+            )}
             {canManage && item.linkId !== undefined && (
               <div className="conn-item-actions" style={{ marginLeft: "auto" }}>
                 {item.type === "link" && onRetypeLink && (

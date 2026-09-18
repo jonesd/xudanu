@@ -954,7 +954,10 @@ pub struct ServerHealth {
 pub(crate) struct LinkState {
     pub(crate) link: HyperLink,
     origin: BeId,
-    destination: BeId,
+    /// FR-71 open-ended links: None until the open end is completed
+    /// (link_add_end on "RightEnd" sets it). The link's RightEnd
+    /// end-set is empty while open — `end_at("RightEnd")` is None.
+    destination: Option<BeId>,
     /// Home document (FR-40 Story 3): the work this link lives in.
     /// None = server-global (historical behavior).
     home_document: Option<BeId>,
@@ -6131,7 +6134,7 @@ impl Server {
                                 link_id: 0,
                                 source_work_title: Some(w[0].work_title.clone()),
                                 source_author_name: Some(w[0].author_name.clone()),
-                                dest_work_id: w[1].work_id,
+                                dest_work_id: Some(w[1].work_id),
                             })
                             .chain(std::iter::once(
                                 super::transport::protocol::ProvenanceHopPayload {
@@ -6143,7 +6146,7 @@ impl Server {
                                     source_author_name: Some(
                                         chain.last().unwrap().author_name.clone(),
                                     ),
-                                    dest_work_id: work_be_id,
+                                    dest_work_id: Some(work_be_id),
                                 },
                             ))
                             .collect(),
@@ -6296,7 +6299,7 @@ impl Server {
                 "source_work_id": format!("{:04x}", hop.source_work_id),
                 "source_work_title": hop.source_work_title,
                 "source_author_name": hop.source_author_name,
-                "dest_work_id": format!("{:04x}", hop.dest_work_id),
+                "dest_work_id": hop.dest_work_id.map(|d| format!("{d:04x}")).unwrap_or_else(|| "open".into()),
             })).collect::<Vec<_>>(),
             "security_log": {
                 "has_log": has_log,
@@ -10972,7 +10975,7 @@ impl Server {
                 LinkState {
                     link: hyperlink,
                     origin,
-                    destination,
+                    destination: Some(destination),
                     cross_server_notify: None,
                     home_document,
                     // WAL records predate authorship stamping; the
@@ -11068,7 +11071,7 @@ impl Server {
                     .map(|attachments| attachments.iter().any(|a| a.work_context() == Some(wid)))
                     .unwrap_or(false)
             }) || ls.origin == wid
-                || ls.destination == wid
+                || ls.destination == Some(wid)
                 || ls.home_document == Some(wid);
             if !still_referenced {
                 if let Some(ids) = self.work_to_links.get_mut(&wid) {
@@ -11092,7 +11095,7 @@ impl Server {
                     .and_then(|hr| hr.work_context())
                     .is_some_and(|w| w == wid)
             }) || ls.origin == wid
-                || ls.destination == wid
+                || ls.destination == Some(wid)
                 || ls.home_document == Some(wid);
             if !still_referenced {
                 if let Some(ids) = self.work_to_links.get_mut(&wid) {
@@ -11162,14 +11165,17 @@ impl Server {
         let mut seen_edges: HashSet<(BeId, BeId)> = HashSet::new();
         let mut edges = Vec::new();
         for (link_id, ls) in &self.links {
-            if visible.contains(&ls.origin) && visible.contains(&ls.destination) {
-                let key = if ls.origin < ls.destination {
-                    (ls.origin, ls.destination)
+            let Some(destination) = ls.destination else {
+                continue;
+            };
+            if visible.contains(&ls.origin) && visible.contains(&destination) {
+                let key = if ls.origin < destination {
+                    (ls.origin, destination)
                 } else {
-                    (ls.destination, ls.origin)
+                    (destination, ls.origin)
                 };
                 if seen_edges.insert(key) {
-                    edges.push((ls.origin, ls.destination, "link".to_string(), 1u64));
+                    edges.push((ls.origin, destination, "link".to_string(), 1u64));
                 }
             }
             let _ = link_id;
@@ -13837,19 +13843,24 @@ impl Server {
                     crate::edition::links::HyperRef::single(None, Some(link.origin), None, None)
                 });
             let d_ref = link
-                .destination_ref
-                .as_ref()
-                .map(|hr| hr.to_hyper_ref(link.destination))
-                .unwrap_or_else(|| {
-                    crate::edition::links::HyperRef::single(
-                        None,
-                        Some(link.destination),
-                        None,
-                        None,
-                    )
+                .destination
+                .zip(link.destination_ref.as_ref())
+                .map(|(dest, hr)| hr.to_hyper_ref(dest))
+                .or_else(|| {
+                    link.destination.map(|dest| {
+                        crate::edition::links::HyperRef::single(None, Some(dest), None, None)
+                    })
                 });
-            let mut hyperlink =
-                crate::edition::links::HyperLink::make(link.link_types.clone(), o_ref, d_ref);
+            let mut hyperlink = match d_ref {
+                Some(d_ref) => {
+                    crate::edition::links::HyperLink::make(link.link_types.clone(), o_ref, d_ref)
+                }
+                // FR-71: an open-ended link restores with no RightEnd.
+                None => crate::edition::links::HyperLink::make_with_ends(
+                    link.link_types.clone(),
+                    [("LeftEnd".to_string(), vec![o_ref])].into_iter().collect(),
+                ),
+            };
             for (name, payload) in &link.named_ends {
                 hyperlink = hyperlink.with_end(
                     name,
@@ -13865,7 +13876,8 @@ impl Server {
                     .collect();
                 hyperlink = hyperlink.with_end_set(name, refs);
             }
-            let mut restored_works = vec![link.origin, link.destination];
+            let mut restored_works = vec![link.origin];
+            restored_works.extend(link.destination);
             restored_works.extend(link.named_ends.iter().filter_map(|(_, p)| p.work_context));
             restored_works.extend(
                 link.end_sets
@@ -14929,6 +14941,73 @@ impl Server {
 
     // === Link operations ===
 
+    /// FR-71: create an OPEN-ENDED link — tethered to `origin`
+    /// (optionally to a specific passage), the other end reserved
+    /// for later completion via `link_add_end` on "RightEnd" (one or
+    /// many places — gathered end-sets unchanged). Visible from the
+    /// origin immediately; `LinkPayload.is_open` marks it for the
+    /// distinct not-yet-connected rendering.
+    pub fn create_open_link(
+        &mut self,
+        _session_id: SessionId,
+        origin: BeId,
+        origin_ref: Option<HyperRef>,
+        link_types: Vec<u64>,
+        home_document: Option<BeId>,
+    ) -> Result<BeId, ServerError> {
+        let _guard = OperationGuard::new(
+            self.consequence_tracker.clone(),
+            self.consequence_tracker.begin_operation(),
+        );
+        self.ensure_session(_session_id)?;
+        let _ = self.work(origin)?;
+        if let Some(home) = home_document {
+            let _ = self.work(home)?;
+        }
+        if let Some(region_club) = self.sessions.get(&_session_id).and_then(|s| s.region()) {
+            let region_prefix = self.club_region_prefix(region_club);
+            if !self.work_in_region(origin, region_club, region_prefix.as_deref()) {
+                return Err(ServerError::NotAuthorized);
+            }
+        }
+
+        self.link_counter += 1;
+        let link_id = self.link_counter;
+        let chain = self.compute_provenance_chain(origin);
+        let o_final = origin_ref.unwrap_or_else(|| {
+            HyperRef::single(None, Some(origin), None, None).with_provenance_chain(chain)
+        });
+        let link = crate::edition::links::HyperLink::make_with_ends(
+            link_types,
+            [("LeftEnd".to_string(), vec![o_final])]
+                .into_iter()
+                .collect(),
+        );
+
+        self.links.insert(
+            link_id,
+            LinkState {
+                link,
+                origin,
+                destination: None,
+                cross_server_notify: None,
+                home_document,
+                author_club: self.resolve_author_club(_session_id),
+            },
+        );
+        self.work_to_links
+            .entry(origin)
+            .or_default()
+            .insert(link_id);
+        if let Some(home) = home_document {
+            self.work_to_links.entry(home).or_default().insert(link_id);
+        }
+        let inserted = self.links[&link_id].link.clone();
+        self.backfollow.register_link_content(&inserted, link_id);
+        self.canopy_insert_link(link_id, &inserted);
+        Ok(link_id)
+    }
+
     pub fn create_link(
         &mut self,
         _session_id: SessionId,
@@ -15006,7 +15085,7 @@ impl Server {
             LinkState {
                 link,
                 origin,
-                destination,
+                destination: Some(destination),
                 cross_server_notify: None,
                 home_document,
                 author_club: self.resolve_author_club(_session_id),
@@ -15185,7 +15264,7 @@ impl Server {
             LinkState {
                 link,
                 origin,
-                destination,
+                destination: Some(destination),
                 cross_server_notify: None,
                 home_document,
                 author_club: self.resolve_author_club(_session_id),
@@ -15271,11 +15350,17 @@ impl Server {
                     "link has no origin excerpt for transclusion attribution".into(),
                 ));
             }
-            (ls.origin, ls.destination, excerpt.to_string())
+            let destination = ls.destination.ok_or_else(|| {
+                ServerError::InvalidArgument(
+                    "link is open-ended; complete it before applying transclusion attribution"
+                        .into(),
+                )
+            })?;
+            (ls.origin, destination, excerpt.to_string())
         };
 
         tracing::info!(
-            "[apply_transclusion_attribution] link={:04x} origin={:04x} dest={:04x} excerpt_len={}",
+            "[apply_transclusion_attribution] link={:04x} origin={:04x} dest={:?} excerpt_len={}",
             link_id,
             origin_work_id,
             dest_work_id,
@@ -15325,11 +15410,14 @@ impl Server {
                 Some(t) if !t.is_empty() => t.to_string(),
                 _ => continue,
             };
-            if self.works.contains_key(&ls.origin) && self.works.contains_key(&ls.destination) {
+            if let (true, Some(dest)) = (self.works.contains_key(&ls.origin), ls.destination) {
+                if !self.works.contains_key(&dest) {
+                    continue;
+                }
                 rebuilt.push(PendingAttribution {
                     link_id,
                     origin_work_id: ls.origin,
-                    dest_work_id: ls.destination,
+                    dest_work_id: dest,
                     excerpt,
                     placed_by: None,
                 });
@@ -15693,7 +15781,7 @@ impl Server {
         Ok(())
     }
 
-    pub fn get_link(&self, link_id: BeId) -> Result<(BeId, BeId, &HyperLink), ServerError> {
+    pub fn get_link(&self, link_id: BeId) -> Result<(BeId, Option<BeId>, &HyperLink), ServerError> {
         let ls = self
             .links
             .get(&link_id)
@@ -15750,7 +15838,7 @@ impl Server {
         to_spec: &crate::server::transport::protocol::LinkEndpointSpecPayload,
         type_ids: &[u64],
         home_spec: &crate::server::transport::protocol::LinkEndpointSpecPayload,
-    ) -> Result<Vec<(BeId, BeId, BeId)>, ServerError> {
+    ) -> Result<Vec<(BeId, BeId, Option<BeId>)>, ServerError> {
         self.ensure_session(session_id)?;
         // FR-40 enfiladic matching: when there is anything to prune
         // (work-constrained from/to, or type-constrained), collect
@@ -15846,14 +15934,17 @@ impl Server {
                 .work(ls.origin)
                 .map(|w| self.work_is_readable(session_id, w))
                 .unwrap_or(false);
+            let Some(destination) = ls.destination else {
+                continue;
+            };
             let readable_dest = self
-                .work(ls.destination)
+                .work(destination)
                 .map(|w| self.work_is_readable(session_id, w))
                 .unwrap_or(false);
             if !readable_origin || !readable_dest {
                 continue;
             }
-            results.push((link_id, ls.origin, ls.destination));
+            results.push((link_id, ls.origin, Some(destination)));
         }
         results.sort_by_key(|(id, _, _)| *id);
         Ok(results)
@@ -15885,7 +15976,7 @@ impl Server {
         to_spec: &crate::server::transport::protocol::LinkEndpointSpecPayload,
         type_ids: &[u64],
         home_spec: &crate::server::transport::protocol::LinkEndpointSpecPayload,
-    ) -> Result<Vec<(BeId, BeId, BeId)>, ServerError> {
+    ) -> Result<Vec<(BeId, BeId, Option<BeId>)>, ServerError> {
         let mut results = Vec::new();
         for (&link_id, ls) in &self.links {
             if self.link_hidden_by_home_archive(link_id) {
@@ -15933,7 +16024,10 @@ impl Server {
             if !pair_ok {
                 continue;
             }
-            results.push((link_id, ls.origin, ls.destination));
+            let Some(destination) = ls.destination else {
+                continue;
+            };
+            results.push((link_id, ls.origin, Some(destination)));
         }
         results.sort_by_key(|(id, _, _)| *id);
         Ok(results)
@@ -16013,7 +16107,8 @@ impl Server {
         self.canopy_remove_link(link_id, &ls.link);
         // Clean every work registration: origin, destination, named
         // ends, and home (FR-40).
-        let mut works = vec![ls.origin, ls.destination];
+        let mut works = vec![ls.origin];
+        works.extend(ls.destination);
         works.extend(
             ls.link
                 .end_names()
@@ -16031,7 +16126,7 @@ impl Server {
         Ok(())
     }
 
-    pub fn list_links_for_work(&self, work_id: BeId) -> Vec<(BeId, BeId, BeId)> {
+    pub fn list_links_for_work(&self, work_id: BeId) -> Vec<(BeId, BeId, Option<BeId>)> {
         self.work_to_links
             .get(&work_id)
             .map(|ids| {
@@ -16068,12 +16163,19 @@ impl Server {
         self.backfollow.unregister_link_content(&old_link, link_id);
         // Register the link against the new end's work so it appears
         // in that work's Connections (FR-40 Story 1).
-        let end_work = end_ref.work_context();
+        let end_work_ctx = end_ref.work_context();
+        let end_work = end_work_ctx;
         let ls = self
             .links
             .get_mut(&link_id)
             .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
         ls.link = ls.link.with_end(end_name, end_ref);
+        // FR-71: completing an open link — the first RightEnd work
+        // (directly or via the end's work context) resolves the
+        // reserved destination.
+        if end_name == "RightEnd" && ls.destination.is_none() {
+            ls.destination = end_work.or_else(|| end_work_ctx);
+        }
         if let Some(wid) = end_work {
             if !self
                 .work_to_links
@@ -16152,7 +16254,7 @@ impl Server {
                     .and_then(|hr| hr.work_context())
                     .is_some_and(|w| w == wid)
             }) || ls.origin == wid
-                || ls.destination == wid
+                || ls.destination == Some(wid)
                 || ls.home_document == Some(wid);
             if !still_referenced {
                 if let Some(ids) = self.work_to_links.get_mut(&wid) {
@@ -16403,7 +16505,7 @@ impl Server {
                     .map(|attachments| attachments.iter().any(|hr| hr.work_context() == Some(wid)))
                     .unwrap_or(false)
             }) || ls.origin == wid
-                || ls.destination == wid
+                || ls.destination == Some(wid)
                 || ls.home_document == Some(wid);
             if !still_referenced {
                 if let Some(ids) = self.work_to_links.get_mut(&wid) {
@@ -16651,10 +16753,10 @@ impl Server {
             if self.link_hidden_by_home_archive(lid) {
                 continue;
             }
-            let source_work_id = if ls.destination == work_id {
+            let source_work_id = if ls.destination == Some(work_id) {
                 ls.origin
             } else if ls.origin == work_id {
-                ls.destination
+                ls.destination.unwrap_or(ls.origin)
             } else {
                 // FR-40 S6: the work is attached via an end-set
                 // attachment — the counterpart source is a work
@@ -16662,8 +16764,8 @@ impl Server {
                 // then any other end's attachment).
                 let counterpart = if ls.origin != work_id {
                     Some(ls.origin)
-                } else if ls.destination != work_id {
-                    Some(ls.destination)
+                } else if ls.destination.is_some_and(|d| d != work_id) {
+                    ls.destination
                 } else {
                     ls.link.end_names().iter().find_map(|n| {
                         ls.link.attachments_at(n).and_then(|attachments| {
@@ -16715,7 +16817,7 @@ impl Server {
                 .get(&source_work_id)
                 .map(|ws| ws.work.is_archived())
                 .unwrap_or(false);
-            let direction = if ls.destination == work_id {
+            let direction = if ls.destination == Some(work_id) {
                 "incoming"
             } else {
                 "outgoing"
@@ -17381,7 +17483,7 @@ impl Server {
         let mut seen = std::collections::HashSet::new();
         let mut visited_works = std::collections::HashSet::new();
         for &(lid, orig, dest) in &incoming {
-            if dest != origin_work_id {
+            if dest != Some(origin_work_id) {
                 continue;
             }
             if orig == origin_work_id {
@@ -17421,7 +17523,7 @@ impl Server {
             }
             let incoming = self.list_links_for_work(current);
             for &(lid, orig, dest) in &incoming {
-                if dest != current {
+                if dest != Some(current) {
                     continue;
                 }
                 if orig == current {
@@ -17498,11 +17600,7 @@ impl Server {
                         (None, None)
                     };
 
-                let dest_work_id = self
-                    .links
-                    .get(&hop.link_id())
-                    .map(|ls| ls.destination)
-                    .unwrap_or(0);
+                let dest_work_id = self.links.get(&hop.link_id()).and_then(|ls| ls.destination);
 
                 ProvenanceHopPayload {
                     source_work_id: hop.source_work_id(),
@@ -23802,7 +23900,7 @@ pub(crate) mod persist_snapshot {
     struct LinkSnapshot {
         link_id: BeId,
         origin: BeId,
-        destination: BeId,
+        destination: Option<BeId>,
         #[cfg_attr(
             feature = "serde",
             serde(default, skip_serializing_if = "Option::is_none")
@@ -24436,11 +24534,20 @@ pub(crate) mod persist_snapshot {
                     .map(|hr| hr.to_hyper_ref(ls.origin))
                     .unwrap_or_else(|| HyperRef::single(None, Some(ls.origin), None, None));
                 let d_ref = ls
-                    .destination_ref
-                    .as_ref()
-                    .map(|hr| hr.to_hyper_ref(ls.destination))
-                    .unwrap_or_else(|| HyperRef::single(None, Some(ls.destination), None, None));
-                let mut link = HyperLink::make(ls.link_types.clone(), o_ref, d_ref);
+                    .destination
+                    .zip(ls.destination_ref.as_ref())
+                    .map(|(dest, hr)| hr.to_hyper_ref(dest))
+                    .or_else(|| {
+                        ls.destination
+                            .map(|dest| HyperRef::single(None, Some(dest), None, None))
+                    });
+                let mut link = match d_ref {
+                    Some(d_ref) => HyperLink::make(ls.link_types.clone(), o_ref, d_ref),
+                    None => HyperLink::make_with_ends(
+                        ls.link_types.clone(),
+                        [("LeftEnd".to_string(), vec![o_ref])].into_iter().collect(),
+                    ),
+                };
                 let mut named_works = Vec::new();
                 for (name, payload) in &ls.named_ends {
                     let wid = payload.work_context;
@@ -24480,11 +24587,13 @@ pub(crate) mod persist_snapshot {
                     .entry(ls.origin)
                     .or_default()
                     .insert(ls.link_id);
-                server
-                    .work_to_links
-                    .entry(ls.destination)
-                    .or_default()
-                    .insert(ls.link_id);
+                if let Some(dest) = ls.destination {
+                    server
+                        .work_to_links
+                        .entry(dest)
+                        .or_default()
+                        .insert(ls.link_id);
+                }
                 for wid in named_works {
                     if !server
                         .work_to_links
@@ -33514,8 +33623,9 @@ mod tests {
         assert_eq!(parallel.len(), 2, "two independent sources into c");
         for hop in &parallel {
             assert_eq!(
-                hop.dest_work_id, c,
-                "independent sources must all dest on the target c, got dest={:04x}",
+                hop.dest_work_id,
+                Some(c),
+                "independent sources must all dest on the target c, got dest={:?}",
                 hop.dest_work_id
             );
         }
@@ -33530,12 +33640,12 @@ mod tests {
         let chain = server2.enrich_provenance_hops(&server2.provenance_ancestry(cc));
         let dests: std::collections::HashSet<_> = chain.iter().map(|h| h.dest_work_id).collect();
         assert!(
-            dests.contains(&cb),
+            dests.contains(&Some(cb)),
             "chain hop a->b must dest on b, dests={:?}",
             dests
         );
         assert!(
-            dests.contains(&cc),
+            dests.contains(&Some(cc)),
             "chain hop b->c must dest on c, dests={:?}",
             dests
         );
@@ -35883,7 +35993,7 @@ mod tests {
                 .get(&link_id)
                 .expect("link must survive restore");
             assert_eq!(ls.origin, origin_work_id);
-            assert_eq!(ls.destination, dest_work_id);
+            assert_eq!(ls.destination, Some(dest_work_id));
             assert_eq!(
                 ls.link.link_types(),
                 &[100, 200],
@@ -39502,7 +39612,7 @@ mod tests {
                 .get(&link_id)
                 .expect("link must survive crash via WAL replay");
             assert_eq!(ls.origin, origin_work_id);
-            assert_eq!(ls.destination, dest_work_id);
+            assert_eq!(ls.destination, Some(dest_work_id));
             assert_eq!(
                 ls.link.link_types(),
                 &[100, 200],
@@ -43607,7 +43717,7 @@ mod tests {
         let quote_bh = mk(b, c, vec![4], Some(home));
         let _disagree_bh = mk(b, a, vec![3], Some(home));
 
-        let ids = |res: Vec<(BeId, BeId, BeId)>| -> Vec<BeId> {
+        let ids = |res: Vec<(BeId, BeId, Option<BeId>)>| -> Vec<BeId> {
             res.into_iter().map(|(l, _, _)| l).collect()
         };
 
@@ -43716,7 +43826,7 @@ mod tests {
             .create_link_with_hyperlink_homed(sid, link, None)
             .unwrap();
 
-        let ids = |res: Vec<(BeId, BeId, BeId)>| -> Vec<BeId> {
+        let ids = |res: Vec<(BeId, BeId, Option<BeId>)>| -> Vec<BeId> {
             res.into_iter().map(|(l, _, _)| l).collect()
         };
 
@@ -44019,6 +44129,112 @@ mod tests {
         assert!(link.has_end("Target"));
         assert!(link.has_end("Evidence"));
         assert!(!link.is_two_ended());
+    }
+
+    /// FR-71: an open-ended link is tethered, visible from the
+    /// origin, and reports is_open — then completes via link_add_end.
+    #[test]
+    fn open_link_lifecycle() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server
+            .create_work(sid, Edition::from_text("anchor text here"))
+            .unwrap();
+        let other = server
+            .create_work(sid, Edition::from_text("completion target"))
+            .unwrap();
+
+        let link_id = server
+            .create_open_link(
+                sid,
+                src,
+                Some(HyperRef::single(None, Some(src), None, None).with_span(Some(0), Some(6))),
+                vec![],
+                None,
+            )
+            .unwrap();
+
+        // Open: destination None, listed from the origin.
+        let (origin, destination, _) = server.get_link(link_id).unwrap();
+        assert_eq!(origin, src);
+        assert_eq!(destination, None, "open link has no destination yet");
+        let listed: Vec<_> = server
+            .list_links_for_work(src)
+            .into_iter()
+            .map(|(id, _, _)| id)
+            .collect();
+        assert!(listed.contains(&link_id), "visible from the origin side");
+        // Not listed from anywhere else.
+        assert!(server.list_links_for_work(other).is_empty());
+
+        // Complete: link_add_end on RightEnd resolves the destination.
+        server
+            .link_add_end(
+                sid,
+                link_id,
+                "RightEnd",
+                HyperRef::single(None, Some(other), None, None),
+            )
+            .unwrap();
+        let (_, destination, link) = server.get_link(link_id).unwrap();
+        assert_eq!(destination, Some(other), "completion resolved the open end");
+        assert!(link.end_at("RightEnd").is_some());
+        let listed: Vec<_> = server
+            .list_links_for_work(other)
+            .into_iter()
+            .map(|(id, _, _)| id)
+            .collect();
+        assert!(
+            listed.contains(&link_id),
+            "completed link visible at destination"
+        );
+    }
+
+    /// FR-71: completion with a GATHERED set (multiple places) — the
+    /// destination tracks the first completing work; the end-set
+    /// holds them all.
+    #[test]
+    fn open_link_completes_with_gathered_set() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server
+            .create_work(sid, Edition::from_text("tether"))
+            .unwrap();
+        let a = server
+            .create_work(sid, Edition::from_text("place a"))
+            .unwrap();
+        let b = server
+            .create_work(sid, Edition::from_text("place b"))
+            .unwrap();
+
+        let link_id = server
+            .create_open_link(sid, src, None, vec![], None)
+            .unwrap();
+        // First completion resolves the destination; further places
+        // GATHER via the attachment op (link_add_end replaces the
+        // end's single ref — the FR-40 end-set semantics).
+        server
+            .link_add_end(
+                sid,
+                link_id,
+                "RightEnd",
+                HyperRef::single(None, Some(a), None, None),
+            )
+            .unwrap();
+        server
+            .link_end_add_attachment(
+                sid,
+                link_id,
+                "RightEnd",
+                HyperRef::single(None, Some(b), None, None),
+            )
+            .unwrap();
+
+        let (_, destination, link) = server.get_link(link_id).unwrap();
+        assert_eq!(destination, Some(a), "first completion wins the field");
+        let right_set = link
+            .attachments_at("RightEnd")
+            .map(|s| s.len())
+            .unwrap_or(0);
+        assert!(right_set >= 2, "gathered set holds both places");
     }
 
     #[test]

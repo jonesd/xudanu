@@ -142,6 +142,7 @@ export function ExportPanel({
     // Outgoing links (this work transcluded FROM others)
     const outgoing = links
       .filter((l) => l.origin === id)
+      .filter((l): l is typeof l & { destination: number } => l.destination != null)
       .map((l) => {
         const dest = works.find((w) => w.work_id === l.destination);
         return {

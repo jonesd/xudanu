@@ -68,6 +68,14 @@ exist yet. The connection precedes the target.
 
 ### 2. Surfacing (the prior art's core ask)
 
+- **Rendering grammar (acceptance criterion):** an open end must be
+  recognizable at a glance as NOT-YET-CONNECTED, and must never be
+  mistakable for a normal rendered link. Concretely: dashed/dotted
+  underline (vs solid for live links), hollow endpoint glyph (vs
+  filled), reduced-opacity label, tooltip "open — complete this
+  connection". The panel section styles open ends as invitations
+  (e.g. "Open ends (2) — complete" affordance), never as errors.
+  Naming homage to the prior art: the `isDeadEnd` class name.
 - Editor: open ends render distinctly from live links — ghost/dotted
   marker, never a broken-link style.
 - Connections panel: an "Open ends" section with the pending count.

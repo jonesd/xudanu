@@ -67,6 +67,7 @@ export function PerspectiveView({
     for (const link of allLinks) {
       const isOrigin = link.origin === centerWorkId;
       const otherWorkId = isOrigin ? link.destination : link.origin;
+      if (otherWorkId == null) continue; // FR-71: open-ended links have no neighbor yet
       if (otherWorkId === centerWorkId) continue;
       if (!neighborMap.has(otherWorkId)) {
         const title = (isOrigin ? link.destination_title : link.origin_title) ||

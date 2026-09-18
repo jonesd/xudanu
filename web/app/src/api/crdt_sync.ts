@@ -152,7 +152,11 @@ export interface LlmUsageSummary {
 export interface LinkEntry {
   link_id: number;
   origin: number;
-  destination: number;
+  /** FR-71: null while the link is open-ended (no RightEnd yet). */
+  destination: number | null;
+  /** FR-71: true while open — render the distinct not-yet-connected
+   *  state (dashed marker, invitation), never a broken link. */
+  is_open?: boolean;
   origin_ref: HyperRefPayload | null;
   destination_ref: HyperRefPayload | null;
   // Ghost metadata (server-side archive state + title + owner per endpoint).
@@ -1177,6 +1181,37 @@ export class CrdtSyncClient {
       payload.home_document = homeDocument;
     }
     const resp = await this.sendRequest("link_create", payload);
+    return extractValue(resp) as number;
+  }
+
+  /** FR-71: create an OPEN-ENDED link — tethered to `origin`
+   * (optionally to a passage), the other end reserved for later
+   * completion via linkAddEnd("RightEnd", …). */
+  async linkCreateOpen(
+    origin: number,
+    originRef?: { excerpt: string; start: number; end: number },
+    linkTypes?: number[],
+    homeDocument?: number,
+  ): Promise<number> {
+    const payload: Record<string, unknown> = { origin };
+    if (originRef) {
+      payload.origin_ref = {
+        kind: "single",
+        work_context: origin,
+        original_context: null,
+        path_context: null,
+        excerpt: originRef.excerpt,
+        start_position: originRef.start,
+        end_position: originRef.end,
+      };
+    }
+    if (linkTypes && linkTypes.length > 0) {
+      payload.link_types = linkTypes;
+    }
+    if (homeDocument !== undefined && homeDocument !== null) {
+      payload.home_document = homeDocument;
+    }
+    const resp = await this.sendRequest("link_create_open", payload);
     return extractValue(resp) as number;
   }
 

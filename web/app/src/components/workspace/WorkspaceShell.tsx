@@ -695,6 +695,26 @@ export function WorkspaceShell() {
     return id ?? null;
   }, [createWork, selectWork]);
 
+  /** FR-71: complete an open-ended link by creating its target —
+   *  the reserved connection resolves to the new document and we
+   *  land the user in it to write. */
+  const completeOpenLink = useCallback(async (linkId: number): Promise<void> => {
+    const client = clientRef.current;
+    if (!client) return;
+    const id = await createWork();
+    if (typeof id !== "number") return;
+    try {
+      await client.linkAddEnd(linkId, "RightEnd", { workContext: id, excerpt: "" });
+    } catch {
+      /* the work exists; the link stays open if this fails */
+    }
+    if (workBeId !== null) {
+      void transclusion.loadLinks(client, workBeId, works);
+    }
+    selectWork(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createWork, selectWork, workBeId, works, transclusion.loadLinks]);
+
   // Trail following: the trail being followed and current stop index.
   // Persisted so a refresh mid-tour resumes where the reader left off.
   const [followTrail, setFollowTrail] = useState<{ name: string; stops: Array<{ work_id: number; note?: string | null }> } | null>(() => {
@@ -2532,11 +2552,68 @@ export function WorkspaceShell() {
                     })()})
                   </div>
                   {(() => {
+                    const openLinks = transclusion.links.filter(
+                      (l) => l.is_open || l.destination == null,
+                    );
+                    const withDest = transclusion.links.filter(
+                      (l): l is typeof l & { destination: number } => l.destination != null,
+                    );
                     const filteredLinks = activeLinkTypes.size === 0
-                      ? transclusion.links
-                      : transclusion.links.filter((l) => (l.link_types || []).some((t) => activeLinkTypes.has(t)));
+                      ? withDest
+                      : withDest.filter((l) => (l.link_types || []).some((t) => activeLinkTypes.has(t)));
+                    const openEndsBlock = openLinks.length > 0 ? (
+                      <div className="ws-conn-open-ends isDeadEnd" style={{ marginBottom: 10 }}>
+                        <div style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--amber)", padding: "8px 0 2px" }}>
+                          Open ends — complete when ready ({openLinks.length})
+                        </div>
+                        {openLinks.map((link) => {
+                          const excerpt = (link.origin_ref?.excerpt || "").slice(0, 60);
+                          const typeName = link.link_types?.length
+                            ? DEFAULT_LINK_TYPES.find((t) => t.type_id === link.link_types![0])?.name || "link"
+                            : "link";
+                          return (
+                            <div
+                              key={`open-${link.link_id}`}
+                              className="ws-conn-item"
+                              style={{
+                                borderLeft: "3px dashed var(--amber)",
+                                opacity: 0.85,
+                                cursor: "default",
+                              }}
+                              title="open — this connection has no target yet"
+                            >
+                              <div className="ws-conn-title-row">
+                                <div className="ws-conn-title" style={{ fontStyle: "italic", opacity: 0.85 }}>
+                                  {"\u25cb"} {excerpt || "this connection"} — {typeName}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => void completeOpenLink(link.link_id)}
+                                  style={{
+                                    background: "none",
+                                    border: "1px dashed var(--amber)",
+                                    borderRadius: 4,
+                                    color: "var(--amber)",
+                                    fontSize: 10,
+                                    padding: "1px 6px",
+                                    cursor: "pointer",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                  title="Create the target document and complete this connection"
+                                >
+                                  {"\u2795 complete"}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null;
+
                     return filteredLinks.length === 0 ? (
-                      <div className="ws-conn-empty">
+                      <div>
+                        {openEndsBlock}
+                        <div className="ws-conn-empty">
                         {transclusion.links.length === 0 ? (
                           <>
                             {"No outbound links. Select text and click \u201cLink\u201d to create one."}
@@ -2555,9 +2632,12 @@ export function WorkspaceShell() {
                         ) : (
                           "No links match the active filter."
                         )}
+                        </div>
                       </div>
                     ) : (
-                      filteredLinks.map((link) => {
+                      <div>
+                        {openEndsBlock}
+                        {filteredLinks.map((link) => {
                       const isWebLink = (link.link_types || []).includes(6);
                       const destUrl = link.destination_ref?.excerpt;
                       const ends = linkEnds(link);
@@ -2719,7 +2799,8 @@ export function WorkspaceShell() {
                           )}
                           </div>
                         );
-                      })
+                      })}
+                      </div>
                     );
                   })()}
                   </div>
