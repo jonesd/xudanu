@@ -262,6 +262,10 @@ function getHatchPattern(ctx: CanvasRenderingContext2D, workId: number): CanvasP
   return pattern;
 }
 
+// Double-buffer: the offscreen canvas the overlay draws into. The
+// visible canvas is only touched by the final blit — never blank.
+const overlayBuffer = document.createElement("canvas");
+
 function drawOverlay(
   editor: HTMLElement | null,
   canvas: HTMLCanvasElement | null,
@@ -310,25 +314,23 @@ function drawOverlay(
   // Atlas, 2026-09-16).
   const CANVAS_PAD = 8;
   const contentH = Math.max(rect.height, editor.scrollHeight + editor.offsetTop) + CANVAS_PAD;
-  // Only touch canvas dimensions when they actually change —
-  // assigning width/height (even to the same value) NATIVELY CLEARS
-  // the canvas, which was the typing-flash root cause: every
-  // keystroke blanked the canvas before the draw cycle could repaint.
-  const newW = Math.round(rect.width * dpr);
-  const newH = Math.round(contentH * dpr);
-  if (canvas.width !== newW) {
-    canvas.width = newW;
+  // Double-buffer: all drawing goes to the offscreen buffer; the
+  // visible canvas is only touched by the final blit at the end —
+  // the user NEVER sees a blank frame.
+  const bufW = Math.round(rect.width * dpr);
+  const bufH = Math.round(contentH * dpr);
+  if (canvas.width !== bufW || canvas.height !== bufH) {
+    canvas.width = bufW;
+    canvas.height = bufH;
     canvas.style.width = rect.width + "px";
-  }
-  if (canvas.height !== newH) {
-    canvas.height = newH;
     canvas.style.height = contentH + "px";
   }
+  overlayBuffer.width = bufW;
+  overlayBuffer.height = bufH;
 
-  const ctx = canvas.getContext("2d");
+  const ctx = overlayBuffer.getContext("2d");
   if (!ctx) return hitZones;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, rect.width, contentH);
+  ctx.scale(dpr, dpr);
 
   const textLen = editor.textContent?.length ?? 0;
   if (textLen === 0) return hitZones;
@@ -1056,6 +1058,13 @@ function drawOverlay(
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 0.5, y + 0.5, r.width - 1, r.height - 1);
     }
+  }
+
+  // Final blit: buffer -> visible canvas (one operation, never blank)
+  const visCtx = canvas.getContext("2d");
+  if (visCtx) {
+    visCtx.clearRect(0, 0, canvas.width, canvas.height);
+    visCtx.drawImage(overlayBuffer, 0, 0);
   }
 
   return hitZones;
