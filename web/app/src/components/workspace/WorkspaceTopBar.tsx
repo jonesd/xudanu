@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { type RefObject, useEffect, useRef } from "react";
 import "../../workspace.css";
 import { PALETTES } from "../../theme";
 import type { ThemeMode, ThemePalette } from "../../theme";
@@ -12,6 +12,9 @@ interface WorkspaceTopBarProps {
   activeNav: WorkspaceNavTab;
   onNavChange: (tab: WorkspaceNavTab) => void;
   onOpenSearch: () => void;
+  searchQuery: string;
+  onSearchChange: (q: string) => void;
+  searchInputRef?: RefObject<HTMLInputElement | null>;
   onOpenIdentity: () => void;
   onOpenAdmin: () => void;
   onHome: () => void;
@@ -56,6 +59,9 @@ export function WorkspaceTopBar({
   activeNav,
   onNavChange,
   onOpenSearch,
+  searchQuery,
+  onSearchChange,
+  searchInputRef,
   onOpenIdentity,
   onOpenAdmin,
   onHome,
@@ -111,7 +117,16 @@ export function WorkspaceTopBar({
           <circle cx="11" cy="11" r="8" />
           <path d="m21 21-4.3-4.3" />
         </svg>
-        Search content, authors, topics…
+        <input
+          ref={searchInputRef}
+          type="search"
+          className="ws-search-input"
+          placeholder="Search content, authors, topics…"
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          onFocus={onOpenSearch}
+          aria-label="Search works"
+        />
         <kbd>⌘K</kbd>
       </div>
 

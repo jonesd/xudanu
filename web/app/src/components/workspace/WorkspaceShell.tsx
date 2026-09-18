@@ -382,6 +382,7 @@ export function WorkspaceShell() {
   const [provenanceChain, setProvenanceChain] = useState<AgainHop[] | null>(null);
   const [provenanceLoading, setProvenanceLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const topSearchRef = useRef<HTMLInputElement | null>(null);
   const [activeLinkTypes, setActiveLinkTypes] = useState<Set<number>>(new Set());
   const [multiCompareWorkIds, setMultiCompareWorkIds] = useState<number[]>([]);
   const [compareFullscreen, setCompareFullscreen] = useState(false);
@@ -1987,7 +1988,8 @@ export function WorkspaceShell() {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
-        setSearchOpen((s) => !s);
+        topSearchRef.current?.focus();
+        topSearchRef.current?.select();
       }
       if (e.key === "Escape") {
         setSearchOpen(false);
@@ -3289,13 +3291,13 @@ export function WorkspaceShell() {
           url.searchParams.delete("demo");
           window.history.replaceState({}, "", url.toString());
         }}
-        onOpenSearch={() => {
-          setNavTab("library");
-          setTimeout(() => {
-            const input = document.querySelector<HTMLInputElement>(".ws-picker-search");
-            input?.focus();
-          }, 100);
+        searchQuery={searchQuery}
+        onSearchChange={(q) => {
+          setSearchQuery(q);
+          if (navTab !== "library") setNavTab("library");
         }}
+        searchInputRef={topSearchRef}
+        onOpenSearch={() => setNavTab("library")}
         onOpenIdentity={() => setShowIdentity(true)}
         onOpenAdmin={() => setShowAdmin(true)}
         isAdmin={isAdmin}
