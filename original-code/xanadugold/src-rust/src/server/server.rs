@@ -950,7 +950,28 @@ pub struct ServerHealth {
     pub uptime_secs: u64,
 }
 
-#[derive(Debug)]
+/// Endorsed link types (Gold nlinksx.cxx:144-145): a link is a
+/// CLAIM; endorsements answer who vouches for the claim.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinkEndorsement {
+    /// The club vouching for this link's claim.
+    pub club_id: BeId,
+    /// What kind of vouch: author (creator), vouch (third party),
+    /// or type (the link claims to instantiate this type work).
+    pub kind: LinkEndorsementKind,
+    pub timestamp: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LinkEndorsementKind {
+    /// The link's creator vouches for it.
+    Author,
+    /// A third party vouches the link's claim is valid.
+    Vouch,
+    /// The link claims to be of this type (FR-39 definition work).
+    Type(BeId),
+}
+
 pub(crate) struct LinkState {
     pub(crate) link: HyperLink,
     origin: BeId,
@@ -971,6 +992,9 @@ pub(crate) struct LinkState {
     /// created before authorship was stamped. Attribution matters
     /// most where multiple parties contend on one passage.
     author_club: Option<BeId>,
+    /// Trust chain: who vouches for this link's claim. Auto-seeded
+    /// with the author's endorsement at creation (Gold's model).
+    pub(crate) endorsements: Vec<LinkEndorsement>,
 }
 
 /// Persisted outcome of a cross-server backlink notification.
@@ -9210,6 +9234,82 @@ impl Server {
         had
     }
 
+    /// Gold model: a third party vouches for a link's claim.
+    pub fn link_endorse(
+        &mut self,
+        session_id: SessionId,
+        link_id: BeId,
+    ) -> Result<(), ServerError> {
+        self.ensure_session(session_id)?;
+        if !self.links.contains_key(&link_id) {
+            return Err(ServerError::NotFound(format!("link {}", link_id)));
+        }
+        let club_id = self
+            .resolve_author_club(session_id)
+            .ok_or_else(|| ServerError::NotAuthorized)?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let ls = self.links.get_mut(&link_id).unwrap();
+        if !ls.endorsements.iter().any(|e| e.club_id == club_id) {
+            ls.endorsements.push(LinkEndorsement {
+                club_id,
+                kind: LinkEndorsementKind::Vouch,
+                timestamp: now,
+            });
+        }
+        Ok(())
+    }
+
+    /// Withdraw a vouch (Gold's "un-endorse").
+    pub fn link_unendorse(
+        &mut self,
+        session_id: SessionId,
+        link_id: BeId,
+    ) -> Result<(), ServerError> {
+        self.ensure_session(session_id)?;
+        let club_id = self
+            .resolve_author_club(session_id)
+            .ok_or_else(|| ServerError::NotAuthorized)?;
+        let ls = self
+            .links
+            .get_mut(&link_id)
+            .ok_or_else(|| ServerError::NotFound(format!("link {}", link_id)))?;
+        let before = ls.endorsements.len();
+        ls.endorsements
+            .retain(|e| !(e.club_id == club_id && e.kind == LinkEndorsementKind::Vouch));
+        if ls.endorsements.len() == before {
+            return Err(ServerError::InvalidArgument(
+                "no vouch from this club to withdraw".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// The link's trust chain.
+    pub fn link_endorsements(
+        &self,
+        link_id: BeId,
+    ) -> Result<Vec<(BeId, String, u64)>, ServerError> {
+        let ls = self
+            .links
+            .get(&link_id)
+            .ok_or_else(|| ServerError::NotFound(format!("link {}", link_id)))?;
+        Ok(ls
+            .endorsements
+            .iter()
+            .map(|e| {
+                let kind = match &e.kind {
+                    LinkEndorsementKind::Author => "author".to_string(),
+                    LinkEndorsementKind::Vouch => "vouch".to_string(),
+                    LinkEndorsementKind::Type(_) => "type".to_string(),
+                };
+                (e.club_id, kind, e.timestamp)
+            })
+            .collect())
+    }
+
     pub fn lattice_is_write_primary(&self, work_be_id: BeId) -> bool {
         self.lattice_write_works.contains(&work_be_id)
     }
@@ -10981,6 +11081,7 @@ impl Server {
                     // WAL records predate authorship stamping; the
                     // manifest restore path carries the field.
                     author_club: None,
+                    endorsements: Vec::new(),
                 },
             );
             self.work_to_links
@@ -13896,6 +13997,7 @@ impl Server {
                     cross_server_notify: None,
                     home_document: link.home_document,
                     author_club: link.author_club,
+                    endorsements: Vec::new(),
                 },
             );
             for wid in restored_works {
@@ -14984,6 +15086,20 @@ impl Server {
                 .collect(),
         );
 
+        let author_club = self.resolve_author_club(_session_id);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let endorsements = author_club
+            .map(|cid| {
+                vec![LinkEndorsement {
+                    club_id: cid,
+                    kind: LinkEndorsementKind::Author,
+                    timestamp: now,
+                }]
+            })
+            .unwrap_or_default();
         self.links.insert(
             link_id,
             LinkState {
@@ -14992,7 +15108,8 @@ impl Server {
                 destination: None,
                 cross_server_notify: None,
                 home_document,
-                author_club: self.resolve_author_club(_session_id),
+                author_club,
+                endorsements,
             },
         );
         self.work_to_links
@@ -15080,6 +15197,20 @@ impl Server {
             .unwrap_or_else(|| HyperRef::single(None, Some(destination), None, None));
         let link = HyperLink::make(vec![], o_final, d_final);
 
+        let author_club = self.resolve_author_club(_session_id);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let endorsements = author_club
+            .map(|cid| {
+                vec![LinkEndorsement {
+                    club_id: cid,
+                    kind: LinkEndorsementKind::Author,
+                    timestamp: now,
+                }]
+            })
+            .unwrap_or_default();
         self.links.insert(
             link_id,
             LinkState {
@@ -15088,7 +15219,8 @@ impl Server {
                 destination: Some(destination),
                 cross_server_notify: None,
                 home_document,
-                author_club: self.resolve_author_club(_session_id),
+                author_club,
+                endorsements,
             },
         );
         self.work_to_links
@@ -15259,6 +15391,20 @@ impl Server {
             })
             .collect();
 
+        let author_club = self.resolve_author_club(_session_id);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let endorsements = author_club
+            .map(|cid| {
+                vec![LinkEndorsement {
+                    club_id: cid,
+                    kind: LinkEndorsementKind::Author,
+                    timestamp: now,
+                }]
+            })
+            .unwrap_or_default();
         self.links.insert(
             link_id,
             LinkState {
@@ -15267,7 +15413,8 @@ impl Server {
                 destination: Some(destination),
                 cross_server_notify: None,
                 home_document,
-                author_club: self.resolve_author_club(_session_id),
+                author_club,
+                endorsements,
             },
         );
         self.work_to_links
@@ -24635,6 +24782,7 @@ pub(crate) mod persist_snapshot {
                         cross_server_notify: ls.cross_server_notify.clone(),
                         home_document: ls.home_document,
                         author_club: ls.author_club,
+                        endorsements: Vec::new(),
                     },
                 );
                 server
@@ -44188,6 +44336,38 @@ mod tests {
 
     /// FR-71: an open-ended link is tethered, visible from the
     /// origin, and reports is_open — then completes via link_add_end.
+
+    /// Gold model: links carry their trust chain. Creation auto-seeds
+    /// the Author endorsement; third parties can vouch and withdraw.
+    #[test]
+    fn link_endorsements_lifecycle() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("claim here"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("target"))
+            .unwrap();
+        let link_id = server.create_link(sid, work_a, work_b, None, None).unwrap();
+
+        // Author endorsement auto-seeded
+        let endorsements = server.link_endorsements(link_id).unwrap();
+        assert!(
+            endorsements.iter().any(|(_, kind, _)| kind == "author"),
+            "author endorsement present: {:?}",
+            endorsements
+        );
+
+        // The same session vouching is idempotent (already has author)
+        server.link_endorse(sid, link_id).unwrap();
+        let after = server.link_endorsements(link_id).unwrap();
+        assert_eq!(after.len(), 1, "no duplicate: {:?}", after);
+
+        // Withdraw: author endorsement not a vouch, so nothing to withdraw
+        let result = server.link_unendorse(sid, link_id);
+        assert!(result.is_err(), "cannot withdraw author endorsement");
+    }
+
     #[test]
     fn open_link_lifecycle() {
         let (mut server, sid) = setup_logged_in_server();

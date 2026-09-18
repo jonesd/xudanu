@@ -1854,6 +1854,39 @@ impl JsonCodec {
                     home_document: args.home_document,
                 })
             }
+            OperationCode::LinkEndorse => {
+                #[derive(Deserialize)]
+                struct Args {
+                    link_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LinkEndorse {
+                    link_id: args.link_id,
+                })
+            }
+            OperationCode::LinkUnendorse => {
+                #[derive(Deserialize)]
+                struct Args {
+                    link_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LinkUnendorse {
+                    link_id: args.link_id,
+                })
+            }
+            OperationCode::LinkEndorsements => {
+                #[derive(Deserialize)]
+                struct Args {
+                    link_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LinkEndorsements {
+                    link_id: args.link_id,
+                })
+            }
             OperationCode::LinkAddEnd => {
                 #[derive(Deserialize)]
                 struct Args {

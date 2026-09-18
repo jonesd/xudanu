@@ -2275,6 +2275,20 @@ fn dispatch_inner(
                 srv.create_open_link(session_id, origin, o_ref, link_types, home_document)?;
             Ok(ResponseValue::Id(link_id))
         }
+        WireRequest::LinkEndorse { link_id } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.link_endorse(session_id, link_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::LinkUnendorse { link_id } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.link_unendorse(session_id, link_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::LinkEndorsements { link_id } => {
+            let endorsements = srv.link_endorsements(link_id)?;
+            Ok(ResponseValue::Json(serde_json::json!(endorsements)))
+        }
         WireRequest::LinkAddEnd {
             link_id,
             end_name,

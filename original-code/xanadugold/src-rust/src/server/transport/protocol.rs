@@ -290,6 +290,9 @@ pub enum OperationCode {
     LinkTypeList,
     LinkQuery,
     LinkCreateOpen,
+    LinkEndorse,
+    LinkUnendorse,
+    LinkEndorsements,
 
     FindExcerptPositions,
 
@@ -673,6 +676,9 @@ impl OperationCode {
         (0x070d, OperationCode::LinkSetTypes),
         (0x070e, OperationCode::LinkTypeRegister),
         (0x070f, OperationCode::LinkCreateOpen),
+        (0x0710, OperationCode::LinkEndorse),
+        (0x0711, OperationCode::LinkUnendorse),
+        (0x0712, OperationCode::LinkEndorsements),
         (0x070b, OperationCode::LinkTypeList),
         (0x070c, OperationCode::LinkQuery),
         (0x0801, OperationCode::FindTranscluders),
@@ -1447,6 +1453,15 @@ pub enum WireRequest {
         origin_ref: Option<HyperRefPayload>,
         link_types: Vec<u64>,
         home_document: Option<BeId>,
+    },
+    LinkEndorse {
+        link_id: BeId,
+    },
+    LinkUnendorse {
+        link_id: BeId,
+    },
+    LinkEndorsements {
+        link_id: BeId,
     },
     LinkAddEnd {
         link_id: BeId,
