@@ -5017,6 +5017,15 @@ canvas._bridge {
   gap: 8px;
 }
 
+.link-target-section {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #8b949e;
+  margin: 10px 0 4px;
+}
+.link-target-section:first-child { margin-top: 0; }
 .link-target-option {
   display: flex;
   align-items: center;

@@ -464,29 +464,8 @@ export function LinkCreator({
               A link is a sentence with blanks — the type is the verb, each end fills a blank.
             </div>
             <div className="link-target-options">
-              <button
-                type="button"
-                className="link-target-option"
-                onClick={() => handleChooseTarget("whole-work")}
-              >
-                <div className="link-target-icon">{"\u2192"}</div>
-                <div className="link-target-text">
-                  <div className="link-target-name">Link to an entire document</div>
-                  <div className="link-target-desc">Pick a document from your library</div>
-                </div>
-              </button>
-              <button
-                type="button"
-                className="link-target-option"
-                onClick={() => handleChooseTarget("open")}
-              >
-                <div className="link-target-icon">{"○"}</div>
-                <div className="link-target-text">
-                  <div className="link-target-name">Leave the other end open</div>
-                  <div className="link-target-desc">Reserve the connection now — complete it later, to one or many places</div>
-                </div>
-              </button>
-              <button
+<div className="link-target-section">In another document</div>
+<button
                 type="button"
                 className="link-target-option"
                 onClick={() => handleChooseTarget("other-doc-text")}
@@ -497,8 +476,20 @@ export function LinkCreator({
                   <div className="link-target-desc">Navigate to another document and select a passage</div>
                 </div>
               </button>
-              {currentWorkId === source.workId && (
-                <button
+<button
+                type="button"
+                className="link-target-option"
+                onClick={() => handleChooseTarget("whole-work")}
+              >
+                <div className="link-target-icon">{"\u2192"}</div>
+                <div className="link-target-text">
+                  <div className="link-target-name">Link to an entire document</div>
+                  <div className="link-target-desc">Pick a document from your library</div>
+                </div>
+              </button>
+{currentWorkId === source.workId && (
+<>
+<button
                   type="button"
                   className="link-target-option"
                   onClick={() => handleChooseTarget("same-doc")}
@@ -509,8 +500,10 @@ export function LinkCreator({
                     <div className="link-target-desc">Select different text in the same document</div>
                   </div>
                 </button>
-              )}
-              <button
+</>
+)}
+<div className="link-target-section">Beyond this server</div>
+<button
                 type="button"
                 className="link-target-option"
                 onClick={() => handleChooseTarget("remote")}
@@ -521,7 +514,7 @@ export function LinkCreator({
                   <div className="link-target-desc">Connect to content on another Xudanu server</div>
                 </div>
               </button>
-              <button
+<button
                 type="button"
                 className="link-target-option"
                 onClick={() => handleChooseTarget("web")}
@@ -541,6 +534,18 @@ export function LinkCreator({
                 <div className="link-target-text">
                   <div className="link-target-name">Paste cross-server reference</div>
                   <div className="link-target-desc">Auto-fill from clipboard (use Copy Ref on published works)</div>
+                </div>
+              </button>
+<div className="link-target-section">Not yet decided</div>
+<button
+                type="button"
+                className="link-target-option"
+                onClick={() => handleChooseTarget("open")}
+              >
+                <div className="link-target-icon">{"○"}</div>
+                <div className="link-target-text">
+                  <div className="link-target-name">Leave the other end open</div>
+                  <div className="link-target-desc">Reserve the connection now — complete it later, to one or many places</div>
                 </div>
               </button>
             </div>
