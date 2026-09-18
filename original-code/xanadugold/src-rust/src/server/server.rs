@@ -16974,10 +16974,65 @@ impl Server {
                 "source works are immutable".into(),
             ));
         }
+        // Full-text replaces used to skip span migration entirely —
+        // a repair that shifted text silently detached every link,
+        // annotation, and inline-transclusion span anchored to it
+        // (found live 2026-09-18: two links drifted off their heading
+        // onto "and" after a ## artifact cleanup). Compute the
+        // old->new diff as delta ops and run the same migration the
+        // CRDT path uses, so set_text is span-safe by construction.
+        let old_text = self.work_text(work_id).unwrap_or_default();
+        if old_text != text {
+            let ops = Self::prefix_suffix_delta_ops(&old_text, text);
+            if !ops.is_empty() {
+                self.migrate_link_spans_for_delta(work_id, &ops);
+                self.migrate_inline_transclusions_for_delta(work_id, &ops);
+            }
+        }
         let edition = crate::edition::Edition::from_text_batched(text);
         let author_club = self.resolve_author_club(session_id);
         self.revise_work(work_id, session_id, edition, author_club)?;
         Ok(())
+    }
+
+    /// Minimal valid delta (common prefix + replace + common suffix)
+    /// between two texts, as wire ops for the span-migration paths.
+    /// Character-based; the mapping only needs to be correct, not
+    /// minimal.
+    pub(crate) fn prefix_suffix_delta_ops(
+        old: &str,
+        new: &str,
+    ) -> Vec<crate::server::transport::protocol::TextDeltaOp> {
+        use crate::server::transport::protocol::TextDeltaOp;
+        let o: Vec<char> = old.chars().collect();
+        let n: Vec<char> = new.chars().collect();
+        let mut pre = 0usize;
+        while pre < o.len() && pre < n.len() && o[pre] == n[pre] {
+            pre += 1;
+        }
+        let mut suf = 0usize;
+        while suf < o.len() - pre
+            && suf < n.len() - pre
+            && o[o.len() - 1 - suf] == n[n.len() - 1 - suf]
+        {
+            suf += 1;
+        }
+        let del = o.len() - pre - suf;
+        let ins: String = n[pre..n.len() - suf].iter().collect();
+        let mut ops = Vec::new();
+        if pre > 0 {
+            ops.push(TextDeltaOp::Retain { count: pre as u64 });
+        }
+        if del > 0 {
+            ops.push(TextDeltaOp::Delete { count: del as u64 });
+        }
+        if !ins.is_empty() {
+            ops.push(TextDeltaOp::Insert { text: ins });
+        }
+        if suf > 0 {
+            ops.push(TextDeltaOp::Retain { count: suf as u64 });
+        }
+        ops
     }
 
     // ── FR-23: Revision methods ──
@@ -37132,7 +37187,7 @@ mod tests {
                     sid,
                     link_id,
                     "Evidence",
-                    HyperRef::single(None, Some(c), None, None).with_span(Some(6), Some(9)),
+                    HyperRef::single(None, Some(c), None, None).with_span(Some(10), Some(9)),
                 )
                 .unwrap();
 
@@ -38430,7 +38485,7 @@ mod tests {
                 sid,
                 t1,
                 doc2,
-                Some(5),
+                Some(6),
                 Some(20),
                 Some("middle".into()),
                 None,
@@ -44235,6 +44290,45 @@ mod tests {
             .map(|s| s.len())
             .unwrap_or(0);
         assert!(right_set >= 2, "gathered set holds both places");
+    }
+
+    /// work_set_text must migrate link spans through the old->new
+    /// diff — the 2026-09-18 incident: a ## artifact cleanup shifted
+    /// text and silently detached two links from their heading.
+    #[test]
+    fn work_set_text_migrates_link_spans() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work = server
+            .create_work(sid, Edition::from_text("# Heading\n\nBody text here."))
+            .unwrap();
+        // Link anchored to [2..9) = "Heading"
+        let other = server
+            .create_work(sid, Edition::from_text("target"))
+            .unwrap();
+        let link_id = server
+            .create_link(
+                sid,
+                work,
+                other,
+                Some(HyperRef::single(None, Some(work), None, None).with_span(Some(2), Some(9))),
+                Some(HyperRef::single(None, Some(other), None, None)),
+            )
+            .unwrap();
+
+        // Full-text replace that shifts "Heading" right by 3 chars
+        server
+            .work_set_text(sid, work, "!!! # Heading\n\nBody text here.")
+            .unwrap();
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let o_ref = link.end_at("LeftEnd").unwrap();
+        assert_eq!(
+            o_ref.start_position(),
+            Some(10),
+            "link span must shift with the text, got {:?}",
+            o_ref.start_position()
+        );
+        assert_eq!(o_ref.end_position(), Some(17));
     }
 
     #[test]
