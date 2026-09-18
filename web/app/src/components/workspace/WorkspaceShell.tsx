@@ -152,110 +152,6 @@ export function WorkspaceShell() {
     license: string; tumbler: string; workId: string; serverId: string;
   } | null>(null);
   const [rightPanelHidden, setRightPanelHidden] = useState(false);
-  // FR-73: BOTH verticals are user-resizable — drag the handle on
-  // the panel's inner edge; double-click resets. Widths persist per
-  // browser. Dragging uses window-level listeners (pointer capture
-  // proved unreliable in Firefox).
-  const RIGHT_PANEL_MIN = 280;
-  const LEFT_RAIL_MIN = 200;
-  const storedWidth = (key: string, min: number, max: number, fallback: number) => {
-    const v = parseInt(localStorage.getItem(key) || "", 10);
-    return Number.isFinite(v) && v >= min && v <= max ? v : fallback;
-  };
-  const [rightPanelWidth, setRightPanelWidth] = useState(() =>
-    storedWidth("xudanu:rightPanelWidth", RIGHT_PANEL_MIN, 760, 320),
-  );
-  const [leftRailWidth, setLeftRailWidth] = useState(() =>
-    storedWidth("xudanu:leftRailWidth", LEFT_RAIL_MIN, 420, 240),
-  );
-  const panelDragRef = useRef<
-    { side: "left" | "right"; startX: number; startW: number } | null
-  >(null);
-  const [panelDragging, setPanelDragging] = useState<"left" | "right" | null>(null);
-
-  const onPanelResizeStart =
-    (side: "left" | "right") => (e: React.PointerEvent<HTMLDivElement>) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      panelDragRef.current = {
-        side,
-        startX: e.clientX,
-        startW: side === "right" ? rightPanelWidth : leftRailWidth,
-      };
-      setPanelDragging(side);
-    };
-  const onPanelResizeReset = (side: "left" | "right") => () => {
-    if (side === "right") {
-      setRightPanelWidth(320);
-      localStorage.removeItem("xudanu:rightPanelWidth");
-    } else {
-      setLeftRailWidth(240);
-      localStorage.removeItem("xudanu:leftRailWidth");
-    }
-  };
-  const [panelWidthMenu, setPanelWidthMenu] = useState<"left" | "right" | null>(null);
-  const applyPanelWidth = (side: "left" | "right", px: number) => {
-    if (side === "right") {
-      const max = Math.min(760, Math.floor(window.innerWidth * 0.55));
-      setRightPanelWidth(Math.max(RIGHT_PANEL_MIN, Math.min(max, px)));
-      localStorage.setItem("xudanu:rightPanelWidth", String(px));
-    } else {
-      setLeftRailWidth(Math.max(LEFT_RAIL_MIN, Math.min(420, px)));
-      localStorage.setItem("xudanu:leftRailWidth", String(px));
-    }
-    setPanelWidthMenu(null);
-  };
-
-  // Keyboard resizing (accessibility + pointer-quirk proof):
-  // Alt+←/→ widens/narrows the right panel; Shift adds the left rail.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!e.altKey || e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-      const dir = e.key === "ArrowRight" ? 1 : -1;
-      if (e.shiftKey) {
-        setLeftRailWidth((w) => Math.max(LEFT_RAIL_MIN, Math.min(420, w + dir * 24)));
-      } else {
-        setRightPanelWidth((w) =>
-          Math.max(RIGHT_PANEL_MIN, Math.min(Math.min(760, Math.floor(window.innerWidth * 0.55)), w - dir * 24)),
-        );
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  useEffect(() => {
-    if (!panelDragging) return;
-    const onMove = (e: PointerEvent) => {
-      const d = panelDragRef.current;
-      if (!d) return;
-      const dx = e.clientX - d.startX;
-      if (d.side === "right") {
-        const next = d.startW - dx;
-        const max = Math.min(760, Math.floor(window.innerWidth * 0.55));
-        setRightPanelWidth(Math.max(RIGHT_PANEL_MIN, Math.min(max, next)));
-      } else {
-        const next = d.startW + dx;
-        setLeftRailWidth(Math.max(LEFT_RAIL_MIN, Math.min(420, next)));
-      }
-    };
-    const onUp = () => {
-      const d = panelDragRef.current;
-      panelDragRef.current = null;
-      setPanelDragging(null);
-      if (d?.side === "right") {
-        localStorage.setItem("xudanu:rightPanelWidth", String(rightPanelWidth));
-      } else if (d?.side === "left") {
-        localStorage.setItem("xudanu:leftRailWidth", String(leftRailWidth));
-      }
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-  }, [panelDragging, rightPanelWidth, leftRailWidth]);
   const [showIdentity, setShowIdentity] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [workMeta, setWorkMeta] = useState<WorkMeta | null>(() => {
@@ -3328,32 +3224,13 @@ export function WorkspaceShell() {
         activeDarkPaletteId={themeState.darkPaletteId}
       />
 
-      <div
-        className={`ws-body ${studioActive ? "ws-studio" : ""}`}
-        style={
-          {
-            "--ws-right-w": `${rightPanelWidth}px`,
-            "--ws-left-w": `${leftRailWidth}px`,
-          } as React.CSSProperties
-        }
-      >
+      <div className={`ws-body ${studioActive ? "ws-studio" : ""}`}>
         {/* Left rail */}
         <aside
           className={`ws-left-rail ${leftRailHidden ? "hidden" : ""} ${isTablet && openDrawer === "left" ? "drawer-open" : ""}`}
           data-drawer="left"
         >
-          {!isTablet && (
-            <div
-              className={`ws-panel-resizer left${panelDragging === "left" ? " dragging" : ""}`}
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize navigation rail (double-click to reset)"
-              title="Drag to resize — double-click to reset"
-              onPointerDown={onPanelResizeStart("left")}
-              onDoubleClick={onPanelResizeReset("left")}
-              onClick={() => setPanelWidthMenu(panelWidthMenu === "left" ? null : "left")}
-            />
-          )}
+
           {studioActive && (
             <button
               className="ws-studio-rail-newdoc"
@@ -3377,16 +3254,6 @@ export function WorkspaceShell() {
             >
               Outline
             </button>
-            {!isTablet && (
-              <button
-                type="button"
-                className="ws-tab ws-width-grip"
-                title="Panel width — click for sizes"
-                onClick={() => setPanelWidthMenu(panelWidthMenu === "right" ? null : "right")}
-              >
-                {"\u21f5"}
-              </button>
-            )}
             {isTablet && (
               <button
                 className="ws-drawer-close"
@@ -5148,55 +5015,6 @@ export function WorkspaceShell() {
           className={`ws-right-panel ${rightPanelHidden ? "hidden" : ""} ${isTablet && openDrawer === "right" ? "drawer-open" : ""}`}
           data-drawer="right"
         >
-          {!isTablet && panelWidthMenu === "right" && (
-            <div className="ws-width-menu" style={{ position: "absolute", left: 10, top: 44, zIndex: 40 }}>
-              {[
-                ["Narrow", 280],
-                ["Default", 320],
-                ["Wide", 480],
-                ["Wider", 640],
-                ["Max", Math.min(760, Math.floor(window.innerWidth * 0.55))],
-              ].map(([label, px]) => (
-                <button
-                  key={label as string}
-                  type="button"
-                  onClick={() => applyPanelWidth("right", px as number)}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    background: "var(--bg)",
-                    border: "none",
-                    color: rightPanelWidth === px ? "var(--accent-blue, #58a6ff)" : "var(--text)",
-                    fontSize: 12,
-                    padding: "5px 10px",
-                    cursor: "pointer",
-                    textAlign: "left",
-                  }}
-                >
-                  {label as string} — {px as number}px
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => { onPanelResizeReset("right")(); setPanelWidthMenu(null); }}
-                style={{ display: "block", width: "100%", background: "var(--bg)", border: "none", color: "var(--text-dim)", fontSize: 11, padding: "5px 10px", cursor: "pointer", textAlign: "left" }}
-              >
-                Reset (double-click also works)
-              </button>
-            </div>
-          )}
-          {!isTablet && (
-            <div
-              className={`ws-panel-resizer right${panelDragging === "right" ? " dragging" : ""}`}
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize side panel (double-click to reset)"
-              title="Drag to resize — double-click to reset"
-              onPointerDown={onPanelResizeStart("right")}
-              onDoubleClick={onPanelResizeReset("right")}
-              onClick={() => setPanelWidthMenu(panelWidthMenu === "right" ? null : "right")}
-            />
-          )}
           <div className="ws-tabs">
             {([
               ["provenance", "Attribution"],

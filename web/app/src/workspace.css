@@ -250,61 +250,11 @@
 .ws-body {
   grid-area: body;
   display: grid;
-  /* FR-73: the right vertical is user-resizable (drag the handle on
-   * the panel's left edge; double-click resets). --ws-right-w is set
-   * inline by WorkspaceShell; 320px is the fallback default. */
-  grid-template-columns: var(--ws-left-w, 240px) minmax(320px, 1fr) var(--ws-right-w, 320px);
+  grid-template-columns: 240px minmax(320px, 1fr) 320px;
   overflow: hidden;
   min-height: 0;
 }
 
-.ws-panel-resizer {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 7px;
-  cursor: col-resize;
-  z-index: 30;
-  background: transparent;
-  touch-action: none;
-  user-select: none;
-  -moz-user-select: none;
-}
-/* right panel: handle on its LEFT edge; left rail: RIGHT edge */
-.ws-panel-resizer.right { left: 0; }
-
-.ws-width-grip {
-  margin-left: auto;
-  color: var(--text-dim);
-  font-size: 12px;
-  padding: 4px 8px;
-}
-.ws-width-grip:hover { color: var(--accent-blue, #58a6ff); }
-
-.ws-width-menu {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-  padding: 4px;
-  min-width: 130px;
-}
-.ws-panel-resizer.left { right: 0; }
-.ws-panel-resizer::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: transparent;
-  transition: background 0.12s;
-}
-.ws-panel-resizer.right::after { left: 2px; }
-.ws-panel-resizer.left::after { right: 2px; }
-.ws-panel-resizer:hover::after,
-.ws-panel-resizer.dragging::after {
-  background: var(--accent-blue, #58a6ff);
-}
 .ws-body:has(.ws-left-rail.hidden) {
   grid-template-columns: 0 minmax(320px, 1fr) 320px;
 }
@@ -345,10 +295,9 @@
   }
 }
 
-/* Compose mode: hide left rail by default; the right column honors
- * the user's resize (FR-73) instead of a hardcoded 220px pin. */
+/* Compose mode: hide left rail by default, narrow right panel */
 .ws-mode-compose .ws-body {
-  grid-template-columns: 0 1fr var(--ws-right-w, 220px);
+  grid-template-columns: 0 1fr 220px;
 }
 .ws-mode-compose .ws-left-rail { display: none; }
 
