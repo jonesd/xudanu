@@ -73,7 +73,7 @@ two-way associations (`assignID`/`tryIntroduce`).
 |---|---|---|
 | Cryptographic provenance | Not present | No P1/P2 in the XPS sense |
 | Cross-server operation | Designed (never shipped) | F1-F5 in Xudanu's FR-6 |
-| Typed link labels | Primitive (sets, no semantic types) | Xudanu's five types are richer |
+| Typed link labels | **Fully implemented** — types are first-class Works (documents) with type hierarchies and per-end descriptions; see below | Xudanu's fixed integer types are simpler |
 | Annotation/query on links | Not present | Xudanu's descriptors, annotations |
 | Content matching at corpus scale | Canopy prunes, but no n-gram index | C2 would require full scan without canopy |
 
@@ -90,6 +90,29 @@ This means:
 
 Without crums, every comparison is O(document size), and corpus-wide
 matching becomes O(D × S) where S is average document size.
+
+## Gold's typed link model (correction)
+
+The initial analysis incorrectly stated Gold lacked typed links. The
+source (`nlinksx.hxx:92`) shows `FeHyperLink` with a **richer type
+system than Xudanu's**:
+
+- `FeHyperLink::make(types, leftEnd, rightEnd)` — takes a SET of
+  types, not a single label
+- Types are **first-class Works** (documents) — each type document
+  describes what the link means and what each end represents
+- **Type hierarchies**: "including all super types of a link in its
+  link type list" — a link carries its full type ancestry
+- `linkFilter(types)` — filter links by type region (Xudanu's
+  link_type_register/link_query are the analogue)
+- **Named multi-ended links**: `endAt(name)`, `withEnd(name, ref)`,
+  `withoutEnd(name)` — ends are addressed by Sequence names, not
+  fixed left/right positions (Xudanu's FR-40 named ends mirror this)
+
+Xudanu's integer type IDs are simpler to implement and query, but
+Gold's document-as-type model is more xanalogical: the type system
+is itself part of the corpus, linkable, transcludable, and
+versioned. This is a design insight worth revisiting.
 
 ## Historical context
 
