@@ -152,45 +152,80 @@ export function WorkspaceShell() {
     license: string; tumbler: string; workId: string; serverId: string;
   } | null>(null);
   const [rightPanelHidden, setRightPanelHidden] = useState(false);
-  // FR-73: the right vertical (Attribution | Links | …) is
-  // user-resizable — drag the handle on the panel's left edge;
-  // double-click the handle resets. Persisted per browser.
+  // FR-73: BOTH verticals are user-resizable — drag the handle on
+  // the panel's inner edge; double-click resets. Widths persist per
+  // browser. Dragging uses window-level listeners (pointer capture
+  // proved unreliable in Firefox).
   const RIGHT_PANEL_MIN = 280;
-  const rightPanelMax = () => Math.min(760, Math.floor(window.innerWidth * 0.55));
-  const [rightPanelWidth, setRightPanelWidth] = useState<number>(() => {
-    const stored = parseInt(localStorage.getItem("xudanu:rightPanelWidth") || "", 10);
-    return Number.isFinite(stored) && stored >= RIGHT_PANEL_MIN && stored <= 760
-      ? stored
-      : 320;
-  });
-  const panelDragRef = useRef<{ startX: number; startW: number } | null>(null);
-  const [panelDragging, setPanelDragging] = useState(false);
-  const onPanelResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    panelDragRef.current = { startX: e.clientX, startW: rightPanelWidth };
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    setPanelDragging(true);
+  const LEFT_RAIL_MIN = 200;
+  const storedWidth = (key: string, min: number, max: number, fallback: number) => {
+    const v = parseInt(localStorage.getItem(key) || "", 10);
+    return Number.isFinite(v) && v >= min && v <= max ? v : fallback;
   };
-  const onPanelResizeMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const d = panelDragRef.current;
-    if (!d) return;
-    const next = d.startW - (e.clientX - d.startX);
-    setRightPanelWidth(Math.max(RIGHT_PANEL_MIN, Math.min(rightPanelMax(), next)));
+  const [rightPanelWidth, setRightPanelWidth] = useState(() =>
+    storedWidth("xudanu:rightPanelWidth", RIGHT_PANEL_MIN, 760, 320),
+  );
+  const [leftRailWidth, setLeftRailWidth] = useState(() =>
+    storedWidth("xudanu:leftRailWidth", LEFT_RAIL_MIN, 420, 240),
+  );
+  const panelDragRef = useRef<
+    { side: "left" | "right"; startX: number; startW: number } | null
+  >(null);
+  const [panelDragging, setPanelDragging] = useState<"left" | "right" | null>(null);
+
+  const onPanelResizeStart =
+    (side: "left" | "right") => (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      panelDragRef.current = {
+        side,
+        startX: e.clientX,
+        startW: side === "right" ? rightPanelWidth : leftRailWidth,
+      };
+      setPanelDragging(side);
+    };
+  const onPanelResizeReset = (side: "left" | "right") => () => {
+    if (side === "right") {
+      setRightPanelWidth(320);
+      localStorage.removeItem("xudanu:rightPanelWidth");
+    } else {
+      setLeftRailWidth(240);
+      localStorage.removeItem("xudanu:leftRailWidth");
+    }
   };
-  const onPanelResizeEnd = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!panelDragRef.current) return;
-    panelDragRef.current = null;
-    setPanelDragging(false);
-    try {
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch { /* pointer already released */ }
-    localStorage.setItem("xudanu:rightPanelWidth", String(rightPanelWidth));
-  };
-  const onPanelResizeReset = () => {
-    setRightPanelWidth(320);
-    localStorage.removeItem("xudanu:rightPanelWidth");
-  };
+
+  useEffect(() => {
+    if (!panelDragging) return;
+    const onMove = (e: PointerEvent) => {
+      const d = panelDragRef.current;
+      if (!d) return;
+      const dx = e.clientX - d.startX;
+      if (d.side === "right") {
+        const next = d.startW - dx;
+        const max = Math.min(760, Math.floor(window.innerWidth * 0.55));
+        setRightPanelWidth(Math.max(RIGHT_PANEL_MIN, Math.min(max, next)));
+      } else {
+        const next = d.startW + dx;
+        setLeftRailWidth(Math.max(LEFT_RAIL_MIN, Math.min(420, next)));
+      }
+    };
+    const onUp = () => {
+      const d = panelDragRef.current;
+      panelDragRef.current = null;
+      setPanelDragging(null);
+      if (d?.side === "right") {
+        localStorage.setItem("xudanu:rightPanelWidth", String(rightPanelWidth));
+      } else if (d?.side === "left") {
+        localStorage.setItem("xudanu:leftRailWidth", String(leftRailWidth));
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [panelDragging, rightPanelWidth, leftRailWidth]);
   const [showIdentity, setShowIdentity] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [workMeta, setWorkMeta] = useState<WorkMeta | null>(() => {
@@ -3263,13 +3298,29 @@ export function WorkspaceShell() {
 
       <div
         className={`ws-body ${studioActive ? "ws-studio" : ""}`}
-        style={{ "--ws-right-w": `${rightPanelWidth}px` } as React.CSSProperties}
+        style={
+          {
+            "--ws-right-w": `${rightPanelWidth}px`,
+            "--ws-left-w": `${leftRailWidth}px`,
+          } as React.CSSProperties
+        }
       >
         {/* Left rail */}
         <aside
           className={`ws-left-rail ${leftRailHidden ? "hidden" : ""} ${isTablet && openDrawer === "left" ? "drawer-open" : ""}`}
           data-drawer="left"
         >
+          {!isTablet && (
+            <div
+              className={`ws-panel-resizer left${panelDragging === "left" ? " dragging" : ""}`}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize navigation rail (double-click to reset)"
+              title="Drag to resize — double-click to reset"
+              onPointerDown={onPanelResizeStart("left")}
+              onDoubleClick={onPanelResizeReset("left")}
+            />
+          )}
           {studioActive && (
             <button
               className="ws-studio-rail-newdoc"
@@ -5056,16 +5107,13 @@ export function WorkspaceShell() {
         >
           {!isTablet && (
             <div
-              className={`ws-panel-resizer${panelDragging ? " dragging" : ""}`}
+              className={`ws-panel-resizer right${panelDragging === "right" ? " dragging" : ""}`}
               role="separator"
               aria-orientation="vertical"
               aria-label="Resize side panel (double-click to reset)"
               title="Drag to resize — double-click to reset"
-              onPointerDown={onPanelResizeStart}
-              onPointerMove={onPanelResizeMove}
-              onPointerUp={onPanelResizeEnd}
-              onPointerCancel={onPanelResizeEnd}
-              onDoubleClick={onPanelResizeReset}
+              onPointerDown={onPanelResizeStart("right")}
+              onDoubleClick={onPanelResizeReset("right")}
             />
           )}
           <div className="ws-tabs">

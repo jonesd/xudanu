@@ -239,32 +239,35 @@
   /* FR-73: the right vertical is user-resizable (drag the handle on
    * the panel's left edge; double-click resets). --ws-right-w is set
    * inline by WorkspaceShell; 320px is the fallback default. */
-  grid-template-columns: 240px minmax(320px, 1fr) var(--ws-right-w, 320px);
+  grid-template-columns: var(--ws-left-w, 240px) minmax(320px, 1fr) var(--ws-right-w, 320px);
   overflow: hidden;
   min-height: 0;
 }
 
 .ws-panel-resizer {
   position: absolute;
-  left: -4px;
   top: 0;
   bottom: 0;
-  width: 8px;
+  width: 7px;
   cursor: col-resize;
   z-index: 30;
   background: transparent;
   touch-action: none;
 }
+/* right panel: handle on its LEFT edge; left rail: RIGHT edge */
+.ws-panel-resizer.right { left: 0; }
+.ws-panel-resizer.left { right: 0; }
 .ws-panel-resizer::after {
   content: "";
   position: absolute;
-  left: 3px;
   top: 0;
   bottom: 0;
   width: 2px;
   background: transparent;
   transition: background 0.12s;
 }
+.ws-panel-resizer.right::after { left: 2px; }
+.ws-panel-resizer.left::after { right: 2px; }
 .ws-panel-resizer:hover::after,
 .ws-panel-resizer.dragging::after {
   background: var(--accent-blue, #58a6ff);
