@@ -2698,6 +2698,44 @@ export function WorkspaceShell() {
                               )}
                             </div>
                             <div style={{ display: "flex", gap: 4 }}>
+                              {(link.endorsement_count ?? 0) > 1 && (
+                                <span
+                                  className="ws-conn-type-badge"
+                                  style={{ background: "#3fb95015", color: "#3fb950", borderColor: "#3fb95040" }}
+                                  title={`${link.endorsement_count ?? 1} endorsements (author + ${(link.endorsement_count ?? 1) - 1} vouch${(link.endorsement_count ?? 1) > 2 ? "es" : ""})`}
+                                >
+                                  ✓ {(link.endorsement_count ?? 1) - 1}
+                                </span>
+                              )}
+                              {link.link_contested && (
+                                <span
+                                  className="ws-conn-type-badge"
+                                  style={{ background: "#f8514915", color: "#f85149", borderColor: "#f8514940" }}
+                                  title="Contested — endorsements withdrawn"
+                                >
+                                  ⚠ contested
+                                </span>
+                              )}
+                              {canEdit && (
+                                <button
+                                  className="ws-conn-delete"
+                                  title="Vouch for this connection (endorse)"
+                                  style={{ color: "#3fb950" }}
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    const client = clientRef.current;
+                                    if (!client) return;
+                                    try {
+                                      await client.sendRequest("link_endorse", { link_id: link.link_id });
+                                      if (workBeId !== null) {
+                                        void loadLinks(client, workBeId, works);
+                                      }
+                                    } catch { /* best-effort */ }
+                                  }}
+                                >
+                                  ✓
+                                </button>
+                              )}
                               {multi && (
                                 <button
                                   className="ws-conn-delete"

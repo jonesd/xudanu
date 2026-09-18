@@ -3275,6 +3275,13 @@ pub struct LinkPayload {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub author_name: Option<String>,
+    /// Gold trust chain: how many endorsements this link carries
+    /// (1 = author only; 2+ = third-party vouches present).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub endorsement_count: u32,
+    /// True when at least one vouch has been withdrawn (contested).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub link_contested: bool,
     /// All named ends on the link (including LeftEnd/RightEnd + any custom ends).
     #[cfg_attr(
         feature = "serde",

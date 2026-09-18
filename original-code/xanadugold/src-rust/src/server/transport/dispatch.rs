@@ -67,6 +67,9 @@ fn build_link_payload(
     let notify = srv.link_cross_server_notify(link_id);
     let author_club = srv.link_author_club(link_id);
     let author_name = author_club.and_then(|cid| srv.club_display_name_by_id(cid));
+    let endorsements = srv.link_endorsements(link_id).unwrap_or_default();
+    let endorsement_count = endorsements.len() as u32;
+    let link_contested = endorsement_count == 0; // zero endorsements = contested/orphaned
     LinkPayload {
         link_id,
         origin,
@@ -82,6 +85,8 @@ fn build_link_payload(
         destination_owner,
         author_club,
         author_name,
+        endorsement_count,
+        link_contested,
         named_ends,
         end_sets,
         link_types: link.link_types().to_vec(),

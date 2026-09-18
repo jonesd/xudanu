@@ -170,6 +170,10 @@ export interface LinkEntry {
   // created before authorship stamping.
   author_club?: number | null;
   author_name?: string | null;
+  /** Gold trust chain: 1 = author only; 2+ = third-party vouches. */
+  endorsement_count?: number;
+  /** True when endorsements have been withdrawn (contested). */
+  link_contested?: boolean;
   link_types?: number[];
   // FR-40: named ends beyond the two-ended fast path.
   named_ends?: [string, HyperRefPayload][];
