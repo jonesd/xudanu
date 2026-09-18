@@ -19,6 +19,7 @@ import {
   DENSITY_THRESHOLD,
   assignLinkLanes,
   clusterOverlappingMarkers,
+  clusterSameSpanLinks,
   filterMarkersByType,
   markerFocusAlpha,
   placeDescBoxes,
@@ -523,6 +524,11 @@ function drawOverlay(
   // regions so overlapping links stay legible.
   const lanes = assignLinkLanes(markers);
   const clusters = clusterOverlappingMarkers(markers);
+  // Rule 1: links sharing an EXACT span collapse into one visual —
+  // the hover band lists them all; no cursor hunting, no overlap.
+  const sameSpan = clusterSameSpanLinks(markers);
+  const inSameSpan = new Set<number>();
+  sameSpan.forEach((c) => c.indices.forEach((i) => inSameSpan.add(i)));
   const collapsed = new Set<number>();
   const densityPills: Array<{ clusterIndex: number; count: number; start: number; end: number; first: TransclusionMarker; markers: TransclusionMarker[] }> = [];
   clusters.forEach((c, ci) => {
@@ -620,9 +626,12 @@ function drawOverlay(
     const height = lastBottom - firstTop;
 
     const bandKey = `${drawStart}:${drawEnd}`;
+    // Rule 1: same-span links share the FIRST marker's lane — one
+    // visual marker, no overlapping. The hover band lists all.
+    const effectiveLane = inSameSpan.has(mi) ? 0 : lane;
     let band = bandRegions.get(bandKey);
     if (!band) {
-      band = { minX: Infinity, maxX: -Infinity, top: firstTop, bottom: lastBottom, maxLane: lane, markers: [] };
+      band = { minX: Infinity, maxX: -Infinity, top: firstTop, bottom: lastBottom, maxLane: effectiveLane, markers: [] };
       bandRegions.set(bandKey, band);
     }
     for (const r of rangeRects) {
@@ -631,7 +640,7 @@ function drawOverlay(
     }
     band.top = Math.min(band.top, firstTop);
     band.bottom = Math.max(band.bottom, lastBottom);
-    band.maxLane = Math.max(band.maxLane, lane);
+    band.maxLane = Math.max(band.maxLane, effectiveLane);
     band.markers.push(marker);
 
     const isIncoming = marker.direction === "incoming";
@@ -664,8 +673,18 @@ function drawOverlay(
     }
     // FR-4.5: stack margin bars per lane (left outgoing / right incoming).
     if (isIncoming && typeStyle) {
-      const rightX = rect.width - 3 - lane * 4;
+      const rightX = rect.width - 3 - effectiveLane * 4;
       ctx.fillRect(rightX, firstTop, 3, height);
+      // Rule 1: same-span count badge (drawn only on the first marker)
+      const sameSpanCluster = sameSpan.get(`${drawStart}..${drawEnd}`);
+      if (sameSpanCluster && sameSpanCluster.indices[0] === mi) {
+        ctx.save();
+        ctx.font = "bold 10px 'JetBrains Mono', monospace";
+        ctx.fillStyle = "#d29922";
+        ctx.textAlign = "center";
+        ctx.fillText(`×${sameSpanCluster.count}`, rightX + 1.5, firstTop - 3);
+        ctx.restore();
+      }
       if (marker.endSetTotal != null && marker.endSetTotal > 1) {
         drawEndSetBadge(ctx, rightX - 26, firstTop, marker);
       }
@@ -677,7 +696,7 @@ function drawOverlay(
         height,
       });
     } else {
-      const leftX = lane * 4;
+      const leftX = effectiveLane * 4;
       ctx.fillRect(leftX, firstTop, 3, height);
 
       if (marker.provenanceChain && marker.provenanceChain.length > 0) {

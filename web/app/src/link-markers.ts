@@ -242,3 +242,42 @@ export function markerFocusAlpha(
   if (marker.linkId === 0) return 1;
   return marker.linkId === focusLinkId ? 1 : FOCUS_DIM_ALPHA;
 }
+
+/**
+ * FR-4.6 Rule 1: same-span link clusters. Multiple links anchored to
+ * the identical text span render as ONE marker (count badge + type
+ * color bar) instead of overlapping individual markers. Hover opens
+ * the type picker — every link listed by type, no cursor hunting.
+ */
+export interface SameSpanCluster {
+  indices: number[];
+  start: number;
+  end: number;
+  typeIds: number[];
+  count: number;
+}
+
+export function clusterSameSpanLinks<T extends { start: number; end: number; linkTypeId?: number }>(
+  markers: T[],
+): Map<string, SameSpanCluster> {
+  const bySpan = new Map<string, number[]>();
+  for (let i = 0; i < markers.length; i++) {
+    const key = `${markers[i].start}..${markers[i].end}`;
+    const arr = bySpan.get(key);
+    if (arr) arr.push(i);
+    else bySpan.set(key, [i]);
+  }
+  const result = new Map<string, SameSpanCluster>();
+  for (const [key, indices] of bySpan) {
+    if (indices.length < 2) continue;
+    const m0 = markers[indices[0]];
+    result.set(key, {
+      indices,
+      start: m0.start,
+      end: m0.end,
+      typeIds: [...new Set(indices.map((i) => markers[i].linkTypeId ?? 0))].sort((a, b) => a - b),
+      count: indices.length,
+    });
+  }
+  return result;
+}
