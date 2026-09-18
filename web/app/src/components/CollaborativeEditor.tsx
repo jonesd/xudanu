@@ -1454,17 +1454,14 @@ export function CollaborativeEditor({
       hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null);
     };
 
-    // Typing flash fix: the direct drawOverlay used to fire on every
-    // buffer/displayText change (every keystroke), bypassing the
-    // overlay pause and clearing+redrawing mid-reflow — markers
-    // visibly flashed. Route through the debounced redraw instead
-    // (respects pause, batches to rAF). The initial draw still runs
-    // immediately for first-mount and data-arrival cases.
-    if (!overlayPausedRef.current) {
+    // Typing flash fix: always draw (markers must track text on every
+    // keystroke), but batch the clear+compute+draw cycle into ONE rAF
+    // so the browser composites them as a single frame — the clear is
+    // never visible as a standalone blank.
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(() => {
       hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null);
-    } else {
-      redraw();
-    }
+    });
 
     const ro = new ResizeObserver(redraw);
     ro.observe(container);
