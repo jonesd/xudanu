@@ -310,14 +310,24 @@ function drawOverlay(
   // Atlas, 2026-09-16).
   const CANVAS_PAD = 8;
   const contentH = Math.max(rect.height, editor.scrollHeight + editor.offsetTop) + CANVAS_PAD;
-  canvas.width = rect.width * dpr;
-  canvas.height = contentH * dpr;
-  canvas.style.width = rect.width + "px";
-  canvas.style.height = contentH + "px";
+  // Only touch canvas dimensions when they actually change —
+  // assigning width/height (even to the same value) NATIVELY CLEARS
+  // the canvas, which was the typing-flash root cause: every
+  // keystroke blanked the canvas before the draw cycle could repaint.
+  const newW = Math.round(rect.width * dpr);
+  const newH = Math.round(contentH * dpr);
+  if (canvas.width !== newW) {
+    canvas.width = newW;
+    canvas.style.width = rect.width + "px";
+  }
+  if (canvas.height !== newH) {
+    canvas.height = newH;
+    canvas.style.height = contentH + "px";
+  }
 
   const ctx = canvas.getContext("2d");
   if (!ctx) return hitZones;
-  ctx.scale(dpr, dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, rect.width, contentH);
 
   const textLen = editor.textContent?.length ?? 0;
