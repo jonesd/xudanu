@@ -1485,6 +1485,21 @@ export function CollaborativeEditor({
     const ro = new ResizeObserver(redraw);
     ro.observe(container);
 
+    // Panel-switch redraw: switching right-panel tabs (or closing a
+    // side panel) can hide/show the editor without changing its
+    // dimensions — the ResizeObserver doesn't fire for display:none
+    // → visible transitions with the same size. The canvas retains
+    // its last frame but may be stale if text changed while hidden.
+    // IntersectionObserver catches "became visible" and repaints.
+    const io = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting && !overlayPausedRef.current) {
+          redraw();
+        }
+      }
+    }, { threshold: 0.01 });
+    io.observe(container);
+
     // Scroll redraw: sync to animation frame for smooth overlay tracking
     let scrollPending = false;
     const scrollRedraw = () => {
@@ -1500,6 +1515,7 @@ export function CollaborativeEditor({
 
     return () => {
       ro.disconnect();
+      io.disconnect();
       container.removeEventListener("scroll", scrollRedraw);
       cancelAnimationFrame(rafId);
     };
