@@ -1096,11 +1096,23 @@ export function WorkspaceShell() {
       const hasMarker = lineText.startsWith(prefix);
       // Also check if line has ANY block marker (to replace it)
       const existingMarker = detectExistingMarker(lineText);
+      // Heading level changes: applying H1 to a "## TWO" line (or any
+      // heading-to-heading change) previously missed the startsWith
+      // check and double-prefixed. Normalize ALL heading markers when
+      // the target is a heading and any heading marker is present.
+      const isHeadingTarget = kind === "heading";
+      const hasAnyHeadingMarker = /^(#{1,6})\s/.test(lineText);
+      const headingPrefixMatch = lineText.match(/^(#{1,6})\s/);
+      const sameHeading =
+        isHeadingTarget && headingPrefixMatch != null && headingPrefixMatch[0] === prefix;
 
       let newLine: string;
-      if (hasMarker) {
+      if (sameHeading || hasMarker) {
         // Toggle off — remove the prefix
         newLine = lineText.slice(prefix.length);
+      } else if (isHeadingTarget && hasAnyHeadingMarker && headingPrefixMatch) {
+        // Heading level change — replace the old level's marker
+        newLine = prefix + lineText.slice(headingPrefixMatch[0].length);
       } else if (existingMarker) {
         // Replace existing marker
         newLine = prefix + lineText.slice(existingMarker.length);
