@@ -15,7 +15,6 @@ import { SuggestionCardList } from "../SuggestionCardList";
 import { useReuseSuggestions } from "../../hooks/useReuseSuggestions";
 import type { SuggestionCardPayload } from "../../api/crdt_sync";
 import { IdentityPanel } from "../IdentityPanel";
-import { DocumentMapPanel } from "../DocumentMapPanel";
 import { TrailsPanel } from "../TrailsPanel";
 import { RevisionTimeline } from "../RevisionTimeline";
 import { LinkCreator } from "../LinkCreator";
@@ -59,7 +58,7 @@ import "../../workspace.css";
 
 const WS_URL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/xudanu`;
 
-type LeftRailMode = "graph" | "outline";
+type LeftRailMode = "documents" | "outline";
 type RightPanelTab = "provenance" | "connections" | "trails" | "timeline" | "servers" | "compare" | "more";
 
 interface WorkMeta {
@@ -135,7 +134,7 @@ export function WorkspaceShell() {
     if (nav === "compose") return "compose";
     return "explore";
   });
-  const [leftRailMode, setLeftRailMode] = useState<LeftRailMode>("graph");
+  const [leftRailMode, setLeftRailMode] = useState<LeftRailMode>("documents");
   const [leftRailHidden, setLeftRailHidden] = useState(false);
   // Tablet/phone: panels are overlay drawers. Which drawer (if any) is
   // open — null, "left", or "right". One at a time; the desktop layout
@@ -216,7 +215,7 @@ export function WorkspaceShell() {
   const [concepts, setConcepts] = useState<Array<{ work_id: number; title: string; link_count: number }>>([]);
   const [conceptNameOverride, setConceptNameOverride] = useState<Map<number, string>>(new Map());
   const [seedingConcepts, setSeedingConcepts] = useState(false);
-  const [seedProgress, setSeedProgress] = useState(0);
+  const [seedProgress, setSeedProgress] /* FR-73: unused since rail slim; concepts await new home */ = useState(0);
   const [serverDomain, setServerDomain] = useState<string>("localhost");
   const [copiedFullId, setCopiedFullId] = useState(false);
 
@@ -2056,6 +2055,7 @@ export function WorkspaceShell() {
       setSeedProgress(0);
     }
   }, [clientRef, createWork, concepts, seedingConcepts]);
+  void handleAddConcept; void handleSeedDefaults; void seedProgress;
 
   const handleKindChange = useCallback(async (kind: WorkKind) => {
     if (workBeId === null || !clientRef.current) return;
@@ -3241,16 +3241,17 @@ export function WorkspaceShell() {
           )}
           <div className="ws-rail-toggle">
             <button
-              className={leftRailMode === "graph" ? "active" : ""}
-              onClick={() => setLeftRailMode("graph")}
-              title="Graph view"
+              className={leftRailMode === "documents" ? "active" : ""}
+              onClick={() => setLeftRailMode("documents")}
+              title="Recent documents"
             >
-              Graph
+              Documents
             </button>
             <button
               className={leftRailMode === "outline" ? "active" : ""}
               onClick={() => setLeftRailMode("outline")}
-              title="Outline view"
+              disabled={workBeId === null}
+              title={workBeId === null ? "Open a document to see its outline" : "Outline of the open document"}
             >
               Outline
             </button>
@@ -3265,85 +3266,30 @@ export function WorkspaceShell() {
             )}
           </div>
           <div className="ws-rail-content">
-            {leftRailMode === "graph" ? (
-              <DocumentMapPanel
-                key={`graph-${workBeId}-${connected}`}
-                client={connected ? clientRef.current : null}
-                onSelectWork={selectWork}
-                currentWorkId={workBeId}
-                onClose={() => setLeftRailHidden(true)}
-                embedded
-              />
-            ) : workBeId === null ? (
-              <div className="ws-placeholder">
-                <div className="ws-placeholder-label">Document outline</div>
-                <div className="ws-placeholder-sublabel">Open a document to see its outline</div>
-              </div>
-            ) : (
-              <DocumentOutlinePanel
-                text={getSourceText()}
-                activeCharPos={null}
-                onNavigate={(charPos) => {
-                  window.history.replaceState(
-                    null,
-                    "",
-                    window.location.pathname + window.location.search + `#C${charPos}`,
-                  );
-                  window.dispatchEvent(new HashChangeEvent("hashchange"));
-                }}
-              />
-            )}
-
-            {/* Related Concepts panel — below the graph */}
-            <div className="ws-concepts-panel">
-              <div className="ws-concepts-header">
-                <span className="ws-concepts-title">Related Concepts</span>
-                <div className="ws-concepts-actions">
-                  <button
-                    className="ws-concept-add-btn"
-                    onClick={handleAddConcept}
-                    title="Add a new concept"
-                  >+</button>
-                  <button
-                    className="ws-concept-add-btn"
-                    onClick={handleSeedDefaults}
-                    disabled={seedingConcepts}
-                    title="Seed default concept list (hypertext/PKM/writing)"
-                  >
-                    {seedingConcepts ? `… ${seedProgress}/${SEED_CONCEPTS.length}` : "⇣"}
-                  </button>
-                </div>
-              </div>
-              {concepts.length === 0 ? (
-                <div className="ws-concepts-empty">
-                  No concepts yet.
-                  <br />
-                  Click <strong>⇣</strong> to seed defaults
-                  <br />
-                  or <strong>+</strong> to add your own.
-                </div>
+            {leftRailMode === "outline" ? (
+              workBeId !== null ? (
+                <DocumentOutlinePanel
+                  text={getSourceText()}
+                  activeCharPos={null}
+                  onNavigate={(charPos) => {
+                    window.history.replaceState(
+                      null,
+                      "",
+                      window.location.pathname + window.location.search + `#C${charPos}`,
+                    );
+                    window.dispatchEvent(new HashChangeEvent("hashchange"));
+                  }}
+                />
               ) : (
-                <ul className="ws-concepts-list">
-                  {concepts.map((c) => (
-                    <li
-                      key={c.work_id}
-                      className="ws-concept-item"
-                      onClick={() => selectWork(c.work_id)}
-                      title={c.link_count > 0 ? `${c.link_count} linked work${c.link_count === 1 ? "" : "s"}` : "No linked works yet"}
-                    >
-                      <span className="ws-concept-name">{c.title}</span>
-                      {c.link_count > 0 && (
-                        <span className="ws-concept-count">{c.link_count}</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* Recent Documents */}
-            <div className="ws-concepts-panel">
-              <div className="ws-concepts-header">
+                <div className="ws-placeholder">
+                  <div className="ws-placeholder-label">Document outline</div>
+                  <div className="ws-placeholder-sublabel">Open a document to see its outline</div>
+                </div>
+              )
+            ) : (
+              <div className="ws-recents-panel">
+              {/* Recent Documents */}
+            <div className="ws-concepts-header">
                 <span className="ws-concepts-title">Recent</span>
                 <button
                   className="ws-concept-add-btn"
@@ -3426,7 +3372,8 @@ export function WorkspaceShell() {
                   </ul>
                 );
               })()}
-            </div>
+              </div>
+            )}
           </div>
           <button
             className="ws-rail-collapse"
