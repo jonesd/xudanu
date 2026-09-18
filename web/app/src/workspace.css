@@ -253,6 +253,8 @@
   z-index: 30;
   background: transparent;
   touch-action: none;
+  user-select: none;
+  -moz-user-select: none;
 }
 /* right panel: handle on its LEFT edge; left rail: RIGHT edge */
 .ws-panel-resizer.right { left: 0; }

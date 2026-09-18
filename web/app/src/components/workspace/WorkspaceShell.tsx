@@ -194,6 +194,24 @@ export function WorkspaceShell() {
     }
   };
 
+  // Keyboard resizing (accessibility + pointer-quirk proof):
+  // Alt+←/→ widens/narrows the right panel; Shift adds the left rail.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const dir = e.key === "ArrowRight" ? 1 : -1;
+      if (e.shiftKey) {
+        setLeftRailWidth((w) => Math.max(LEFT_RAIL_MIN, Math.min(420, w + dir * 24)));
+      } else {
+        setRightPanelWidth((w) =>
+          Math.max(RIGHT_PANEL_MIN, Math.min(Math.min(760, Math.floor(window.innerWidth * 0.55)), w - dir * 24)),
+        );
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   useEffect(() => {
     if (!panelDragging) return;
     const onMove = (e: PointerEvent) => {
