@@ -1888,11 +1888,12 @@ export function CollaborativeEditor({
     pauseTimerRef.current = setTimeout(() => {
       isTypingRef.current = false;
       overlayPausedRef.current = false;
-      const el = editorRef.current;
-      const canvas = overlayRef.current;
-      if (el && canvas) {
-        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null);
-      }
+      // No direct drawOverlay here — the closure's marker/attribution
+      // values are STALE (captured before the text change). Drawing
+      // with them put markers at old positions, then the next React
+      // render corrected them — the visible "flash on typing stop".
+      // The useEffect's rAF draw (which uses current values via
+      // re-render) is the single source of truth for positions.
     }, 400);
     let newText = hasInlineTransclusions ? getEditableText(el) : getTextContent(el);
     if (newText === "\n" && !el.querySelector("DIV") && !el.querySelector("P")) {
