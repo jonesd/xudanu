@@ -27,9 +27,12 @@ createRoot(document.getElementById("root")!).render(
 );
 
 // PWA: register the service worker (app-shell offline; document content
-// is mirrored in IndexedDB by offline-cache.ts). Debug builds too — the
-// SW is small and correctness matters everywhere.
-if ("serviceWorker" in navigator) {
+// is mirrored in IndexedDB by offline-cache.ts). PRODUCTION ONLY — in
+// dev the SW's cached shell shadows Vite: new tabs get stale modules
+// with a dead HMR token, which surfaces as duplicate-React crashes
+// ("Invalid hook call") and edits that never arrive (found the hard
+// way, Sept 2026). Dev correctness comes from Vite, not the SW.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch(() => {
       /* offline shell is best-effort */
