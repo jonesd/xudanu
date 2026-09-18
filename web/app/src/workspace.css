@@ -1774,8 +1774,19 @@
 }
 
 @media (max-width: 1023px) {
+  /* Tablet: sidebars become fixed overlay drawers (out of grid
+   * flow), so the doc is the ONLY in-flow grid child. Auto-placement
+   * would drop it into the first column — which used to be a 0px
+   * track, squashing the doc to its 2px borders (the "document
+   * disappears at 1023" bug). Single 1fr track + explicit placement
+   * keeps the document the layout's invariant at every width; the
+   * drawers overlay PART of it (320px), so network/Servers views
+   * coexist with the document. */
   .ws-body {
-    grid-template-columns: 0 1fr 0;
+    grid-template-columns: 1fr;
+  }
+  .ws-doc-surface {
+    grid-column: 1;
   }
   .ws-left-rail,
   .ws-right-panel {
@@ -3024,7 +3035,7 @@
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.25);
 }
 .ws-mode-compose .ws-body {
-  grid-template-columns: 0 minmax(0, 1fr) 0;
+  grid-template-columns: minmax(0, 1fr);
   padding-right: min(560px, 46vw);
 }
 .ws-mode-compose .ws-left-rail { display: none; }
@@ -3066,7 +3077,7 @@
     border-left: none;
   }
   .ws-mode-compose .ws-body {
-    grid-template-columns: 0 minmax(0, 1fr) 0;
+    grid-template-columns: minmax(0, 1fr);
     padding-right: 0;
   }
   .cb-header {
@@ -3377,7 +3388,7 @@
     display: none;
   }
   .ws-mode-welcome .ws-body {
-    grid-template-columns: 0 minmax(0, 1fr) 0;
+    grid-template-columns: minmax(0, 1fr);
     overflow-y: auto;
   }
   .ws-mode-doc .ws-doc-surface {
