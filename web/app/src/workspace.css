@@ -236,9 +236,38 @@
 .ws-body {
   grid-area: body;
   display: grid;
-  grid-template-columns: 240px minmax(320px, 1fr) 320px;
+  /* FR-73: the right vertical is user-resizable (drag the handle on
+   * the panel's left edge; double-click resets). --ws-right-w is set
+   * inline by WorkspaceShell; 320px is the fallback default. */
+  grid-template-columns: 240px minmax(320px, 1fr) var(--ws-right-w, 320px);
   overflow: hidden;
   min-height: 0;
+}
+
+.ws-panel-resizer {
+  position: absolute;
+  left: -4px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 30;
+  background: transparent;
+  touch-action: none;
+}
+.ws-panel-resizer::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+  transition: background 0.12s;
+}
+.ws-panel-resizer:hover::after,
+.ws-panel-resizer.dragging::after {
+  background: var(--accent-blue, #58a6ff);
 }
 .ws-body:has(.ws-left-rail.hidden) {
   grid-template-columns: 0 minmax(320px, 1fr) 320px;
