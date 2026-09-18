@@ -259,6 +259,14 @@
 /* right panel: handle on its LEFT edge; left rail: RIGHT edge */
 .ws-panel-resizer.right { left: 0; }
 
+.ws-width-grip {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 4px 8px;
+}
+.ws-width-grip:hover { color: var(--accent-blue, #58a6ff); }
+
 .ws-width-menu {
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -323,9 +331,10 @@
   }
 }
 
-/* Compose mode: hide left rail by default, narrow right panel */
+/* Compose mode: hide left rail by default; the right column honors
+ * the user's resize (FR-73) instead of a hardcoded 220px pin. */
 .ws-mode-compose .ws-body {
-  grid-template-columns: 0 1fr 220px;
+  grid-template-columns: 0 1fr var(--ws-right-w, 220px);
 }
 .ws-mode-compose .ws-left-rail { display: none; }
 

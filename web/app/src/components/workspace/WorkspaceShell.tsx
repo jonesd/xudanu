@@ -3375,6 +3375,16 @@ export function WorkspaceShell() {
             >
               Outline
             </button>
+            {!isTablet && (
+              <button
+                type="button"
+                className="ws-tab ws-width-grip"
+                title="Panel width — click for sizes"
+                onClick={() => setPanelWidthMenu(panelWidthMenu === "right" ? null : "right")}
+              >
+                {"\u21f5"}
+              </button>
+            )}
             {isTablet && (
               <button
                 className="ws-drawer-close"
