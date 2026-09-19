@@ -248,13 +248,15 @@ export function WorkspaceShell() {
   const [showImport, setShowImport] = useState(false);
   // FR-74: ref mirror so the selection handler always sees the
   // current pending destination (state closures can be stale)
-  const sameDocDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sameDocDestPendingRef = useRef<{
     sourceWorkId: number;
     sourceWorkTitle: string;
     start: number;
     end: number;
     text: string;
+    latestS?: number;
+    latestE?: number;
+    latestText?: string;
   } | null>(null);
 
   const [sameDocDestPending, setSameDocDestPending] = useState<
@@ -4620,6 +4622,24 @@ export function WorkspaceShell() {
                     sendCursor(idx);
                     setCursorPos(idx);
                   }}
+                  onSelectionEnd={() => {
+                    const sdp = sameDocDestPendingRef.current;
+                    if (sdp && sdp.latestS != null && sdp.latestE != null && sdp.latestS !== sdp.latestE) {
+                      const destText = sdp.latestText ?? "";
+                      if (destText.trim().length > 0) {
+                        sameDocDestPendingRef.current = null;
+                        setSameDocDestPending(null);
+                        setSameDocDestCaptured({
+                          sourceStart: sdp.start,
+                          sourceEnd: sdp.end,
+                          sourceText: sdp.text,
+                          destStart: sdp.latestS,
+                          destEnd: sdp.latestE,
+                          destText,
+                        });
+                      }
+                    }
+                  }}
                   onSelectionChange={(s, e) => {
                     sendSelection(s, e);
                     if (s !== null && e !== null && s !== e) setSelectionRange({ start: s, end: e });
@@ -4644,24 +4664,9 @@ export function WorkspaceShell() {
                 }
                 const sdp = sameDocDestPendingRef.current;
                 if (sdp && s !== null && e !== null && s !== e) {
-                  const destS = s;
-                  const destE = e;
-                  const destText = text.slice(s, e);
-                  if (sameDocDebounceRef.current) clearTimeout(sameDocDebounceRef.current);
-                  sameDocDebounceRef.current = setTimeout(() => {
-                    if (destText.trim().length > 0 && sameDocDestPendingRef.current) {
-                      sameDocDestPendingRef.current = null;
-                      setSameDocDestPending(null);
-                      setSameDocDestCaptured({
-                        sourceStart: sdp.start,
-                        sourceEnd: sdp.end,
-                        sourceText: sdp.text,
-                        destStart: destS,
-                        destEnd: destE,
-                        destText,
-                      });
-                    }
-                  }, 400);
+                  sdp.latestS = s;
+                  sdp.latestE = e;
+                  sdp.latestText = text.slice(s, e);
                 }
                   }}
                   connected={connected}
@@ -5349,6 +5354,7 @@ export function WorkspaceShell() {
                   if (!clientRef.current || workBeId === null) return;
                   const c = sameDocDestCaptured;
                   setSameDocDestCaptured(null);
+                  console.log("[same-doc] creating link:", { srcStart: c.sourceStart, srcEnd: c.sourceEnd, srcText: c.sourceText.slice(0, 20), destStart: c.destStart, destEnd: c.destEnd, destText: c.destText.slice(0, 20) });
                   void clientRef.current.linkCreate(
                     workBeId,
                     workBeId,
