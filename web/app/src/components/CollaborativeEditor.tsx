@@ -1158,6 +1158,13 @@ export function CollaborativeEditor({
   onPlaceImage,
 }: CollaborativeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
+  // FR-74 solid foundation: the editor alternates between DISPLAY
+  // (read-only, DOM rebuilt from model) and EDIT (contenteditable
+  // active for typing). The contenteditable's mutated state never
+  // survives past exiting edit mode — corruption is structurally
+  // impossible between editing sessions.
+  const [isEditing, setIsEditing] = useState(false);
+  const editExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const hitZonesRef = useRef<MarkerHitZone[]>([]);
   const [placementIndicator, setPlacementIndicator] = useState<{ x: number; y: number; height: number; pos: number; padding?: string } | null>(null);
@@ -1331,7 +1338,10 @@ export function CollaborativeEditor({
     // (link, transclusion, format) may have changed the text without
     // changing marks; the contenteditable's mutated state must never
     // survive past this point.
-    const structuralKey = `sv:${structuralVersion}`;
+    // FR-74: isEditing transitions force rebuild — exiting edit mode
+    // must rebuild from the model (the contenteditable's DOM state is
+    // discarded). structuralVersion bumps also force rebuild.
+    const structuralKey = `sv:${structuralVersion}:e:${isEditing ? 1 : 0}`;
     // URL presence participates in the key: a freshly typed/pasted URL
     // (native insertion, plain text node) must trigger one rebuild so it
     // renders as a live link — without rebuilding on every keystroke.
@@ -1361,7 +1371,7 @@ export function CollaborativeEditor({
       console.error("[style-marks] rebuild failed, falling back to plain text:", e);
       el.textContent = displayText;
     }
-  }, [styleMarks, displayText, hasInlineTransclusions, structuralVersion]);
+  }, [styleMarks, displayText, hasInlineTransclusions, structuralVersion, isEditing]);
 
   useEffect(() => {
     const el = editorRef.current;
@@ -3077,11 +3087,24 @@ export function CollaborativeEditor({
           <div
             ref={editorRef}
             className={`editor-content${!editable ? " editor-readonly" : ""}${readingMode ? " reading-mode" : ""}`}
-            contentEditable={editable && !pendingTransclusion && !pendingImagePlacement}
+            contentEditable={editable && isEditing && !pendingTransclusion && !pendingImagePlacement}
             suppressContentEditableWarning
+            onPointerDown={() => {
+              if (editable) {
+                if (editExitTimerRef.current) clearTimeout(editExitTimerRef.current);
+                setIsEditing(true);
+              }
+            }}
             onInput={handleInput}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            onKeyUp={() => {
+              if (editExitTimerRef.current) clearTimeout(editExitTimerRef.current);
+              editExitTimerRef.current = setTimeout(() => {
+                setIsEditing(false);
+                handleInput();
+              }, 2000);
+            }}
             onDrop={(e) => {
               const items = e.dataTransfer?.items;
               if (items) {
@@ -3194,6 +3217,12 @@ export function CollaborativeEditor({
                   }
                 }}
                 onBlur={(e) => {
+              if (editable) {
+                // FR-74: exit edit mode — force rebuild from model on
+                // the next render cycle (the structuralVersion effect)
+                setIsEditing(false);
+                handleInput();
+              }
                   if (e.target.value.trim() !== editingDesc.text) {
                     onEditLinkDescription?.(editingDesc.linkId, e.target.value.trim());
                   }
