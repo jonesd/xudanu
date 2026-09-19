@@ -2717,6 +2717,40 @@ export function WorkspaceShell() {
                                 </span>
                               )}
                               {canEdit && (
+                                <select
+                                  className="ws-conn-type-badge"
+                                  value={link.link_types?.[0] ?? 0}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={async (e) => {
+                                    e.stopPropagation();
+                                    const client = clientRef.current;
+                                    if (!client) return;
+                                    try {
+                                      await client.linkSetTypes(link.link_id, [parseInt(e.target.value, 10)]);
+                                      if (workBeId !== null) {
+                                        void loadLinks(client, workBeId, works);
+                                      }
+                                    } catch { /* best-effort */ }
+                                  }}
+                                  title="Change link type"
+                                  style={{
+                                    background: "var(--bg, #161b22)",
+                                    border: "1px solid var(--border, #30363d)",
+                                    color: "var(--text, #e6edf3)",
+                                    fontSize: 10,
+                                    padding: "1px 4px",
+                                    cursor: "pointer",
+                                    borderRadius: 4,
+                                  }}
+                                >
+                                  <option value={1}>Comment</option>
+                                  <option value={2}>Reference</option>
+                                  <option value={3}>Disagreement</option>
+                                  <option value={4}>Quotation</option>
+                                  <option value={5}>See Also</option>
+                                </select>
+                              )}
+                              {canEdit && (
                                 <button
                                   className="ws-conn-delete"
                                   title="Vouch for this connection (endorse)"
