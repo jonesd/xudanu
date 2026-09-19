@@ -246,6 +246,16 @@ export function WorkspaceShell() {
   const [tagResult, setTagResult] = useState<{ new: Array<{name: string; id: number}>; linked: Array<{name: string; id: number}> } | null>(null);
   const [epubImporting, setEpubImporting] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  // FR-74: ref mirror so the selection handler always sees the
+  // current pending destination (state closures can be stale)
+  const sameDocDestPendingRef = useRef<{
+    sourceWorkId: number;
+    sourceWorkTitle: string;
+    start: number;
+    end: number;
+    text: string;
+  } | null>(null);
+
   const [sameDocDestPending, setSameDocDestPending] = useState<{
     sourceWorkId: number;
     sourceWorkTitle: string;
@@ -4634,18 +4644,20 @@ export function WorkspaceShell() {
                     }
                   }, 400);
                 }
-                if (sameDocDestPending && s !== null && e !== null && s !== e) {
+                const sdp = sameDocDestPendingRef.current;
+                if (sdp && s !== null && e !== null && s !== e) {
                   const destText = text.slice(s, e);
                   if (destText.trim().length > 0) {
                     setSameDocDestCaptured({
-                      sourceStart: sameDocDestPending.start,
-                      sourceEnd: sameDocDestPending.end,
-                      sourceText: sameDocDestPending.text,
+                      sourceStart: sdp.start,
+                      sourceEnd: sdp.end,
+                      sourceText: sdp.text,
                       destStart: s,
                       destEnd: e,
                       destText,
                     });
-                    setSameDocDestPending(null);
+                    sameDocDestPendingRef.current = null;
+                setSameDocDestPending(null);
                   }
                 }
                   }}
@@ -5265,6 +5277,13 @@ export function WorkspaceShell() {
           }}
           onSelectTextInOtherDoc={() => {
             if (transclusion.pendingLink) {
+              sameDocDestPendingRef.current = {
+                sourceWorkId: transclusion.pendingLink.sourceWorkId,
+                sourceWorkTitle: transclusion.pendingLink.sourceWorkTitle,
+                start: transclusion.pendingLink.start,
+                end: transclusion.pendingLink.end,
+                text: transclusion.pendingLink.text,
+              };
               setSameDocDestPending({
                 sourceWorkId: transclusion.pendingLink.sourceWorkId,
                 sourceWorkTitle: transclusion.pendingLink.sourceWorkTitle,
