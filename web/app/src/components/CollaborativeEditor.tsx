@@ -57,9 +57,9 @@ interface CollaborativeEditorProps {
   onTextChange?: (text: string) => void;
   onCursorChange: (index: number | null) => void;
   onSelectionChange: (start: number | null, end: number | null) => void;
-  /** FR-74: fires on mouseup — the same-doc destination capture
-   *  reads the final selection (drag complete, no timer race). */
-  onSelectionEnd?: () => void;
+  /** FR-74: fires on mouseup with the cursor/selection offset —
+   *  the same-doc destination capture reads the final position. */
+  onSelectionEnd?: (offset: number | null) => void;
   connected: boolean;
   attributionSpans: AttributionSpan[];
   editable: boolean;
@@ -2618,7 +2618,16 @@ export function CollaborativeEditor({
           onMouseMove={handleOverlayMouseMove}
           onMouseLeave={handleOverlayMouseLeave}
             onMouseDown={handleOverlayMouseDown}
-            onMouseUp={() => { handleOverlayMouseUp(); onSelectionEnd?.(); }}
+            onMouseUp={() => {
+              handleOverlayMouseUp();
+              const el = editorRef.current;
+              const sel = window.getSelection();
+              if (el && sel && el.contains(sel.anchorNode)) {
+                onSelectionEnd?.(getCursorOffset(el));
+              } else {
+                onSelectionEnd?.(null);
+              }
+            }}
           onClick={handleOverlayClick}
         >
           <canvas

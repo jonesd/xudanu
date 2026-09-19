@@ -4622,9 +4622,16 @@ export function WorkspaceShell() {
                     sendCursor(idx);
                     setCursorPos(idx);
                   }}
-                  onSelectionEnd={() => {
+                  onSelectionEnd={(cursorOffset) => {
                     const sdp = sameDocDestPendingRef.current;
-                    if (sdp && sdp.latestS != null && sdp.latestE != null) {
+                    if (!sdp) return;
+                    // If no selection was stored (single click = collapsed),
+                    // use the cursor position and let word snapping expand it
+                    if (sdp.latestS == null && cursorOffset != null) {
+                      sdp.latestS = cursorOffset;
+                      sdp.latestE = cursorOffset;
+                    }
+                    if (sdp.latestS != null && sdp.latestE != null) {
                       // FR-74 word snapping: expand the selection to word
                       // boundaries so clicking any part of a word selects
                       // the whole word. No precise dragging needed.
