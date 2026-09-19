@@ -1897,7 +1897,9 @@ export function CollaborativeEditor({
     const pre = document.createRange();
     pre.selectNodeContents(el);
     pre.setEnd(range.startContainer, range.startOffset);
-    const start = pre.toString().length;
+    // FR-74 position fix: strip ZWSP (DOM-only artifact) so the
+    // reported position matches the MODEL text exactly
+    const start = pre.toString().replace(/\u200B/g, "").length;
     pre.setEnd(range.endContainer, range.endOffset);
     const end = pre.toString().length;
     return { start, end };
@@ -2228,7 +2230,9 @@ export function CollaborativeEditor({
     const pre = document.createRange();
     pre.selectNodeContents(el);
     pre.setEnd(range.startContainer, range.startOffset);
-    const start = pre.toString().length;
+    // FR-74 position fix: strip ZWSP (DOM-only artifact) so the
+    // reported position matches the MODEL text exactly
+    const start = pre.toString().replace(/\u200B/g, "").length;
 
     if (sel.isCollapsed) {
       onCursorChange(start);
@@ -2236,7 +2240,7 @@ export function CollaborativeEditor({
       const preEnd = document.createRange();
       preEnd.selectNodeContents(el);
       preEnd.setEnd(range.endContainer, range.endOffset);
-      let end = preEnd.toString().length;
+      let end = preEnd.toString().replace(/\u200B/g, "").length;
 
       if (start < end && compoundSpanRanges.length > 0) {
         for (const sr of compoundSpanRanges) {

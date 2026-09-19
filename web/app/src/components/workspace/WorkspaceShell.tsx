@@ -5351,11 +5351,17 @@ export function WorkspaceShell() {
                   ).then((r) => {
                     const linkId = typeof r === "number" ? r : (r as { link_id?: number })?.link_id;
                     if (linkId && clientRef.current) {
-                      void clientRef.current.linkSetTypes(linkId, [t.id]).then(() => {
+                      clientRef.current.linkSetTypes(linkId, [t.id]).then(() => {
                         if (clientRef.current && workBeId !== null) {
                           void loadLinks(clientRef.current, workBeId, works);
                         }
                         showToast("\u2713 " + t.name + " link created");
+                      }).catch((err) => {
+                        console.warn("[same-doc] linkSetTypes failed:", err);
+                        showToast(t.name + " link created (type may need manual set)");
+                        if (clientRef.current && workBeId !== null) {
+                          void loadLinks(clientRef.current, workBeId, works);
+                        }
                       });
                     }
                   }).catch(() => {

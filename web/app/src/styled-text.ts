@@ -377,7 +377,13 @@ export function getCursorOffset(el: HTMLElement): number {
   const preRange = document.createRange();
   preRange.selectNodeContents(el);
   preRange.setEnd(range.startContainer, range.startOffset);
-  return preRange.toString().length;
+
+  // FR-74 position fix: the preRange.toString() includes text inside
+  // hidden marker spans (## prefixes) and ZWSP (\u200B) characters.
+  // The hidden marker text IS in the model (it's the heading syntax),
+  // so we keep it. But ZWSPs are DOM-only artifacts — strip them so
+  // the offset matches the model text exactly.
+  return preRange.toString().replace(/\u200B/g, "").length;
 }
 
 export function setCursorOffset(el: HTMLElement, offset: number): void {
