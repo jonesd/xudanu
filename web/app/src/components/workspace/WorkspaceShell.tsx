@@ -248,6 +248,7 @@ export function WorkspaceShell() {
   const [showImport, setShowImport] = useState(false);
   // FR-74: ref mirror so the selection handler always sees the
   // current pending destination (state closures can be stale)
+  const sameDocDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sameDocDestPendingRef = useRef<{
     sourceWorkId: number;
     sourceWorkTitle: string;
@@ -4643,19 +4644,24 @@ export function WorkspaceShell() {
                 }
                 const sdp = sameDocDestPendingRef.current;
                 if (sdp && s !== null && e !== null && s !== e) {
+                  const destS = s;
+                  const destE = e;
                   const destText = text.slice(s, e);
-                  if (destText.trim().length > 0) {
-                    setSameDocDestCaptured({
-                      sourceStart: sdp.start,
-                      sourceEnd: sdp.end,
-                      sourceText: sdp.text,
-                      destStart: s,
-                      destEnd: e,
-                      destText,
-                    });
-                    sameDocDestPendingRef.current = null;
-                setSameDocDestPending(null);
-                  }
+                  if (sameDocDebounceRef.current) clearTimeout(sameDocDebounceRef.current);
+                  sameDocDebounceRef.current = setTimeout(() => {
+                    if (destText.trim().length > 0 && sameDocDestPendingRef.current) {
+                      sameDocDestPendingRef.current = null;
+                      setSameDocDestPending(null);
+                      setSameDocDestCaptured({
+                        sourceStart: sdp.start,
+                        sourceEnd: sdp.end,
+                        sourceText: sdp.text,
+                        destStart: destS,
+                        destEnd: destE,
+                        destText,
+                      });
+                    }
+                  }, 400);
                 }
                   }}
                   connected={connected}
