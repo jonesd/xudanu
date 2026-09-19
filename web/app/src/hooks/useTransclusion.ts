@@ -292,6 +292,39 @@ export function useTransclusion(): TransclusionState {
                 endLabel,
                 otherEndTitles,
             });
+
+            // Same-doc link: the destination end is ALSO on this page.
+            // Without this marker, "here is the target" looks like text.
+            if (link.origin === link.destination && link.destination_ref) {
+              const dRef = link.destination_ref;
+              const dStart = dRef.start_position;
+              const dEnd = dRef.end_position;
+              if (dStart != null && dEnd != null && dStart < dEnd) {
+                newMarkers.push({
+                  start: dStart,
+                  end: dEnd,
+                  linkId: link.link_id,
+                  direction: "incoming" as const,
+                  otherWorkId,
+                  otherWorkTitle: title,
+                  color,
+                  excerpt: (dRef.excerpt ?? excerpt).slice(0, 120),
+                  provenanceChain: chain,
+                  linkTypeId: link.link_types?.[0],
+                  linkAuthorName: link.author_name ?? null,
+                  linkAuthorClub: link.author_club ?? null,
+                  otherWorkIsArchived: !!otherArchived,
+                  otherWorkOwner: otherOwner ?? null,
+                  crossServerRef,
+                  sourceSpanStart: localRef?.start_position ?? null,
+                  sourceSpanEnd: localRef?.end_position ?? null,
+                  descriptorExcerpt,
+                  totalEnds,
+                  endLabel,
+                  otherEndTitles,
+                });
+              }
+            }
           }
         }
         if (stale()) return;
