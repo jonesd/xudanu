@@ -69,7 +69,9 @@ fn build_link_payload(
     let author_name = author_club.and_then(|cid| srv.club_display_name_by_id(cid));
     let endorsements = srv.link_endorsements(link_id).unwrap_or_default();
     let endorsement_count = endorsements.len() as u32;
-    let link_contested = endorsement_count == 0; // zero endorsements = contested/orphaned
+    // Contested = had endorsements and lost them. Legacy links (created
+    // before the endorsement system) have always had zero — not contested.
+    let link_contested = false; // no un-endorsement tracking yet
     LinkPayload {
         link_id,
         origin,

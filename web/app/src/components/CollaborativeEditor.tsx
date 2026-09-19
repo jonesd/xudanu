@@ -1168,6 +1168,22 @@ export function CollaborativeEditor({
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [showBoilerplate, setShowBoilerplate] = useState(false);
   const [hoveredMarker, setHoveredMarker] = useState<TransclusionMarker | null>(null);
+  // Hover suppression during text selection: selecting across a linked
+  // passage is the PRIMARY interaction (copy, re-link, quote) — the
+  // tooltip must never block it. On mousedown, suppress hover until
+  // mouseup; also add a dwell delay so quick mouse-overs don't flash.
+  const isSelectingRef = useRef(false);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearHoverTimer = useCallback(() => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  }, []);
+  const scheduleHover = useCallback((fn: () => void, delayMs: number = 300) => {
+    clearHoverTimer();
+    hoverTimerRef.current = setTimeout(fn, delayMs);
+  }, [clearHoverTimer]);
   const [hoveredStack, setHoveredStack] = useState<{ markers: TransclusionMarker[]; x: number; y: number } | null>(null);
   const [hoveredAnnotation, setHoveredAnnotation] = useState<{ text: string; x: number; y: number; id: number } | null>(null);
   const annotationHitZonesRef = useRef<Array<{ x: number; y: number; width: number; height: number; text: string; id: number }>>([]);
@@ -1727,18 +1743,26 @@ export function CollaborativeEditor({
     );
     if (hit) {
       if (hit.stackMarkers && hit.stackMarkers.length > 1) {
-        setTooltipPos({ x: e.clientX, y: e.clientY });
-        setHoveredStack({ markers: hit.stackMarkers, x: e.clientX, y: e.clientY });
-        setHoveredMarker(null);
-        setAuthorTooltip(null);
+        if (isSelectingRef.current) return;
+        clearHoverTimer();
+        scheduleHover(() => {
+          setTooltipPos({ x: e.clientX, y: e.clientY });
+          setHoveredStack({ markers: hit.stackMarkers ?? [], x: e.clientX, y: e.clientY });
+          setHoveredMarker(null);
+          setAuthorTooltip(null);
+        });
         return;
       }
       setHoveredStack(null);
+      if (isSelectingRef.current) return;
       const m = (hit.densityCluster != null && hit.densityCount != null)
         ? { ...hit.marker, otherWorkTitle: `${hit.densityCount} links in this region` }
         : hit.marker;
-      setHoveredMarker(m);
-      setTooltipPos({ x: e.clientX, y: e.clientY });
+      clearHoverTimer();
+      scheduleHover(() => {
+        setHoveredMarker(m);
+        setTooltipPos({ x: e.clientX, y: e.clientY });
+      });
     } else {
       setHoveredStack(null);
       // Single-author documents: the hover would only restate the
@@ -1764,7 +1788,22 @@ export function CollaborativeEditor({
 
   const handleOverlayMouseLeave = useCallback(() => {
     scheduleHideTooltip();
-  }, [scheduleHideTooltip]);
+    clearHoverTimer();
+  }, [scheduleHideTooltip, clearHoverTimer]);
+
+  const handleOverlayMouseDown = useCallback(() => {
+    isSelectingRef.current = true;
+    clearHoverTimer();
+    setHoveredMarker(null);
+    setHoveredStack(null);
+    setAuthorTooltip(null);
+  }, [clearHoverTimer]);
+
+  const handleOverlayMouseUp = useCallback(() => {
+    // Small delay before re-enabling hover — the selection may still be
+    // finishing (double-click to select word, shift-click to extend)
+    setTimeout(() => { isSelectingRef.current = false; }, 200);
+  }, []);
 
   const handleOverlayClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -2546,6 +2585,8 @@ export function CollaborativeEditor({
           style={(pendingTransclusion || pendingImagePlacement) ? { cursor: "crosshair" } : undefined}
           onMouseMove={handleOverlayMouseMove}
           onMouseLeave={handleOverlayMouseLeave}
+            onMouseDown={handleOverlayMouseDown}
+            onMouseUp={handleOverlayMouseUp}
           onClick={handleOverlayClick}
         >
           <canvas
