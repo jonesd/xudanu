@@ -48,6 +48,11 @@ interface AuthorStyle {
 
 interface CollaborativeEditorProps {
   text: string;
+  /** FR-74 Phase A: increments after every structural operation
+   *  (link create, transclusion insert, format change). Forces a
+   *  DOM rebuild from the model text — the contenteditable's
+   *  intermediate state is never trusted after structural changes. */
+  structuralVersion?: number;
   workId?: number;
   onTextChange?: (text: string) => void;
   onCursorChange: (index: number | null) => void;
@@ -1105,6 +1110,7 @@ function findTextNodeAt(root: Node, targetOffset: number, skipNonEditable: boole
 
 export function CollaborativeEditor({
   text,
+  structuralVersion = 0,
   workId,
   onTextChange,
   onCursorChange,
@@ -1321,11 +1327,16 @@ export function CollaborativeEditor({
     // native typing/Enter must NOT rebuild (innerHTML rebuild raced
     // the caret and killed input mid-list).
     const marksKey = styleMarks.map((m) => `${m.kind}:${m.char_start}:${m.char_end}`).join("|");
+    // FR-74: structuralVersion participates — a structural operation
+    // (link, transclusion, format) may have changed the text without
+    // changing marks; the contenteditable's mutated state must never
+    // survive past this point.
+    const structuralKey = `sv:${structuralVersion}`;
     // URL presence participates in the key: a freshly typed/pasted URL
     // (native insertion, plain text node) must trigger one rebuild so it
     // renders as a live link — without rebuilding on every keystroke.
     const urlKey = findUrls(displayText).map((u) => `${u.start}:${u.end}`).join("|");
-    const combinedKey = `${marksKey}#${urlKey}`;
+    const combinedKey = `${marksKey}#${urlKey}#${structuralKey}`;
     if (combinedKey === lastMarksRef.current) {
       // DOM already contains the typed text (native insertion) —
       // leave it and the caret alone.
@@ -1350,7 +1361,7 @@ export function CollaborativeEditor({
       console.error("[style-marks] rebuild failed, falling back to plain text:", e);
       el.textContent = displayText;
     }
-  }, [styleMarks, displayText, hasInlineTransclusions]);
+  }, [styleMarks, displayText, hasInlineTransclusions, structuralVersion]);
 
   useEffect(() => {
     const el = editorRef.current;

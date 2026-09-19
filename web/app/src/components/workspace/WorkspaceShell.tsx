@@ -169,6 +169,10 @@ export function WorkspaceShell() {
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [showUndoToast, setShowUndoToast] = useState(false);
   const [editorMode, setEditorMode] = useState<"authoring" | "reading">("authoring");
+  // FR-74 Phase A: bumps after every structural operation — forces
+  // the editor to rebuild its DOM from the model text
+  const [structuralVersion, setStructuralVersion] = useState(0);
+  const bumpStructuralVersion = useCallback(() => setStructuralVersion((v) => v + 1), []);
   const [highlightRange, setHighlightRange] = useState<{ start: number; end: number } | null>(null);
   const [pendingImage, setPendingImage] = useState<{ hash: string; mime: string; byte_size: number; width?: number; height?: number } | null>(null);
   const useMDE = new URLSearchParams(window.location.search).has("mde");
@@ -1778,7 +1782,13 @@ export function WorkspaceShell() {
   // Load links + backlinks on every work change (needed for colored underlines in editor)
   // Deferred 200ms after text is visible so text renders first
   // Gated on authenticated so nothing fires during the ticket-redeem window
-  const loadLinks = transclusion.loadLinks;
+  const loadLinks = useCallback(
+    (client: NonNullable<typeof clientRef.current>, workId: number, works: import("../../api/crdt_sync").WorkListEntry[]) => {
+      bumpStructuralVersion();
+      void transclusion.loadLinks(client, workId, works);
+    },
+    [bumpStructuralVersion, transclusion.loadLinks],
+  );
 
   /**
    * FR-40 L4 (S7 attachLink, winfe links.cpp:305): commenting on a
@@ -4594,6 +4604,7 @@ export function WorkspaceShell() {
                   />
                 ) : (
                   <CollaborativeEditor
+                  structuralVersion={structuralVersion}
                   text={text}
                   workId={workBeId ?? undefined}
                   onTextChange={canEdit ? setText : undefined}
