@@ -4624,7 +4624,7 @@ export function WorkspaceShell() {
                   }}
                   onSelectionEnd={() => {
                     const sdp = sameDocDestPendingRef.current;
-                    if (sdp && sdp.latestS != null && sdp.latestE != null && sdp.latestS !== sdp.latestE) {
+                    if (sdp && sdp.latestS != null && sdp.latestE != null) {
                       // FR-74 word snapping: expand the selection to word
                       // boundaries so clicking any part of a word selects
                       // the whole word. No precise dragging needed.
@@ -4686,7 +4686,9 @@ export function WorkspaceShell() {
                   }, 400);
                 }
                 const sdp = sameDocDestPendingRef.current;
-                if (sdp && s !== null && e !== null && s !== e) {
+                if (sdp && s !== null && e !== null) {
+                  // Store even collapsed selections (s === e) — the word
+                  // snapping in onSelectionEnd (mouseup) will expand them.
                   sdp.latestS = s;
                   sdp.latestE = e;
                   sdp.latestText = text.slice(s, e);
