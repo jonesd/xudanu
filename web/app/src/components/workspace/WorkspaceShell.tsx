@@ -256,13 +256,10 @@ export function WorkspaceShell() {
     text: string;
   } | null>(null);
 
-  const [sameDocDestPending, setSameDocDestPending] = useState<{
-    sourceWorkId: number;
-    sourceWorkTitle: string;
-    start: number;
-    end: number;
-    text: string;
-  } | null>(null);
+  const [sameDocDestPending, setSameDocDestPending] = useState<
+    { sourceWorkId: number; sourceWorkTitle: string; start: number; end: number; text: string } | null
+  >(null);
+  void sameDocDestPending; // handler uses the ref; state for future render checks
   const gatherDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [gatherPending, setGatherPending] = useState<{
     sourceWorkId: number;
