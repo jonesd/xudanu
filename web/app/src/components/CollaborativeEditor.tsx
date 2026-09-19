@@ -606,9 +606,12 @@ function drawOverlay(
     let drawStart = Math.max(marker.start, 0);
     let drawEnd = Math.min(marker.end, textLen);
     const rawExcerpt = (marker.excerpt || "").trim();
-    if (rawExcerpt.length >= 8) {
+    if (rawExcerpt.length >= 4) {
+      // FR-74 deterministic markers: compare against the MODEL text
+      // (displayText), not the DOM textContent (which has ZWSP and
+      // hidden-span artifacts). Same model text → same marker position.
       const want = rawExcerpt.slice(0, 40);
-      const flat = editor.textContent || "";
+      const flat = (editor.textContent || "").replace(/\u200B/g, "");
       const at = flat.slice(drawStart, drawStart + want.length);
       if (at !== want) {
         const found = flat.indexOf(want);

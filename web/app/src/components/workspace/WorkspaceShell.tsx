@@ -4625,6 +4625,29 @@ export function WorkspaceShell() {
                   onSelectionEnd={() => {
                     const sdp = sameDocDestPendingRef.current;
                     if (sdp && sdp.latestS != null && sdp.latestE != null && sdp.latestS !== sdp.latestE) {
+                      // FR-74 word snapping: expand the selection to word
+                      // boundaries so clicking any part of a word selects
+                      // the whole word. No precise dragging needed.
+                      const modelText = text;
+                      const snapToWord = (pos: number, isStart: boolean): number => {
+                        const wordChars = /[a-zA-Z0-9']/;
+                        if (isStart) {
+                          // expand left
+                          let p = pos;
+                          while (p > 0 && wordChars.test(modelText[p - 1])) p--;
+                          return p;
+                        } else {
+                          // expand right
+                          let p = pos;
+                          while (p < modelText.length && wordChars.test(modelText[p])) p++;
+                          return p;
+                        }
+                      };
+                      sdp.latestS = snapToWord(sdp.latestS, true);
+                      sdp.latestE = snapToWord(sdp.latestE, false);
+                      if (sdp.latestS < sdp.latestE) {
+                        sdp.latestText = text.slice(sdp.latestS, sdp.latestE);
+                      }
                       const destText = sdp.latestText ?? "";
                       if (destText.trim().length > 0) {
                         sameDocDestPendingRef.current = null;
