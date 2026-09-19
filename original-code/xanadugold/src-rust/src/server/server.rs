@@ -13188,6 +13188,20 @@ impl Server {
         self.demo_work_id
     }
 
+    /// Schema-drift self-heal: write a checkpoint immediately after
+    /// restore so new default fields are persisted on THIS startup,
+    /// not deferred to the next autosave. Eliminates the repeated
+    /// SCHEMA DRIFT warning.
+    pub fn checkpoint_after_restore(&mut self) -> std::io::Result<()> {
+        if self.chunk_store().is_some() {
+            self.checkpoint_to_store()?;
+            tracing::info!(
+                "[restore] schema-drift self-heal: checkpoint written with current schema"
+            );
+        }
+        Ok(())
+    }
+
     pub fn restore_from_data_dir(
         &mut self,
         data_dir: &std::path::Path,

@@ -1044,6 +1044,10 @@ async fn main() {
                         );
                         std::process::exit(1);
                     }
+                    // Schema-drift self-heal: persist with current fields
+                    if let Err(e) = s.checkpoint_after_restore() {
+                        tracing::warn!("[restore] schema self-heal checkpoint failed: {}", e);
+                    }
                     let elapsed = start.elapsed();
                     tracing::info!(
                         "Restored in {:.2}ms: {}",
