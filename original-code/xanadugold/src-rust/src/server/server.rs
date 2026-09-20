@@ -23791,6 +23791,7 @@ impl Server {
                 server_id,
                 verifying_key_hex,
                 kex_public_hex,
+                recovery_key_hex,
             } => {
                 let proofs = vec![];
                 let mut entry = crate::server::federation::MembershipEntry::new(
@@ -23804,6 +23805,7 @@ impl Server {
                 // valid from the round AFTER the sealing batch (§1).
                 entry.admitted_by_governance = true;
                 entry.epoch.valid_from_seq = sealing_seq + 1;
+                entry.recovery_key_hex = recovery_key_hex.clone();
                 let tag = self.federation.membership_mut().next_tag(server_id);
                 self.federation.membership_mut().add_member(entry, tag);
             }
@@ -23812,11 +23814,95 @@ impl Server {
             }
             crate::server::federation::GovernanceTx::KeyRegister {
                 server_id,
+                key_id: _,
                 verifying_key_hex,
                 kex_public_hex,
-                ..
+                authorization,
             } => {
                 if let Some(mut entry) = self.federation.membership().find_member(server_id) {
+                    // FR-75 §4: rotation authority — the current key
+                    // alone NEVER suffices. Single-server mode is the
+                    // one exemption (the operator IS the server).
+                    let payload = crate::server::federation::KeyRegisterAuthorization::payload_for(
+                        server_id,
+                        verifying_key_hex,
+                    );
+                    let admitted = self.governance_admitted_count_at(sealing_seq + 1).max(1);
+                    let authorized = match authorization {
+                        crate::server::federation::KeyRegisterAuthorization::None => {
+                            if admitted <= 1 {
+                                true
+                            } else {
+                                tracing::warn!(
+                                    server_id = %server_id,
+                                    "KeyRegister refused: no rotation authorization (multi-server)"
+                                );
+                                false
+                            }
+                        }
+                        crate::server::federation::KeyRegisterAuthorization::Operator {
+                            current_signature,
+                            recovery_signature,
+                        } => {
+                            let current_ok = !entry.verifying_key_hex.is_empty()
+                                && crate::server::federation::verify_hex_sig(
+                                    &entry.verifying_key_hex,
+                                    &payload,
+                                    current_signature,
+                                );
+                            let recovery_ok = !entry.recovery_key_hex.is_empty()
+                                && crate::server::federation::verify_hex_sig(
+                                    &entry.recovery_key_hex,
+                                    &payload,
+                                    recovery_signature,
+                                );
+                            if !(current_ok && recovery_ok) {
+                                tracing::warn!(
+                                    server_id = %server_id,
+                                    current_ok,
+                                    recovery_ok,
+                                    "KeyRegister refused: operator authorization invalid"
+                                );
+                            }
+                            current_ok && recovery_ok
+                        }
+                        crate::server::federation::KeyRegisterAuthorization::Social {
+                            authorizations,
+                        } => {
+                            // A quorum of OTHER members signed the rotation.
+                            let keys = self.governance_member_keys_at(sealing_seq + 1);
+                            let quorum = 2 * ((admitted.saturating_sub(1)) / 3) + 1;
+                            let mut distinct: std::collections::HashSet<&str> =
+                                std::collections::HashSet::new();
+                            for auth in authorizations {
+                                if auth.member_id == *server_id {
+                                    continue; // the rotating server cannot authorize itself
+                                }
+                                let Some(key) = keys.get(&auth.member_id) else {
+                                    continue;
+                                };
+                                if crate::server::federation::verify_hex_sig(
+                                    key,
+                                    &payload,
+                                    &auth.signature,
+                                ) {
+                                    distinct.insert(auth.member_id.as_str());
+                                }
+                            }
+                            if distinct.len() < quorum {
+                                tracing::warn!(
+                                    server_id = %server_id,
+                                    signed = distinct.len(),
+                                    quorum,
+                                    "KeyRegister refused: social recovery below quorum"
+                                );
+                            }
+                            distinct.len() >= quorum
+                        }
+                    };
+                    if !authorized {
+                        return;
+                    }
                     // FR-75 §2: the old key goes to the retired ledger
                     // (view-change grace only — never votes again).
                     self.federation.governance_mut().retire_key(
@@ -30221,6 +30307,7 @@ mod tests {
             server_id: joiner_id.clone(),
             verifying_key_hex: joiner_vk,
             kex_public_hex: "00".to_string(),
+                recovery_key_hex: String::new(),
         });
         assert!(
             server
@@ -30258,6 +30345,7 @@ mod tests {
                 server_id: id.to_string(),
                 verifying_key_hex: vk_hex,
                 kex_public_hex: "00".to_string(),
+                recovery_key_hex: String::new(),
             });
         };
         for (id, key) in &peers {
@@ -30397,6 +30485,7 @@ mod tests {
             server_id: "srv-new".to_string(),
             verifying_key_hex: "vk-new".to_string(),
             kex_public_hex: "kex-new".to_string(),
+                recovery_key_hex: String::new(),
         };
         server.governance_execute_tx(&tx);
         assert_eq!(server.membership_count(), 2);
@@ -30412,6 +30501,7 @@ mod tests {
             server_id: "srv-new".to_string(),
             verifying_key_hex: "vk-new".to_string(),
             kex_public_hex: "kex-new".to_string(),
+                recovery_key_hex: String::new(),
         };
         server.governance_execute_tx(&tx_admit);
         assert_eq!(server.membership_count(), 2);

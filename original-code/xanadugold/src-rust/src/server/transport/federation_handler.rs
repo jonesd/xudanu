@@ -2507,6 +2507,9 @@ mod tests {
 
         struct Mesh {
             nodes: Vec<Node>,
+            /// FR-75 §4: per-member offline recovery keys, registered at
+            /// Admit.
+            recovery_keys: std::collections::HashMap<String, ed25519_dalek::SigningKey>,
             /// Directed delivery blocks (a, b): a's frames never reach b.
             blocked: std::collections::HashSet<(usize, usize)>,
             /// Dead nodes neither send nor receive.
@@ -2534,15 +2537,34 @@ mod tests {
                         (e.server_id, e.verifying_key_hex)
                     })
                     .collect();
-                // Cross-register membership: every node admits every other.
+                // FR-75 §4: offline recovery keys per member.
+                let recovery_keys: std::collections::HashMap<String, ed25519_dalek::SigningKey> =
+                    entries
+                        .iter()
+                        .enumerate()
+                        .map(|(i, (id, _))| {
+                            let mut seed = [0u8; 32];
+                            seed[0] = 0xA0 + i as u8;
+                            (id.clone(), ed25519_dalek::SigningKey::from_bytes(&seed))
+                        })
+                        .collect();
+                // Cross-register membership: every node admits every
+                // other (with their recovery keys).
                 for state in &states {
                     for (id, vk) in &entries {
+                        let rk = recovery_keys[id]
+                            .verifying_key()
+                            .to_bytes()
+                            .iter()
+                            .map(|b| format!("{b:02x}"))
+                            .collect::<String>();
                         state.server.with_server(|srv| {
                             srv.governance_execute_tx(
                                 &crate::server::federation::GovernanceTx::Admit {
                                     server_id: id.clone(),
                                     verifying_key_hex: vk.clone(),
                                     kex_public_hex: "00".to_string(),
+                                    recovery_key_hex: rk,
                                 },
                             );
                         });
@@ -2555,8 +2577,42 @@ mod tests {
                     .collect();
                 Mesh {
                     nodes,
+                    recovery_keys,
                     blocked: std::collections::HashSet::new(),
                     dead: std::collections::HashSet::new(),
+                }
+            }
+
+            /// Build a valid FR-75 §4 Path-A authorization for rotating
+            /// `server_id` to `new_vk` (current key + recovery key).
+            fn operator_authorization(
+                &self,
+                server_id: &str,
+                new_vk: &str,
+            ) -> crate::server::federation::KeyRegisterAuthorization {
+                use ed25519_dalek::Signer;
+                let payload = crate::server::federation::KeyRegisterAuthorization::payload_for(
+                    server_id, new_vk,
+                );
+                let node = self.nodes.iter().find(|n| n.id == server_id).unwrap();
+                let current_sig = node
+                    .state
+                    .server
+                    .with_server_ref(|srv| srv.server_signing_key_test())
+                    .sign(payload.as_bytes())
+                    .to_bytes()
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>();
+                let recovery_sig = self.recovery_keys[server_id]
+                    .sign(payload.as_bytes())
+                    .to_bytes()
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>();
+                crate::server::federation::KeyRegisterAuthorization::Operator {
+                    current_signature: current_sig,
+                    recovery_signature: recovery_sig,
                 }
             }
 
@@ -3143,6 +3199,7 @@ mod tests {
                 .iter()
                 .map(|b| format!("{b:02x}"))
                 .collect();
+            let authorization = mesh.operator_authorization(&victim_id, &new_vk);
             for node in &mesh.nodes {
                 node.state.server.with_server(|srv| {
                     srv.governance_execute_tx_at(
@@ -3151,6 +3208,7 @@ mod tests {
                             key_id: 0,
                             verifying_key_hex: new_vk.clone(),
                             kex_public_hex: "00".to_string(),
+                authorization: authorization.clone(),
                         },
                         1,
                     );
@@ -3215,6 +3273,7 @@ mod tests {
             let victim = (0..4).find(|i| *i != leader).unwrap();
             let victim_id = mesh.nodes[victim].id.clone();
             let new_vk = "cd".repeat(32);
+            let authorization = mesh.operator_authorization(&victim_id, &new_vk);
             for node in &mesh.nodes {
                 node.state.server.with_server(|srv| {
                     srv.governance_execute_tx_at(
@@ -3223,6 +3282,7 @@ mod tests {
                             key_id: 0,
                             verifying_key_hex: new_vk.to_string(),
                             kex_public_hex: "00".to_string(),
+                authorization: authorization.clone(),
                         },
                         1,
                     );
@@ -3259,6 +3319,181 @@ mod tests {
                 srv.retired_key_lookup_for_test(&vc.server_id, seq).is_none()
             });
             assert!(refused, "old key refused beyond grace");
+        }
+
+        /// FR-75 test 5: rotation authority — the current key alone
+        /// never suffices. Unproven rotation refused in multi-server
+        /// mode; operator (current+recovery) accepted; social
+        /// recovery (quorum of others) accepted; recovery key WITHOUT
+        /// the current key refused.
+        #[test]
+        fn rotation_authority_matrix() {
+            let mut mesh = Mesh::new(4);
+            let leader = mesh.leader_for_view(0);
+            mesh.propose_from(leader, None);
+            let victim = (0..4).find(|i| *i != leader).unwrap();
+            let victim_id = mesh.nodes[victim].id.clone();
+            let new_vk = "ab".repeat(32);
+
+            let rotate = |mesh: &Mesh, auth: crate::server::federation::KeyRegisterAuthorization, vk: &str| {
+                let mut any_changed = false;
+                for node in &mesh.nodes {
+                    let changed = node.state.server.with_server(|srv| {
+                        let before = srv.find_member_public(&victim_id)
+                            .map(|m| m.verifying_key_hex).unwrap_or_default();
+                        srv.governance_execute_tx_at(
+                            &crate::server::federation::GovernanceTx::KeyRegister {
+                                server_id: victim_id.clone(),
+                                key_id: 0,
+                                verifying_key_hex: vk.to_string(),
+                                kex_public_hex: "00".to_string(),
+                                authorization: auth.clone(),
+                            },
+                            1,
+                        );
+                        let after = srv.find_member_public(&victim_id)
+                            .map(|m| m.verifying_key_hex).unwrap_or_default();
+                        after != before
+                    });
+                    any_changed = any_changed || changed;
+                }
+                any_changed
+            };
+
+            // 1. Unproven rotation refused (multi-server).
+            assert!(
+                !rotate(&mesh, crate::server::federation::KeyRegisterAuthorization::None, &new_vk),
+                "no authorization — refused"
+            );
+
+            // 2. Recovery key alone (attacker holds the offline key but
+            // not the current key): current_signature invalid.
+            use ed25519_dalek::Signer;
+            let payload = crate::server::federation::KeyRegisterAuthorization::payload_for(
+                &victim_id, &new_vk,
+            );
+            let forged = {
+                let wrong_current = {
+                    let mut seed = [0u8; 32];
+                    seed[0] = 0x99;
+                    let k = ed25519_dalek::SigningKey::from_bytes(&seed);
+                    crate::server::federation::vote_hex_sig(&k, &payload)
+                };
+                let real_recovery = crate::server::federation::vote_hex_sig(
+                    &mesh.recovery_keys[&victim_id], &payload,
+                );
+                crate::server::federation::KeyRegisterAuthorization::Operator {
+                    current_signature: wrong_current,
+                    recovery_signature: real_recovery,
+                }
+            };
+            assert!(!rotate(&mesh, forged, &new_vk), "recovery alone — refused");
+
+            // 3. Operator path (current + recovery) accepted.
+            let valid = mesh.operator_authorization(&victim_id, &new_vk);
+            assert!(rotate(&mesh, valid, &new_vk), "operator authorization — accepted");
+
+            // Rotate BACK via social recovery (quorum of others), so
+            // path B is also exercised: sign with 3 other members.
+            let final_vk = "ef".repeat(32);
+            let payload_b = crate::server::federation::KeyRegisterAuthorization::payload_for(
+                &victim_id, &final_vk,
+            );
+            let authorizations: Vec<_> = mesh
+                .nodes
+                .iter()
+                .filter(|n| n.id != victim_id)
+                .take(3)
+                .map(|n| crate::server::federation::MemberSignature {
+                    member_id: n.id.clone(),
+                    signature: crate::server::federation::vote_hex_sig(
+                        &n.state.server.with_server_ref(|srv| srv.server_signing_key_test()),
+                        &payload_b,
+                    ),
+                })
+                .collect();
+            let social = crate::server::federation::KeyRegisterAuthorization::Social { authorizations };
+            assert!(rotate(&mesh, social, &final_vk), "social recovery — accepted");
+        }
+
+        /// FR-75 test 6: a thief holding ONLY the current key can
+        /// neither rotate nor survive epoch expiry — locked out.
+        #[test]
+        fn stolen_current_key_cannot_take_over() {
+            let mut mesh = Mesh::new(4);
+            let leader = mesh.leader_for_view(0);
+            mesh.propose_from(leader, None);
+            let victim = (0..4).find(|i| *i != leader).unwrap();
+            let victim_id = mesh.nodes[victim].id.clone();
+
+            // The thief possesses the current key (the server signing
+            // key) but NOT the recovery key. Every rotation they craft
+            // fails the operator path; None fails outright; social
+            // recovery needs a quorum of honest others they lack.
+            let thief_vk = "99".repeat(32);
+            let payload = crate::server::federation::KeyRegisterAuthorization::payload_for(
+                &victim_id, &thief_vk,
+            );
+            let thief_sig = mesh.nodes[victim]
+                .state
+                .server
+                .with_server_ref(|srv| {
+                    crate::server::federation::vote_hex_sig(&srv.server_signing_key_test(), &payload)
+                });
+            let garbage_recovery = "00".repeat(64);
+            let attempt = crate::server::federation::KeyRegisterAuthorization::Operator {
+                current_signature: thief_sig,
+                recovery_signature: garbage_recovery,
+            };
+            for node in &mesh.nodes {
+                node.state.server.with_server(|srv| {
+                    srv.governance_execute_tx_at(
+                        &crate::server::federation::GovernanceTx::KeyRegister {
+                            server_id: victim_id.clone(),
+                            key_id: 0,
+                            verifying_key_hex: thief_vk.clone(),
+                            kex_public_hex: "00".to_string(),
+                            authorization: attempt.clone(),
+                        },
+                        1,
+                    );
+                });
+            }
+            let vk_now = mesh.nodes[leader]
+                .state
+                .server
+                .with_server_ref(|srv| srv.find_member_public(&victim_id).unwrap().verifying_key_hex);
+            assert_ne!(vk_now, thief_vk, "thief's key never registered");
+
+            // And when the stolen key's epoch ends, its votes die
+            // (step-2 semantics): locked out at expiry.
+            let expired = crate::server::federation::KeyEpoch {
+                valid_from_seq: 1,
+                valid_until_seq: 1,
+            };
+            for node in &mesh.nodes {
+                node.state.server.with_server(|srv| {
+                    srv.membership_set_epoch_for_tests(&victim_id, expired.clone())
+                });
+            }
+            let mut thief_vote = crate::server::federation::PbftVote {
+                view_number: 0,
+                sequence_number: 2,
+                voter_id: victim_id.clone(),
+                phase: crate::server::federation::PbftPhase::Prepare,
+                digest: "ab".repeat(32),
+                signature: String::new(),
+            };
+            let k = mesh.nodes[victim]
+                .state
+                .server
+                .with_server_ref(|srv| srv.server_signing_key_test());
+            crate::server::federation::sign_vote(&mut thief_vote, &k);
+            let phase = mesh.nodes[leader]
+                .state
+                .server
+                .with_server(|srv| srv.governance_receive_prepare(thief_vote));
+            assert_eq!(format!("{phase:?}"), "PrePrepare", "expired stolen key cannot vote");
         }
 
         /// FR-75 test 8: epoch decisions are functions of (sequence)

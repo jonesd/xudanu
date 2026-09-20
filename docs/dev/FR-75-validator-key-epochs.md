@@ -1,8 +1,8 @@
 # FR-75: Validator Key Epochs — Rotation, Revocation, and Reconfiguration via Consensus
 
-**Status:** steps 1-3 SHIPPED 2026-09-20 (governance-only validator
-keys; KeyEpoch + expiry rejection + epoch-frozen quorums; retired-key
-ledger with view-change grace); step 4 proposed
+**Status:** COMPLETE — steps 1-4 all shipped 2026-09-20. Remaining
+follow-ups: operational alerting on rotation/expiry, genesis bootstrap
+pinning (optional hardening of TOFU).
 **Created:** 2026-09-20
 **Depends on:** FR-19b (PBFT hardening: signed vote certificates, view
 change, mesh harness)
@@ -253,7 +253,16 @@ With epochs + consensus rotation + the four accompaniments:
    kills the old key for votes while membership carries the new key
    (2); grace accepts an old-key view-change at retirement+0 and
    refuses it beyond the window (3).
-4. Rotation authority (recovery keys) + tests 5, 6
+4. ✅ **Rotation authority** (shipped): `Admit` registers the
+   operator's offline `recovery_key_hex`; `KeyRegister` carries a
+   `KeyRegisterAuthorization` — Operator (current key AND recovery
+   key both sign "key-register|server|new_vk") or Social (a quorum
+   of OTHER members signs; the rotating server cannot authorize
+   itself). Unproven rotation is valid ONLY in single-server mode.
+   A thief holding just the current key can neither rotate (tests 5,
+   6) nor outlive epoch expiry. Mesh harness generates and registers
+   per-member recovery keys; `operator_authorization()` builds valid
+   Path-A proofs.
 
 **Cluster guidance confirmed:** with the expiry machinery of steps
 2-4, a 4-node cluster at one unrenewed expiry drops to quorum 3-of-3

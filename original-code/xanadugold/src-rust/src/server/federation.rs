@@ -1480,6 +1480,10 @@ pub struct MembershipEntry {
     /// FR-75 §1: sequence-bounded validity window for this key.
     #[serde(default)]
     pub epoch: KeyEpoch,
+    /// FR-75 §4: the operator's offline recovery key (hex) — must
+    /// co-sign key rotations (or a member quorum must).
+    #[serde(default)]
+    pub recovery_key_hex: String,
 }
 
 impl PartialEq for MembershipEntry {
@@ -1510,6 +1514,7 @@ impl MembershipEntry {
             kex_public_hex: kex_public_hex.into(),
             admitted_by_governance: false,
             epoch: KeyEpoch::default(),
+            recovery_key_hex: String::new(),
             endorsed_by,
             joined_at,
             status: MembershipStatus::Active,
@@ -1914,13 +1919,17 @@ impl MembershipState {
 //   4. EXECUTE:     After sufficient commits, transactions are applied to state
 
 /// A governance transaction that must be agreed upon via PBFT consensus.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "serde", serde(tag = "type", rename_all = "snake_case"))]
 pub enum GovernanceTx {
     Admit {
         server_id: String,
         verifying_key_hex: String,
         kex_public_hex: String,
+        /// FR-75 §4: the operator's OFFLINE Ed25519 recovery key
+        /// (hex) — required to co-sign future key rotations.
+        #[serde(default)]
+        recovery_key_hex: String,
     },
     Expel {
         server_id: String,
@@ -1931,6 +1940,12 @@ pub enum GovernanceTx {
         key_id: u64,
         verifying_key_hex: String,
         kex_public_hex: String,
+        /// FR-75 §4: rotation authority — the current key alone must
+        /// NEVER suffice (a thief could rotate to their own key and
+        /// own the identity forever). Either the offline operator
+        /// recovery key co-signs, or a quorum of OTHER members does.
+        #[serde(default)]
+        authorization: KeyRegisterAuthorization,
     },
     RoyaltyRecord {
         origin_server_id: String,
@@ -1949,6 +1964,42 @@ impl GovernanceTx {
             GovernanceTx::KeyRegister { .. } => "key_register",
             GovernanceTx::RoyaltyRecord { .. } => "royalty_record",
         }
+    }
+}
+
+/// FR-75 §4: the authorization that empowers a KeyRegister rotation.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum KeyRegisterAuthorization {
+    /// No authorization — valid ONLY in single-server mode.
+    #[default]
+    None,
+    /// Path A: the member's current key AND the operator's offline
+    /// recovery key both signed the rotation payload.
+    Operator {
+        current_signature: String,
+        recovery_signature: String,
+    },
+    /// Path B (social recovery): a quorum of OTHER members signed the
+    /// rotation payload — for lost recovery keys or locking out a
+    /// thief who holds only the current key.
+    Social {
+        authorizations: Vec<MemberSignature>,
+    },
+}
+
+/// One member's signature over a governance authorization payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemberSignature {
+    pub member_id: String,
+    pub signature: String,
+}
+
+impl KeyRegisterAuthorization {
+    /// The payload both paths sign: binds the rotation to exactly
+    /// this server and this NEW key.
+    pub fn payload_for(server_id: &str, new_verifying_key_hex: &str) -> String {
+        format!("key-register|{server_id}|{new_verifying_key_hex}")
     }
 }
 
@@ -4869,6 +4920,7 @@ mod tests {
             server_id: "srv-new".to_string(),
             verifying_key_hex: "vk-new".to_string(),
             kex_public_hex: "kex-new".to_string(),
+                recovery_key_hex: String::new(),
         };
 
         let proposal = gov.propose(vec![tx], "srv-a".to_string()).unwrap();
@@ -4964,7 +5016,8 @@ mod tests {
             GovernanceTx::Admit {
                 server_id: "a".into(),
                 verifying_key_hex: "v".into(),
-                kex_public_hex: "k".into()
+                kex_public_hex: "k".into(),
+                recovery_key_hex: String::new(),
             }
             .tx_type_name(),
             "admit"
@@ -4982,7 +5035,8 @@ mod tests {
                 server_id: "a".into(),
                 key_id: 1,
                 verifying_key_hex: "v".into(),
-                kex_public_hex: "k".into()
+                kex_public_hex: "k".into(),
+                authorization: Default::default(),
             }
             .tx_type_name(),
             "key_register"
@@ -5009,6 +5063,7 @@ mod tests {
                 server_id: "srv-x".to_string(),
                 verifying_key_hex: "vk-x".to_string(),
                 kex_public_hex: "kex-x".to_string(),
+                recovery_key_hex: String::new(),
             }],
             proposer_id: "srv-a".to_string(),
             timestamp: 12345,
