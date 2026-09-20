@@ -2937,6 +2937,85 @@ mod tests {
             assert_eq!(mesh.current_view(victim), 0, "insufficient certs rejected");
         }
 
+        /// FR-75 §3 (test matrix #4): membership sync cannot smuggle
+        /// validator keys. A sync frame carrying a new member or a key
+        /// change is sanitized; governance Admit remains the only door.
+        #[test]
+        fn mesh_membership_sync_cannot_smuggle_validator_keys() {
+            let mut mesh = Mesh::new(4);
+            let leader = mesh.leader_for_view(0);
+            mesh.propose_from(leader, None);
+            // 4 validators — the round sealed.
+            for i in 0..4 {
+                assert_eq!(
+                    mesh.nodes[i]
+                        .state
+                        .server
+                        .with_server_ref(|srv| srv.governance_validator_members().len()),
+                    4
+                );
+            }
+
+            // A hostile MembershipSync arrives at node 0: a new member
+            // plus a hijacked key for node 1.
+            let hostile_entry_new = {
+                let mut e = mesh.nodes[1]
+                    .state
+                    .server
+                    .with_server_ref(|srv| srv.membership_self_entry().unwrap());
+                e.server_id = format!("{}-evil", e.server_id);
+                e.verifying_key_hex = "ff".repeat(32);
+                e.admitted_by_governance = true; // the smuggled flag!
+                e
+            };
+            let hostile_key_change = {
+                let mut e = mesh.nodes[1]
+                    .state
+                    .server
+                    .with_server_ref(|srv| srv.membership_self_entry().unwrap());
+                e.verifying_key_hex = "ee".repeat(32);
+                e
+            };
+            let mut hostile = crate::server::federation::OrSet::new();
+            hostile.add(
+                hostile_entry_new,
+                crate::server::federation::OrSetTag::new("evil-node", 1),
+            );
+            hostile.add(
+                hostile_key_change,
+                crate::server::federation::OrSetTag::new("evil-node", 2),
+            );
+            mesh.nodes[0].state.server.with_server(|srv| {
+                srv.membership_merge_orset(&hostile);
+            });
+
+            // Validator set unchanged; keys unchanged; no fifth validator.
+            let node1_id = mesh.nodes[1].id.clone();
+            let node1_real_vk = mesh.nodes[1]
+                .state
+                .server
+                .with_server_ref(|srv| srv.membership_self_entry().unwrap())
+                .verifying_key_hex;
+            let (validators, stored_vk, has_evil) =
+                mesh.nodes[0].state.server.with_server_ref(|srv| {
+                    (
+                        srv.governance_validator_members().len(),
+                        srv.find_member_public(&node1_id)
+                            .map(|m| m.verifying_key_hex)
+                            .unwrap_or_default(),
+                        srv.membership_list()
+                            .iter()
+                            .any(|m| m.server_id.ends_with("-evil")),
+                    )
+                });
+            assert_eq!(validators, 4, "no smuggled validator");
+            assert!(!has_evil, "evil member entry dropped from sync");
+            assert_eq!(
+                stored_vk, node1_real_vk,
+                "hijacked key sanitized back to the governed key"
+            );
+        }
+
         #[test]
         fn view_change_escalation_targets_advance_only_when_stale() {
             let mut gov = crate::server::federation::GovernanceState::new(4);

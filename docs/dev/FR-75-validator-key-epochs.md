@@ -1,6 +1,7 @@
 # FR-75: Validator Key Epochs — Rotation, Revocation, and Reconfiguration via Consensus
 
-**Status:** proposed (not implemented)
+**Status:** step 1 SHIPPED 2026-09-20 (governance-only validator keys);
+steps 2-4 proposed
 **Created:** 2026-09-20
 **Depends on:** FR-19b (PBFT hardening: signed vote certificates, view
 change, mesh harness)
@@ -207,8 +208,25 @@ With epochs + consensus rotation + the four accompaniments:
 
 ## Implementation order
 
-1. Governance-only validator keys (prerequisite — makes everything
-   else meaningful) + test 4
+1. ✅ **Governance-only validator keys** (shipped): membership entries
+   carry `admitted_by_governance` (set only by sealed Admit execution
+   or bootstrap self-registration; monotonic in the OrSet merge);
+   `governance_validator_members()` is the member set for ALL consensus
+   computation (quorum, leader, vote membership, view-change); the
+   CRDT merge guard refuses new-member entries and key changes from
+   sync frames (new entries dropped, key changes sanitized back to
+   the governed keys); join-protocol entries are directory-only until
+   a governance Admit seals. Tests: sync-drops-new/key-changes,
+   sync-merges-metadata, join-is-not-validator-admission,
+   mesh-smuggle (test matrix #4). One panic (unwrap on unknown
+   server_id in the guard) and one merge-stickiness bug found and
+   fixed during implementation.
 2. KeyEpoch + expiry rejection + epoch-frozen quorums + tests 1, 7, 8
 3. Retired-key ledger + grace + tests 2, 3
 4. Rotation authority (recovery keys) + tests 5, 6
+
+**Cluster guidance confirmed:** with the expiry machinery of steps
+2-4, a 4-node cluster at one unrenewed expiry drops to quorum 3-of-3
+(zero fault tolerance, technically live). 5 nodes is the default
+recommendation; 4 requires rotation alerting. This matches the
+phase-19b policy table.

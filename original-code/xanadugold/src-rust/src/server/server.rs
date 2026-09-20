@@ -2541,13 +2541,7 @@ impl Server {
             // so every honest member drops it. (Proposal only: the
             // quorum decides.)
             if self.federation_is_enabled() {
-                let member_ids: Vec<String> = self
-                    .federation
-                    .membership()
-                    .active_members()
-                    .iter()
-                    .map(|m| m.server_id.clone())
-                    .collect();
+                let member_ids: Vec<String> = self.governance_validator_ids();
                 let target_id = server_id.to_string();
                 if member_ids.contains(&target_id) {
                     let _ = self.governance_propose(vec![
@@ -22936,13 +22930,16 @@ impl Server {
             }
         };
 
-        let entry = crate::server::federation::MembershipEntry::new(
+        let mut entry = crate::server::federation::MembershipEntry::new(
             server_id,
             verifying_key_hex,
             kex_hex,
             vec![self_proof],
             now,
         );
+        // FR-75 §3: bootstrap self-registration IS the governance
+        // admission for single-server mode.
+        entry.admitted_by_governance = true;
         let server_id = self.federation_server_id();
         let tag = self.federation.membership_mut().next_tag(&server_id);
         self.federation.membership_mut().add_member(entry, tag);
@@ -23179,13 +23176,9 @@ impl Server {
         &mut self,
         transactions: Vec<crate::server::federation::GovernanceTx>,
     ) -> Option<crate::server::federation::GovernanceProposal> {
-        let members: Vec<String> = self
-            .federation
-            .membership()
-            .active_members()
-            .iter()
-            .map(|m| m.server_id.clone())
-            .collect();
+        // FR-75 §3: consensus membership is the VALIDATOR set
+        // (governance-admitted), not the directory.
+        let members: Vec<String> = self.governance_validator_ids();
         let my_id = self.federation_server_id();
         let gov = self.federation.governance_mut();
         gov.set_cluster_size(members.len().max(1));
@@ -23205,13 +23198,51 @@ impl Server {
         Some(proposal)
     }
 
-    /// Member verifying keys (server_id → hex Ed25519 public key) for
-    /// vote-signature verification.
-    fn governance_member_keys(&self) -> std::collections::HashMap<String, String> {
+    /// Public membership lookup (directory plane).
+    pub fn find_member_public(
+        &self,
+        server_id: &str,
+    ) -> Option<crate::server::federation::MembershipEntry> {
+        self.federation.membership().find_member(server_id)
+    }
+
+    /// Test accessor for the validator verifying-key map.
+    #[doc(hidden)]
+    pub fn governance_member_keys_for_test(
+        &self,
+    ) -> std::collections::HashMap<String, String> {
+        self.governance_member_keys()
+    }
+
+    /// Validator id list — the member set for every consensus
+    /// computation (quorum, leader election, vote membership checks).
+    fn governance_validator_ids(&self) -> Vec<String> {
+        self.governance_validator_members()
+            .into_iter()
+            .map(|m| m.server_id)
+            .collect()
+    }
+
+    /// The VALIDATOR set (FR-75 §3): active members admitted by
+    /// governance (sealed Admit, or bootstrap self-registration for
+    /// single-server mode). Join/sync-plane entries are directory
+    /// members without voting rights.
+    pub fn governance_validator_members(
+        &self,
+    ) -> Vec<crate::server::federation::MembershipEntry> {
         self.federation
             .membership()
             .active_members()
-            .iter()
+            .into_iter()
+            .filter(|m| m.admitted_by_governance)
+            .collect()
+    }
+
+    /// Member verifying keys (server_id → hex Ed25519 public key) for
+    /// vote-signature verification — validators only.
+    fn governance_member_keys(&self) -> std::collections::HashMap<String, String> {
+        self.governance_validator_members()
+            .into_iter()
             .map(|m| (m.server_id.clone(), m.verifying_key_hex.clone()))
             .collect()
     }
@@ -23328,13 +23359,9 @@ impl Server {
         &mut self,
         msg: &crate::server::federation::ViewChangeMessage,
     ) -> Option<crate::server::federation::NewViewMessage> {
-        let members: Vec<String> = self
-            .federation
-            .membership()
-            .active_members()
-            .iter()
-            .map(|m| m.server_id.clone())
-            .collect();
+        // FR-75 §3: consensus membership is the VALIDATOR set
+        // (governance-admitted), not the directory.
+        let members: Vec<String> = self.governance_validator_ids();
         // Quorum checks below must see the real cluster (lazy sync —
         // a fresh node otherwise computes quorum from cluster_size 1).
         self.federation
@@ -23378,13 +23405,9 @@ impl Server {
         &mut self,
         new_view: &crate::server::federation::NewViewMessage,
     ) {
-        let members: Vec<String> = self
-            .federation
-            .membership()
-            .active_members()
-            .iter()
-            .map(|m| m.server_id.clone())
-            .collect();
+        // FR-75 §3: consensus membership is the VALIDATOR set
+        // (governance-admitted), not the directory.
+        let members: Vec<String> = self.governance_validator_ids();
         self.federation
             .governance_mut()
             .set_cluster_size(members.len().max(1));
@@ -23474,13 +23497,9 @@ impl Server {
         &mut self,
         proposal: &crate::server::federation::GovernanceProposal,
     ) -> Result<crate::server::federation::PbftVote, String> {
-        let members: Vec<String> = self
-            .federation
-            .membership()
-            .active_members()
-            .iter()
-            .map(|m| m.server_id.clone())
-            .collect();
+        // FR-75 §3: consensus membership is the VALIDATOR set
+        // (governance-admitted), not the directory.
+        let members: Vec<String> = self.governance_validator_ids();
         let vote = self.governance_make_signed_vote(
             crate::server::federation::PbftPhase::Prepare,
             proposal,
@@ -23498,13 +23517,9 @@ impl Server {
         &mut self,
         vote: crate::server::federation::PbftVote,
     ) -> crate::server::federation::RoundPhase {
-        let members: Vec<String> = self
-            .federation
-            .membership()
-            .active_members()
-            .iter()
-            .map(|m| m.server_id.clone())
-            .collect();
+        // FR-75 §3: consensus membership is the VALIDATOR set
+        // (governance-admitted), not the directory.
+        let members: Vec<String> = self.governance_validator_ids();
         let member_ids: Vec<&str> = members.iter().map(|s| s.as_str()).collect();
         if !member_ids.contains(&vote.voter_id.as_str()) {
             return crate::server::federation::RoundPhase::PrePrepare;
@@ -23535,13 +23550,9 @@ impl Server {
         &mut self,
         vote: crate::server::federation::PbftVote,
     ) -> crate::server::federation::RoundPhase {
-        let members: Vec<String> = self
-            .federation
-            .membership()
-            .active_members()
-            .iter()
-            .map(|m| m.server_id.clone())
-            .collect();
+        // FR-75 §3: consensus membership is the VALIDATOR set
+        // (governance-admitted), not the directory.
+        let members: Vec<String> = self.governance_validator_ids();
         let member_ids: Vec<&str> = members.iter().map(|s| s.as_str()).collect();
         if !member_ids.contains(&vote.voter_id.as_str()) {
             return crate::server::federation::RoundPhase::PrePrepare;
@@ -23616,13 +23627,15 @@ impl Server {
                 kex_public_hex,
             } => {
                 let proofs = vec![];
-                let entry = crate::server::federation::MembershipEntry::new(
+                let mut entry = crate::server::federation::MembershipEntry::new(
                     server_id,
                     verifying_key_hex,
                     kex_public_hex,
                     proofs,
                     Self::current_timestamp_secs(),
                 );
+                // FR-75 §3: consensus admission grants validator rights.
+                entry.admitted_by_governance = true;
                 let tag = self.federation.membership_mut().next_tag(server_id);
                 self.federation.membership_mut().add_member(entry, tag);
             }
@@ -23686,25 +23699,17 @@ impl Server {
     }
 
     pub fn governance_is_leader(&self) -> bool {
-        let members: Vec<String> = self
-            .federation
-            .membership()
-            .active_members()
-            .iter()
-            .map(|m| m.server_id.clone())
-            .collect();
+        // FR-75 §3: consensus membership is the VALIDATOR set
+        // (governance-admitted), not the directory.
+        let members: Vec<String> = self.governance_validator_ids();
         let my_id = self.federation_server_id();
         self.federation.governance().is_leader(&my_id, &members)
     }
 
     pub fn governance_leader_id(&self) -> Option<String> {
-        let members: Vec<String> = self
-            .federation
-            .membership()
-            .active_members()
-            .iter()
-            .map(|m| m.server_id.clone())
-            .collect();
+        // FR-75 §3: consensus membership is the VALIDATOR set
+        // (governance-admitted), not the directory.
+        let members: Vec<String> = self.governance_validator_ids();
         self.federation.governance().leader_id(&members)
     }
 
@@ -29978,6 +29983,75 @@ mod tests {
         let p = proposal.unwrap();
         assert_eq!(p.sequence_number, 1);
         assert_eq!(p.proposer_id, my_id);
+    }
+
+    /// FR-75 §3: a join-admitted member is DIRECTORY-only — its key
+    /// does not verify votes and it does not count in the validator
+    /// set until a governance Admit seals. Then it does.
+    #[test]
+    fn governance_join_admission_is_not_validator_admission() {
+        let mut server = setup_federated_server();
+        let self_id = server.federation_server_id();
+
+        // A member enters via the 19a join path (not governance).
+        let joiner_key = {
+            let mut seed = [0u8; 32];
+            seed[0] = 0x77;
+            ed25519_dalek::SigningKey::from_bytes(&seed)
+        };
+        let joiner_vk: String = joiner_key
+            .verifying_key()
+            .to_bytes()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let joiner_id = format!("{self_id}-joiner");
+        let proof = server
+            .membership_sign_endorsement(&joiner_id, &joiner_vk)
+            .expect("endorsement signs");
+        let entry = crate::server::federation::MembershipEntry::new(
+            &joiner_id,
+            joiner_vk.clone(),
+            "00".to_string(),
+            vec![proof],
+            1,
+        );
+        let result = server.membership_process_join(entry);
+        assert!(
+            matches!(
+                result,
+                crate::server::federation::JoinResult::Accepted { .. }
+            ),
+            "join accepted at the directory level"
+        );
+
+        // Directory: present. Validator set: absent.
+        assert!(server.membership_list().iter().any(|m| m.server_id == joiner_id));
+        assert!(
+            !server
+                .governance_validator_members()
+                .iter()
+                .any(|m| m.server_id == joiner_id),
+            "join-admitted member is NOT a validator"
+        );
+        // Its key does not verify votes.
+        let keys = server.governance_member_keys_for_test();
+        assert!(!keys.contains_key(&joiner_id));
+
+        // Governance admission flips it.
+        server.governance_execute_tx(&crate::server::federation::GovernanceTx::Admit {
+            server_id: joiner_id.clone(),
+            verifying_key_hex: joiner_vk,
+            kex_public_hex: "00".to_string(),
+        });
+        assert!(
+            server
+                .governance_validator_members()
+                .iter()
+                .any(|m| m.server_id == joiner_id),
+            "governance Admit grants validator rights"
+        );
+        assert!(server.governance_member_keys_for_test().contains_key(&joiner_id));
     }
 
     /// Functional 4-node round over the SERVER glue: real membership,

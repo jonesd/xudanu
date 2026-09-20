@@ -1435,6 +1435,14 @@ pub struct MembershipEntry {
     pub endorsed_by: Vec<EndorsementProof>,
     pub joined_at: u64,
     pub status: MembershipStatus,
+    /// FR-75 §3: validator rights require GOVERNANCE admission (a
+    /// sealed Admit transaction or bootstrap self-registration). The
+    /// CRDT join/sync planes may carry the entry for directory
+    /// purposes, but a join-admitted server does not verify votes
+    /// until consensus admits it. Set ONLY by governance execution
+    /// locally; never merged from peers.
+    #[serde(default)]
+    pub admitted_by_governance: bool,
 }
 
 impl PartialEq for MembershipEntry {
@@ -1463,6 +1471,7 @@ impl MembershipEntry {
             server_id: server_id.into(),
             verifying_key_hex: verifying_key_hex.into(),
             kex_public_hex: kex_public_hex.into(),
+            admitted_by_governance: false,
             endorsed_by,
             joined_at,
             status: MembershipStatus::Active,
@@ -1666,6 +1675,10 @@ impl MembershipState {
             if entry.status == MembershipStatus::Active {
                 merged.status = MembershipStatus::Active;
             }
+            // FR-75 §3: governance admission is monotonic — once any
+            // entry for this server was sealed by an Admit, the member
+            // is a validator (only Expel/KeyRegister paths change that).
+            merged.admitted_by_governance |= entry.admitted_by_governance;
         }
 
         Some(merged)
@@ -1773,8 +1786,69 @@ impl MembershipState {
     }
 
     /// Import from wire protocol (merge).
+    /// CRDT membership merge with the FR-75 §3 guard: validator keys
+    /// are governance-owned. Incoming entries that would ADD a new
+    /// server or CHANGE a known server's keys are skipped and logged —
+    /// validator mutations travel exclusively through sealed
+    /// Admit/Expel/KeyRegister batches (executed locally by every
+    /// replica). Identical entries and tombstones (expulsions) merge
+    /// normally.
     pub fn merge_orset(&mut self, other: &OrSet<MembershipEntry>) {
-        self.members.merge(other);
+        let mut filtered = OrSet::new();
+        for entry in &other.adds {
+            let e = &entry.value;
+            let known = self.find_member(&e.server_id);
+            let is_validator_change = match &known {
+                None => true, // a new server_id — governance Admit territory
+                Some(k) => {
+                    k.verifying_key_hex != e.verifying_key_hex
+                        || k.kex_public_hex != e.kex_public_hex
+                }
+            };
+            if is_validator_change {
+                match &known {
+                    None => {
+                        // Brand-new server via sync: dropped entirely.
+                        // New members enter through sealed Admit (which
+                        // every replica executes), not through the
+                        // CRDT plane.
+                        tracing::warn!(
+                            server_id = %e.server_id,
+                            "membership sync: new member entry refused — governance admission required"
+                        );
+                    }
+                    Some(k) => {
+                        // Known member with CHANGED keys: sanitize back
+                        // to the locally-governed keys; only directory
+                        // metadata merges.
+                        let mut sanitized = e.clone();
+                        sanitized.verifying_key_hex = k.verifying_key_hex.clone();
+                        sanitized.kex_public_hex = k.kex_public_hex.clone();
+                        sanitized.admitted_by_governance = k.admitted_by_governance;
+                        tracing::warn!(
+                            server_id = %e.server_id,
+                            "membership sync: validator-key change refused — governance admission required"
+                        );
+                        filtered.adds.push(OrSetEntry {
+                            value: sanitized,
+                            tag: entry.tag.clone(),
+                        });
+                    }
+                }
+            } else {
+                // Keys unchanged: merge, but the admission flag is
+                // local governance state, never synced.
+                let known = known.unwrap();
+                let mut safe = e.clone();
+                safe.admitted_by_governance = known.admitted_by_governance;
+                filtered.adds.push(OrSetEntry {
+                    value: safe,
+                    tag: entry.tag.clone(),
+                });
+            }
+        }
+        filtered.tombstones = other.tombstones.clone();
+        self.members.merge(&filtered);
     }
 }
 
@@ -4949,6 +5023,56 @@ mod tests {
     }
 
     // ── Hardening suite (spec checks vs Castro-Liskov) ─────────────
+
+    // ── FR-75 §3: governance-only validator keys ────────────────────
+
+    #[test]
+    fn membership_sync_drops_new_entries_and_key_changes() {
+        let mut state = MembershipState::new(1);
+        let self_entry = MembershipEntry::new("srv-a", "vk-a", "kex-a", vec![], 1);
+        state.add_member(
+            self_entry.clone(),
+            OrSetTag::new("srv-a", 1),
+        );
+
+        // A hostile/partial sync proposes a brand-new member.
+        let mut hostile = OrSet::new();
+        hostile.add(
+            MembershipEntry::new("srv-evil", "vk-evil", "kex-evil", vec![], 2),
+            OrSetTag::new("srv-evil", 1),
+        );
+        // ...and a key change for a known member.
+        hostile.add(
+            MembershipEntry::new("srv-a", "vk-HIJACKED", "kex-a", vec![], 1),
+            OrSetTag::new("srv-a", 2),
+        );
+        state.merge_orset(&hostile);
+
+        let members = state.active_members();
+        assert!(
+            members.iter().all(|m| m.server_id != "srv-evil"),
+            "new member via sync refused"
+        );
+        let a = state.find_member("srv-a").unwrap();
+        assert_eq!(a.verifying_key_hex, "vk-a", "validator key change refused");
+    }
+
+    #[test]
+    fn membership_sync_merges_metadata_and_tombstones() {
+        let mut state = MembershipState::new(1);
+        state.add_member(
+            MembershipEntry::new("srv-a", "vk-a", "kex-a", vec![], 1),
+            OrSetTag::new("srv-a", 1),
+        );
+        // Same keys, different (directory) metadata — merges.
+        let mut sync = OrSet::new();
+        sync.add(
+            MembershipEntry::new("srv-a", "vk-a", "kex-a", vec![], 99),
+            OrSetTag::new("srv-a", 2),
+        );
+        state.merge_orset(&sync);
+        assert!(state.find_member("srv-a").is_some());
+    }
 
     #[test]
     fn governance_policy_single_or_four_plus() {
