@@ -72,6 +72,32 @@ Only two things must differ between any two running servers: the
 **port** and the **data directory**. Everything else (identity,
 peers, pinning) is per-data-dir state.
 
+## Functional fault-injection suite
+
+```bash
+./scripts/federation-fault-tests.sh        # ports 9081+, own temp data dir
+```
+
+Spins up a fresh genesis-pinned 4-node cluster and injects the
+failure modes the protocol is designed to handle, asserting
+detection + recovery after each:
+
+1. **Graceful stop/restart** — SIGTERM + checkpoint; survivors
+   healthy during downtime; node returns, lifecycle unified
+2. **Hard crash/restart** — SIGKILL; data durable across the crash;
+   node recovers, lifecycle unified
+3. **Freeze/thaw** — SIGSTOP (hung node): survivors stay healthy;
+   on SIGCONT the mesh either rides through (connections persist
+   through a sub-heartbeat freeze) or rebuilds via the dialer
+4. **Rolling restart** — every node recycled one at a time; quorum
+   maintained throughout
+
+After every recovery the suite asserts the invariant that matters
+most: `/health` ok on all nodes AND `governance_lifecycle`
+identical everywhere (`v=4 p=4 q=3 m=1`) — a diverged lifecycle
+would mean a forked validator set. Self-cleaning; safe to run
+repeatedly; suitable as a CI gate.
+
 ## Monitoring
 
 `GET /health` on each node. The `governance_lifecycle` section is
