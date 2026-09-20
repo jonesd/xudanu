@@ -57,7 +57,7 @@ svg text{font-family:'Inter',sans-serif}
 <div class="wrap">
 
 <h1>Federation Activation</h1>
-<p class="subtitle">How independent Xudanu servers connect, trust each other, replicate content, reach consensus, recover from failures, and scale — explained with diagrams for operators and developers.</p>
+<p class="subtitle">How independent Xudanu servers connect, trust each other, replicate content, reach consensus, recover from failures, and scale — explained with diagrams for operators and developers. Updated for the hardened protocol: signed certificates, view change, key epochs, and 4-node BFT deployment.</p>
 
 <div class="toc">
 <div class="toc-title">Contents</div>
@@ -94,30 +94,38 @@ svg text{font-family:'Inter',sans-serif}
   <text x="210" y="92" font-size="10" fill="#8b949e">web + /xudanu WS</text>
 
   <g>
-    <rect x="90" y="120" width="220" height="120" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
-    <text x="200" y="148" text-anchor="middle" font-size="16" font-weight="700" fill="#e6edf3">Peer A</text>
-    <text x="200" y="172" text-anchor="middle" font-size="11" fill="#8b949e">web UI . /xudanu . /federation</text>
-    <text x="200" y="195" text-anchor="middle" font-size="11" fill="#3fb950">Ed25519 identity + /data</text>
-    <text x="200" y="218" text-anchor="middle" font-size="10" fill="#484f58" font-family="JetBrains Mono,monospace">--peer B  --peer C</text>
+    <rect x="55" y="120" width="185" height="120" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+    <text x="147" y="148" text-anchor="middle" font-size="15" font-weight="700" fill="#e6edf3">Peer A</text>
+    <text x="147" y="172" text-anchor="middle" font-size="10" fill="#8b949e">web UI . /xudanu . /federation</text>
+    <text x="147" y="195" text-anchor="middle" font-size="10" fill="#3fb950">Ed25519 identity + /data</text>
+    <text x="147" y="218" text-anchor="middle" font-size="9" fill="#484f58" font-family="JetBrains Mono,monospace">--peer B C D</text>
   </g>
   <g>
-    <rect x="340" y="120" width="220" height="120" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
-    <text x="450" y="148" text-anchor="middle" font-size="16" font-weight="700" fill="#e6edf3">Peer B</text>
-    <text x="450" y="172" text-anchor="middle" font-size="11" fill="#8b949e">web UI . /xudanu . /federation</text>
-    <text x="450" y="195" text-anchor="middle" font-size="11" fill="#3fb950">Ed25519 identity + /data</text>
-    <text x="450" y="218" text-anchor="middle" font-size="10" fill="#484f58" font-family="JetBrains Mono,monospace">--peer A  --peer C</text>
+    <rect x="260" y="120" width="185" height="120" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+    <text x="352" y="148" text-anchor="middle" font-size="15" font-weight="700" fill="#e6edf3">Peer B</text>
+    <text x="352" y="172" text-anchor="middle" font-size="10" fill="#8b949e">web UI . /xudanu . /federation</text>
+    <text x="352" y="195" text-anchor="middle" font-size="10" fill="#3fb950">Ed25519 identity + /data</text>
+    <text x="352" y="218" text-anchor="middle" font-size="9" fill="#484f58" font-family="JetBrains Mono,monospace">--peer A C D</text>
   </g>
   <g>
-    <rect x="590" y="120" width="220" height="120" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
-    <text x="700" y="148" text-anchor="middle" font-size="16" font-weight="700" fill="#e6edf3">Peer C</text>
-    <text x="700" y="172" text-anchor="middle" font-size="11" fill="#8b949e">web UI . /xudanu . /federation</text>
-    <text x="700" y="195" text-anchor="middle" font-size="11" fill="#3fb950">Ed25519 identity + /data</text>
-    <text x="700" y="218" text-anchor="middle" font-size="10" fill="#484f58" font-family="JetBrains Mono,monospace">--peer A  --peer B</text>
+    <rect x="465" y="120" width="185" height="120" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+    <text x="557" y="148" text-anchor="middle" font-size="15" font-weight="700" fill="#e6edf3">Peer C</text>
+    <text x="557" y="172" text-anchor="middle" font-size="10" fill="#8b949e">web UI . /xudanu . /federation</text>
+    <text x="557" y="195" text-anchor="middle" font-size="10" fill="#3fb950">Ed25519 identity + /data</text>
+    <text x="557" y="218" text-anchor="middle" font-size="9" fill="#484f58" font-family="JetBrains Mono,monospace">--peer A B D</text>
+  </g>
+  <g>
+    <rect x="670" y="120" width="185" height="120" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+    <text x="762" y="148" text-anchor="middle" font-size="15" font-weight="700" fill="#e6edf3">Peer D</text>
+    <text x="762" y="172" text-anchor="middle" font-size="10" fill="#8b949e">web UI . /xudanu . /federation</text>
+    <text x="762" y="195" text-anchor="middle" font-size="10" fill="#3fb950">Ed25519 identity + /data</text>
+    <text x="762" y="218" text-anchor="middle" font-size="9" fill="#484f58" font-family="JetBrains Mono,monospace">--peer A B C</text>
   </g>
 
-  <line x1="310" y1="180" x2="340" y2="180" stroke="#a371f7" stroke-width="2"/>
-  <line x1="560" y1="180" x2="590" y2="180" stroke="#a371f7" stroke-width="2"/>
-  <path d="M 200 240 Q 360 320 450 240" fill="none" stroke="#a371f7" stroke-width="2" stroke-dasharray="5 3"/>
+  <line x1="240" y1="180" x2="260" y2="180" stroke="#a371f7" stroke-width="2"/>
+  <line x1="445" y1="180" x2="465" y2="180" stroke="#a371f7" stroke-width="2"/>
+  <line x1="650" y1="180" x2="670" y2="180" stroke="#a371f7" stroke-width="2"/>
+  <path d="M 147 240 Q 450 330 762 240" fill="none" stroke="#a371f7" stroke-width="2" stroke-dasharray="5 3"/>
 
   <rect x="300" y="300" width="300" height="30" rx="6" fill="rgba(163,113,247,0.10)" stroke="#a371f7"/>
   <text x="450" y="320" text-anchor="middle" font-size="12" fill="#a371f7">/federation WS . BLAKE3-verified replication</text>
@@ -128,7 +136,7 @@ svg text{font-family:'Inter',sans-serif}
     <rect x="360" y="350" width="12" height="12" rx="2" fill="rgba(163,113,247,0.18)" stroke="#a371f7"/><text x="378" y="360">federation link</text>
   </g>
 </svg>
-<div class="diagram-caption">Three full-node peers on a private network. Users hit any peer's web UI; peers replicate content and membership over <code>/federation</code>.</div>
+<div class="diagram-caption">Four full-node peers (the BFT minimum, 3f+1) on a private network. Users hit any peer's web UI; peers replicate content and run PBFT governance over <code>/federation</code>.</div>
 </div>
 
 <h2 id="activation">The activation layer (FR-3) — now implemented</h2>
@@ -140,7 +148,7 @@ svg text{font-family:'Inter',sans-serif}
 <div class="step"><div class="n">4</div><div class="b"><strong><span class="accent-purple">Periodic sync / heartbeat</span></strong> — Every 30s sends <code>Heartbeat</code>; every 60s sends <code>SyncPull</code>, <code>MembershipSyncPush</code>, <code>StateSyncPush</code>, <code>EndorsementSyncPush</code>. Turns "connected" into "converged."</div></div>
 <div class="step"><div class="n">5</div><div class="b"><strong><span class="accent-red">PBFT broadcast</span></strong> — <code>GovernancePropose</code> broadcasts <code>GovernancePrePrepare</code> to all peers via the <code>governance_tx</code> broadcast channel; peers relay votes and seal.</div></div>
 
-<div class="note"><strong>Federation is off by default.</strong> A standalone server (no <code>--peer</code> flag) is completely unaffected — the dialer never spawns, the broadcast channel has no subscribers, and <code>is_peer_known</code> returns <code>true</code> for everyone. You opt in at startup with CLI flags.</div>
+<div class="note"><strong>Federation is off by default.</strong> A standalone server (no <code>--peer</code> flag) is completely unaffected — the dialer never spawns and the broadcast channel has no subscribers. You opt in at startup with CLI flags. A standalone server and a federation cluster coexist happily on the same machine: only the port and data directory must differ. Prefer <code>--pin-members &lt;file&gt;</code> over piecemeal <code>--trusted-peer-key</code> flags — it makes admission strict (no trust-on-first-use) and seeds the unified validator set.</div>
 
 <h2 id="pbft">PBFT: Making decisions together</h2>
 <p>Xudanu uses <strong>Practical Byzantine Fault Tolerance (PBFT)</strong> for cluster-wide decisions — things like admitting a new member, expelling a bad actor, or recording a royalty payment. PBFT is a consensus protocol that lets a group of nodes agree on a decision even if some nodes are malicious or offline.</p>
@@ -152,6 +160,15 @@ svg text{font-family:'Inter',sans-serif}
 <li>No two honest members will ever disagree on the outcome.</li>
 <li>Once a decision is sealed, it cannot be undone.</li>
 </ul>
+
+<div class="gold"><strong>The hardened protocol (2026 revisions).</strong> PBFT now carries production-grade safeguards, each backed by an in-process test mesh and a TLA+/TLC model check (337k states, zero safety violations):
+<ul>
+<li><strong>Signed vote certificates</strong> — every vote is an Ed25519 signature over the proposal digest (BLAKE3 of sequence+transactions). A sealed batch embeds 2f+1 prepare and 2f+1 commit certificates; recipients verify before executing. A byzantine leader cannot forge outcomes, and clients can no longer inject votes.</li>
+<li><strong>View change</strong> — if the leader stalls (10s round timeout), replicas automatically emit signed VIEW-CHANGE messages carrying their highest prepared certificate; the next leader assembles a NEW-VIEW and governance resumes. No operator action needed.</li>
+<li><strong>Key epochs</strong> (FR-75) — validator keys are valid for a range of sealed sequences, never wall-clock time. Expired keys stop counting votes; a shrunk voting pool halts governance <em>safely</em> rather than forking. Rotation requires the operator's offline recovery key or a quorum of other members — a stolen server key alone can never take over an identity.</li>
+<li><strong>State transfer</strong> — a node that missed sealed batches requests the certificate-verified log tail from any peer and catches up in order.</li>
+<li><strong>Strict peer admission</strong> — with genesis pinning (<code>--pin-members</code>), only pinned keys may connect: no trust-on-first-use.</li>
+</ul></div>
 
 <div class="diagram-container">
 <svg viewBox="0 0 900 460" width="100%" role="img" aria-label="PBFT three-phase consensus flow">
@@ -207,7 +224,7 @@ svg text{font-family:'Inter',sans-serif}
   <!-- quorum annotation -->
   <rect x="580" y="170" width="260" height="40" rx="6" fill="rgba(88,166,255,0.08)" stroke="#58a6ff"/>
   <text x="710" y="187" text-anchor="middle" font-size="10" fill="#58a6ff" font-weight="600">2f+1 Prepare votes received?</text>
-  <text x="710" y="202" text-anchor="middle" font-size="10" fill="#3fb950">YES (2 of 3 active) -> advance to Commit</text>
+  <text x="710" y="202" text-anchor="middle" font-size="10" fill="#3fb950">YES (3 of 4) -> advance to Commit</text>
 
   <!-- Phase 3: Commit -->
   <text x="20" y="275" font-size="11" fill="#d29922" font-weight="600" letter-spacing="0.5">PHASE 3</text>
@@ -229,7 +246,7 @@ svg text{font-family:'Inter',sans-serif}
   <!-- quorum table -->
   <text x="50" y="410" font-size="11" fill="#8b949e" font-weight="600">Quorum requirements by cluster size:</text>
   <g font-size="10" fill="#8b949e">
-    <text x="50" y="430">3 nodes (f=1): need 2 votes</text>
+    <text x="50" y="430">1 node: local mode (quorum 1)</text>
     <text x="250" y="430">4 nodes (f=1): need 3 votes</text>
     <text x="480" y="430">7 nodes (f=2): need 5 votes</text>
     <text x="680" y="430">10 nodes (f=3): need 7 votes</text>
@@ -241,14 +258,15 @@ svg text{font-family:'Inter',sans-serif}
 <h3>The quorum rule, simply</h3>
 <p>For a cluster of <strong>N</strong> nodes, PBFT tolerates up to <strong>f</strong> faulty/offline nodes, where <code>f = (N - 1) / 3</code>. To make a decision, you need at least <strong>2f+1</strong> nodes to vote yes:</p>
 <table>
-<tr><th>Cluster size (N)</th><th>Fault tolerance (f)</th><th>Votes needed (2f+1)</th><th>Can lose</th></tr>
-<tr><td>3</td><td>0</td><td>2</td><td>1 node <span class="tag tag-ok">OK</span></td></tr>
-<tr><td>4</td><td>1</td><td>3</td><td>1 node <span class="tag tag-ok">OK</span></td></tr>
-<tr><td>7</td><td>2</td><td>5</td><td>2 nodes <span class="tag tag-ok">OK</span></td></tr>
-<tr><td>10</td><td>3</td><td>7</td><td>3 nodes <span class="tag tag-ok">OK</span></td></tr>
-<tr><td>2</td><td>0</td><td>2</td><td>0 nodes <span class="tag tag-warn">fragile</span></td></tr>
+<tr><th>Cluster size (N)</th><th>Mode</th><th>Fault tolerance (f)</th><th>Votes needed (2f+1)</th><th>Can lose</th></tr>
+<tr><td>1</td><td>single-server</td><td>—</td><td>1 (local)</td><td>— <span class="tag tag-ok">local mode</span></td></tr>
+<tr><td>2–3</td><td>governance refused</td><td>—</td><td>—</td><td>content sync works; <strong>no BFT decisions</strong> <span class="tag tag-risk">refused</span></td></tr>
+<tr><td>4</td><td>BFT</td><td>1</td><td>3</td><td>1 byzantine node, 0 crashes <span class="tag tag-warn">zero margin</span></td></tr>
+<tr><td>5</td><td>BFT</td><td>1</td><td>3</td><td>1 byzantine + 1 crash <span class="tag tag-ok">recommended</span></td></tr>
+<tr><td>7</td><td>BFT</td><td>2</td><td>5</td><td>2 nodes <span class="tag tag-ok">OK</span></td></tr>
+<tr><td>10</td><td>BFT</td><td>3</td><td>7</td><td>3 nodes <span class="tag tag-ok">OK</span></td></tr>
 </table>
-<div class="note"><strong>Practical guidance:</strong> 3 nodes is the minimum for a resilient federation (tolerates 1 offline). 2 nodes works but both must always be online. 4 nodes is the sweet spot — tolerates 1 failure with margin.</div>
+<div class="note"><strong>Practical guidance:</strong> 4 nodes is the BFT minimum (3f+1) — with one unrenewed key expiry it drops to quorum 3-of-3, <em>zero</em> fault tolerance, so rotate keys promptly (the <code>governance_lifecycle.margin</code> field in <code>/health</code> is your canary). <strong>5 nodes is the recommended default</strong>: tolerates one byzantine node and one additional crash. Clusters of 2–3 replicate content fine but the governance plane refuses to open rounds — there is no majority-safe quorum.</div>
 
 <h2 id="broadcast">Broadcasting &amp; synchronization</h2>
 <p>Once peers are connected, they need to stay in sync. Xudanu uses two complementary mechanisms: <strong>periodic sync</strong> (every 60 seconds) and <strong>event-driven broadcast</strong> (immediate, for governance).</p>
@@ -489,6 +507,8 @@ svg text{font-family:'Inter',sans-serif}
 
 <div class="gold"><strong>No central authority.</strong> Trust is peer-signed and auditable; a compromised donor can be ejected via signed retraction or a PBFT <code>Expel</code> transaction. Each donor bears their own machine, so cost stays distributed — there is no expensive central fleet.</div>
 
+<div class="note"><strong>Joining is directory-level; validating is consensus-level</strong> (FR-75). The handshake above admits the server to the membership directory — content replication and cross-server transclusion work immediately. But <em>voting rights</em> in PBFT require a sealed <code>Admit</code> transaction: the join-admitted key does not verify votes until governance admits it. For cold-starting a cluster, prefer genesis pinning (<code>--pin-members</code>): every node boots with the same validator set and governance is unified from the first round.</div>
+
 <h2 id="failures">When things go wrong: failure &amp; recovery</h2>
 <p>Federations run over real networks, and real networks fail. Xudanu is designed to <strong>self-heal</strong> — when a failed or partitioned node comes back, it catches up automatically. Here are the common scenarios and how the system handles them.</p>
 
@@ -554,7 +574,7 @@ svg text{font-family:'Inter',sans-serif}
 </div>
 
 <h3>Scenario 2: Node crash (data dir survives)</h3>
-<p>If a peer process crashes but its <code>/data</code> directory survives (common case — process killed, OOM, panic), the node restarts, restores from its chunk store, reconnects, and syncs. Data written before the crash is durable (checkpointed every 5 seconds). No manual intervention needed.</p>
+<p>If a peer process crashes but its <code>/data</code> directory survives (common case — process killed, OOM, panic), the node restarts, restores from its chunk store, reconnects, and syncs. Content catches up via CRDT sync; <strong>governance catches up via state transfer</strong> — the restarted node requests the sealed-batch log tail from a peer and ingests it certificate-verified, in order. Data written before the crash is durable (checkpointed every 5 seconds). No manual intervention needed.</p>
 
 <h3>Scenario 3: Byzantine (malicious) node</h3>
 <p>A compromised node tries to inject tampered data or forge endorsements. The system rejects these automatically:</p>
@@ -563,7 +583,12 @@ svg text{font-family:'Inter',sans-serif}
 <li><strong>Forged endorsements:</strong> Ed25519 signature verification fails &rarr; rejected.</li>
 <li><strong>False membership claims:</strong> <code>MembershipJoinRequest</code> with invalid proofs &rarr; rejected.</li>
 <li><strong>Cluster-wide removal:</strong> A PBFT <code>Expel</code> transaction removes the bad node's membership from all peers.</li>
+<li><strong>Forged governance:</strong> votes and sealed batches without 2f+1 valid Ed25519 signatures are rejected on arrival; a byzantine leader can stall a round (recovered by view change) but cannot forge an outcome.</li>
+<li><strong>Stolen validator key:</strong> votes stop at key-epoch expiry; the thief cannot rotate to a new key (rotation needs the operator's offline recovery key or a member quorum) and cannot survive the expiry.</li>
 </ul>
+
+<h3>Scenario 3b: Leader failure — automatic view change</h3>
+<p>The current leader crashes or stalls mid-round. After a 10-second timeout, the remaining replicas emit signed VIEW-CHANGE messages for the next view; when a quorum accumulates, the incoming leader broadcasts a signed NEW-VIEW and re-proposes. Governance continues in the new view within seconds. One caveat: a request whose round never reached prepare-quorum is <em>discarded</em> — the client retries with the new leader (values that did reach prepare-quorum carry over and cannot be changed).</p>
 
 <h3>Scenario 4: Split-brain (two partitions, both active)</h3>
 <p>If the network splits into two groups (e.g., A-B and C-D), both partitions continue accepting edits independently. PBFT cannot reach quorum in either partition (each has fewer than 2f+1 votes for a 4-node cluster with f=1). When the partition heals, CRDTs merge the divergent states — both sets of edits are preserved as alternatives, and the reconcile store's LWW (Last-Writer-Wins) registers pick the most recent timestamp.</p>
@@ -622,17 +647,18 @@ svg text{font-family:'Inter',sans-serif}
 <p>A diagnostic reference for operators. If something seems wrong, check these items.</p>
 
 <h3>2–3 nodes (personal / small team)</h3>
+<div class="warn"><strong>2–3 nodes cannot do BFT governance</strong> — the governance plane refuses to open rounds below 4 validators (there is no majority-safe quorum). Content replication, cross-server transclusion, and membership sync all work fine. Add a 4th node (or 5th, recommended) to activate PBFT.</div>
 <ul>
-<li><span class="tag tag-ok">Common</span> <strong>Keys not cross-registered:</strong> Both peers must register each other's verifying key via <code>--trusted-peer-key</code>. If you see "peer not in trusted peers list," check that the hex keys match.</li>
+<li><span class="tag tag-ok">Common</span> <strong>Keys not cross-registered:</strong> Peers must know each other's verifying keys — via <code>--pin-members</code> (preferred, strict) or <code>--trusted-peer-key</code> flags. If you see "peer not in trusted peers list," check that the hex keys match.</li>
 <li><span class="tag tag-ok">Common</span> <strong>Wrong peer address format:</strong> <code>--peer</code> expects <code>ws://host:port/federation</code> or <code>host:port</code>. Check that the port matches the listening port of the remote peer.</li>
 <li><span class="tag tag-ok">Common</span> <strong>Firewall blocks /federation:</strong> The WebSocket upgrade on <code>/federation</code> must be reachable. If using Docker, ensure the port is published.</li>
-<li><span class="tag tag-warn">Watch</span> <strong>Both nodes offline:</strong> With 2 nodes and f=0, if one goes down, PBFT cannot function. Content sync still works when it returns (CRDTs), but governance is blocked until both are up.</li>
+<li><span class="tag tag-ok">Tip</span> <strong>First diagnostic stop:</strong> <code>./scripts/federation.sh diagnose</code> — checks node health, cross-node validator-set consistency, margin alerts, peer-trust rejections, view-change activity, and disk headroom in one command.</li>
 <li><span class="tag tag-warn">Watch</span> <strong>Bootstrap not called:</strong> If membership is empty, check that <code>--peer</code> was specified (which enables federation and triggers <code>membership_bootstrap_init</code>).</li>
 </ul>
 
 <h3>5–10 nodes (organization)</h3>
 <ul>
-<li><span class="tag tag-warn">Watch</span> <strong>Key management:</strong> Each new peer's verifying key must be registered on all existing peers. Consider maintaining a shared <code>trusted-peers.txt</code> file.</li>
+<li><span class="tag tag-warn">Watch</span> <strong>Key management:</strong> Maintain the pinned member set as a versioned file; rotations need the offline recovery keys. Watch <code>/health &rarr; governance_lifecycle</code> — <code>margin: 0</code> means one loss from halting; negative means governance is already halted (safely — nothing forks).</li>
 <li><span class="tag tag-warn">Watch</span> <strong>Sync bandwidth:</strong> With 10 peers and significant content, each sync cycle sends data to 9 peers. Monitor outbound bandwidth.</li>
 <li><span class="tag tag-warn">Watch</span> <strong>Stale membership:</strong> If a peer leaves without sending <code>MembershipLeave</code>, its entry persists until explicitly removed. Use the admin API to clean up.</li>
 <li><span class="tag tag-ok">Tip</span> <strong>Use 4+ nodes for PBFT:</strong> With 4 nodes (f=1), you can lose 1 node and still reach quorum. With 3 nodes (f=0), losing any node blocks governance.</li>
@@ -643,7 +669,7 @@ svg text{font-family:'Inter',sans-serif}
 <li><span class="tag tag-risk">Plan</span> <strong>Connection overhead:</strong> Each peer holds 9–19 WebSocket connections. Monitor file descriptor limits (<code>ulimit -n</code>).</li>
 <li><span class="tag tag-risk">Plan</span> <strong>Startup thundering herd:</strong> If all peers restart simultaneously, they all try to dial each other at once. The exponential backoff helps, but consider staggered restarts.</li>
 <li><span class="tag tag-warn">Watch</span> <strong>Endorsement chain growth:</strong> The membership OR-Set grows with each endorsement. At 20 nodes with cross-endorsements, the set can be several hundred KB. Not a problem, but watch for sync latency.</li>
-<li><span class="tag tag-warn">Watch</span> <strong>PBFT leader bottleneck:</strong> The current leader proposes all transactions. At 20 nodes, if the leader is slow, governance stalls. Leader rotation exists but view-change (automatic leader failover) is a future feature.</li>
+<li><span class="tag tag-ok">Shipped</span> <strong>Leader failover is automatic:</strong> a stalled leader triggers view change after a 10s timeout — signed VIEW-CHANGE quorum, NEW-VIEW, re-proposal. At 20 nodes, vote traffic is O(n&sup2;) per round, which is the real cost of scale.</li>
 </ul>
 
 <h3>20–50+ nodes (research / max scale)</h3>
@@ -655,29 +681,21 @@ svg text{font-family:'Inter',sans-serif}
 <li><span class="tag tag-warn">Watch</span> <strong>NAT / reachability:</strong> Donated hosts behind NAT cannot be dialed. Each peer must be directly reachable (public IP or port-forward). A relay/TURN server is a future feature.</li>
 </ul>
 
-<div class="note"><strong>Bottom line:</strong> For most use cases (3–10 peers on VPS or donated machines), Xudanu's federation works well out of the box. The full-mesh + periodic sync model is simple, robust, and self-healing. Scaling beyond 20 nodes is possible but will benefit from the incremental sync and gossip relay optimizations on the roadmap.</div>
+<div class="note"><strong>Bottom line:</strong> For most use cases (4–10 peers on VPS or donated machines — 4 minimum for governance, 5 recommended), Xudanu's federation works well out of the box. The full-mesh + periodic sync model is simple, robust, and self-healing; PBFT safety is model-checked and the validator lifecycle surfaces in <code>/health</code>. Scaling beyond 20 nodes is possible but will benefit from the incremental sync and gossip relay optimizations on the roadmap.</div>
 
-<h2 id="docker">Testing it: Docker test bed</h2>
-<p>The <code>docker-compose.yml</code> runs three full-node peers on a private bridge network (host ports <code>8081</code>/<code>8082</code>/<code>8083</code>), each with <code>--peer</code> pointing at the other two. On a 32&nbsp;GB machine this is trivial for small/fresh data dirs — you could run 5–10+ peers; <strong>3–4 is the sweet spot</strong> for exercising PBFT quorum and membership.</p>
+<h2 id="docker">Testing it: 4-node test bed</h2>
+<p>The <code>docker-compose.yml</code> runs <strong>four full-node peers</strong> on a private bridge network (host ports <code>8081</code>–<code>8084</code>), each with <code>--peer</code> wiring to the other three — the BFT minimum. Admin passphrases go in via <code>XUDANU_ADMIN_PASSPHRASE</code> from an uncommitted <code>.env</code> file (never on the CLI — arguments are visible in <code>ps</code> and <code>docker inspect</code>).</p>
 <pre><code>docker compose up --build
 # then browse:
-open http://localhost:8081   # peer A
-open http://localhost:8082   # peer B
-open http://localhost:8083   # peer C</code></pre>
+open http://localhost:8081   # peer A (Alice)
+open http://localhost:8082   # peer B (Bob)
+open http://localhost:8083   # peer C (Carol)
+open http://localhost:8084   # peer D (Dave)
+curl http://localhost:8081/health | grep -A8 governance_lifecycle</code></pre>
 
-<p>For manual testing with two peers (no Docker):</p>
-<pre><code># Terminal 1: Peer A
-cargo run --release --features server --bin xudanu-server -- \
-  run 127.0.0.1:8081 data-a \
-  --peer 127.0.0.1:8082 \
-  --trusted-peer-key &lt;B's verifying key&gt;
-
-# Terminal 2: Peer B
-cargo run --release --features server --bin xudanu-server -- \
-  run 127.0.0.1:8082 data-b \
-  --peer 127.0.0.1:8081 \
-  --trusted-peer-key &lt;A's verifying key&gt;</code></pre>
-<p>Each server prints its verifying key at startup: <code>Federation: this server's verifying key: &lt;hex&gt;</code>. Copy it to the other peer's <code>--trusted-peer-key</code> flag.</p>
+<p>For local testing without Docker, one command runs the whole lifecycle — it inits the nodes, extracts their keys, writes <code>pinned-members.json</code> (strict admission + unified validators), and starts all peers with per-node logs:</p>
+<pre><code>./scripts/federation.sh start 4 /tmp/fed   # also: status | diagnose | logs N | stop</code></pre>
+<p>The full operations guide — recovery playbooks (crash, leader failure, expired keys, state-transfer gaps), log locations, and the diagnostic reference — lives in <code>FEDERATION-OPS.md</code> in the source repository.</p>
 
 <h2>Sequencing (implementation order)</h2>
 <div class="step"><div class="n">1</div><div class="b"><strong>Peer-key registration + bootstrap</strong> — smallest; fixes the reject-all trap so anything can connect. <span class="tag tag-ok">done</span></div></div>
@@ -685,6 +703,8 @@ cargo run --release --features server --bin xudanu-server -- \
 <div class="step"><div class="n">3</div><div class="b"><strong>Sync / heartbeat loop</strong> — turns a connection into convergence. <span class="tag tag-ok">done</span></div></div>
 <div class="step"><div class="n">4</div><div class="b"><strong>Donated-host join + PBFT broadcast</strong> — cluster-wide trust and decisions. <span class="tag tag-ok">done</span></div></div>
 <div class="step"><div class="n">5</div><div class="b"><strong>Real two-server integration test</strong> — proves 1–4 end-to-end. <span class="tag tag-ok">done</span></div></div>
+<div class="step"><div class="n">6</div><div class="b"><strong>BFT hardening round</strong> — signed vote certificates, automatic view change, key epochs + rotation authority (FR-75), state transfer, genesis pinning, per-IP connection caps, randomized mesh fuzz, and a TLA+/TLC safety proof. <span class="tag tag-ok">done</span></div></div>
+<div class="step"><div class="n">7</div><div class="b"><strong>Operations</strong> — 4-node demo cluster, lifecycle scripts (start/stop/status/logs/diagnose), and the operator guide (<code>FEDERATION-OPS.md</code>). <span class="tag tag-ok">done</span></div></div>
 
 <div class="footer">Xudanu Federation Activation — see <a href="dev/FR-3.md">FR-3 spec</a> . <a href="technical-architecture.html">Technical Architecture</a> . <a href="transclusion-engine.html">Transclusion Engine</a> . <a href="editions-and-works.html">Editions &amp; Works</a></div>
 
