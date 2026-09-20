@@ -2527,6 +2527,24 @@ fn dispatch_inner(
                 }))),
             }
         }
+        WireRequest::CompoundResolveSegments { work_id } => {
+            use crate::edition::compound_segment::SegmentRender;
+            srv.ensure_can_read(session_id, work_id)?;
+            let renders = srv.compound_resolve_segments(work_id);
+            let list: Vec<serde_json::Value> = renders
+                .iter()
+                .map(|r| {
+                    let kind = match r {
+                        SegmentRender::Text(_) => "text",
+                        SegmentRender::Image { .. } => "image",
+                        SegmentRender::Drifted { .. } => "drifted",
+                        SegmentRender::Placeholder { .. } => "placeholder",
+                    };
+                    serde_json::json!({ "kind": kind, "text": r.text() })
+                })
+                .collect();
+            Ok(ResponseValue::Json(serde_json::json!({ "renders": list })))
+        }
         WireRequest::WorkDiffRegions { work_a, work_b } => {
             srv.ensure_can_read(session_id, work_a)?;
             srv.ensure_can_read(session_id, work_b)?;
@@ -5732,6 +5750,88 @@ mod tests {
             srv.authenticate(sid, &lock, &LockCredential::Boo).unwrap();
             sid
         })
+    }
+
+    #[test]
+    fn dispatch_compound_resolve_segments_returns_renders() {
+        let state = make_state();
+        let sid = owned_session(&state);
+
+        // Source work + empty compound, then the placement hook
+        // (mirrors server.rs compound tests) derives keyed segments.
+        let (src, compound) = state.server.with_server(|srv| {
+            let src = srv
+                .create_work(sid, Edition::from_text("alpha quote here\nomega"))
+                .unwrap();
+            let compound = srv.create_work(sid, Edition::from_text("")).unwrap();
+            (src, compound)
+        });
+        state.server.with_server(|srv| {
+            use crate::edition::compound::{CompoundEdition, CompoundElement, CompoundSpan};
+            let mut ed = CompoundEdition::empty();
+            ed.push(CompoundElement::Text {
+                content: "Header\n".into(),
+            });
+            ed.push(CompoundElement::Span {
+                span: CompoundSpan::new(src, 0, 16),
+            });
+            ed.push(CompoundElement::Text {
+                content: "\nFooter".into(),
+            });
+            srv.set_compound_edition(compound, ed, sid).unwrap();
+        });
+
+        let resp = dispatch(
+            &state,
+            sid,
+            WireRequest::CompoundResolveSegments { work_id: compound },
+        )
+        .unwrap();
+        match resp {
+            ResponseValue::Json(v) => {
+                let renders = v.get("renders").and_then(|r| r.as_array()).unwrap();
+                assert!(!renders.is_empty(), "placement hook derives segments");
+                let joined = renders
+                    .iter()
+                    .map(|r| r.get("text").and_then(|t| t.as_str()).unwrap_or(""))
+                    .collect::<String>();
+                assert!(
+                    joined.contains("Header"),
+                    "authored text renders: {joined:?}"
+                );
+                assert!(
+                    joined.contains("alpha quote here"),
+                    "transcluded span resolves against live source: {joined:?}"
+                );
+                assert!(
+                    joined.contains("Footer"),
+                    "trailing authored text renders: {joined:?}"
+                );
+                for r in renders {
+                    let kind = r.get("kind").and_then(|k| k.as_str()).unwrap();
+                    assert!(
+                        matches!(kind, "text" | "image" | "drifted" | "placeholder"),
+                        "render kind must be one of the four: {kind}"
+                    );
+                }
+            }
+            other => panic!("expected Json response, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_compound_resolve_segments_unknown_work_errors() {
+        // Works are world-readable by default, so the negative path is
+        // a nonexistent work: must surface WorkNotFound, not panic or
+        // silently return empty renders.
+        let state = make_state();
+        let sid = public_session(&state);
+        let resp = dispatch(
+            &state,
+            sid,
+            WireRequest::CompoundResolveSegments { work_id: 999_999 },
+        );
+        assert!(resp.is_err());
     }
 
     #[test]

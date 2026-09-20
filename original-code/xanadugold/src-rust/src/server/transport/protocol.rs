@@ -303,6 +303,7 @@ pub enum OperationCode {
     SharedCrumRegions,
     SpanKeyResolve,
     CompoundFollowBack,
+    CompoundResolveSegments,
     WorkDiffRegions,
 
     ServerStats,
@@ -688,6 +689,7 @@ impl OperationCode {
         (0x0806, OperationCode::SharedCrumRegions),
         (0x0807, OperationCode::SpanKeyResolve),
         (0x0808, OperationCode::CompoundFollowBack),
+        (0x080a, OperationCode::CompoundResolveSegments),
         (0x0805, OperationCode::WorkDiffRegions),
         (0x0601, OperationCode::ServerStats),
         (0x0602, OperationCode::MetricsSnapshot),
@@ -1546,6 +1548,14 @@ pub enum WireRequest {
     CompoundFollowBack {
         work_id: BeId,
         local_char: u64,
+    },
+    /// FR-55 T5: resolve a compound work's segments against LIVE
+    /// source state — exact text, drift flags, placeholders. The
+    /// builder's live-preview path (was sent by the frontend without
+    /// a transport arm: every request was a protocol violation that
+    /// accumulated security strikes and disconnected the socket).
+    CompoundResolveSegments {
+        work_id: BeId,
     },
     WorkDiffRegions {
         work_a: BeId,

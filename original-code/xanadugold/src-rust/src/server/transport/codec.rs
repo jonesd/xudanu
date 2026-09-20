@@ -2091,6 +2091,17 @@ impl JsonCodec {
                     local_char: args.local_char,
                 })
             }
+            OperationCode::CompoundResolveSegments => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CompoundResolveSegments {
+                    work_id: args.work_id,
+                })
+            }
             OperationCode::WorkDiffRegions => {
                 #[derive(Deserialize)]
                 struct Args {
@@ -4324,6 +4335,30 @@ mod tests {
             IncomingMessage::Request(req) => {
                 assert_eq!(req.request_id, 3);
                 assert!(matches!(req.inner, WireRequest::WorkCreate { .. }));
+            }
+            other => panic!("expected Request, got {:?}", other),
+        }
+    }
+
+    /// The builder live-preview op. It was shipped in the frontend
+    /// without this transport arm — every request decoded as
+    /// "unknown variant", each a protocol violation that accumulated
+    /// security strikes until the server disconnected the socket
+    /// (browser: code 1006 reconnect loop). This test pins the decode.
+    #[test]
+    fn json_codec_decode_request_compound_resolve_segments() {
+        let codec = JsonCodec;
+        let frame = br#"{"v":2,"type":"request","id":21,"op":"compound_resolve_segments","payload":{"work_id":1130}}"#;
+        let msg = codec.decode_request(frame).unwrap();
+        match msg {
+            IncomingMessage::Request(req) => {
+                assert_eq!(req.request_id, 21);
+                match req.inner {
+                    WireRequest::CompoundResolveSegments { work_id } => {
+                        assert_eq!(work_id, 1130);
+                    }
+                    other => panic!("expected CompoundResolveSegments, got {:?}", other),
+                }
             }
             other => panic!("expected Request, got {:?}", other),
         }

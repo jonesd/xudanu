@@ -88,6 +88,37 @@ as a block annotation. The renderer already supports this
 legacy text-prefix lines to annotations). Needs either an awaitable
 text-save path or a server-side op to avoid the position race.
 
+**E2E:** `web/app/e2e/block-formatting.spec.ts` (backend-gated) —
+identity → Compose → type → H1 → assert styled span + no `#` in the
+model → append at line end (migration) → toggle off.
+
+## Session finding (2026-09-20): the WS 1006 reconnect loop
+
+The editor e2e kept losing its connection (browser: code 1006, no
+close frame). Root cause chain, traced via frame capture + security
+log:
+
+1. The CompoundBuilder live-preview sends `compound_resolve_segments`
+   on every load — but the op was never wired into the transport
+   (engine method shipped in FR-55 T5; protocol/dispatch arms did not)
+2. Every send decoded as "unknown variant" → `protocol_error` → a
+   protocol violation strike in the security layer
+3. Strikes accumulate → `should_disconnect` → the server kills the
+   socket (abrupt = 1006) → client reconnects → builder sends the op
+   again → loop. Editors lost in-flight typing whenever the socket
+   dropped mid-save.
+
+Fix: full transport wiring (op 0x080a, codec arm, dispatch arm calling
+`compound_resolve_segments`, JSON response `{renders:[{kind,text}]}`),
+pinned by codec + dispatch tests. The op-code soundness gate caught
+0x0809 colliding with ProvenanceAncestry — use 0x080a.
+
+**Follow-up bug exposed (not yet fixed):** typing during a work switch
+is silently discarded when the server text arrives (the switch calls
+`setText(serverText)` unconditionally). The reconnect path already
+diffs-and-pushes local edits; the switch path needs the same. Also
+`deleteAnnotation` silently no-ops while disconnected.
+
 **Exit criteria:** heading formatting survives any text edit, any
 deletion, any insertion. `##` characters never appear in the text
 model unless the user literally typed them. ✔ (annotation path; legacy
