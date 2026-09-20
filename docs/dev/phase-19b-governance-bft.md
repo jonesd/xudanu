@@ -1,107 +1,106 @@
 # Phase 19b: Governance & BFT
 
-## Overview
+**Status: HARDENED 2026-09-20** — the initial PBFT review found safety
+and liveness gaps (see "Review findings fixed" below); this is the
+protocol as now implemented, with signed vote certificates,
+all-to-all vote relay, sealed-batch verification, buffered commits,
+view change, and cluster policy.
 
-Phase 19b implements the **Governance Plane** — a lightweight PBFT (Practical Byzantine Fault Tolerance) consensus protocol for federation governance decisions. This is the third consensus plane, providing strong consistency (one truth, no forks) for operations that require federation-wide agreement.
+## Deployment policy
 
-## Three Planes of Consensus
+| Nodes | Mode | Quorum | Behavior |
+|-------|------|--------|----------|
+| 1 | Single-server | 1 | Governance works locally; server signs its own votes; seals execute immediately |
+| 2–3 | Refused | — | No BFT possible (needs 3f+1=4); propose returns None with a logged reason |
+| 4 | BFT (f=1) | 3 | Minimum viable |
+| 5+ | BFT (f=1+) | 2f+1 | 5 recommended operationally (f=1 + one crash for liveness) |
 
-| Plane | What | Mechanism | BFT? |
-|-------|------|-----------|------|
-| Content | Blobs, editions, text spans | G-Set CRDT + blake3 | No — hash IS consensus |
-| Reconciliation | Endorsements, branch heads | OR-Set CRDT + DagWood | No — coexisting truths |
-| **Governance** | Membership, keys, royalties | **PBFT (3f+1 nodes)** | **Yes — one truth** |
+## Review findings fixed (2026-09-20 hardening)
 
-## PBFT Protocol
+- **S1 sealed batches carried no proof** → votes are Ed25519-signed
+  over (view, seq, phase, digest, voter); `SealedBatch` embeds signed
+  prepare/commit certificates; `verify_sealed` checks digest + 2f+1
+  distinct valid signatures before any execution; `GovernanceSealed`
+  recipients verify before applying.
+- **S2 clients could inject votes as arbitrary members** → the
+  `GovernancePrepare`/`GovernanceCommit` wire ops now cast only THIS
+  server's own signed vote; client payloads are ignored.
+- **S3 view changes forked the log** → view change carries prepared
+  certificates; `prepared_digests` (seq → digest) blocks any
+  conflicting re-proposal at a prepared sequence, in any view.
+- **S4 early commit votes were dropped** → buffered during Prepare and
+  replayed on prepare-quorum.
+- **L1 the wire protocol deadlocked at quorum ≥ 3** → replicas now
+  create their own round from the pre-prepare
+  (`receive_pre_prepare` validates view/seq/leader) and votes are
+  broadcast all-to-all via the governance channel (each originator
+  broadcasts its own vote — no relay storms).
+- **L2 sealed batches never propagated** → sealing broadcasts
+  `GovernanceSealed` with certificates; replicas verify + execute +
+  ingest.
+- **L3 no leader-failure recovery** → 10s round timeout → signed
+  VIEW-CHANGE for view+1 (with highest-prepared certificate) → new
+  leader assembles NEW-VIEW from 2f+1 verified view-changes → all
+  replicas enter the new view with the watermark carried forward.
+- **Deterministic leader election** — active members are sorted by
+  server_id; OrSet arrival order previously made leader selection
+  differ per replica (proposals rejected as "not from leader").
+- **Bounded state** — the governance log prunes to the last 64 sealed
+  batches with a `pruned_below` watermark (checkpoint hygiene).
 
-The consensus follows a simplified PBFT flow:
+## Castro-Liskov conformance
 
-```
-1. PRE-PREPARE: Leader proposes a batch of governance transactions
-                with a monotonically increasing sequence number.
-                
-2. PREPARE:     Each replica validates the proposal and broadcasts
-                a Prepare vote. When quorum (2f+1) prepares are
-                received, transition to Commit phase.
-                
-3. COMMIT:      Each replica broadcasts a Commit vote. When quorum
-                (2f+1) commits are received, the batch is sealed.
-                
-4. EXECUTE:     The sealed batch is applied to governance state.
-                Transactions are executed in sequence order.
-```
+| Mechanism | Status | Notes |
+|-----------|--------|-------|
+| Pre-prepare (leader proposal, view+seq) | ✅ | Leader-checked, fork-checked |
+| Prepare phase, 2f+1 quorum | ✅ | Signature + digest bound |
+| Commit phase, 2f+1 quorum | ✅ | Buffered early votes |
+| Sealed execution, deterministic order | ✅ | Only after certificates |
+| Signed messages (per-member keys) | ✅ | Ed25519, `verify_strict` |
+| View change + new-view | ✅ | Simplified: highest-prepared certificate transfer |
+| Checkpoints / log GC | ◐ | Retention-window pruning; no stable-checkpoint protocol |
+| Client request authentication | ✅ | Admin-gated propose; votes server-to-server only |
+| State transfer for lagging replicas | ◐ | Sealed-batch ingestion; no bulk catch-up |
+| Watermarks on sequence numbers | ◐ | Implicit via prepared watermark |
 
-### Quorum Requirements
+## Test coverage
 
-| Cluster Size | Faulty Tolerance (f) | Quorum (2f+1) |
-|-------------|---------------------|----------------|
-| 1 | 0 | 1 |
-| 3 | 0 | 1 |
-| 4 | 1 | 3 |
-| 7 | 2 | 5 |
-| 10 | 3 | 7 |
+- 40 governance tests: digests, signature binding (every field
+  tamper-detected), equivocation across digests, certificate
+  forgery (tampered content / stripped sigs / unregistered keys),
+  buffered-commit replay, pre-prepare validation, fork protection,
+  view-change quorum + watermark carry, timeout/touch, log pruning,
+  ingest idempotence, cluster policy (2–3 refused), single-server
+  mode.
+- Functional 4-node round over the real server glue: membership with
+  live keys → propose → signed prepares → commits → sealed with
+  verified certificates → replica catch-up via ingest → forged batch
+  rejected.
+- Coverage: PBFT core block (federation.rs:1837–2820) at 74% line
+  coverage; federation-wide 33% (membership/reconciliation legacy
+  paths included).
+- Security scans: cargo-audit clean after rustls 0.23.43 → 0.23.45
+  (RUSTSEC-2026-0285); cargo-deny license failures are pre-existing
+  (deny.toml allow-list too narrow — separate maintenance task).
 
-### Leader Election
+## Performance envelope (3–5 nodes)
 
-The leader for each view is determined by `view_number % cluster_size`. View advancement (leader rotation) happens via `advance_view()`.
-
-## Governance Transactions
-
-Four types of transactions can be proposed and agreed upon via PBFT:
-
-### Admit
-```json
-{
-  "type": "admit",
-  "server_id": "server-xyz",
-  "verifying_key_hex": "abc123...",
-  "kex_public_hex": "def456..."
-}
-```
-Formally admits a server as a member through consensus. Unlike the 19a join protocol (which is request/response between two servers), governance admission is a federation-wide decision.
-
-### Expel
-```json
-{
-  "type": "expel",
-  "server_id": "server-bad",
-  "reason": "Byzantine behavior detected"
-}
-```
-Removes a member from the federation by consensus. No single server can expel another — it requires quorum agreement.
-
-### KeyRegister
-```json
-{
-  "type": "key_register",
-  "server_id": "server-xyz",
-  "key_id": 42,
-  "verifying_key_hex": "newkey...",
-  "kex_public_hex": "newkex..."
-}
-```
-Registers or rotates a server's cryptographic keys through consensus. Ensures all servers agree on the current key state.
-
-### RoyaltyRecord
-```json
-{
-  "type": "royalty_record",
-  "origin_server_id": "server-a",
-  "target_server_id": "server-b",
-  "content_fingerprint_hex": "abcdef...",
-  "royalty_type": "transclusion",
-  "amount": 100
-}
-```
-Records a transclusion royalty obligation. This is recording, not settlement — payment is a separate concern.
+Governance ops are rare (admissions, key rotations, royalties): a
+round costs 1 pre-prepare + (n−1) prepares + n commits ≈ 3n frames,
+each ~200 bytes + one Ed25519 signature (~50µs sign, ~80µs verify).
+Verification of a sealed batch (2 × 2f+1 sigs) ≈ 0.5ms. The timeout
+poll runs every 5s per connection; negligible. Single pending round
+at a time — pipelining deliberately omitted (governance tx volume
+does not justify it; revisit if royalty recording becomes
+high-volume).
 
 ## Wire Operations (0x1Bxx range)
 
 | Opcode | Operation | Auth Required |
 |--------|-----------|---------------|
 | `0x1B01` | `GovernancePropose` | Admin |
-| `0x1B02` | `GovernancePrepare` | Login |
-| `0x1B03` | `GovernanceCommit` | Login |
+| `0x1B02` | `GovernancePrepare` (casts SELF vote) | Login |
+| `0x1B03` | `GovernanceCommit` (casts SELF vote) | Login |
 | `0x1B04` | `GovernanceSeal` | Admin |
 | `0x1B05` | `GovernanceLog` | Login |
 | `0x1B06` | `GovernanceStatus` | Login |
@@ -111,75 +110,35 @@ Records a transclusion royalty obligation. This is recording, not settlement —
 | Frame | Purpose |
 |-------|---------|
 | `GovernancePrePrepare` | Leader proposes a governance batch |
-| `GovernancePrepareVote` | Replica votes prepare on a proposal |
-| `GovernanceCommitVote` | Replica votes commit on a proposal |
-| `GovernanceSealed` | Propagates a sealed batch to all members |
+| `GovernancePrepareVote` | Signed prepare vote (broadcast all-to-all) |
+| `GovernanceCommitVote` | Signed commit vote (broadcast all-to-all) |
+| `GovernanceSealed` | Sealed batch + certificates (broadcast on seal) |
+| `GovernanceViewChange` | Signed view-change with prepared certificate |
+| `GovernanceNewView` | Leader's 2f+1 view-change assembly |
 
-## Server Methods
+## Governance Transactions
 
-- `governance_propose(transactions)` — Propose a batch of governance transactions
-- `governance_receive_prepare(vote)` — Process a Prepare vote
-- `governance_receive_commit(vote)` — Process a Commit vote
-- `governance_seal_round()` — Seal the current round and execute transactions
-- `governance_execute_tx(tx)` — Apply a single governance transaction to state
-- `governance_log()` — View the governance log
-- `governance_current_view()` / `governance_current_sequence()` — Consensus state
-- `governance_is_leader()` / `governance_leader_id()` — Leader queries
-- `governance_cluster_size()` / `governance_quorum_size()` — Cluster parameters
-- `governance_pending_round()` — View the current in-progress round
+Admit / Expel / KeyRegister / RoyaltyRecord (unchanged from the
+original design — see git history for details).
 
 ## Key Types
 
-- `GovernanceTx` — A governance transaction (Admit, Expel, KeyRegister, RoyaltyRecord)
-- `GovernanceProposal` — A proposed batch with view, sequence, and timestamp
-- `PbftVote` — A Prepare or Commit vote for a specific (view, sequence) pair
-- `PbftPhase` — Prepare or Commit
-- `SealedBatch` — A fully committed batch in the governance log
-- `ConsensusRound` — An in-progress consensus round with vote tracking
-- `RoundPhase` — PrePrepare, Prepare, Commit, or Sealed
-- `GovernanceState` — The complete PBFT state machine
+- `GovernanceProposal` (+ `digest()`)
+- `PbftVote` (+ digest + Ed25519 signature)
+- `SealedBatch` (+ digest + signed certificates)
+- `ViewChangeMessage` / `NewViewMessage`
+- `ConsensusRound` (+ signed certificates, buffered commits, started_at)
+- `GovernanceState` (+ prepared_digests, pruned_below, view_change_votes)
 
-## Test Coverage
+## Known gaps (follow-ups)
 
-### Unit Tests (21 new)
-- GovernanceState construction and cluster sizing
-- Quorum calculations for 1/3/4/7/10 node clusters
-- Leader rotation through view advancement
-- Proposal creation and pending round tracking
-- Full consensus flow (4 nodes: propose → prepare → commit → seal)
-- Seal rejection when round is not ready
-- Wrong view/sequence rejection
-- View advancement clearing pending rounds
-- Transaction type names
-- Serialization roundtrips for proposals, sealed batches, and votes
-- Multiple sequential batches
-- Dynamic cluster resizing
-
-### Server Method Tests (6 new)
-- Bootstrap → propose (single server)
-- Full consensus on single server
-- Execute Admit/Expel/Royalty transactions
-- Governance status queries
-
-### Integration Tests (7 new)
-- Governance status via wire op
-- Propose via wire op (admin auth required)
-- Log query (empty and populated)
-- Full consensus via server methods (propose → prepare → commit → seal)
-- Royalty recording through consensus
-- Propose requires admin auth
-- Seal + log roundtrip via wire ops
-
-## Design Decisions
-
-1. **Lightweight PBFT**: Designed for 3-10 nodes, not thousands. Simplified phases without checkpointing or view-change (to be added if needed).
-
-2. **Leader-based proposal**: Only the current leader (by view rotation) can propose. This prevents conflicting proposals for the same sequence number.
-
-3. **Transaction execution on seal**: Transactions are only applied to state after a batch is sealed (quorum commits received). This ensures all nodes execute in the same order.
-
-4. **Governance log is append-only**: Once a batch is sealed, it's in the log forever. No rollback mechanism — if an expel was wrong, the server can be re-admitted through a new Admit transaction.
-
-5. **Tag counter initialized with timestamp**: Prevents cross-server tag collisions in the OrSet that underlies the membership state.
-
-6. **Governance state is NOT CRDT-merged**: Unlike membership and reconciliation, governance state is consensus-driven. Only sealed batches from PBFT are applied, ensuring one truth.
+1. **State transfer**: a rejoining replica only catches up via
+   ingested sealed batches — no bulk sync of pruned history (ask a
+   peer for the log tail beyond the watermark).
+2. **federation_active.rs coverage**: the async connection loop
+   (including the view-change timer) has no test coverage — needs an
+   in-process two-server transport harness.
+3. **deny.toml license allow-list** too narrow (388 pre-existing
+   rejections on standard MIT/Apache crates).
+4. Full stable-checkpoint protocol (sequence watermarks beyond the
+   retention prune) if governance volume ever grows.

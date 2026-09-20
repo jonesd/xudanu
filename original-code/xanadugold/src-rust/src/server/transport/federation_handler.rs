@@ -143,6 +143,12 @@ pub enum FederationFrame {
     GovernanceSealed {
         batch: crate::server::federation::SealedBatch,
     },
+    GovernanceViewChange {
+        message: crate::server::federation::ViewChangeMessage,
+    },
+    GovernanceNewView {
+        new_view: crate::server::federation::NewViewMessage,
+    },
 
     CrdtSyncPush {
         server_id: String,
@@ -758,35 +764,41 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
                                     "Governance: received pre-prepare from {} view={} seq={}",
                                     proposal.proposer_id, proposal.view_number, proposal.sequence_number
                                 );
-                                let my_id = state.server.with_server_ref(|srv| srv.federation_server_id());
-                                let prepare_vote = crate::server::federation::PbftVote {
-                                    view_number: proposal.view_number,
-                                    sequence_number: proposal.sequence_number,
-                                    voter_id: my_id,
-                                    phase: crate::server::federation::PbftPhase::Prepare,
-                                };
-                                let phase = state.server.with_server(|srv| {
-                                    srv.governance_receive_prepare(prepare_vote.clone())
+                                // Replica path (L1 fix): validate + create
+                                // the local round, cast OUR signed prepare
+                                // vote, and broadcast it ALL-TO-ALL — votes
+                                // no longer travel only proposer↔replica.
+                                let result = state.server.with_server(|srv| {
+                                    srv.governance_receive_pre_prepare(&proposal)
                                 });
-
-                                send_encrypted_frame(
-                                    &mut ws_sender,
-                                    &FederationFrame::GovernancePrepareVote { vote: prepare_vote },
-                                    &mut outbound_cipher,
-                                ).await;
-
-                                if phase == crate::server::federation::RoundPhase::Commit {
-                                    let commit_vote = crate::server::federation::PbftVote {
-                                        view_number: proposal.view_number,
-                                        sequence_number: proposal.sequence_number,
-                                        voter_id: state.server.with_server_ref(|srv| srv.federation_server_id()),
-                                        phase: crate::server::federation::PbftPhase::Commit,
-                                    };
-                                    send_encrypted_frame(
-                                        &mut ws_sender,
-                                        &FederationFrame::GovernanceCommitVote { vote: commit_vote },
-                                        &mut outbound_cipher,
-                                    ).await;
+                                match result {
+                                    Ok(vote) => {
+                                        let _ = state.governance_tx.send(
+                                            FederationFrame::GovernancePrepareVote { vote },
+                                        );
+                                        // Single-server / tiny-quorum clusters
+                                        // can reach Commit from the own vote.
+                                        let phase = state.server.with_server_ref(|srv| {
+                                            srv.governance_pending_round_phase()
+                                        });
+                                        if phase == Some(crate::server::federation::RoundPhase::Commit) {
+                                            let commit = state.server.with_server(|srv| {
+                                                srv.governance_make_signed_vote(
+                                                    crate::server::federation::PbftPhase::Commit,
+                                                    &proposal,
+                                                )
+                                            });
+                                            let _ = state.governance_tx.send(
+                                                FederationFrame::GovernanceCommitVote { vote: commit },
+                                            );
+                                        }
+                                    }
+                                    Err(reason) => {
+                                        tracing::warn!(
+                                            %reason,
+                                            "Governance: rejected pre-prepare"
+                                        );
+                                    }
                                 }
                             }
                             Ok(FederationFrame::GovernancePrepareVote { vote }) => {
@@ -797,6 +809,24 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
                                         srv.governance_receive_prepare(vote)
                                     });
                                     tracing::debug!("Governance: prepare vote processed, phase={:?}", phase);
+                                    // Commit-phase broadcast: whoever crosses
+                                    // prepare-quorum casts its commit vote to
+                                    // all peers (all-to-all, L1 fix).
+                                    if phase == crate::server::federation::RoundPhase::Commit {
+                                        if let Some(proposal) = state.server.with_server_ref(|srv| {
+                                            srv.governance_pending_round_proposal()
+                                        }) {
+                                            let commit = state.server.with_server(|srv| {
+                                                srv.governance_make_signed_vote(
+                                                    crate::server::federation::PbftPhase::Commit,
+                                                    &proposal,
+                                                )
+                                            });
+                                            let _ = state.governance_tx.send(
+                                                FederationFrame::GovernanceCommitVote { vote: commit },
+                                            );
+                                        }
+                                    }
                                 }
                             }
                             Ok(FederationFrame::GovernanceCommitVote { vote }) => {
@@ -807,12 +837,20 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
                                         srv.governance_receive_commit(vote)
                                     });
                                     if phase == crate::server::federation::RoundPhase::Sealed {
-                                        if let Some(batch) = state.server.with_server(|srv| {
+                                        // Sealed locally with full certificates:
+                                        // execute and broadcast the sealed batch
+                                        // to every peer (L2 fix — replicas
+                                        // previously never learned seals).
+                                        let sealed = state.server.with_server(|srv| {
                                             srv.governance_seal_round()
-                                        }) {
+                                        });
+                                        if let Some(batch) = sealed {
                                             tracing::info!(
-                                                "Governance: sealed batch seq={} with {} txs",
+                                                "Governance: sealed batch seq={} with {} txs — broadcasting",
                                                 batch.sequence_number, batch.transactions.len()
+                                            );
+                                            let _ = state.governance_tx.send(
+                                                FederationFrame::GovernanceSealed { batch },
                                             );
                                         }
                                     }
@@ -823,33 +861,35 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
                                     "Governance: received sealed batch seq={} from {}",
                                     batch.sequence_number, batch.proposer_id
                                 );
+                                // Verify certificates against member keys, then
+                                // execute + ingest (S1 fix — the sealed path
+                                // previously executed unverified claims).
                                 state.server.with_server(|srv| {
-                                    if batch.proposer_id != peer_server_id {
-                                        tracing::warn!(
-                                            "Governance: rejected sealed batch from {} — proposer is {}",
-                                            peer_server_id, batch.proposer_id
-                                        );
-                                        return;
-                                    }
-                                    let expected_seq = srv.governance_current_sequence() + 1;
-                                    if batch.sequence_number != expected_seq {
-                                        tracing::warn!(
-                                            "Governance: rejected sealed batch seq={} — expected {}",
-                                            batch.sequence_number, expected_seq
-                                        );
-                                        return;
-                                    }
-                                    if srv.governance_is_applied(batch.sequence_number) {
-                                        tracing::info!(
-                                            "Governance: skipping already-applied batch seq={}",
-                                            batch.sequence_number
-                                        );
-                                        return;
-                                    }
-                                    for tx in &batch.transactions {
-                                        srv.governance_execute_tx(tx);
-                                    }
-                                    srv.governance_mark_applied(batch.sequence_number);
+                                    srv.governance_ingest_sealed_batch(batch);
+                                });
+                            }
+                            Ok(FederationFrame::GovernanceViewChange { message }) => {
+                                if message.server_id != peer_server_id {
+                                    tracing::warn!(
+                                        "Governance: view-change from {} claiming to be {}",
+                                        peer_server_id, message.server_id
+                                    );
+                                } else if let Some(new_view) =
+                                    state.server.with_server(|srv| {
+                                        srv.governance_receive_view_change(&message)
+                                    }) {
+                                    tracing::info!(
+                                        view = new_view.view_number,
+                                        "Governance: view-change quorum — broadcasting NewView"
+                                    );
+                                    let _ = state.governance_tx.send(
+                                        FederationFrame::GovernanceNewView { new_view },
+                                    );
+                                }
+                            }
+                            Ok(FederationFrame::GovernanceNewView { new_view }) => {
+                                state.server.with_server(|srv| {
+                                    srv.governance_apply_new_view(&new_view);
                                 });
                             }
                             Ok(FederationFrame::CrdtSyncPull { server_id, work_ids }) => {
@@ -1417,33 +1457,31 @@ pub(crate) async fn process_federation_frame(
                 proposal.view_number,
                 proposal.sequence_number
             );
-            let my_id = state
-                .server
-                .with_server_ref(|srv| srv.federation_server_id());
-            let prepare_vote = crate::server::federation::PbftVote {
-                view_number: proposal.view_number,
-                sequence_number: proposal.sequence_number,
-                voter_id: my_id,
-                phase: crate::server::federation::PbftPhase::Prepare,
-            };
-            let phase = state
-                .server
-                .with_server(|srv| srv.governance_receive_prepare(prepare_vote.clone()));
-
-            let mut replies = vec![FederationFrame::GovernancePrepareVote { vote: prepare_vote }];
-
-            if phase == crate::server::federation::RoundPhase::Commit {
-                let commit_vote = crate::server::federation::PbftVote {
-                    view_number: proposal.view_number,
-                    sequence_number: proposal.sequence_number,
-                    voter_id: state
-                        .server
-                        .with_server_ref(|srv| srv.federation_server_id()),
-                    phase: crate::server::federation::PbftPhase::Commit,
-                };
-                replies.push(FederationFrame::GovernanceCommitVote { vote: commit_vote });
+            match state.server.with_server(|srv| srv.governance_receive_pre_prepare(&proposal)) {
+                Ok(vote) => {
+                    let mut replies =
+                        vec![FederationFrame::GovernancePrepareVote { vote }];
+                    let phase = state.server.with_server_ref(|srv| {
+                        srv.governance_pending_round_phase()
+                    });
+                    if phase == Some(crate::server::federation::RoundPhase::Commit) {
+                        let commit_vote = state.server.with_server(|srv| {
+                            srv.governance_make_signed_vote(
+                                crate::server::federation::PbftPhase::Commit,
+                                &proposal,
+                            )
+                        });
+                        replies.push(FederationFrame::GovernanceCommitVote {
+                            vote: commit_vote,
+                        });
+                    }
+                    replies
+                }
+                Err(reason) => {
+                    tracing::warn!("Governance: rejected pre-prepare: {}", reason);
+                    vec![]
+                }
             }
-            replies
         }
         FederationFrame::GovernancePrepareVote { vote } => {
             if vote.voter_id != peer_server_id {
@@ -1539,6 +1577,29 @@ pub(crate) async fn process_federation_frame(
                     .with_server(|srv| srv.federation_crdt_pull(&work_ids));
                 vec![FederationFrame::CrdtSyncResult { updates }]
             }
+        }
+        FederationFrame::GovernanceViewChange { message } => {
+            if message.server_id != peer_server_id {
+                tracing::warn!(
+                    "Governance: view-change from {} claiming to be {}",
+                    peer_server_id, message.server_id
+                );
+                vec![]
+            } else {
+                let new_view = state
+                    .server
+                    .with_server(|srv| srv.governance_receive_view_change(&message));
+                match new_view {
+                    Some(nv) => vec![FederationFrame::GovernanceNewView { new_view: nv }],
+                    None => vec![],
+                }
+            }
+        }
+        FederationFrame::GovernanceNewView { new_view } => {
+            state
+                .server
+                .with_server(|srv| srv.governance_apply_new_view(&new_view));
+            vec![]
         }
         FederationFrame::CrdtSyncPush { server_id, updates } => {
             if server_id != peer_server_id {
@@ -2317,6 +2378,8 @@ mod tests {
             sequence_number: 2,
             voter_id: "voter-1".to_string(),
             phase,
+            digest: "ab".repeat(32),
+            signature: "cd".repeat(64),
         }
     }
 
@@ -2360,8 +2423,12 @@ mod tests {
                 transactions: vec![],
                 proposer_id: "proposer-1".to_string(),
                 timestamp: 55,
-                prepare_votes: vec!["v1".to_string()],
-                commit_votes: vec!["v1".to_string(), "v2".to_string()],
+                digest: "ab".repeat(32),
+                prepare_votes: vec![sample_vote(crate::server::federation::PbftPhase::Prepare)],
+                commit_votes: vec![
+                    sample_vote(crate::server::federation::PbftPhase::Commit),
+                    sample_vote(crate::server::federation::PbftPhase::Commit),
+                ],
             },
         };
         assert_has_tag(&frame, "GovernanceSealed");
@@ -2707,6 +2774,8 @@ mod tests {
                 sequence_number: 1,
                 voter_id: "impostor".to_string(),
                 phase: crate::server::federation::PbftPhase::Prepare,
+                digest: String::new(),
+                signature: String::new(),
             },
         };
         let replies = process_federation_frame(frame, &state, "peer").await;

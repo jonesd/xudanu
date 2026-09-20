@@ -3559,27 +3559,35 @@ fn dispatch_inner(
             Ok(ResponseValue::GovernanceProposeResult { proposal })
         }
 
-        WireRequest::GovernancePrepare { vote } => {
+        WireRequest::GovernancePrepare { .. } => {
             if !srv.federation_is_enabled() {
                 return Err(crate::server::ServerError::InvalidArgument(
                     "federation not enabled".into(),
                 ));
             }
             srv.ensure_logged_in(session_id)?;
-            let phase = srv.governance_receive_prepare(vote);
+            // S2 fix: consensus votes are SERVER-to-server evidence —
+            // clients cannot inject votes claiming to be arbitrary
+            // members. This op now casts THIS server's own signed
+            // vote for the pending round (ops/testing convenience).
+            let phase = srv.governance_cast_own_vote(
+                crate::server::federation::PbftPhase::Prepare,
+            );
             Ok(ResponseValue::GovernancePrepareResult {
                 phase: format!("{:?}", phase),
             })
         }
 
-        WireRequest::GovernanceCommit { vote } => {
+        WireRequest::GovernanceCommit { .. } => {
             if !srv.federation_is_enabled() {
                 return Err(crate::server::ServerError::InvalidArgument(
                     "federation not enabled".into(),
                 ));
             }
             srv.ensure_logged_in(session_id)?;
-            let phase = srv.governance_receive_commit(vote);
+            let phase = srv.governance_cast_own_vote(
+                crate::server::federation::PbftPhase::Commit,
+            );
             Ok(ResponseValue::GovernanceCommitResult {
                 phase: format!("{:?}", phase),
             })

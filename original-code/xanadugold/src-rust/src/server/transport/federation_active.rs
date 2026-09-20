@@ -335,6 +335,12 @@ async fn run_outbound_connection(
     let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(30));
     heartbeat_interval.tick().await;
 
+    // View-change timeout poll (S3/L3): a stalled round triggers this
+    // server's signed view-change for view+1, broadcast to all peers.
+    let mut view_change_interval = tokio::time::interval(Duration::from_secs(5));
+    view_change_interval.tick().await;
+    const GOVERNANCE_ROUND_TIMEOUT_SECS: u64 = 10;
+
     let mut sync_interval = tokio::time::interval(Duration::from_secs(60));
     sync_interval.tick().await;
 
@@ -454,6 +460,33 @@ async fn run_outbound_connection(
 
             _ = heartbeat_interval.tick() => {
                 send_encrypted(&mut ws_sender, &FederationFrame::Heartbeat, &mut encrypt_cipher).await;
+            }
+
+            _ = view_change_interval.tick() => {
+                let stalled = state.server.with_server(|srv| {
+                    if srv.governance_round_timed_out(GOVERNANCE_ROUND_TIMEOUT_SECS) {
+                        // Count our own view-change locally, then
+                        // broadcast it to every peer.
+                        let msg = srv.governance_make_view_change();
+                        let new_view = srv.governance_receive_view_change(&msg);
+                        (Some(msg), new_view)
+                    } else {
+                        (None, None)
+                    }
+                });
+                if let Some(msg) = stalled.0 {
+                    send_encrypted(
+                        &mut ws_sender,
+                        &FederationFrame::GovernanceViewChange { message: msg },
+                        &mut encrypt_cipher,
+                    )
+                    .await;
+                }
+                if let Some(new_view) = stalled.1 {
+                    let _ = state
+                        .governance_tx
+                        .send(FederationFrame::GovernanceNewView { new_view });
+                }
             }
 
             _ = sync_interval.tick() => {

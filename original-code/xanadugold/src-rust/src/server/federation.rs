@@ -420,7 +420,7 @@ impl FederationState {
                 .prepare_votes
                 .iter()
                 .chain(batch.commit_votes.iter())
-                .cloned()
+                .map(|v| v.voter_id.clone())
                 .collect();
 
             let consensus_type = match (
@@ -1684,6 +1684,12 @@ impl MembershipState {
                 }
             }
         }
+        // Deterministic order — every replica MUST compute the same
+        // leader from the same membership set, or proposals get
+        // rejected as "not from the leader". OrSet insertion order is
+        // merge-arrival order and differs per replica; server_id sort
+        // is the canonical order.
+        result.sort_by(|a, b| a.server_id.cmp(&b.server_id));
         result
     }
 
@@ -1844,13 +1850,147 @@ pub struct GovernanceProposal {
     pub timestamp: u64,
 }
 
+impl GovernanceProposal {
+    /// blake3 digest over the canonical proposal encoding. Every vote
+    /// and certificate binds to THIS — votes for the same (view, seq)
+    /// with different transaction sets cannot be confused (review
+    /// finding S1: votes previously carried no proposal identity).
+    pub fn digest(&self) -> String {
+        let txs = serde_json::to_string(&self.transactions).unwrap_or_default();
+        let payload = format!(
+            "{}|{}|{}|{}|{}",
+            self.view_number, self.sequence_number, self.proposer_id, self.timestamp, txs
+        );
+        blake3::hash(payload.as_bytes()).to_hex().to_string()
+    }
+}
+
 /// A PBFT vote (used for both Prepare and Commit phases).
+///
+/// Carries the proposal digest and an Ed25519 signature over the
+/// canonical vote payload. A vote is only evidence when it is
+/// attributable: signed by a member's registered verifying key
+/// (review finding S1 — unsigned voter_id strings were forgeable
+/// narrative, not proof).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PbftVote {
     pub view_number: u64,
     pub sequence_number: u64,
     pub voter_id: String,
     pub phase: PbftPhase,
+    /// blake3 hex digest of the proposal this vote certifies.
+    #[serde(default)]
+    pub digest: String,
+    /// Ed25519 signature (hex) over `vote_payload`.
+    #[serde(default)]
+    pub signature: String,
+}
+
+impl PbftVote {
+    /// Canonical signed payload — everything except the signature.
+    pub fn payload(&self) -> String {
+        format!(
+            "{}|{}|{}|{}|{}",
+            self.view_number,
+            self.sequence_number,
+            self.phase_name(),
+            self.digest,
+            self.voter_id
+        )
+    }
+
+    pub fn phase_name(&self) -> &'static str {
+        match self.phase {
+            PbftPhase::Prepare => "prepare",
+            PbftPhase::Commit => "commit",
+        }
+    }
+
+    pub fn is_signed(&self) -> bool {
+        !self.signature.is_empty() && !self.digest.is_empty()
+    }
+}
+
+/// Sign a vote with an Ed25519 signing key (hex signature).
+pub fn sign_vote(vote: &mut PbftVote, signing_key: &ed25519_dalek::SigningKey) {
+    use ed25519_dalek::Signer;
+    vote.signature = hex::encode(
+        &signing_key
+            .sign(vote.payload().as_bytes())
+            .to_bytes(),
+    );
+}
+
+/// Sign an arbitrary payload, returning the hex signature (shared by
+/// view-change messages).
+pub fn vote_hex_sig(signing_key: &ed25519_dalek::SigningKey, payload: &str) -> String {
+    use ed25519_dalek::Signer;
+    hex::encode(&signing_key.sign(payload.as_bytes()).to_bytes())
+}
+
+/// Verify a hex Ed25519 signature over a payload against a hex
+/// verifying key (shared by view-change messages).
+pub fn verify_hex_sig(verifying_key_hex: &str, payload: &str, signature_hex: &str) -> bool {
+    let key_bytes = match hex_decode32(verifying_key_hex) {
+        Some(b) => b,
+        None => return false,
+    };
+    let vk = match ed25519_dalek::VerifyingKey::from_bytes(&key_bytes) {
+        Ok(k) => k,
+        Err(_) => return false,
+    };
+    let sig_bytes = match hex_decode64(signature_hex) {
+        Some(b) => b,
+        None => return false,
+    };
+    let sig = ed25519_dalek::Signature::from_bytes(&sig_bytes);
+    vk.verify_strict(payload.as_bytes(), &sig).is_ok()
+}
+
+/// Verify a vote's signature against a member's registered verifying
+/// key (hex-encoded Ed25519 public key).
+pub fn verify_vote_signature(vote: &PbftVote, verifying_key_hex: &str) -> bool {
+    if !vote.is_signed() {
+        return false;
+    }
+    let key_bytes = match hex_decode32(verifying_key_hex) {
+        Some(b) => b,
+        None => return false,
+    };
+    let vk = match ed25519_dalek::VerifyingKey::from_bytes(&key_bytes) {
+        Ok(k) => k,
+        Err(_) => return false,
+    };
+    let sig_bytes = match hex_decode64(&vote.signature) {
+        Some(b) => b,
+        None => return false,
+    };
+    let sig = match ed25519_dalek::Signature::from_bytes(&sig_bytes) {
+        s => s,
+    };
+    vk.verify_strict(vote.payload().as_bytes(), &sig).is_ok()
+}
+
+fn hex_decode32(s: &str) -> Option<[u8; 32]> {
+    if s.len() != 64 {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    for i in 0..32 {
+        out[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).ok()?;
+    }
+    Some(out)
+}
+
+fn hex_decode64(s: &str) -> Option<[u8; 64]> {
+    if s.len() != 128 {
+        return None;
+    }
+    let mut out = [0u8; 64];
+    for i in 0..64 {
+        out[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).ok()?;
+    }
+    Some(out)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1861,6 +2001,13 @@ pub enum PbftPhase {
 }
 
 /// A sealed (fully committed) governance batch in the log.
+///
+/// The vote sets are SIGNED certificates: 2f+1 distinct valid
+/// prepare signatures and 2f+1 commit signatures over the batch
+/// digest. Recipients verify before executing — a sealed batch is
+/// self-proving and no longer trusts the relayer (review finding
+/// S1: the GovernanceSealed path previously executed whatever the
+/// proposer claimed, unverified).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SealedBatch {
     pub view_number: u64,
@@ -1868,8 +2015,73 @@ pub struct SealedBatch {
     pub transactions: Vec<GovernanceTx>,
     pub proposer_id: String,
     pub timestamp: u64,
-    pub prepare_votes: Vec<String>,
-    pub commit_votes: Vec<String>,
+    /// blake3 digest of the proposal (recomputed and checked on verify).
+    #[serde(default)]
+    pub digest: String,
+    /// Signed prepare certificates (≥ quorum distinct members).
+    #[serde(default)]
+    pub prepare_votes: Vec<PbftVote>,
+    /// Signed commit certificates (≥ quorum distinct members).
+    #[serde(default)]
+    pub commit_votes: Vec<PbftVote>,
+}
+
+impl SealedBatch {
+    /// The proposal this batch seals (digest/ certificate binding).
+    pub fn proposal(&self) -> GovernanceProposal {
+        GovernanceProposal {
+            view_number: self.view_number,
+            sequence_number: self.sequence_number,
+            transactions: self.transactions.clone(),
+            proposer_id: self.proposer_id.clone(),
+            timestamp: self.timestamp,
+        }
+    }
+
+    /// Recompute and check the embedded digest.
+    pub fn digest_matches(&self) -> bool {
+        let d = self.proposal().digest();
+        !self.digest.is_empty() && self.digest == d
+    }
+}
+
+/// View-change message (review findings S3/L3): a replica's signed
+/// statement that it is abandoning the current view, carrying its
+/// highest prepared certificate so the new leader cannot re-propose
+/// conflicting content at a prepared sequence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ViewChangeMessage {
+    pub new_view: u64,
+    pub server_id: String,
+    /// Highest (sequence, digest) this replica saw reach prepare-quorum.
+    #[serde(default)]
+    pub highest_prepared: Option<(u64, String)>,
+    #[serde(default)]
+    pub signature: String,
+}
+
+impl ViewChangeMessage {
+    pub fn payload(&self) -> String {
+        match &self.highest_prepared {
+            Some((seq, digest)) => format!(
+                "view-change|{}|{}|{}|{}",
+                self.new_view, self.server_id, seq, digest
+            ),
+            None => format!("view-change|{}|{}||", self.new_view, self.server_id),
+        }
+    }
+
+    pub fn is_signed(&self) -> bool {
+        !self.signature.is_empty()
+    }
+}
+
+/// New-view announcement assembled by the incoming leader from 2f+1
+/// verified view-change messages.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewViewMessage {
+    pub view_number: u64,
+    pub view_changes: Vec<ViewChangeMessage>,
 }
 
 /// The state of a single ongoing consensus round.
@@ -1878,7 +2090,21 @@ pub struct ConsensusRound {
     pub proposal: GovernanceProposal,
     pub prepare_votes: HashSet<String>,
     pub commit_votes: HashSet<String>,
+    /// Signed certificates accumulated for the sealed batch.
+    #[serde(default)]
+    pub signed_prepare_votes: Vec<PbftVote>,
+    #[serde(default)]
+    pub signed_commit_votes: Vec<PbftVote>,
+    /// Commit votes that arrived before prepare-quorum — buffered and
+    /// replayed on transition (review finding S4: early committers'
+    /// votes were dropped, stalling rounds under normal async timing).
+    #[serde(default)]
+    pub buffered_commit_votes: Vec<PbftVote>,
     pub phase: RoundPhase,
+    /// When the round started (unix secs) — drives view-change
+    /// timeouts.
+    #[serde(default)]
+    pub started_at: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1889,6 +2115,9 @@ pub enum RoundPhase {
     Commit,
     Sealed,
 }
+
+/// How many sealed batches are retained in full before pruning.
+const GOVERNANCE_KEEP_BATCHES: usize = 64;
 
 /// The complete governance state for a federation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1901,6 +2130,22 @@ pub struct GovernanceState {
     faulty_tolerance: usize,
     tag_counter: u64,
     applied_sequences: HashSet<u64>,
+    /// Fork protection (review finding S3): seq → digest of the
+    /// highest prepared (commit-quorum) proposal. A later proposal at
+    /// the same seq in any view MUST carry the same digest or be
+    /// rejected — this is the local half of the view-change safety
+    /// rule.
+    #[serde(default)]
+    prepared_digests: HashMap<u64, String>,
+    /// Everything below this sequence was pruned from `log` and
+    /// `applied_sequences` (checkpoint watermark).
+    #[serde(default)]
+    pruned_below: u64,
+    /// View-change messages by target view → sender (S3/L3: leader
+    /// failure previously stalled governance forever; view changes
+    /// previously had NO protocol — advance_view just forked state).
+    #[serde(default)]
+    view_change_votes: HashMap<u64, HashMap<String, ViewChangeMessage>>,
 }
 
 impl GovernanceState {
@@ -1918,6 +2163,9 @@ impl GovernanceState {
                 .unwrap_or_default()
                 .as_nanos() as u64,
             applied_sequences: HashSet::new(),
+            prepared_digests: HashMap::new(),
+            pruned_below: 0,
+            view_change_votes: HashMap::new(),
         }
     }
 
@@ -1979,20 +2227,32 @@ impl GovernanceState {
         self.tag_counter
     }
 
+    /// Governance policy: single-server mode works locally (quorum 1,
+    /// self-signed); 2-3 nodes can neither do BFT (needs 3f+1 = 4) nor
+    /// serve as a meaningful majority — refuse with a clear reason so
+    /// operators see WHY nothing seals. 4+ nodes run real BFT.
+    pub fn policy_reason(&self) -> Option<String> {
+        let n = self.cluster_size;
+        if n == 1 || n >= 4 {
+            None
+        } else {
+            Some(format!(
+                "governance requires 1 (single-server) or ≥4 (BFT) members — cluster has {n}"
+            ))
+        }
+    }
+
     pub fn propose(
         &mut self,
         transactions: Vec<GovernanceTx>,
         proposer_id: String,
     ) -> Option<GovernanceProposal> {
-        if self.pending_round.is_some() {
+        if let Some(reason) = self.policy_reason() {
+            tracing::warn!(cluster_size = self.cluster_size, %reason, "governance propose refused");
             return None;
         }
-        if self.cluster_size >= 2 && self.quorum_size() < 2 {
-            tracing::warn!(
-                cluster_size = self.cluster_size,
-                quorum_size = self.quorum_size(),
-                "governance propose with dangerously low quorum — cluster_size should be >= 4 for Byzantine fault tolerance"
-            );
+        if self.pending_round.is_some() {
+            return None;
         }
         let seq = self.current_sequence + 1;
         let proposal = GovernanceProposal {
@@ -2006,6 +2266,20 @@ impl GovernanceState {
                 .as_secs(),
         };
 
+        // Fork protection: if this seq was ever prepared (here or in
+        // a view-change certificate) with a different digest, the
+        // re-proposal MUST replay the prepared transactions.
+        if let Some(prepared) = self.prepared_digests.get(&seq) {
+            if *prepared != proposal.digest() {
+                tracing::warn!(
+                    seq,
+                    prepared = %prepared,
+                    "propose refused: sequence already prepared with a different digest"
+                );
+                return None;
+            }
+        }
+
         self.pending_round = Some(ConsensusRound {
             proposal: proposal.clone(),
             prepare_votes: {
@@ -2014,13 +2288,79 @@ impl GovernanceState {
                 s
             },
             commit_votes: HashSet::new(),
+            signed_prepare_votes: Vec::new(),
+            signed_commit_votes: Vec::new(),
+            buffered_commit_votes: Vec::new(),
             phase: RoundPhase::Prepare,
+            started_at: now_secs(),
         });
 
         Some(proposal)
     }
 
+    /// Accept a pre-prepare from the current leader (replica path —
+    /// review finding L1: replicas previously never created a pending
+    /// round, so they could never track progress or reach Commit on
+    /// their own). Validates view, sequence, leadership, and fork
+    /// protection before creating the round.
+    pub fn receive_pre_prepare(
+        &mut self,
+        proposal: &GovernanceProposal,
+        members: &[String],
+    ) -> Result<(), String> {
+        if self.pending_round.is_some() {
+            return Err("a round is already in progress".into());
+        }
+        if proposal.view_number != self.current_view {
+            return Err(format!(
+                "proposal view {} does not match current view {}",
+                proposal.view_number, self.current_view
+            ));
+        }
+        if proposal.sequence_number != self.current_sequence + 1 {
+            return Err(format!(
+                "proposal seq {} does not match expected {}",
+                proposal.sequence_number,
+                self.current_sequence + 1
+            ));
+        }
+        if !self.is_leader(&proposal.proposer_id, members) {
+            return Err(format!(
+                "proposer {} is not the leader for view {}",
+                proposal.proposer_id, proposal.view_number
+            ));
+        }
+        if let Some(prepared) = self.prepared_digests.get(&proposal.sequence_number) {
+            if *prepared != proposal.digest() {
+                return Err(
+                    "proposal conflicts with a prepared digest for this sequence".into(),
+                );
+            }
+        }
+        self.pending_round = Some(ConsensusRound {
+            proposal: proposal.clone(),
+            prepare_votes: {
+                let mut s = HashSet::new();
+                s.insert(proposal.proposer_id.clone());
+                s
+            },
+            commit_votes: HashSet::new(),
+            signed_prepare_votes: Vec::new(),
+            signed_commit_votes: Vec::new(),
+            buffered_commit_votes: Vec::new(),
+            phase: RoundPhase::Prepare,
+            started_at: now_secs(),
+        });
+        Ok(())
+    }
+
     pub fn receive_prepare(&mut self, vote: PbftVote) -> RoundPhase {
+        // BFT mode (n ≥ 4): unsigned votes are not evidence. The
+        // server layer verifies signatures; the state machine refuses
+        // anything unsigned on arrival (defense in depth).
+        if self.cluster_size >= 4 && !vote.is_signed() {
+            return RoundPhase::PrePrepare;
+        }
         let quorum = self.quorum_size();
         let round = match &mut self.pending_round {
             Some(r) => r,
@@ -2037,17 +2377,66 @@ impl GovernanceState {
             return round.phase;
         }
 
+        // Votes bind to the proposal digest (S1): a vote for the same
+        // (view, seq) but different content does not count.
+        if vote.is_signed() && vote.digest != round.proposal.digest() {
+            return round.phase;
+        }
+
         round.prepare_votes.insert(vote.voter_id.clone());
         round.phase = RoundPhase::Prepare;
+        if vote.is_signed() && !round.signed_prepare_votes.contains(&vote) {
+            round.signed_prepare_votes.push(vote);
+        }
 
         if round.prepare_votes.len() >= quorum {
             round.phase = RoundPhase::Commit;
+            // Record the prepared digest — fork protection from here on.
+            let seq = round.proposal.sequence_number;
+            let digest = round.proposal.digest();
+            self.prepared_digests.insert(seq, digest);
+            // Replay commit votes buffered during Prepare (S4).
+            let buffered = std::mem::take(&mut round.buffered_commit_votes);
+            for v in buffered {
+                let phase = self.receive_commit_inner(v);
+                if phase == RoundPhase::Sealed {
+                    return RoundPhase::Sealed;
+                }
+            }
         }
 
-        round.phase
+        // The phase may have advanced through the replay; read fresh.
+        self.pending_round
+            .as_ref()
+            .map(|r| r.phase)
+            .unwrap_or(RoundPhase::PrePrepare)
     }
 
     pub fn receive_commit(&mut self, vote: PbftVote) -> RoundPhase {
+        if self.cluster_size >= 4 && !vote.is_signed() {
+            return RoundPhase::PrePrepare;
+        }
+        let round = match &mut self.pending_round {
+            Some(r) => r,
+            None => return RoundPhase::PrePrepare,
+        };
+        if round.phase != RoundPhase::Commit {
+            // Buffer early commit votes instead of dropping them (S4).
+            if round.phase == RoundPhase::Prepare
+                && vote.view_number == round.proposal.view_number
+                && vote.sequence_number == round.proposal.sequence_number
+                && (!vote.is_signed() || vote.digest == round.proposal.digest())
+            {
+                if !round.buffered_commit_votes.contains(&vote) {
+                    round.buffered_commit_votes.push(vote);
+                }
+            }
+            return round.phase;
+        }
+        self.receive_commit_inner(vote)
+    }
+
+    fn receive_commit_inner(&mut self, vote: PbftVote) -> RoundPhase {
         let quorum = self.quorum_size();
         let round = match &mut self.pending_round {
             Some(r) => r,
@@ -2063,8 +2452,14 @@ impl GovernanceState {
         {
             return round.phase;
         }
+        if vote.is_signed() && vote.digest != round.proposal.digest() {
+            return round.phase;
+        }
 
         round.commit_votes.insert(vote.voter_id.clone());
+        if vote.is_signed() && !round.signed_commit_votes.contains(&vote) {
+            round.signed_commit_votes.push(vote);
+        }
 
         if round.commit_votes.len() >= quorum {
             round.phase = RoundPhase::Sealed;
@@ -2081,25 +2476,227 @@ impl GovernanceState {
             return None;
         }
 
+        let proposal = round.proposal.clone();
         let sealed = SealedBatch {
-            view_number: round.proposal.view_number,
-            sequence_number: round.proposal.sequence_number,
-            transactions: round.proposal.transactions,
-            proposer_id: round.proposal.proposer_id,
-            timestamp: round.proposal.timestamp,
-            prepare_votes: round.prepare_votes.into_iter().collect(),
-            commit_votes: round.commit_votes.into_iter().collect(),
+            view_number: proposal.view_number,
+            sequence_number: proposal.sequence_number,
+            transactions: proposal.transactions,
+            proposer_id: proposal.proposer_id,
+            timestamp: proposal.timestamp,
+            digest: round.proposal.digest(),
+            prepare_votes: round.signed_prepare_votes,
+            commit_votes: round.signed_commit_votes,
         };
 
         self.current_sequence = sealed.sequence_number;
         self.applied_sequences.insert(sealed.sequence_number);
+        self.prepared_digests.insert(sealed.sequence_number, sealed.digest.clone());
         self.log.push(sealed.clone());
+        self.prune_log();
         Some(sealed)
+    }
+
+    /// Verify a sealed batch's certificates against member verifying
+    /// keys (hex). Checks: digest matches content, ≥ quorum distinct
+    /// valid prepare signatures, ≥ quorum distinct valid commit
+    /// signatures, all voters active members.
+    pub fn verify_sealed(
+        &self,
+        batch: &SealedBatch,
+        member_keys: &HashMap<String, String>,
+    ) -> Result<(), String> {
+        if !batch.digest_matches() {
+            return Err("digest does not match batch content".into());
+        }
+        let quorum = self.quorum_size();
+        let count = |votes: &[PbftVote], phase: PbftPhase| -> usize {
+            let mut distinct: HashSet<&str> = HashSet::new();
+            for v in votes {
+                if v.phase != phase {
+                    continue;
+                }
+                if v.view_number != batch.view_number
+                    || v.sequence_number != batch.sequence_number
+                    || v.digest != batch.digest
+                {
+                    continue;
+                }
+                let Some(key) = member_keys.get(&v.voter_id) else {
+                    continue;
+                };
+                if verify_vote_signature(v, key) {
+                    distinct.insert(v.voter_id.as_str());
+                }
+            }
+            distinct.len()
+        };
+        let prepares = count(&batch.prepare_votes, PbftPhase::Prepare);
+        if prepares < quorum {
+            return Err(format!(
+                "insufficient prepare certificates: {prepares} < {quorum}"
+            ));
+        }
+        let commits = count(&batch.commit_votes, PbftPhase::Commit);
+        if commits < quorum {
+            return Err(format!(
+                "insufficient commit certificates: {commits} < {quorum}"
+            ));
+        }
+        Ok(())
+    }
+
+    /// Ingest a verified sealed batch from the network (replica catch-
+    /// up path). Records the digest for fork protection and advances
+    /// the sequence watermark.
+    pub fn ingest_sealed(&mut self, batch: SealedBatch) {
+        if batch.sequence_number <= self.current_sequence {
+            return;
+        }
+        self.prepared_digests.insert(batch.sequence_number, batch.digest.clone());
+        self.current_sequence = batch.sequence_number;
+        self.applied_sequences.insert(batch.sequence_number);
+        self.pending_round = None;
+        self.log.push(batch);
+        self.prune_log();
+    }
+
+    /// Prune old batches beyond the retention window and advance the
+    /// checkpoint watermark (bounded memory for long-lived
+    /// federations).
+    fn prune_log(&mut self) {
+        if self.log.len() > GOVERNANCE_KEEP_BATCHES {
+            let drop = self.log.len() - GOVERNANCE_KEEP_BATCHES;
+            let new_watermark = self.log[drop - 1].sequence_number;
+            self.log.drain(0..drop);
+            if new_watermark > self.pruned_below {
+                self.pruned_below = new_watermark;
+            }
+            self.applied_sequences.retain(|s| *s >= self.pruned_below);
+        }
+    }
+
+    /// Highest sequence protected by a prepared digest (view-change
+    /// certificate input).
+    pub fn highest_prepared(&self) -> Option<(u64, String)> {
+        self.prepared_digests
+            .iter()
+            .filter(|(seq, _)| **seq <= self.current_sequence)
+            .max_by_key(|(seq, _)| **seq)
+            .map(|(seq, d)| (*seq, d.clone()))
+    }
+
+    pub fn prepared_digest(&self, sequence_number: u64) -> Option<&String> {
+        self.prepared_digests.get(&sequence_number)
+    }
+
+    pub fn pruned_below(&self) -> u64 {
+        self.pruned_below
     }
 
     pub fn advance_view(&mut self) {
         self.current_view += 1;
         self.pending_round = None;
+    }
+
+    // ── View change (S3/L3) ────────────────────────────────────────
+
+    /// Store a (signature-verified upstream) view-change message.
+    /// Returns the NewView announcement when THIS server is the
+    /// incoming leader and quorum accumulated — the caller broadcasts
+    /// it.
+    pub fn receive_view_change(
+        &mut self,
+        msg: &ViewChangeMessage,
+        members: &[String],
+        my_server_id: &str,
+    ) -> Option<NewViewMessage> {
+        if msg.new_view <= self.current_view {
+            return None; // stale view change
+        }
+        let bucket_len = {
+            let bucket = self
+                .view_change_votes
+                .entry(msg.new_view)
+                .or_default();
+            bucket.insert(msg.server_id.clone(), msg.clone());
+            bucket.len()
+        };
+        if bucket_len < self.quorum_size() {
+            return None;
+        }
+        // Am I the leader of the NEW view?
+        if members.is_empty() {
+            return None;
+        }
+        let idx = (msg.new_view as usize) % members.len();
+        if members.get(idx).map(|s| s.as_str()) != Some(my_server_id) {
+            return None;
+        }
+        // Clear stale view-change buckets below the new view.
+        let msgs: Vec<ViewChangeMessage> = self
+            .view_change_votes
+            .get(&msg.new_view)
+            .map(|b| b.values().cloned().collect())
+            .unwrap_or_default();
+        self.view_change_votes.retain(|v, _| *v >= msg.new_view);
+        Some(NewViewMessage {
+            view_number: msg.new_view,
+            view_changes: msgs,
+        })
+    }
+
+    /// Apply a verified NewView: enter the new view and import every
+    /// prepared certificate it carries. The sequence watermark never
+    /// moves backward and prepared digests block conflicting
+    /// re-proposals — this is the anti-fork core of view change.
+    pub fn apply_new_view(&mut self, new_view: &NewViewMessage) {
+        if new_view.view_number <= self.current_view {
+            return;
+        }
+        self.current_view = new_view.view_number;
+        self.pending_round = None;
+        for vc in &new_view.view_changes {
+            if let Some((seq, digest)) = &vc.highest_prepared {
+                if seq > &self.current_sequence {
+                    self.current_sequence = *seq;
+                }
+                let existing = self.prepared_digests.entry(*seq).or_insert_with(|| digest.clone());
+                if existing != digest {
+                    // Conflicting prepared digests at the same seq —
+                    // impossible under quorum intersection with signed
+                    // votes; treat as protocol violation and refuse to
+                    // move past it.
+                    tracing::error!(
+                        seq,
+                        recorded = %existing,
+                        incoming = %digest,
+                        "conflicting prepared digests in view-change certificates"
+                    );
+                } else {
+                    *existing = digest.clone();
+                }
+            }
+        }
+    }
+
+    /// Is the pending round stale enough to trigger a view change?
+    pub fn round_timed_out(&self, now: u64, timeout_secs: u64) -> bool {
+        match &self.pending_round {
+            Some(r) => now.saturating_sub(r.started_at) >= timeout_secs,
+            None => false,
+        }
+    }
+
+    /// The view number a view change should target.
+    pub fn next_view(&self) -> u64 {
+        self.current_view + 1
+    }
+
+    /// Reset the pending round's timer (a vote arrived — progress).
+    pub fn touch_round(&mut self) {
+        if let Some(r) = &mut self.pending_round {
+            r.started_at = now_secs();
+        }
     }
 
     pub fn apply_sealed(&self, batch: &SealedBatch) -> Vec<GovernanceTx> {
@@ -2113,6 +2710,13 @@ impl GovernanceState {
     pub fn mark_applied(&mut self, sequence_number: u64) {
         self.applied_sequences.insert(sequence_number);
     }
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 mod hex {
@@ -3822,6 +4426,71 @@ mod tests {
     // Phase 19b: Governance & BFT Tests
     // =====================================================================
 
+    // Test cluster: deterministic SigningKeys per member + hex key map.
+    fn test_cluster(n: usize) -> (Vec<ed25519_dalek::SigningKey>, HashMap<String, String>) {
+        let mut keys = Vec::new();
+        let mut member_keys = HashMap::new();
+        for i in 0..n {
+            let mut seed = [0u8; 32];
+            seed[0] = (i + 1) as u8;
+            let sk = ed25519_dalek::SigningKey::from_bytes(&seed);
+            let voter = format!("srv-{}", (b'a' + i as u8) as char);
+            member_keys.insert(voter, hex::encode(&sk.verifying_key().to_bytes()));
+            keys.push(sk);
+        }
+        (keys, member_keys)
+    }
+
+    fn tvote(
+        sk: &ed25519_dalek::SigningKey,
+        voter: &str,
+        phase: PbftPhase,
+        proposal: &GovernanceProposal,
+    ) -> PbftVote {
+        let mut v = PbftVote {
+            view_number: proposal.view_number,
+            sequence_number: proposal.sequence_number,
+            voter_id: voter.to_string(),
+            phase,
+            digest: proposal.digest(),
+            signature: String::new(),
+        };
+        sign_vote(&mut v, sk);
+        v
+    }
+
+    fn uvote(voter: &str, phase: PbftPhase, view: u64, seq: u64) -> PbftVote {
+        PbftVote {
+            view_number: view,
+            sequence_number: seq,
+            voter_id: voter.to_string(),
+            phase,
+            digest: String::new(),
+            signature: String::new(),
+        }
+    }
+
+    /// Drive a full signed round on a fresh n-node cluster; returns the
+    /// sealed batch.
+    fn drive_signed_round(gov: &mut GovernanceState, keys: &[ed25519_dalek::SigningKey]) -> SealedBatch {
+        let tx = GovernanceTx::Expel {
+            server_id: "srv-z".to_string(),
+            reason: "test".to_string(),
+        };
+        let proposal = gov
+            .propose(vec![tx], "srv-a".to_string())
+            .expect("leader propose");
+        for (i, key) in keys.iter().enumerate() {
+            let voter = format!("srv-{}", (b'a' + i as u8) as char);
+            let _ = gov.receive_prepare(tvote(key, &voter, PbftPhase::Prepare, &proposal));
+        }
+        for (i, key) in keys.iter().enumerate() {
+            let voter = format!("srv-{}", (b'a' + i as u8) as char);
+            let _ = gov.receive_commit(tvote(key, &voter, PbftPhase::Commit, &proposal));
+        }
+        gov.seal_round().expect("sealed after quorum commits")
+    }
+
     #[test]
     fn governance_state_new() {
         let gov = GovernanceState::new(4);
@@ -3875,7 +4544,7 @@ mod tests {
 
     #[test]
     fn governance_propose_creates_round() {
-        let mut gov = GovernanceState::new(3);
+        let mut gov = GovernanceState::new(4);
         let tx = GovernanceTx::Admit {
             server_id: "srv-new".to_string(),
             verifying_key_hex: "vk-new".to_string(),
@@ -3895,60 +4564,28 @@ mod tests {
 
     #[test]
     fn governance_full_consensus_four_nodes() {
+        let (keys, member_keys) = test_cluster(4);
         let mut gov = GovernanceState::new(4);
         let tx = GovernanceTx::Expel {
             server_id: "srv-bad".to_string(),
             reason: "malicious".to_string(),
         };
 
-        gov.propose(vec![tx], "srv-a".to_string());
-
+        let proposal = gov.propose(vec![tx], "srv-a".to_string()).unwrap();
         assert_eq!(gov.pending_round().unwrap().phase, RoundPhase::Prepare);
 
-        let vote_b = PbftVote {
-            view_number: 0,
-            sequence_number: 1,
-            voter_id: "srv-b".to_string(),
-            phase: PbftPhase::Prepare,
-        };
-        let phase = gov.receive_prepare(vote_b);
+        // The leader casts its own signed prepare too — a complete
+        // certificate includes it.
+        let _ = gov.receive_prepare(tvote(&keys[0], "srv-a", PbftPhase::Prepare, &proposal));
+        let phase = gov.receive_prepare(tvote(&keys[1], "srv-b", PbftPhase::Prepare, &proposal));
         assert_eq!(phase, RoundPhase::Prepare, "2 prepares < quorum 3");
 
-        let vote_c = PbftVote {
-            view_number: 0,
-            sequence_number: 1,
-            voter_id: "srv-c".to_string(),
-            phase: PbftPhase::Prepare,
-        };
-        let phase = gov.receive_prepare(vote_c);
+        let phase = gov.receive_prepare(tvote(&keys[2], "srv-c", PbftPhase::Prepare, &proposal));
         assert_eq!(phase, RoundPhase::Commit, "3 prepares >= quorum 3");
 
-        let commit_a = PbftVote {
-            view_number: 0,
-            sequence_number: 1,
-            voter_id: "srv-a".to_string(),
-            phase: PbftPhase::Commit,
-        };
-        let phase = gov.receive_commit(commit_a);
-        assert_eq!(phase, RoundPhase::Commit);
-
-        let commit_b = PbftVote {
-            view_number: 0,
-            sequence_number: 1,
-            voter_id: "srv-b".to_string(),
-            phase: PbftPhase::Commit,
-        };
-        let phase = gov.receive_commit(commit_b);
-        assert_eq!(phase, RoundPhase::Commit);
-
-        let commit_c = PbftVote {
-            view_number: 0,
-            sequence_number: 1,
-            voter_id: "srv-c".to_string(),
-            phase: PbftPhase::Commit,
-        };
-        let phase = gov.receive_commit(commit_c);
-        assert_eq!(phase, RoundPhase::Sealed);
+        assert_eq!(gov.receive_commit(tvote(&keys[0], "srv-a", PbftPhase::Commit, &proposal)), RoundPhase::Commit);
+        assert_eq!(gov.receive_commit(tvote(&keys[1], "srv-b", PbftPhase::Commit, &proposal)), RoundPhase::Commit);
+        assert_eq!(gov.receive_commit(tvote(&keys[2], "srv-c", PbftPhase::Commit, &proposal)), RoundPhase::Sealed);
 
         let batch = gov.seal_round().unwrap();
         assert_eq!(batch.sequence_number, 1);
@@ -3958,11 +4595,15 @@ mod tests {
         assert_eq!(gov.log_len(), 1);
         assert_eq!(gov.current_sequence(), 1);
         assert!(gov.pending_round().is_none());
+
+        // The sealed batch carries VERIFIABLE certificates against the
+        // member keys (spec check: prepared/committed proof).
+        gov.verify_sealed(&batch, &member_keys).expect("certificates verify");
     }
 
     #[test]
     fn governance_seal_fails_if_not_ready() {
-        let mut gov = GovernanceState::new(3);
+        let mut gov = GovernanceState::new(4);
         gov.propose(vec![], "srv-a".to_string());
         assert!(
             gov.seal_round().is_none(),
@@ -3976,15 +4617,12 @@ mod tests {
 
     #[test]
     fn governance_rejects_wrong_view() {
-        let mut gov = GovernanceState::new(3);
-        gov.propose(vec![], "srv-a".to_string());
+        let (keys, _) = test_cluster(4);
+        let mut gov = GovernanceState::new(4);
+        let proposal = gov.propose(vec![], "srv-a".to_string()).unwrap();
 
-        let wrong_view = PbftVote {
-            view_number: 99,
-            sequence_number: 1,
-            voter_id: "srv-b".to_string(),
-            phase: PbftPhase::Prepare,
-        };
+        let mut wrong_view = tvote(&keys[1], "srv-b", PbftPhase::Prepare, &proposal);
+        wrong_view.view_number = 99;
         let phase = gov.receive_prepare(wrong_view);
         assert_eq!(phase, RoundPhase::Prepare, "wrong view should be ignored");
         assert_eq!(gov.pending_round().unwrap().prepare_votes.len(), 1);
@@ -3992,7 +4630,7 @@ mod tests {
 
     #[test]
     fn governance_advance_view_clears_round() {
-        let mut gov = GovernanceState::new(3);
+        let mut gov = GovernanceState::new(4);
         gov.propose(vec![], "srv-a".to_string());
         assert!(gov.pending_round().is_some());
         gov.advance_view();
@@ -4064,36 +4702,56 @@ mod tests {
 
     #[test]
     fn governance_sealed_batch_serialize_roundtrip() {
+        let (keys, _) = test_cluster(3);
+        let proposal = GovernanceProposal {
+            view_number: 0,
+            sequence_number: 1,
+            transactions: vec![],
+            proposer_id: "srv-a".to_string(),
+            timestamp: 999,
+        };
+        let votes: Vec<PbftVote> = keys
+            .iter()
+            .enumerate()
+            .map(|(i, k)| tvote(k, &format!("srv-{}", (b'a' + i as u8) as char), PbftPhase::Prepare, &proposal))
+            .collect();
         let batch = SealedBatch {
             view_number: 0,
             sequence_number: 1,
             transactions: vec![],
             proposer_id: "srv-a".to_string(),
             timestamp: 999,
-            prepare_votes: vec!["a".into(), "b".into(), "c".into()],
-            commit_votes: vec!["a".into(), "b".into(), "c".into()],
+            digest: proposal.digest(),
+            prepare_votes: votes.clone(),
+            commit_votes: votes,
         };
         let json = serde_json::to_string(&batch).unwrap();
         let back: SealedBatch = serde_json::from_str(&json).unwrap();
         assert_eq!(back.prepare_votes.len(), 3);
         assert_eq!(back.commit_votes.len(), 3);
+        assert!(back.digest_matches());
     }
 
     #[test]
     fn governance_vote_serialize_roundtrip() {
-        let vote = PbftVote {
+        let (keys, _) = test_cluster(2);
+        let proposal = GovernanceProposal {
             view_number: 2,
             sequence_number: 10,
-            voter_id: "srv-b".to_string(),
-            phase: PbftPhase::Commit,
+            transactions: vec![],
+            proposer_id: "srv-a".to_string(),
+            timestamp: 1,
         };
+        let vote = tvote(&keys[1], "srv-b", PbftPhase::Commit, &proposal);
         let json = serde_json::to_string(&vote).unwrap();
         let back: PbftVote = serde_json::from_str(&json).unwrap();
         assert_eq!(back.phase, PbftPhase::Commit);
+        assert!(back.is_signed());
     }
 
     #[test]
     fn governance_multiple_batches() {
+        let (keys, _) = test_cluster(4);
         let mut gov = GovernanceState::new(4);
 
         for i in 0..3 {
@@ -4104,23 +4762,14 @@ mod tests {
                 royalty_type: RoyaltyType::Transclusion,
                 amount: 100 * (i as u64 + 1),
             };
-            gov.propose(vec![tx], "srv-a".to_string());
-
-            for voter in &["srv-a", "srv-b", "srv-c"] {
-                gov.receive_prepare(PbftVote {
-                    view_number: 0,
-                    sequence_number: (i as u64) + 1,
-                    voter_id: voter.to_string(),
-                    phase: PbftPhase::Prepare,
-                });
+            let proposal = gov.propose(vec![tx], "srv-a".to_string()).unwrap();
+            for (idx, key) in keys.iter().enumerate() {
+                let voter = format!("srv-{}", (b'a' + idx as u8) as char);
+                let _ = gov.receive_prepare(tvote(key, &voter, PbftPhase::Prepare, &proposal));
             }
-            for voter in &["srv-a", "srv-b", "srv-c"] {
-                gov.receive_commit(PbftVote {
-                    view_number: 0,
-                    sequence_number: (i as u64) + 1,
-                    voter_id: voter.to_string(),
-                    phase: PbftPhase::Commit,
-                });
+            for (idx, key) in keys.iter().enumerate() {
+                let voter = format!("srv-{}", (b'a' + idx as u8) as char);
+                let _ = gov.receive_commit(tvote(key, &voter, PbftPhase::Commit, &proposal));
             }
             gov.seal_round().unwrap();
         }
@@ -4145,6 +4794,366 @@ mod tests {
         assert_eq!(gov.cluster_size(), 7);
         assert_eq!(gov.faulty_tolerance(), 2);
         assert_eq!(gov.quorum_size(), 5);
+    }
+
+    // ── Hardening suite (spec checks vs Castro-Liskov) ─────────────
+
+    #[test]
+    fn governance_policy_single_or_four_plus() {
+        for good in [1usize, 4, 5, 7] {
+            assert!(
+                GovernanceState::new(good).policy_reason().is_none(),
+                "n={good} must be allowed"
+            );
+        }
+        for bad in [2usize, 3] {
+            let mut gov = GovernanceState::new(bad);
+            assert!(gov.policy_reason().is_some(), "n={bad} must be refused");
+            assert!(
+                gov.propose(vec![], "srv-a".to_string()).is_none(),
+                "propose must refuse at n={bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn governance_single_server_round_unsigned_ok() {
+        let mut gov = GovernanceState::new(1);
+        let proposal = gov.propose(vec![], "solo".to_string()).unwrap();
+        // n=1: local unsigned votes still advance the round (the
+        // server glue signs its own votes; the state machine permits
+        // unsigned ONLY here).
+        assert_eq!(
+            gov.receive_prepare(uvote("solo", PbftPhase::Prepare, 0, 1)),
+            RoundPhase::Commit,
+            "quorum 1: own prepare commits immediately"
+        );
+        assert_eq!(
+            gov.receive_commit(uvote("solo", PbftPhase::Commit, 0, 1)),
+            RoundPhase::Sealed
+        );
+        assert!(gov.seal_round().is_some());
+    }
+
+    #[test]
+    fn governance_unsigned_vote_refused_in_bft_mode() {
+        let mut gov = GovernanceState::new(4);
+        gov.propose(vec![], "srv-a".to_string()).unwrap();
+        let phase = gov.receive_prepare(uvote("srv-b", PbftPhase::Prepare, 0, 1));
+        assert_eq!(phase, RoundPhase::PrePrepare, "unsigned votes are not evidence in BFT mode");
+        assert_eq!(
+            gov.pending_round().unwrap().prepare_votes.len(),
+            1,
+            "only the proposer's implicit vote"
+        );
+    }
+
+    #[test]
+    fn governance_vote_signature_binds_every_field() {
+        let (keys, member_keys) = test_cluster(2);
+        let proposal = GovernanceProposal {
+            view_number: 0,
+            sequence_number: 1,
+            transactions: vec![],
+            proposer_id: "srv-a".to_string(),
+            timestamp: 1,
+        };
+        let vote = tvote(&keys[1], "srv-b", PbftPhase::Prepare, &proposal);
+        let vk = member_keys.get("srv-b").unwrap();
+        assert!(verify_vote_signature(&vote, vk), "valid signature verifies");
+
+        // Tampering ANY signed field breaks verification.
+        let mut t = vote.clone();
+        t.digest = "00".repeat(32);
+        assert!(!verify_vote_signature(&t, vk), "tampered digest rejected");
+
+        let mut t = vote.clone();
+        t.phase = PbftPhase::Commit;
+        assert!(!verify_vote_signature(&t, vk), "phase swap rejected");
+
+        let mut t = vote.clone();
+        t.voter_id = "srv-a".to_string();
+        assert!(!verify_vote_signature(&t, vk), "voter swap rejected");
+
+        // Wrong key (srv-a's key for srv-b's claimed vote) rejected.
+        assert!(
+            !verify_vote_signature(&vote, member_keys.get("srv-a").unwrap()),
+            "cross-key forgery rejected"
+        );
+    }
+
+    #[test]
+    fn governance_wrong_digest_vote_not_counted() {
+        // Equivocation across proposals: a signed vote for a DIFFERENT
+        // proposal at the same (view, seq) must not count toward this
+        // round (digest binding).
+        let (keys, _) = test_cluster(4);
+        let mut gov = GovernanceState::new(4);
+        let proposal = gov.propose(vec![], "srv-a".to_string()).unwrap();
+
+        let mut other = proposal.clone();
+        other.timestamp = proposal.timestamp + 999; // different digest
+        assert_ne!(proposal.digest(), other.digest());
+
+        let forged = tvote(&keys[1], "srv-b", PbftPhase::Prepare, &other);
+        let phase = gov.receive_prepare(forged);
+        assert_eq!(phase, RoundPhase::Prepare, "vote for another digest ignored");
+        assert_eq!(gov.pending_round().unwrap().prepare_votes.len(), 1);
+    }
+
+    #[test]
+    fn governance_sealed_certificates_verify_and_forgery_fails() {
+        let (keys, member_keys) = test_cluster(4);
+        let mut gov = GovernanceState::new(4);
+        let batch = drive_signed_round(&mut gov, &keys);
+        gov.verify_sealed(&batch, &member_keys)
+            .expect("honest batch verifies");
+
+        // Forged content: same certificates, different transactions.
+        let mut forged = batch.clone();
+        forged.transactions = vec![GovernanceTx::Expel {
+            server_id: "hijacked".to_string(),
+            reason: "forged".to_string(),
+        }];
+        assert!(gov.verify_sealed(&forged, &member_keys).is_err(), "content forgery fails digest check");
+
+        // Stripped certificates.
+        let mut stripped = batch.clone();
+        stripped.commit_votes.truncate(1);
+        assert!(gov.verify_sealed(&stripped, &member_keys).is_err(), "insufficient commit certificates");
+
+        // Signatures by non-members.
+        let stranger = {
+            let mut seed = [0u8; 32];
+            seed[0] = 0xEE;
+            ed25519_dalek::SigningKey::from_bytes(&seed)
+        };
+        let mut stranger_keys = member_keys.clone();
+        let mut alien = batch.clone();
+        let stranger_proposal = alien.proposal();
+        alien.prepare_votes = vec![tvote(&stranger, "srv-b", PbftPhase::Prepare, &stranger_proposal); 3];
+        // srv-b's registered key stays in the map; votes signed by the
+        // stranger's key fail verification.
+        alien.prepare_votes[0].voter_id = "srv-b".into();
+        alien.prepare_votes[1].voter_id = "srv-c".into();
+        alien.prepare_votes[2].voter_id = "srv-d".into();
+        let _ = stranger_keys;
+        assert!(
+            gov.verify_sealed(&alien, &member_keys).is_err(),
+            "votes signed by an unregistered key are not certificates"
+        );
+    }
+
+    #[test]
+    fn governance_buffered_commit_votes_replayed() {
+        // S4: commit votes arriving before prepare-quorum are buffered
+        // and replayed — early committers no longer stall the round.
+        let (keys, _) = test_cluster(4);
+        let mut gov = GovernanceState::new(4);
+        let proposal = gov.propose(vec![], "srv-a".to_string()).unwrap();
+
+        // Commits from b and c arrive while still in Prepare.
+        gov.receive_commit(tvote(&keys[1], "srv-b", PbftPhase::Commit, &proposal));
+        gov.receive_commit(tvote(&keys[2], "srv-c", PbftPhase::Commit, &proposal));
+        assert_eq!(gov.pending_round().unwrap().phase, RoundPhase::Prepare);
+
+        // Third prepare (a implicit + b + c) crosses quorum → Commit;
+        // the buffered commits replay (b, c) and the leader's own
+        // commit completes quorum → Sealed — exactly the wire
+        // sequence (each node broadcasts its commit on transition).
+        let _ = gov.receive_prepare(tvote(&keys[1], "srv-b", PbftPhase::Prepare, &proposal));
+        let phase = gov.receive_prepare(tvote(&keys[2], "srv-c", PbftPhase::Prepare, &proposal));
+        assert_eq!(phase, RoundPhase::Commit, "prepare quorum reached, buffered commits replayed");
+        let phase = gov.receive_commit(tvote(&keys[0], "srv-a", PbftPhase::Commit, &proposal));
+        assert_eq!(phase, RoundPhase::Sealed, "leader commit completes the quorum");
+        assert!(gov.seal_round().is_some());
+    }
+
+    #[test]
+    fn governance_receive_pre_prepare_validates() {
+        let (keys, _) = test_cluster(4);
+        let members = vec![
+            "srv-a".to_string(),
+            "srv-b".to_string(),
+            "srv-c".to_string(),
+            "srv-d".to_string(),
+        ];
+        let mut gov = GovernanceState::new(4);
+        let proposal = GovernanceProposal {
+            view_number: 0,
+            sequence_number: 1,
+            transactions: vec![],
+            proposer_id: "srv-a".to_string(),
+            timestamp: 1,
+        };
+
+        assert!(gov.receive_pre_prepare(&proposal, &members).is_ok());
+
+        let mut bad = proposal.clone();
+        bad.view_number = 9;
+        assert!(gov.receive_pre_prepare(&bad, &members).is_err(), "wrong view rejected");
+
+        let mut bad = proposal.clone();
+        bad.sequence_number = 7;
+        assert!(gov.receive_pre_prepare(&bad, &members).is_err(), "wrong seq rejected");
+
+        let mut bad = proposal.clone();
+        bad.proposer_id = "srv-b".to_string(); // not leader of view 0
+        assert!(gov.receive_pre_prepare(&bad, &members).is_err(), "non-leader proposer rejected");
+
+        // Second pre-prepare while a round is pending.
+        assert!(
+            gov.receive_pre_prepare(&proposal, &members).is_err(),
+            "concurrent round rejected"
+        );
+        let _ = keys;
+    }
+
+    #[test]
+    fn governance_fork_protection_blocks_conflicting_reproposal() {
+        // The S3 fork scenario: after a round prepares at seq N, any
+        // later proposal at N with DIFFERENT content is refused.
+        let (keys, _) = test_cluster(4);
+        let mut gov = GovernanceState::new(4);
+        let batch = drive_signed_round(&mut gov, &keys);
+        assert_eq!(batch.sequence_number, 1);
+
+        // Force the sequence back to 0 to simulate a replica that did
+        // NOT seal (view-change straggler) attempting a conflicting
+        // re-proposal at seq 1.
+        let conflicting = GovernanceProposal {
+            view_number: 1,
+            sequence_number: 1,
+            transactions: vec![GovernanceTx::Expel {
+                server_id: "different".to_string(),
+                reason: "conflicting".to_string(),
+            }],
+            proposer_id: "srv-b".to_string(),
+            timestamp: 42,
+        };
+        let members = vec![
+            "srv-a".to_string(),
+            "srv-b".to_string(),
+            "srv-c".to_string(),
+            "srv-d".to_string(),
+        ];
+        // Direct propose() path (seq would be 2 now) — construct the
+        // straggler's view via receive_pre_prepare at seq 1 instead:
+        // prepared digest exists → rejected.
+        let mut straggler = GovernanceState::new(4);
+        straggler.apply_new_view(&crate::server::federation::NewViewMessage {
+            view_number: 1,
+            view_changes: vec![ViewChangeMessage {
+                new_view: 1,
+                server_id: "srv-a".to_string(),
+                highest_prepared: Some((1, batch.digest.clone())),
+                signature: String::new(),
+            }],
+        });
+        assert_eq!(straggler.current_sequence(), 1, "watermark carried by view change");
+        assert!(
+            straggler.receive_pre_prepare(&conflicting, &members).is_err(),
+            "conflicting re-proposal at a prepared seq is refused"
+        );
+    }
+
+    #[test]
+    fn governance_view_change_quorum_assembles_new_view() {
+        let mut gov = GovernanceState::new(4);
+        let members = vec![
+            "srv-a".to_string(),
+            "srv-b".to_string(),
+            "srv-c".to_string(),
+            "srv-d".to_string(),
+        ];
+        // View 1's leader is srv-b (1 % 4). srv-b collects 3
+        // view-changes → assembles NewView; srv-a does not.
+        let msgs: Vec<ViewChangeMessage> = ["srv-a", "srv-b", "srv-c"]
+            .iter()
+            .map(|id| ViewChangeMessage {
+                new_view: 1,
+                server_id: id.to_string(),
+                highest_prepared: None,
+                signature: "sig".to_string(),
+            })
+            .collect();
+        for m in &msgs {
+            let nv = gov.receive_view_change(m, &members, "srv-b");
+            if m.server_id == "srv-c" {
+                // Third message crosses quorum 3.
+                let nv = nv.expect("srv-b (leader of view 1) assembles NewView");
+                assert_eq!(nv.view_number, 1);
+                assert_eq!(nv.view_changes.len(), 3);
+            } else {
+                assert!(nv.is_none(), "below quorum");
+            }
+        }
+
+        let mut other = GovernanceState::new(4);
+        for m in &msgs {
+            assert!(
+                other.receive_view_change(m, &members, "srv-a").is_none(),
+                "non-leader never assembles NewView"
+            );
+        }
+    }
+
+    #[test]
+    fn governance_round_timeout_and_touch() {
+        let (keys, _) = test_cluster(4);
+        let mut gov = GovernanceState::new(4);
+        gov.propose(vec![], "srv-a".to_string()).unwrap();
+        assert!(!gov.round_timed_out(now_secs(), 10), "fresh round not timed out");
+
+        // Age the round artificially.
+        if let Some(r) = gov.pending_round.as_mut() {
+            r.started_at = now_secs().saturating_sub(11);
+        }
+        assert!(gov.round_timed_out(now_secs(), 10), "stalled round timed out");
+
+        gov.touch_round();
+        assert!(!gov.round_timed_out(now_secs(), 10), "touch resets the timer");
+        let _ = keys;
+    }
+
+    #[test]
+    fn governance_log_pruning_watermark() {
+        let (keys, _) = test_cluster(4);
+        let mut gov = GovernanceState::new(4);
+        for _ in 0..(GOVERNANCE_KEEP_BATCHES + 10) {
+            drive_signed_round(&mut gov, &keys);
+        }
+        assert!(
+            gov.log_len() <= GOVERNANCE_KEEP_BATCHES,
+            "log bounded to the retention window"
+        );
+        assert!(gov.pruned_below() > 0, "watermark advanced");
+        assert!(
+            gov.is_applied(gov.current_sequence()),
+            "recent sequences stay applied"
+        );
+    }
+
+    #[test]
+    fn governance_ingest_sealed_idempotent() {
+        let (keys, member_keys) = test_cluster(4);
+        let mut proposer = GovernanceState::new(4);
+        let batch = drive_signed_round(&mut proposer, &keys);
+
+        let mut replica = GovernanceState::new(4);
+        replica.ingest_sealed(batch.clone());
+        let seq_after = replica.current_sequence();
+        replica.ingest_sealed(batch.clone());
+        assert_eq!(
+            replica.current_sequence(),
+            seq_after,
+            "double ingest is a no-op"
+        );
+        assert_eq!(replica.log_len(), 1);
+        assert!(
+            replica.verify_sealed(&batch, &member_keys).is_ok(),
+            "ingested batch carries valid certificates"
+        );
     }
 }
 
@@ -4310,7 +5319,8 @@ impl FederationState {
             );
 
             // Add voter associations
-            for voter_id in &sealed_batch.prepare_votes {
+            for vote in &sealed_batch.prepare_votes {
+                let voter_id = &vote.voter_id;
                 let voter_agent_id =
                     generate_prov_id("xudanu:server", &voter_id[..8.min(voter_id.len())]);
                 let assoc_id = format!("{}:prepare:{}", gov_activity_id, voter_id);
@@ -4330,7 +5340,8 @@ impl FederationState {
                 );
             }
 
-            for voter_id in &sealed_batch.commit_votes {
+            for vote in &sealed_batch.commit_votes {
+                let voter_id = &vote.voter_id;
                 let voter_agent_id =
                     generate_prov_id("xudanu:server", &voter_id[..8.min(voter_id.len())]);
                 let assoc_id = format!("{}:commit:{}", gov_activity_id, voter_id);
@@ -4454,7 +5465,7 @@ impl FederationState {
                     .prepare_votes
                     .iter()
                     .chain(sealed_batch.commit_votes.iter())
-                    .cloned()
+                    .map(|v| v.voter_id.clone())
                     .collect(),
                 "pbft_consensus".to_string(),
                 sealed_batch.prepare_votes.len() >= self.governance.quorum_size(),

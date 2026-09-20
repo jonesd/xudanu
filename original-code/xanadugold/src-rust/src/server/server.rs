@@ -23192,7 +23192,219 @@ impl Server {
         if !gov.is_leader(&my_id, &members) {
             return None;
         }
-        gov.propose(transactions, my_id)
+        let proposal = gov.propose(transactions, my_id.clone())?;
+        // The leader casts its own SIGNED prepare immediately: the
+        // proposal's implicit vote counts toward quorum, but the
+        // sealed certificate needs the signature. Single-server mode
+        // reaches Commit right here.
+        let vote = self.governance_make_signed_vote(
+            crate::server::federation::PbftPhase::Prepare,
+            &proposal,
+        );
+        self.federation.governance_mut().receive_prepare(vote);
+        Some(proposal)
+    }
+
+    /// Member verifying keys (server_id → hex Ed25519 public key) for
+    /// vote-signature verification.
+    fn governance_member_keys(&self) -> std::collections::HashMap<String, String> {
+        self.federation
+            .membership()
+            .active_members()
+            .iter()
+            .map(|m| (m.server_id.clone(), m.verifying_key_hex.clone()))
+            .collect()
+    }
+
+    /// Build and SIGN this server's own vote for the pending round
+    /// (or a given proposal). The signature binds (view, seq, phase,
+    /// digest, voter) — votes are certificates, not claims.
+    pub fn governance_make_signed_vote(
+        &self,
+        phase: crate::server::federation::PbftPhase,
+        proposal: &crate::server::federation::GovernanceProposal,
+    ) -> crate::server::federation::PbftVote {
+        let mut vote = crate::server::federation::PbftVote {
+            view_number: proposal.view_number,
+            sequence_number: proposal.sequence_number,
+            voter_id: self.federation_server_id(),
+            phase,
+            digest: proposal.digest(),
+            signature: String::new(),
+        };
+        crate::server::federation::sign_vote(&mut vote, &self.server_keypair.signing_key);
+        vote
+    }
+
+    pub fn governance_pending_round_phase(
+        &self,
+    ) -> Option<crate::server::federation::RoundPhase> {
+        self.federation
+            .governance()
+            .pending_round()
+            .map(|r| r.phase)
+    }
+
+    pub fn governance_pending_round_proposal(
+        &self,
+    ) -> Option<crate::server::federation::GovernanceProposal> {
+        self.federation
+            .governance()
+            .pending_round()
+            .map(|r| r.proposal.clone())
+    }
+
+    /// Is the current governance round stalled past the timeout?
+    pub fn governance_round_timed_out(&self, timeout_secs: u64) -> bool {
+        self.federation.governance().round_timed_out(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            timeout_secs,
+        )
+    }
+
+    /// Number of active federation members (test/diagnostic accessor).
+    pub fn federation_membership_active_count(&self) -> usize {
+        self.federation.membership().active_members().len()
+    }
+
+    // ── View change glue ────────────────────────────────────────────
+
+    /// Build this server's signed view-change message for view+1.
+    pub fn governance_make_view_change(
+        &self,
+    ) -> crate::server::federation::ViewChangeMessage {
+        let mut msg = crate::server::federation::ViewChangeMessage {
+            new_view: self.federation.governance().next_view(),
+            server_id: self.federation_server_id(),
+            highest_prepared: self.federation.governance().highest_prepared(),
+            signature: String::new(),
+        };
+        msg.signature = crate::server::federation::vote_hex_sig(
+            &self.server_keypair.signing_key,
+            &msg.payload(),
+        );
+        msg
+    }
+
+    /// Process a view-change message: verify signature against the
+    /// sender's member key, store it, and — when this server is the
+    /// new leader and quorum accumulated — assemble the NewView.
+    pub fn governance_receive_view_change(
+        &mut self,
+        msg: &crate::server::federation::ViewChangeMessage,
+    ) -> Option<crate::server::federation::NewViewMessage> {
+        let members: Vec<String> = self
+            .federation
+            .membership()
+            .active_members()
+            .iter()
+            .map(|m| m.server_id.clone())
+            .collect();
+        if !members.contains(&msg.server_id) {
+            return None;
+        }
+        let my_id = self.federation_server_id();
+        if msg.server_id != my_id {
+            let keys = self.governance_member_keys();
+            let key = keys.get(&msg.server_id).map(|s| s.as_str()).unwrap_or("");
+            if !crate::server::federation::verify_hex_sig(key, &msg.payload(), &msg.signature) {
+                tracing::warn!(
+                    sender = %msg.server_id,
+                    "view-change message rejected: invalid signature"
+                );
+                return None;
+            }
+        }
+        self.federation
+            .governance_mut()
+            .receive_view_change(msg, &members, &my_id)
+    }
+
+    /// Apply a NewView announcement after verifying its embedded
+    /// view-change certificates (2f+1 valid signatures).
+    pub fn governance_apply_new_view(
+        &mut self,
+        new_view: &crate::server::federation::NewViewMessage,
+    ) {
+        let keys = self.governance_member_keys();
+        let valid = new_view
+            .view_changes
+            .iter()
+            .filter(|vc| {
+                !vc.server_id.is_empty()
+                    && keys.contains_key(&vc.server_id)
+                    && crate::server::federation::verify_hex_sig(
+                        keys.get(&vc.server_id).map(|s| s.as_str()).unwrap_or(""),
+                        &vc.payload(),
+                        &vc.signature,
+                    )
+            })
+            .count();
+        if valid < self.federation.governance().quorum_size() {
+            tracing::warn!(
+                valid,
+                needed = self.federation.governance().quorum_size(),
+                "NewView rejected: insufficient valid view-change certificates"
+            );
+            return;
+        }
+        self.federation.governance_mut().apply_new_view(new_view);
+        tracing::info!(
+            view = new_view.view_number,
+            "governance view advanced via view change"
+        );
+    }
+
+    /// Cast this server's own signed vote (Prepare or Commit) into the
+    /// pending round — the ONLY vote a client-facing op can produce
+    /// (S2: clients previously injected arbitrary voter_ids).
+    pub fn governance_cast_own_vote(
+        &mut self,
+        phase: crate::server::federation::PbftPhase,
+    ) -> crate::server::federation::RoundPhase {
+        let Some(proposal) = self
+            .federation
+            .governance()
+            .pending_round()
+            .map(|r| r.proposal.clone())
+        else {
+            return crate::server::federation::RoundPhase::PrePrepare;
+        };
+        let vote = self.governance_make_signed_vote(phase, &proposal);
+        match phase {
+            crate::server::federation::PbftPhase::Prepare => self.governance_receive_prepare(vote),
+            crate::server::federation::PbftPhase::Commit => self.governance_receive_commit(vote),
+        }
+    }
+
+    /// Replica path: accept a leader's pre-prepare, create the local
+    /// round, and cast this server's signed prepare vote into it.
+    /// Returns the signed vote for all-to-all broadcast.
+    pub fn governance_receive_pre_prepare(
+        &mut self,
+        proposal: &crate::server::federation::GovernanceProposal,
+    ) -> Result<crate::server::federation::PbftVote, String> {
+        let members: Vec<String> = self
+            .federation
+            .membership()
+            .active_members()
+            .iter()
+            .map(|m| m.server_id.clone())
+            .collect();
+        let vote = self.governance_make_signed_vote(
+            crate::server::federation::PbftPhase::Prepare,
+            proposal,
+        );
+        {
+            let gov = self.federation.governance_mut();
+            gov.set_cluster_size(members.len().max(1));
+            gov.receive_pre_prepare(proposal, &members)?;
+            gov.receive_prepare(vote.clone());
+        }
+        Ok(vote)
     }
 
     pub fn governance_receive_prepare(
@@ -23209,6 +23421,23 @@ impl Server {
         let member_ids: Vec<&str> = members.iter().map(|s| s.as_str()).collect();
         if !member_ids.contains(&vote.voter_id.as_str()) {
             return crate::server::federation::RoundPhase::PrePrepare;
+        }
+        // Signature check (review finding S1): an unsigned or
+        // forged vote from a member is not evidence. Verification is
+        // skipped only for the server's OWN votes (self-signed above).
+        let my_id = self.federation_server_id();
+        if vote.voter_id != my_id {
+            let keys = self.governance_member_keys();
+            if !crate::server::federation::verify_vote_signature(
+                &vote,
+                keys.get(&vote.voter_id).map(|s| s.as_str()).unwrap_or(""),
+            ) {
+                tracing::warn!(
+                    voter = %vote.voter_id,
+                    "governance prepare vote rejected: invalid signature"
+                );
+                return crate::server::federation::RoundPhase::PrePrepare;
+            }
         }
         let gov = self.federation.governance_mut();
         gov.set_cluster_size(members.len().max(1));
@@ -23230,9 +23459,58 @@ impl Server {
         if !member_ids.contains(&vote.voter_id.as_str()) {
             return crate::server::federation::RoundPhase::PrePrepare;
         }
+        let my_id = self.federation_server_id();
+        if vote.voter_id != my_id {
+            let keys = self.governance_member_keys();
+            if !crate::server::federation::verify_vote_signature(
+                &vote,
+                keys.get(&vote.voter_id).map(|s| s.as_str()).unwrap_or(""),
+            ) {
+                tracing::warn!(
+                    voter = %vote.voter_id,
+                    "governance commit vote rejected: invalid signature"
+                );
+                return crate::server::federation::RoundPhase::PrePrepare;
+            }
+        }
         let gov = self.federation.governance_mut();
         gov.set_cluster_size(members.len().max(1));
         gov.receive_commit(vote)
+    }
+
+    /// Verify a sealed batch's certificates against member keys.
+    pub fn governance_verify_sealed(
+        &self,
+        batch: &crate::server::federation::SealedBatch,
+    ) -> Result<(), String> {
+        self.federation
+            .governance()
+            .verify_sealed(batch, &self.governance_member_keys())
+    }
+
+    /// Ingest a verified sealed batch from the network: execute the
+    /// transactions and advance the governance log (replica path —
+    /// review finding L2: replicas previously never learned sealed
+    /// batches).
+    pub fn governance_ingest_sealed_batch(
+        &mut self,
+        batch: crate::server::federation::SealedBatch,
+    ) {
+        if let Err(reason) = self.governance_verify_sealed(&batch) {
+            tracing::warn!(seq = batch.sequence_number, %reason, "rejected sealed batch: invalid certificates");
+            return;
+        }
+        if self
+            .federation
+            .governance()
+            .is_applied(batch.sequence_number)
+        {
+            return;
+        }
+        for tx in &batch.transactions {
+            self.governance_execute_tx(tx);
+        }
+        self.federation.governance_mut().ingest_sealed(batch);
     }
 
     pub fn governance_seal_round(&mut self) -> Option<crate::server::federation::SealedBatch> {
@@ -29615,6 +29893,131 @@ mod tests {
         assert_eq!(p.proposer_id, my_id);
     }
 
+    /// Functional 4-node round over the SERVER glue: real membership,
+    /// real signatures, certificate verification, replica catch-up,
+    /// and forged-batch rejection. This is the Castro-Liskov happy
+    /// path plus the S1 forgery scenario at the server level.
+    #[test]
+    fn governance_four_node_round_with_certificates() {
+        let mut server = setup_federated_server();
+        let a_id = server.federation_server_id();
+
+        // Synthetic members, named to sort AFTER the leader's id so
+        // deterministic leader election (sorted server_ids) picks the
+        // real server for view 0.
+        let make_key = |seed: u8| {
+            let mut s = [0u8; 32];
+            s[0] = seed;
+            ed25519_dalek::SigningKey::from_bytes(&s)
+        };
+        let peers: Vec<(String, ed25519_dalek::SigningKey)> = (1..=3)
+            .map(|i| (format!("{a_id}-peer-{i}"), make_key(i as u8)))
+            .collect();
+
+        let admit = |srv: &mut Server, id: &str, vk_hex: String| {
+            srv.governance_execute_tx(&crate::server::federation::GovernanceTx::Admit {
+                server_id: id.to_string(),
+                verifying_key_hex: vk_hex,
+                kex_public_hex: "00".to_string(),
+            });
+        };
+        for (id, key) in &peers {
+            let vk_hex = key
+                .verifying_key()
+                .to_bytes()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>();
+            admit(&mut server, id, vk_hex);
+        }
+        // Leader proposes (own signed prepare cast by the glue). The
+        // cluster size syncs from membership on this call.
+        let tx = crate::server::federation::GovernanceTx::RoyaltyRecord {
+            origin_server_id: a_id.clone(),
+            target_server_id: peers[0].0.clone(),
+            content_fingerprint_hex: "ab".repeat(32),
+            royalty_type: crate::server::federation::RoyaltyType::Transclusion,
+            amount: 7,
+        };
+        assert_eq!(server.federation_membership_active_count(), 4, "4 members — BFT mode");
+        let proposal = server
+            .governance_propose(vec![tx])
+            .expect("leader may propose — sorted membership puts self first");
+
+        let svote = |key: &ed25519_dalek::SigningKey,
+                     voter: &str,
+                     phase: crate::server::federation::PbftPhase| {
+            let mut v = crate::server::federation::PbftVote {
+                view_number: proposal.view_number,
+                sequence_number: proposal.sequence_number,
+                voter_id: voter.to_string(),
+                phase,
+                digest: proposal.digest(),
+                signature: String::new(),
+            };
+            crate::server::federation::sign_vote(&mut v, key);
+            v
+        };
+
+        // Two peer prepares → quorum 3 (self + 2).
+        let phase = server.governance_receive_prepare(svote(&peers[0].1, &peers[0].0, crate::server::federation::PbftPhase::Prepare));
+        assert_eq!(format!("{phase:?}"), "Prepare");
+        let phase = server.governance_receive_prepare(svote(&peers[1].1, &peers[1].0, crate::server::federation::PbftPhase::Prepare));
+        assert_eq!(format!("{phase:?}"), "Commit");
+
+        // Commits: leader self-vote + two peers → Sealed.
+        let phase = server.governance_cast_own_vote(crate::server::federation::PbftPhase::Commit);
+        assert_eq!(format!("{phase:?}"), "Commit");
+        let phase = server.governance_receive_commit(svote(&peers[0].1, &peers[0].0, crate::server::federation::PbftPhase::Commit));
+        assert_eq!(format!("{phase:?}"), "Commit");
+        let phase = server.governance_receive_commit(svote(&peers[1].1, &peers[1].0, crate::server::federation::PbftPhase::Commit));
+        assert_eq!(format!("{phase:?}"), "Sealed");
+
+        let batch = server.governance_seal_round().expect("sealed");
+        server
+            .governance_verify_sealed(&batch)
+            .expect("certificates verify against registered member keys");
+
+        // Replica catch-up (L2): a fresh server with the same
+        // membership ingests the sealed batch and executes it.
+        let mut replica = setup_federated_server();
+        let a_entry = server.membership_self_entry().expect("self entry");
+        admit(
+            &mut replica,
+            &a_entry.server_id,
+            a_entry.verifying_key_hex.clone(),
+        );
+        for (id, key) in &peers {
+            let vk_hex = key
+                .verifying_key()
+                .to_bytes()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>();
+            admit(&mut replica, id, vk_hex);
+        }
+        replica.governance_ingest_sealed_batch(batch.clone());
+        assert_eq!(
+            replica.governance_log().len(),
+            1,
+            "replica executes the verified sealed batch"
+        );
+
+        // Forgery (S1): tampered content with the same certificates is
+        // refused.
+        let mut forged = batch.clone();
+        forged.transactions = vec![crate::server::federation::GovernanceTx::Expel {
+            server_id: "hijacked".to_string(),
+            reason: "forged".to_string(),
+        }];
+        replica.governance_ingest_sealed_batch(forged);
+        assert_eq!(
+            replica.governance_log().len(),
+            1,
+            "forged batch rejected — log unchanged"
+        );
+    }
+
     #[test]
     fn governance_full_consensus_single_server() {
         let mut server = setup_federated_server();
@@ -29627,21 +30030,18 @@ mod tests {
             }])
             .unwrap();
 
-        let vote = crate::server::federation::PbftVote {
-            view_number: 0,
-            sequence_number: 1,
-            voter_id: my_id.clone(),
-            phase: crate::server::federation::PbftPhase::Prepare,
-        };
-        server.governance_receive_prepare(vote);
-
-        let commit = crate::server::federation::PbftVote {
-            view_number: 0,
-            sequence_number: 1,
-            voter_id: my_id.clone(),
-            phase: crate::server::federation::PbftPhase::Commit,
-        };
-        server.governance_receive_commit(commit);
+        // Single-server mode: the server's own SIGNED votes (the glue
+        // signs with the server keypair — unsigned voter_id claims are
+        // no longer protocol currency).
+        let phase = server.governance_cast_own_vote(
+            crate::server::federation::PbftPhase::Prepare,
+        );
+        assert_eq!(
+            format!("{:?}", phase),
+            "Commit",
+            "own prepare reaches quorum 1 immediately in single-server mode"
+        );
+        server.governance_cast_own_vote(crate::server::federation::PbftPhase::Commit);
 
         let batch = server.governance_seal_round();
         assert!(batch.is_some());
