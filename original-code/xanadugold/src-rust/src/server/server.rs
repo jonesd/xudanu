@@ -23235,6 +23235,30 @@ impl Server {
         self.governance_admitted_count_at(seq)
     }
 
+    /// Test aid: the server's Ed25519 signing key (the pre-rotation
+    /// key after a KeyRegister).
+    #[doc(hidden)]
+    pub fn server_signing_key_test(&self) -> ed25519_dalek::SigningKey {
+        self.server_keypair.signing_key.clone()
+    }
+
+    /// Test aid: grace-window retired-key lookup.
+    #[doc(hidden)]
+    pub fn retired_key_lookup_for_test(&self, server_id: &str, at_seq: u64) -> Option<String> {
+        self.federation
+            .governance()
+            .retired_key_within_grace(server_id, at_seq)
+            .map(|s| s.to_string())
+    }
+
+    /// Test aid: advance the governance sequence watermark.
+    #[doc(hidden)]
+    pub fn governance_set_current_sequence_for_tests(&mut self, seq: u64) {
+        self.federation
+            .governance_mut()
+            .set_current_sequence_for_tests(seq);
+    }
+
     /// Test accessor for the validator verifying-key map (next seq).
     #[doc(hidden)]
     pub fn governance_member_keys_for_test(
@@ -23324,7 +23348,7 @@ impl Server {
     /// Member verifying keys (server_id → hex Ed25519 public key) for
     /// vote-signature verification — validators only, epoch-valid at
     /// the given sequence.
-    fn governance_member_keys_at(
+    pub(crate) fn governance_member_keys_at(
         &self,
         seq: u64,
     ) -> std::collections::HashMap<String, String> {
@@ -23459,10 +23483,22 @@ impl Server {
         }
         let my_id = self.federation_server_id();
         if msg.server_id != my_id {
-            // FR-75 §1: view-change senders must be epoch-valid for
-            // the round the new view would govern (next sequence).
-            let keys = self.governance_member_keys_at(self.next_governance_seq());
-            let key = keys.get(&msg.server_id).map(|s| s.as_str()).unwrap_or("");
+            // FR-75 §1/§2: view-change senders must be epoch-valid for
+            // the next round — OR authenticated by a key retired within
+            // the grace window (in-flight elections under an old key
+            // must complete; a rotation mid-election must not stall).
+            let next_seq = self.next_governance_seq();
+            let current_seq = self.federation.governance().current_sequence();
+            let keys = self.governance_member_keys_at(next_seq);
+            let key = keys
+                .get(&msg.server_id)
+                .map(|s| s.as_str())
+                .or_else(|| {
+                    self.federation
+                        .governance()
+                        .retired_key_within_grace(&msg.server_id, current_seq)
+                })
+                .unwrap_or("");
             if !crate::server::federation::verify_hex_sig(key, &msg.payload(), &msg.signature) {
                 tracing::warn!(
                     sender = %msg.server_id,
@@ -23529,17 +23565,25 @@ impl Server {
             );
             return;
         }
+        let current_seq = self.federation.governance().current_sequence();
         let valid = new_view
             .view_changes
             .iter()
             .filter(|vc| {
-                !vc.server_id.is_empty()
-                    && keys.contains_key(&vc.server_id)
-                    && crate::server::federation::verify_hex_sig(
-                        keys.get(&vc.server_id).map(|s| s.as_str()).unwrap_or(""),
-                        &vc.payload(),
-                        &vc.signature,
-                    )
+                if vc.server_id.is_empty() {
+                    return false;
+                }
+                // Current key, or a retired key inside the grace window.
+                let key = keys
+                    .get(&vc.server_id)
+                    .map(|s| s.as_str())
+                    .or_else(|| {
+                        self.federation
+                            .governance()
+                            .retired_key_within_grace(&vc.server_id, current_seq)
+                    })
+                    .unwrap_or("");
+                crate::server::federation::verify_hex_sig(key, &vc.payload(), &vc.signature)
             })
             .count();
         if valid < self.federation.governance().quorum_size() {
@@ -23773,8 +23817,18 @@ impl Server {
                 ..
             } => {
                 if let Some(mut entry) = self.federation.membership().find_member(server_id) {
+                    // FR-75 §2: the old key goes to the retired ledger
+                    // (view-change grace only — never votes again).
+                    self.federation.governance_mut().retire_key(
+                        server_id,
+                        entry.verifying_key_hex.clone(),
+                        sealing_seq,
+                    );
                     entry.verifying_key_hex = verifying_key_hex.clone();
                     entry.kex_public_hex = kex_public_hex.clone();
+                    // FR-75 §1: the new key governs from the next round.
+                    entry.epoch.valid_from_seq = sealing_seq + 1;
+                    entry.epoch.valid_until_seq = u64::MAX;
                     self.federation.membership_mut().remove_member(server_id);
                     let tag = self.federation.membership_mut().next_tag(server_id);
                     self.federation.membership_mut().add_member(entry, tag);

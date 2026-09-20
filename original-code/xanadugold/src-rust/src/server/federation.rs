@@ -2111,6 +2111,22 @@ pub enum PbftPhase {
     Commit,
 }
 
+/// FR-75 §2: a retired validator key. After a KeyRegister rotation,
+/// the OLD key may still verify VIEW-CHANGE certificates for a grace
+/// window of sequences (an in-flight election signed under the old
+/// key must complete, or a rotation mid-election stalls it) — but
+/// never prepare/commit votes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RetiredKey {
+    pub server_id: String,
+    pub verifying_key_hex: String,
+    pub retired_at_seq: u64,
+}
+
+/// Grace window (sealed sequences) during which retired keys still
+/// authenticate view-change certificates.
+pub const VIEW_CHANGE_GRACE_SEQS: u64 = 100;
+
 /// A sealed (fully committed) governance batch in the log.
 ///
 /// The vote sets are SIGNED certificates: 2f+1 distinct valid
@@ -2290,6 +2306,9 @@ pub struct GovernanceState {
     /// message reordering (found by the mesh harness).
     #[serde(default)]
     buffered_prepare_votes: Vec<PbftVote>,
+    /// FR-75 §2: retired-key ledger with grace semantics.
+    #[serde(default)]
+    retired_keys: Vec<RetiredKey>,
 }
 
 impl GovernanceState {
@@ -2313,6 +2332,7 @@ impl GovernanceState {
             current_view_entered_at: now_secs(),
             view_change_started: HashMap::new(),
             buffered_prepare_votes: Vec::new(),
+            retired_keys: Vec::new(),
         }
     }
 
@@ -2741,6 +2761,7 @@ impl GovernanceState {
                 self.pruned_below = new_watermark;
             }
             self.applied_sequences.retain(|s| *s >= self.pruned_below);
+            self.prune_retired_keys();
         }
     }
 
@@ -2937,11 +2958,46 @@ impl GovernanceState {
         }
     }
 
+    /// Append a rotation's old key to the retired ledger.
+    pub fn retire_key(&mut self, server_id: &str, verifying_key_hex: String, retired_at_seq: u64) {
+        self.retired_keys.push(RetiredKey {
+            server_id: server_id.to_string(),
+            verifying_key_hex,
+            retired_at_seq,
+        });
+    }
+
+    /// The retired key for a server, valid for VIEW-CHANGE
+    /// authentication only while within the grace window.
+    pub fn retired_key_within_grace(&self, server_id: &str, at_seq: u64) -> Option<&str> {
+        self.retired_keys
+            .iter()
+            .filter(|r| r.server_id == server_id)
+            .filter(|r| at_seq.saturating_sub(r.retired_at_seq) <= VIEW_CHANGE_GRACE_SEQS)
+            .map(|r| r.verifying_key_hex.as_str())
+            .max_by(|a, b| a.cmp(b))
+    }
+
+    /// Prune ledger entries below the checkpoint watermark.
+    pub fn prune_retired_keys(&mut self) {
+        self.retired_keys
+            .retain(|r| r.retired_at_seq >= self.pruned_below);
+    }
+
     /// Record that THIS replica emitted a view change for `target`.
     pub fn note_view_change_emission(&mut self, target: u64) {
         self.view_change_started
             .entry(target)
             .or_insert_with(now_secs);
+    }
+
+    /// Test aid: force the sequence watermark (simulates sealed
+    /// history for grace-window arithmetic).
+    #[doc(hidden)]
+    pub fn set_current_sequence_for_tests(&mut self, seq: u64) {
+        if seq > self.current_sequence {
+            self.current_sequence = seq;
+        }
     }
 
     /// Test aid: rewind the round and view-entry stall timers far into

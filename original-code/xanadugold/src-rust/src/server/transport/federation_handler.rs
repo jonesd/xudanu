@@ -3118,6 +3118,149 @@ mod tests {
             }
         }
 
+        /// FR-75 test 2: after a KeyRegister rotation seals, the old key
+        /// can never vote again (prepare/commit refused everywhere);
+        /// membership carries the new key from the next round.
+        #[test]
+        fn mesh_rotation_kills_old_key_for_votes() {
+            let mut mesh = Mesh::new(4);
+            let leader = mesh.leader_for_view(0);
+            mesh.propose_from(leader, None);
+
+            // Rotate a non-leader member's key on every node (in
+            // production: a sealed KeyRegister batch, executed
+            // everywhere).
+            let victim = (0..4).find(|i| *i != leader).unwrap();
+            let victim_id = mesh.nodes[victim].id.clone();
+            let new_key = {
+                let mut seed = [0u8; 32];
+                seed[0] = 0x5a;
+                ed25519_dalek::SigningKey::from_bytes(&seed)
+            };
+            let new_vk: String = new_key
+                .verifying_key()
+                .to_bytes()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            for node in &mesh.nodes {
+                node.state.server.with_server(|srv| {
+                    srv.governance_execute_tx_at(
+                        &crate::server::federation::GovernanceTx::KeyRegister {
+                            server_id: victim_id.clone(),
+                            key_id: 0,
+                            verifying_key_hex: new_vk.clone(),
+                            kex_public_hex: "00".to_string(),
+                        },
+                        1,
+                    );
+                });
+            }
+
+            // Membership carries the NEW key for rounds after seq 1.
+            let keys = mesh.nodes[leader]
+                .state
+                .server
+                .with_server_ref(|srv| srv.governance_member_keys_at(2));
+            assert_eq!(
+                keys.get(&victim_id).map(|s| s.as_str()),
+                Some(new_vk.as_str()),
+                "membership carries the rotated key"
+            );
+
+            // A vote signed by the victim's (unchanged, now-retired)
+            // SERVER key is refused at the leader.
+            let old_key = mesh.nodes[victim]
+                .state
+                .server
+                .with_server_ref(|srv| srv.server_signing_key_test());
+            let mut old_vote = crate::server::federation::PbftVote {
+                view_number: 0,
+                sequence_number: 2,
+                voter_id: victim_id.clone(),
+                phase: crate::server::federation::PbftPhase::Prepare,
+                digest: "ab".repeat(32),
+                signature: String::new(),
+            };
+            crate::server::federation::sign_vote(&mut old_vote, &old_key);
+            let old_vote_sent = old_vote.clone();
+            let phase = mesh.nodes[leader]
+                .state
+                .server
+                .with_server(move |srv| srv.governance_receive_prepare(old_vote_sent));
+            assert_eq!(
+                format!("{phase:?}"),
+                "PrePrepare",
+                "retired key's prepare vote refused"
+            );
+
+            // The NEW key's vote verifies against membership.
+            let mut new_vote = old_vote;
+            new_vote.signature = String::new();
+            crate::server::federation::sign_vote(&mut new_vote, &new_key);
+            assert!(
+                crate::server::federation::verify_vote_signature(&new_vote, &new_vk),
+                "rotated key's vote verifies"
+            );
+        }
+
+        /// FR-75 test 3: a view-change signed under the OLD key
+        /// verifies within the grace window and fails beyond it.
+        #[test]
+        fn view_change_grace_window_for_retired_keys() {
+            let mut mesh = Mesh::new(4);
+            let leader = mesh.leader_for_view(0);
+            mesh.propose_from(leader, None);
+
+            let victim = (0..4).find(|i| *i != leader).unwrap();
+            let victim_id = mesh.nodes[victim].id.clone();
+            let new_vk = "cd".repeat(32);
+            for node in &mesh.nodes {
+                node.state.server.with_server(|srv| {
+                    srv.governance_execute_tx_at(
+                        &crate::server::federation::GovernanceTx::KeyRegister {
+                            server_id: victim_id.clone(),
+                            key_id: 0,
+                            verifying_key_hex: new_vk.to_string(),
+                            kex_public_hex: "00".to_string(),
+                        },
+                        1,
+                    );
+                });
+            }
+
+            // Within grace (current seq 1, retired at 1): the victim's
+            // OLD key authenticates a view-change at any OTHER node.
+            // The vc is signed with the SERVER key (the old key — the
+            // server keypair never changed) and claims the victim id.
+            let vc = mesh.nodes[victim]
+                .state
+                .server
+                .with_server(|srv| srv.governance_make_view_change(600));
+            let accepted = mesh.nodes[leader].state.server.with_server_ref(|srv| {
+                let seq = srv.governance_current_sequence();
+                match srv.retired_key_lookup_for_test(&vc.server_id, seq) {
+                    Some(key) => {
+                        crate::server::federation::verify_hex_sig(&key, &vc.payload(), &vc.signature)
+                    }
+                    None => false,
+                }
+            });
+            assert!(accepted, "old key authenticates within grace");
+
+            // Beyond grace: retired_at 1, current_sequence 200 →
+            // 200 - 1 > 100 → refused.
+            mesh.nodes[leader]
+                .state
+                .server
+                .with_server(|srv| srv.governance_set_current_sequence_for_tests(200));
+            let refused = mesh.nodes[leader].state.server.with_server_ref(|srv| {
+                let seq = srv.governance_current_sequence();
+                srv.retired_key_lookup_for_test(&vc.server_id, seq).is_none()
+            });
+            assert!(refused, "old key refused beyond grace");
+        }
+
         /// FR-75 test 8: epoch decisions are functions of (sequence)
         /// alone — no wall clock participates. Two states with entries
         /// created at different times agree on pool membership per

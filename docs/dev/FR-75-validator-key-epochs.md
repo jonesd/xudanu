@@ -1,8 +1,8 @@
 # FR-75: Validator Key Epochs — Rotation, Revocation, and Reconfiguration via Consensus
 
-**Status:** steps 1-2 SHIPPED 2026-09-20 (governance-only validator
-keys; KeyEpoch + expiry rejection + epoch-frozen quorums); steps 3-4
-proposed
+**Status:** steps 1-3 SHIPPED 2026-09-20 (governance-only validator
+keys; KeyEpoch + expiry rejection + epoch-frozen quorums; retired-key
+ledger with view-change grace); step 4 proposed
 **Created:** 2026-09-20
 **Depends on:** FR-19b (PBFT hardening: signed vote certificates, view
 change, mesh harness)
@@ -241,7 +241,18 @@ With epochs + consensus rotation + the four accompaniments:
    (8). Two test-design lessons banked: expired members still INGEST
    consensus decisions (they follow, they don't vote); mesh leader
    election must be computed over the live pool after expiry.
-3. Retired-key ledger + grace + tests 2, 3
+3. ✅ **Retired-key ledger + grace** (shipped): `RetiredKey
+   { server_id, verifying_key_hex, retired_at_seq }` ledger on
+   GovernanceState; KeyRegister execution retires the old key at the
+   sealing sequence and registers the new key valid from the next
+   round; view-change senders and NewView certificates authenticate
+   against the CURRENT key, or a retired key within
+   VIEW_CHANGE_GRACE_SEQS = 100 sealed sequences (prepare/commit
+   votes are refused immediately — no grace for consensus votes);
+   the ledger prunes with the checkpoint watermark. Tests: rotation
+   kills the old key for votes while membership carries the new key
+   (2); grace accepts an old-key view-change at retirement+0 and
+   refuses it beyond the window (3).
 4. Rotation authority (recovery keys) + tests 5, 6
 
 **Cluster guidance confirmed:** with the expiry machinery of steps
