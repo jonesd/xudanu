@@ -25,9 +25,15 @@ x-node: &node
     context: ..
     dockerfile: Dockerfile
 
+# Admin passphrases: set via env var (never CLI — visible in `ps`
+# and `docker inspect` process args). Put values in an uncommitted
+# .env file next to this compose file:
+#   echo "NODE1_ADMIN_PASSPHRASE=$(openssl rand -hex 24)" >> .env
 services:
   node1:
     <<: *node
+    environment:
+      - XUDANU_ADMIN_PASSPHRASE=${NODE1_ADMIN_PASSPHRASE:-}
     ports:
       - "8081:8080"
     volumes:

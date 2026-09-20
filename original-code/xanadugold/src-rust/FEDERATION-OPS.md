@@ -189,7 +189,15 @@ safe (WAL + chunk store recover) but loses the final checkpoint.
 - The demo uses deterministic recovery keys for convenience. Real
   deployments: generate per-operator keys OFFLINE, register them in
   the pin file, never store them on the servers.
-- Set `--admin-passphrase` per node; the demo omits it.
+- Set an admin passphrase per node. **Never put it on the CLI** —
+  arguments are visible in `ps`, shell history, and `docker inspect`.
+  Use the environment variable:
+  `XUDANU_ADMIN_PASSPHRASE=... xudanu-server run ...`
+  (in compose: an `environment:` entry from a `.env` file you don't
+  commit). Or omit it entirely on nodes that never need local admin —
+  no passphrase, no admin login path, nothing to leak.
+  A `--admin-passphrase-file` form is planned for the strongest
+  posture.
 - Federation sockets: per-IP cap (8) is enforced; put an upstream
   proxy/firewall in front for untrusted networks.
 - Docker: `docker/docker-compose.yml` is the 4-node equivalent
