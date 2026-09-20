@@ -4,7 +4,7 @@ import type {
   WorkSummary as WorkSummaryData,
   WorkVersionTimeline,
   RevisionComparePayload,
-  RevisionMeta,
+  VersionTimelineEntry,
   ReusedInDoc,
 } from "../api/crdt_sync";
 
@@ -193,7 +193,7 @@ export function WorkSummaryPanel({
                   {timeline.revisions
                     .slice()
                     .reverse()
-                    .map((rev: RevisionMeta) => {
+                    .map((rev: VersionTimelineEntry) => {
                       const revType = rev.author_type || "unattributed";
                       const revColor = TYPE_COLORS[revType] || FALLBACK_COLORS[0];
                       return (

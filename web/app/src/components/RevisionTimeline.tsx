@@ -301,7 +301,7 @@ export function RevisionTimeline({ workId, client, onViewRevision }: RevisionTim
             >
               <option value="">from…</option>
               {sorted.map((r) => (
-                <option key={r.revision} value={r.revision}>r{r.revision}</option>
+                <option key={r.revision_id} value={r.revision_id}>r{r.revision_id}</option>
               ))}
             </select>
             <select
@@ -313,7 +313,7 @@ export function RevisionTimeline({ workId, client, onViewRevision }: RevisionTim
             >
               <option value="">to…</option>
               {sorted.map((r) => (
-                <option key={r.revision} value={r.revision}>r{r.revision}</option>
+                <option key={r.revision_id} value={r.revision_id}>r{r.revision_id}</option>
               ))}
             </select>
             <button

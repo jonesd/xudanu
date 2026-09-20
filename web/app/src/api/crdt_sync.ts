@@ -273,7 +273,12 @@ export interface WorkSummary {
   reused_in_docs: ReusedInDoc[];
 }
 
-export interface RevisionMeta {
+// Version-timeline entries (workVersionTimeline API). Named distinctly
+// from RevisionMeta (workRevisionsList) — the two shapes have different
+// id fields (revision vs revision_id); a duplicate "RevisionMeta" name
+// made TypeScript merge them silently, which caused unkeyed <option>
+// lists (key={r.revision} on revision_id data = undefined).
+export interface VersionTimelineEntry {
   revision: number;
   char_count: number;
   author_club_id: number | null;
@@ -284,7 +289,7 @@ export interface RevisionMeta {
 }
 
 export interface WorkVersionTimeline {
-  revisions: RevisionMeta[];
+  revisions: VersionTimelineEntry[];
 }
 
 export interface CompositionLayer {
