@@ -11,6 +11,35 @@ multiple-versions = "warn"
 wildcards = "allow"
 highlight = "all"
 
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "0BSD",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+    "CC0-1.0",
+    "NCSA",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+
+# GPL-3.0 exists ONLY behind the non-default `epub-import` feature
+# (epub-2.x). Operators enabling that feature opt their build into GPL
+# terms; the default (and server) builds stay GPL-free and any NEW
+# GPL dependency fails this gate loudly.
+exceptions = [
+    { allow = ["GPL-3.0"], crate = "epub" },
+]
+
 [sources]
 unknown-registry = "deny"
 unknown-git = "warn"

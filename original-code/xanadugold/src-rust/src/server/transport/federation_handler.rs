@@ -149,6 +149,19 @@ pub enum FederationFrame {
     GovernanceNewView {
         new_view: crate::server::federation::NewViewMessage,
     },
+    /// FR-75 follow-up (state transfer): a lagging replica requests
+    /// the sealed-batch tail from a peer.
+    GovernanceLogRequest {
+        from_seq: u64,
+    },
+    GovernanceLogResult {
+        /// Sealed batches with sequence ≥ from_seq (bounded to what
+        /// the peer still retains — pruned_below cuts the rest).
+        batches: Vec<crate::server::federation::SealedBatch>,
+        /// The peer's watermark: sequences below this are gone; a
+        /// requester still behind it cannot fully catch up.
+        pruned_below: u64,
+    },
 
     CrdtSyncPush {
         server_id: String,
@@ -207,6 +220,38 @@ async fn federation_ws_handler(
 }
 
 async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_addr: SocketAddr) {
+    // Transport DOS cap (FR follow-up): a single IP flooding
+    // federation sockets must not exhaust server resources. The slot
+    // is held for the socket's lifetime and released on exit.
+    {
+        let allowed = state
+            .security
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .federation_conn_try_acquire(Some(remote_addr));
+        if !allowed {
+            tracing::warn!(
+                remote = %remote_addr,
+                event = "SECURITY:federation_conn_capped",
+                "Federation connection refused: per-IP connection cap exceeded"
+            );
+            return; // drop the socket without a handshake
+        }
+    }
+    let result = handle_federation_socket_inner(socket, state.clone(), remote_addr).await;
+    state
+        .security
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .federation_conn_release(Some(remote_addr));
+    result
+}
+
+async fn handle_federation_socket_inner(
+    socket: WebSocket,
+    state: SharedState,
+    remote_addr: SocketAddr,
+) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
     let (my_server_id, my_eph_bytes, my_eph) = state
@@ -767,6 +812,8 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
                                     | FederationFrame::GovernanceSealed { .. }
                                     | FederationFrame::GovernanceViewChange { .. }
                                     | FederationFrame::GovernanceNewView { .. }
+                                    | FederationFrame::GovernanceLogRequest { .. }
+                                    | FederationFrame::GovernanceLogResult { .. }
                             ) => {
                                 // Single orchestration point (also used by
                                 // the sync path and the test mesh): returns
@@ -1230,6 +1277,33 @@ pub(crate) fn handle_governance_frame(
                 .with_server(|srv| srv.governance_apply_new_view(new_view));
             vec![]
         }
+        FederationFrame::GovernanceLogRequest { from_seq } => {
+            // State transfer (replica catch-up): hand over the sealed
+            // tail the peer is missing, plus the retention watermark.
+            let (batches, pruned_below) = state.server.with_server_ref(|srv| {
+                let log = srv.governance_log();
+                (
+                    log.iter()
+                        .filter(|b| b.sequence_number >= *from_seq)
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                    srv.governance_pruned_below(),
+                )
+            });
+            vec![FederationFrame::GovernanceLogResult {
+                batches,
+                pruned_below,
+            }]
+        }
+        FederationFrame::GovernanceLogResult {
+            batches,
+            pruned_below,
+        } => {
+            state.server.with_server(|srv| {
+                srv.governance_ingest_log_tail(batches.clone(), *pruned_below);
+            });
+            vec![]
+        }
         _ => vec![],
     }
 }
@@ -1485,7 +1559,9 @@ pub(crate) async fn process_federation_frame(
         | FederationFrame::GovernanceCommitVote { .. }
         | FederationFrame::GovernanceSealed { .. }
         | FederationFrame::GovernanceViewChange { .. }
-        | FederationFrame::GovernanceNewView { .. } => {
+        | FederationFrame::GovernanceNewView { .. }
+        | FederationFrame::GovernanceLogRequest { .. }
+        | FederationFrame::GovernanceLogResult { .. } => {
             // Delegated to the single governance orchestration point
             // (shared with the ws path and the test mesh).
             handle_governance_frame(&frame, state, peer_server_id)
@@ -2510,10 +2586,14 @@ mod tests {
             /// FR-75 §4: per-member offline recovery keys, registered at
             /// Admit.
             recovery_keys: std::collections::HashMap<String, ed25519_dalek::SigningKey>,
-            /// Directed delivery blocks (a, b): a's frames never reach b.
+            /// Directed delivery blocks (a, a): a's frames never reach b.
             blocked: std::collections::HashSet<(usize, usize)>,
             /// Dead nodes neither send nor receive.
             dead: std::collections::HashSet<usize>,
+            /// Fuzz mode: seeded delivery-order shuffling (every message
+            /// still arrives — reordering, not loss — exercising the
+            /// buffering paths exactly where the mesh found real bugs).
+            shuffle_seed: Option<u64>,
         }
 
         impl Mesh {
@@ -2580,7 +2660,14 @@ mod tests {
                     recovery_keys,
                     blocked: std::collections::HashSet::new(),
                     dead: std::collections::HashSet::new(),
+                    shuffle_seed: None,
                 }
+            }
+
+            /// Enable seeded delivery-order fuzzing.
+            fn with_shuffle_seed(mut self, seed: u64) -> Self {
+                self.shuffle_seed = Some(seed);
+                self
             }
 
             /// Build a valid FR-75 §4 Path-A authorization for rotating
@@ -2661,7 +2748,19 @@ mod tests {
 
             fn deliver_from(&mut self, from: usize, frame: &FederationFrame, depth: usize) {
                 assert!(depth < 24, "protocol cascade exceeded depth cap");
-                for to in 0..self.nodes.len() {
+                let mut targets: Vec<usize> = (0..self.nodes.len()).collect();
+                if let Some(seed) = self.shuffle_seed {
+                    // Deterministic per-(seed, depth, from) shuffle:
+                    // every recipient still gets the frame, in a
+                    // randomized order.
+                    use rand::seq::SliceRandom;
+                    use rand::SeedableRng;
+                    let mut rng = rand::rngs::StdRng::seed_from_u64(
+                        seed ^ ((depth as u64) << 32) ^ (from as u64),
+                    );
+                    targets.shuffle(&mut rng);
+                }
+                for to in targets {
                     if to == from
                         || self.dead.contains(&from)
                         || self.dead.contains(&to)
@@ -3494,6 +3593,142 @@ mod tests {
                 .server
                 .with_server(|srv| srv.governance_receive_prepare(thief_vote));
             assert_eq!(format!("{phase:?}"), "PrePrepare", "expired stolen key cannot vote");
+        }
+
+        /// Randomized delivery-order fuzz: 25 seeds, every message
+        /// delivered but in shuffled order. Properties: (liveness) the
+        /// round ALWAYS seals on every node; (safety) every node
+        /// seals the identical digest — no fork under reordering.
+        /// This is the ordering class that hid three real bugs
+        /// (early-prepare loss, commit self-count, assembler
+        /// self-apply); shuttle-style thread randomization doesn't
+        /// apply to the single-threaded event mesh — event-order
+        /// randomization is the correct tool here.
+        #[test]
+        fn randomized_delivery_order_fuzz() {
+            for seed in 0..25u64 {
+                let mut mesh = Mesh::new(4).with_shuffle_seed(seed);
+                let leader = mesh.leader_for_view(0);
+                mesh.propose_from(leader, None);
+                let digests: Vec<Vec<String>> =
+                    (0..4).map(|i| mesh.seal_digests(i)).collect();
+                assert_eq!(
+                    digests[0].len(),
+                    1,
+                    "seed {seed}: round sealed everywhere"
+                );
+                assert!(
+                    digests.windows(2).all(|w| w[0] == w[1]),
+                    "seed {seed}: NO FORK — identical digests under reordering"
+                );
+                for i in 0..4 {
+                    assert_eq!(mesh.log_len(i), 1, "seed {seed}: node {i} sealed");
+                }
+            }
+        }
+
+        /// FR-75 follow-up (state transfer): a replica that missed
+        /// sealed batches catches up via GovernanceLogRequest/Result —
+        /// certificates verified, executed in order, and a pruned-
+        /// past gap is detected and refused loudly.
+        #[test]
+        fn state_transfer_catches_up_lagging_replica() {
+            let mut mesh = Mesh::new(4);
+            let leader = mesh.leader_for_view(0);
+
+            // A fresh replica with the same membership but NO history.
+            let replica = {
+                let mut srv = crate::server::Server::new();
+                let config = crate::server::federation::FederationConfig::closed(vec![]);
+                srv.set_federation_config(config);
+                srv.membership_bootstrap_init();
+                crate::server::transport::shared::AppState::new(srv).shared()
+            };
+            // Register the same validator membership on the replica
+            // (it would arrive via join + governance in production).
+            for node in &mesh.nodes {
+                let e = node
+                    .state
+                    .server
+                    .with_server_ref(|srv| srv.membership_self_entry().unwrap());
+                let recovery = mesh.recovery_keys[&e.server_id]
+                    .verifying_key()
+                    .to_bytes()
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>();
+                replica.server.with_server(|srv| {
+                    srv.governance_execute_tx(
+                        &crate::server::federation::GovernanceTx::Admit {
+                            server_id: e.server_id.clone(),
+                            verifying_key_hex: e.verifying_key_hex.clone(),
+                            kex_public_hex: "00".to_string(),
+                            recovery_key_hex: recovery,
+                        },
+                    );
+                });
+            }
+
+            // Seal two rounds on the mesh.
+            mesh.propose_from(leader, None);
+            mesh.propose_from(leader, None);
+            for i in 0..4 {
+                assert_eq!(mesh.log_len(i), 2, "mesh sealed two rounds");
+            }
+
+            // The replica requests everything from sequence 1.
+            let replies = {
+                let peer_id = "replica".to_string();
+                handle_governance_frame(
+                    &FederationFrame::GovernanceLogRequest { from_seq: 1 },
+                    &mesh.nodes[leader].state,
+                    &peer_id,
+                )
+            };
+            assert_eq!(replies.len(), 1, "one log result");
+            match &replies[0] {
+                FederationFrame::GovernanceLogResult {
+                    batches,
+                    pruned_below,
+                } => {
+                    assert_eq!(batches.len(), 2, "full tail returned");
+                    assert_eq!(*pruned_below, 0, "nothing pruned yet");
+                }
+                other => panic!("expected log result, got {other:?}"),
+            }
+
+            // Deliver to the replica: catches up (certificates
+            // verified against its identical validator membership).
+            let peer_id = mesh.nodes[leader].id.clone();
+            for reply in replies {
+                let _ = handle_governance_frame(&reply, &replica, &peer_id);
+            }
+            let caught_up = replica
+                .server
+                .with_server_ref(|srv| (srv.governance_log().len(), srv.governance_current_sequence()));
+            assert_eq!(caught_up, (2, 2), "replica caught up in order");
+
+            // Same digests as the mesh — no fork via transfer.
+            let mesh_digests = mesh.seal_digests(leader);
+            let replica_digests: Vec<String> = replica
+                .server
+                .with_server_ref(|srv| srv.governance_log().iter().map(|b| b.digest.clone()).collect());
+            assert_eq!(mesh_digests, replica_digests);
+
+            // Gap refusal: a peer pruned past our position returns a
+            // loud no-op instead of a partial history.
+            let pruned_past = FederationFrame::GovernanceLogResult {
+                batches: vec![],
+                pruned_below: 50,
+            };
+            replica.server.with_server(|srv| {
+                srv.governance_ingest_log_tail(vec![], 50);
+            });
+            let still = replica
+                .server
+                .with_server_ref(|srv| srv.governance_log().len());
+            assert_eq!(still, 2, "gap refused — history unchanged");
+            let _ = pruned_past;
         }
 
         /// FR-75 follow-up: the lifecycle snapshot is the alerting

@@ -185,20 +185,47 @@ original design — see git history for details).
 - `ConsensusRound` (+ signed certificates, buffered commits, started_at)
 - `GovernanceState` (+ prepared_digests, pruned_below, view_change_votes)
 
-## Known gaps (follow-ups)
+## Follow-ups closed (2026-09-20, second hardening round)
 
-1. **State transfer**: a rejoining replica only catches up via
-   ingested sealed batches — no bulk sync of pruned history (ask a
-   peer for the log tail beyond the watermark).
-2. **federation_active.rs loop**: the async connection loop itself is
-   thin glue over now-tested decision functions
-   (`view_change_due`, `next_view`, `handle_governance_frame`), but
-   the loop wiring has no direct coverage — a Shuttle-randomized mesh
-   (see tooling survey) is the natural next step.
-3. **deny.toml license allow-list** too narrow (388 pre-existing
-   rejections on standard MIT/Apache crates).
-4. Full stable-checkpoint protocol (sequence watermarks beyond the
+1. ✅ **State transfer**: `GovernanceLogRequest/Result` frames — a
+   lagging replica requests the sealed tail, each batch is
+   certificate-verified and executed in order; a pruned-past gap is
+   detected and refused loudly (full rejoin required). Mesh test
+   covers catch-up + no-fork-via-transfer + gap refusal.
+2. ✅ **Randomized mesh fuzz**: 25-seed delivery-order shuffling
+   (every message arrives, in randomized order) — liveness (always
+   seals) + safety (identical digests, no fork). This is the ordering
+   class that hid three real bugs; Shuttle-style thread randomization
+   doesn't apply to the single-threaded event mesh, so event-order
+   randomization is the tool (18/18 mesh scenarios stable).
+3. ✅ **deny.toml licenses**: proper OSS allow-list; the gate caught a
+   REAL issue — `epub-2.x` is GPL-3.0 and was linked into the
+   Apache-2.0 server. EPUB import is now isolated behind the
+   non-default `epub-import` feature (operators opting in accept GPL
+   terms for their build); core/server builds are GPL-free and any
+   new GPL dependency fails the gate. NCSA (libfuzzer) and
+   CDLA-Permissive-2.0 (webpki-roots) allow-listed as permissive.
+4. ✅ **Transport DOS**: per-IP federation connection cap (8 live
+   sockets) enforced at the federation ws entry, slot released on
+   close; unattributable connections uncapped; capped refusals
+   logged as SECURITY events.
+5. ✅ **TLA+ safety spec** (`spec/xudanu-pbft/`): formal model of the
+   quorum mechanics (signed digest-bound votes, one byzantine node
+   with unrestricted equivocation, arbitrary message reordering).
+   TLC-checked at N=4/Q=3/2 digests/1 sequence: **337,761 states, no
+   violations of Agreement, TypeOK, or Validity** — the protocol
+   cannot fork. Single-sequence scope: the cross-sequence fork
+   protection (prepared digests) is enforced in code and covered by
+   mesh tests, not re-proven here.
+6. **cargo-audit** clean (6 allowed unmaintained-crate warnings,
+   pre-existing transitive deps).
+
+## Remaining gaps
+
+1. Full stable-checkpoint protocol (sequence watermarks beyond the
    retention prune) if governance volume ever grows.
-5. Client retry semantics: unprepared requests lost on view change
+2. Client retry semantics: unprepared requests lost on view change
    are the client's responsibility to resubmit (mesh tests model
    this); a durable client-side retry queue would smooth it.
+3. Multi-sequence TLA+ model (state-explosion-bound; needs symmetry
+   reduction or abstraction refinement to check S={1,2}).

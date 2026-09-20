@@ -226,6 +226,8 @@ pub struct SecurityMonitor {
     per_session: HashMap<SessionKey, SessionTrackers>,
     per_ip: HashMap<IpKey, IpTrackers>,
     active_sessions_per_ip: HashMap<IpKey, u32>,
+    /// FR follow-up (transport DOS): live federation sockets per IP.
+    federation_conns_per_ip: HashMap<IpKey, u32>,
 
     config: SecurityConfig,
 }
@@ -254,6 +256,7 @@ impl SecurityMonitor {
             per_session: HashMap::new(),
             per_ip: HashMap::new(),
             active_sessions_per_ip: HashMap::new(),
+            federation_conns_per_ip: HashMap::new(),
             config: SecurityConfig::default(),
         }
     }
@@ -540,6 +543,36 @@ impl SecurityMonitor {
         }
     }
 
+    /// Transport DOS cap: try to register a federation connection
+    /// from `remote`. Returns false when the per-IP cap is exceeded
+    /// (the caller must close the socket immediately).
+    pub fn federation_conn_try_acquire(&mut self, remote: Option<std::net::SocketAddr>) -> bool {
+        const MAX_FEDERATION_CONNS_PER_IP: u32 = 8;
+        // Key by IP (strip the port from the string form).
+        let key = IpKey {
+            addr: remote.map(|a| a.ip().to_string()),
+        };
+        if key.addr.is_none() {
+            return true; // unattributable — don't cap
+        }
+        let count = self.federation_conns_per_ip.entry(key).or_insert(0);
+        if *count >= MAX_FEDERATION_CONNS_PER_IP {
+            return false;
+        }
+        *count += 1;
+        true
+    }
+
+    /// Release a federation connection slot (on socket close).
+    pub fn federation_conn_release(&mut self, remote: Option<std::net::SocketAddr>) {
+        let key = IpKey {
+            addr: remote.map(|a| a.ip().to_string()),
+        };
+        if let Some(count) = self.federation_conns_per_ip.get_mut(&key) {
+            *count = count.saturating_sub(1);
+        }
+    }
+
     pub fn on_request(
         &mut self,
         session_id: SessionId,
@@ -732,6 +765,27 @@ fn now_iso() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn federation_conn_cap_blocks_at_limit_and_releases() {
+        let collector = Arc::new(CollectorAuditLog::new());
+        let mut sec = SecurityMonitor::new(collector);
+        let addr = |port: u16| format!("127.0.0.1:{port}").parse().unwrap();
+
+        // 8 slots acquirable from one IP.
+        for i in 0..8u16 {
+            assert!(sec.federation_conn_try_acquire(Some(addr(1000 + i))));
+        }
+        // The 9th from the same IP is refused...
+        assert!(!sec.federation_conn_try_acquire(Some(addr(2000))), "capped");
+        // ...while a different IP is unaffected.
+        assert!(sec.federation_conn_try_acquire(Some("192.0.2.9:1".parse().unwrap())));
+        // Release restores the slot.
+        sec.federation_conn_release(Some(addr(1000)));
+        assert!(sec.federation_conn_try_acquire(Some(addr(3000))), "released slot reusable");
+        // Unattributable connections are never capped.
+        assert!(sec.federation_conn_try_acquire(None));
+    }
 
     #[test]
     fn audit_event_serialization() {

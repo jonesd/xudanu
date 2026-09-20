@@ -67,3 +67,6 @@ community/
 content/
 docs/gold-optimizations-coles-notes.txt
 scripts/seed-convergence-essay.mjs
+
+# TLC model-checker checkpoint artifacts
+spec/**/states/

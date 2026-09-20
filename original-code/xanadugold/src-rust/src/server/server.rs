@@ -6659,7 +6659,10 @@ impl Server {
     }
 
     // ── EPUB import ──
+    // GPL-3.0 territory (epub-2.x) — only compiled with the explicit
+    // epub-import feature; the default server build stays GPL-free.
 
+    #[cfg(feature = "epub-import")]
     pub fn import_epub(
         &mut self,
         session_id: SessionId,
@@ -23807,6 +23810,53 @@ impl Server {
         // AT the batch's sequence (epoch-frozen verification).
         let keys = self.governance_member_keys_at(batch.sequence_number);
         self.federation.governance().verify_sealed(batch, &keys)
+    }
+
+    /// Retention watermark accessor (state transfer diagnostics).
+    pub fn governance_pruned_below(&self) -> u64 {
+        self.federation.governance().pruned_below()
+    }
+
+    /// FR-75 follow-up (state transfer): ingest a log tail from a
+    /// peer. Batches arrive oldest-first; each is certificate-
+    /// verified (S1 — never trust the relayer) and executed in order.
+    /// A gap below the peer's watermark is logged loudly: the
+    /// requesting replica is too far behind and must rejoin via
+    /// snapshot/bootstrap.
+    pub fn governance_ingest_log_tail(
+        &mut self,
+        batches: Vec<crate::server::federation::SealedBatch>,
+        peer_pruned_below: u64,
+    ) {
+        let mut sorted = batches;
+        sorted.sort_by_key(|b| b.sequence_number);
+        // Gap detection against OUR position.
+        let my_seq = self.federation.governance().current_sequence();
+        let first_needed = my_seq + 1;
+        if let Some(first) = sorted.first() {
+            if first.sequence_number > first_needed {
+                tracing::warn!(
+                    my_seq,
+                    peer_first = first.sequence_number,
+                    peer_pruned_below,
+                    "state transfer gap: peer history starts beyond our position — full rejoin required"
+                );
+                return;
+            }
+        } else if peer_pruned_below > first_needed {
+            tracing::warn!(
+                my_seq,
+                peer_pruned_below,
+                "state transfer empty: peer pruned past our position — full rejoin required"
+            );
+            return;
+        }
+        for batch in sorted {
+            if batch.sequence_number <= self.federation.governance().current_sequence() {
+                continue; // already applied
+            }
+            self.governance_ingest_sealed_batch(batch);
+        }
     }
 
     /// Ingest a verified sealed batch from the network: execute the
