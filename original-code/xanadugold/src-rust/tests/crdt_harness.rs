@@ -178,24 +178,28 @@ impl TestClient {
         let new_mid: String = new_chars[prefix..new_chars.len() - j].iter().collect();
 
         if prefix > 0 {
-            ops.push(serde_json::json!({"Retain": {"count": prefix}}));
+            ops.push(serde_json::json!({"type": "retain", "count": prefix}));
         }
         if !old_mid.is_empty() {
-            ops.push(serde_json::json!({"Delete": {"count": old_mid.len()}}));
+            ops.push(serde_json::json!({"type": "delete", "count": old_mid.len()}));
         }
         if !new_mid.is_empty() {
-            ops.push(serde_json::json!({"Insert": {"text": new_mid}}));
+            ops.push(serde_json::json!({"type": "insert", "text": new_mid}));
         }
 
-        let _ = self
+        let resp = self
             .request(
-                "crdt_text_delta",
+                "work_revise_delta",
                 &serde_json::json!({
                     "work_id": work_id,
+                    "base_revision": 0,
                     "ops": ops,
                 }),
             )
             .await;
+        if resp.get("type").and_then(|t| t.as_str()) == Some("error") {
+            eprintln!("[harness] work_revise_delta error: {:?}", resp);
+        }
         self.local_text.insert(work_id, new.to_string());
     }
 
@@ -316,34 +320,33 @@ async fn concurrent_n_users_n_works_isolated() {
 #[tokio::test]
 #[cfg(feature = "server")]
 async fn concurrent_rapid_edits_stress() {
-    let rt = tokio::runtime::Runtime::new();
-    {
-        let server = TestServer::start().await;
-        let mut alice = TestClient::connect(server.addr).await;
-        let work_id = alice.create_work("start\n").await;
-        let mut bob = TestClient::connect(server.addr).await;
-        let _ = bob.open_work(work_id).await;
+    let server = TestServer::start().await;
+    let mut alice = TestClient::connect(server.addr).await;
+    let work_id = alice.create_work("start\n").await;
+    let mut bob = TestClient::connect(server.addr).await;
+    let _ = alice.open_work(work_id).await;
+    let _ = bob.open_work(work_id).await;
 
-        // 20 rapid edits each, alternating
-        let start = Instant::now();
-        for i in 0..20 {
-            let alice_old = alice
-                .local_text
-                .get(&work_id)
-                .cloned()
-                .unwrap_or("start\n".into());
-            let alice_new = format!("{}alice-{};\n", alice_old, i);
-            alice.send_delta(work_id, &alice_old, &alice_new).await;
+    // 20 rapid edits each, alternating
+    let start = Instant::now();
+    for i in 0..20 {
+        let alice_old = alice
+            .local_text
+            .get(&work_id)
+            .cloned()
+            .unwrap_or("start\n".into());
+        let alice_new = format!("{}alice-{};\n", alice_old, i);
+        alice.send_delta(work_id, &alice_old, &alice_new).await;
 
-            let bob_old = bob
-                .local_text
-                .get(&work_id)
-                .cloned()
-                .unwrap_or("start\n".into());
-            let bob_new = format!("{}bob-{};\n", bob_old, i);
-            bob.send_delta(work_id, &bob_old, &bob_new).await;
-        }
-        let elapsed = start.elapsed();
+        let bob_old = bob
+            .local_text
+            .get(&work_id)
+            .cloned()
+            .unwrap_or("start\n".into());
+        let bob_new = format!("{}bob-{};\n", bob_old, i);
+        bob.send_delta(work_id, &bob_old, &bob_new).await;
+    }
+    let elapsed = start.elapsed();
 
         // Verify convergence
         let alice_final = alice.read_text(work_id).await;
@@ -352,12 +355,11 @@ async fn concurrent_rapid_edits_stress() {
         assert!(alice_final.contains("alice-19;"), "all alice edits present");
         assert!(bob_final.contains("bob-19;"), "all bob edits present");
 
-        println!(
-            "rapid_edits: 40 ops in {:?} ({:.0} ops/sec)",
-            elapsed,
-            40.0 / elapsed.as_secs_f64()
-        );
-    }
+    println!(
+        "rapid_edits: 40 ops in {:?} ({:.0} ops/sec)",
+        elapsed,
+        40.0 / elapsed.as_secs_f64()
+    );
 }
 
 /// Scenario 4: Server checkpoint during concurrent edits — no loss.
