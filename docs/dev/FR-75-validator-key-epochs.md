@@ -1,7 +1,8 @@
 # FR-75: Validator Key Epochs — Rotation, Revocation, and Reconfiguration via Consensus
 
-**Status:** step 1 SHIPPED 2026-09-20 (governance-only validator keys);
-steps 2-4 proposed
+**Status:** steps 1-2 SHIPPED 2026-09-20 (governance-only validator
+keys; KeyEpoch + expiry rejection + epoch-frozen quorums); steps 3-4
+proposed
 **Created:** 2026-09-20
 **Depends on:** FR-19b (PBFT hardening: signed vote certificates, view
 change, mesh harness)
@@ -221,7 +222,25 @@ With epochs + consensus rotation + the four accompaniments:
    mesh-smuggle (test matrix #4). One panic (unwrap on unknown
    server_id in the guard) and one merge-stickiness bug found and
    fixed during implementation.
-2. KeyEpoch + expiry rejection + epoch-frozen quorums + tests 1, 7, 8
+2. ✅ **KeyEpoch + expiry rejection + epoch-frozen quorums** (shipped):
+   `KeyEpoch { valid_from_seq, valid_until_seq }` on membership
+   entries (serde-default = never expires — migration-safe); vote
+   verification, view-change sender checks, sealed-batch certificate
+   checks, and leader election are all functions of the round's
+   SEQUENCE (epoch-frozen — no wall clocks anywhere in safety); Admit
+   sets `valid_from = sealing_seq + 1` via sequence-aware execution;
+   quorum basis = ADMITTED count at the sequence (expired members
+   count toward n and f exactly like crashed members — quorum stays
+   2f+1, the voting pool shrinks); propose refuses when pool <
+   quorum (halted-safely, test 7); ingest syncs the quorum basis
+   before verifying (a fresh replica no longer accepts 1-cert
+   "quorums"). Tests: expired-member round completes with its vote in
+   no certificate and no fork (1), double expiry halts safely with
+   nothing sealed (7), epoch decisions are sequence-pure with
+   inclusive-lower/exclusive-upper bounds and default-never-expires
+   (8). Two test-design lessons banked: expired members still INGEST
+   consensus decisions (they follow, they don't vote); mesh leader
+   election must be computed over the live pool after expiry.
 3. Retired-key ledger + grace + tests 2, 3
 4. Rotation authority (recovery keys) + tests 5, 6
 

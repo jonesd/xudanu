@@ -2560,12 +2560,23 @@ mod tests {
                 }
             }
 
-            /// Index of the leader for the given view (membership is
-            /// sorted by server_id deterministically).
+            /// Index of the leader for the given view — computed over
+            /// the LIVE (epoch-valid) voting pool at the next sequence,
+            /// sorted by server_id. Matches governance_propose exactly.
             fn leader_for_view(&self, view: u64) -> usize {
-                let mut ids: Vec<&str> = self.nodes.iter().map(|n| n.id.as_str()).collect();
+                let pool: Vec<String> = self.nodes[0]
+                    .state
+                    .server
+                    .with_server_ref(|srv| {
+                        let seq = srv.governance_current_sequence() + 1;
+                        srv.governance_validator_members_at(seq)
+                            .into_iter()
+                            .map(|m| m.server_id)
+                            .collect()
+                    });
+                let mut ids = pool;
                 ids.sort();
-                let leader_id = ids[(view as usize) % ids.len()];
+                let leader_id = ids[(view as usize) % ids.len()].clone();
                 self.nodes.iter().position(|n| n.id == leader_id).unwrap()
             }
 
@@ -3014,6 +3025,116 @@ mod tests {
                 stored_vk, node1_real_vk,
                 "hijacked key sanitized back to the governed key"
             );
+        }
+
+        /// FR-75 test 1: a member whose key epoch ended before the
+        /// round's sequence cannot vote; the round completes with the
+        /// remaining pool (quorum still 3 — expired members count
+        /// toward f like crashed members).
+        #[test]
+        fn mesh_expired_member_cannot_vote_round_completes() {
+            let mut mesh = Mesh::new(4);
+            // Expire a member FIRST — the sorted voting pool (and thus
+            // the leader) is a function of the epoch state.
+            let old_leader = mesh.leader_for_view(0);
+            let victim = (0..4).find(|i| *i != old_leader).unwrap();
+
+            // The victim's key expired before sequence 1 — set on
+            // EVERY node's membership (in production, epochs change
+            // via sealed KeyRegister batches executed everywhere).
+            let expired = crate::server::federation::KeyEpoch {
+                valid_from_seq: 1,
+                valid_until_seq: 1, // covers nothing at seq 1
+            };
+            let victim_id = mesh.nodes[victim].id.clone();
+            for node in &mesh.nodes {
+                node.state
+                    .server
+                    .with_server(|srv| srv.membership_set_epoch_for_tests(&victim_id, expired.clone()));
+            }
+            // Recompute the leader over the LIVE voting pool.
+            let leader = mesh.leader_for_view(0);
+
+            mesh.propose_from(leader, None);
+            // Everyone converges — the expired member never seals
+            // locally but INGESTS the consensus decision (it follows
+            // governance; it just cannot vote).
+            for i in 0..4 {
+                assert_eq!(mesh.log_len(i), 1, "node {i} applied the sealed batch");
+            }
+            let digests: Vec<Vec<String>> = (0..4).map(|i| mesh.seal_digests(i)).collect();
+            assert!(
+                digests.windows(2).all(|w| w[0] == w[1]),
+                "no fork — expired member agrees with the validators"
+            );
+            // The honest invariant: the victim's vote appears in NO
+            // certificate of the sealed batch.
+            let victim_id = mesh.nodes[victim].id.clone();
+            let voted = mesh.nodes[leader].state.server.with_server_ref(|srv| {
+                let batch = &srv.governance_log()[0];
+                batch.prepare_votes.iter().chain(batch.commit_votes.iter())
+                    .any(|v| v.voter_id == victim_id)
+            });
+            assert!(!voted, "expired member's vote appears in no certificate");
+        }
+
+        /// FR-75 test 7: with the expired member still admitted, quorum
+        /// stays 3 and the pool of 3 must be unanimous; with TWO
+        /// expiries the pool (2) drops below quorum (3) and governance
+        /// halts safely — no round opens, no fork.
+        #[test]
+        fn mesh_double_expiry_halts_safely() {
+            let mut mesh = Mesh::new(4);
+            let leader = mesh.leader_for_view(0);
+            let others: Vec<usize> = (0..4).filter(|i| *i != leader).collect();
+
+            // Expire two members — on every node's membership.
+            let expired = crate::server::federation::KeyEpoch {
+                valid_from_seq: 1,
+                valid_until_seq: 1,
+            };
+            for v in &others[..2] {
+                let id = mesh.nodes[*v].id.clone();
+                for node in &mesh.nodes {
+                    node.state.server.with_server(|srv| {
+                        srv.membership_set_epoch_for_tests(&id, expired.clone())
+                    });
+                }
+            }
+
+            // The leader's own propose is refused: pool 2 < quorum 3.
+            let result = mesh.nodes[leader].state.server.with_server(|srv| {
+                srv.governance_propose(vec![crate::server::federation::GovernanceTx::RoyaltyRecord {
+                    origin_server_id: String::new(),
+                    target_server_id: String::new(),
+                    content_fingerprint_hex: "ab".repeat(32),
+                    royalty_type: crate::server::federation::RoyaltyType::Transclusion,
+                    amount: 1,
+                }])
+            });
+            assert!(result.is_none(), "governance halted: no round may open");
+            for i in 0..4 {
+                assert_eq!(mesh.log_len(i), 0, "nothing sealed — halted, not forked");
+            }
+        }
+
+        /// FR-75 test 8: epoch decisions are functions of (sequence)
+        /// alone — no wall clock participates. Two states with entries
+        /// created at different times agree on pool membership per
+        /// sequence, and expiry bites purely by sequence arithmetic.
+        #[test]
+        fn key_epoch_decisions_are_sequence_pure() {
+            let e = crate::server::federation::KeyEpoch {
+                valid_from_seq: 2,
+                valid_until_seq: 5,
+            };
+            assert!(!e.covers(1), "before valid_from");
+            assert!(e.covers(2), "inclusive lower bound");
+            assert!(e.covers(4));
+            assert!(!e.covers(5), "exclusive upper bound");
+            assert!(e.admitted_by(7), "expired members remain admitted (count toward f)");
+            // The default (migration) epoch never expires.
+            assert!(crate::server::federation::KeyEpoch::default().covers(u64::MAX - 1));
         }
 
         #[test]

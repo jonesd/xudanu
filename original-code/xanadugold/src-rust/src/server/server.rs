@@ -23180,10 +23180,34 @@ impl Server {
         // (governance-admitted), not the directory.
         let members: Vec<String> = self.governance_validator_ids();
         let my_id = self.federation_server_id();
+        // FR-75 §5: halted-safely guard — if epoch expiries have
+        // shrunk the voting pool below the quorum, a round can never
+        // seal; refuse to open one.
+        {
+            let gov = self.federation.governance();
+            let pool = self.governance_validator_members_at(gov.current_sequence() + 1).len();
+            let admitted = self.governance_admitted_count_at(gov.current_sequence() + 1).max(1);
+            let quorum = 2 * ((admitted.saturating_sub(1)) / 3) + 1;
+            if pool < quorum {
+                tracing::warn!(
+                    pool,
+                    quorum,
+                    admitted,
+                    "governance propose refused: voting pool below quorum (expired members) — halted safely"
+                );
+                return None;
+            }
+        }
+        // FR-75 §5: cluster size (policy + quorum basis) counts
+        // ADMITTED validators — expired members still count toward f
+        // and n; only the voting pool excludes them.
+        let admitted = self
+            .governance_admitted_count_at(self.federation.governance().current_sequence() + 1)
+            .max(1);
         let gov = self.federation.governance_mut();
-        gov.set_cluster_size(members.len().max(1));
+        gov.set_cluster_size(admitted);
         if !gov.is_leader(&my_id, &members) {
-            return None;
+        return None;
         }
         let proposal = gov.propose(transactions, my_id.clone())?;
         // The leader casts its own SIGNED prepare immediately: the
@@ -23206,21 +23230,80 @@ impl Server {
         self.federation.membership().find_member(server_id)
     }
 
-    /// Test accessor for the validator verifying-key map.
+    #[doc(hidden)]
+    pub fn governance_admitted_count_for_test(&self, seq: u64) -> usize {
+        self.governance_admitted_count_at(seq)
+    }
+
+    /// Test accessor for the validator verifying-key map (next seq).
     #[doc(hidden)]
     pub fn governance_member_keys_for_test(
         &self,
     ) -> std::collections::HashMap<String, String> {
-        self.governance_member_keys()
+        self.governance_member_keys_at(self.next_governance_seq())
     }
 
-    /// Validator id list — the member set for every consensus
-    /// computation (quorum, leader election, vote membership checks).
+    /// Test aid: set a member's key epoch directly (simulates
+    /// expiry/rotation without the full machinery).
+    #[doc(hidden)]
+    pub fn membership_set_epoch_for_tests(
+        &mut self,
+        server_id: &str,
+        epoch: crate::server::federation::KeyEpoch,
+    ) {
+        if let Some(mut entry) = self.federation.membership().find_member(server_id) {
+            entry.epoch = epoch;
+            self.federation.membership_mut().remove_member(server_id);
+            let tag = self
+                .federation
+                .membership_mut()
+                .next_tag(server_id);
+            self.federation
+                .membership_mut()
+                .add_member(entry, tag);
+        }
+    }
+
+    /// Validator id list — the member set for consensus at the CURRENT
+    /// sequence (next expected round).
     fn governance_validator_ids(&self) -> Vec<String> {
+        self.governance_validator_ids_at(self.next_governance_seq())
+    }
+
+    /// The next sequence a governance round would use.
+    fn next_governance_seq(&self) -> u64 {
+        self.federation.governance().current_sequence() + 1
+    }
+
+    /// FR-75 §1/§5: the VOTING POOL at a sequence — governance-admitted
+    /// validators whose key epoch covers it. This is who may vote and
+    /// who may lead for that round.
+    pub fn governance_validator_members_at(
+        &self,
+        seq: u64,
+    ) -> Vec<crate::server::federation::MembershipEntry> {
         self.governance_validator_members()
+            .into_iter()
+            .filter(|m| m.epoch.covers(seq))
+            .collect()
+    }
+
+    fn governance_validator_ids_at(&self, seq: u64) -> Vec<String> {
+        self.governance_validator_members_at(seq)
             .into_iter()
             .map(|m| m.server_id)
             .collect()
+    }
+
+    /// FR-75 §5: the QUORUM BASIS at a sequence — every governance-
+    /// admitted validator whose epoch began by then (expired members
+    /// still count toward f, exactly like a crashed member in classic
+    /// BFT: n stays n, quorum stays 2f+1, the voting pool shrinks).
+    fn governance_admitted_count_at(&self, seq: u64) -> usize {
+        self.governance_validator_members()
+            .into_iter()
+            .filter(|m| m.epoch.admitted_by(seq))
+            .count()
     }
 
     /// The VALIDATOR set (FR-75 §3): active members admitted by
@@ -23239,9 +23322,13 @@ impl Server {
     }
 
     /// Member verifying keys (server_id → hex Ed25519 public key) for
-    /// vote-signature verification — validators only.
-    fn governance_member_keys(&self) -> std::collections::HashMap<String, String> {
-        self.governance_validator_members()
+    /// vote-signature verification — validators only, epoch-valid at
+    /// the given sequence.
+    fn governance_member_keys_at(
+        &self,
+        seq: u64,
+    ) -> std::collections::HashMap<String, String> {
+        self.governance_validator_members_at(seq)
             .into_iter()
             .map(|m| (m.server_id.clone(), m.verifying_key_hex.clone()))
             .collect()
@@ -23372,12 +23459,14 @@ impl Server {
         }
         let my_id = self.federation_server_id();
         if msg.server_id != my_id {
-            let keys = self.governance_member_keys();
+            // FR-75 §1: view-change senders must be epoch-valid for
+            // the round the new view would govern (next sequence).
+            let keys = self.governance_member_keys_at(self.next_governance_seq());
             let key = keys.get(&msg.server_id).map(|s| s.as_str()).unwrap_or("");
             if !crate::server::federation::verify_hex_sig(key, &msg.payload(), &msg.signature) {
                 tracing::warn!(
                     sender = %msg.server_id,
-                    "view-change message rejected: invalid signature"
+                    "view-change message rejected: invalid signature or expired epoch"
                 );
                 return None;
             }
@@ -23427,7 +23516,7 @@ impl Server {
             );
             return;
         }
-        let keys = self.governance_member_keys();
+        let keys = self.governance_member_keys_at(self.next_governance_seq());
         // Assembler signature over the NewView payload.
         if !crate::server::federation::verify_hex_sig(
             keys.get(&new_view.assembler_id).map(|s| s.as_str()).unwrap_or(""),
@@ -23529,20 +23618,27 @@ impl Server {
         // skipped only for the server's OWN votes (self-signed above).
         let my_id = self.federation_server_id();
         if vote.voter_id != my_id {
-            let keys = self.governance_member_keys();
+            // FR-75 §1: epoch check at the vote's own sequence — the
+            // keys map only contains members valid for THAT round.
+            let keys = self.governance_member_keys_at(vote.sequence_number);
             if !crate::server::federation::verify_vote_signature(
                 &vote,
                 keys.get(&vote.voter_id).map(|s| s.as_str()).unwrap_or(""),
             ) {
                 tracing::warn!(
                     voter = %vote.voter_id,
-                    "governance prepare vote rejected: invalid signature"
+                    seq = vote.sequence_number,
+                    "governance prepare vote rejected: invalid signature or expired epoch"
                 );
                 return crate::server::federation::RoundPhase::PrePrepare;
             }
         }
+        // FR-75 §5: quorum from the admitted count at this sequence
+        // (expired members still count toward f); the voter pool is
+        // the members list checked above.
+        let admitted = self.governance_admitted_count_at(vote.sequence_number).max(1);
         let gov = self.federation.governance_mut();
-        gov.set_cluster_size(members.len().max(1));
+        gov.set_cluster_size(admitted);
         gov.receive_prepare(vote)
     }
 
@@ -23559,20 +23655,22 @@ impl Server {
         }
         let my_id = self.federation_server_id();
         if vote.voter_id != my_id {
-            let keys = self.governance_member_keys();
+            let keys = self.governance_member_keys_at(vote.sequence_number);
             if !crate::server::federation::verify_vote_signature(
                 &vote,
                 keys.get(&vote.voter_id).map(|s| s.as_str()).unwrap_or(""),
             ) {
                 tracing::warn!(
                     voter = %vote.voter_id,
-                    "governance commit vote rejected: invalid signature"
+                    seq = vote.sequence_number,
+                    "governance commit vote rejected: invalid signature or expired epoch"
                 );
                 return crate::server::federation::RoundPhase::PrePrepare;
             }
         }
+        let admitted = self.governance_admitted_count_at(vote.sequence_number).max(1);
         let gov = self.federation.governance_mut();
-        gov.set_cluster_size(members.len().max(1));
+        gov.set_cluster_size(admitted);
         gov.receive_commit(vote)
     }
 
@@ -23581,9 +23679,10 @@ impl Server {
         &self,
         batch: &crate::server::federation::SealedBatch,
     ) -> Result<(), String> {
-        self.federation
-            .governance()
-            .verify_sealed(batch, &self.governance_member_keys())
+        // FR-75 §1: certificates are checked against the validator set
+        // AT the batch's sequence (epoch-frozen verification).
+        let keys = self.governance_member_keys_at(batch.sequence_number);
+        self.federation.governance().verify_sealed(batch, &keys)
     }
 
     /// Ingest a verified sealed batch from the network: execute the
@@ -23594,6 +23693,13 @@ impl Server {
         &mut self,
         batch: crate::server::federation::SealedBatch,
     ) {
+        // FR-75 §5: sync the quorum basis to the batch's sequence
+        // BEFORE verifying — a fresh replica's cluster_size would
+        // otherwise default to 1 and accept 1-cert "quorums".
+        let admitted = self
+            .governance_admitted_count_at(batch.sequence_number)
+            .max(1);
+        self.federation.governance_mut().set_cluster_size(admitted);
         if let Err(reason) = self.governance_verify_sealed(&batch) {
             tracing::warn!(seq = batch.sequence_number, %reason, "rejected sealed batch: invalid certificates");
             return;
@@ -23605,21 +23711,37 @@ impl Server {
         {
             return;
         }
+        let sealing_seq = batch.sequence_number;
         for tx in &batch.transactions {
-            self.governance_execute_tx(tx);
+            self.governance_execute_tx_at(tx, sealing_seq);
         }
         self.federation.governance_mut().ingest_sealed(batch);
     }
 
     pub fn governance_seal_round(&mut self) -> Option<crate::server::federation::SealedBatch> {
         let batch = self.federation.governance_mut().seal_round()?;
+        let sealing_seq = batch.sequence_number;
         for tx in &batch.transactions {
-            self.governance_execute_tx(tx);
+            self.governance_execute_tx_at(tx, sealing_seq);
         }
         Some(batch)
     }
 
     pub(crate) fn governance_execute_tx(&mut self, tx: &crate::server::federation::GovernanceTx) {
+        // Direct (pre-round/test) execution: nothing sealed yet, so the
+        // admission is valid from the next round onward.
+        self.governance_execute_tx_at(tx, self.federation.governance().current_sequence());
+    }
+
+    /// Execute a governance transaction as part of the batch that
+    /// SEALED it at `sealing_seq` — admissions take effect from the
+    /// following round (the sealing round's voters were the previous
+    /// validator set).
+    pub(crate) fn governance_execute_tx_at(
+        &mut self,
+        tx: &crate::server::federation::GovernanceTx,
+        sealing_seq: u64,
+    ) {
         match tx {
             crate::server::federation::GovernanceTx::Admit {
                 server_id,
@@ -23634,8 +23756,10 @@ impl Server {
                     proofs,
                     Self::current_timestamp_secs(),
                 );
-                // FR-75 §3: consensus admission grants validator rights.
+                // FR-75 §3: consensus admission grants validator rights,
+                // valid from the round AFTER the sealing batch (§1).
                 entry.admitted_by_governance = true;
+                entry.epoch.valid_from_seq = sealing_seq + 1;
                 let tag = self.federation.membership_mut().next_tag(server_id);
                 self.federation.membership_mut().add_member(entry, tag);
             }

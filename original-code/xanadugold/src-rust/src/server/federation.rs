@@ -1421,6 +1421,40 @@ pub enum MembershipStatus {
     Pending,
 }
 
+/// FR-75 §1: a validator key's validity window, measured in SEALED
+/// SEQUENCE numbers — never wall clocks. Safety-relevant decisions
+/// (vote validity, quorum membership) are functions of (sequence)
+/// alone; a partitioned node with a skewed clock cannot disagree.
+///
+/// A vote for round-sequence `n` counts only when
+/// `valid_from_seq <= n < valid_until_seq`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeyEpoch {
+    pub valid_from_seq: u64,
+    /// Exclusive upper bound; u64::MAX = no expiry (migration default
+    /// for entries predating FR-75).
+    pub valid_until_seq: u64,
+}
+
+impl Default for KeyEpoch {
+    fn default() -> Self {
+        KeyEpoch {
+            valid_from_seq: 0,
+            valid_until_seq: u64::MAX,
+        }
+    }
+}
+
+impl KeyEpoch {
+    pub fn covers(&self, seq: u64) -> bool {
+        self.valid_from_seq <= seq && seq < self.valid_until_seq
+    }
+
+    pub fn admitted_by(&self, seq: u64) -> bool {
+        self.valid_from_seq <= seq
+    }
+}
+
 /// A single server's membership record in the federation.
 /// Identified by server_id (which is derived from the verifying key).
 ///
@@ -1443,6 +1477,9 @@ pub struct MembershipEntry {
     /// locally; never merged from peers.
     #[serde(default)]
     pub admitted_by_governance: bool,
+    /// FR-75 §1: sequence-bounded validity window for this key.
+    #[serde(default)]
+    pub epoch: KeyEpoch,
 }
 
 impl PartialEq for MembershipEntry {
@@ -1472,6 +1509,7 @@ impl MembershipEntry {
             verifying_key_hex: verifying_key_hex.into(),
             kex_public_hex: kex_public_hex.into(),
             admitted_by_governance: false,
+            epoch: KeyEpoch::default(),
             endorsed_by,
             joined_at,
             status: MembershipStatus::Active,
