@@ -1,6 +1,6 @@
 #!/bin/bash
 # test-cross-server-network.sh — FR-40 cross-server link delivery under
-# network stress on the 3-node Docker network.
+# network stress on the 4-node Docker federation network.
 #
 # Covers the sender-feedback contract end to end:
 #   1. Healthy delivery: node1 -> node2 link, receiver accepts

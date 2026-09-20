@@ -1,7 +1,8 @@
 #!/bin/bash
 # demo-network.sh — FR-41 S4/S8: one command to bring up the seeded
-# 3-node demo network, run the story smoke test headlessly, and print
-# a checklist. Leaves the cluster UP for the human demo/recording.
+# 4-node demo network (BFT minimum), run the story smoke test
+# headlessly, and print a checklist. Leaves the cluster UP for the
+# human demo/recording.
 #
 # Usage:  ./scripts/demo-network.sh [--keep-down]
 # Needs:  docker compose (daemon running), node (for ws probes).
@@ -12,6 +13,7 @@ COMPOSE="docker compose -f docker/docker-compose.yml"
 NODE1_WS="ws://localhost:8081/xudanu?format=json&version=2"
 NODE2_WS="ws://localhost:8082/xudanu?format=json&version=2"
 NODE3_WS="ws://localhost:8083/xudanu?format=json&version=2"
+NODE4_WS="ws://localhost:8084/xudanu?format=json&version=2"
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
 pass() { echo -e "${GREEN}[PASS]${NC} $1"; PASSED=$((PASSED+1)); }
@@ -19,9 +21,9 @@ fail() { echo -e "${RED}[FAIL]${NC} $1"; FAILED=1; }
 info() { echo -e "${YELLOW}[DEMO]${NC} $1"; }
 PASSED=0; FAILED=0
 
-info "1/6 bringing up the 3-node cluster (builds on first run, ~5 min)"
+info "1/6 bringing up the 4-node cluster (builds on first run, ~5 min)"
 $COMPOSE up --build -d >/dev/null 2>&1
-for i in 1 2 3; do
+for i in 1 2 3 4; do
   port=$((8080 + i))
   for t in $(seq 1 60); do
     curl -sf "http://localhost:${port}/health" >/dev/null 2>&1 && break
@@ -34,7 +36,7 @@ done
 
 info "2/6 seeding personas (idempotent)"
 pushd scripts >/dev/null
-for spec in "8081 alice" "8082 bob" "8083 carol"; do
+for spec in "8081 alice" "8082 bob" "8083 carol" "8084 dave"; do
   set -- $spec
   port=$1; persona=$2
   OUT=$(node seed-node.mjs "ws://localhost:${port}/xudanu?format=json&version=2" "$2-admin" "$persona" 2>/dev/null || \

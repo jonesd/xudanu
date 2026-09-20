@@ -1,21 +1,33 @@
-# docker-compose.yml — 3-node Xudanu FR-6 test network
+# docker-compose.yml — 4-node Xudanu federation test network
 #
-# Each node is an independent server. They discover each other via the
-# well-known endpoint and resolve cross-server references via the public API.
+# 4 nodes = the minimum for BFT governance (f=1, quorum 3 of 4).
+# 3 nodes CANNOT do Byzantine fault tolerance (needs 3f+1 = 4) — the
+# governance plane refuses to open rounds below 4 members.
+#
+# All nodes are wired as federation peers (--peer flags): the dialer
+# maintains /federation WebSocket connections, membership joins via
+# the endorsement handshake, and governance (PBFT) runs over the mesh.
 #
 # Usage:
 #   docker compose up --build
 #
 # Then from any node (or your host):
 #   curl http://localhost:8081/.well-known/xudanu-server.json
-#   curl http://localhost:8082/.well-known/xudanu-server.json
-#   curl http://localhost:8083/.well-known/xudanu-server.json
+#   curl http://localhost:8081/health   # see "governance_lifecycle"
+#
+# Genesis pinning (strict peer admission): generate member keys,
+# write a JSON PinnedMember list, and add
+#   --pin-members /data/pinned-members.json
+# to each node's command (mount the file into /data via the volume).
+
+x-node: &node
+  build:
+    context: ..
+    dockerfile: Dockerfile
 
 services:
   node1:
-    build:
-      context: ..
-      dockerfile: Dockerfile
+    <<: *node
     ports:
       - "8081:8080"
     volumes:
@@ -29,18 +41,22 @@ services:
       - "--server-name"
       - "Node 1 (Alice)"
       - "--server-description"
-      - "First test node"
+      - "First federation node"
       - "--server-namespace-id"
       - "1"
+      - "--peer"
+      - "node2:8080"
+      - "--peer"
+      - "node3:8080"
+      - "--peer"
+      - "node4:8080"
     networks:
       xudanu-net:
         aliases:
           - node1
 
   node2:
-    build:
-      context: ..
-      dockerfile: Dockerfile
+    <<: *node
     ports:
       - "8082:8080"
     volumes:
@@ -54,18 +70,22 @@ services:
       - "--server-name"
       - "Node 2 (Bob)"
       - "--server-description"
-      - "Second test node"
+      - "Second federation node"
       - "--server-namespace-id"
       - "2"
+      - "--peer"
+      - "node1:8080"
+      - "--peer"
+      - "node3:8080"
+      - "--peer"
+      - "node4:8080"
     networks:
       xudanu-net:
         aliases:
           - node2
 
   node3:
-    build:
-      context: ..
-      dockerfile: Dockerfile
+    <<: *node
     ports:
       - "8083:8080"
     volumes:
@@ -79,18 +99,54 @@ services:
       - "--server-name"
       - "Node 3 (Carol)"
       - "--server-description"
-      - "Third test node"
+      - "Third federation node"
       - "--server-namespace-id"
       - "3"
+      - "--peer"
+      - "node1:8080"
+      - "--peer"
+      - "node2:8080"
+      - "--peer"
+      - "node4:8080"
     networks:
       xudanu-net:
         aliases:
           - node3
 
+  node4:
+    <<: *node
+    ports:
+      - "8084:8080"
+    volumes:
+      - node4-data:/data
+    command:
+      - "run"
+      - "0.0.0.0:8080"
+      - "/data"
+      - "--static-dir"
+      - "/app/dist"
+      - "--server-name"
+      - "Node 4 (Dave)"
+      - "--server-description"
+      - "Fourth federation node (BFT minimum)"
+      - "--server-namespace-id"
+      - "4"
+      - "--peer"
+      - "node1:8080"
+      - "--peer"
+      - "node2:8080"
+      - "--peer"
+      - "node3:8080"
+    networks:
+      xudanu-net:
+        aliases:
+          - node4
+
 volumes:
   node1-data:
   node2-data:
   node3-data:
+  node4-data:
 
 networks:
   xudanu-net:

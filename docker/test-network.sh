@@ -1,5 +1,5 @@
 #!/bin/bash
-# test-network.sh — verify the 3-node FR-6 test network
+# test-network.sh — verify the 4-node federation test network (BFT minimum)
 #
 # Run after: docker compose up --build -d
 # Then:     ./docker/test-network.sh
@@ -26,11 +26,13 @@ info() { echo -e "${YELLOW}[TEST]${NC} $1"; }
 NODE1="http://localhost:8081"
 NODE2="http://localhost:8082"
 NODE3="http://localhost:8083"
+NODE4="http://localhost:8084"
 
 # Internal Docker addresses (for cross-server resolution)
 NODE1_INTERNAL="node1:8080"
 NODE2_INTERNAL="node2:8080"
 NODE3_INTERNAL="node3:8080"
+NODE4_INTERNAL="node4:8080"
 
 echo "============================================"
 echo "  Xudanu FR-6 Network Test"
@@ -107,8 +109,10 @@ echo "Network status:"
 echo "  Node 1 (Alice): http://localhost:8081  — server_id=1"
 echo "  Node 2 (Bob):   http://localhost:8082  — server_id=2"
 echo "  Node 3 (Carol): http://localhost:8083  — server_id=3"
+echo "  Node 4 (Dave):  http://localhost:8084  — server_id=4"
 echo ""
 echo "Try the web UI:"
 echo "  open http://localhost:8081"
 echo "  open http://localhost:8082"
 echo "  open http://localhost:8083"
+echo "  open http://localhost:8084"
