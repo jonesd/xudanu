@@ -188,7 +188,12 @@ start)
 
     echo "Building xudanu-server..."
     cargo build --features server --bin xudanu-server 2>/dev/null
-    BIN="target/debug/xudanu-server"
+    # Resolve the binary: workspace member builds land in the WORKSPACE
+    # target dir (../../target from src-rust); a stale artifact dir at
+    # src-rust/target/debug/xudanu-server must not be exec'd.
+    TARGET_DIR=$(cargo metadata --format-version 1 --no-deps 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])' 2>/dev/null)
+    BIN="$TARGET_DIR/debug/xudanu-server"
+    [ -f "$BIN" ] && [ -x "$BIN" ] || { echo "Error: xudanu-server binary not found at $BIN"; exit 1; }
 
     mkdir -p "$LOG_DIR"
     PIDS=()
