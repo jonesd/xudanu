@@ -2668,6 +2668,36 @@ impl GovernanceState {
             }
         };
 
+        if round.phase == RoundPhase::Commit {
+            // In-flight signed prepares still land during Commit (the
+            // leader's signed prepare may arrive after commit votes) —
+            // record them so the certificate can complete, and re-check
+            // the seal condition.
+            if vote.is_signed()
+                && vote.view_number == round.proposal.view_number
+                && vote.sequence_number == round.proposal.sequence_number
+                && vote.digest == round.proposal.digest()
+                && !round.signed_prepare_votes.contains(&vote)
+            {
+                round.signed_prepare_votes.push(vote);
+            }
+            let signed_prepares = round
+                .signed_prepare_votes
+                .iter()
+                .map(|v| v.voter_id.as_str())
+                .collect::<HashSet<&str>>()
+                .len();
+            // Certificate completeness is a BFT-mode requirement (the
+            // single-server round carries no certificates).
+            let need_signed = self.cluster_size >= 4;
+            if round.commit_votes.len() >= quorum
+                && (!need_signed || signed_prepares >= quorum)
+            {
+                round.phase = RoundPhase::Sealed;
+                return RoundPhase::Sealed;
+            }
+            return round.phase;
+        }
         if round.phase != RoundPhase::Prepare && round.phase != RoundPhase::PrePrepare {
             return round.phase;
         }
@@ -2684,7 +2714,7 @@ impl GovernanceState {
             return round.phase;
         }
 
-        round.prepare_votes.insert(vote.voter_id.clone());
+        round.prepare_votes.insert(voter_id_of(&vote).to_string());
         round.phase = RoundPhase::Prepare;
         if vote.is_signed() && !round.signed_prepare_votes.contains(&vote) {
             round.signed_prepare_votes.push(vote);
@@ -2764,12 +2794,40 @@ impl GovernanceState {
         }
         round.started_at = now_secs(); // progress resets the stall clock
 
-        if round.commit_votes.len() >= quorum {
+        let signed_prepares = round
+            .signed_prepare_votes
+            .iter()
+            .map(|v| v.voter_id.as_str())
+            .collect::<HashSet<&str>>()
+            .len();
+        let need_signed = self.cluster_size >= 4;
+        if round.commit_votes.len() >= quorum
+            && (!need_signed || signed_prepares >= quorum)
+        {
             round.phase = RoundPhase::Sealed;
             return RoundPhase::Sealed;
         }
 
         RoundPhase::Commit
+    }
+
+    /// Distinct members with SIGNED prepare votes recorded. Sealing
+    /// requires this to reach quorum — the phase quorum counts the
+    /// leader's IMPLICIT vote, but the certificate must carry quorum
+    /// signatures or peers reject the sealed batch (race found by the
+    /// governance fault suite: the leader's signed prepare can still
+    /// be in flight when a replica's commit quorum lands).
+    fn signed_prepare_voters(&self) -> usize {
+        self.pending_round
+            .as_ref()
+            .map(|r| {
+                r.signed_prepare_votes
+                    .iter()
+                    .map(|v| v.voter_id.as_str())
+                    .collect::<HashSet<&str>>()
+                    .len()
+            })
+            .unwrap_or(0)
     }
 
     pub fn seal_round(&mut self) -> Option<SealedBatch> {
@@ -3149,6 +3207,10 @@ impl GovernanceState {
     pub fn mark_applied(&mut self, sequence_number: u64) {
         self.applied_sequences.insert(sequence_number);
     }
+}
+
+fn voter_id_of(v: &PbftVote) -> &str {
+    v.voter_id.as_str()
 }
 
 fn now_secs() -> u64 {
@@ -5454,6 +5516,9 @@ mod tests {
         let (keys, _) = test_cluster(4);
         let mut gov = GovernanceState::new(4);
         let proposal = gov.propose(vec![], "srv-a".to_string()).unwrap();
+        // The server glue self-casts the leader's signed prepare on
+        // propose (certificate completeness) — mirror it here.
+        let _ = gov.receive_prepare(tvote(&keys[0], "srv-a", PbftPhase::Prepare, &proposal));
 
         // Commits from b and c arrive while still in Prepare.
         gov.receive_commit(tvote(&keys[1], "srv-b", PbftPhase::Commit, &proposal));

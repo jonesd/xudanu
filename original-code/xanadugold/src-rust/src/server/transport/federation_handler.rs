@@ -816,10 +816,28 @@ async fn handle_federation_socket_inner(
                                     | FederationFrame::GovernanceLogResult { .. }
                             ) => {
                                 // Single orchestration point (also used by
-                                // the sync path and the test mesh): returns
-                                // the frames to broadcast to ALL peers.
+                                // the sync path and the test mesh). Consensus
+                                // frames broadcast to ALL peers; state-transfer
+                                // replies UNICAST on the requesting socket —
+                                // fanning a log tail out to everyone both
+                                // wastes bandwidth and races concurrent
+                                // requesters (found by the governance fault
+                                // suite).
+                                let unicast = matches!(
+                                    frame,
+                                    FederationFrame::GovernanceLogRequest { .. }
+                                );
                                 for out in handle_governance_frame(&frame, &state, &peer_server_id) {
-                                    let _ = state.governance_tx.send(out);
+                                    if unicast {
+                                        send_encrypted_frame(
+                                            &mut ws_sender,
+                                            &out,
+                                            &mut outbound_cipher,
+                                        )
+                                        .await;
+                                    } else {
+                                        let _ = state.governance_tx.send(out);
+                                    }
                                 }
                             }
                             Ok(FederationFrame::CrdtSyncPull { server_id, work_ids }) => {
@@ -1278,17 +1296,27 @@ pub(crate) fn handle_governance_frame(
             vec![]
         }
         FederationFrame::GovernanceLogRequest { from_seq } => {
+            tracing::debug!(
+                from_seq,
+                "Governance: state-transfer request from peer {}",
+                peer_server_id
+            );
             // State transfer (replica catch-up): hand over the sealed
             // tail the peer is missing, plus the retention watermark.
             let (batches, pruned_below) = state.server.with_server_ref(|srv| {
                 let log = srv.governance_log();
-                (
-                    log.iter()
-                        .filter(|b| b.sequence_number >= *from_seq)
-                        .cloned()
-                        .collect::<Vec<_>>(),
-                    srv.governance_pruned_below(),
-                )
+                let filtered: Vec<_> = log
+                    .iter()
+                    .filter(|b| b.sequence_number >= *from_seq)
+                    .cloned()
+                    .collect();
+                tracing::info!(
+                    from_seq,
+                    total_log = log.len(),
+                    returning = filtered.len(),
+                    "Governance: state-transfer response built"
+                );
+                (filtered, srv.governance_pruned_below())
             });
             vec![FederationFrame::GovernanceLogResult {
                 batches,
@@ -1299,9 +1327,25 @@ pub(crate) fn handle_governance_frame(
             batches,
             pruned_below,
         } => {
-            state.server.with_server(|srv| {
+            tracing::info!(
+                received = batches.len(),
+                pruned_below,
+                "Governance: state-transfer tail received from peer {}",
+                peer_server_id
+            );
+            let applied = state.server.with_server(|srv| {
+                let before = srv.governance_current_sequence();
                 srv.governance_ingest_log_tail(batches.clone(), *pruned_below);
+                srv.governance_current_sequence().saturating_sub(before)
             });
+            if applied > 0 {
+                tracing::info!(
+                    applied,
+                    "Governance: state transfer caught up {} batch(es) via peer {}",
+                    applied,
+                    peer_server_id
+                );
+            }
             vec![]
         }
         _ => vec![],

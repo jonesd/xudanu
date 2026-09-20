@@ -72,6 +72,38 @@ Only two things must differ between any two running servers: the
 **port** and the **data directory**. Everything else (identity,
 peers, pinning) is per-data-dir state.
 
+## Governance fault suite
+
+```bash
+./scripts/federation-governance-tests.sh   # ports 9181+, own temp dir
+```
+
+Drives REAL PBFT rounds over the wire (admin-authenticated
+`governance_propose` via `scripts/gov-drive.mjs`) and injects
+governance-level faults:
+
+- **G1** healthy propose → seals on all 4 nodes with identical
+  digests (no fork via real sockets)
+- **G2** leader SIGKILLed mid-round → the round STILL seals on
+  survivors (f=1 quorum); the restarted leader catches up via state
+  transfer and its log matches — no fork
+- **G3** leader + one replica down → governance halts SAFELY
+  (sequence frozen, survivors healthy); on return, both catch up
+
+**Known open bug (caught by G3, unfixed):** after a dual restart, a
+fresh propose's round stalls silently — all nodes are caught up and
+connected, the pre-prepare is accepted, but the round never completes
+(no rejection logged). Reproduce: run the suite; see
+`G3: node-N did not seal post-recovery`. Suspects: vote propagation
+on re-established duplicate connections. G1/G2 and all in-process
+suites are green; investigate with log level debug on
+`xudanu::server::transport::federation_handler`.
+
+**Network shaping (G4):** pf/dummynet partition tests need
+passwordless sudo and are skipped when unavailable; the script prints
+the ready-to-run recipe. Process-level equivalents (kill/freeze) are
+covered by G2/G3 and the fault-injection suite.
+
 ## Functional fault-injection suite
 
 ```bash

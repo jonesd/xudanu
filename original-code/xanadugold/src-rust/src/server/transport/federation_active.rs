@@ -330,6 +330,28 @@ async fn run_outbound_connection(
     pool.insert(peer_addr.clone(), peer_server_id.clone(), frame_tx)
         .await;
 
+    // State transfer on (re)connect (found by the governance fault
+    // suite): a node that crashed hard may hold a stale or empty
+    // governance log while peers have sealed batches. Request the
+    // certificate-verified tail so catch-up is automatic — the frame
+    // handler verifies each batch and ingests in order.
+    {
+        let from_seq = state.server.with_server_ref(|srv| {
+            srv.governance_current_sequence() + 1
+        });
+        tracing::info!(
+            from_seq,
+            peer = %peer_server_id,
+            "Governance: requesting state transfer on connect"
+        );
+        send_encrypted(
+            &mut ws_sender,
+            &FederationFrame::GovernanceLogRequest { from_seq },
+            &mut encrypt_cipher,
+        )
+        .await;
+    }
+
     let mut gov_rx = state.governance_tx.subscribe();
 
     let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(30));
