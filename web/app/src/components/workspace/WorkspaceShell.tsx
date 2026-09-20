@@ -48,7 +48,7 @@ import { AdminDashboard } from "../AdminDashboard";
 import { DocumentSettings, loadDocPreferences } from "../DocumentSettings";
 import type { DocPreferences } from "../DocumentSettings";
 import type { CrossServerBacklinkPayload } from "../../api/crdt_sync";
-import { getCursorOffset, setCaretModel } from "../../styled-text";
+import { getCursorOffset, setCaretModel, detectLineBlock, planBlockToggle } from "../../styled-text";
 import { SEED_CONCEPTS } from "../../concepts-seed";
 import { WorkspaceTopBar } from "./WorkspaceTopBar";
 import type { WorkspaceNavTab } from "./WorkspaceTopBar";
@@ -1094,6 +1094,27 @@ export function WorkspaceShell() {
       const lineEnd = lineEndIdx === -1 ? text.length : lineEndIdx;
       const lineText = text.slice(lineStart, lineEnd);
 
+      // FR-74 Phase B: unmarked lines get block ANNOTATIONS — the
+      // text model never gains "# ", "- ", "> " prefixes, so
+      // formatting survives every edit (server-side span migration).
+      // Lines that already carry a legacy text marker keep the
+      // text-prefix path: the marker wins renderer precedence, and
+      // converting mid-toggle would race the debounced text save
+      // against annotation positions.
+      if (!detectLineBlock(lineText).type) {
+        const plan = planBlockToggle(lineStart, lineEnd, kind, _payload, annotations);
+        if (plan.deleteAnnotationId !== undefined) {
+          await deleteAnnotation(plan.deleteAnnotationId);
+        }
+        if (plan.create) {
+          await createAnnotation(plan.create.kind, plan.create.payload, plan.create.char_start, plan.create.char_end, false);
+        }
+        refreshAnnotations();
+        bumpStructuralVersion();
+        return;
+      }
+
+      // Legacy text-prefix path (marker lines, backward compat)
       // Determine the marker prefix for this block type
       let prefix = "";
       if (kind === "heading") {
@@ -1149,7 +1170,7 @@ export function WorkspaceShell() {
         }, 50);
       }
     },
-    [text, workBeId, cursorPos],
+    [text, workBeId, cursorPos, annotations, deleteAnnotation, createAnnotation, refreshAnnotations, bumpStructuralVersion],
   );
 
   function detectExistingMarker(line: string): string {

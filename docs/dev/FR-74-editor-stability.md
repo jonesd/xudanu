@@ -1,6 +1,7 @@
 # FR-74: Editor Stability — Model-Truth Architecture
 
-**Status:** next session (top priority)
+**Status:** Phase A shipped (split display/edit states) · Phase B shipped
+2026-09-19 (annotation-based block toggles) · Phase C future
 **Created:** 2026-09-19
 **Problem:** the contenteditable editor corrupts text during structural
 operations — 5+ incidents in one session (heading merges, character loss,
@@ -21,7 +22,13 @@ the model) works fine while the editor shows garbage.
 
 ## The fix: three phases
 
-### Phase A: Model-truth rebuild (~half day)
+### Phase A: Model-truth rebuild (~half day) — SHIPPED (evolved)
+
+Shipped as the split display/edit states (commit 0a7c786f): the
+contenteditable is only alive during active editing; display mode is
+React-owned and always rendered from the server model. Stronger than
+the original rebuild-on-structural-op design — corruption can never
+persist past the edit session.
 
 **The rule: after any structural operation, rebuild the editor DOM from
 the server model. No surgical DOM edits for structural changes.**
@@ -50,29 +57,41 @@ heading, and annotate — text is byte-identical to the server model
 after each operation. No character loss. No line merging. No ##
 artifacts.
 
-### Phase B: Annotation-based headings (~half day)
+### Phase B: Annotation-based headings (~half day) — SHIPPED 2026-09-19
 
 Stop storing `## `, `### ` etc. as text prefixes. Store heading level
 as a block annotation. The renderer already supports this
 (`buildStyledText` handles `annBlockMarks`).
 
-Implementation:
-1. The heading/list/blockquote buttons create annotations instead of
-   text prefixes:
-   ```json
-   { "kind": "heading", "char_start": 0, "char_end": 15,
-     "payload": "{\"level\": 2}" }
-   ```
-2. `buildStyledText` already renders from annotations — no renderer
-   changes needed
-3. Text-prefix headings keep working (backward compat — both paths
-   coexist)
-4. Migration tool: a one-time "normalize formatting" command that
-   converts text-prefix headings to annotations (for existing docs)
+**Implementation (as shipped):**
+
+- `planBlockToggle()` in `styled-text.ts` — pure planner returning the
+  annotation ops (create / delete / replace) for a line toggle. Uses
+  the same line-overlap rule as the renderer. 11 unit tests in
+  `block-formatting.test.ts`.
+- `handleToggleBlock` (WorkspaceShell) — unmarked lines take the
+  annotation path: **no text change, no caret move**. Formatting is an
+  annotation; the server's span migration (FR-50 A1 armor) carries it
+  through every subsequent edit.
+- Legacy coexistence: lines that already carry a text marker (`# `,
+  `- `, `> `, ` ``` `) keep the text-prefix path. Two reasons:
+  1. the marker wins renderer precedence, so an annotation on a marked
+     line would be invisible;
+  2. converting mid-toggle would race the debounced text save against
+     annotation char positions (delete-at-span-start maps differently
+     than the desired post-strip span).
+- After annotation ops: `refreshAnnotations()` +
+  `bumpStructuralVersion()` — the display rebuilds from the model with
+  the new block marks.
+
+**Deferred:** the "normalize formatting" one-time migration (converts
+legacy text-prefix lines to annotations). Needs either an awaitable
+text-save path or a server-side op to avoid the position race.
 
 **Exit criteria:** heading formatting survives any text edit, any
 deletion, any insertion. `##` characters never appear in the text
-model unless the user literally typed them.
+model unless the user literally typed them. ✔ (annotation path; legacy
+marker lines unchanged until normalize ships)
 
 ### Phase C: TipTap migration (future session, 2-3 days)
 

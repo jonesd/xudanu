@@ -3,6 +3,7 @@ import {
   buildStyledText,
   extractStyleMarks,
   findMarkInRange,
+  planBlockToggle,
   type StyleMark,
 } from "../styled-text";
 import type { AnnotationEntry } from "../api/crdt_sync";
@@ -72,6 +73,89 @@ describe("findMarkInRange", () => {
   it("returns null for non-overlapping", () => {
     const marks = [mark("bold", 0, 5)];
     expect(findMarkInRange(marks, "bold", 6, 10)).toBeNull();
+  });
+});
+
+// ── planBlockToggle (FR-74 Phase B: annotation-based toggles) ─────────────
+
+describe("planBlockToggle", () => {
+  const H1 = JSON.stringify({ level: 1 });
+  const H2 = JSON.stringify({ level: 2 });
+  const BULLET = JSON.stringify({ type: "bullet" });
+  const ORDERED = JSON.stringify({ type: "ordered" });
+
+  it("creates an annotation when the line has no block formatting", () => {
+    const plan = planBlockToggle(0, 5, "heading", H1, []);
+    expect(plan.deleteAnnotationId).toBeUndefined();
+    expect(plan.create).toEqual({ kind: "heading", payload: H1, char_start: 0, char_end: 5 });
+  });
+
+  it("toggles off when the same kind + level exists on the line", () => {
+    const annotations = [ann("heading", 0, 5, H2)];
+    const plan = planBlockToggle(0, 5, "heading", H2, annotations);
+    expect(plan.deleteAnnotationId).toBe(annotations[0].annotation_id);
+    expect(plan.create).toBeUndefined();
+  });
+
+  it("replaces when the heading level differs", () => {
+    const annotations = [ann("heading", 0, 5, H2)];
+    const plan = planBlockToggle(0, 5, "heading", H1, annotations);
+    expect(plan.deleteAnnotationId).toBe(annotations[0].annotation_id);
+    expect(plan.create).toEqual({ kind: "heading", payload: H1, char_start: 0, char_end: 5 });
+  });
+
+  it("replaces when the kind differs", () => {
+    const annotations = [ann("blockquote", 0, 5)];
+    const plan = planBlockToggle(0, 5, "heading", H1, annotations);
+    expect(plan.deleteAnnotationId).toBe(annotations[0].annotation_id);
+    expect(plan.create?.kind).toBe("heading");
+  });
+
+  it("replaces when the list type differs", () => {
+    const annotations = [ann("list_item", 0, 5, BULLET)];
+    const plan = planBlockToggle(0, 5, "list_item", ORDERED, annotations);
+    expect(plan.deleteAnnotationId).toBe(annotations[0].annotation_id);
+    expect(plan.create).toEqual({ kind: "list_item", payload: ORDERED, char_start: 0, char_end: 5 });
+  });
+
+  it("matches block annotations by line overlap (renderer rule)", () => {
+    // Annotation [10, 20), line [15, 19) — overlapping
+    const annotations = [ann("heading", 10, 20, H1)];
+    const plan = planBlockToggle(15, 19, "heading", H1, annotations);
+    expect(plan.deleteAnnotationId).toBe(annotations[0].annotation_id);
+  });
+
+  it("ignores annotations on other lines", () => {
+    const annotations = [ann("heading", 0, 5, H1)];
+    const plan = planBlockToggle(10, 15, "heading", H1, annotations);
+    expect(plan.deleteAnnotationId).toBeUndefined();
+    expect(plan.create).toBeDefined();
+  });
+
+  it("ignores non-block annotations on the line", () => {
+    const annotations = [ann("note", 0, 5, "comment"), ann("bold", 0, 5)];
+    const plan = planBlockToggle(0, 5, "heading", H1, annotations);
+    expect(plan.deleteAnnotationId).toBeUndefined();
+    expect(plan.create).toBeDefined();
+  });
+
+  it("supports zero-width line spans (empty line)", () => {
+    const plan = planBlockToggle(7, 7, "list_item", BULLET, []);
+    expect(plan.create).toEqual({ kind: "list_item", payload: BULLET, char_start: 7, char_end: 7 });
+  });
+
+  it("treats payload-less headings as level 1 (same target)", () => {
+    const annotations = [ann("heading", 0, 5, "")];
+    const plan = planBlockToggle(0, 5, "heading", H1, annotations);
+    expect(plan.deleteAnnotationId).toBe(annotations[0].annotation_id);
+    expect(plan.create).toBeUndefined();
+  });
+
+  it("blockquote and code_block match by kind alone", () => {
+    const annotations = [ann("code_block", 0, 5)];
+    const plan = planBlockToggle(0, 5, "code_block", "", annotations);
+    expect(plan.deleteAnnotationId).toBe(annotations[0].annotation_id);
+    expect(plan.create).toBeUndefined();
   });
 });
 

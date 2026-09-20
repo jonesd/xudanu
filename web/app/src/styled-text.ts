@@ -34,6 +34,70 @@ export function findMarkInRange(
   ) ?? null;
 }
 
+// ── FR-74 Phase B: annotation-based block formatting ──────────────────────
+//
+// The toolbar block buttons (H1-H3, bullet, blockquote, code) create
+// block annotations instead of writing markdown prefixes into the text
+// model. Formatting lives in annotations; spans migrate through every
+// text edit (server-side A1 armor), so headings survive insertions,
+// deletions, and CRDT merges. Text prefixes remain supported by the
+// renderer for legacy documents.
+
+function headingLevel(payload: string | undefined): number {
+  try { return JSON.parse(payload || "{}").level || 1; } catch { return 1; }
+}
+
+function listType(payload: string | undefined): "bullet" | "ordered" {
+  try { return JSON.parse(payload || "{}").type === "ordered" ? "ordered" : "bullet"; } catch { return "bullet"; }
+}
+
+export interface BlockTogglePlan {
+  /** Annotation to delete first (replacing or toggling off an existing block). */
+  deleteAnnotationId?: number;
+  /** Annotation to create (absent when toggling off). */
+  create?: { kind: string; payload: string; char_start: number; char_end: number };
+}
+
+/**
+ * Decide the annotation operations for a block-format toggle on the line
+ * span [lineStart, lineEnd). Pure — the caller performs the ops.
+ *
+ * Line-association uses the same overlap rule the renderer uses
+ * (char_start <= lineEnd && char_end >= lineStart), so an annotation
+ * touching any part of the line counts.
+ */
+export function planBlockToggle(
+  lineStart: number,
+  lineEnd: number,
+  kind: string,
+  payload: string,
+  annotations: AnnotationEntry[],
+): BlockTogglePlan {
+  const existing = annotations.find(
+    (a) =>
+      BLOCK_KINDS.has(a.kind) &&
+      a.char_start <= lineEnd &&
+      a.char_end >= lineStart,
+  );
+  if (!existing) {
+    return { create: { kind, payload, char_start: lineStart, char_end: lineEnd } };
+  }
+  const sameTarget =
+    existing.kind === kind &&
+    (kind === "heading"
+      ? headingLevel(existing.payload) === headingLevel(payload)
+      : kind === "list_item"
+        ? listType(existing.payload) === listType(payload)
+        : true);
+  if (sameTarget) {
+    return { deleteAnnotationId: existing.annotation_id };
+  }
+  return {
+    deleteAnnotationId: existing.annotation_id,
+    create: { kind, payload, char_start: lineStart, char_end: lineEnd },
+  };
+}
+
 import { escapeHtml } from "./utils/escape";
 
 // Render-time URL autolinking: URLs are self-describing text, so they are
@@ -153,14 +217,14 @@ function buildInlineHtml(text: string, marks: StyleMark[], linkOpts?: { mode?: L
 }
 
 // Detect block type from line prefix (Markdown-style markers in the text itself)
-interface LineBlock {
+export interface LineBlock {
   type: "heading" | "list_item" | "blockquote" | "code_block" | null;
   level?: number;
   listType?: "bullet" | "ordered";
   contentStart: number;
 }
 
-function detectLineBlock(line: string): LineBlock {
+export function detectLineBlock(line: string): LineBlock {
   if (line.startsWith("### ")) return { type: "heading", level: 3, contentStart: 4 };
   if (line.startsWith("## ")) return { type: "heading", level: 2, contentStart: 3 };
   if (line.startsWith("# ")) return { type: "heading", level: 1, contentStart: 2 };
