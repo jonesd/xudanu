@@ -72,6 +72,45 @@ pub struct FederationConfig {
     pub mode: FederationMode,
     #[cfg_attr(feature = "serde", serde(default = "default_min_endorsements"))]
     pub min_endorsements: u32,
+    /// FR-75 follow-up: genesis bootstrap pinning. When non-empty,
+    /// peer connections are accepted ONLY from these keys (strict
+    /// mode — closes trust-on-first-use for first contact) and
+    /// bootstrap seeds these members with their recovery keys.
+    #[serde(default)]
+    pub pinned_members: Vec<PinnedMember>,
+}
+
+/// FR-75 follow-up: operational lifecycle snapshot for
+/// rotation/expiry alerting (surfaced via GovernanceStatus and
+/// /health).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GovernanceLifecycle {
+    /// Governance-admitted validators (n).
+    pub validators: usize,
+    /// Epoch-valid voting pool at the next sequence.
+    pub pool: usize,
+    /// Quorum (2f+1 of admitted).
+    pub quorum: usize,
+    /// pool − quorum: fault-tolerance headroom. 0 = no further loss
+    /// tolerable; negative = governance halted.
+    pub margin: i64,
+    /// Members whose epochs ended without renewal.
+    pub expired_members: Vec<String>,
+    /// Members expiring within the warning window: (id, until_seq).
+    pub expiring_soon: Vec<(String, u64)>,
+    /// Retired keys still within view-change grace.
+    pub grace_keys: usize,
+    /// The sequence these numbers are computed at.
+    pub next_sequence: u64,
+}
+
+/// A genesis-pinned federation member.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PinnedMember {
+    pub server_id: String,
+    pub verifying_key_hex: String,
+    #[serde(default)]
+    pub recovery_key_hex: String,
 }
 
 fn default_mode() -> FederationMode {
@@ -89,6 +128,7 @@ impl Default for FederationConfig {
             peers: Vec::new(),
             mode: FederationMode::Closed,
             min_endorsements: 2,
+            pinned_members: Vec::new(),
         }
     }
 }
@@ -100,6 +140,19 @@ impl FederationConfig {
             peers,
             mode: FederationMode::Closed,
             min_endorsements: 2,
+            pinned_members: Vec::new(),
+        }
+    }
+
+    /// FR-75 follow-up: genesis-pinned configuration — strict peer
+    /// admission from the pinned key set.
+    pub fn pinned(peers: Vec<PeerAddress>, members: Vec<PinnedMember>) -> Self {
+        FederationConfig {
+            enabled: true,
+            peers,
+            mode: FederationMode::Closed,
+            min_endorsements: 2,
+            pinned_members: members,
         }
     }
 
@@ -260,6 +313,16 @@ impl FederationState {
     pub fn is_peer_known(&self, verifying_key_hex: &str) -> bool {
         if !self.config.enabled {
             return false;
+        }
+        // FR-75 genesis pinning: strict mode — ONLY pinned keys
+        // authenticate, regardless of what the peer registry
+        // accumulated (closes trust-on-first-use for first contact).
+        if !self.config.pinned_members.is_empty() {
+            return self
+                .config
+                .pinned_members
+                .iter()
+                .any(|m| m.verifying_key_hex == verifying_key_hex);
         }
         if self.known_peer_keys.is_empty() {
             tracing::warn!(
@@ -3027,6 +3090,11 @@ impl GovernanceState {
             .filter(|r| at_seq.saturating_sub(r.retired_at_seq) <= VIEW_CHANGE_GRACE_SEQS)
             .map(|r| r.verifying_key_hex.as_str())
             .max_by(|a, b| a.cmp(b))
+    }
+
+    /// Number of retired keys still within the grace window.
+    pub fn retired_key_count(&self) -> usize {
+        self.retired_keys.len()
     }
 
     /// Prune ledger entries below the checkpoint watermark.

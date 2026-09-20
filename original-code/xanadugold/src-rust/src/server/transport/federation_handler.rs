@@ -3496,6 +3496,141 @@ mod tests {
             assert_eq!(format!("{phase:?}"), "PrePrepare", "expired stolen key cannot vote");
         }
 
+        /// FR-75 follow-up: the lifecycle snapshot is the alerting
+        /// surface — margin drops to zero with one expiry at n=4 and
+        /// negative (halted) with two.
+        #[test]
+        fn lifecycle_snapshot_tracks_margin_and_expiry() {
+            let mut mesh = Mesh::new(4);
+            let leader = mesh.leader_for_view(0);
+            let snap = mesh.nodes[leader]
+                .state
+                .server
+                .with_server_ref(|srv| srv.governance_lifecycle_snapshot());
+            assert_eq!(snap.validators, 4);
+            assert_eq!(snap.pool, 4);
+            assert_eq!(snap.quorum, 3);
+            assert_eq!(snap.margin, 1, "healthy n=4: one loss tolerable");
+            assert!(snap.expired_members.is_empty());
+
+            // One expiry: pool 3, quorum 3 → margin 0 (zero fault
+            // tolerance — the operational canary).
+            let victim = (0..4).find(|i| *i != leader).unwrap();
+            let expired = crate::server::federation::KeyEpoch {
+                valid_from_seq: 1,
+                valid_until_seq: 1,
+            };
+            let victim_id = mesh.nodes[victim].id.clone();
+            for node in &mesh.nodes {
+                node.state.server.with_server(|srv| {
+                    srv.membership_set_epoch_for_tests(&victim_id, expired.clone())
+                });
+            }
+            let snap = mesh.nodes[leader]
+                .state
+                .server
+                .with_server_ref(|srv| srv.governance_lifecycle_snapshot());
+            assert_eq!(snap.pool, 3);
+            assert_eq!(snap.quorum, 3, "expired member still counts toward n/f");
+            assert_eq!(snap.margin, 0);
+            assert_eq!(snap.expired_members, vec![victim_id.clone()]);
+
+            // Expiring-soon detection: an epoch ending within the
+            // warning window surfaces BEFORE it bites.
+            let other = (0..4)
+                .find(|i| *i != leader && *i != victim)
+                .unwrap();
+            let soon = crate::server::federation::KeyEpoch {
+                valid_from_seq: 1,
+                valid_until_seq: 900, // within 1000 of next seq 1
+            };
+            let other_id = mesh.nodes[other].id.clone();
+            for node in &mesh.nodes {
+                node.state.server.with_server(|srv| {
+                    srv.membership_set_epoch_for_tests(&other_id, soon.clone())
+                });
+            }
+            let snap = mesh.nodes[leader]
+                .state
+                .server
+                .with_server_ref(|srv| srv.governance_lifecycle_snapshot());
+            assert!(
+                snap.expiring_soon.iter().any(|(id, _)| *id == other_id),
+                "expiring member surfaces for rotation"
+            );
+        }
+
+        /// FR-75 follow-up: genesis pinning — strict peer admission
+        /// (only pinned keys pass) and bootstrap seeding of the pinned
+        /// set with recovery keys.
+        #[test]
+        fn genesis_pining_restricts_peers_and_seeds_membership() {
+            use crate::server::transport::shared::AppState;
+            use crate::server::Server;
+
+            let make_key = |seed: u8| {
+                let mut s = [0u8; 32];
+                s[0] = seed;
+                ed25519_dalek::SigningKey::from_bytes(&s)
+            };
+            let a = make_key(1);
+            let b = make_key(2);
+            let vk = |k: &ed25519_dalek::SigningKey| -> String {
+                k.verifying_key()
+                    .to_bytes()
+                    .iter()
+                    .map(|x| format!("{x:02x}"))
+                    .collect()
+            };
+
+            // A pinned config with two members.
+            let config = crate::server::federation::FederationConfig::pinned(
+                vec![],
+                vec![
+                    crate::server::federation::PinnedMember {
+                        server_id: "srv-a".to_string(),
+                        verifying_key_hex: vk(&a),
+                        recovery_key_hex: "aa".repeat(32),
+                    },
+                    crate::server::federation::PinnedMember {
+                        server_id: "srv-b".to_string(),
+                        verifying_key_hex: vk(&b),
+                        recovery_key_hex: "bb".repeat(32),
+                    },
+                ],
+            );
+            let mut server = Server::new();
+            server.set_federation_config(config);
+
+            // Strict admission: pinned keys pass, anything else fails
+            // (even if the accumulated registry would have accepted it).
+            let state = AppState::new(server).shared();
+            assert!(state.server.with_server_ref(|srv| srv.federation_is_peer_known(&vk(&a))));
+            assert!(state.server.with_server_ref(|srv| srv.federation_is_peer_known(&vk(&b))));
+            let stranger = vk(&make_key(0xEE));
+            assert!(
+                !state.server.with_server_ref(|srv| srv.federation_is_peer_known(&stranger)),
+                "unpinned key refused under genesis pinning"
+            );
+
+            // Bootstrap seeds the pinned members (with recovery keys,
+            // governance-admitted) alongside self.
+            state.server.with_server(|srv| {
+                srv.membership_bootstrap_init();
+            });
+            let (a_entry, b_entry) = state.server.with_server_ref(|srv| {
+                (
+                    srv.find_member_public("srv-a"),
+                    srv.find_member_public("srv-b"),
+                )
+            });
+            let a_entry = a_entry.expect("pinned member seeded");
+            let b_entry = b_entry.expect("pinned member seeded");
+            assert!(a_entry.admitted_by_governance, "pinned members are validators");
+            assert_eq!(a_entry.recovery_key_hex, "aa".repeat(32));
+            assert_eq!(b_entry.recovery_key_hex, "bb".repeat(32));
+        }
+
         /// FR-75 test 8: epoch decisions are functions of (sequence)
         /// alone — no wall clock participates. Two states with entries
         /// created at different times agree on pool membership per

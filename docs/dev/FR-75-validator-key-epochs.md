@@ -1,8 +1,17 @@
 # FR-75: Validator Key Epochs — Rotation, Revocation, and Reconfiguration via Consensus
 
-**Status:** COMPLETE — steps 1-4 all shipped 2026-09-20. Remaining
-follow-ups: operational alerting on rotation/expiry, genesis bootstrap
-pinning (optional hardening of TOFU).
+**Status:** COMPLETE — steps 1-4 plus both follow-ups shipped
+2026-09-20:
+- **Lifecycle alerting**: `governance_lifecycle_snapshot()` (also in
+  the GovernanceStatus wire op and `/health` as
+  `governance_lifecycle`) exposes validators/pool/quorum/margin,
+  expired members, keys expiring within 1000 sequences, and in-grace
+  retired keys; propose logs a zero-margin warning (the n=4 canary).
+- **Genesis pinning**: `--pin-members <file>` (JSON PinnedMember list)
+  makes peer admission STRICT (only pinned verifying keys pass the
+  handshake — TOFU closed) and bootstrap seeds the pinned members as
+  governance-admitted validators with their recovery keys; a server
+  absent from its own pinned set logs a loud warning.
 **Created:** 2026-09-20
 **Depends on:** FR-19b (PBFT hardening: signed vote certificates, view
 change, mesh harness)

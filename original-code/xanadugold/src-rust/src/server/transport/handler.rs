@@ -218,6 +218,27 @@ async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
             "anchoring".into(),
             state.server.with_server(|srv| srv.ots_anchor_status()),
         );
+        // FR-75 follow-up: validator lifecycle in /health so external
+        // monitors can alert on rotation/expiry (margin 0 = no
+        // further loss tolerable; negative = governance halted).
+        if state.server.with_server_ref(|srv| srv.federation_is_enabled()) {
+            let lifecycle = state
+                .server
+                .with_server_ref(|srv| srv.governance_lifecycle_snapshot());
+            obj.insert(
+                "governance_lifecycle".into(),
+                serde_json::json!({
+                    "validators": lifecycle.validators,
+                    "pool": lifecycle.pool,
+                    "quorum": lifecycle.quorum,
+                    "margin": lifecycle.margin,
+                    "expired_members": lifecycle.expired_members,
+                    "expiring_soon": lifecycle.expiring_soon,
+                    "grace_keys": lifecycle.grace_keys,
+                    "next_sequence": lifecycle.next_sequence,
+                }),
+            );
+        }
         // Off-machine backup status (backup-offsite.sh writes the
         // file; staleness is the signal, same contract as anchoring).
         obj.insert(

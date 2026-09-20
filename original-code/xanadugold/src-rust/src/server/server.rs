@@ -22940,6 +22940,31 @@ impl Server {
         // FR-75 §3: bootstrap self-registration IS the governance
         // admission for single-server mode.
         entry.admitted_by_governance = true;
+        // FR-75 follow-up: genesis pinning — seed the pinned members
+        // (admitted, with recovery keys) alongside self.
+        let pinned = self.federation.config().pinned_members.clone();
+        if !pinned.is_empty() && !pinned.iter().any(|m| m.server_id == entry.server_id) {
+            tracing::warn!(
+                self_id = %entry.server_id,
+                "bootstrap: this server is NOT in the pinned member set — check the genesis configuration"
+            );
+        }
+        for m in &pinned {
+            if m.server_id == entry.server_id {
+                continue; // self, already registered above
+            }
+            let mut pinned_entry = crate::server::federation::MembershipEntry::new(
+                &m.server_id,
+                m.verifying_key_hex.clone(),
+                "00".to_string(),
+                vec![],
+                now,
+            );
+            pinned_entry.admitted_by_governance = true;
+            pinned_entry.recovery_key_hex = m.recovery_key_hex.clone();
+            let tag = self.federation.membership_mut().next_tag(&m.server_id);
+            self.federation.membership_mut().add_member(pinned_entry, tag);
+        }
         let server_id = self.federation_server_id();
         let tag = self.federation.membership_mut().next_tag(&server_id);
         self.federation.membership_mut().add_member(entry, tag);
@@ -23204,6 +23229,18 @@ impl Server {
         let admitted = self
             .governance_admitted_count_at(self.federation.governance().current_sequence() + 1)
             .max(1);
+        // FR-75 follow-up: margin alerting — the canary for n=4
+        // clusters (one unrenewed expiry = zero fault tolerance).
+        {
+            let lifecycle = self.governance_lifecycle_snapshot();
+            if lifecycle.margin == 0 {
+                tracing::warn!(
+                    pool = lifecycle.pool,
+                    quorum = lifecycle.quorum,
+                    "governance at ZERO fault-tolerance margin — one more loss halts consensus; rotate/renew keys"
+                );
+            }
+        }
         let gov = self.federation.governance_mut();
         gov.set_cluster_size(admitted);
         if !gov.is_leader(&my_id, &members) {
@@ -23285,6 +23322,49 @@ impl Server {
             self.federation
                 .membership_mut()
                 .add_member(entry, tag);
+        }
+    }
+
+    /// FR-75 follow-up: validator lifecycle observability — the
+    /// operational surface for rotation/expiry alerting. Margin is
+    /// the fault-tolerance headroom: pool − quorum. At 0 the cluster
+    /// tolerates no further loss; below 0 governance is halted.
+    pub fn governance_lifecycle_snapshot(&self) -> crate::server::federation::GovernanceLifecycle {
+        let next = self.next_governance_seq();
+        let validators = self.governance_validator_members();
+        let pool: Vec<&crate::server::federation::MembershipEntry> = validators
+            .iter()
+            .filter(|m| m.epoch.covers(next))
+            .collect();
+        let admitted = validators
+            .iter()
+            .filter(|m| m.epoch.admitted_by(next))
+            .count();
+        let quorum = 2 * ((admitted.saturating_sub(1)) / 3) + 1;
+        let expired: Vec<String> = validators
+            .iter()
+            .filter(|m| !m.epoch.covers(next))
+            .map(|m| m.server_id.clone())
+            .collect();
+        const WARN_WINDOW: u64 = 1000;
+        let expiring_soon: Vec<(String, u64)> = validators
+            .iter()
+            .filter(|m| {
+                m.epoch.covers(next)
+                    && m.epoch.valid_until_seq.saturating_sub(next) <= WARN_WINDOW
+            })
+            .map(|m| (m.server_id.clone(), m.epoch.valid_until_seq))
+            .collect();
+        let grace = self.federation.governance().retired_key_count();
+        crate::server::federation::GovernanceLifecycle {
+            validators: validators.len(),
+            pool: pool.len(),
+            quorum,
+            margin: pool.len() as i64 - quorum as i64,
+            expired_members: expired,
+            expiring_soon,
+            grace_keys: grace,
+            next_sequence: next,
         }
     }
 

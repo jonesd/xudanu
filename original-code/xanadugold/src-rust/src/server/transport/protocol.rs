@@ -2679,6 +2679,10 @@ pub enum ResponseValue {
         is_leader: bool,
         leader_id: Option<String>,
         pending: bool,
+        /// FR-75 follow-up: lifecycle/alerting surface (margin,
+        /// expired members, expiring keys).
+        #[cfg_attr(feature = "serde", serde(default))]
+        lifecycle: serde_json::Value,
     },
 
     CrdtSyncOpenResult {

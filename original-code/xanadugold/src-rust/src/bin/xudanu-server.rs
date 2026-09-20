@@ -717,6 +717,7 @@ async fn main() {
             let mut tls_key: Option<PathBuf> = None;
             let mut federation_peers: Vec<String> = Vec::new();
             let mut federation_mode = "closed".to_string();
+            let mut pinned_members_path: Option<String> = None;
             let mut network_flag: Option<bool> = None;
             let mut trusted_peer_keys: Vec<String> = Vec::new();
             let mut allowed_origins: std::collections::HashSet<String> =
@@ -802,6 +803,14 @@ async fn main() {
                             eprintln!("Error: --federation-mode requires a value");
                             std::process::exit(1);
                         });
+                    }
+                    "--pin-members" => {
+                        i += 1;
+                        pinned_members_path = args.get(i).cloned();
+                        if pinned_members_path.is_none() {
+                            eprintln!("Error: --pin-members requires a path to a JSON member list");
+                            std::process::exit(1);
+                        }
                     }
                     "--network" => {
                         i += 1;
@@ -1166,11 +1175,39 @@ async fn main() {
                     "open" => xudanu::server::federation::FederationMode::Open,
                     _ => xudanu::server::federation::FederationMode::Closed,
                 };
+                // FR-75 follow-up: genesis pinning — a JSON file of
+                // PinnedMember records makes peer admission strict.
+                let pinned_members = match &pinned_members_path {
+                    Some(path) => {
+                        match std::fs::read_to_string(path)
+                            .map_err(|e| e.to_string())
+                            .and_then(|text| {
+                                serde_json::from_str::<
+                                    Vec<xudanu::server::federation::PinnedMember>,
+                                >(&text)
+                                .map_err(|e| e.to_string())
+                            }) {
+                            Ok(members) => {
+                                tracing::info!(
+                                    "Genesis pinning ACTIVE: {} pinned member(s) — strict peer admission",
+                                    members.len()
+                                );
+                                members
+                            }
+                            Err(e) => {
+                                eprintln!("Error: --pin-members file {path} unreadable: {e}");
+                                std::process::exit(1);
+                            }
+                        }
+                    }
+                    None => Vec::new(),
+                };
                 let config = xudanu::server::federation::FederationConfig {
                     enabled: true,
                     peers,
                     mode,
                     min_endorsements: 2,
+                    pinned_members,
                 };
                 tracing::info!(
                     "Federation enabled with {} peer(s), mode={}",

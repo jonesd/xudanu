@@ -3622,6 +3622,7 @@ fn dispatch_inner(
                 ));
             }
             srv.ensure_logged_in(session_id)?;
+            let lifecycle = srv.governance_lifecycle_snapshot();
             Ok(ResponseValue::GovernanceStatusResult {
                 view: srv.governance_current_view(),
                 sequence: srv.governance_current_sequence(),
@@ -3630,6 +3631,7 @@ fn dispatch_inner(
                 is_leader: srv.governance_is_leader(),
                 leader_id: srv.governance_leader_id(),
                 pending: srv.governance_pending_round().is_some(),
+                lifecycle: serde_json::to_value(&lifecycle).unwrap_or(serde_json::Value::Null),
             })
         }
 
@@ -5429,6 +5431,7 @@ fn dispatch_inner_read(
                 ));
             }
             srv.ensure_logged_in(session_id)?;
+            let lifecycle = srv.governance_lifecycle_snapshot();
             Ok(ResponseValue::GovernanceStatusResult {
                 view: srv.governance_current_view(),
                 sequence: srv.governance_current_sequence(),
@@ -5437,6 +5440,7 @@ fn dispatch_inner_read(
                 is_leader: srv.governance_is_leader(),
                 leader_id: srv.governance_leader_id(),
                 pending: srv.governance_pending_round().is_some(),
+                lifecycle: serde_json::to_value(&lifecycle).unwrap_or(serde_json::Value::Null),
             })
         }
         WireRequest::CrdtSyncDiff {
