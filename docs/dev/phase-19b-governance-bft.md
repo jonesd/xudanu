@@ -65,23 +65,78 @@ view change, and cluster policy.
 
 ## Test coverage
 
-- 40 governance tests: digests, signature binding (every field
+- 46 governance state tests: digests, signature binding (every field
   tamper-detected), equivocation across digests, certificate
   forgery (tampered content / stripped sigs / unregistered keys),
   buffered-commit replay, pre-prepare validation, fork protection,
   view-change quorum + watermark carry, timeout/touch, log pruning,
   ingest idempotence, cluster policy (2–3 refused), single-server
-  mode.
-- Functional 4-node round over the real server glue: membership with
-  live keys → propose → signed prepares → commits → sealed with
-  verified certificates → replica catch-up via ingest → forged batch
-  rejected.
-- Coverage: PBFT core block (federation.rs:1837–2820) at 74% line
-  coverage; federation-wide 33% (membership/reconciliation legacy
-  paths included).
+  mode, escalation freshness.
+- **In-process mesh harness** (`governance_mesh` tests): N real
+  servers driving the REAL protocol code (`handle_governance_frame`
+  — the same orchestration the live ws loop uses) with partition /
+  crash / view-change-tick controls:
+  - 4-node happy path cascades to a seal on all nodes
+  - leader crash mid-round → view change → NewView → client retry
+    seals with identical digests (no fork)
+  - byzantine leader's forged seal (hijacked transactions, same
+    certificates) rejected everywhere
+  - conflicting re-proposal at a sealed sequence refused
+  - NewView forgery matrix: wrong assembler, cross-view
+    certificates, insufficient certificates — all rejected
+- Functional 4-node round over the server glue with replica
+  catch-up.
+- Coverage: **PBFT core block at 90% line coverage** (was 74%
+  pre-harness); the ws orchestration layer went 6% → 25%.
 - Security scans: cargo-audit clean after rustls 0.23.43 → 0.23.45
   (RUSTSEC-2026-0285); cargo-deny license failures are pre-existing
   (deny.toml allow-list too narrow — separate maintenance task).
+
+## Bugs the harness caught (2026-09-20, all fixed)
+
+1. **Early prepare votes were dropped** — a replica whose pre-prepare
+   was delayed lost early prepare votes and stalled at quorum-1
+   forever under simple message reordering. Now buffered and replayed
+   on round creation (mirrors the buffered-commit fix).
+2. **Commit votes were broadcast but never self-counted** — the
+   emitter's own round missed its own vote; rounds stalled at
+   commit-quorum-1 on the origin node.
+3. **The NewView assembler never applied its own NewView** — the new
+   leader broadcast the view change but stayed in the old view.
+4. **Digest covered the proposal envelope** (view/proposer/timestamp)
+   — re-proposing the same value in a new view changed the digest,
+   breaking prepared-certificate carry-over. Digests now bind only
+   (sequence, transactions), matching PBFT's request digest.
+5. **Cluster size not synced in view-change paths** — quorum computed
+   from the default cluster_size 1 on fresh nodes.
+6. **View-change election had no timeout** (review finding #2) — a
+   wedged election (new leader also down) never retried. Stall
+   detection now covers: stalled rounds, view-changes-in-flight
+   without a NewView, and entered-view-without-a-proposal; targets
+   escalate only after a full timeout collecting (no scattering).
+7. **NewView verification gaps** (review finding #4) — assembler must
+   be the leader of the announced view with a valid signature;
+   certificates must target exactly that view with distinct senders.
+
+## PBFT/BFT testing tooling survey (2026-09-20)
+
+- **Shuttle** (awslabs, Rust) — randomized concurrency testing with
+  PCT probabilistic bug-finding guarantees and deterministic
+  reproduction; tokio wrappers available. Best next step: wrap the
+  mesh harness in `shuttle::check_random` for randomized scheduling
+  of the protocol cascade.
+- **TLA+ / TLC** — Castro-Liskov PBFT safety is classically specified
+  in TLA+ (the thesis appendix PlusCal spec); writing a TLA+ spec of
+  THIS simplified protocol and model-checking agreement/validity
+  invariants at n=4 would give the strongest safety confidence.
+- **Jepsen** — black-box fault injection (partitions, kills, clocks)
+  against the Docker 3-node federation; industry gold standard,
+  largest investment. Natural fit once a 4-node demo cluster exists.
+- **madsim** — deterministic tokio/network simulator; an alternative
+  to Shuttle for asynchrony testing at the transport layer.
+- Recommendation: adopt Shuttle around the mesh harness next (cheap,
+  high yield), then a TLA+ safety spec; Jepsen when the 4+ node
+  federation demo is real.
 
 ## Performance envelope (3–5 nodes)
 
@@ -135,10 +190,15 @@ original design — see git history for details).
 1. **State transfer**: a rejoining replica only catches up via
    ingested sealed batches — no bulk sync of pruned history (ask a
    peer for the log tail beyond the watermark).
-2. **federation_active.rs coverage**: the async connection loop
-   (including the view-change timer) has no test coverage — needs an
-   in-process two-server transport harness.
+2. **federation_active.rs loop**: the async connection loop itself is
+   thin glue over now-tested decision functions
+   (`view_change_due`, `next_view`, `handle_governance_frame`), but
+   the loop wiring has no direct coverage — a Shuttle-randomized mesh
+   (see tooling survey) is the natural next step.
 3. **deny.toml license allow-list** too narrow (388 pre-existing
    rejections on standard MIT/Apache crates).
 4. Full stable-checkpoint protocol (sequence watermarks beyond the
    retention prune) if governance volume ever grows.
+5. Client retry semantics: unprepared requests lost on view change
+   are the client's responsibility to resubmit (mesh tests model
+   this); a durable client-side retry queue would smooth it.

@@ -464,10 +464,11 @@ async fn run_outbound_connection(
 
             _ = view_change_interval.tick() => {
                 let stalled = state.server.with_server(|srv| {
-                    if srv.governance_round_timed_out(GOVERNANCE_ROUND_TIMEOUT_SECS) {
+                    if srv.governance_view_change_due(GOVERNANCE_ROUND_TIMEOUT_SECS) {
                         // Count our own view-change locally, then
                         // broadcast it to every peer.
-                        let msg = srv.governance_make_view_change();
+                        let msg = srv
+                            .governance_make_view_change(GOVERNANCE_ROUND_TIMEOUT_SECS);
                         let new_view = srv.governance_receive_view_change(&msg);
                         (Some(msg), new_view)
                     } else {

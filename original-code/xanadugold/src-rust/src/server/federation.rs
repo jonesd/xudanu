@@ -1851,16 +1851,15 @@ pub struct GovernanceProposal {
 }
 
 impl GovernanceProposal {
-    /// blake3 digest over the canonical proposal encoding. Every vote
-    /// and certificate binds to THIS — votes for the same (view, seq)
-    /// with different transaction sets cannot be confused (review
-    /// finding S1: votes previously carried no proposal identity).
+    /// blake3 digest over the IMMUTABLE VALUE: (sequence, transactions).
+    /// The envelope (view, proposer, timestamp) is deliberately
+    /// excluded — a view change re-proposes the SAME value in a new
+    /// view, and the digest must survive so prepared certificates
+    /// carry across views (PBFT digests the request, not the
+    /// pre-prepare).
     pub fn digest(&self) -> String {
         let txs = serde_json::to_string(&self.transactions).unwrap_or_default();
-        let payload = format!(
-            "{}|{}|{}|{}|{}",
-            self.view_number, self.sequence_number, self.proposer_id, self.timestamp, txs
-        );
+        let payload = format!("{}|{}", self.sequence_number, txs);
         blake3::hash(payload.as_bytes()).to_hex().to_string()
     }
 }
@@ -2077,11 +2076,27 @@ impl ViewChangeMessage {
 }
 
 /// New-view announcement assembled by the incoming leader from 2f+1
-/// verified view-change messages.
+/// verified view-change messages. The assembler identity is carried
+/// (and leader-checked + signature-checked on apply): a NewView from a
+/// non-leader, or with certificates targeting other views, must be
+/// refused — otherwise replayed view-changes from different views
+/// could inflate the quorum count.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NewViewMessage {
     pub view_number: u64,
     pub view_changes: Vec<ViewChangeMessage>,
+    /// Who assembled this NewView (must be the leader of `view_number`).
+    #[serde(default)]
+    pub assembler_id: String,
+    /// Ed25519 signature (hex) over "new-view|view_number|assembler_id".
+    #[serde(default)]
+    pub signature: String,
+}
+
+impl NewViewMessage {
+    pub fn payload(&self) -> String {
+        format!("new-view|{}|{}", self.view_number, self.assembler_id)
+    }
 }
 
 /// The state of a single ongoing consensus round.
@@ -2146,6 +2161,23 @@ pub struct GovernanceState {
     /// previously had NO protocol — advance_view just forked state).
     #[serde(default)]
     view_change_votes: HashMap<u64, HashMap<String, ViewChangeMessage>>,
+    /// When the current view was entered — drives the
+    /// "new leader never proposed" stall timer (a NEW-VIEW applied but
+    /// the incoming leader immediately crashes must not wedge
+    /// governance forever).
+    #[serde(default)]
+    current_view_entered_at: u64,
+    /// First emission time per view-change target — escalation past a
+    /// target only after a full timeout collecting for it, so replicas
+    /// don't scatter across targets on every poll.
+    #[serde(default)]
+    view_change_started: HashMap<u64, u64>,
+    /// Prepare votes that arrived before this replica's round existed
+    /// (pre-prepare delayed by the network). PBFT buffers these;
+    /// dropping them stalls rounds at quorum-1 forever under simple
+    /// message reordering (found by the mesh harness).
+    #[serde(default)]
+    buffered_prepare_votes: Vec<PbftVote>,
 }
 
 impl GovernanceState {
@@ -2166,6 +2198,9 @@ impl GovernanceState {
             prepared_digests: HashMap::new(),
             pruned_below: 0,
             view_change_votes: HashMap::new(),
+            current_view_entered_at: now_secs(),
+            view_change_started: HashMap::new(),
+            buffered_prepare_votes: Vec::new(),
         }
     }
 
@@ -2351,6 +2386,16 @@ impl GovernanceState {
             phase: RoundPhase::Prepare,
             started_at: now_secs(),
         });
+        // Replay prepare votes that arrived before the round existed.
+        let buffered = std::mem::take(&mut self.buffered_prepare_votes);
+        for v in buffered {
+            if v.view_number == proposal.view_number
+                && v.sequence_number == proposal.sequence_number
+                && (v.digest.is_empty() || v.digest == proposal.digest())
+            {
+                let _ = self.receive_prepare(v);
+            }
+        }
         Ok(())
     }
 
@@ -2364,7 +2409,17 @@ impl GovernanceState {
         let quorum = self.quorum_size();
         let round = match &mut self.pending_round {
             Some(r) => r,
-            None => return RoundPhase::PrePrepare,
+            None => {
+                // No round yet: the pre-prepare may still be in flight.
+                // Buffer the vote (bounded) — dropping it stalls the
+                // round at quorum-1 when the pre-prepare lands.
+                if self.buffered_prepare_votes.len() < 32
+                    && !self.buffered_prepare_votes.contains(&vote)
+                {
+                    self.buffered_prepare_votes.push(vote);
+                }
+                return RoundPhase::PrePrepare;
+            }
         };
 
         if round.phase != RoundPhase::Prepare && round.phase != RoundPhase::PrePrepare {
@@ -2388,6 +2443,7 @@ impl GovernanceState {
         if vote.is_signed() && !round.signed_prepare_votes.contains(&vote) {
             round.signed_prepare_votes.push(vote);
         }
+        round.started_at = now_secs(); // progress resets the stall clock
 
         if round.prepare_votes.len() >= quorum {
             round.phase = RoundPhase::Commit;
@@ -2460,6 +2516,7 @@ impl GovernanceState {
         if vote.is_signed() && !round.signed_commit_votes.contains(&vote) {
             round.signed_commit_votes.push(vote);
         }
+        round.started_at = now_secs(); // progress resets the stall clock
 
         if round.commit_votes.len() >= quorum {
             round.phase = RoundPhase::Sealed;
@@ -2595,6 +2652,7 @@ impl GovernanceState {
 
     pub fn advance_view(&mut self) {
         self.current_view += 1;
+        self.current_view_entered_at = now_secs();
         self.pending_round = None;
     }
 
@@ -2642,6 +2700,8 @@ impl GovernanceState {
         Some(NewViewMessage {
             view_number: msg.new_view,
             view_changes: msgs,
+            assembler_id: my_server_id.to_string(),
+            signature: String::new(), // signed by the server glue
         })
     }
 
@@ -2653,7 +2713,27 @@ impl GovernanceState {
         if new_view.view_number <= self.current_view {
             return;
         }
+        // Structural validation BEFORE mutating: every certificate must
+        // target exactly this view (cross-view replay inflation), and
+        // each sender counts once.
+        let mut distinct: HashSet<&str> = HashSet::new();
+        for vc in &new_view.view_changes {
+            if vc.new_view != new_view.view_number {
+                tracing::warn!(
+                    announced = new_view.view_number,
+                    cert_target = vc.new_view,
+                    "NewView refused: certificate targets a different view"
+                );
+                return;
+            }
+            distinct.insert(vc.server_id.as_str());
+        }
+        if distinct.len() != new_view.view_changes.len() {
+            tracing::warn!("NewView refused: duplicate view-change senders");
+            return;
+        }
         self.current_view = new_view.view_number;
+        self.current_view_entered_at = now_secs();
         self.pending_round = None;
         for vc in &new_view.view_changes {
             if let Some((seq, digest)) = &vc.highest_prepared {
@@ -2679,6 +2759,38 @@ impl GovernanceState {
         }
     }
 
+    /// Does ANY governance condition demand a view change right now?
+    ///
+    /// Three stall modes, all fatal to liveness if unhandled:
+    /// 1. the pending round stalled (leader crashed mid-round)
+    /// 2. we hold view-change votes for a future view but quorum never
+    ///    assembled (incoming leader crashed BEFORE proposing)
+    /// 3. we entered a view but no pre-prepare ever arrived (incoming
+    ///    leader crashed AFTER NEW-VIEW)
+    pub fn view_change_due(&self, now: u64, timeout_secs: u64) -> bool {
+        if self.round_timed_out(now, timeout_secs) {
+            return true;
+        }
+        if now.saturating_sub(self.current_view_entered_at) >= timeout_secs
+            && self.pending_round.is_none()
+        {
+            // No round at all for a full timeout in this view — either
+            // the leader never proposed, or a round finished and the
+            // next never came. Only stall if we EXPECT activity: a
+            // cluster with nothing to propose is idle, not stalled, so
+            // this mode requires view-change votes already in flight
+            // (mode 2) — otherwise idle clusters would churn views.
+            if self
+                .view_change_votes
+                .keys()
+                .any(|v| *v > self.current_view)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Is the pending round stale enough to trigger a view change?
     pub fn round_timed_out(&self, now: u64, timeout_secs: u64) -> bool {
         match &self.pending_round {
@@ -2687,9 +2799,49 @@ impl GovernanceState {
         }
     }
 
-    /// The view number a view change should target.
-    pub fn next_view(&self) -> u64 {
-        self.current_view + 1
+    /// The view number a view change should target: the highest target
+    /// already in flight (or current+1) while it is still FRESH; once a
+    /// full timeout has passed collecting for that target without a
+    /// NewView, escalate past it (a wedged election for v+1 retries at
+    /// v+2 — but replicas must not scatter to new targets on every
+    /// poll, or quorum never assembles).
+    pub fn next_view(&self, now: u64, timeout_secs: u64) -> u64 {
+        // Collect where the cluster is collecting: the highest target
+        // seen in buckets or our own emissions — but never below
+        // current+1 (a fresh replica starts the next view).
+        let target = self
+            .view_change_votes
+            .keys()
+            .chain(self.view_change_started.keys())
+            .copied()
+            .max()
+            .unwrap_or(0)
+            .max(self.current_view + 1);
+        match self.view_change_started.get(&target) {
+            // Collecting for this target went stale — escalate past it.
+            Some(t0) if now.saturating_sub(*t0) >= timeout_secs => target + 1,
+            // Fresh (or nothing recorded): keep collecting for it.
+            _ => target,
+        }
+    }
+
+    /// Record that THIS replica emitted a view change for `target`.
+    pub fn note_view_change_emission(&mut self, target: u64) {
+        self.view_change_started
+            .entry(target)
+            .or_insert_with(now_secs);
+    }
+
+    /// Test aid: rewind the round and view-entry stall timers far into
+    /// the past. View-change EMISSION freshness is deliberately NOT
+    /// rewound — escalation must stay real-time in tests, or every
+    /// tick would scatter to a new target.
+    #[doc(hidden)]
+    pub fn force_stall(&mut self, now: u64) {
+        if let Some(r) = &mut self.pending_round {
+            r.started_at = now.saturating_sub(3600);
+        }
+        self.current_view_entered_at = now.saturating_sub(3600);
     }
 
     /// Reset the pending round's timer (a vote arrived — progress).
@@ -4892,8 +5044,18 @@ mod tests {
         let proposal = gov.propose(vec![], "srv-a".to_string()).unwrap();
 
         let mut other = proposal.clone();
-        other.timestamp = proposal.timestamp + 999; // different digest
+        other.transactions = vec![GovernanceTx::Expel {
+            server_id: "different".to_string(),
+            reason: "different value".to_string(),
+        }];
         assert_ne!(proposal.digest(), other.digest());
+        // The envelope may change (view/proposer/time) — same value,
+        // same digest.
+        let mut reprop = proposal.clone();
+        reprop.view_number += 1;
+        reprop.proposer_id = "srv-z".to_string();
+        reprop.timestamp += 1;
+        assert_eq!(proposal.digest(), reprop.digest());
 
         let forged = tvote(&keys[1], "srv-b", PbftPhase::Prepare, &other);
         let phase = gov.receive_prepare(forged);
@@ -5041,7 +5203,7 @@ mod tests {
         // straggler's view via receive_pre_prepare at seq 1 instead:
         // prepared digest exists → rejected.
         let mut straggler = GovernanceState::new(4);
-        straggler.apply_new_view(&crate::server::federation::NewViewMessage {
+        straggler.apply_new_view(&NewViewMessage {
             view_number: 1,
             view_changes: vec![ViewChangeMessage {
                 new_view: 1,
@@ -5049,6 +5211,8 @@ mod tests {
                 highest_prepared: Some((1, batch.digest.clone())),
                 signature: String::new(),
             }],
+            assembler_id: "srv-b".to_string(),
+            signature: String::new(),
         });
         assert_eq!(straggler.current_sequence(), 1, "watermark carried by view change");
         assert!(

@@ -759,138 +759,21 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
                                     tracing::info!("Peer {} left federation membership", server_id);
                                 }
                             }
-                            Ok(FederationFrame::GovernancePrePrepare { proposal }) => {
-                                tracing::info!(
-                                    "Governance: received pre-prepare from {} view={} seq={}",
-                                    proposal.proposer_id, proposal.view_number, proposal.sequence_number
-                                );
-                                // Replica path (L1 fix): validate + create
-                                // the local round, cast OUR signed prepare
-                                // vote, and broadcast it ALL-TO-ALL — votes
-                                // no longer travel only proposer↔replica.
-                                let result = state.server.with_server(|srv| {
-                                    srv.governance_receive_pre_prepare(&proposal)
-                                });
-                                match result {
-                                    Ok(vote) => {
-                                        let _ = state.governance_tx.send(
-                                            FederationFrame::GovernancePrepareVote { vote },
-                                        );
-                                        // Single-server / tiny-quorum clusters
-                                        // can reach Commit from the own vote.
-                                        let phase = state.server.with_server_ref(|srv| {
-                                            srv.governance_pending_round_phase()
-                                        });
-                                        if phase == Some(crate::server::federation::RoundPhase::Commit) {
-                                            let commit = state.server.with_server(|srv| {
-                                                srv.governance_make_signed_vote(
-                                                    crate::server::federation::PbftPhase::Commit,
-                                                    &proposal,
-                                                )
-                                            });
-                                            let _ = state.governance_tx.send(
-                                                FederationFrame::GovernanceCommitVote { vote: commit },
-                                            );
-                                        }
-                                    }
-                                    Err(reason) => {
-                                        tracing::warn!(
-                                            %reason,
-                                            "Governance: rejected pre-prepare"
-                                        );
-                                    }
+                            Ok(frame) if matches!(
+                                frame,
+                                FederationFrame::GovernancePrePrepare { .. }
+                                    | FederationFrame::GovernancePrepareVote { .. }
+                                    | FederationFrame::GovernanceCommitVote { .. }
+                                    | FederationFrame::GovernanceSealed { .. }
+                                    | FederationFrame::GovernanceViewChange { .. }
+                                    | FederationFrame::GovernanceNewView { .. }
+                            ) => {
+                                // Single orchestration point (also used by
+                                // the sync path and the test mesh): returns
+                                // the frames to broadcast to ALL peers.
+                                for out in handle_governance_frame(&frame, &state, &peer_server_id) {
+                                    let _ = state.governance_tx.send(out);
                                 }
-                            }
-                            Ok(FederationFrame::GovernancePrepareVote { vote }) => {
-                                if vote.voter_id != peer_server_id {
-                                    tracing::warn!("Governance: rejected prepare vote from {} claiming to be {}", peer_server_id, vote.voter_id);
-                                } else {
-                                    let phase = state.server.with_server(|srv| {
-                                        srv.governance_receive_prepare(vote)
-                                    });
-                                    tracing::debug!("Governance: prepare vote processed, phase={:?}", phase);
-                                    // Commit-phase broadcast: whoever crosses
-                                    // prepare-quorum casts its commit vote to
-                                    // all peers (all-to-all, L1 fix).
-                                    if phase == crate::server::federation::RoundPhase::Commit {
-                                        if let Some(proposal) = state.server.with_server_ref(|srv| {
-                                            srv.governance_pending_round_proposal()
-                                        }) {
-                                            let commit = state.server.with_server(|srv| {
-                                                srv.governance_make_signed_vote(
-                                                    crate::server::federation::PbftPhase::Commit,
-                                                    &proposal,
-                                                )
-                                            });
-                                            let _ = state.governance_tx.send(
-                                                FederationFrame::GovernanceCommitVote { vote: commit },
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                            Ok(FederationFrame::GovernanceCommitVote { vote }) => {
-                                if vote.voter_id != peer_server_id {
-                                    tracing::warn!("Governance: rejected commit vote from {} claiming to be {}", peer_server_id, vote.voter_id);
-                                } else {
-                                    let phase = state.server.with_server(|srv| {
-                                        srv.governance_receive_commit(vote)
-                                    });
-                                    if phase == crate::server::federation::RoundPhase::Sealed {
-                                        // Sealed locally with full certificates:
-                                        // execute and broadcast the sealed batch
-                                        // to every peer (L2 fix — replicas
-                                        // previously never learned seals).
-                                        let sealed = state.server.with_server(|srv| {
-                                            srv.governance_seal_round()
-                                        });
-                                        if let Some(batch) = sealed {
-                                            tracing::info!(
-                                                "Governance: sealed batch seq={} with {} txs — broadcasting",
-                                                batch.sequence_number, batch.transactions.len()
-                                            );
-                                            let _ = state.governance_tx.send(
-                                                FederationFrame::GovernanceSealed { batch },
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                            Ok(FederationFrame::GovernanceSealed { batch }) => {
-                                tracing::info!(
-                                    "Governance: received sealed batch seq={} from {}",
-                                    batch.sequence_number, batch.proposer_id
-                                );
-                                // Verify certificates against member keys, then
-                                // execute + ingest (S1 fix — the sealed path
-                                // previously executed unverified claims).
-                                state.server.with_server(|srv| {
-                                    srv.governance_ingest_sealed_batch(batch);
-                                });
-                            }
-                            Ok(FederationFrame::GovernanceViewChange { message }) => {
-                                if message.server_id != peer_server_id {
-                                    tracing::warn!(
-                                        "Governance: view-change from {} claiming to be {}",
-                                        peer_server_id, message.server_id
-                                    );
-                                } else if let Some(new_view) =
-                                    state.server.with_server(|srv| {
-                                        srv.governance_receive_view_change(&message)
-                                    }) {
-                                    tracing::info!(
-                                        view = new_view.view_number,
-                                        "Governance: view-change quorum — broadcasting NewView"
-                                    );
-                                    let _ = state.governance_tx.send(
-                                        FederationFrame::GovernanceNewView { new_view },
-                                    );
-                                }
-                            }
-                            Ok(FederationFrame::GovernanceNewView { new_view }) => {
-                                state.server.with_server(|srv| {
-                                    srv.governance_apply_new_view(&new_view);
-                                });
                             }
                             Ok(FederationFrame::CrdtSyncPull { server_id, work_ids }) => {
                                 if server_id != peer_server_id {
@@ -1204,6 +1087,153 @@ async fn wait_for_frame(
     wait_for_frame_inner(ws_receiver).await.and_then(|r| r.ok())
 }
 
+/// Process one governance frame and return the frames this node must
+/// BROADCAST to all peers (votes, sealed batches, NewView). This is
+/// the single orchestration point used by the live ws path, the sync
+/// path, AND the test mesh — the protocol cascade (pre-prepare →
+/// prepare votes → commit votes → sealed) is defined exactly once.
+#[allow(clippy::too_many_lines)]
+pub(crate) fn handle_governance_frame(
+    frame: &FederationFrame,
+    state: &SharedState,
+    peer_server_id: &str,
+) -> Vec<FederationFrame> {
+    use crate::server::federation::{PbftPhase, RoundPhase};
+    match frame {
+        FederationFrame::GovernancePrePrepare { proposal } => {
+            tracing::info!(
+                "Governance: received pre-prepare from {} view={} seq={}",
+                proposal.proposer_id, proposal.view_number, proposal.sequence_number
+            );
+            // Replica path (L1 fix): validate + create the local round,
+            // cast OUR signed prepare vote, broadcast it ALL-TO-ALL.
+            match state
+                .server
+                .with_server(|srv| srv.governance_receive_pre_prepare(proposal))
+            {
+                Ok(vote) => {
+                    let mut out = vec![FederationFrame::GovernancePrepareVote { vote }];
+                    // Tiny-quorum clusters can reach Commit from the
+                    // own vote alone.
+                    if state.server.with_server_ref(|srv| srv.governance_pending_round_phase())
+                        == Some(RoundPhase::Commit)
+                    {
+                        let commit = state.server.with_server(|srv| {
+                            let v = srv.governance_make_signed_vote(PbftPhase::Commit, proposal);
+                            // Self-count before broadcasting.
+                            let _ = srv.governance_receive_commit(v.clone());
+                            v
+                        });
+                        out.push(FederationFrame::GovernanceCommitVote { vote: commit });
+                    }
+                    out
+                }
+                Err(reason) => {
+                    tracing::warn!(%reason, "Governance: rejected pre-prepare");
+                    vec![]
+                }
+            }
+        }
+        FederationFrame::GovernancePrepareVote { vote } => {
+            if vote.voter_id != peer_server_id {
+                tracing::warn!(
+                    "Governance: rejected prepare vote from {} claiming to be {}",
+                    peer_server_id, vote.voter_id
+                );
+                return vec![];
+            }
+            let phase = state
+                .server
+                .with_server(|srv| srv.governance_receive_prepare(vote.clone()));
+            tracing::debug!("Governance: prepare vote processed, phase={:?}", phase);
+            // Commit-phase broadcast: whoever crosses prepare-quorum
+            // casts its commit vote to all peers (L1 fix).
+            if phase == RoundPhase::Commit {
+                if let Some(proposal) =
+                    state.server.with_server_ref(|srv| srv.governance_pending_round_proposal())
+                {
+                    let commit = state.server.with_server(|srv| {
+                        let v = srv.governance_make_signed_vote(PbftPhase::Commit, &proposal);
+                        // Self-count before broadcasting: the emitter's
+                        // own round must count its own commit vote (the
+                        // mesh caught commits landing everywhere EXCEPT
+                        // on their origin node).
+                        let _ = srv.governance_receive_commit(v.clone());
+                        v
+                    });
+                    return vec![FederationFrame::GovernanceCommitVote { vote: commit }];
+                }
+            }
+            vec![]
+        }
+        FederationFrame::GovernanceCommitVote { vote } => {
+            if vote.voter_id != peer_server_id {
+                tracing::warn!(
+                    "Governance: rejected commit vote from {} claiming to be {}",
+                    peer_server_id, vote.voter_id
+                );
+                return vec![];
+            }
+            let phase = state
+                .server
+                .with_server(|srv| srv.governance_receive_commit(vote.clone()));
+            if phase == RoundPhase::Sealed {
+                // Sealed locally with full certificates: execute and
+                // broadcast (L2 fix).
+                if let Some(batch) = state.server.with_server(|srv| srv.governance_seal_round()) {
+                    tracing::info!(
+                        "Governance: sealed batch seq={} with {} txs — broadcasting",
+                        batch.sequence_number,
+                        batch.transactions.len()
+                    );
+                    return vec![FederationFrame::GovernanceSealed { batch }];
+                }
+            }
+            vec![]
+        }
+        FederationFrame::GovernanceSealed { batch } => {
+            tracing::info!(
+                "Governance: received sealed batch seq={} from {}",
+                batch.sequence_number, batch.proposer_id
+            );
+            // Verify certificates, then execute + ingest (S1 fix).
+            state
+                .server
+                .with_server(|srv| srv.governance_ingest_sealed_batch(batch.clone()));
+            vec![]
+        }
+        FederationFrame::GovernanceViewChange { message } => {
+            if message.server_id != peer_server_id {
+                tracing::warn!(
+                    "Governance: view-change from {} claiming to be {}",
+                    peer_server_id, message.server_id
+                );
+                return vec![];
+            }
+            match state
+                .server
+                .with_server(|srv| srv.governance_receive_view_change(message))
+            {
+                Some(new_view) => {
+                    tracing::info!(
+                        view = new_view.view_number,
+                        "Governance: view-change quorum — broadcasting NewView"
+                    );
+                    vec![FederationFrame::GovernanceNewView { new_view }]
+                }
+                None => vec![],
+            }
+        }
+        FederationFrame::GovernanceNewView { new_view } => {
+            state
+                .server
+                .with_server(|srv| srv.governance_apply_new_view(new_view));
+            vec![]
+        }
+        _ => vec![],
+    }
+}
+
 pub(crate) async fn process_federation_frame(
     frame: FederationFrame,
     state: &SharedState,
@@ -1450,115 +1480,15 @@ pub(crate) async fn process_federation_frame(
             }
             vec![]
         }
-        FederationFrame::GovernancePrePrepare { proposal } => {
-            tracing::info!(
-                "Governance: received pre-prepare from {} view={} seq={}",
-                proposal.proposer_id,
-                proposal.view_number,
-                proposal.sequence_number
-            );
-            match state.server.with_server(|srv| srv.governance_receive_pre_prepare(&proposal)) {
-                Ok(vote) => {
-                    let mut replies =
-                        vec![FederationFrame::GovernancePrepareVote { vote }];
-                    let phase = state.server.with_server_ref(|srv| {
-                        srv.governance_pending_round_phase()
-                    });
-                    if phase == Some(crate::server::federation::RoundPhase::Commit) {
-                        let commit_vote = state.server.with_server(|srv| {
-                            srv.governance_make_signed_vote(
-                                crate::server::federation::PbftPhase::Commit,
-                                &proposal,
-                            )
-                        });
-                        replies.push(FederationFrame::GovernanceCommitVote {
-                            vote: commit_vote,
-                        });
-                    }
-                    replies
-                }
-                Err(reason) => {
-                    tracing::warn!("Governance: rejected pre-prepare: {}", reason);
-                    vec![]
-                }
-            }
-        }
-        FederationFrame::GovernancePrepareVote { vote } => {
-            if vote.voter_id != peer_server_id {
-                tracing::warn!(
-                    "Governance: rejected prepare vote from {} claiming to be {}",
-                    peer_server_id,
-                    vote.voter_id
-                );
-            } else {
-                let phase = state
-                    .server
-                    .with_server(|srv| srv.governance_receive_prepare(vote));
-                tracing::debug!("Governance: prepare vote processed, phase={:?}", phase);
-            }
-            vec![]
-        }
-        FederationFrame::GovernanceCommitVote { vote } => {
-            if vote.voter_id != peer_server_id {
-                tracing::warn!(
-                    "Governance: rejected commit vote from {} claiming to be {}",
-                    peer_server_id,
-                    vote.voter_id
-                );
-            } else {
-                let phase = state
-                    .server
-                    .with_server(|srv| srv.governance_receive_commit(vote));
-                if phase == crate::server::federation::RoundPhase::Sealed {
-                    if let Some(batch) = state.server.with_server(|srv| srv.governance_seal_round())
-                    {
-                        tracing::info!(
-                            "Governance: sealed batch seq={} with {} txs",
-                            batch.sequence_number,
-                            batch.transactions.len()
-                        );
-                    }
-                }
-            }
-            vec![]
-        }
-        FederationFrame::GovernanceSealed { batch } => {
-            tracing::info!(
-                "Governance: received sealed batch seq={} from {}",
-                batch.sequence_number,
-                batch.proposer_id
-            );
-            state.server.with_server(|srv| {
-                if batch.proposer_id != peer_server_id {
-                    tracing::warn!(
-                        "Governance: rejected sealed batch from {} — proposer is {}",
-                        peer_server_id,
-                        batch.proposer_id
-                    );
-                    return;
-                }
-                let expected_seq = srv.governance_current_sequence() + 1;
-                if batch.sequence_number != expected_seq {
-                    tracing::warn!(
-                        "Governance: rejected sealed batch seq={} — expected {}",
-                        batch.sequence_number,
-                        expected_seq
-                    );
-                    return;
-                }
-                if srv.governance_is_applied(batch.sequence_number) {
-                    tracing::info!(
-                        "Governance: skipping already-applied batch seq={}",
-                        batch.sequence_number
-                    );
-                    return;
-                }
-                for tx in &batch.transactions {
-                    srv.governance_execute_tx(tx);
-                }
-                srv.governance_mark_applied(batch.sequence_number);
-            });
-            vec![]
+        FederationFrame::GovernancePrePrepare { .. }
+        | FederationFrame::GovernancePrepareVote { .. }
+        | FederationFrame::GovernanceCommitVote { .. }
+        | FederationFrame::GovernanceSealed { .. }
+        | FederationFrame::GovernanceViewChange { .. }
+        | FederationFrame::GovernanceNewView { .. } => {
+            // Delegated to the single governance orchestration point
+            // (shared with the ws path and the test mesh).
+            handle_governance_frame(&frame, state, peer_server_id)
         }
         FederationFrame::CrdtSyncPull {
             server_id,
@@ -1577,29 +1507,6 @@ pub(crate) async fn process_federation_frame(
                     .with_server(|srv| srv.federation_crdt_pull(&work_ids));
                 vec![FederationFrame::CrdtSyncResult { updates }]
             }
-        }
-        FederationFrame::GovernanceViewChange { message } => {
-            if message.server_id != peer_server_id {
-                tracing::warn!(
-                    "Governance: view-change from {} claiming to be {}",
-                    peer_server_id, message.server_id
-                );
-                vec![]
-            } else {
-                let new_view = state
-                    .server
-                    .with_server(|srv| srv.governance_receive_view_change(&message));
-                match new_view {
-                    Some(nv) => vec![FederationFrame::GovernanceNewView { new_view: nv }],
-                    None => vec![],
-                }
-            }
-        }
-        FederationFrame::GovernanceNewView { new_view } => {
-            state
-                .server
-                .with_server(|srv| srv.governance_apply_new_view(&new_view));
-            vec![]
         }
         FederationFrame::CrdtSyncPush { server_id, updates } => {
             if server_id != peer_server_id {
@@ -1717,7 +1624,6 @@ pub(crate) async fn process_federation_frame(
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2575,6 +2481,489 @@ mod tests {
         use crate::server::transport::shared::AppState;
         use crate::server::Server;
         AppState::new(Server::new()).shared()
+    }
+
+    // ── Governance mesh harness ─────────────────────────────────────
+    //
+    // An in-process N-node "network" driving the REAL protocol code:
+    // every hop goes through handle_governance_frame — the same
+    // orchestration the live ws loop uses. Partitions, crashes, and
+    // view-change ticks are mesh controls; time is forced via
+    // governance_force_stall_for_tests so stalls are deterministic.
+
+    mod governance_mesh {
+        use super::super::super::federation_handler::FederationFrame;
+        use super::super::handle_governance_frame;
+        use crate::server::transport::shared::AppState;
+        use crate::server::Server;
+        use crate::server::transport::shared::SharedState;
+
+        const TIMEOUT: u64 = 600;
+
+        struct Node {
+            id: String,
+            state: SharedState,
+        }
+
+        struct Mesh {
+            nodes: Vec<Node>,
+            /// Directed delivery blocks (a, b): a's frames never reach b.
+            blocked: std::collections::HashSet<(usize, usize)>,
+            /// Dead nodes neither send nor receive.
+            dead: std::collections::HashSet<usize>,
+        }
+
+        impl Mesh {
+            fn new(n: usize) -> Mesh {
+                let mut states: Vec<SharedState> = (0..n)
+                    .map(|_| {
+                        let mut srv = Server::new();
+                        let config = crate::server::federation::FederationConfig::closed(vec![]);
+                        srv.set_federation_config(config);
+                        srv.membership_bootstrap_init();
+                        AppState::new(srv).shared()
+                    })
+                    .collect();
+                // Collect self entries first (id + verifying key).
+                let entries: Vec<(String, String)> = states
+                    .iter()
+                    .map(|st| {
+                        let e = st
+                            .server
+                            .with_server_ref(|srv| srv.membership_self_entry().unwrap());
+                        (e.server_id, e.verifying_key_hex)
+                    })
+                    .collect();
+                // Cross-register membership: every node admits every other.
+                for state in &states {
+                    for (id, vk) in &entries {
+                        state.server.with_server(|srv| {
+                            srv.governance_execute_tx(
+                                &crate::server::federation::GovernanceTx::Admit {
+                                    server_id: id.clone(),
+                                    verifying_key_hex: vk.clone(),
+                                    kex_public_hex: "00".to_string(),
+                                },
+                            );
+                        });
+                    }
+                }
+                let nodes = states
+                    .into_iter()
+                    .zip(&entries)
+                    .map(|(state, (id, _))| Node { id: id.clone(), state })
+                    .collect();
+                Mesh {
+                    nodes,
+                    blocked: std::collections::HashSet::new(),
+                    dead: std::collections::HashSet::new(),
+                }
+            }
+
+            /// Index of the leader for the given view (membership is
+            /// sorted by server_id deterministically).
+            fn leader_for_view(&self, view: u64) -> usize {
+                let mut ids: Vec<&str> = self.nodes.iter().map(|n| n.id.as_str()).collect();
+                ids.sort();
+                let leader_id = ids[(view as usize) % ids.len()];
+                self.nodes.iter().position(|n| n.id == leader_id).unwrap()
+            }
+
+            fn log_len(&self, i: usize) -> usize {
+                self.nodes[i]
+                    .state
+                    .server
+                    .with_server_ref(|srv| srv.governance_log().len())
+            }
+
+            fn current_view(&self, i: usize) -> u64 {
+                self.nodes[i]
+                    .state
+                    .server
+                    .with_server_ref(|srv| srv.governance_current_view())
+            }
+
+            fn seal_digests(&self, i: usize) -> Vec<String> {
+                self.nodes[i]
+                    .state
+                    .server
+                    .with_server_ref(|srv| {
+                        srv.governance_log().iter().map(|b| b.digest.clone()).collect()
+                    })
+            }
+
+            fn deliver_from(&mut self, from: usize, frame: &FederationFrame, depth: usize) {
+                assert!(depth < 24, "protocol cascade exceeded depth cap");
+                for to in 0..self.nodes.len() {
+                    if to == from
+                        || self.dead.contains(&from)
+                        || self.dead.contains(&to)
+                        || self.blocked.contains(&(from, to))
+                        || self.blocked.contains(&(to, from))
+                    {
+                        continue;
+                    }
+                    let peer_id = self.nodes[from].id.clone();
+                    let outs =
+                        handle_governance_frame(frame, &self.nodes[to].state, &peer_id);
+                    for out in outs {
+                        self.deliver_from(to, &out, depth + 1);
+                    }
+                }
+            }
+
+            /// The leader proposes and the pre-prepare fans out (with
+            /// `reach` limiting delivery — a crashing leader that only
+            /// reached some replicas).
+            fn propose_from(&mut self, leader: usize, reach: Option<Vec<usize>>) {
+                let txs = vec![crate::server::federation::GovernanceTx::RoyaltyRecord {
+                    origin_server_id: self.nodes[leader].id.clone(),
+                    target_server_id: self.nodes[leader].id.clone(),
+                    content_fingerprint_hex: "ab".repeat(32),
+                    royalty_type: crate::server::federation::RoyaltyType::Transclusion,
+                    amount: 1,
+                }];
+                let frame = self.nodes[leader]
+                    .state
+                    .server
+                    .with_server(|srv| srv.governance_propose(txs))
+                    .map(|proposal| FederationFrame::GovernancePrePrepare { proposal })
+                    .expect("leader proposes");
+                match reach {
+                    Some(targets) => {
+                        for to in targets {
+                            let peer_id = self.nodes[leader].id.clone();
+                            let outs = handle_governance_frame(
+                                &frame,
+                                &self.nodes[to].state,
+                                &peer_id,
+                            );
+                            for out in outs {
+                                self.deliver_from(to, &out, 1);
+                            }
+                        }
+                    }
+                    None => self.deliver_from(leader, &frame, 0),
+                }
+            }
+
+            /// One view-change poll for every alive node — mirrors
+            /// federation_active exactly: make the signed message,
+            /// count it LOCALLY, deliver to peers, and broadcast any
+            /// assembled NewView.
+            fn tick_stalls(&mut self) {
+                for i in 0..self.nodes.len() {
+                    if self.dead.contains(&i) {
+                        continue;
+                    }
+                    let outcome = self.nodes[i].state.server.with_server(|srv| {
+                        srv.governance_force_stall_for_tests();
+                        if srv.governance_view_change_due(TIMEOUT) {
+                            let msg = srv.governance_make_view_change(TIMEOUT);
+                            let new_view = srv.governance_receive_view_change(&msg);
+                            Some((msg, new_view))
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some((msg, new_view)) = outcome {
+                        self.deliver_from(
+                            i,
+                            &FederationFrame::GovernanceViewChange { message: msg },
+                            0,
+                        );
+                        if let Some(nv) = new_view {
+                            self.deliver_from(
+                                i,
+                                &FederationFrame::GovernanceNewView { new_view: nv },
+                                0,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        fn assert_all_agree(mesh: &Mesh, expected_len: usize) {
+            let mut digests: Option<Vec<String>> = None;
+            for i in 0..mesh.nodes.len() {
+                assert_eq!(mesh.log_len(i), expected_len, "node {i} log length");
+                let d = mesh.seal_digests(i);
+                if let Some(prev) = &digests {
+                    assert_eq!(&d, prev, "node {i} sealed different digests — FORK");
+                } else {
+                    digests = Some(d);
+                }
+            }
+        }
+
+        #[test]
+        fn mesh_four_node_happy_path_cascades_to_seal() {
+            let mut mesh = Mesh::new(4);
+            let leader = mesh.leader_for_view(0);
+            eprintln!("DBG leader={leader} ids={:?}",
+                mesh.nodes.iter().map(|n| n.id.clone()).collect::<Vec<_>>());
+            mesh.propose_from(leader, None);
+            for i in 0..4 {
+                let (phase, prep, comm, cluster) = mesh.nodes[i].state.server.with_server_ref(|srv| {
+                    let r = srv.governance_pending_round();
+                    (format!("{:?}", r.map(|x| x.phase)),
+                     r.map(|x| x.prepare_votes.len()).unwrap_or(0),
+                     r.map(|x| x.commit_votes.len()).unwrap_or(0),
+                     srv.governance_cluster_size())
+                });
+                eprintln!("DBG node {i}: phase={phase} prepares={prep} commits={comm} cluster={cluster} log={}", mesh.log_len(i));
+            }
+            assert_all_agree(&mesh, 1);
+            for i in 0..4 {
+                assert_eq!(mesh.current_view(i), 0);
+            }
+        }
+
+        #[test]
+        fn mesh_leader_crash_mid_round_recovers_via_view_change() {
+            let mut mesh = Mesh::new(4);
+            let leader = mesh.leader_for_view(0);
+            // The leader reaches only ONE replica (2 of quorum 3),
+            // then crashes — the round stalls without quorum.
+            let others: Vec<usize> = (0..4).filter(|i| *i != leader).collect();
+            mesh.propose_from(leader, Some(vec![others[0]]));
+            mesh.dead.insert(leader);
+
+            // Both reached replicas now hold stalled rounds (no quorum).
+            // Ticking drives: view-change(v1) → quorum → NewView → all
+            // enter view 1. The round never reached prepare-quorum, so
+            // it is correctly DISCARDED (unprepared requests are lost —
+            // the client retries with the new leader, as in PBFT).
+            for _ in 0..6 {
+                mesh.tick_stalls();
+            }
+            // Every ALIVE node advanced to view 1 (the dead leader
+            // obviously cannot).
+            for i in 0..4 {
+                if mesh.dead.contains(&i) {
+                    continue;
+                }
+                assert_eq!(
+                    mesh.current_view(i),
+                    1,
+                    "alive node {i} must have advanced to view 1"
+                );
+            }
+
+            // Client retry with the SAME value (a view change
+            // re-proposes prepared values; a different value at a
+            // prepared sequence is refused). The digest covers only
+            // (seq, transactions), so this re-proposal carries the
+            // original digest.
+            let new_leader = mesh.leader_for_view(1);
+            assert!(!mesh.dead.contains(&new_leader), "view-1 leader must be alive");
+            let original_txs = vec![crate::server::federation::GovernanceTx::RoyaltyRecord {
+                origin_server_id: mesh.nodes[mesh
+                    .dead
+                    .iter()
+                    .copied()
+                    .next()
+                    .unwrap()]
+                    .id
+                    .clone(),
+                target_server_id: mesh.nodes[mesh
+                    .dead
+                    .iter()
+                    .copied()
+                    .next()
+                    .unwrap()]
+                    .id
+                    .clone(),
+                content_fingerprint_hex: "ab".repeat(32),
+                royalty_type: crate::server::federation::RoyaltyType::Transclusion,
+                amount: 1,
+            }];
+            let frame = mesh.nodes[new_leader]
+                .state
+                .server
+                .with_server(|srv| srv.governance_propose(original_txs))
+                .map(|proposal| FederationFrame::GovernancePrePrepare { proposal })
+                .expect("retry re-proposes the prepared value");
+            mesh.deliver_from(new_leader, &frame, 0);
+            for i in 0..4 {
+                if mesh.dead.contains(&i) {
+                    continue;
+                }
+                assert_eq!(mesh.log_len(i), 1, "alive node {i} sealed the retry");
+                assert_eq!(mesh.current_view(i), 1);
+            }
+            let digests: Vec<Vec<String>> = (0..4)
+                .filter(|i| !mesh.dead.contains(i))
+                .map(|i| mesh.seal_digests(i))
+                .collect();
+            assert!(
+                digests.windows(2).all(|w| w[0] == w[1]),
+                "alive nodes sealed identical digests — no fork"
+            );
+        }
+
+        #[test]
+        fn mesh_byzantine_leader_forged_seal_rejected_everywhere() {
+            let mut mesh = Mesh::new(4);
+            let leader = mesh.leader_for_view(0);
+            mesh.propose_from(leader, None);
+            assert_all_agree(&mesh, 1);
+
+            // The (now byzantine) leader replays the seal with
+            // hijacked transactions and the SAME certificates.
+            let real = mesh.nodes[leader]
+                .state
+                .server
+                .with_server_ref(|srv| srv.governance_log()[0].clone());
+            let mut forged = real.clone();
+            forged.transactions = vec![crate::server::federation::GovernanceTx::Expel {
+                server_id: "hijacked".to_string(),
+                reason: "forged".to_string(),
+            }];
+            mesh.deliver_from(leader, &FederationFrame::GovernanceSealed { batch: forged }, 0);
+            assert_all_agree(&mesh, 1);
+        }
+
+        #[test]
+        fn mesh_conflicting_reproposal_at_sealed_seq_rejected() {
+            let mut mesh = Mesh::new(4);
+            let leader = mesh.leader_for_view(0);
+            mesh.propose_from(leader, None);
+            assert_all_agree(&mesh, 1);
+
+            // A conflicting proposal at the SEALED sequence: the next
+            // expected seq is 2, so a forged pre-prepare at seq 1 with
+            // different content must be refused by every replica.
+            let mut conflicting = crate::server::federation::GovernanceProposal {
+                view_number: 0,
+                sequence_number: 1,
+                transactions: vec![crate::server::federation::GovernanceTx::Expel {
+                    server_id: "conflicting".to_string(),
+                    reason: "fork attempt".to_string(),
+                }],
+                proposer_id: mesh.nodes[leader].id.clone(),
+                timestamp: 42,
+            };
+            mesh.deliver_from(
+                leader,
+                &FederationFrame::GovernancePrePrepare { proposal: conflicting },
+                0,
+            );
+            assert_all_agree(&mesh, 1);
+        }
+
+        #[test]
+        fn newview_forgery_variants_rejected() {
+            let mut mesh = Mesh::new(4);
+            let leader = mesh.leader_for_view(0);
+            mesh.propose_from(leader, Some(vec![])); // leader's own round only
+            mesh.dead.insert(leader);
+
+            // Collect three REAL signed view-changes from the followers.
+            let others: Vec<usize> = (0..4).filter(|i| *i != leader).collect();
+            let vcs: Vec<_> = others
+                .iter()
+                .map(|i| {
+                    mesh.nodes[*i].state.server.with_server(|srv| {
+                        srv.governance_force_stall_for_tests();
+                        srv.governance_make_view_change(TIMEOUT)
+                    })
+                })
+                .collect();
+            let target = mesh.nodes[others[0]]
+                .state
+                .server
+                .with_server_ref(|srv| srv.governance_current_view())
+                + 1;
+            let new_leader = mesh.leader_for_view(target);
+
+            // The real NewView: assembled by the correct leader, signed.
+            let real_nv = mesh.nodes[new_leader].state.server.with_server(|srv| {
+                let mut assembled = None;
+                for vc in &vcs {
+                    if let Some(nv) = srv.governance_receive_view_change(vc) {
+                        assembled = Some(nv);
+                    }
+                }
+                assembled.expect("quorum assembles")
+            });
+            // The new leader (already at view 1 via self-apply)
+            // re-applies the pristine NewView idempotently.
+            mesh.nodes[new_leader]
+                .state
+                .server
+                .with_server(|srv| srv.governance_apply_new_view(&real_nv));
+            assert_eq!(mesh.current_view(new_leader), target, "pristine NewView applies");
+
+            // One clean victim suffices — rejections never advance the
+            // view, so it serves all three variants.
+            let victim = others
+                .iter()
+                .copied()
+                .find(|i| *i != new_leader && mesh.current_view(*i) == 0)
+                .expect("at least one node remains at view 0");
+
+            // Variant A: wrong assembler (a non-leader member id).
+            let mut a = real_nv.clone();
+            a.assembler_id = mesh.nodes[victim].id.clone();
+            a.signature = String::new();
+            mesh.nodes[victim]
+                .state
+                .server
+                .with_server(|srv| srv.governance_apply_new_view(&a));
+            assert_eq!(mesh.current_view(victim), 0, "wrong assembler rejected");
+
+            // Variant B: cross-view certificates (certs say v+2 inside a
+            // v+1 announcement).
+            let mut b = real_nv.clone();
+            for vc in b.view_changes.iter_mut() {
+                vc.new_view = target + 1;
+                vc.signature = String::new(); // sigs now invalid too
+            }
+            mesh.nodes[victim]
+                .state
+                .server
+                .with_server(|srv| srv.governance_apply_new_view(&b));
+            assert_eq!(mesh.current_view(victim), 0, "cross-view certs rejected");
+
+            // Variant C: insufficient certificates (only 1 of 3).
+            let mut c = real_nv.clone();
+            c.view_changes.truncate(1);
+            mesh.nodes[victim]
+                .state
+                .server
+                .with_server(|srv| srv.governance_apply_new_view(&c));
+            assert_eq!(mesh.current_view(victim), 0, "insufficient certs rejected");
+        }
+
+        #[test]
+        fn view_change_escalation_targets_advance_only_when_stale() {
+            let mut gov = crate::server::federation::GovernanceState::new(4);
+            assert_eq!(gov.next_view(0, 100), 1, "fresh state targets view 1");
+            gov.note_view_change_emission(1);
+            assert_eq!(
+                gov.next_view(0, 100),
+                1,
+                "collecting for view 1 while fresh — same target"
+            );
+            assert_eq!(
+                gov.next_with_stale_started(),
+                2,
+                "stale collection escalates to view 2"
+            );
+        }
+
+        impl crate::server::federation::GovernanceState {
+            #[doc(hidden)]
+            fn next_with_stale_started(&self) -> u64 {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                self.next_view(now, 0) // timeout 0 = instantly stale
+            }
+        }
     }
 
     #[tokio::test]

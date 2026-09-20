@@ -23265,19 +23265,51 @@ impl Server {
         )
     }
 
+    /// Does any governance stall condition demand a view change now?
+    pub fn governance_view_change_due(&self, timeout_secs: u64) -> bool {
+        self.federation.governance().view_change_due(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            timeout_secs,
+        )
+    }
+
     /// Number of active federation members (test/diagnostic accessor).
     pub fn federation_membership_active_count(&self) -> usize {
         self.federation.membership().active_members().len()
+    }
+
+    /// Test aid: rewind every governance stall timer far into the past
+    /// so `view_change_due` fires deterministically without waiting.
+    #[doc(hidden)]
+    pub fn governance_force_stall_for_tests(&mut self) {
+        self.federation
+            .governance_mut()
+            .force_stall(std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs());
     }
 
     // ── View change glue ────────────────────────────────────────────
 
     /// Build this server's signed view-change message for view+1.
     pub fn governance_make_view_change(
-        &self,
+        &mut self,
+        timeout_secs: u64,
     ) -> crate::server::federation::ViewChangeMessage {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let target = self.federation.governance().next_view(now, timeout_secs);
+        self.federation
+            .governance_mut()
+            .note_view_change_emission(target);
         let mut msg = crate::server::federation::ViewChangeMessage {
-            new_view: self.federation.governance().next_view(),
+            new_view: target,
             server_id: self.federation_server_id(),
             highest_prepared: self.federation.governance().highest_prepared(),
             signature: String::new(),
@@ -23303,6 +23335,11 @@ impl Server {
             .iter()
             .map(|m| m.server_id.clone())
             .collect();
+        // Quorum checks below must see the real cluster (lazy sync —
+        // a fresh node otherwise computes quorum from cluster_size 1).
+        self.federation
+            .governance_mut()
+            .set_cluster_size(members.len().max(1));
         if !members.contains(&msg.server_id) {
             return None;
         }
@@ -23318,9 +23355,21 @@ impl Server {
                 return None;
             }
         }
-        self.federation
+        let mut assembled = self
+            .federation
             .governance_mut()
-            .receive_view_change(msg, &members, &my_id)
+            .receive_view_change(msg, &members, &my_id);
+        // The leader signs the NewView it assembles AND enters the new
+        // view itself (it is a member of it) — previously the assembler
+        // broadcast the NewView but stayed in the old view forever.
+        if let Some(nv) = &mut assembled {
+            nv.signature = crate::server::federation::vote_hex_sig(
+                &self.server_keypair.signing_key,
+                &nv.payload(),
+            );
+            self.federation.governance_mut().apply_new_view(nv);
+        }
+        assembled
     }
 
     /// Apply a NewView announcement after verifying its embedded
@@ -23329,7 +23378,45 @@ impl Server {
         &mut self,
         new_view: &crate::server::federation::NewViewMessage,
     ) {
+        let members: Vec<String> = self
+            .federation
+            .membership()
+            .active_members()
+            .iter()
+            .map(|m| m.server_id.clone())
+            .collect();
+        self.federation
+            .governance_mut()
+            .set_cluster_size(members.len().max(1));
+        // The assembler must be the leader of the ANNOUNCED view — a
+        // NewView from anyone else is refused (no unauthorized view
+        // advancement, review finding #4). Leader is computed for the
+        // announced view, not the current one.
+        let idx = (new_view.view_number as usize) % members.len();
+        if members.is_empty()
+            || new_view.assembler_id.is_empty()
+            || members.get(idx).map(|s| s.as_str()) != Some(new_view.assembler_id.as_str())
+        {
+            tracing::warn!(
+                assembler = %new_view.assembler_id,
+                view = new_view.view_number,
+                "NewView rejected: assembler is not the leader of the announced view"
+            );
+            return;
+        }
         let keys = self.governance_member_keys();
+        // Assembler signature over the NewView payload.
+        if !crate::server::federation::verify_hex_sig(
+            keys.get(&new_view.assembler_id).map(|s| s.as_str()).unwrap_or(""),
+            &new_view.payload(),
+            &new_view.signature,
+        ) {
+            tracing::warn!(
+                assembler = %new_view.assembler_id,
+                "NewView rejected: invalid assembler signature"
+            );
+            return;
+        }
         let valid = new_view
             .view_changes
             .iter()
