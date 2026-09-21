@@ -1,6 +1,15 @@
 # xudanu
 
-![Xudanu — documents with visible connections](docs/screenshots/hero.png)
+![Home — the invitation](docs/screenshots/home-landing.png)
+
+## What it looks like
+
+| | |
+|---|---|
+| ![Connections](docs/screenshots/connections-panel.png) | ![Link types](docs/screenshots/link-types-multi.png) |
+| **Every connection is visible** — links and backlinks with type colors | **Typed links** — Comment, Reference, Disagreement, Quotation, See Also, Web |
+| ![Trails](docs/screenshots/trails-panel.png) | ![Editor](docs/screenshots/editor-docuverse-practically.png) |
+| **Trails** — curated reading paths through the docuverse | **The editor** — writing with visible structure |
 
 > **[Try it live](https://xudanu.com)** — a running server with the interactive Links Course: typed and multi-ended links, gathered end-sets, and live transclusions.
 > **[Read the documentation](https://dgjones.info/xudanu/)** — user guides, technical architecture, and visual diagrams.

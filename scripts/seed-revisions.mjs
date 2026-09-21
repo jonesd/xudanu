@@ -5,7 +5,7 @@
 import WebSocket from "ws";
 
 const URL = process.argv[2] || "ws://127.0.0.1:8081/xudanu?format=json";
-const ws = new WebSocket(URL, { headers: { origin: "http://127.0.0.1:8081" } });
+const ws = new WebSocket(URL, { headers: { origin: "http://localhost:5173" } });
 let nextId = 1;
 const pending = new Map();
 
@@ -62,6 +62,14 @@ async function main() {
   await new Promise((res, rej) => { ws.once("open", res); ws.once("error", rej); });
   await request("session_connect");
   await request("session_login_public");
+  // Auth as admin for work creation on owner-only servers
+  try {
+    const _admin = value(await request("club_id_by_name", { name: "admin" }));
+    await request("session_login", { club_id: _admin });
+    await request("session_authenticate", {
+      credential: { password: Array.from(process.env.XUDANU_ADMIN_PASS || "greetingsforalltime").map(c => c.charCodeAt(0)) },
+    });
+  } catch {}
   console.log("connected + logged in");
 
   const w = value(await request("work_create", { edition: { text: R0 } }));
