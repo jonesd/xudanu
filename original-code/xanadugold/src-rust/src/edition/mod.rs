@@ -12,6 +12,7 @@ pub mod compound_arrangement;
 #[cfg(feature = "serde")]
 pub mod compound_segment;
 pub mod content_address;
+pub mod content_index;
 #[cfg(feature = "serde")]
 pub mod derived;
 pub mod document_invariants;
