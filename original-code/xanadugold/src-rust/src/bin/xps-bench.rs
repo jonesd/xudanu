@@ -138,17 +138,31 @@ fn main() {
     let sid = server.connect();
     server.login_public(sid).unwrap();
 
-    // Create corpus
+    // Create corpus — bulk mode for large N (individual create_work
+    // compounds overhead at ~O(N²); bulk_create_works amortizes it)
     let text_template = "The quick brown fox jumps over the lazy dog. ".repeat(doc_size / 45 + 1);
-    let mut work_ids = Vec::with_capacity(docs);
-    for i in 0..docs {
-        let text = format!("Document {i}\n\n{text_template}");
-        let wid = server
-            .create_work(sid, xudanu::edition::Edition::from_text(&text))
-            .unwrap();
-        work_ids.push(wid);
-    }
-    eprintln!("  created {docs} works in {:.1}s", start_setup.elapsed().as_secs_f32());
+    let work_ids: Vec<_> = if docs <= 100 {
+        let mut ids = Vec::with_capacity(docs);
+        for i in 0..docs {
+            let text = format!("Document {i}\n\n{text_template}");
+            let wid = server
+                .create_work(sid, xudanu::edition::Edition::from_text(&text))
+                .unwrap();
+            ids.push(wid);
+        }
+        ids
+    } else {
+        let editions: Vec<xudanu::edition::Edition> = (0..docs)
+            .map(|i| {
+                xudanu::edition::Edition::from_text(&format!("Document {i}\n\n{text_template}"))
+            })
+            .collect();
+        server.bulk_create_works(sid, editions).unwrap()
+    };
+    eprintln!(
+        "  created {docs} works in {:.1}s",
+        start_setup.elapsed().as_secs_f32()
+    );
 
     eprintln!("  (link creation via dispatch layer — see dispatch_bench for link-specific timing)");
 
@@ -174,7 +188,10 @@ fn main() {
             "L2-backlink-query",
             serde_json::json!({"docs": docs}),
             "responsive",
-            mean, p50, p95, 100,
+            mean,
+            p50,
+            p95,
+            100,
         ));
     }
 
@@ -194,7 +211,10 @@ fn main() {
             "C5-write-text-small",
             serde_json::json!({"text_len": test_text.len()}),
             "interactive",
-            mean, p50, p95, 50,
+            mean,
+            p50,
+            p95,
+            50,
         ));
     }
 
@@ -216,7 +236,10 @@ fn main() {
             "C1-content-match",
             serde_json::json!({"docs": 2, "doc_size": doc_size}),
             "batch",
-            mean, p50, p95, 20,
+            mean,
+            p50,
+            p95,
+            20,
         ));
     }
 
@@ -232,7 +255,10 @@ fn main() {
             "P1-attribution",
             serde_json::json!({"doc_size": doc_size}),
             "responsive",
-            mean, p50, p95, 50,
+            mean,
+            p50,
+            p95,
+            50,
         ));
     }
 
@@ -248,7 +274,10 @@ fn main() {
             "C3-work-list",
             serde_json::json!({"docs": docs}),
             "responsive",
-            mean, p50, p95, 50,
+            mean,
+            p50,
+            p95,
+            50,
         ));
     }
 
@@ -263,7 +292,10 @@ fn main() {
             "C4-read-text",
             serde_json::json!({"doc_size": doc_size}),
             "interactive",
-            mean, p50, p95, 100,
+            mean,
+            p50,
+            p95,
+            100,
         ));
     }
 
@@ -279,7 +311,10 @@ fn main() {
             "C5-write-text",
             serde_json::json!({"doc_size": text_template.len()}),
             "interactive",
-            mean, p50, p95, 50,
+            mean,
+            p50,
+            p95,
+            50,
         ));
     }
 
@@ -338,7 +373,10 @@ fn main() {
     // ── Report ────────────────────────────────────────────────────
     let total = results.len();
     let passed = results.iter().filter(|r| r.pass).count();
-    let failed = results.iter().filter(|r| !r.pass && r.measured_ms.is_some()).count();
+    let failed = results
+        .iter()
+        .filter(|r| !r.pass && r.measured_ms.is_some())
+        .count();
     let not_impl = results.iter().filter(|r| r.measured_ms.is_none()).count();
 
     let report = XpsReport {
@@ -347,7 +385,9 @@ fn main() {
         environment: format!(
             "{}/{} cores/{}GB",
             std::env::consts::OS,
-            std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1),
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1),
             sys_memory_gb(),
         ),
         corpus_seed: 42,
@@ -357,9 +397,18 @@ fn main() {
             passed,
             failed,
             not_implemented: not_impl,
-            interactive_pass: results.iter().filter(|r| r.class == "interactive" && r.pass).count(),
-            responsive_pass: results.iter().filter(|r| r.class == "responsive" && r.pass).count(),
-            batch_pass: results.iter().filter(|r| r.class == "batch" && r.pass).count(),
+            interactive_pass: results
+                .iter()
+                .filter(|r| r.class == "interactive" && r.pass)
+                .count(),
+            responsive_pass: results
+                .iter()
+                .filter(|r| r.class == "responsive" && r.pass)
+                .count(),
+            batch_pass: results
+                .iter()
+                .filter(|r| r.class == "batch" && r.pass)
+                .count(),
         },
         results,
     };
@@ -387,7 +436,10 @@ fn main() {
             } else {
                 "FAIL"
             };
-            eprintln!("  {:<28} {:>10} {:>10} {:>8}  {}", r.op, p50, p95, bound, status);
+            eprintln!(
+                "  {:<28} {:>10} {:>10} {:>8}  {}",
+                r.op, p50, p95, bound, status
+            );
             if let Some(note) = &r.note {
                 eprintln!("    └─ {note}");
             }

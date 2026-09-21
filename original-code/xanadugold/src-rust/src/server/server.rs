@@ -4541,6 +4541,105 @@ impl Server {
         Ok(be_id)
     }
 
+    /// FR-76 / XPS: batch create N works in one call.
+    ///
+    /// Amortizes the per-call overhead (OperationGuard, session check,
+    /// title extraction) that compounds at scale. Each edition still
+    /// gets its own work ID, title, provenance, and grand-map entry,
+    /// but the validation and session checks run once.
+    ///
+    /// This is the batch-seeding path for XPS tier 3+ benchmarks and
+    /// bulk imports (e.g., Project Gutenberg).
+    pub fn bulk_create_works(
+        &mut self,
+        session_id: SessionId,
+        editions: Vec<Edition>,
+    ) -> Result<Vec<BeId>, ServerError> {
+        let _guard = OperationGuard::new(
+            self.consequence_tracker.clone(),
+            self.consequence_tracker.begin_operation(),
+        );
+        self.ensure_logged_in(session_id)?;
+
+        const MAX_WORK_COUNT: usize = 100_000;
+        if self.work_count() + editions.len() >= MAX_WORK_COUNT {
+            return Err(ServerError::InvalidArgument(format!(
+                "work limit reached (max {})",
+                MAX_WORK_COUNT
+            )));
+        }
+
+        // Validate all editions upfront (fail fast, don't half-create)
+        for edition in &editions {
+            if edition.to_text().len() > Self::MAX_TEXT_LEN {
+                return Err(ServerError::InvalidArgument(format!(
+                    "document too large: {} bytes (max {} bytes per revision)",
+                    edition.to_text().len(),
+                    Self::MAX_TEXT_LEN
+                )));
+            }
+        }
+
+        let mut ids = Vec::with_capacity(editions.len());
+        for edition in editions {
+            let wid = self.create_work_unchecked(session_id, edition)?;
+            ids.push(wid);
+        }
+        Ok(ids)
+    }
+
+    /// Internal: create a work without the per-call session validation
+    /// (already done by bulk_create_works).
+    fn create_work_unchecked(
+        &mut self,
+        session_id: SessionId,
+        edition: Edition,
+    ) -> Result<BeId, ServerError> {
+        let (be_id, elem) = self.grand_map.new_work_element(None);
+        self.grand_map.assign_new_id(elem);
+        let owner = self
+            .session(session_id)?
+            .authority_clubs()
+            .iter()
+            .next()
+            .copied();
+        let title = Self::extract_title(&edition);
+        let span_prov = self.build_edition_provenance(session_id, &edition);
+        let mut edition = edition;
+        if let Some(sp) = span_prov {
+            edition.span_provenance = sp;
+        }
+        let mut work = Work::new_with_owner(be_id, owner, edition);
+        work.set_tumbler_server(Some(self.tumbler_server_identity()));
+        let trace = self.fulltrace.new_trace();
+        let ws = WorkState {
+            work,
+            trace,
+            region: None,
+            chunk_ref: None,
+            prev_chunk_history: None,
+            dirty_gen: 0,
+            grabber: None,
+            grabbed_at: None,
+            grab_waiters: Vec::new(),
+            last_revision_author: None,
+            revision_authors: std::collections::HashMap::new(),
+            revision_timestamps: std::collections::HashMap::new(),
+            status_detectors: DetectorList::new(),
+            revision_detectors: DetectorList::new(),
+            cached_title: title,
+            is_source: false,
+            imported_by: None,
+            content_start_line: None,
+            content_end_line: None,
+            source_author_id: None,
+            source_edition_info: None,
+            source_fingerprint: None,
+        };
+        self.works.insert(be_id, ws);
+        Ok(be_id)
+    }
+
     pub fn create_work(
         &mut self,
         session_id: SessionId,

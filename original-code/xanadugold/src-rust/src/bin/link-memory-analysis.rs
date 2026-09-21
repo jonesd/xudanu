@@ -53,9 +53,12 @@ fn main() {
 
     println!("HyperLink:");
     println!("  Two-ended (simple):       {hyperlink_2end:>4} bytes");
-    println!("  Three-ended:              {hyperlink_nend(3):>4} bytes");
-    println!("  Gathered 2×3:           {hyperlink_gathered(2, 3):>4} bytes (2 ends, 3 attachments each)");
-    println!("  Gathered 2×10:          {hyperlink_gathered(2, 10):>4} bytes");
+    let n3 = hyperlink_nend(3);
+    println!("  Three-ended:              {n3:>4} bytes");
+    let g3 = hyperlink_gathered(2, 3);
+    println!("  Gathered 2×3:           {g3:>4} bytes (2 ends, 3 attachments each)");
+    let g10 = hyperlink_gathered(2, 10);
+    println!("  Gathered 2×10:          {g10:>4} bytes");
     println!();
 
     // ── LinkState (server-side wrapper) ──────────────────────────
@@ -70,8 +73,14 @@ fn main() {
 
     println!("LinkState (server wrapper around HyperLink):");
     println!("  Base (no endorsements):   {linkstate_base:>4} bytes");
-    println!("  + 1 endorsement:          {:>4} bytes", linkstate_base + 80);
-    println!("  + 3 endorsements:         {:>4} bytes", linkstate_base + 240);
+    println!(
+        "  + 1 endorsement:          {:>4} bytes",
+        linkstate_base + 80
+    );
+    println!(
+        "  + 3 endorsements:         {:>4} bytes",
+        linkstate_base + 240
+    );
     println!();
 
     // ── Index overhead ───────────────────────────────────────────
@@ -96,15 +105,30 @@ fn main() {
     println!("═══════════════════════════════════════════════════════════════");
     println!("TOTAL COST PER LINK (in-memory, including indexes):");
     println!("═══════════════════════════════════════════════════════════════");
-    println!("  Two-ended simple:         {total_simple:>4} bytes  ({:.1} bytes/end)", total_simple as f64 / 2.0);
-    println!("  Three-ended:              {total_3end:>4} bytes  ({:.1} bytes/end)", total_3end as f64 / 3.0);
-    println!("  Gathered 2×3:           {total_gathered:>4} bytes  ({:.1} bytes/attachment)", total_gathered as f64 / 6.0);
-    println!("  Cross-server:          {}  bytes  (+300 for CrossServerRef)", total_simple + 300);
+    println!(
+        "  Two-ended simple:         {total_simple:>4} bytes  ({:.1} bytes/end)",
+        total_simple as f64 / 2.0
+    );
+    println!(
+        "  Three-ended:              {total_3end:>4} bytes  ({:.1} bytes/end)",
+        total_3end as f64 / 3.0
+    );
+    println!(
+        "  Gathered 2×3:           {total_gathered:>4} bytes  ({:.1} bytes/attachment)",
+        total_gathered as f64 / 6.0
+    );
+    println!(
+        "  Cross-server:          {}  bytes  (+300 for CrossServerRef)",
+        total_simple + 300
+    );
     println!();
 
     // ── Capacity table ───────────────────────────────────────────
     println!("Capacity at different memory budgets:");
-    println!("{:<12} {:>12} {:>12} {:>12}", "Memory", "2-ended", "3-ended", "Gathered 2×3");
+    println!(
+        "{:<12} {:>12} {:>12} {:>12}",
+        "Memory", "2-ended", "3-ended", "Gathered 2×3"
+    );
     println!("{}", "─".repeat(52));
     for &gb in &[1u64, 4, 8, 16, 32, 64, 128, 256] {
         let bytes = gb * 1_073_741_824;
@@ -122,7 +146,13 @@ fn main() {
                 format!("{n}")
             }
         };
-        println!("{gb:<12} {:>12} {:>12} {:>12}", "{gb}GB", fmt(simple_cap), fmt(tri_cap), fmt(gathered_cap));
+        let label = format!("{gb}GB");
+        println!(
+            "{label:<12} {:>12} {:>12} {:>12}",
+            fmt(simple_cap),
+            fmt(tri_cap),
+            fmt(gathered_cap)
+        );
     }
 
     println!();

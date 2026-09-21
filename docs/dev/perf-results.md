@@ -172,3 +172,60 @@ edit with a typical 1-5ms WebSocket round-trip, the server is idle
 
 The epoch-sharding design (FR-76) addresses #1; the federation
 architecture addresses #3 through caching.
+
+
+---
+
+## XPS Release-Mode Baseline — 2026-09-21
+
+**Machine:** Apple M4 (10 cores), 32GB unified memory, NVMe SSD, macOS
+**Build:** release (cargo build --release --features server)
+**XPS version:** 1.13.1
+**Runner:** `xps-bench --tier 2`
+
+### Tier 2 Release (1,000 docs, 10KB each)
+
+| Operation | p50 | p95 | Class | Bound | Pass | vs Debug |
+|---|---|---|---|---|---|---|
+| L2-backlink-query | 0.00ms | 0.01ms | responsive | 100ms | ✓ | — |
+| C4-read-text | 0.17ms | 0.24ms | interactive | 16ms | ✓ | 3.8× faster |
+| C5-write-text | 0.08ms | 0.20ms | interactive | 16ms | ✓ | 4.0× faster |
+| C5-write-text-small | 0.08ms | 0.16ms | interactive | 16ms | ✓ | 3.1× faster |
+| C1-content-match | 39.96ms | 42.40ms | batch | 1000ms | ✓ | 10.0× faster |
+| P1-attribution | 0.00ms | 0.00ms | responsive | 100ms | ✓ | — |
+| C3-work-list | 0.01ms | 0.01ms | responsive | 100ms | ✓ | — |
+
+**Seeding:** 65s (vs 346s debug = 5.3× faster)
+
+**Estimated capacity:** ~147K concurrent writers, ~1.47M concurrent readers
+(based on p95 write latency, 1 write per 30s per user, 10:1 read:write)
+
+### Debug vs Release comparison (tier 2)
+
+| Operation | Debug p95 | Release p95 | Speedup |
+|---|---|---|---|
+| Write text | 0.8ms | 0.20ms | 4.0× |
+| Read text | 0.9ms | 0.24ms | 3.8× |
+| Content match | 422.5ms | 42.40ms | 10.0× |
+| Write (small) | 0.5ms | 0.16ms | 3.1× |
+| **Capacity (writers)** | **39K** | **147K** | **3.8×** |
+
+### Tier 3 status
+
+Tier 3 (10K docs, 100KB each) timed out even in release mode —
+seeding 10K works one-by-one through `work_create` +
+`work_set_text` is ~O(N²) in practice (index updates, span
+migration scale with corpus size). Needs batch seeding (one
+bulk_create op). Recorded as follow-up.
+
+### Key findings
+
+1. **Server is not the bottleneck**: at 0.2ms p95 for writes with
+   a typical 1-5ms WebSocket round-trip, the server is idle
+   ~96-99% of the time per request
+2. **Content match is 10× faster in release** but still the
+   slowest operation — the content-match index (committed
+   separately) addresses this
+3. **Capacity**: a single Apple M4 can theoretically support
+   ~147K concurrent writers (1 edit/30s each) or ~1.5M concurrent
+   readers
