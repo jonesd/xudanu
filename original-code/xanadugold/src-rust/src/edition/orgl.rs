@@ -1620,6 +1620,22 @@ impl OrglRoot {
         }
     }
 
+    /// Extract all entries as (position, carrier) pairs, sorted by position.
+    /// FR-76 epoch freeze: this is the data that gets serialized into
+    /// content-addressed chunks. The tree structure is NOT preserved
+    /// (it's a mutable splaying optimization, rebuilt on thaw).
+    pub fn entries(&self) -> Vec<(i64, Arc<Carrier>)> {
+        match &self.inner {
+            OrglInner::Empty => Vec::new(),
+            OrglInner::Actual { loaf, .. } => {
+                let mut result = Vec::new();
+                collect_loaf_entries(loaf, &mut result);
+                result.sort_by_key(|(pos, _)| *pos);
+                result
+            }
+        }
+    }
+
     pub fn count(&self) -> u64 {
         match &self.inner {
             OrglInner::Empty => 0,
@@ -2961,6 +2977,23 @@ mod tests {
             prop_assert_eq!(back, Some(position), "roundtrip must recover position");
             prop_assert!(arr.owns_tumbler(&tumbler), "arrangement must own the tumbler");
         }
+    }
+}
+
+fn collect_loaf_entries(loaf: &Loaf, out: &mut Vec<(i64, Arc<Carrier>)>) {
+    match loaf {
+        Loaf::Leaf { entries, .. } => {
+            out.extend(entries.iter().cloned());
+        }
+        Loaf::Split {
+            in_child,
+            out_child,
+            ..
+        } => {
+            collect_loaf_entries(in_child, out);
+            collect_loaf_entries(out_child, out);
+        }
+        Loaf::Dsp { child, .. } => collect_loaf_entries(child, out),
     }
 }
 

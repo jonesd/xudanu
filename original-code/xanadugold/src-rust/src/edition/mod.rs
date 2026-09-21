@@ -16,6 +16,7 @@ pub mod content_address;
 pub mod derived;
 pub mod document_invariants;
 pub mod edition;
+pub mod epoch;
 pub use edition::SpanLicenseSummary;
 pub mod endorsement;
 pub mod fetext;
