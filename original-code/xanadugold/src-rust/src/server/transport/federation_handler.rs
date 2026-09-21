@@ -1168,7 +1168,9 @@ pub(crate) fn handle_governance_frame(
         FederationFrame::GovernancePrePrepare { proposal } => {
             tracing::info!(
                 "Governance: received pre-prepare from {} view={} seq={}",
-                proposal.proposer_id, proposal.view_number, proposal.sequence_number
+                proposal.proposer_id,
+                proposal.view_number,
+                proposal.sequence_number
             );
             // Replica path (L1 fix): validate + create the local round,
             // cast OUR signed prepare vote, broadcast it ALL-TO-ALL.
@@ -1180,7 +1182,9 @@ pub(crate) fn handle_governance_frame(
                     let mut out = vec![FederationFrame::GovernancePrepareVote { vote }];
                     // Tiny-quorum clusters can reach Commit from the
                     // own vote alone.
-                    if state.server.with_server_ref(|srv| srv.governance_pending_round_phase())
+                    if state
+                        .server
+                        .with_server_ref(|srv| srv.governance_pending_round_phase())
                         == Some(RoundPhase::Commit)
                     {
                         let commit = state.server.with_server(|srv| {
@@ -1203,7 +1207,8 @@ pub(crate) fn handle_governance_frame(
             if vote.voter_id != peer_server_id {
                 tracing::warn!(
                     "Governance: rejected prepare vote from {} claiming to be {}",
-                    peer_server_id, vote.voter_id
+                    peer_server_id,
+                    vote.voter_id
                 );
                 return vec![];
             }
@@ -1214,8 +1219,9 @@ pub(crate) fn handle_governance_frame(
             // Commit-phase broadcast: whoever crosses prepare-quorum
             // casts its commit vote to all peers (L1 fix).
             if phase == RoundPhase::Commit {
-                if let Some(proposal) =
-                    state.server.with_server_ref(|srv| srv.governance_pending_round_proposal())
+                if let Some(proposal) = state
+                    .server
+                    .with_server_ref(|srv| srv.governance_pending_round_proposal())
                 {
                     let commit = state.server.with_server(|srv| {
                         let v = srv.governance_make_signed_vote(PbftPhase::Commit, &proposal);
@@ -1235,7 +1241,8 @@ pub(crate) fn handle_governance_frame(
             if vote.voter_id != peer_server_id {
                 tracing::warn!(
                     "Governance: rejected commit vote from {} claiming to be {}",
-                    peer_server_id, vote.voter_id
+                    peer_server_id,
+                    vote.voter_id
                 );
                 return vec![];
             }
@@ -1259,7 +1266,8 @@ pub(crate) fn handle_governance_frame(
         FederationFrame::GovernanceSealed { batch } => {
             tracing::info!(
                 "Governance: received sealed batch seq={} from {}",
-                batch.sequence_number, batch.proposer_id
+                batch.sequence_number,
+                batch.proposer_id
             );
             // Verify certificates, then execute + ingest (S1 fix).
             state
@@ -1271,7 +1279,8 @@ pub(crate) fn handle_governance_frame(
             if message.server_id != peer_server_id {
                 tracing::warn!(
                     "Governance: view-change from {} claiming to be {}",
-                    peer_server_id, message.server_id
+                    peer_server_id,
+                    message.server_id
                 );
                 return vec![];
             }
@@ -2615,8 +2624,8 @@ mod tests {
         use super::super::super::federation_handler::FederationFrame;
         use super::super::handle_governance_frame;
         use crate::server::transport::shared::AppState;
-        use crate::server::Server;
         use crate::server::transport::shared::SharedState;
+        use crate::server::Server;
 
         const TIMEOUT: u64 = 600;
 
@@ -2697,7 +2706,10 @@ mod tests {
                 let nodes = states
                     .into_iter()
                     .zip(&entries)
-                    .map(|(state, (id, _))| Node { id: id.clone(), state })
+                    .map(|(state, (id, _))| Node {
+                        id: id.clone(),
+                        state,
+                    })
                     .collect();
                 Mesh {
                     nodes,
@@ -2751,16 +2763,13 @@ mod tests {
             /// the LIVE (epoch-valid) voting pool at the next sequence,
             /// sorted by server_id. Matches governance_propose exactly.
             fn leader_for_view(&self, view: u64) -> usize {
-                let pool: Vec<String> = self.nodes[0]
-                    .state
-                    .server
-                    .with_server_ref(|srv| {
-                        let seq = srv.governance_current_sequence() + 1;
-                        srv.governance_validator_members_at(seq)
-                            .into_iter()
-                            .map(|m| m.server_id)
-                            .collect()
-                    });
+                let pool: Vec<String> = self.nodes[0].state.server.with_server_ref(|srv| {
+                    let seq = srv.governance_current_sequence() + 1;
+                    srv.governance_validator_members_at(seq)
+                        .into_iter()
+                        .map(|m| m.server_id)
+                        .collect()
+                });
                 let mut ids = pool;
                 ids.sort();
                 let leader_id = ids[(view as usize) % ids.len()].clone();
@@ -2782,12 +2791,12 @@ mod tests {
             }
 
             fn seal_digests(&self, i: usize) -> Vec<String> {
-                self.nodes[i]
-                    .state
-                    .server
-                    .with_server_ref(|srv| {
-                        srv.governance_log().iter().map(|b| b.digest.clone()).collect()
-                    })
+                self.nodes[i].state.server.with_server_ref(|srv| {
+                    srv.governance_log()
+                        .iter()
+                        .map(|b| b.digest.clone())
+                        .collect()
+                })
             }
 
             fn deliver_from(&mut self, from: usize, frame: &FederationFrame, depth: usize) {
@@ -2814,8 +2823,7 @@ mod tests {
                         continue;
                     }
                     let peer_id = self.nodes[from].id.clone();
-                    let outs =
-                        handle_governance_frame(frame, &self.nodes[to].state, &peer_id);
+                    let outs = handle_governance_frame(frame, &self.nodes[to].state, &peer_id);
                     for out in outs {
                         self.deliver_from(to, &out, depth + 1);
                     }
@@ -2843,11 +2851,8 @@ mod tests {
                     Some(targets) => {
                         for to in targets {
                             let peer_id = self.nodes[leader].id.clone();
-                            let outs = handle_governance_frame(
-                                &frame,
-                                &self.nodes[to].state,
-                                &peer_id,
-                            );
+                            let outs =
+                                handle_governance_frame(&frame, &self.nodes[to].state, &peer_id);
                             for out in outs {
                                 self.deliver_from(to, &out, 1);
                             }
@@ -2911,17 +2916,22 @@ mod tests {
         fn mesh_four_node_happy_path_cascades_to_seal() {
             let mut mesh = Mesh::new(4);
             let leader = mesh.leader_for_view(0);
-            eprintln!("DBG leader={leader} ids={:?}",
-                mesh.nodes.iter().map(|n| n.id.clone()).collect::<Vec<_>>());
+            eprintln!(
+                "DBG leader={leader} ids={:?}",
+                mesh.nodes.iter().map(|n| n.id.clone()).collect::<Vec<_>>()
+            );
             mesh.propose_from(leader, None);
             for i in 0..4 {
-                let (phase, prep, comm, cluster) = mesh.nodes[i].state.server.with_server_ref(|srv| {
-                    let r = srv.governance_pending_round();
-                    (format!("{:?}", r.map(|x| x.phase)),
-                     r.map(|x| x.prepare_votes.len()).unwrap_or(0),
-                     r.map(|x| x.commit_votes.len()).unwrap_or(0),
-                     srv.governance_cluster_size())
-                });
+                let (phase, prep, comm, cluster) =
+                    mesh.nodes[i].state.server.with_server_ref(|srv| {
+                        let r = srv.governance_pending_round();
+                        (
+                            format!("{:?}", r.map(|x| x.phase)),
+                            r.map(|x| x.prepare_votes.len()).unwrap_or(0),
+                            r.map(|x| x.commit_votes.len()).unwrap_or(0),
+                            srv.governance_cluster_size(),
+                        )
+                    });
                 eprintln!("DBG node {i}: phase={phase} prepares={prep} commits={comm} cluster={cluster} log={}", mesh.log_len(i));
             }
             assert_all_agree(&mesh, 1);
@@ -2967,22 +2977,15 @@ mod tests {
             // (seq, transactions), so this re-proposal carries the
             // original digest.
             let new_leader = mesh.leader_for_view(1);
-            assert!(!mesh.dead.contains(&new_leader), "view-1 leader must be alive");
+            assert!(
+                !mesh.dead.contains(&new_leader),
+                "view-1 leader must be alive"
+            );
             let original_txs = vec![crate::server::federation::GovernanceTx::RoyaltyRecord {
-                origin_server_id: mesh.nodes[mesh
-                    .dead
-                    .iter()
-                    .copied()
-                    .next()
-                    .unwrap()]
+                origin_server_id: mesh.nodes[mesh.dead.iter().copied().next().unwrap()]
                     .id
                     .clone(),
-                target_server_id: mesh.nodes[mesh
-                    .dead
-                    .iter()
-                    .copied()
-                    .next()
-                    .unwrap()]
+                target_server_id: mesh.nodes[mesh.dead.iter().copied().next().unwrap()]
                     .id
                     .clone(),
                 content_fingerprint_hex: "ab".repeat(32),
@@ -3031,7 +3034,11 @@ mod tests {
                 server_id: "hijacked".to_string(),
                 reason: "forged".to_string(),
             }];
-            mesh.deliver_from(leader, &FederationFrame::GovernanceSealed { batch: forged }, 0);
+            mesh.deliver_from(
+                leader,
+                &FederationFrame::GovernanceSealed { batch: forged },
+                0,
+            );
             assert_all_agree(&mesh, 1);
         }
 
@@ -3057,7 +3064,9 @@ mod tests {
             };
             mesh.deliver_from(
                 leader,
-                &FederationFrame::GovernancePrePrepare { proposal: conflicting },
+                &FederationFrame::GovernancePrePrepare {
+                    proposal: conflicting,
+                },
                 0,
             );
             assert_all_agree(&mesh, 1);
@@ -3104,7 +3113,11 @@ mod tests {
                 .state
                 .server
                 .with_server(|srv| srv.governance_apply_new_view(&real_nv));
-            assert_eq!(mesh.current_view(new_leader), target, "pristine NewView applies");
+            assert_eq!(
+                mesh.current_view(new_leader),
+                target,
+                "pristine NewView applies"
+            );
 
             // One clean victim suffices — rejections never advance the
             // view, so it serves all three variants.
@@ -3247,9 +3260,9 @@ mod tests {
             };
             let victim_id = mesh.nodes[victim].id.clone();
             for node in &mesh.nodes {
-                node.state
-                    .server
-                    .with_server(|srv| srv.membership_set_epoch_for_tests(&victim_id, expired.clone()));
+                node.state.server.with_server(|srv| {
+                    srv.membership_set_epoch_for_tests(&victim_id, expired.clone())
+                });
             }
             // Recompute the leader over the LIVE voting pool.
             let leader = mesh.leader_for_view(0);
@@ -3271,7 +3284,10 @@ mod tests {
             let victim_id = mesh.nodes[victim].id.clone();
             let voted = mesh.nodes[leader].state.server.with_server_ref(|srv| {
                 let batch = &srv.governance_log()[0];
-                batch.prepare_votes.iter().chain(batch.commit_votes.iter())
+                batch
+                    .prepare_votes
+                    .iter()
+                    .chain(batch.commit_votes.iter())
                     .any(|v| v.voter_id == victim_id)
             });
             assert!(!voted, "expired member's vote appears in no certificate");
@@ -3303,13 +3319,15 @@ mod tests {
 
             // The leader's own propose is refused: pool 2 < quorum 3.
             let result = mesh.nodes[leader].state.server.with_server(|srv| {
-                srv.governance_propose(vec![crate::server::federation::GovernanceTx::RoyaltyRecord {
-                    origin_server_id: String::new(),
-                    target_server_id: String::new(),
-                    content_fingerprint_hex: "ab".repeat(32),
-                    royalty_type: crate::server::federation::RoyaltyType::Transclusion,
-                    amount: 1,
-                }])
+                srv.governance_propose(vec![
+                    crate::server::federation::GovernanceTx::RoyaltyRecord {
+                        origin_server_id: String::new(),
+                        target_server_id: String::new(),
+                        content_fingerprint_hex: "ab".repeat(32),
+                        royalty_type: crate::server::federation::RoyaltyType::Transclusion,
+                        amount: 1,
+                    },
+                ])
             });
             assert!(result.is_none(), "governance halted: no round may open");
             for i in 0..4 {
@@ -3351,7 +3369,7 @@ mod tests {
                             key_id: 0,
                             verifying_key_hex: new_vk.clone(),
                             kex_public_hex: "00".to_string(),
-                authorization: authorization.clone(),
+                            authorization: authorization.clone(),
                         },
                         1,
                     );
@@ -3425,7 +3443,7 @@ mod tests {
                             key_id: 0,
                             verifying_key_hex: new_vk.to_string(),
                             kex_public_hex: "00".to_string(),
-                authorization: authorization.clone(),
+                            authorization: authorization.clone(),
                         },
                         1,
                     );
@@ -3443,9 +3461,11 @@ mod tests {
             let accepted = mesh.nodes[leader].state.server.with_server_ref(|srv| {
                 let seq = srv.governance_current_sequence();
                 match srv.retired_key_lookup_for_test(&vc.server_id, seq) {
-                    Some(key) => {
-                        crate::server::federation::verify_hex_sig(&key, &vc.payload(), &vc.signature)
-                    }
+                    Some(key) => crate::server::federation::verify_hex_sig(
+                        &key,
+                        &vc.payload(),
+                        &vc.signature,
+                    ),
                     None => false,
                 }
             });
@@ -3459,7 +3479,8 @@ mod tests {
                 .with_server(|srv| srv.governance_set_current_sequence_for_tests(200));
             let refused = mesh.nodes[leader].state.server.with_server_ref(|srv| {
                 let seq = srv.governance_current_sequence();
-                srv.retired_key_lookup_for_test(&vc.server_id, seq).is_none()
+                srv.retired_key_lookup_for_test(&vc.server_id, seq)
+                    .is_none()
             });
             assert!(refused, "old key refused beyond grace");
         }
@@ -3478,12 +3499,16 @@ mod tests {
             let victim_id = mesh.nodes[victim].id.clone();
             let new_vk = "ab".repeat(32);
 
-            let rotate = |mesh: &Mesh, auth: crate::server::federation::KeyRegisterAuthorization, vk: &str| {
+            let rotate = |mesh: &Mesh,
+                          auth: crate::server::federation::KeyRegisterAuthorization,
+                          vk: &str| {
                 let mut any_changed = false;
                 for node in &mesh.nodes {
                     let changed = node.state.server.with_server(|srv| {
-                        let before = srv.find_member_public(&victim_id)
-                            .map(|m| m.verifying_key_hex).unwrap_or_default();
+                        let before = srv
+                            .find_member_public(&victim_id)
+                            .map(|m| m.verifying_key_hex)
+                            .unwrap_or_default();
                         srv.governance_execute_tx_at(
                             &crate::server::federation::GovernanceTx::KeyRegister {
                                 server_id: victim_id.clone(),
@@ -3494,8 +3519,10 @@ mod tests {
                             },
                             1,
                         );
-                        let after = srv.find_member_public(&victim_id)
-                            .map(|m| m.verifying_key_hex).unwrap_or_default();
+                        let after = srv
+                            .find_member_public(&victim_id)
+                            .map(|m| m.verifying_key_hex)
+                            .unwrap_or_default();
                         after != before
                     });
                     any_changed = any_changed || changed;
@@ -3505,7 +3532,11 @@ mod tests {
 
             // 1. Unproven rotation refused (multi-server).
             assert!(
-                !rotate(&mesh, crate::server::federation::KeyRegisterAuthorization::None, &new_vk),
+                !rotate(
+                    &mesh,
+                    crate::server::federation::KeyRegisterAuthorization::None,
+                    &new_vk
+                ),
                 "no authorization — refused"
             );
 
@@ -3523,7 +3554,8 @@ mod tests {
                     crate::server::federation::vote_hex_sig(&k, &payload)
                 };
                 let real_recovery = crate::server::federation::vote_hex_sig(
-                    &mesh.recovery_keys[&victim_id], &payload,
+                    &mesh.recovery_keys[&victim_id],
+                    &payload,
                 );
                 crate::server::federation::KeyRegisterAuthorization::Operator {
                     current_signature: wrong_current,
@@ -3534,7 +3566,10 @@ mod tests {
 
             // 3. Operator path (current + recovery) accepted.
             let valid = mesh.operator_authorization(&victim_id, &new_vk);
-            assert!(rotate(&mesh, valid, &new_vk), "operator authorization — accepted");
+            assert!(
+                rotate(&mesh, valid, &new_vk),
+                "operator authorization — accepted"
+            );
 
             // Rotate BACK via social recovery (quorum of others), so
             // path B is also exercised: sign with 3 other members.
@@ -3550,13 +3585,19 @@ mod tests {
                 .map(|n| crate::server::federation::MemberSignature {
                     member_id: n.id.clone(),
                     signature: crate::server::federation::vote_hex_sig(
-                        &n.state.server.with_server_ref(|srv| srv.server_signing_key_test()),
+                        &n.state
+                            .server
+                            .with_server_ref(|srv| srv.server_signing_key_test()),
                         &payload_b,
                     ),
                 })
                 .collect();
-            let social = crate::server::federation::KeyRegisterAuthorization::Social { authorizations };
-            assert!(rotate(&mesh, social, &final_vk), "social recovery — accepted");
+            let social =
+                crate::server::federation::KeyRegisterAuthorization::Social { authorizations };
+            assert!(
+                rotate(&mesh, social, &final_vk),
+                "social recovery — accepted"
+            );
         }
 
         /// FR-75 test 6: a thief holding ONLY the current key can
@@ -3577,12 +3618,9 @@ mod tests {
             let payload = crate::server::federation::KeyRegisterAuthorization::payload_for(
                 &victim_id, &thief_vk,
             );
-            let thief_sig = mesh.nodes[victim]
-                .state
-                .server
-                .with_server_ref(|srv| {
-                    crate::server::federation::vote_hex_sig(&srv.server_signing_key_test(), &payload)
-                });
+            let thief_sig = mesh.nodes[victim].state.server.with_server_ref(|srv| {
+                crate::server::federation::vote_hex_sig(&srv.server_signing_key_test(), &payload)
+            });
             let garbage_recovery = "00".repeat(64);
             let attempt = crate::server::federation::KeyRegisterAuthorization::Operator {
                 current_signature: thief_sig,
@@ -3602,10 +3640,11 @@ mod tests {
                     );
                 });
             }
-            let vk_now = mesh.nodes[leader]
-                .state
-                .server
-                .with_server_ref(|srv| srv.find_member_public(&victim_id).unwrap().verifying_key_hex);
+            let vk_now = mesh.nodes[leader].state.server.with_server_ref(|srv| {
+                srv.find_member_public(&victim_id)
+                    .unwrap()
+                    .verifying_key_hex
+            });
             assert_ne!(vk_now, thief_vk, "thief's key never registered");
 
             // And when the stolen key's epoch ends, its votes die
@@ -3636,7 +3675,11 @@ mod tests {
                 .state
                 .server
                 .with_server(|srv| srv.governance_receive_prepare(thief_vote));
-            assert_eq!(format!("{phase:?}"), "PrePrepare", "expired stolen key cannot vote");
+            assert_eq!(
+                format!("{phase:?}"),
+                "PrePrepare",
+                "expired stolen key cannot vote"
+            );
         }
 
         /// Randomized delivery-order fuzz: 25 seeds, every message
@@ -3654,13 +3697,8 @@ mod tests {
                 let mut mesh = Mesh::new(4).with_shuffle_seed(seed);
                 let leader = mesh.leader_for_view(0);
                 mesh.propose_from(leader, None);
-                let digests: Vec<Vec<String>> =
-                    (0..4).map(|i| mesh.seal_digests(i)).collect();
-                assert_eq!(
-                    digests[0].len(),
-                    1,
-                    "seed {seed}: round sealed everywhere"
-                );
+                let digests: Vec<Vec<String>> = (0..4).map(|i| mesh.seal_digests(i)).collect();
+                assert_eq!(digests[0].len(), 1, "seed {seed}: round sealed everywhere");
                 assert!(
                     digests.windows(2).all(|w| w[0] == w[1]),
                     "seed {seed}: NO FORK — identical digests under reordering"
@@ -3702,14 +3740,12 @@ mod tests {
                     .map(|b| format!("{b:02x}"))
                     .collect::<String>();
                 replica.server.with_server(|srv| {
-                    srv.governance_execute_tx(
-                        &crate::server::federation::GovernanceTx::Admit {
-                            server_id: e.server_id.clone(),
-                            verifying_key_hex: e.verifying_key_hex.clone(),
-                            kex_public_hex: "00".to_string(),
-                            recovery_key_hex: recovery,
-                        },
-                    );
+                    srv.governance_execute_tx(&crate::server::federation::GovernanceTx::Admit {
+                        server_id: e.server_id.clone(),
+                        verifying_key_hex: e.verifying_key_hex.clone(),
+                        kex_public_hex: "00".to_string(),
+                        recovery_key_hex: recovery,
+                    });
                 });
             }
 
@@ -3747,16 +3783,22 @@ mod tests {
             for reply in replies {
                 let _ = handle_governance_frame(&reply, &replica, &peer_id);
             }
-            let caught_up = replica
-                .server
-                .with_server_ref(|srv| (srv.governance_log().len(), srv.governance_current_sequence()));
+            let caught_up = replica.server.with_server_ref(|srv| {
+                (
+                    srv.governance_log().len(),
+                    srv.governance_current_sequence(),
+                )
+            });
             assert_eq!(caught_up, (2, 2), "replica caught up in order");
 
             // Same digests as the mesh — no fork via transfer.
             let mesh_digests = mesh.seal_digests(leader);
-            let replica_digests: Vec<String> = replica
-                .server
-                .with_server_ref(|srv| srv.governance_log().iter().map(|b| b.digest.clone()).collect());
+            let replica_digests: Vec<String> = replica.server.with_server_ref(|srv| {
+                srv.governance_log()
+                    .iter()
+                    .map(|b| b.digest.clone())
+                    .collect()
+            });
             assert_eq!(mesh_digests, replica_digests);
 
             // Gap refusal: a peer pruned past our position returns a
@@ -3816,18 +3858,16 @@ mod tests {
 
             // Expiring-soon detection: an epoch ending within the
             // warning window surfaces BEFORE it bites.
-            let other = (0..4)
-                .find(|i| *i != leader && *i != victim)
-                .unwrap();
+            let other = (0..4).find(|i| *i != leader && *i != victim).unwrap();
             let soon = crate::server::federation::KeyEpoch {
                 valid_from_seq: 1,
                 valid_until_seq: 900, // within 1000 of next seq 1
             };
             let other_id = mesh.nodes[other].id.clone();
             for node in &mesh.nodes {
-                node.state.server.with_server(|srv| {
-                    srv.membership_set_epoch_for_tests(&other_id, soon.clone())
-                });
+                node.state
+                    .server
+                    .with_server(|srv| srv.membership_set_epoch_for_tests(&other_id, soon.clone()));
             }
             let snap = mesh.nodes[leader]
                 .state
@@ -3884,11 +3924,17 @@ mod tests {
             // Strict admission: pinned keys pass, anything else fails
             // (even if the accumulated registry would have accepted it).
             let state = AppState::new(server).shared();
-            assert!(state.server.with_server_ref(|srv| srv.federation_is_peer_known(&vk(&a))));
-            assert!(state.server.with_server_ref(|srv| srv.federation_is_peer_known(&vk(&b))));
+            assert!(state
+                .server
+                .with_server_ref(|srv| srv.federation_is_peer_known(&vk(&a))));
+            assert!(state
+                .server
+                .with_server_ref(|srv| srv.federation_is_peer_known(&vk(&b))));
             let stranger = vk(&make_key(0xEE));
             assert!(
-                !state.server.with_server_ref(|srv| srv.federation_is_peer_known(&stranger)),
+                !state
+                    .server
+                    .with_server_ref(|srv| srv.federation_is_peer_known(&stranger)),
                 "unpinned key refused under genesis pinning"
             );
 
@@ -3905,7 +3951,10 @@ mod tests {
             });
             let a_entry = a_entry.expect("pinned member seeded");
             let b_entry = b_entry.expect("pinned member seeded");
-            assert!(a_entry.admitted_by_governance, "pinned members are validators");
+            assert!(
+                a_entry.admitted_by_governance,
+                "pinned members are validators"
+            );
             assert_eq!(a_entry.recovery_key_hex, "aa".repeat(32));
             assert_eq!(b_entry.recovery_key_hex, "bb".repeat(32));
         }
@@ -3924,7 +3973,10 @@ mod tests {
             assert!(e.covers(2), "inclusive lower bound");
             assert!(e.covers(4));
             assert!(!e.covers(5), "exclusive upper bound");
-            assert!(e.admitted_by(7), "expired members remain admitted (count toward f)");
+            assert!(
+                e.admitted_by(7),
+                "expired members remain admitted (count toward f)"
+            );
             // The default (migration) epoch never expires.
             assert!(crate::server::federation::KeyEpoch::default().covers(u64::MAX - 1));
         }

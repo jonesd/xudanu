@@ -348,12 +348,12 @@ async fn concurrent_rapid_edits_stress() {
     }
     let elapsed = start.elapsed();
 
-        // Verify convergence
-        let alice_final = alice.read_text(work_id).await;
-        let bob_final = bob.read_text(work_id).await;
-        assert_eq!(alice_final, bob_final, "converged after rapid edits");
-        assert!(alice_final.contains("alice-19;"), "all alice edits present");
-        assert!(bob_final.contains("bob-19;"), "all bob edits present");
+    // Verify convergence
+    let alice_final = alice.read_text(work_id).await;
+    let bob_final = bob.read_text(work_id).await;
+    assert_eq!(alice_final, bob_final, "converged after rapid edits");
+    assert!(alice_final.contains("alice-19;"), "all alice edits present");
+    assert!(bob_final.contains("bob-19;"), "all bob edits present");
 
     println!(
         "rapid_edits: 40 ops in {:?} ({:.0} ops/sec)",

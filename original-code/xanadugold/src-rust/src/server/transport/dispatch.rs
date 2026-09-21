@@ -3570,9 +3570,7 @@ fn dispatch_inner(
             // clients cannot inject votes claiming to be arbitrary
             // members. This op now casts THIS server's own signed
             // vote for the pending round (ops/testing convenience).
-            let phase = srv.governance_cast_own_vote(
-                crate::server::federation::PbftPhase::Prepare,
-            );
+            let phase = srv.governance_cast_own_vote(crate::server::federation::PbftPhase::Prepare);
             Ok(ResponseValue::GovernancePrepareResult {
                 phase: format!("{:?}", phase),
             })
@@ -3585,9 +3583,7 @@ fn dispatch_inner(
                 ));
             }
             srv.ensure_logged_in(session_id)?;
-            let phase = srv.governance_cast_own_vote(
-                crate::server::federation::PbftPhase::Commit,
-            );
+            let phase = srv.governance_cast_own_vote(crate::server::federation::PbftPhase::Commit);
             Ok(ResponseValue::GovernanceCommitResult {
                 phase: format!("{:?}", phase),
             })
@@ -4057,7 +4053,13 @@ fn dispatch_inner(
         } => {
             #[cfg(not(feature = "epub-import"))]
             {
-                let _ = (epub_data, title, author, skip_prefix_lines, skip_suffix_lines);
+                let _ = (
+                    epub_data,
+                    title,
+                    author,
+                    skip_prefix_lines,
+                    skip_suffix_lines,
+                );
                 Err(crate::server::ServerError::InvalidArgument(
                     "EPUB import not compiled in (GPL-licensed feature — rebuild with --features epub-import)"
                         .into(),

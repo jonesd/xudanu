@@ -98,8 +98,12 @@ fn usage() {
     eprintln!("  --log-retention <n>      Keep files covered by the newest N checkpoints (default 0 = all)");
     eprintln!("  --log-retention-mode <m> Compaction mode: archive (default) or delete");
     eprintln!("  --key-passphrase <pw>   Passphrase for encrypted server key file");
-    eprintln!("  --admin-passphrase <pw>  Admin passphrase (prefer XUDANU_ADMIN_PASSPHRASE env var)");
-    eprintln!("                          (CLI args are visible in `ps` — use the env var or a file)");
+    eprintln!(
+        "  --admin-passphrase <pw>  Admin passphrase (prefer XUDANU_ADMIN_PASSPHRASE env var)"
+    );
+    eprintln!(
+        "                          (CLI args are visible in `ps` — use the env var or a file)"
+    );
     eprintln!("                         (can also set XUDANU_KEY_PASSPHRASE env var)");
     eprintln!("  --github-client-id <id>      GitHub OAuth app client ID");
     eprintln!("  --github-client-secret <key> GitHub OAuth app client secret");

@@ -221,7 +221,10 @@ async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
         // FR-75 follow-up: validator lifecycle in /health so external
         // monitors can alert on rotation/expiry (margin 0 = no
         // further loss tolerable; negative = governance halted).
-        if state.server.with_server_ref(|srv| srv.federation_is_enabled()) {
+        if state
+            .server
+            .with_server_ref(|srv| srv.federation_is_enabled())
+        {
             let lifecycle = state
                 .server
                 .with_server_ref(|srv| srv.governance_lifecycle_snapshot());

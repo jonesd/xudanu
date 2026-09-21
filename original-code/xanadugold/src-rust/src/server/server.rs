@@ -22966,7 +22966,9 @@ impl Server {
             pinned_entry.admitted_by_governance = true;
             pinned_entry.recovery_key_hex = m.recovery_key_hex.clone();
             let tag = self.federation.membership_mut().next_tag(&m.server_id);
-            self.federation.membership_mut().add_member(pinned_entry, tag);
+            self.federation
+                .membership_mut()
+                .add_member(pinned_entry, tag);
         }
         let server_id = self.federation_server_id();
         let tag = self.federation.membership_mut().next_tag(&server_id);
@@ -23213,8 +23215,12 @@ impl Server {
         // seal; refuse to open one.
         {
             let gov = self.federation.governance();
-            let pool = self.governance_validator_members_at(gov.current_sequence() + 1).len();
-            let admitted = self.governance_admitted_count_at(gov.current_sequence() + 1).max(1);
+            let pool = self
+                .governance_validator_members_at(gov.current_sequence() + 1)
+                .len();
+            let admitted = self
+                .governance_admitted_count_at(gov.current_sequence() + 1)
+                .max(1);
             let quorum = 2 * ((admitted.saturating_sub(1)) / 3) + 1;
             if pool < quorum {
                 tracing::warn!(
@@ -23247,17 +23253,15 @@ impl Server {
         let gov = self.federation.governance_mut();
         gov.set_cluster_size(admitted);
         if !gov.is_leader(&my_id, &members) {
-        return None;
+            return None;
         }
         let proposal = gov.propose(transactions, my_id.clone())?;
         // The leader casts its own SIGNED prepare immediately: the
         // proposal's implicit vote counts toward quorum, but the
         // sealed certificate needs the signature. Single-server mode
         // reaches Commit right here.
-        let vote = self.governance_make_signed_vote(
-            crate::server::federation::PbftPhase::Prepare,
-            &proposal,
-        );
+        let vote = self
+            .governance_make_signed_vote(crate::server::federation::PbftPhase::Prepare, &proposal);
         self.federation.governance_mut().receive_prepare(vote);
         Some(proposal)
     }
@@ -23301,9 +23305,7 @@ impl Server {
 
     /// Test accessor for the validator verifying-key map (next seq).
     #[doc(hidden)]
-    pub fn governance_member_keys_for_test(
-        &self,
-    ) -> std::collections::HashMap<String, String> {
+    pub fn governance_member_keys_for_test(&self) -> std::collections::HashMap<String, String> {
         self.governance_member_keys_at(self.next_governance_seq())
     }
 
@@ -23318,13 +23320,8 @@ impl Server {
         if let Some(mut entry) = self.federation.membership().find_member(server_id) {
             entry.epoch = epoch;
             self.federation.membership_mut().remove_member(server_id);
-            let tag = self
-                .federation
-                .membership_mut()
-                .next_tag(server_id);
-            self.federation
-                .membership_mut()
-                .add_member(entry, tag);
+            let tag = self.federation.membership_mut().next_tag(server_id);
+            self.federation.membership_mut().add_member(entry, tag);
         }
     }
 
@@ -23335,10 +23332,8 @@ impl Server {
     pub fn governance_lifecycle_snapshot(&self) -> crate::server::federation::GovernanceLifecycle {
         let next = self.next_governance_seq();
         let validators = self.governance_validator_members();
-        let pool: Vec<&crate::server::federation::MembershipEntry> = validators
-            .iter()
-            .filter(|m| m.epoch.covers(next))
-            .collect();
+        let pool: Vec<&crate::server::federation::MembershipEntry> =
+            validators.iter().filter(|m| m.epoch.covers(next)).collect();
         let admitted = validators
             .iter()
             .filter(|m| m.epoch.admitted_by(next))
@@ -23353,8 +23348,7 @@ impl Server {
         let expiring_soon: Vec<(String, u64)> = validators
             .iter()
             .filter(|m| {
-                m.epoch.covers(next)
-                    && m.epoch.valid_until_seq.saturating_sub(next) <= WARN_WINDOW
+                m.epoch.covers(next) && m.epoch.valid_until_seq.saturating_sub(next) <= WARN_WINDOW
             })
             .map(|m| (m.server_id.clone(), m.epoch.valid_until_seq))
             .collect();
@@ -23417,9 +23411,7 @@ impl Server {
     /// governance (sealed Admit, or bootstrap self-registration for
     /// single-server mode). Join/sync-plane entries are directory
     /// members without voting rights.
-    pub fn governance_validator_members(
-        &self,
-    ) -> Vec<crate::server::federation::MembershipEntry> {
+    pub fn governance_validator_members(&self) -> Vec<crate::server::federation::MembershipEntry> {
         self.federation
             .membership()
             .active_members()
@@ -23461,9 +23453,7 @@ impl Server {
         vote
     }
 
-    pub fn governance_pending_round_phase(
-        &self,
-    ) -> Option<crate::server::federation::RoundPhase> {
+    pub fn governance_pending_round_phase(&self) -> Option<crate::server::federation::RoundPhase> {
         self.federation
             .governance()
             .pending_round()
@@ -23510,12 +23500,12 @@ impl Server {
     /// so `view_change_due` fires deterministically without waiting.
     #[doc(hidden)]
     pub fn governance_force_stall_for_tests(&mut self) {
-        self.federation
-            .governance_mut()
-            .force_stall(std::time::SystemTime::now()
+        self.federation.governance_mut().force_stall(
+            std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
-                .as_secs());
+                .as_secs(),
+        );
     }
 
     // ── View change glue ────────────────────────────────────────────
@@ -23638,7 +23628,9 @@ impl Server {
         let keys = self.governance_member_keys_at(self.next_governance_seq());
         // Assembler signature over the NewView payload.
         if !crate::server::federation::verify_hex_sig(
-            keys.get(&new_view.assembler_id).map(|s| s.as_str()).unwrap_or(""),
+            keys.get(&new_view.assembler_id)
+                .map(|s| s.as_str())
+                .unwrap_or(""),
             &new_view.payload(),
             &new_view.signature,
         ) {
@@ -23716,10 +23708,8 @@ impl Server {
         // FR-75 §3: consensus membership is the VALIDATOR set
         // (governance-admitted), not the directory.
         let members: Vec<String> = self.governance_validator_ids();
-        let vote = self.governance_make_signed_vote(
-            crate::server::federation::PbftPhase::Prepare,
-            proposal,
-        );
+        let vote = self
+            .governance_make_signed_vote(crate::server::federation::PbftPhase::Prepare, proposal);
         {
             let gov = self.federation.governance_mut();
             gov.set_cluster_size(members.len().max(1));
@@ -23763,7 +23753,9 @@ impl Server {
         // FR-75 §5: quorum from the admitted count at this sequence
         // (expired members still count toward f); the voter pool is
         // the members list checked above.
-        let admitted = self.governance_admitted_count_at(vote.sequence_number).max(1);
+        let admitted = self
+            .governance_admitted_count_at(vote.sequence_number)
+            .max(1);
         let gov = self.federation.governance_mut();
         gov.set_cluster_size(admitted);
         gov.receive_prepare(vote)
@@ -23795,7 +23787,9 @@ impl Server {
                 return crate::server::federation::RoundPhase::PrePrepare;
             }
         }
-        let admitted = self.governance_admitted_count_at(vote.sequence_number).max(1);
+        let admitted = self
+            .governance_admitted_count_at(vote.sequence_number)
+            .max(1);
         let gov = self.federation.governance_mut();
         gov.set_cluster_size(admitted);
         gov.receive_commit(vote)
@@ -30420,7 +30414,10 @@ mod tests {
         );
 
         // Directory: present. Validator set: absent.
-        assert!(server.membership_list().iter().any(|m| m.server_id == joiner_id));
+        assert!(server
+            .membership_list()
+            .iter()
+            .any(|m| m.server_id == joiner_id));
         assert!(
             !server
                 .governance_validator_members()
@@ -30437,7 +30434,7 @@ mod tests {
             server_id: joiner_id.clone(),
             verifying_key_hex: joiner_vk,
             kex_public_hex: "00".to_string(),
-                recovery_key_hex: String::new(),
+            recovery_key_hex: String::new(),
         });
         assert!(
             server
@@ -30446,7 +30443,9 @@ mod tests {
                 .any(|m| m.server_id == joiner_id),
             "governance Admit grants validator rights"
         );
-        assert!(server.governance_member_keys_for_test().contains_key(&joiner_id));
+        assert!(server
+            .governance_member_keys_for_test()
+            .contains_key(&joiner_id));
     }
 
     /// Functional 4-node round over the SERVER glue: real membership,
@@ -30496,7 +30495,11 @@ mod tests {
             royalty_type: crate::server::federation::RoyaltyType::Transclusion,
             amount: 7,
         };
-        assert_eq!(server.federation_membership_active_count(), 4, "4 members — BFT mode");
+        assert_eq!(
+            server.federation_membership_active_count(),
+            4,
+            "4 members — BFT mode"
+        );
         let proposal = server
             .governance_propose(vec![tx])
             .expect("leader may propose — sorted membership puts self first");
@@ -30517,17 +30520,33 @@ mod tests {
         };
 
         // Two peer prepares → quorum 3 (self + 2).
-        let phase = server.governance_receive_prepare(svote(&peers[0].1, &peers[0].0, crate::server::federation::PbftPhase::Prepare));
+        let phase = server.governance_receive_prepare(svote(
+            &peers[0].1,
+            &peers[0].0,
+            crate::server::federation::PbftPhase::Prepare,
+        ));
         assert_eq!(format!("{phase:?}"), "Prepare");
-        let phase = server.governance_receive_prepare(svote(&peers[1].1, &peers[1].0, crate::server::federation::PbftPhase::Prepare));
+        let phase = server.governance_receive_prepare(svote(
+            &peers[1].1,
+            &peers[1].0,
+            crate::server::federation::PbftPhase::Prepare,
+        ));
         assert_eq!(format!("{phase:?}"), "Commit");
 
         // Commits: leader self-vote + two peers → Sealed.
         let phase = server.governance_cast_own_vote(crate::server::federation::PbftPhase::Commit);
         assert_eq!(format!("{phase:?}"), "Commit");
-        let phase = server.governance_receive_commit(svote(&peers[0].1, &peers[0].0, crate::server::federation::PbftPhase::Commit));
+        let phase = server.governance_receive_commit(svote(
+            &peers[0].1,
+            &peers[0].0,
+            crate::server::federation::PbftPhase::Commit,
+        ));
         assert_eq!(format!("{phase:?}"), "Commit");
-        let phase = server.governance_receive_commit(svote(&peers[1].1, &peers[1].0, crate::server::federation::PbftPhase::Commit));
+        let phase = server.governance_receive_commit(svote(
+            &peers[1].1,
+            &peers[1].0,
+            crate::server::federation::PbftPhase::Commit,
+        ));
         assert_eq!(format!("{phase:?}"), "Sealed");
 
         let batch = server.governance_seal_round().expect("sealed");
@@ -30590,9 +30609,7 @@ mod tests {
         // Single-server mode: the server's own SIGNED votes (the glue
         // signs with the server keypair — unsigned voter_id claims are
         // no longer protocol currency).
-        let phase = server.governance_cast_own_vote(
-            crate::server::federation::PbftPhase::Prepare,
-        );
+        let phase = server.governance_cast_own_vote(crate::server::federation::PbftPhase::Prepare);
         assert_eq!(
             format!("{:?}", phase),
             "Commit",
@@ -30615,7 +30632,7 @@ mod tests {
             server_id: "srv-new".to_string(),
             verifying_key_hex: "vk-new".to_string(),
             kex_public_hex: "kex-new".to_string(),
-                recovery_key_hex: String::new(),
+            recovery_key_hex: String::new(),
         };
         server.governance_execute_tx(&tx);
         assert_eq!(server.membership_count(), 2);
@@ -30631,7 +30648,7 @@ mod tests {
             server_id: "srv-new".to_string(),
             verifying_key_hex: "vk-new".to_string(),
             kex_public_hex: "kex-new".to_string(),
-                recovery_key_hex: String::new(),
+            recovery_key_hex: String::new(),
         };
         server.governance_execute_tx(&tx_admit);
         assert_eq!(server.membership_count(), 2);

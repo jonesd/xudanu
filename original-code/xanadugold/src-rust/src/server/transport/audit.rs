@@ -782,7 +782,10 @@ mod tests {
         assert!(sec.federation_conn_try_acquire(Some("192.0.2.9:1".parse().unwrap())));
         // Release restores the slot.
         sec.federation_conn_release(Some(addr(1000)));
-        assert!(sec.federation_conn_try_acquire(Some(addr(3000))), "released slot reusable");
+        assert!(
+            sec.federation_conn_try_acquire(Some(addr(3000))),
+            "released slot reusable"
+        );
         // Unattributable connections are never capped.
         assert!(sec.federation_conn_try_acquire(None));
     }

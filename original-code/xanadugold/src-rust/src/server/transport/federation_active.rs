@@ -336,9 +336,9 @@ async fn run_outbound_connection(
     // certificate-verified tail so catch-up is automatic — the frame
     // handler verifies each batch and ingests in order.
     {
-        let from_seq = state.server.with_server_ref(|srv| {
-            srv.governance_current_sequence() + 1
-        });
+        let from_seq = state
+            .server
+            .with_server_ref(|srv| srv.governance_current_sequence() + 1);
         tracing::info!(
             from_seq,
             peer = %peer_server_id,
