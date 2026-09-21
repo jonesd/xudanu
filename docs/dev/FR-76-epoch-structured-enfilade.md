@@ -251,6 +251,157 @@ to content stored elsewhere. This design extends that concept: the
 entire tree becomes virtual (by-reference) once frozen. Gold's
 splaying remains exactly as designed within the active epoch.
 
+## Multi-server architecture
+
+Frozen chunks are content-addressed and immutable — any server can
+hold, cache, or verify any chunk by recomputing its BLAKE3 hash.
+The active epoch (mutable splay tree) stays on the document's
+**owner** server. This is the same trust model as the existing
+federation: owners write, everyone reads.
+
+### Server roles
+
+Each server plays three roles simultaneously:
+
+| Role | Responsibility | Scope |
+|---|---|---|
+| **Owner** | Active epoch for assigned documents; accepts writes | Per-document |
+| **Primary** | Stores frozen chunks in its hash range | Per-chunk (hash-range partitioning) |
+| **Cache** | Serves reads for any cached chunk | Any chunk, LRU eviction |
+
+A server with no owned documents (pure read replica) runs the
+cache role only — useful for read-heavy deployments and geographic
+locality.
+
+### Read path (cross-server)
+
+```
+read(doc-42, position P) on Server B:
+
+1. Active epoch?          → only if B owns doc-42
+2. Local chunk cache?     → hit? return (~0.5 μs)
+3. Compute chunk hash from doc-42 root + P's path
+4. Query owner (Server A) → hit? fetch, cache, return
+5. Query hash-range primary → hit? fetch, cache, return
+6. Broadcast to all servers (last resort, Bloom-filtered)
+```
+
+Steps 4-5 are one network round-trip (~1ms same-DC, ~50ms WAN).
+After the first fetch, the chunk is cached locally — subsequent
+reads are RAM-speed. Cold documents on remote servers pay the
+network cost once.
+
+### Write path
+
+```
+edit(doc-42) on Server B:
+
+1. B is not the owner → redirect (or proxy) to Server A
+2. Server A's active epoch handles the edit (splay tree)
+3. On freeze: chunks write locally, then distribute to primaries
+4. Server B eventually caches the new chunks (on next read)
+```
+
+Write latency is identical to single-server for the owner. Non-
+owners pay a redirect hop. For write-heavy cross-server usage,
+the client should connect to the owning server directly.
+
+### Freeze distribution
+
+When the owner freezes an epoch:
+
+1. Owner writes all chunks to its local chunk store
+2. Owner sends chunks to each hash-range primary (async, non-blocking)
+3. Primaries acknowledge (or don't — chunks are also fetchable
+   from the owner)
+4. Owner drops the in-memory tree
+
+The distribution is eventually-consistent — the owner is always
+authoritative for recently-frozen chunks until primaries confirm.
+
+### Cross-server structural diff
+
+```
+diff(doc-42@v1, doc-42@v2):
+
+1. Server A: "v2 root hash = def456"
+2. Server B: "v1 root hash = abc123"
+3. Different → walk trees in parallel, comparing child hashes
+4. Only descend into subtrees with different hashes
+5. Result: list of changed chunks + their hashes
+
+Cost: O(changed nodes) + 1 round-trip per changed subtree
+```
+
+This works because both servers see the same chunk hashes —
+the tree structure is deterministic once frozen. A server that
+doesn't have a chunk can request it by hash from any server
+that does.
+
+### Corpus-wide query (C2)
+
+"Which documents share this passage?" — the hardest operation
+to scale. Each server maintains a local content-fingerprint
+index (the existing BLAKE3 n-gram approach). The query path:
+
+```
+corpus_match(passage P) on Server A:
+
+1. Compute P's content fingerprint
+2. Check local fingerprint index
+3. Check Bloom filters from other servers (FR-35)
+4. Only query servers whose Bloom filter says "maybe"
+5. Merge results
+
+Network cost: O(S_maybe) where S_maybe ≤ S total servers
+Bloom filters reduce S_maybe to near-zero for most queries
+```
+
+### Capacity scaling
+
+| Resource | 1 server | 4 servers | N servers |
+|---|---|---|---|
+| Write throughput | 1× | 4× (docs partitioned) | N× |
+| Read throughput | 1× | 4×+ (cache hits) | N×+ |
+| Total storage | 1× | 4× | N× |
+| Corpus capacity | ~500K books | ~2M books | N × 500K |
+| C2 query latency | local only | local + 3 filtered hops | local + O(S_maybe) |
+
+### Docker validation plan
+
+Initial validation with the existing 4-node Docker federation:
+
+1. **Single-server freeze**: verify freeze/compaction works on
+   one node before distributing
+2. **Chunk replication**: freeze on node A, verify chunks
+   appear on nodes B/C/D (hash-range primaries)
+3. **Cross-server read**: request a frozen chunk on node B,
+   verify it's fetched from node A and cached locally
+4. **Cross-server diff**: create two versions of a document,
+   diff them from a non-owning server
+5. **Load distribution**: seed documents across all 4 nodes,
+   run read queries from all nodes, verify cache hit rates
+   and that no single node is a bottleneck
+6. **Failover**: kill the owner, verify reads still work from
+   cached chunks on other servers (writes fail until a new
+   owner is elected — the PBFT governance plane handles this)
+
+### Relation to existing federation
+
+The epoch model is **additive** to the existing federation
+protocol (FR-19b, FR-31, FR-35):
+
+- Federation handles: server discovery, membership, governance,
+  cross-server links, transclusion resolution
+- Epoch model adds: structural chunk distribution, cross-server
+  tree reads, content-addressed caching
+- The `GovernanceLogRequest/Result` frames (state transfer)
+  already demonstrate the fetch-by-need pattern — epoch chunks
+  follow the same model
+
+The existing `--peer` wiring and genesis pinning work unchanged.
+Epoch distribution uses the same encrypted channels.
+
 ## Implementation roadmap
 
 ### Phase 1: Freeze protocol (~2-3 days)
@@ -269,10 +420,12 @@ splaying remains exactly as designed within the active epoch.
 - Background compaction trigger
 - GC integration (old epochs become collectible)
 
-### Phase 4: Sharding (~future, depends on FR-19b)
-- Hash-range chunk distribution
-- Cross-server epoch reads
+### Phase 4: Multi-server distribution (~3-4 days)
+- Hash-range chunk distribution (federation frames)
+- Cross-server epoch reads with local caching
 - Cache coherence (trivial: immutable chunks)
+- Docker validation: 4-node load distribution test
+- Failover: reads survive owner loss (cached chunks)
 
 ### Phase 5: XPS integration (~1 day)
 - Add epoch operations to the benchmark suite
