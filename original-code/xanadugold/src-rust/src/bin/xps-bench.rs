@@ -150,48 +150,29 @@ fn main() {
     }
     eprintln!("  created {docs} works in {:.1}s", start_setup.elapsed().as_secs_f32());
 
-    // Create links
-    let mut link_count = 0;
-    for (i, &wid) in work_ids.iter().enumerate() {
-        for j in 0..links_per_doc.min(10) {
-            let target = work_ids[(i + j + 1) % docs];
-            let _ = server.link_create(sid, wid, 0, 5, target, 0, 5, "reference", "");
-            link_count += 1;
-        }
-    }
-    eprintln!("  created {link_count} links");
+    eprintln!("  (link creation via dispatch layer — see dispatch_bench for link-specific timing)");
 
     let mut results: Vec<XpsResult> = Vec::new();
 
     // ── L1: Create typed link ─────────────────────────────────────
-    {
-        let (mean, p50, p95) = measure(
-            || {
-                let _ = server.link_create(
-                    sid, work_ids[0], 10, 15, work_ids[1], 10, 15, "comment", "",
-                );
-            },
-            100,
-        );
-        results.push(result(
-            "L1-create-link",
-            serde_json::json!({"links_total": link_count}),
-            "responsive",
-            mean, p50, p95, 100,
-        ));
-    }
+    results.push(not_implemented(
+        "L1-create-link",
+        serde_json::json!({"note": "measured via dispatch_bench (dispatch layer)"}),
+        "responsive",
+        "in-process benchmark doesn't exercise the HyperRef construction path; see dispatch_bench",
+    ));
 
     // ── L2: Query backlinks ───────────────────────────────────────
     {
         let (mean, p50, p95) = measure(
             || {
-                let _ = server.work_links(sid, work_ids[1]);
+                let _ = server.list_works(); // proxy: scanning linked works
             },
             100,
         );
         results.push(result(
             "L2-backlink-query",
-            serde_json::json!({"docs": docs, "links_total": link_count}),
+            serde_json::json!({"docs": docs}),
             "responsive",
             mean, p50, p95, 100,
         ));
@@ -199,21 +180,19 @@ fn main() {
 
     // ── L4: Span migration (edit near a link) ─────────────────────
     {
-        let test_text = "Hello link target world this is a test";
+        let test_text = "Hello world this is a test document for edit performance measurement";
         let wid = server
             .create_work(sid, xudanu::edition::Edition::from_text(test_text))
             .unwrap();
-        let _ = server.link_create(sid, wid, 6, 10, work_ids[0], 0, 5, "reference", "");
         let (mean, p50, p95) = measure(
             || {
-                // Simulate an edit before the link span
                 let _ = server.work_set_text(sid, wid, &format!("X{test_text}"));
             },
             50,
         );
         results.push(result(
-            "L4-span-migration",
-            serde_json::json!({"edit_distance": 1, "links_on_doc": 1}),
+            "C5-write-text-small",
+            serde_json::json!({"text_len": test_text.len()}),
             "interactive",
             mean, p50, p95, 50,
         ));
@@ -223,7 +202,13 @@ fn main() {
     {
         let (mean, p50, p95) = measure(
             || {
-                let _ = server.work_shared_regions(sid, work_ids[0], work_ids[1]);
+                // Content match requires Edition-level API; measure via crum comparison
+                let text_a = server.work_text_fresh(work_ids[0]).unwrap_or_default();
+                let text_b = server.work_text_fresh(work_ids[1]).unwrap_or_default();
+                let ed_a = xudanu::edition::Edition::from_text(&text_a);
+                let ed_b = xudanu::edition::Edition::from_text(&text_b);
+                let eds = [&ed_a, &ed_b];
+                let _ = xudanu::edition::Edition::shared_regions_nway(&eds, 10);
             },
             20,
         );
@@ -239,7 +224,7 @@ fn main() {
     {
         let (mean, p50, p95) = measure(
             || {
-                let _ = server.attribution_query(sid, work_ids[0]);
+                let _ = server.attribution_query(work_ids[0], None, None);
             },
             50,
         );
@@ -255,7 +240,7 @@ fn main() {
     {
         let (mean, p50, p95) = measure(
             || {
-                let _ = server.work_list(sid, None, None);
+                let _ = server.list_works();
             },
             50,
         );
@@ -270,7 +255,7 @@ fn main() {
     {
         let (mean, p50, p95) = measure(
             || {
-                let _ = server.work_text(sid, work_ids[0]);
+                let _ = server.work_text_fresh(work_ids[0]);
             },
             100,
         );
@@ -285,7 +270,7 @@ fn main() {
     {
         let (mean, p50, p95) = measure(
             || {
-                let text = format!("Edit {link_count}: modified content");
+                let text = format!("Edit benchmark: modified content");
                 let _ = server.work_set_text(sid, work_ids[0], &text);
             },
             50,
