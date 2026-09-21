@@ -7242,6 +7242,7 @@ async fn federation_activation_content_replication_end_to_end() {
             peers: vec![PeerAddress::new("127.0.0.1", b_port)],
             mode: FederationMode::Closed,
             min_endorsements: 2,
+            pinned_members: Vec::new(),
         });
         srv.membership_bootstrap_init();
     });
@@ -7252,6 +7253,7 @@ async fn federation_activation_content_replication_end_to_end() {
             peers: vec![PeerAddress::new("127.0.0.1", a_port)],
             mode: FederationMode::Closed,
             min_endorsements: 2,
+            pinned_members: Vec::new(),
         });
         srv.membership_bootstrap_init();
     });
@@ -7344,6 +7346,7 @@ async fn federation_activation_membership_converges() {
             peers: vec![PeerAddress::new("127.0.0.1", b_port)],
             mode: FederationMode::Closed,
             min_endorsements: 2,
+            pinned_members: Vec::new(),
         });
         srv.membership_bootstrap_init();
     });
@@ -7354,6 +7357,7 @@ async fn federation_activation_membership_converges() {
             peers: vec![PeerAddress::new("127.0.0.1", a_port)],
             mode: FederationMode::Closed,
             min_endorsements: 2,
+            pinned_members: Vec::new(),
         });
         srv.membership_bootstrap_init();
     });
@@ -8648,6 +8652,7 @@ async fn governance_full_consensus_via_server_methods() {
     state.server.with_server(|srv| {
         let proposal = srv
             .governance_propose(vec![xudanu::server::federation::GovernanceTx::Admit {
+                recovery_key_hex: String::new(),
                 server_id: "srv-joined".to_string(),
                 verifying_key_hex: "vk-joined".to_string(),
                 kex_public_hex: "kex-joined".to_string(),
@@ -8659,6 +8664,8 @@ async fn governance_full_consensus_via_server_methods() {
             sequence_number: proposal.sequence_number,
             voter_id: my_id.clone(),
             phase: xudanu::server::federation::PbftPhase::Prepare,
+            digest: proposal.digest(),
+            signature: String::new(),
         };
         srv.governance_receive_prepare(vote);
 
@@ -8667,6 +8674,8 @@ async fn governance_full_consensus_via_server_methods() {
             sequence_number: proposal.sequence_number,
             voter_id: my_id.clone(),
             phase: xudanu::server::federation::PbftPhase::Commit,
+            digest: proposal.digest(),
+            signature: String::new(),
         };
         srv.governance_receive_commit(commit);
 
@@ -8701,6 +8710,8 @@ async fn governance_royalty_recording_via_consensus() {
             sequence_number: 1,
             voter_id: my_id.clone(),
             phase: xudanu::server::federation::PbftPhase::Prepare,
+            digest: String::new(),
+            signature: String::new(),
         };
         srv.governance_receive_prepare(vote);
 
@@ -8709,6 +8720,8 @@ async fn governance_royalty_recording_via_consensus() {
             sequence_number: 1,
             voter_id: my_id.clone(),
             phase: xudanu::server::federation::PbftPhase::Commit,
+            digest: String::new(),
+            signature: String::new(),
         };
         srv.governance_receive_commit(commit);
 
@@ -8778,6 +8791,8 @@ async fn governance_seal_via_wire_op() {
             sequence_number: 1,
             voter_id: my_id.clone(),
             phase: xudanu::server::federation::PbftPhase::Prepare,
+            digest: String::new(),
+            signature: String::new(),
         };
         srv.governance_receive_prepare(vote);
 
@@ -8786,6 +8801,8 @@ async fn governance_seal_via_wire_op() {
             sequence_number: 1,
             voter_id: my_id.clone(),
             phase: xudanu::server::federation::PbftPhase::Commit,
+            digest: String::new(),
+            signature: String::new(),
         };
         srv.governance_receive_commit(commit);
     });

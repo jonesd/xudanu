@@ -6659,10 +6659,9 @@ impl Server {
     }
 
     // ── EPUB import ──
-    // GPL-3.0 territory (epub-2.x) — only compiled with the explicit
-    // epub-import feature; the default server build stays GPL-free.
+    // MIT-licensed (epub-parser) — part of the server feature with no
+    // GPL entanglement.
 
-    #[cfg(feature = "epub-import")]
     pub fn import_epub(
         &mut self,
         session_id: SessionId,
@@ -6678,28 +6677,41 @@ impl Server {
         );
         self.ensure_logged_in(session_id)?;
 
-        // 1. Extract metadata from EPUB
-        let cursor = std::io::Cursor::new(epub_data.to_vec());
-        let doc = epub::doc::EpubDoc::from_reader(cursor).map_err(|e| {
-            ServerError::InvalidArgument(format!("EPUB metadata parse failed: {}", e))
-        })?;
+        // epub-parser works from a file — write to a temp path.
+        let tmp = std::env::temp_dir().join(format!(
+            "xudanu-epub-{}.epub",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::write(&tmp, epub_data)
+            .map_err(|e| ServerError::InvalidArgument(format!("EPUB temp write failed: {}", e)))?;
+        let parsed = epub_parser::Epub::parse(&tmp).map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            ServerError::InvalidArgument(format!("EPUB parse failed: {}", e))
+        });
+        let _ = std::fs::remove_file(&tmp);
+        let epub = parsed?;
 
+        // 1. Extract metadata
         let title = title_override
             .map(String::from)
-            .or_else(|| doc.get_title())
+            .or_else(|| epub.metadata.title.clone())
             .unwrap_or_else(|| "Untitled".to_string());
 
         let author_name = author_override
             .map(String::from)
-            .or_else(|| doc.mdata("creator").map(|m| m.value.clone()))
+            .or_else(|| epub.metadata.author.clone())
             .unwrap_or_else(|| "Unknown Author".to_string());
 
-        drop(doc);
-
-        // 2. Extract plain text
-        let text = cli_epub_to_text::epub_bytes_to_text(epub_data).map_err(|e| {
-            ServerError::InvalidArgument(format!("EPUB text extraction failed: {}", e))
-        })?;
+        // 2. Extract text from pages (spine order)
+        let text: String = epub
+            .pages
+            .iter()
+            .map(|p| p.content.as_str())
+            .collect::<Vec<&str>>()
+            .join("\n\n");
 
         if text.is_empty() {
             return Err(ServerError::InvalidArgument(
@@ -30592,6 +30604,109 @@ mod tests {
             1,
             "forged batch rejected — log unchanged"
         );
+    }
+
+    /// EPUB import: builds a minimal valid EPUB (ZIP with mimetype +
+    /// container.xml + OPF + one chapter) and imports it, verifying
+    /// metadata extraction and text content.
+    #[test]
+    fn epub_import_extracts_metadata_and_text() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        // Minimal EPUB: a ZIP containing the required structure
+        let epub_bytes = build_minimal_epub(
+            "Test Book Title",
+            "Jane Author",
+            "Chapter one text here.\nChapter two text follows.",
+        );
+
+        let (work_id, author_id, text_len, title) = server
+            .import_epub(sid, &epub_bytes, None, None, 0, 0)
+            .expect("import succeeds");
+
+        assert_eq!(
+            title, "Test Book Title",
+            "title extracted from EPUB metadata"
+        );
+        assert!(text_len > 0, "text extracted ({text_len} chars)");
+        let text = server.work_text_opt(work_id).unwrap_or_default();
+        assert!(
+            text.contains("Chapter one"),
+            "chapter text present: {}...",
+            &text[..text.len().min(80)]
+        );
+        let _ = author_id;
+    }
+
+    #[test]
+    fn epub_import_rejects_garbage() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        assert!(
+            server
+                .import_epub(sid, b"this is not an epub", None, None, 0, 0)
+                .is_err(),
+            "non-EPUB data rejected"
+        );
+    }
+
+    /// Build a minimal valid EPUB as raw bytes (ZIP format).
+    fn build_minimal_epub(title: &str, author: &str, body: &str) -> Vec<u8> {
+        use std::io::Write;
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+
+        // mimetype must be first, uncompressed
+        zip.start_file("mimetype", options).unwrap();
+        zip.write_all(b"application/epub+zip").unwrap();
+
+        // META-INF/container.xml
+        let container = r#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#;
+        zip.start_file("META-INF/container.xml", options).unwrap();
+        zip.write_all(container.as_bytes()).unwrap();
+
+        // OPF package file
+        let opf = format!(
+            r#"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="uid">test-id</dc:identifier>
+    <dc:title>{title}</dc:title>
+    <dc:creator>{author}</dc:creator>
+    <dc:language>en</dc:language>
+  </metadata>
+  <manifest>
+    <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch1"/>
+  </spine>
+</package>"#
+        );
+        zip.start_file("OEBPS/content.opf", options).unwrap();
+        zip.write_all(opf.as_bytes()).unwrap();
+
+        // Chapter content
+        let chapter = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>{title}</title></head>
+<body><p>{body}</p></body>
+</html>"#
+        );
+        zip.start_file("OEBPS/ch1.xhtml", options).unwrap();
+        zip.write_all(chapter.as_bytes()).unwrap();
+
+        zip.finish().unwrap().into_inner()
     }
 
     #[test]
