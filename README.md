@@ -13,7 +13,7 @@
 
 ### The Gallery of Unusual Connections
 
-A seeded museum of live link structures — every exhibit is the thing itself, not a picture of it. Click any underlined passage to follow its connection; hover for the type and the far end.
+The best demo of what Xudanu does: a seeded museum of live link structures — every exhibit is the thing itself, not a picture of it. Click any underlined passage to follow its connection; hover for the type and the far end; watch for the quiet note when you cross in or out of the exhibition.
 
 | | |
 |---|---|
@@ -24,12 +24,22 @@ A seeded museum of live link structures — every exhibit is the thing itself, n
 | ![Five-way compare](docs/screenshots/gallery-compare.png) | |
 | **The Five-Way Junction** — one connection, five named ends, compared side by side | |
 
-Seed it on your own server: `node scripts/seed-gallery-unusual.mjs`, then walk **The Curator's Tour** in the Trails panel. The gallery is also an **exhibition** (`node scripts/seed-exhibition-gathers.mjs`) — click any underlined passage to follow a connection, and watch for the quiet note when you cross in or out of the grouped unit.
+Seed it on your own server (from a repo checkout, against a running local server):
+
+```bash
+npm install ws
+XUDANU_ADMIN_PASSPHRASE=<your-admin-pass> node scripts/seed-gallery-unusual.mjs
+XUDANU_ADMIN_PASSPHRASE=<your-admin-pass> node scripts/seed-exhibition-gathers.mjs
+```
+
+Then open the **Gallery — Lobby** in the Library, or walk **The Curator's Tour** in the Trails panel. Seeding against the Docker quickstart (port 8080)? Add `SEED_ORIGIN=http://localhost:8080` to the commands. Both seeders are idempotent — re-running is safe.
 
 > **[Try it live](https://xudanu.com)** — a running server with the interactive Links Course: typed and multi-ended links, gathered end-sets, and live transclusions.
 > **[Read the documentation](https://dgjones.info/xudanu/)** — user guides, technical architecture, and visual diagrams.
 > **[Source on GitHub](https://github.com/jonesd/xudanu)** — releases with static binaries for Linux, macOS, and Windows.
 > **[Docker image](https://github.com/jonesd/xudanu/pkgs/container/xudanu)** — `ghcr.io/jonesd/xudanu`, multi-arch, rebuilt on every release.
+>
+> **Start with [the Gallery of Unusual Connections](#the-gallery-of-unusual-connections)** — nine rooms of live link structures, seeded on your own server in one command. It is the best tour of what the system does.
 
 **xudanu** (Xudanu) is a modern Rust and TypeScript implementation inspired by the Xanadu Project and its Udanax Gold (Xanadu 92.1) system.
 
@@ -161,6 +171,10 @@ docker compose -f docker-compose.single.yml up -d
 Open `http://localhost:8080`. Create a document, select some text,
 make a link. Data persists in a named volume — `docker compose -f
 docker-compose.single.yml down` to stop (`-v` also deletes the data).
+
+Then seed **[the Gallery of Unusual Connections](#the-gallery-of-unusual-connections)**
+— nine rooms of live link structures, the fastest way to see what
+links, gathered ends, and transclusions actually look like.
 
 No Docker? Grab a static binary from
 [releases](https://github.com/jonesd/xudanu/releases) — Linux (musl),

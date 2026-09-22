@@ -32,7 +32,7 @@
 import WebSocket from "ws";
 
 const url = process.argv[2] ?? "ws://127.0.0.1:8080/xudanu?format=json";
-const ws = new WebSocket(url, { headers: { origin: "http://localhost:5173" } });
+const ws = new WebSocket(url, { headers: { origin: process.env.SEED_ORIGIN ?? "http://localhost:5173" } });
 
 let nextId = 1;
 const pending = new Map();
