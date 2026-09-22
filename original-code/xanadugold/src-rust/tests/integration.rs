@@ -4405,21 +4405,39 @@ async fn link_list_jump_target_pairs_work_and_span() {
     let work_a = send_recv_json(
         &mut s,
         &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "hello source text"}}))),
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "hello source text"}})),
+        ),
     )
-    .await["value"]["value"].as_u64().unwrap();
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
     let work_b = send_recv_json(
         &mut s,
         &mut r,
-        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "world target text"}}))),
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "world target text"}})),
+        ),
     )
-    .await["value"]["value"].as_u64().unwrap();
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
     let work_c = send_recv_json(
         &mut s,
         &mut r,
-        json_req(12, "work_create", Some(serde_json::json!({"edition": {"text": "spanless far end"}}))),
+        json_req(
+            12,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "spanless far end"}})),
+        ),
     )
-    .await["value"]["value"].as_u64().unwrap();
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
     // Spanned link: both ends carry work + positions.
     let link1 = send_recv_json(
@@ -4474,7 +4492,11 @@ async fn link_list_jump_target_pairs_work_and_span() {
     let from_a = send_recv_json(
         &mut s,
         &mut r,
-        json_req(30, "link_list_for_work", Some(serde_json::json!({"work_id": work_a}))),
+        json_req(
+            30,
+            "link_list_for_work",
+            Some(serde_json::json!({"work_id": work_a})),
+        ),
     )
     .await["value"]["value"]["entries"]
         .as_array()
@@ -4505,7 +4527,11 @@ async fn link_list_jump_target_pairs_work_and_span() {
     let from_b = send_recv_json(
         &mut s,
         &mut r,
-        json_req(31, "link_list_for_work", Some(serde_json::json!({"work_id": work_b}))),
+        json_req(
+            31,
+            "link_list_for_work",
+            Some(serde_json::json!({"work_id": work_b})),
+        ),
     )
     .await["value"]["value"]["entries"]
         .as_array()

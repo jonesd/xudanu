@@ -47,7 +47,11 @@ fn build_link_payload(
         let work_id = r.work_context?;
         let start = r.start_position?;
         let end = r.end_position?;
-        (end > start).then(|| JumpTargetPayload { work_id, start, end })
+        (end > start).then(|| JumpTargetPayload {
+            work_id,
+            start,
+            end,
+        })
     });
     let (origin_archived, origin_title, origin_owner) = srv.link_endpoint_meta(origin);
     let is_open = destination.is_none() || d_ref.is_none();
@@ -2419,7 +2423,14 @@ fn dispatch_inner(
                 .into_iter()
                 .filter_map(|(link_id, origin, destination)| {
                     let (_, _, link) = srv.get_link(link_id).ok()?;
-                    Some(build_link_payload(srv, link_id, origin, destination, link, None))
+                    Some(build_link_payload(
+                        srv,
+                        link_id,
+                        origin,
+                        destination,
+                        link,
+                        None,
+                    ))
                 })
                 .collect();
             Ok(ResponseValue::LinkList(entries))
@@ -5238,7 +5249,14 @@ fn dispatch_inner_read(
                 .into_iter()
                 .filter_map(|(link_id, origin, destination)| {
                     let (_, _, link) = srv.get_link(link_id).ok()?;
-                    Some(build_link_payload(srv, link_id, origin, destination, link, None))
+                    Some(build_link_payload(
+                        srv,
+                        link_id,
+                        origin,
+                        destination,
+                        link,
+                        None,
+                    ))
                 })
                 .collect();
             Ok(ResponseValue::LinkList(entries))
