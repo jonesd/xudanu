@@ -52,6 +52,7 @@ import { getCursorOffset, setCaretModel, detectLineBlock, planBlockToggle } from
 import { SEED_CONCEPTS } from "../../concepts-seed";
 import { WorkspaceTopBar } from "./WorkspaceTopBar";
 import type { WorkspaceNavTab } from "./WorkspaceTopBar";
+import { checkExhibitionCrossing } from "../../exhibition";
 import "../../app.css";
 import "../../theme.css";
 import "../../workspace.css";
@@ -997,6 +998,21 @@ export function WorkspaceShell() {
     }
     setTimeout(() => setToast(null), 5000);
   }, []);
+
+  // Exhibition boundary: an INDICATION when a work switch crosses in
+  // or out of a grouped exhibition (cover + gathers links). Never
+  // blocks navigation — the crossing notice is informational only.
+  const prevWorkRef = useRef<number | null>(null);
+  useEffect(() => {
+    const prev = prevWorkRef.current;
+    prevWorkRef.current = workBeId;
+    if (prev == null || workBeId == null || prev === workBeId) return;
+    const client = clientRef.current;
+    if (!client) return;
+    void checkExhibitionCrossing(client, prev, workBeId).then((note) => {
+      if (note) showToast(note);
+    });
+  }, [workBeId, showToast]);
 
   const handleCreateAnnotation = useCallback(() => {
     if (!selectionRange) {

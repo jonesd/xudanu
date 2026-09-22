@@ -315,36 +315,41 @@ describe("markerFocusAlpha (solo/focus dimming)", () => {
 // span travel together or not at all.
 
 describe("markerTarget", () => {
+  const mkRef = (partial: Record<string, unknown>) => ({ kind: "single", work_context: null, original_context: null, excerpt: null, ...partial });
+  const mkLink = (partial: Record<string, unknown>) => ({
+    link_id: 1, origin: 1, destination: 2, origin_ref: null, destination_ref: null, ...partial,
+  });
+
   it("prefers the server jump_target view when present", async () => {
     const { markerTarget } = await import("../hooks/useTransclusion");
-    const link = { link_id: 1, jump_target: { work_id: 42, start: 10, end: 30 } };
+    const link = mkLink({ jump_target: { work_id: 42, start: 10, end: 30 } });
     const t = markerTarget(link, null);
     expect(t).toEqual({ workId: 42, span: { start: 10, end: 30 } });
   });
 
   it("falls back to the paired ref's own work + span", async () => {
     const { markerTarget } = await import("../hooks/useTransclusion");
-    const ref = { work_context: 7, start_position: 3, end_position: 9 };
-    const t = markerTarget({ link_id: 2 }, ref);
+    const ref = mkRef({ work_context: 7, start_position: 3, end_position: 9 });
+    const t = markerTarget(mkLink({}), ref);
     expect(t).toEqual({ workId: 7, span: { start: 3, end: 9 } });
   });
 
   it("ref with work but no span -> no target (no half-pairs)", async () => {
     const { markerTarget } = await import("../hooks/useTransclusion");
-    const ref = { work_context: 7, start_position: null, end_position: null };
-    expect(markerTarget({ link_id: 3 }, ref)).toBeUndefined();
+    const ref = mkRef({ work_context: 7, start_position: null, end_position: null });
+    expect(markerTarget(mkLink({}), ref)).toBeUndefined();
   });
 
   it("ref with span but no work -> no target (no half-pairs)", async () => {
     const { markerTarget } = await import("../hooks/useTransclusion");
-    const ref = { start_position: 3, end_position: 9 };
-    expect(markerTarget({ link_id: 4 }, ref)).toBeUndefined();
+    const ref = mkRef({ start_position: 3, end_position: 9 });
+    expect(markerTarget(mkLink({}), ref)).toBeUndefined();
   });
 
   it("empty or inverted spans -> no target", async () => {
     const { markerTarget } = await import("../hooks/useTransclusion");
-    expect(markerTarget({ link_id: 5 }, { work_context: 9, start_position: 5, end_position: 5 })).toBeUndefined();
-    expect(markerTarget({ link_id: 6 }, { work_context: 9, start_position: 8, end_position: 4 })).toBeUndefined();
-    expect(markerTarget({ link_id: 7, jump_target: { work_id: 1, start: 0, end: 0 } }, null)).toBeUndefined();
+    expect(markerTarget(mkLink({}), mkRef({ work_context: 9, start_position: 5, end_position: 5 }))).toBeUndefined();
+    expect(markerTarget(mkLink({}), mkRef({ work_context: 9, start_position: 8, end_position: 4 }))).toBeUndefined();
+    expect(markerTarget(mkLink({ jump_target: { work_id: 1, start: 0, end: 0 } }), null)).toBeUndefined();
   });
 });

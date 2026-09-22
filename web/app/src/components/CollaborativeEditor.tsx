@@ -157,6 +157,7 @@ const LINK_TYPE_STYLES: Record<number, { color: string; dash: number[] }> = {
   4: { color: "#a371f7", dash: [] },   // Quotation
   5: { color: "#d29922", dash: [] },   // See Also
   6: { color: "#39d2c0", dash: [] },   // Web Link
+  8: { color: "#f0883e", dash: [] },   // Gathers (exhibition membership)
 };
 
 const LINK_TYPE_NAMES: Record<number, string> = {
@@ -166,7 +167,18 @@ const LINK_TYPE_NAMES: Record<number, string> = {
   4: "Quotation",
   5: "See Also",
   6: "Web Link",
+  8: "Gathers",
 };
+
+// Custom link types (registered with definition works — the work IS
+// the type) carry per-server ids that no static map can know. They
+// get a deterministic palette color keyed by id, so Gathers renders
+// consistently on every server without client registration.
+const CUSTOM_TYPE_PALETTE = ["#f0883e", "#ff7b72", "#79c0ff", "#d2a8ff", "#7ee787", "#56d4dd", "#ffa657", "#ff9bce"];
+function linkTypeColor(tid: number | null | undefined): string | null {
+  if (tid == null) return null;
+  return LINK_TYPE_STYLES[tid]?.color ?? CUSTOM_TYPE_PALETTE[tid % CUSTOM_TYPE_PALETTE.length];
+}
 
 const DESC_BOX_WIDTH = 210;
 const DESC_BOX_HEIGHT = 46;
@@ -583,7 +595,7 @@ function drawOverlay(
     height: number;
     textRightX: number;
     marker: TransclusionMarker;
-    typeStyle: { color: string; dash: number[] };
+    typeStyle: { color: string };
     marginX: number;
     isIncoming: boolean;
     lane: number;
@@ -670,7 +682,7 @@ function drawOverlay(
     band.markers.push(marker);
 
     const isIncoming = marker.direction === "incoming";
-    const typeStyle = marker.linkTypeId ? LINK_TYPE_STYLES[marker.linkTypeId] : null;
+    const typeStyle = marker.linkTypeId ? { color: linkTypeColor(marker.linkTypeId) ?? "#a371f7" } : null;
     const barColor = typeStyle ? typeStyle.color : marker.color;
 
     if (typeStyle) {
@@ -887,7 +899,7 @@ function drawOverlay(
       let row = 0;
       for (const tid of ordered) {
         if (row >= 5) break;
-        const color = tid && LINK_TYPE_STYLES[tid] ? LINK_TYPE_STYLES[tid].color : "#a371f7";
+        const color = linkTypeColor(tid) ?? "#a371f7";
         for (const s of line.types.get(tid)!) {
           ctx.globalAlpha = markerFocusAlpha(s.marker, focusLinkId);
           ctx.fillStyle = color;
@@ -979,7 +991,7 @@ function drawOverlay(
     for (const t of typeOrder) {
       const n = byType.get(t);
       if (!n) continue;
-      const color = t && LINK_TYPE_STYLES[t] ? LINK_TYPE_STYLES[t].color : "#a371f7";
+      const color = linkTypeColor(t) ?? "#a371f7";
       for (let k = 0; k < n && segs.length < 7; k++) segs.push({ color, dim: k > 0 });
     }
 
@@ -2610,7 +2622,7 @@ export function CollaborativeEditor({
               All
             </button>
             {presentTypes.map((tid) => {
-              const style = LINK_TYPE_STYLES[tid];
+              const style = { color: linkTypeColor(tid) ?? "#a371f7" };
               const active = linkTypeFilter !== null && linkTypeFilter.has(tid);
               const color = style?.color ?? "#8b949e";
               const name = LINK_TYPE_NAMES[tid] ?? `Type ${tid}`;
@@ -2714,7 +2726,7 @@ export function CollaborativeEditor({
                 zIndex: 100,
               }}
             >
-              <div className="marker-tooltip-title" style={{ color: hoveredMarker.linkTypeId ? (LINK_TYPE_STYLES[hoveredMarker.linkTypeId]?.color ?? hoveredMarker.color) : hoveredMarker.color }}>
+              <div className="marker-tooltip-title" style={{ color: hoveredMarker.linkTypeId ? (linkTypeColor(hoveredMarker.linkTypeId) ?? hoveredMarker.color) : hoveredMarker.color }}>
                 {hoveredMarker.linkTypeId === 6 ? hoveredMarker.excerpt : hoveredMarker.otherWorkTitle}
               </div>
               <div className="marker-tooltip-direction">
@@ -2939,7 +2951,7 @@ export function CollaborativeEditor({
                     seen.add(key);
                     return true;
                   });
-                  const style = tid ? LINK_TYPE_STYLES[tid] : null;
+                  const style = tid ? { color: linkTypeColor(tid) ?? "#a371f7" } : null;
                   const color = style ? style.color : "#a371f7";
                   const name = tid ? (LINK_TYPE_NAMES[tid] ?? "Link") : "Transclusion";
                   return (
