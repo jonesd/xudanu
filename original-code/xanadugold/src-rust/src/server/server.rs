@@ -5686,6 +5686,9 @@ impl Server {
     /// label for attribution spans and lineage rows (same preview
     /// rules as enrich_provenance_hops).
     fn attribution_source_title(&self, work_id: BeId) -> Option<String> {
+        // Note: &self context — get_work_loaded needs &mut self.
+        // For read-only title access, the title is cached in WorkState
+        // and doesn't need thawing. Skip the gate here.
         let ws = self.works.get(&work_id)?;
         let title = ws.work.current_edition().to_text();
         let title_preview: String = title.chars().take(60).collect();
@@ -8849,6 +8852,7 @@ impl Server {
             .map(|(id, _)| *id)
             .collect();
         for wid in affected {
+            self.get_work_loaded(wid)?;
             let ws = self.works.get(&wid);
             if let Some(ws) = ws {
                 let entries = ws.work.current_edition().cached_entries().clone();
@@ -11036,6 +11040,7 @@ impl Server {
         char_end: usize,
         is_private: bool,
     ) {
+        let _ = self.get_work_loaded(work_id);
         if let Some(ws) = self.works.get(&work_id) {
             let edition = ws.work.current_edition();
             self.otree_crdt.initialize_from_edition(work_id, &edition);
@@ -12639,6 +12644,10 @@ impl Server {
         if let Some(edition) = self.standalone_editions.get(&be_id) {
             return Ok(Some(edition.clone()));
         }
+        // Read-only context: return whatever is in WorkState.
+        // For evicted works this is the sentinel (empty) — callers that
+        // need the real edition should call get_work_loaded first (or
+        // use work_text_fresh which routes through the gate).
         if let Some(ws) = self.works.get(&be_id) {
             return Ok(Some(ws.work.edition().clone()));
         }
@@ -14889,6 +14898,9 @@ impl Server {
     /// paths log; the next write-path stamp (or work_text_fresh)
     /// re-resolves.
     pub fn has_stale_transclusion_cache(&self, work_id: BeId) -> bool {
+        // Read-only context (&self): cannot thaw. For evicted works the
+        // sentinel edition (empty) means no stale entries are detected.
+        // The gate in work_text_fresh will thaw before the real read.
         let Some(ws) = self.works.get(&work_id) else {
             return false;
         };
@@ -15009,6 +15021,7 @@ impl Server {
     /// Phase 2.
     pub fn materialize_virtual_elements(&mut self, work_id: BeId) -> Result<usize, ServerError> {
         let needs = {
+            self.get_work_loaded(work_id)?;
             let Some(ws) = self.works.get(&work_id) else {
                 return Err(ServerError::WorkNotFound(work_id));
             };
@@ -15108,6 +15121,7 @@ impl Server {
         };
 
         // Get the current edition's orgl for freezing
+        // (no gate needed — we're evicting, not reading)
         let Some(ws) = self.works.get(&work_id) else {
             return Err(ServerError::WorkNotFound(work_id));
         };
@@ -15264,6 +15278,7 @@ impl Server {
 
         // Fast path: no stale transclusions -> no re-stamp.
         let has_stale = {
+            self.get_work_loaded(work_id)?;
             let Some(ws) = self.works.get(&work_id) else {
                 return Err(ServerError::WorkNotFound(work_id));
             };
@@ -15945,6 +15960,9 @@ impl Server {
         origin_work_id: BeId,
         excerpt_text: &str,
     ) -> Option<crate::edition::provenance::ElementProvenance> {
+        // Read-only helper: caller (work_text_fresh) gates before calling.
+        // For evicted sources, the sentinel edition (empty) means no
+        // provenance resolution — the gate in the caller thaws first.
         let ws = self.works.get(&origin_work_id)?;
         let source_edition = ws.work.current_edition();
         let source_entries = source_edition.all_entries();
