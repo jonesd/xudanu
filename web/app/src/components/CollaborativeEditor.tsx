@@ -831,9 +831,15 @@ function drawOverlay(
         ctx.lineWidth = 1.5;
         ctx.setLineDash([]);
         ctx.beginPath();
-        const startX = desc.textRightX + 4;
+        // Join the RIBBON, not the text rect: the ribbon row is drawn
+        // from x1 to (x2 - 3) at (bottom + 1 + row*6), height 4 — so
+        // the connector starts at the ribbon's right end (slight
+        // overlap to avoid a hairline gap) and rides its row-0
+        // vertical center. Starting at textRight + 4 left a ~7px gap
+        // and floated above the ribbon (user report, Room 8).
+        const startX = desc.textRightX - 2;
         const endX = chipLeftX - 2;
-        const lineY = desc.firstTop + desc.height - 1 + desc.lane * 2;
+        const lineY = desc.firstTop + desc.height + 3;
         const boxMidY = boxTop + boxH / 2;
         const elbowX = endX - 20 - desc.lane * 5;
         ctx.moveTo(startX, lineY);
