@@ -651,6 +651,14 @@ export function WorkspaceShell() {
       navBackRef.current.push({ workId: prevWorkRef.current, scrollTop: navScrollTop() });
       if (navBackRef.current.length > 50) navBackRef.current.shift();
       setNavDepth(navBackRef.current.length);
+      // Opening a document starts at its TOP: the scroll container
+      // persists across work switches and would otherwise inherit the
+      // previous document's offset (clamped wherever content allows).
+      // EXCEPT span landings — a #C<char> hash (cross-doc link jumps)
+      // owns the scroll and the editor honors it on text arrival.
+      if (!window.location.hash.startsWith("#C")) {
+        pendingRestoreRef.current = { workId: id, scrollTop: 0 };
+      }
     }
     setWorkBeId(id);
     setImageEntries([]);
