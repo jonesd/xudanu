@@ -135,6 +135,7 @@ interface MarkerHitZone {
   densityCount?: number;
   stackMarkers?: TransclusionMarker[];
   hoverOnly?: boolean;
+  band?: boolean;
 }
 
 interface AuthorBarZone {
@@ -290,6 +291,8 @@ function drawOverlay(
   showLinkDescriptions: boolean = false,
   linkDescMap: Map<number, { text: string; resolved: boolean }> = new Map(),
   focusLinkId: number | null = null,
+  bandsClickable: boolean = false,
+  highlight: { start: number; end: number; t0: number } | null = null,
 ): MarkerHitZone[] {
   const hitZones: MarkerHitZone[] = [];
   authorBarZones.length = 0;
@@ -896,6 +899,44 @@ function drawOverlay(
     ctx.globalAlpha = 1;
   }
 
+  // Highlight wash (jump-to-passage): painted INSIDE the shared
+  // overlay pipeline so it can never fight the marker repaint — the
+  // old standalone rAF loop cleared this canvas every frame for 3-4s,
+  // making every link flicker and vanish while it ran. Fade curve is
+  // computed from the t0 timestamp; when alpha hits zero the wash
+  // simply stops painting.
+  if (highlight) {
+    const elapsed = performance.now() - highlight.t0;
+    const rampIn = Math.min(1, elapsed / 200);
+    const decay = Math.max(0, 1 - Math.max(0, elapsed - 400) / 3000);
+    const a = rampIn * decay;
+    if (a > 0.005) {
+      const drawStart = Math.max(highlight.start, 0);
+      const drawEnd = Math.min(highlight.end, textLen);
+      if (drawStart < drawEnd) {
+        try {
+          const sn = findTextNodeAt(editor, drawStart);
+          const en = findTextNodeAt(editor, drawEnd - 1);
+          if (sn && en) {
+            const range = document.createRange();
+            range.setStart(sn.node, sn.offset);
+            range.setEnd(en.node, en.offset + 1);
+            for (const r of range.getClientRects()) {
+              const x = r.left - rect.left;
+              const y = r.top - rect.top;
+              if (y + r.height < viewportTop || y > viewportBottom) continue;
+              ctx.fillStyle = `rgba(255, 223, 0, ${(0.16 * a).toFixed(3)})`;
+              ctx.fillRect(x, y, r.width, r.height);
+              ctx.strokeStyle = `rgba(255, 180, 0, ${(0.22 * a).toFixed(3)})`;
+              ctx.lineWidth = 1;
+              ctx.strokeRect(x + 0.5, y + 0.5, r.width - 1, r.height - 1);
+            }
+          }
+        } catch { /* range error — ignore */ }
+      }
+    }
+  }
+
   // FR-4.5: density pills collapse DENSITY_THRESHOLD+ overlapping links into
   // one summary badge; clicking the pill expands the cluster.
   for (const pill of densityPills) {
@@ -982,10 +1023,13 @@ function drawOverlay(
     });
   }
 
-  // Emit hover-only band zones from the accumulated regions. These
-  // never appear in click handling (text clicks must place the cursor
-  // and make selections, not navigate) — mouse-move reads them to show
-  // the stacked-connection summary.
+  // Emit band zones from the accumulated regions. In EDIT mode they
+  // are hover-only (text clicks must place the cursor and make
+  // selections, not navigate). In READING mode there is no caret to
+  // place, so the band becomes a click target: clicking an underlined
+  // passage follows its connection — the interaction every reader
+  // already expects. Mouse-move reads them either way for the
+  // stacked-connection summary.
   for (const band of bandRegions.values()) {
     if (band.markers.length === 0 || !isFinite(band.minX)) continue;
     hitZones.push({
@@ -995,7 +1039,8 @@ function drawOverlay(
       width: Math.max(band.maxX - band.minX, 8),
       height: band.bottom - band.top + (band.maxLane + 1) * 2 + 6,
       stackMarkers: band.markers,
-      hoverOnly: true,
+      hoverOnly: !bandsClickable,
+      band: true,
     });
   }
 
@@ -1537,6 +1582,9 @@ export function CollaborativeEditor({
   const isTypingRef = useRef(false);
   const overlayPausedRef = useRef(false);
   const pauseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Timestamp for the highlight fade curve (see the highlight param on
+  // drawOverlay) — set when a new highlightRange arrives.
+  const highlightT0Ref = useRef(0);
 
   useEffect(() => {
     const el = editorRef.current;
@@ -1556,13 +1604,13 @@ export function CollaborativeEditor({
         cancelAnimationFrame(rafId);
         rafId = requestAnimationFrame(() => {
           lastDraw = performance.now();
-          hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null);
+          hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null, !editable, highlightRange ? { ...highlightRange, t0: highlightT0Ref.current } : null);
         });
         return;
       }
       cancelAnimationFrame(rafId);
       lastDraw = now;
-      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null);
+      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null, !editable, highlightRange ? { ...highlightRange, t0: highlightT0Ref.current } : null);
     };
 
     // Typing flash fix: always draw (markers must track text on every
@@ -1571,7 +1619,7 @@ export function CollaborativeEditor({
     // never visible as a standalone blank.
     cancelAnimationFrame(rafId);
     rafId = requestAnimationFrame(() => {
-      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null);
+      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null, !editable, highlightRange ? { ...highlightRange, t0: highlightT0Ref.current } : null);
     });
 
     const ro = new ResizeObserver(redraw);
@@ -1600,7 +1648,7 @@ export function CollaborativeEditor({
       scrollPending = true;
       rafId = requestAnimationFrame(() => {
         scrollPending = false;
-        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null);
+        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null, !editable, highlightRange ? { ...highlightRange, t0: highlightT0Ref.current } : null);
       });
     };
     container.addEventListener("scroll", scrollRedraw, { passive: true });
@@ -1625,81 +1673,21 @@ export function CollaborativeEditor({
     const container = el.parentElement;
     if (!container) return;
 
-    const draw = (alpha: number) => {
-      if (!highlightRange) return;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      const rect = container.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
-      const clear = () => {
-        // Canvas is shared with other overlays and is NOT auto-cleared:
-        // repainting without clearing accumulates alpha toward solid
-        // yellow, drowning the text. Always wipe first (raw pixel
-        // space, before the dpr scale).
-        ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.restore();
-      };
-      ctx.save();
-      ctx.scale(dpr, dpr);
-      const drawStart = Math.max(highlightRange.start, 0);
-      const drawEnd = Math.min(highlightRange.end, modelTextLength(el));
-      if (drawStart >= drawEnd) { clear(); ctx.restore(); return; }
-      try {
-        const sn = findTextNodeAt(el, drawStart);
-        const en = findTextNodeAt(el, drawEnd - 1);
-        if (!sn || !en) { clear(); ctx.restore(); return; }
-        const range = document.createRange();
-        range.setStart(sn.node, sn.offset);
-        range.setEnd(en.node, en.offset + 1);
-        const rangeRects = range.getClientRects();
-        clear();
-        // Gentle breathing highlight: a pale wash that fades out on
-        // its own — noticeable enough to locate the passage, never
-        // loud enough to fight the text.
-        const a = Math.max(0, alpha);
-        if (a > 0.005) {
-          for (const r of rangeRects) {
-            const x = r.left - rect.left;
-            const y = r.top - rect.top;
-            ctx.fillStyle = `rgba(255, 223, 0, ${(0.16 * a).toFixed(3)})`;
-            ctx.fillRect(x, y, r.width, r.height);
-            ctx.strokeStyle = `rgba(255, 180, 0, ${(0.22 * a).toFixed(3)})`;
-            ctx.lineWidth = 1;
-            ctx.strokeRect(x + 0.5, y + 0.5, r.width - 1, r.height - 1);
-          }
-        }
-      } catch { /* range error — ignore */ }
-      ctx.restore();
-    };
-
     if (highlightRange) {
-      // Fade the highlight in briefly, then let it decay to nothing —
-      // a single calm gesture rather than a persistent painted block.
-      const FADE_MS = 3000;
-      const t0 = performance.now();
-      let raf = 0;
-      const anim = () => {
-        const elapsed = performance.now() - t0;
-        const rampIn = Math.min(1, elapsed / 200);
-        const decay = Math.max(0, 1 - Math.max(0, elapsed - 400) / FADE_MS);
-        const alpha = rampIn * decay;
-        draw(alpha);
-        if (alpha > 0.005) {
-          raf = requestAnimationFrame(anim);
-        } else {
-          draw(0);
-        }
-      };
-      raf = requestAnimationFrame(anim);
+      // The wash itself is painted by drawOverlay (see the highlight
+      // param) — this effect only timestamps the fade curve and scrolls
+      // the span into view. The previous design ran its own rAF loop
+      // that cleared the shared canvas every frame, warring with the
+      // 200ms marker repaint: links visibly flickered and vanished for
+      // the whole 3-4s animation (the Room 6 disappearing-constellation
+      // bug).
+      highlightT0Ref.current = performance.now();
       // Scroll the highlighted span into view (same math as
       // jumpToCharOffset) — highlight-without-scroll leaves long
       // documents looking like nothing happened.
       const line = buffer.getLineForChar(Math.max(0, Math.min(highlightRange.start, modelTextLength(el) - 1)));
       const targetScroll = line * parseFloat(getComputedStyle(el).lineHeight || "20");
       container.scrollTo({ top: Math.max(0, targetScroll - container.clientHeight / 3), behavior: "smooth" });
-      return () => cancelAnimationFrame(raf);
     }
   }, [highlightRange, buffer]);
 
@@ -1709,10 +1697,10 @@ export function CollaborativeEditor({
       const el = editorRef.current;
       const canvas = overlayRef.current;
       if (!el || !canvas) return;
-      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null);
+      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, effectiveShowAttribution, expandedClusters, compoundSourceTitles, effectiveShowCompound, showLinkDescriptions, linkDescMap, hoveredMarker?.linkId ?? null, !editable, highlightRange ? { ...highlightRange, t0: highlightT0Ref.current } : null);
     }, 200);
     return () => clearInterval(interval);
-  }, [recentChanges, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, effectiveShowAttribution, expandedClusters]);
+  }, [recentChanges, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, effectiveShowAttribution, expandedClusters, editable, highlightRange]);
 
   // Build annotation hit zones for hover tooltips (runs on scroll + redraw)
   useEffect(() => {
@@ -1885,11 +1873,22 @@ export function CollaborativeEditor({
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const hit = hitZonesRef.current.find((hz) =>
+    // Nested spans produce nested band zones; the smallest enclosing
+    // zone is the precise target (clicking an inner phrase must not
+    // fall through to the whole-sentence link around it).
+    const matches = hitZonesRef.current.filter((hz) =>
       !hz.hoverOnly &&
       x >= hz.x && x <= hz.x + hz.width && y >= hz.y && y <= hz.y + hz.height
     );
+    const hit = matches.reduce<MarkerHitZone | null>((best, hz) =>
+      !best || hz.width * hz.height < best.width * best.height ? hz : best, null);
     if (!hit) return;
+    if (hit.band) {
+      // Reading-mode underline click. A drag-selection (copy gesture)
+      // must not navigate — only a plain click follows the link.
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return;
+    }
     if (hit.densityCluster != null) {
       toggleClusterExpansion(hit.densityCluster);
       return;

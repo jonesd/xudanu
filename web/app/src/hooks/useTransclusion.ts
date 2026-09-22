@@ -239,7 +239,13 @@ export function useTransclusion(): TransclusionState {
                 end: span.end,
                 linkId: link.link_id,
                 direction: isOrigin ? "outgoing" : "incoming",
-                otherWorkId: member.ref.work_context ?? otherWorkId,
+                // Navigation target must pair with sourceSpan coordinates:
+                // the remote ref (span below) belongs to the link's far
+                // end. Overriding with member.ref.work_context produced
+                // "same work + foreign span" pairs — clicking a gathered
+                // member highlighted a meaningless span in the CURRENT
+                // document and triggered the 4s highlight canvas war.
+                otherWorkId,
                 otherWorkTitle: isWebLink ? webTitle : title,
                 color: isWebLink ? "#39d2c0" : gatheredColor,
                 excerpt: (member.ref.excerpt || excerpt).slice(0, 120),
