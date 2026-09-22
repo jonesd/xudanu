@@ -68,7 +68,7 @@ if [ ! -f "${ENV_FILE}" ]; then
   echo ""
   sudo cat "${ENV_FILE}"
   echo ""
-  read -r -p "Press Enter once you have saved it..."
+  read -r -p "Press Enter once you have saved it..." < /dev/tty || true
 else
   sudo chmod 600 "${ENV_FILE}"
   echo "Using existing ${ENV_FILE}"
