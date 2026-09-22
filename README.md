@@ -24,7 +24,7 @@ A seeded museum of live link structures — every exhibit is the thing itself, n
 | ![Five-way compare](docs/screenshots/gallery-compare.png) | |
 | **The Five-Way Junction** — one connection, five named ends, compared side by side | |
 
-Seed it on your own server: `node scripts/seed-gallery-unusual.mjs`, then walk **The Curator's Tour** in the Trails panel.
+Seed it on your own server: `node scripts/seed-gallery-unusual.mjs`, then walk **The Curator's Tour** in the Trails panel. The gallery is also an **exhibition** (`node scripts/seed-exhibition-gathers.mjs`) — click any underlined passage to follow a connection, and watch for the quiet note when you cross in or out of the grouped unit.
 
 > **[Try it live](https://xudanu.com)** — a running server with the interactive Links Course: typed and multi-ended links, gathered end-sets, and live transclusions.
 > **[Read the documentation](https://dgjones.info/xudanu/)** — user guides, technical architecture, and visual diagrams.
@@ -44,6 +44,7 @@ Seed it on your own server: `node scripts/seed-gallery-unusual.mjs`, then walk *
 
 - **Visible typed links** — Six link types (Comment, Reference, Disagreement, Quotation, See Also, Web) with coloured description boxes and connecting lines
 - **Real transclusion** — Content from one document appears live in another, with provenance tracing back to the source
+- **Exhibitions** — Group related works under a cover: a "Gathers" link from the cover to each member defines the unit. Crossing the boundary is an indication, never a barrier — the reader is told when they enter or leave, and nothing is hidden
 - **Real-time CRDT collaboration** — Multiple users editing the same document without locks
 - **Transcopyright licensing** — First system to natively support Ted Nelson's Transcopyright License (TCo). Per-work license metadata with compliance badges and attribution stamping
 - **Cross-server federation** — Documents link across independent servers via BLAKE3-verified tumblers
