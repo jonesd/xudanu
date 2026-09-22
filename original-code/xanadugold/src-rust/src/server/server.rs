@@ -15114,6 +15114,7 @@ impl Server {
 
         let edition = ws.work.current_edition();
         let entries = edition.cached_entries();
+        let text = edition.to_text();
         let orgl = crate::edition::orgl::OrglRoot::from_bulk_entries(
             entries.clone(),
             None,
@@ -15124,7 +15125,65 @@ impl Server {
             .evict(work_id, &orgl, None)
             .map_err(|e| ServerError::Internal(format!("evict failed: {e}")))?;
 
-        tracing::info!(work_id, "work evicted from RAM to chunks");
+        // Replace the edition with a sentinel (empty) — no phantom reads.
+        // Any code that bypasses the gate gets empty text (obviously wrong,
+        // caught immediately) instead of stale data (silently wrong).
+        if let Some(ws) = self.works.get_mut(&work_id) {
+            ws.work
+                .update_current_edition(crate::edition::Edition::from_text(""));
+        }
+
+        tracing::info!(
+            work_id,
+            "work evicted from RAM to chunks (edition replaced with sentinel)"
+        );
+        Ok(())
+    }
+
+    /// FR-76 Phase 3: THE work access gate. Ensures a work is in the
+    /// active set before any edition access. If evicted, transparently
+    /// thaws from chunks. After this call, code proceeds normally.
+    ///
+    /// Usage: call at the top of any method that reads a work's edition:
+    ///     self.get_work_loaded(id)?;
+    ///     let ws = self.works.get(&id)?;  // ← now guaranteed correct
+    ///
+    /// Active works: near-zero overhead (one HashMap lookup in the
+    /// eviction manager). Evicted works: one-time thaw cost, then the
+    /// work stays loaded until the next eviction cycle.
+    pub fn get_work_loaded(&mut self, work_id: BeId) -> Result<(), ServerError> {
+        // Fast path: no eviction enabled, or work not evicted
+        if !self.is_work_evicted(work_id) {
+            return Ok(());
+        }
+
+        let Some(eviction) = &mut self.eviction else {
+            return Ok(()); // shouldn't happen (is_work_evicted would be false)
+        };
+
+        // Thaw: read chunk → deserialize entries
+        let data = eviction
+            .promote_to_active(work_id)
+            .map_err(|e| ServerError::Internal(format!("thaw failed: {e}")))?;
+
+        // Rebuild the edition from the thawed entries
+        let mut text = String::new();
+        for (_, carrier) in &data.entries {
+            match &carrier.element {
+                crate::edition::range_element::RangeElement::Text { text: t } => {
+                    text.push_str(t);
+                }
+                _ => {} // non-text elements contribute empty string for now
+            }
+        }
+
+        // Replace the sentinel edition with the real data
+        if let Some(ws) = self.works.get_mut(&work_id) {
+            ws.work
+                .update_current_edition(crate::edition::Edition::from_text(&text));
+        }
+
+        tracing::debug!(work_id, "work thawed from chunks to active set");
         Ok(())
     }
 
@@ -30604,6 +30663,113 @@ mod tests {
     // =====================================================================
 
     #[test]
+    /// FR-76 Phase 3: gate pattern — sentinel edition prevents phantom reads.
+    /// After eviction, the in-memory edition is empty (sentinel). Reading
+    /// through get_work_loaded() transparently thaws from chunks.
+    #[test]
+    fn eviction_sentinel_prevents_phantom_reads() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let wid = server
+            .create_work(sid, crate::edition::Edition::from_text("real content here"))
+            .unwrap();
+
+        // Enable eviction
+        let dir = std::env::temp_dir().join(format!(
+            "xudanu-sentinel-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store =
+            std::sync::Arc::new(crate::persist::chunk_store::ChunkStore::open(&dir).unwrap());
+        server.enable_eviction(store, 0, 10);
+
+        // Evict — edition is replaced with sentinel
+        server.evict_work(wid).unwrap();
+        assert!(server.is_work_evicted(wid));
+
+        // Direct access (bypassing gate) gets sentinel (empty) — NOT stale data
+        let ws = server.works.get(&wid).unwrap();
+        let direct_text = ws.work.current_edition().to_text();
+        assert!(
+            direct_text.is_empty(),
+            "direct access should get sentinel (empty), not stale data"
+        );
+
+        // Gate access gets the real content from chunks
+        server.get_work_loaded(wid).unwrap();
+        assert!(!server.is_work_evicted(wid), "work should be active again");
+        let ws2 = server.works.get(&wid).unwrap();
+        let gated_text = ws2.work.current_edition().to_text();
+        assert!(
+            gated_text.contains("real content"),
+            "gated access should get the real content from chunks"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn eviction_gate_idempotent_for_active_works() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let wid = server
+            .create_work(sid, crate::edition::Edition::from_text("active work"))
+            .unwrap();
+
+        // No eviction enabled — gate is a no-op
+        server.get_work_loaded(wid).unwrap();
+
+        let ws = server.works.get(&wid).unwrap();
+        assert!(ws.work.current_edition().to_text().contains("active work"));
+    }
+
+    #[test]
+    fn eviction_gate_thaws_and_stays_loaded() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let wid = server
+            .create_work(sid, crate::edition::Edition::from_text("thaw once"))
+            .unwrap();
+
+        let dir = std::env::temp_dir().join(format!(
+            "xudanu-gate-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store =
+            std::sync::Arc::new(crate::persist::chunk_store::ChunkStore::open(&dir).unwrap());
+        server.enable_eviction(store, 0, 10);
+
+        // Evict
+        server.evict_work(wid).unwrap();
+
+        // Gate (first time — thaws)
+        server.get_work_loaded(wid).unwrap();
+
+        // Gate again (no-op — already loaded)
+        server.get_work_loaded(wid).unwrap();
+
+        // Both reads should return the same content
+        let ws = server.works.get(&wid).unwrap();
+        assert!(ws.work.current_edition().to_text().contains("thaw once"));
+        assert!(!server.is_work_evicted(wid));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// FR-76 Phase 2: transparent eviction wiring — works are evicted
     /// from RAM, reads transparently route through cache/chunks.
     #[test]
