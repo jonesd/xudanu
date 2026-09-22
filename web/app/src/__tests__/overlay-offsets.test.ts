@@ -167,6 +167,28 @@ describe("modelTextLength", () => {
     expect(modelTextLength(root)).toBe(5);
   });
 
+  it("reading mode: contenteditable=false on the ROOT must not turn the document into decoration", () => {
+    // The gallery link-ink regression: reading mode renders the editor
+    // root itself contenteditable="false". The model walk must treat
+    // that as the boundary — plain text still counts — or modelTextLength
+    // returns 0 and drawOverlay renders nothing at all.
+    root.setAttribute("contenteditable", "false");
+    root.textContent = "The gallery lobby text, all plain, all readable.";
+    expect(modelTextLength(root)).toBe(root.textContent!.length);
+
+    const hit = findTextNodeAt(root, 4);
+    expect(hit).not.toBeNull();
+    expect(hit!.offset).toBe(4);
+
+    // Decorations INSIDE still skip: a bullet under a false root.
+    root.textContent = "";
+    const item = document.createElement("span");
+    item.textContent = "item";
+    root.appendChild(spanHtml("display:inline-block", "•"));
+    root.appendChild(item);
+    expect(modelTextLength(root)).toBe(4);
+  });
+
   it("includes hidden marker text, excludes bullets and ZWSPs", () => {
     root.appendChild(spanHtml("display:none", "# "));
     const vis = document.createElement("span");

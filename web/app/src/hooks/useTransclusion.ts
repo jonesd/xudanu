@@ -329,7 +329,8 @@ export function useTransclusion(): TransclusionState {
         }
         if (stale()) return;
         setMarkers(newMarkers);
-      } catch {
+      } catch (e) {
+        console.error("[loadLinks] marker build failed:", e);
         if (stale()) return;
         setMarkers([]);
       }

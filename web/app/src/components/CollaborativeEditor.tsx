@@ -1099,7 +1099,7 @@ export function findTextNodeAt(root: Node, targetOffset: number): { node: Text; 
   let node: Node | null;
   while ((node = walker.nextNode())) {
     const text = node.textContent ?? "";
-    const guard = enclosingNonEditable(node);
+    const guard = enclosingNonEditable(node, root);
     if (guard) {
       if (guard.style?.display === "none") {
         // Hidden marker span: model text, consume its length.
@@ -1131,7 +1131,7 @@ export function modelTextLength(root: Node): number {
   let node: Node | null;
   while ((node = walker.nextNode())) {
     const text = node.textContent ?? "";
-    const guard = enclosingNonEditable(node);
+    const guard = enclosingNonEditable(node, root);
     if (guard) {
       if (guard.style?.display === "none") len += text.length;
       continue;
@@ -1143,9 +1143,14 @@ export function modelTextLength(root: Node): number {
   return len;
 }
 
-function enclosingNonEditable(node: Node): HTMLElement | null {
+// Nearest contenteditable="false" wrapper BELOW root (marker spans,
+// bullet glyphs). The root itself is the boundary: reading mode puts
+// contenteditable="false" ON the editor root, and that must not turn
+// the whole document into "decoration" (the gallery link-ink bug:
+// modelTextLength returned 0, drawOverlay bailed, nothing rendered).
+function enclosingNonEditable(node: Node, root: Node): HTMLElement | null {
   let n: Node | null = node;
-  while (n && n.nodeType !== Node.DOCUMENT_NODE) {
+  while (n && n !== root && n.nodeType !== Node.DOCUMENT_NODE) {
     if (n.nodeType === Node.ELEMENT_NODE) {
       const el = n as HTMLElement;
       if (el.getAttribute && el.getAttribute("contenteditable") === "false") {
