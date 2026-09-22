@@ -122,3 +122,11 @@ required-features = ["server"]
 name = "xudanu-bench"
 required-features = ["server"]
 
+
+[[bin]]
+name = "xps-bench"
+required-features = ["server"]
+
+[[bin]]
+name = "link-memory-analysis"
+required-features = ["server"]

@@ -12,6 +12,7 @@
 use std::time::Instant;
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[cfg(feature = "server")]
 struct XpsResult {
     op: String,
     scale: serde_json::Value,

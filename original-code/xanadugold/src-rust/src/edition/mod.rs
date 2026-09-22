@@ -12,12 +12,15 @@ pub mod compound_arrangement;
 #[cfg(feature = "serde")]
 pub mod compound_segment;
 pub mod content_address;
+#[cfg(feature = "server")]
 pub mod content_index;
 #[cfg(feature = "serde")]
 pub mod derived;
 pub mod document_invariants;
 pub mod edition;
+#[cfg(feature = "server")]
 pub mod epoch;
+#[cfg(feature = "server")]
 pub mod eviction;
 pub use edition::SpanLicenseSummary;
 pub mod endorsement;
