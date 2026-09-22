@@ -1930,11 +1930,13 @@ export function CollaborativeEditor({
       const excerpt = (hit.marker as unknown as Record<string, unknown>).excerpt as string || "";
       onShowBacklinks(hit.marker.otherWorkId, excerpt);
     } else if (e.detail === 1) {
-      // Click-to-source: when the quoted span's coordinates are known,
-      // jump TO THE SPAN (same-doc: highlight+scroll; cross-doc:
-      // navigate+land) instead of merely switching works.
-      if (onNavigateToSource && (hit.marker.sourceSpanStart != null || hit.marker.sourceSpanEnd != null)) {
-        onNavigateToSource(hit.marker.otherWorkId, hit.marker.sourceSpanStart ?? null, hit.marker.sourceSpanEnd ?? null);
+      // Click-to-source: when the marker carries a complete navigation
+      // target (work + span as one unit — see markerTarget), jump TO
+      // THE SPAN (same-doc: highlight+scroll; cross-doc: navigate and
+      // land) instead of merely switching works.
+      const t = hit.marker.target;
+      if (onNavigateToSource && t && t.workId != null && t.span) {
+        onNavigateToSource(t.workId, t.span.start, t.span.end);
       } else if (onNavigateToWork) {
         onNavigateToWork(hit.marker.otherWorkId);
       }

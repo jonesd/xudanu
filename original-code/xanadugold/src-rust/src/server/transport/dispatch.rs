@@ -17,15 +17,38 @@ fn llm_semaphore() -> &'static tokio::sync::Semaphore {
 /// Build the wire payload for a link (FR-40): named ends beyond the
 /// two-ended fast path, derived type ends (Green's three-set,
 /// materialized on read), and home-document state.
+///
+/// `requesting_work`: the work the listing was requested FOR — the
+/// perspective the derived `jump_target` is computed from. None when
+/// no single perspective applies (link_get without a viewing work).
 fn build_link_payload(
     srv: &Server,
     link_id: BeId,
     origin: BeId,
     destination: Option<BeId>,
     link: &crate::edition::links::HyperLink,
+    requesting_work: Option<BeId>,
 ) -> LinkPayload {
     let o_ref = link.end_at("LeftEnd").map(HyperRefPayload::from_hyper_ref);
     let d_ref = link.end_at("RightEnd").map(HyperRefPayload::from_hyper_ref);
+    // Derived jump target: the FAR main end from the requesting
+    // work's perspective, with that end's own work + span as one
+    // unit. Gathered end-sets share the link's far end, so every
+    // member marker gets the same, consistent target.
+    let jump_target = requesting_work.and_then(|w| {
+        let far = if origin == w {
+            d_ref.as_ref()
+        } else if destination == Some(w) {
+            o_ref.as_ref()
+        } else {
+            None
+        };
+        let r = far?;
+        let work_id = r.work_context?;
+        let start = r.start_position?;
+        let end = r.end_position?;
+        (end > start).then(|| JumpTargetPayload { work_id, start, end })
+    });
     let (origin_archived, origin_title, origin_owner) = srv.link_endpoint_meta(origin);
     let is_open = destination.is_none() || d_ref.is_none();
     let (destination_archived, destination_title, destination_owner) = destination
@@ -97,6 +120,7 @@ fn build_link_payload(
         home_archived,
         cross_server_notify_accepted: notify.as_ref().map(|n| n.accepted),
         cross_server_notify_error: notify.and_then(|n| n.error),
+        jump_target,
     }
 }
 
@@ -2155,6 +2179,7 @@ fn dispatch_inner(
                 origin,
                 destination,
                 link,
+                None,
             )))
         }
         WireRequest::LinkUpdate {
@@ -2255,7 +2280,14 @@ fn dispatch_inner(
                 .filter(|&(link_id, _, _)| !srv.link_hidden_by_home_archive(link_id))
                 .filter_map(|(link_id, origin, destination)| {
                     let (_, _, link) = srv.get_link(link_id).ok()?;
-                    Some(build_link_payload(srv, link_id, origin, destination, link))
+                    Some(build_link_payload(
+                        srv,
+                        link_id,
+                        origin,
+                        destination,
+                        link,
+                        Some(work_id),
+                    ))
                 })
                 .collect();
             let total_count = all.len() as u64;
@@ -2387,7 +2419,7 @@ fn dispatch_inner(
                 .into_iter()
                 .filter_map(|(link_id, origin, destination)| {
                     let (_, _, link) = srv.get_link(link_id).ok()?;
-                    Some(build_link_payload(srv, link_id, origin, destination, link))
+                    Some(build_link_payload(srv, link_id, origin, destination, link, None))
                 })
                 .collect();
             Ok(ResponseValue::LinkList(entries))
@@ -5158,6 +5190,7 @@ fn dispatch_inner_read(
                 origin,
                 destination,
                 link,
+                None,
             )))
         }
         WireRequest::LinkListForWork {
@@ -5172,7 +5205,14 @@ fn dispatch_inner_read(
                 .filter(|&(link_id, _, _)| !srv.link_hidden_by_home_archive(link_id))
                 .filter_map(|(link_id, origin, destination)| {
                     let (_, _, link) = srv.get_link(link_id).ok()?;
-                    Some(build_link_payload(srv, link_id, origin, destination, link))
+                    Some(build_link_payload(
+                        srv,
+                        link_id,
+                        origin,
+                        destination,
+                        link,
+                        Some(work_id),
+                    ))
                 })
                 .collect();
             let total_count = all.len() as u64;
@@ -5198,7 +5238,7 @@ fn dispatch_inner_read(
                 .into_iter()
                 .filter_map(|(link_id, origin, destination)| {
                     let (_, _, link) = srv.get_link(link_id).ok()?;
-                    Some(build_link_payload(srv, link_id, origin, destination, link))
+                    Some(build_link_payload(srv, link_id, origin, destination, link, None))
                 })
                 .collect();
             Ok(ResponseValue::LinkList(entries))

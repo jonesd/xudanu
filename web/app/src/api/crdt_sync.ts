@@ -177,6 +177,13 @@ export interface LinkEntry {
   link_types?: number[];
   // FR-40: named ends beyond the two-ended fast path.
   named_ends?: [string, HyperRefPayload][];
+  /** Server-derived navigation view (link_list_for_work only): the
+   * far main end's work + span from THIS work's perspective, as one
+   * unit. Absent when no complete target exists (open links,
+   * spanless refs, perspectives without a far end — link_get/link_query
+   * never carry it). Clients should prefer this over assembling the
+   * pair from separate refs. */
+  jump_target?: { work_id: number; start: number; end: number } | null;
   // FR-40 S6: complete attachment lists for any end with more than
   // one attachment (server end names: LeftEnd/RightEnd + custom).
   end_sets?: [string, HyperRefPayload[]][];
@@ -439,12 +446,13 @@ export interface TransclusionMarker {
   linkAuthorName?: string | null;
   linkAuthorClub?: number | null;
   crossServerRef?: { tumbler: string; contentHash: string } | null;
-  /** Source-span coordinates in the OTHER work (the quoted origin) —
-   * set when the link's other-side ref carries positions; enables
-   * click-to-jump-to-source (same doc: highlight+scroll; other doc:
-   * navigate and land on the span). */
-  sourceSpanStart?: number | null;
-  sourceSpanEnd?: number | null;
+  /** Navigation target as ONE unit: the span lives IN target.workId.
+   * Built from the server's jump_target view when present (the far
+   * main end's work + span, paired server-side), else from the
+   * matching ref. Structural on purpose: work and span travel
+   * together or not at all — the Room-6 bug class (work id from one
+   * end, span from another) cannot be constructed. */
+  target?: { workId: number; span: { start: number; end: number } };
   /** FR-40 S6/L1 (B.1): when this marker is one member of a
    * gathered end-set, its 1-based position and the end's total —
    * "passage i of N". Present only for gathered members. */

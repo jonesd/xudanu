@@ -2,6 +2,32 @@ import { useState, useCallback, useRef } from "react";
 import type { CrdtSyncClient, LinkEntry, TransclusionMarker, WorkListEntry, BacklinkEntry, LinkTypeInfo } from "../api/crdt_sync";
 import { resolveMarkerPositions, localEndSetMembers, refSpan } from "../link-markers";
 import { linkEnds } from "../link-ends";
+import type { HyperRefPayload } from "../api/crdt_sync";
+
+/**
+ * Build a marker's navigation target as ONE structurally-paired unit.
+ * Prefers the server's jump_target view (work + span paired
+ * server-side); falls back to assembling the pair from the given ref —
+ * work_context WITH that same ref's positions, never mixed sources.
+ * All-or-nothing: no work, no complete span -> no target (the caller
+ * falls back to plain work navigation).
+ */
+export function markerTarget(
+  link: LinkEntry,
+  pairedRef: HyperRefPayload | null | undefined,
+): { workId: number; span: { start: number; end: number } } | undefined {
+  const jt = link.jump_target;
+  if (jt && jt.end > jt.start) {
+    return { workId: jt.work_id, span: { start: jt.start, end: jt.end } };
+  }
+  const w = pairedRef?.work_context;
+  const s = pairedRef?.start_position;
+  const e = pairedRef?.end_position;
+  if (w != null && s != null && e != null && e > s) {
+    return { workId: w, span: { start: s, end: e } };
+  }
+  return undefined;
+}
 
 export interface PendingTransclusion {
   sourceWorkId: number;
@@ -261,8 +287,7 @@ export function useTransclusion(): TransclusionState {
                       contentHash: member.ref.cross_server_ref.content_hash,
                     }
                   : null,
-                sourceSpanStart: remoteRef?.start_position ?? null,
-                sourceSpanEnd: remoteRef?.end_position ?? null,
+                target: markerTarget(link, remoteRef),
                 endSetIndex: member.index,
                 endSetTotal: member.total,
                 descriptorExcerpt,
@@ -291,8 +316,7 @@ export function useTransclusion(): TransclusionState {
               otherWorkIsArchived: !!otherArchived,
               otherWorkOwner: otherOwner ?? null,
               crossServerRef,
-              sourceSpanStart: remoteRef?.start_position ?? null,
-              sourceSpanEnd: remoteRef?.end_position ?? null,
+              target: markerTarget(link, remoteRef),
                 descriptorExcerpt,
                 totalEnds,
                 endLabel,
@@ -322,8 +346,9 @@ export function useTransclusion(): TransclusionState {
                   otherWorkIsArchived: !!otherArchived,
                   otherWorkOwner: otherOwner ?? null,
                   crossServerRef,
-                  sourceSpanStart: localRef?.start_position ?? null,
-                  sourceSpanEnd: localRef?.end_position ?? null,
+                  // The destination marker's landing target is the
+                  // ORIGIN end's span in this same work — one unit.
+                  target: markerTarget(link, localRef),
                   descriptorExcerpt,
                   totalEnds,
                   endLabel,

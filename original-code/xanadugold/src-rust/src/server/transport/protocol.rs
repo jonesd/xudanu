@@ -3354,6 +3354,30 @@ pub struct LinkPayload {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub cross_server_notify_error: Option<String>,
+    /// Derived navigation view: where a click on this link's marker
+    /// should land, from the REQUESTING work's perspective (the far
+    /// main end's work + span, delivered as one unit). Bakes the
+    /// work/span pairing into the server so clients never assemble
+    /// it themselves — mixing a work id from one end with span
+    /// coordinates from another produced nonsense navigations (the
+    /// gathered-end bug class). Present only when a complete target
+    /// exists; absent otherwise (clients fall back to their own
+    /// derivation).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub jump_target: Option<JumpTargetPayload>,
+}
+
+/// A complete, self-consistent navigation target: the span lives IN
+/// work_id. All three fields present or the whole target is absent —
+/// half-pairs cannot exist by construction.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct JumpTargetPayload {
+    pub work_id: BeId,
+    pub start: i64,
+    pub end: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

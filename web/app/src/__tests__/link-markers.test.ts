@@ -308,3 +308,43 @@ describe("markerFocusAlpha (solo/focus dimming)", () => {
     expect(markerFocusAlpha({ linkId: 5 }, 0)).toBe(1);
   });
 });
+
+// ─── markerTarget: navigation pairing is structural ───────────────
+// The Room-6 bug class: work id from one end mixed with span
+// coordinates from another. The target is now one unit — work and
+// span travel together or not at all.
+
+describe("markerTarget", () => {
+  it("prefers the server jump_target view when present", async () => {
+    const { markerTarget } = await import("../hooks/useTransclusion");
+    const link = { link_id: 1, jump_target: { work_id: 42, start: 10, end: 30 } };
+    const t = markerTarget(link, null);
+    expect(t).toEqual({ workId: 42, span: { start: 10, end: 30 } });
+  });
+
+  it("falls back to the paired ref's own work + span", async () => {
+    const { markerTarget } = await import("../hooks/useTransclusion");
+    const ref = { work_context: 7, start_position: 3, end_position: 9 };
+    const t = markerTarget({ link_id: 2 }, ref);
+    expect(t).toEqual({ workId: 7, span: { start: 3, end: 9 } });
+  });
+
+  it("ref with work but no span -> no target (no half-pairs)", async () => {
+    const { markerTarget } = await import("../hooks/useTransclusion");
+    const ref = { work_context: 7, start_position: null, end_position: null };
+    expect(markerTarget({ link_id: 3 }, ref)).toBeUndefined();
+  });
+
+  it("ref with span but no work -> no target (no half-pairs)", async () => {
+    const { markerTarget } = await import("../hooks/useTransclusion");
+    const ref = { start_position: 3, end_position: 9 };
+    expect(markerTarget({ link_id: 4 }, ref)).toBeUndefined();
+  });
+
+  it("empty or inverted spans -> no target", async () => {
+    const { markerTarget } = await import("../hooks/useTransclusion");
+    expect(markerTarget({ link_id: 5 }, { work_context: 9, start_position: 5, end_position: 5 })).toBeUndefined();
+    expect(markerTarget({ link_id: 6 }, { work_context: 9, start_position: 8, end_position: 4 })).toBeUndefined();
+    expect(markerTarget({ link_id: 7, jump_target: { work_id: 1, start: 0, end: 0 } }, null)).toBeUndefined();
+  });
+});

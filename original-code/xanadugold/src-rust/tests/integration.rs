@@ -4398,6 +4398,129 @@ async fn link_list_for_work() {
 }
 
 #[tokio::test]
+async fn link_list_jump_target_pairs_work_and_span() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_a = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "hello source text"}}))),
+    )
+    .await["value"]["value"].as_u64().unwrap();
+    let work_b = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "world target text"}}))),
+    )
+    .await["value"]["value"].as_u64().unwrap();
+    let work_c = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(12, "work_create", Some(serde_json::json!({"edition": {"text": "spanless far end"}}))),
+    )
+    .await["value"]["value"].as_u64().unwrap();
+
+    // Spanned link: both ends carry work + positions.
+    let link1 = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "link_create",
+            Some(serde_json::json!({
+                "origin": work_a, "destination": work_b,
+                "origin_ref": { "kind": "single", "work_context": work_a,
+                                "start_position": 0, "end_position": 5 },
+                "destination_ref": { "kind": "single", "work_context": work_b,
+                                     "start_position": 0, "end_position": 5 }
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(link1["type"], "response");
+    let link1_id = link1["value"]["value"].as_u64().unwrap();
+
+    // Spanless link: neither end carries positions — no jump target.
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            21,
+            "link_create",
+            Some(serde_json::json!({"origin": work_a, "destination": work_c})),
+        ),
+    )
+    .await;
+
+    // Gather the source end (multi-attachment LeftEnd): the near end
+    // grows; the jump target must remain the FAR end + its span.
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            22,
+            "link_end_add_attachment",
+            Some(serde_json::json!({
+                "link_id": link1_id, "end_name": "LeftEnd",
+                "attachment": { "kind": "single", "work_context": work_a,
+                                "start_position": 6, "end_position": 12 }
+            })),
+        ),
+    )
+    .await;
+
+    // From A's perspective: target is B's span.
+    let from_a = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(30, "link_list_for_work", Some(serde_json::json!({"work_id": work_a}))),
+    )
+    .await["value"]["value"]["entries"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let spanned_a = from_a
+        .iter()
+        .find(|l| l["link_id"].as_u64() == Some(link1_id))
+        .expect("spanned link listed for work_a");
+    assert_eq!(
+        spanned_a["jump_target"]["work_id"].as_u64(),
+        Some(work_b),
+        "jump target work must be the far end, paired with the far end's span"
+    );
+    assert_eq!(spanned_a["jump_target"]["start"].as_i64(), Some(0));
+    assert_eq!(spanned_a["jump_target"]["end"].as_i64(), Some(5));
+
+    let spanless = from_a
+        .iter()
+        .find(|l| l["destination"].as_u64() == Some(work_c))
+        .expect("spanless link listed for work_a");
+    assert!(
+        spanless["jump_target"].is_null(),
+        "no complete far-end target -> no jump_target, clients fall back"
+    );
+
+    // From B's perspective: target flips to A's span.
+    let from_b = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(31, "link_list_for_work", Some(serde_json::json!({"work_id": work_b}))),
+    )
+    .await["value"]["value"]["entries"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let spanned_b = from_b
+        .iter()
+        .find(|l| l["link_id"].as_u64() == Some(link1_id))
+        .expect("spanned link listed for work_b");
+    assert_eq!(spanned_b["jump_target"]["work_id"].as_u64(), Some(work_a));
+    assert_eq!(spanned_b["jump_target"]["start"].as_i64(), Some(0));
+    assert_eq!(spanned_b["jump_target"]["end"].as_i64(), Some(5));
+}
+
+#[tokio::test]
 async fn find_works_for_content() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;

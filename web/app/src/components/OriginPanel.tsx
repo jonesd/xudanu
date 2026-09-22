@@ -123,16 +123,22 @@ export function OriginPanel({
       return exactRange;
     }
     let start = -1;
-    if (marker.sourceSpanStart != null && marker.sourceSpanEnd != null) {
-      const cand = originText.slice(marker.sourceSpanStart, marker.sourceSpanEnd).trim();
+    // The navigation target's span is only valid against THIS panel's
+    // text when the target work is the origin work we fetched.
+    const spanStart = marker.target && marker.target.workId === marker.otherWorkId
+      ? marker.target.span.start : null;
+    const spanEnd = marker.target && marker.target.workId === marker.otherWorkId
+      ? marker.target.span.end : null;
+    if (spanStart != null && spanEnd != null) {
+      const cand = originText.slice(spanStart, spanEnd).trim();
       if (cand.length > 0 && excerpt.length > 0 && cand.slice(0, 40) === excerpt.slice(0, 40)) {
-        start = marker.sourceSpanStart;
+        start = spanStart;
       }
     }
     if (start < 0) start = originText.indexOf(excerpt);
     if (start < 0) return null;
     return { start, end: start + excerpt.length };
-  }, [originText, marker.excerpt, marker.sourceSpanStart, marker.sourceSpanEnd, exactRange]);
+  }, [originText, marker.excerpt, marker.target, marker.otherWorkId, exactRange]);
 
   const author = marker.provenanceChain?.[0]?.source_author_name ?? null;
   const otherEnds = ends.filter((e) => e.workId !== marker.otherWorkId);
@@ -183,8 +189,8 @@ export function OriginPanel({
               <dd>{marker.excerpt ? `\u201C${marker.excerpt}\u201D` : "(no excerpt recorded)"}</dd>
               <dt>Stored span in origin</dt>
               <dd>
-                {marker.sourceSpanStart != null && marker.sourceSpanEnd != null
-                  ? `chars ${marker.sourceSpanStart}\u2013${marker.sourceSpanEnd}`
+                {marker.target && marker.target.workId === marker.otherWorkId
+                  ? `chars ${marker.target.span.start}\u2013${marker.target.span.end}`
                   : "not recorded"}
               </dd>
               <dt>Origin</dt>
