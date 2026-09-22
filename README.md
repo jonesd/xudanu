@@ -11,6 +11,21 @@
 | ![Trails](docs/screenshots/trails-panel.png) | ![Editor](docs/screenshots/editor-docuverse-practically.png) |
 | **Trails** — curated reading paths through the docuverse | **The editor** — writing with visible structure |
 
+### The Gallery of Unusual Connections
+
+A seeded museum of live link structures — every exhibit is the thing itself, not a picture of it. Click any underlined passage to follow its connection; hover for the type and the far end.
+
+| | |
+|---|---|
+| ![Gallery lobby](docs/screenshots/gallery-lobby.png) | ![Spectrum sentence](docs/screenshots/gallery-spectrum.png) |
+| **The lobby** — the floor plan is wired with links: click a room name to walk there | **The Spectrum Sentence** — all six link types stacked on one sentence |
+| ![Rebuttal constellation](docs/screenshots/gallery-constellation.png) | ![Live window](docs/screenshots/gallery-live-window.png) |
+| **The Rebuttal Constellation** — three gathered passages, one end, one answer | **The Live Window** — transclusions: the text lives in the other document |
+| ![Five-way compare](docs/screenshots/gallery-compare.png) | |
+| **The Five-Way Junction** — one connection, five named ends, compared side by side | |
+
+Seed it on your own server: `node scripts/seed-gallery-unusual.mjs`, then walk **The Curator's Tour** in the Trails panel.
+
 > **[Try it live](https://xudanu.com)** — a running server with the interactive Links Course: typed and multi-ended links, gathered end-sets, and live transclusions.
 > **[Read the documentation](https://dgjones.info/xudanu/)** — user guides, technical architecture, and visual diagrams.
 > **[Source on GitHub](https://github.com/jonesd/xudanu)** — releases with static binaries for Linux, macOS, and Windows.
