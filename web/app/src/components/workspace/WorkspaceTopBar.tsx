@@ -19,7 +19,10 @@ interface WorkspaceTopBarProps {
   onOpenAdmin: () => void;
   onHome: () => void;
   isAdmin: boolean;
+  /** Back along the reading path (work + position stack). Rendered
+   *  only when provided; disabled when the path is empty. */
   onGoBack?: () => void;
+  canGoBack?: boolean;
   backToTitle?: string | null;
   onCreateWork: () => void;
   themeMode: ThemeMode;
@@ -66,6 +69,9 @@ export function WorkspaceTopBar({
   onOpenAdmin,
   onHome,
   isAdmin,
+  onGoBack,
+  canGoBack,
+  backToTitle,
   onCreateWork,
   themeMode,
   themePickerOpen,
@@ -111,6 +117,21 @@ export function WorkspaceTopBar({
           Xuda<span className="ws-brand-nu">nu</span>
         </span>
       </div>
+
+      {onGoBack && (
+        <button
+          className="ws-nav-back"
+          onClick={onGoBack}
+          disabled={!canGoBack}
+          title={backToTitle ? `Back — ${backToTitle}` : "Back along your reading path"}
+          aria-label="Back"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12H5" />
+            <path d="m12 19-7-7 7-7" />
+          </svg>
+        </button>
+      )}
 
       <div className="ws-search-trigger" onClick={onOpenSearch}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

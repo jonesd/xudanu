@@ -595,7 +595,6 @@ export function WorkspaceShell() {
   );
 
   const recentWorkIds = useRef<number[]>([]);
-  const [prevWork, setPrevWork] = useState<{ id: number; title: string } | null>(null);
 
   const prevSaveState = useRef(saveState);
 
@@ -611,12 +610,47 @@ export function WorkspaceShell() {
 
   const getSourceText = useCallback(() => compound.resolvedText || text, [compound.resolvedText, text]);
 
-  const selectWork = useCallback((id: number) => {
-    if (workBeId !== null && workBeId !== id) {
-      setPrevWork({
-        id: workBeId,
-        title: works.find(w => w.work_id === workBeId)?.title || `work 0x${workBeId.toString(16)}`,
-      });
+  // ── Back-path history ────────────────────────────────────────────
+  // A stack of {work, scroll} for the Back affordance. Links land at
+  // SPANS in other works, so back must restore work + position, never
+  // just the work. The path a reader walks is also, implicitly, a
+  // trail being written — save-as-trail is one button away someday.
+  const navBackRef = useRef<Array<{ workId: number; scrollTop: number }>>([]);
+  const [navDepth, setNavDepth] = useState(0);
+  const pendingRestoreRef = useRef<{ workId: number; scrollTop: number } | null>(null);
+  // The scroll container depends on the editor mode: short works scroll
+  // the editor container, long (virtualized) works scroll the editor
+  // root itself — and the container can carry a few px of canvas-padding
+  // overflow even when it is NOT the real scroller, so a mere
+  // "is scrollable" check picks the wrong one. Take the candidate with
+  // the GREATEST scroll overflow.
+  const navScrollEl = (): HTMLElement | null => {
+    const candidates = [
+      document.querySelector(".collaborative-editor"),
+      document.querySelector(".editor-container"),
+    ].filter((e): e is HTMLElement => e instanceof HTMLElement && e.isConnected);
+    let best: HTMLElement | null = null;
+    let bestOverflow = 0;
+    for (const c of candidates) {
+      const overflow = c.scrollHeight - c.clientHeight;
+      if (overflow > bestOverflow) {
+        best = c;
+        bestOverflow = overflow;
+      }
+    }
+    return best;
+  };
+  const navScrollTop = () => navScrollEl()?.scrollTop ?? 0;
+
+  const selectWork = useCallback((id: number, opts?: { back?: boolean }) => {
+    // Back-path history: every FORWARD navigation pushes where the
+    // reader is standing (work + scroll position) so Back can return
+    // them to the exact place — a link lands at a SPAN in another
+    // work, so restoring merely the work is not enough.
+    if (!opts?.back && prevWorkRef.current != null && prevWorkRef.current !== id) {
+      navBackRef.current.push({ workId: prevWorkRef.current, scrollTop: navScrollTop() });
+      if (navBackRef.current.length > 50) navBackRef.current.shift();
+      setNavDepth(navBackRef.current.length);
     }
     setWorkBeId(id);
     setImageEntries([]);
@@ -1013,6 +1047,68 @@ export function WorkspaceShell() {
       if (note) showToast(note);
     });
   }, [workBeId, showToast]);
+
+  // Back: pop the path entry and land where the reader stood. Same-
+  // work entries (same-doc span jumps) restore scroll directly;
+  // cross-work entries navigate without pushing (back must not grow
+  // the stack). Position restore waits for the text to arrive.
+  const handleNavBack = useCallback(() => {
+    const entry = navBackRef.current.pop();
+    setNavDepth(navBackRef.current.length);
+    if (!entry) return;
+    if (entry.workId === prevWorkRef.current) {
+      const scroller = navScrollEl();
+      if (scroller) scroller.scrollTop = entry.scrollTop;
+      return;
+    }
+    pendingRestoreRef.current = entry;
+    selectWork(entry.workId, { back: true });
+  }, [selectWork]);
+
+  // Apply a pending position restore once the target work's text has
+  // rendered. Long (virtualized) works grow their scrollHeight
+  // progressively — a single set clamps to 0 while content is short —
+  // so apply-and-verify on frames until the position actually takes
+  // (bounded by a time budget).
+  useEffect(() => {
+    const pending = pendingRestoreRef.current;
+    if (!pending || pending.workId !== workBeId || text.length === 0) return;
+    // Progressive virtualized rendering settles late (spacer rebuilds
+    // can reset scroll seconds after arrival): apply until the
+    // position takes, then DEFEND it for a short window.
+    const deadline = performance.now() + 4000;
+    const defendUntil = performance.now() + 6000;
+    let raf = 0;
+    const apply = () => {
+      const scroller = navScrollEl();
+      const now = performance.now();
+      if (scroller && scroller.isConnected) {
+        scroller.scrollTop = pending.scrollTop;
+        const took = Math.abs(scroller.scrollTop - pending.scrollTop) < 2;
+        if (took) {
+          if (now >= defendUntil) {
+            pendingRestoreRef.current = null;
+            return;
+          }
+          // taken — but keep defending against late resets
+          raf = requestAnimationFrame(apply);
+          return;
+        }
+      }
+      if (now > deadline && scroller && scroller.isConnected) {
+        // gave up taking; leave whatever the layout allows
+        pendingRestoreRef.current = null;
+        return;
+      }
+      if (now > defendUntil) {
+        pendingRestoreRef.current = null;
+        return;
+      }
+      raf = requestAnimationFrame(apply);
+    };
+    raf = requestAnimationFrame(apply);
+    return () => cancelAnimationFrame(raf);
+  }, [workBeId, text]);
 
   const handleCreateAnnotation = useCallback(() => {
     if (!selectionRange) {
@@ -1652,7 +1748,13 @@ export function WorkspaceShell() {
   const handleNavigateToSource = useCallback(
     (workId: number, spanStart: number | null, spanEnd: number | null) => {
       if (workId === workBeId && spanStart != null && spanEnd != null && spanEnd > spanStart) {
-        // Same document: highlight + smooth-scroll to the quoted span.
+        // Same document: remember where the reader stood (Back must
+        // undo this jump), then highlight + smooth-scroll to the span.
+        if (workBeId != null) {
+          navBackRef.current.push({ workId, scrollTop: navScrollTop() });
+          if (navBackRef.current.length > 50) navBackRef.current.shift();
+          setNavDepth(navBackRef.current.length);
+        }
         setHighlightRange({ start: spanStart, end: spanEnd });
         setTimeout(() => setHighlightRange(null), 4000);
       } else {
@@ -3313,10 +3415,14 @@ export function WorkspaceShell() {
         identityColor={identityColor}
         activeNav={navTab}
         onNavChange={setNavTab}
-        onGoBack={prevWork && workBeId !== prevWork.id ? () => {
-          if (prevWork) selectWork(prevWork.id);
-        } : undefined}
-        backToTitle={prevWork && workBeId !== prevWork.id ? prevWork.title : null}
+        onGoBack={handleNavBack}
+        canGoBack={navDepth > 0}
+        backToTitle={
+          navDepth > 0
+            ? works.find((w) => w.work_id === navBackRef.current[navBackRef.current.length - 1]?.workId)
+                ?.title ?? null
+            : null
+        }
         onHome={() => {
           setWorkBeId(null);
           setImageEntries([]);

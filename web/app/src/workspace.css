@@ -133,6 +133,31 @@
   cursor: pointer;
 }
 
+/* Back along the reading path (work + position stack). Sits between
+   the brand and search; disabled at the path's start. */
+.ws-nav-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.ws-nav-back:hover:not(:disabled) {
+  background: var(--surface-hover, rgba(139, 148, 158, 0.12));
+  border-color: var(--border-strong, var(--border));
+}
+.ws-nav-back:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .ws-search-trigger {
   flex: 0 1 400px;
   background: var(--bg);
