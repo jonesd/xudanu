@@ -340,7 +340,7 @@ function drawOverlay(
   if (!ctx) return hitZones;
   ctx.scale(dpr, dpr);
 
-  const textLen = editor.textContent?.length ?? 0;
+  const textLen = modelTextLength(editor);
   if (textLen === 0) return hitZones;
   const textNode = editor.firstChild;
   const singleNode = textNode && textNode.nodeType === Node.TEXT_NODE && textNode === editor.lastChild;
@@ -364,8 +364,8 @@ function drawOverlay(
         range.setStart(textNode as Text, drawStart);
         range.setEnd(textNode as Text, drawEnd);
       } else {
-        const sn = findTextNodeAt(editor, drawStart, false);
-        const en = findTextNodeAt(editor, drawEnd - 1, false);
+        const sn = findTextNodeAt(editor, drawStart);
+        const en = findTextNodeAt(editor, drawEnd - 1);
         if (!sn || !en) continue;
         range.setStart(sn.node, sn.offset);
         range.setEnd(en.node, en.offset + 1);
@@ -454,8 +454,8 @@ function drawOverlay(
         range.setStart(textNode as Text, drawStart);
         range.setEnd(textNode as Text, drawEnd);
       } else {
-        const sn = findTextNodeAt(editor, drawStart, false);
-        const en = findTextNodeAt(editor, drawEnd - 1, false);
+        const sn = findTextNodeAt(editor, drawStart);
+        const en = findTextNodeAt(editor, drawEnd - 1);
         if (!sn || !en) continue;
         range.setStart(sn.node, sn.offset);
         range.setEnd(en.node, en.offset + 1);
@@ -520,8 +520,8 @@ function drawOverlay(
         range.setStart(textNode as Text, drawStart);
         range.setEnd(textNode as Text, drawEnd);
       } else {
-        const sn = findTextNodeAt(editor, drawStart, false);
-        const en = findTextNodeAt(editor, drawEnd - 1, false);
+        const sn = findTextNodeAt(editor, drawStart);
+        const en = findTextNodeAt(editor, drawEnd - 1);
         if (!sn || !en) continue;
         range.setStart(sn.node, sn.offset);
         range.setEnd(en.node, en.offset + 1);
@@ -630,8 +630,8 @@ function drawOverlay(
         range.setStart(textNode as Text, drawStart);
         range.setEnd(textNode as Text, drawEnd);
       } else {
-        const sn = findTextNodeAt(editor, drawStart, false);
-        const en = findTextNodeAt(editor, drawEnd - 1, false);
+        const sn = findTextNodeAt(editor, drawStart);
+        const en = findTextNodeAt(editor, drawEnd - 1);
         if (!sn || !en) continue;
         range.setStart(sn.node, sn.offset);
         range.setEnd(en.node, en.offset + 1);
@@ -910,8 +910,8 @@ function drawOverlay(
         range.setStart(textNode as Text, drawStart);
         range.setEnd(textNode as Text, drawEnd);
       } else {
-        const sn = findTextNodeAt(editor, drawStart, false);
-        const en = findTextNodeAt(editor, drawEnd - 1, false);
+        const sn = findTextNodeAt(editor, drawStart);
+        const en = findTextNodeAt(editor, drawEnd - 1);
         if (!sn || !en) continue;
         range.setStart(sn.node, sn.offset);
         range.setEnd(en.node, en.offset + 1);
@@ -1015,8 +1015,8 @@ function drawOverlay(
         range.setStart(textNode as Text, drawStart);
         range.setEnd(textNode as Text, drawEnd);
       } else {
-        const sn = findTextNodeAt(editor, drawStart, false);
-        const en = findTextNodeAt(editor, drawEnd - 1, false);
+        const sn = findTextNodeAt(editor, drawStart);
+        const en = findTextNodeAt(editor, drawEnd - 1);
         if (!sn || !en) continue;
         range.setStart(sn.node, sn.offset);
         range.setEnd(en.node, en.offset + 1);
@@ -1049,8 +1049,8 @@ function drawOverlay(
         range.setStart(textNode as Text, drawStart);
         range.setEnd(textNode as Text, drawEnd);
       } else {
-        const sn = findTextNodeAt(editor, drawStart, false);
-        const en = findTextNodeAt(editor, drawEnd - 1, false);
+        const sn = findTextNodeAt(editor, drawStart);
+        const en = findTextNodeAt(editor, drawEnd - 1);
         if (!sn || !en) continue;
         range.setStart(sn.node, sn.offset);
         range.setEnd(en.node, en.offset + 1);
@@ -1081,35 +1081,78 @@ function drawOverlay(
   return hitZones;
 }
 
-function findTextNodeAt(root: Node, targetOffset: number, skipNonEditable: boolean = true): { node: Text; offset: number } | null {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode(node) {
-      if (skipNonEditable) {
-        let n: Node | null = node;
-        while (n && n.nodeType !== Node.DOCUMENT_NODE) {
-          if (n.nodeType === Node.ELEMENT_NODE) {
-            const el = n as Element;
-            if (el.getAttribute && el.getAttribute("contenteditable") === "false") {
-              const style = el.getAttribute("style");
-              if (!style || !style.includes("display:none")) {
-                return NodeFilter.FILTER_REJECT;
-              }
-            }
-          }
-          n = n.parentNode;
-        }
-      }
-      return NodeFilter.FILTER_ACCEPT;
-    },
-  });
+// MODEL offset → DOM position mapping for overlay drawing (links,
+// attribution, compounds, annotations, highlights).
+//
+// The DOM differs from the model text in exactly three ways:
+//   1. Hidden marker spans (display:none contenteditable=false, carrying
+//      "# ", "- " …) hold text that IS part of the model — counted here,
+//      but never returned as a position (display:none rects are empty).
+//   2. Visible decoration glyphs (bullet "•", inline image alts) inside
+//      contenteditable=false spans are DOM-only — never counted.
+//   3. ZWSP (\u200B) characters inside editable text are DOM-only
+//      artifacts — not counted, and mapped around within a node.
+// Same contract as getCursorOffset/setCaretModel in styled-text.ts.
+export function findTextNodeAt(root: Node, targetOffset: number): { node: Text; offset: number } | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let current = 0;
   let node: Node | null;
   while ((node = walker.nextNode())) {
-    const len = node.textContent?.length ?? 0;
-    if (current + len > targetOffset) {
-      return { node: node as Text, offset: targetOffset - current };
+    const text = node.textContent ?? "";
+    const guard = enclosingNonEditable(node);
+    if (guard) {
+      if (guard.style?.display === "none") {
+        // Hidden marker span: model text, consume its length.
+        current += text.length;
+      }
+      // Visible decoration (bullet glyph, image alt): DOM-only, skip.
+      continue;
     }
-    current += len;
+    // Editable text: only non-ZWSP chars count as model positions.
+    let modelLen = 0;
+    for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) === 0x200b) continue;
+      if (current + modelLen >= targetOffset) {
+        return { node: node as Text, offset: i };
+      }
+      modelLen++;
+    }
+    current += modelLen;
+  }
+  return null;
+}
+
+// Model-text length of an editor subtree: hidden marker text counts,
+// visible decorations and ZWSPs do not. Use this — not textContent.length,
+// which includes DOM-only artifacts — when clamping model offsets.
+export function modelTextLength(root: Node): number {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let len = 0;
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const text = node.textContent ?? "";
+    const guard = enclosingNonEditable(node);
+    if (guard) {
+      if (guard.style?.display === "none") len += text.length;
+      continue;
+    }
+    for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) !== 0x200b) len++;
+    }
+  }
+  return len;
+}
+
+function enclosingNonEditable(node: Node): HTMLElement | null {
+  let n: Node | null = node;
+  while (n && n.nodeType !== Node.DOCUMENT_NODE) {
+    if (n.nodeType === Node.ELEMENT_NODE) {
+      const el = n as HTMLElement;
+      if (el.getAttribute && el.getAttribute("contenteditable") === "false") {
+        return el;
+      }
+    }
+    n = n.parentNode;
   }
   return null;
 }
@@ -1596,11 +1639,11 @@ export function CollaborativeEditor({
       ctx.save();
       ctx.scale(dpr, dpr);
       const drawStart = Math.max(highlightRange.start, 0);
-      const drawEnd = Math.min(highlightRange.end, el.textContent?.length ?? 0);
+      const drawEnd = Math.min(highlightRange.end, modelTextLength(el));
       if (drawStart >= drawEnd) { clear(); ctx.restore(); return; }
       try {
-        const sn = findTextNodeAt(el, drawStart, false);
-        const en = findTextNodeAt(el, drawEnd - 1, false);
+        const sn = findTextNodeAt(el, drawStart);
+        const en = findTextNodeAt(el, drawEnd - 1);
         if (!sn || !en) { clear(); ctx.restore(); return; }
         const range = document.createRange();
         range.setStart(sn.node, sn.offset);
@@ -1648,7 +1691,7 @@ export function CollaborativeEditor({
       // Scroll the highlighted span into view (same math as
       // jumpToCharOffset) — highlight-without-scroll leaves long
       // documents looking like nothing happened.
-      const line = buffer.getLineForChar(Math.max(0, Math.min(highlightRange.start, (el.textContent?.length ?? 1) - 1)));
+      const line = buffer.getLineForChar(Math.max(0, Math.min(highlightRange.start, modelTextLength(el) - 1)));
       const targetScroll = line * parseFloat(getComputedStyle(el).lineHeight || "20");
       container.scrollTo({ top: Math.max(0, targetScroll - container.clientHeight / 3), behavior: "smooth" });
       return () => cancelAnimationFrame(raf);
@@ -1677,7 +1720,7 @@ export function CollaborativeEditor({
       const rect = container.getBoundingClientRect();
       if (rect.width === 0) return;
       const zones: Array<{ x: number; y: number; width: number; height: number; text: string; id: number }> = [];
-      const textLen = el.textContent?.length ?? 0;
+      const textLen = modelTextLength(el);
 
       for (const ann of annotations) {
         if (ann.kind !== "note") continue;
