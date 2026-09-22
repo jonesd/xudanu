@@ -1118,6 +1118,26 @@ export function WorkspaceShell() {
     return () => cancelAnimationFrame(raf);
   }, [workBeId, text]);
 
+  // Read-only demo awareness: when the server runs the Frozen edit
+  // policy (museum mode — HN/demo deployments), the UI says so
+  // gracefully instead of leaving refused buttons lying around.
+  const [demoReadOnly, setDemoReadOnly] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/health")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { edit_policy?: string } | null) => {
+        if (!cancelled && d?.edit_policy === "frozen") setDemoReadOnly(true);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => {
+    if (demoReadOnly) {
+      showToast("This demo server is read-only — everything you see is live data");
+    }
+  }, [demoReadOnly, showToast]);
+
   const handleCreateAnnotation = useCallback(() => {
     if (!selectionRange) {
       showToast("Select some text first — notes attach to a passage");
@@ -3423,6 +3443,7 @@ export function WorkspaceShell() {
         identityColor={identityColor}
         activeNav={navTab}
         onNavChange={setNavTab}
+        readOnlyDemo={demoReadOnly}
         onGoBack={handleNavBack}
         canGoBack={navDepth > 0}
         backToTitle={

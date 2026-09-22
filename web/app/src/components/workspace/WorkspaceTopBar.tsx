@@ -19,6 +19,9 @@ interface WorkspaceTopBarProps {
   onOpenAdmin: () => void;
   onHome: () => void;
   isAdmin: boolean;
+  /** Server runs the Frozen edit policy (museum/demo mode): the
+   *  Create affordance becomes a read-only notice. */
+  readOnlyDemo?: boolean;
   /** Back along the reading path (work + position stack). Rendered
    *  only when provided; disabled when the path is empty. */
   onGoBack?: () => void;
@@ -69,6 +72,7 @@ export function WorkspaceTopBar({
   onOpenAdmin,
   onHome,
   isAdmin,
+  readOnlyDemo,
   onGoBack,
   canGoBack,
   backToTitle,
@@ -152,12 +156,22 @@ export function WorkspaceTopBar({
       </div>
 
       <nav className="ws-nav">
-        <button className="ws-nav-create" onClick={onCreateWork} title="Create a new work">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          Create
-        </button>
+        {readOnlyDemo ? (
+          <span
+            className="ws-nav-create"
+            title="This demo server is read-only — browse the gallery, follow connections, compare ends"
+            style={{ opacity: 0.75, cursor: "default" }}
+          >
+            Read-only demo
+          </span>
+        ) : (
+          <button className="ws-nav-create" onClick={onCreateWork} title="Create a new work">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            Create
+          </button>
+        )}
         <button
           className={`ws-nav-tab ${activeNav === "explore" ? "active" : ""}`}
           onClick={() => onNavChange("explore")}

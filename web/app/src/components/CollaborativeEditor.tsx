@@ -215,7 +215,10 @@ const HATCH_COLORS: [string, string][] = [
   ["#c62828", "#ef9a9a"],
   ["#2e7d32", "#a5d6a7"],
   ["#e65100", "#ffcc80"],
-  ["#37474f", "#90a4ae"],
+  // No near-black pairs: dark hatches at 3px bar width read as
+  // "broken/black" markers (user report: stale build rendered
+  // unrecognized Gathers type as apparently-black links).
+  ["#546e7a", "#b0bec5"],
   ["#4527a0", "#b39ddb"],
 ];
 
@@ -710,7 +713,10 @@ function drawOverlay(
       ctx.fillStyle = pattern || marker.color + "60";
     }
     // FR-4.5: stack margin bars per lane (left outgoing / right incoming).
-    if (isIncoming && typeStyle) {
+    // Side follows DIRECTION regardless of type-recognition — untyped
+    // incoming links previously drew on the outgoing side, reading as
+    // connections THIS page made.
+    if (isIncoming) {
       const rightX = rect.width - 3 - effectiveLane * 4;
       ctx.fillRect(rightX, firstTop, 3, height);
       // Rule 1: same-span count badge (drawn only on the first marker)
