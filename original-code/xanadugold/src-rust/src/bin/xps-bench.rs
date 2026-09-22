@@ -30,8 +30,9 @@ struct XpsReport {
     implementation: String,
     date: String,
     environment: String,
-    corpus_seed: u64,
-    tier: u8,
+    time_limit_secs: u64,
+    docs_created: usize,
+    doc_size: usize,
     results: Vec<XpsResult>,
     summary: XpsSummary,
 }
@@ -113,55 +114,124 @@ fn not_implemented(op: &str, scale: serde_json::Value, class: &str, note: &str) 
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let tier: u8 = args
-        .iter()
-        .position(|a| a == "--tier")
-        .and_then(|i| args.get(i + 1))
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1);
     let json = args.contains(&"--json".to_string());
-
-    // Tier determines corpus scale
-    let (docs, links_per_doc, doc_size) = match tier {
-        1 => (100, 1, 1_000),
-        2 => (1_000, 10, 10_000),
-        3 => (10_000, 100, 100_000),
-        4 => (100_000, 1_000, 1_000_000),
-        _ => (100, 1, 1_000),
-    };
-
-    eprintln!("XPS Bench — tier {tier} ({docs} docs, {links_per_doc} links/doc, {doc_size}B/doc)");
-    eprintln!("Seeding corpus...");
 
     let start_setup = Instant::now();
     let mut server = xudanu::server::Server::new();
     let sid = server.connect();
     server.login_public(sid).unwrap();
 
-    // Create corpus — bulk mode for large N (individual create_work
-    // compounds overhead at ~O(N²); bulk_create_works amortizes it)
+    // ── Time-boxed corpus creation ─────────────────────────────────
+    // Instead of fixing the corpus size and waiting (which times out
+    // for large data), fix the TIME BUDGET and measure how many works
+    // we can create. This gives us a throughput curve.
+    //
+    // Usage: xps-bench --time-limit 60 [--doc-size 10000]
+    // Output: "Created N works in Ts (N/T works/sec)"
+
+    let time_limit_secs: u64 = args
+        .iter()
+        .position(|a| a == "--time-limit")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60); // default: 60 seconds
+
+    let doc_size: usize = args
+        .iter()
+        .position(|a| a == "--doc-size")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10_000); // default 10KB
+
+    eprintln!(
+        "XPS Bench — time-boxed: {}s limit, {}B docs",
+        time_limit_secs, doc_size
+    );
+
+    let start_setup = Instant::now();
+    let mut server = xudanu::server::Server::new();
+    let sid = server.connect();
+    server.login_public(sid).unwrap();
+
     let text_template = "The quick brown fox jumps over the lazy dog. ".repeat(doc_size / 45 + 1);
-    let work_ids: Vec<_> = if docs <= 100 {
-        let mut ids = Vec::with_capacity(docs);
-        for i in 0..docs {
-            let text = format!("Document {i}\n\n{text_template}");
-            let wid = server
-                .create_work(sid, xudanu::edition::Edition::from_text(&text))
-                .unwrap();
-            ids.push(wid);
+    let deadline = start_setup + std::time::Duration::from_secs(time_limit_secs);
+
+    // Create works in batches of 100, checking the clock between batches
+    let mut work_ids: Vec<u64> = Vec::new();
+    let batch_size = 100;
+    let mut batch_num = 0usize;
+
+    loop {
+        if Instant::now() >= deadline {
+            break;
         }
-        ids
-    } else {
-        let editions: Vec<xudanu::edition::Edition> = (0..docs)
-            .map(|i| {
+
+        // Build a batch of editions
+        let start_idx = batch_num * batch_size;
+        let editions: Vec<xudanu::edition::Edition> = (0..batch_size)
+            .map(|j| {
+                let i = start_idx + j;
                 xudanu::edition::Edition::from_text(&format!("Document {i}\n\n{text_template}"))
             })
             .collect();
-        server.bulk_create_works(sid, editions).unwrap()
+
+        // Check if we'll exceed the deadline mid-batch
+        // (if so, create fewer works)
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let elapsed = start_setup.elapsed();
+        let per_work = if work_ids.len() > 0 {
+            elapsed.as_secs_f64() / work_ids.len() as f64
+        } else {
+            0.001 // initial estimate
+        };
+        let estimated_batch_time = per_work * batch_size as f64;
+
+        if estimated_batch_time > remaining.as_secs_f64() && remaining.as_secs_f64() < 5.0 {
+            // Running out of time — create as many as we can fit
+            let fits = (remaining.as_secs_f64() / per_work) as usize;
+            if fits < 1 {
+                break;
+            }
+            let partial: Vec<xudanu::edition::Edition> =
+                editions.into_iter().take(fits.min(batch_size)).collect();
+            let ids = server.bulk_create_works(sid, partial).unwrap();
+            work_ids.extend(ids);
+            break;
+        }
+
+        // Full batch
+        let batch_start = Instant::now();
+        let ids = server.bulk_create_works(sid, editions).unwrap();
+        let batch_elapsed = batch_start.elapsed();
+        work_ids.extend(ids);
+        batch_num += 1;
+
+        // Progress report every 1000 works
+        if work_ids.len() % 1000 == 0 {
+            let total_elapsed = start_setup.elapsed().as_secs_f64();
+            let throughput = work_ids.len() as f64 / total_elapsed;
+            eprint!(
+                "\r  {} works ({:.0}/sec) — {:.1}s elapsed",
+                work_ids.len(),
+                throughput,
+                total_elapsed
+            );
+        }
+    }
+
+    eprintln!();
+    let total_secs = start_setup.elapsed().as_secs_f32();
+    let docs_created = work_ids.len();
+    let throughput = if total_secs > 0.0 {
+        docs_created as f64 / total_secs as f64
+    } else {
+        0.0
     };
+    let total_mb = (docs_created * doc_size) as f64 / 1_048_576.0;
+
     eprintln!(
-        "  created {docs} works in {:.1}s",
-        start_setup.elapsed().as_secs_f32()
+        "  Created {} works ({:.1} MB) in {:.1}s ({:.0} works/sec)",
+        docs_created, total_mb, total_secs, throughput
     );
 
     eprintln!("  (link creation via dispatch layer — see dispatch_bench for link-specific timing)");
@@ -186,7 +256,7 @@ fn main() {
         );
         results.push(result(
             "L2-backlink-query",
-            serde_json::json!({"docs": docs}),
+            serde_json::json!({"docs": docs_created}),
             "responsive",
             mean,
             p50,
@@ -272,7 +342,7 @@ fn main() {
         );
         results.push(result(
             "C3-work-list",
-            serde_json::json!({"docs": docs}),
+            serde_json::json!({"docs": docs_created}),
             "responsive",
             mean,
             p50,
@@ -333,7 +403,7 @@ fn main() {
     {
         results.push(not_implemented(
             "C2-corpus-matching",
-            serde_json::json!({"docs": docs}),
+            serde_json::json!({"docs": docs_created}),
             "background",
             "requires content-match index across all works",
         ));
@@ -390,8 +460,9 @@ fn main() {
                 .unwrap_or(1),
             sys_memory_gb(),
         ),
-        corpus_seed: 42,
-        tier,
+        time_limit_secs,
+        docs_created,
+        doc_size,
         summary: XpsSummary {
             total_ops: total,
             passed,
@@ -417,7 +488,10 @@ fn main() {
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
     } else {
         eprintln!("\n{}", "═".repeat(72));
-        eprintln!("  XPS Results — {} (tier {tier})", report.implementation);
+        eprintln!(
+            "  XPS Results — {} ({} works, {}s limit)",
+            report.implementation, docs_created, time_limit_secs
+        );
         eprintln!("  {} on {}", report.environment, report.date);
         eprintln!("{}", "═".repeat(72));
         eprintln!(
