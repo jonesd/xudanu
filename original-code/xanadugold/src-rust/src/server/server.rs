@@ -12844,59 +12844,33 @@ impl Server {
         let seed = std::fs::read_to_string(dir.join("security.log.seed"))
             .map(|s| s.trim().to_string())
             .unwrap_or_default();
-        // Anchor derivation — LEDGER, not heuristics. The old approach
-        // (previous file's last line, ` chain=` extraction) silently
-        // fell back to the genesis seed whenever that line was a
-        // checkpoint/rotation record — ordinary operation after
-        // restarts — making the quick check report CHAIN INVALID with
-        // no tampering (found live 2026-09-23). The checkpoint records
-        // ARE the chain's positions: use the newest checkpoint that
-        // covers files BEFORE the current one; its head_hash is the
-        // expected chain head at this file's start. Seed remains the
-        // correct anchor only when no earlier files exist.
-        let anchor = if log_files.len() >= 2 {
-            let prev_name = log_files[log_files.len() - 2]
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-            let from_checkpoint = crate::server::transport::log_checkpoint::load_checkpoints(
-                dir, "security",
-            )
-            .ok()
-            .and_then(|cps| {
-                let cp = cps
-                    .iter()
-                    .filter(|c| c.files_covered.iter().any(|f| *f == prev_name))
-                    .max_by_key(|c| c.seq)?;
-                Some(cp.head_hash.clone())
-            });
-            from_checkpoint.unwrap_or_else(|| {
-                // No checkpoint covering the previous file (the
-                // checkpoint may itself have failed — the bookkeeping
-                // bug family). Walk the previous file's lines BACKWARD
-                // to the last real chained entry, skipping trailing
-                // non-chain records (checkpoint/bookkeeping lines).
-                // The last chained entry's hash IS the head this file
-                // continues from.
-                std::fs::read_to_string(&log_files[log_files.len() - 2])
-                    .ok()
-                    .and_then(|c| {
-                        c.lines()
-                            .rev()
-                            .filter(|l| !l.is_empty())
-                            .find(|l| l.contains(" chain="))
-                            .and_then(|l| l.rfind(" chain=").map(|p| l[p + 7..].to_string()))
-                    })
-                    .unwrap_or(seed)
-            })
-        } else {
-            seed
+        // Quick check: verify the way the writer chains — one
+        // continuous walk from the seed through every file, no anchor
+        // reconstruction. Per-file anchor heuristics (checkpoint
+        // lookups, last-line extraction) kept failing on real data
+        // (missing checkpoints after the bookkeeping bug, trailing
+        // records); this is correct by construction and still cheap.
+        // Chainless legacy lines are skipped without advancing the
+        // head — the same tolerance the writer's recovery uses.
+        let chain_valid = {
+            use crate::server::transport::chained_log::ChainedLogWriter;
+            let mut ok = true;
+            let mut prev = seed.clone();
+            'outer: for f in &log_files {
+                let Ok(c) = std::fs::read_to_string(f) else { continue };
+                for l in c.lines().filter(|l| !l.is_empty()) {
+                    match ChainedLogWriter::<std::io::Sink>::verify_line(l, &prev) {
+                        Ok(h) => prev = h,
+                        Err(_) if !l.contains(" chain=") => {}
+                        Err(_) => {
+                            ok = false;
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+            ok
         };
-        let chain_valid =
-            crate::server::transport::chained_log::ChainedLogWriter::<std::io::Sink>::verify_log(
-                &content, &anchor,
-            )
-            .is_ok();
 
         let tail: Vec<String> = content
             .lines()
