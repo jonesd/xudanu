@@ -34,6 +34,15 @@ XUDANU_ADMIN_PASSPHRASE=<your-admin-pass> node scripts/seed-exhibition-gathers.m
 
 Then open the **Gallery — Lobby** in the Library, or walk **The Curator's Tour** in the Trails panel. Seeding against the Docker quickstart (port 8080)? Add `SEED_ORIGIN=http://localhost:8080` to the commands. Both seeders are idempotent — re-running is safe.
 
+### Operating a server
+
+Self-hosting is a first-class case, and the admin console is built for it: live metrics and health checks, session management, and audit logging with **authoritative chain verification** — the same full cryptographic walk the `verify-security-log` CLI performs, available in one click. A quick check may warn; only the full walk may say *tampering*.
+
+| | |
+|---|---|
+| ![Admin overview](docs/screenshots/admin/admin-overview.png) | ![Admin audit verification](docs/screenshots/admin/admin-audit.png) |
+| **Overview** — works, links, sessions, content size, health checks with auto-refresh | **Audit** — the chained security log, with one-click full verification of every entry, checkpoint, and key rotation |
+
 > **[Try it live](https://xudanu.com)** — a running server with the interactive Links Course: typed and multi-ended links, gathered end-sets, and live transclusions.
 > **[Read the documentation](https://dgjones.info/xudanu/)** — user guides, technical architecture, and visual diagrams.
 > **[Source on GitHub](https://github.com/jonesd/xudanu)** — releases with static binaries for Linux, macOS, and Windows.
