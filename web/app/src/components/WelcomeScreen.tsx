@@ -1,3 +1,11 @@
+/** One showcase entry: a seeded demo work the visitor can open in a
+ *  single click (FR-77). */
+export interface ShowcaseEntry {
+  id: number;
+  label: string;
+  title: string;
+}
+
 interface WelcomeScreenProps {
   workCount: number;
   hasIdentity: boolean;
@@ -5,6 +13,13 @@ interface WelcomeScreenProps {
    *  the paradigm. Absent on unseeded servers; nothing renders. */
   hasCourse?: boolean;
   onLearnLinks?: () => void;
+  /** Gallery showcase seeded on this server (FR-77): one-click demo
+   *  entries. Absent on unseeded servers; nothing renders. */
+  showcase?: ShowcaseEntry[];
+  onOpenShowcaseWork?: (id: number) => void;
+  /** Server runs the Frozen edit policy — the read-only notice rides
+   *  the showcase card (museum mode). */
+  readOnlyDemo?: boolean;
   onNewDocument: () => void;
   onBrowseLibrary: () => void;
   onImport: () => void;
@@ -16,6 +31,9 @@ export function WelcomeScreen({
   hasIdentity,
   hasCourse,
   onLearnLinks,
+  showcase,
+  onOpenShowcaseWork,
+  readOnlyDemo,
   onNewDocument,
   onBrowseLibrary,
   onImport,
@@ -30,6 +48,31 @@ export function WelcomeScreen({
         A connected literature where every quotation maintains its bond to the original,
         where every reuse carries its full provenance.
       </div>
+      {showcase && showcase.length > 0 && onOpenShowcaseWork && (
+        <div className="welcome-showcase">
+          <div className="welcome-showcase-head">
+            <span className="welcome-showcase-icon">{"\u25A4"}</span>
+            <span className="welcome-showcase-title">THE GALLERY OF UNUSUAL CONNECTIONS</span>
+            {readOnlyDemo && <span className="welcome-showcase-ro">read-only demo</span>}
+          </div>
+          <div className="welcome-showcase-desc">
+            Nine rooms of live link structures — every exhibit is the thing itself,
+            not a picture of it. Click any underlined passage to follow a connection.
+          </div>
+          <div className="welcome-showcase-entries">
+            {showcase.map((e) => (
+              <button
+                key={e.id}
+                className="welcome-showcase-entry"
+                title={e.title}
+                onClick={() => onOpenShowcaseWork(e.id)}
+              >
+                {e.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="welcome-features">
         <div className="welcome-feature-card">
           <div className="welcome-feature-icon" style={{ background: "rgba(88,166,255,0.12)", color: "#58a6ff" }}>{"\u2192"}</div>

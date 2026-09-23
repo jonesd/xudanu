@@ -35,6 +35,7 @@ import type { WorkKind } from "../../graph-scoring";
 import { KIND_ICON, KIND_COLOR, KIND_ICON_COLOR } from "../../graph-scoring";
 import { DataIntegrityBanner } from "../DataIntegrityBanner";
 import { WelcomeScreen } from "../WelcomeScreen";
+import type { ShowcaseEntry } from "../WelcomeScreen";
 import { DocumentOutlinePanel } from "../DocumentOutline";
 import { useIsTablet, useIsPhone } from "../../hooks/useMediaQuery";
 import { MobileBottomNav } from "./MobileBottomNav";
@@ -678,6 +679,26 @@ export function WorkspaceShell() {
       null,
     [works],
   );
+
+  // FR-77 gallery showcase: the seeded gallery's marquee rooms, offered
+  // as one-click entries on the welcome screen. Present only when the
+  // gallery is seeded — same convention as the course detection.
+  const galleryShowcase = useMemo(() => {
+    const find = (prefix: string) =>
+      works.find((w) => (w.title || "").startsWith(prefix))?.work_id;
+    const lobby = find("Gallery — Lobby");
+    const spectrum = find("Gallery — Wing I · Room 1");
+    const liveWindow = find("Gallery — The Fabric · Room 9");
+    const fiveWay = find("Gallery — Wing III · Room 7");
+    if (lobby == null || spectrum == null) return undefined;
+    const entries: ShowcaseEntry[] = [
+      { id: lobby, label: "Enter the Lobby", title: "The Gallery of Unusual Connections" },
+      { id: spectrum, label: "Spectrum Sentence", title: "All six link types on one sentence" },
+    ];
+    if (liveWindow != null) entries.push({ id: liveWindow, label: "Live Window", title: "Transclusions: windows, not copies" });
+    if (fiveWay != null) entries.push({ id: fiveWay, label: "Five-Way Compare", title: "One connection, five named ends" });
+    return entries;
+  }, [works]);
 
   // First-visit onboarding: when the Links Course is present and this
   // browser hasn't seen the intro, open Lesson 1 directly — a fresh
@@ -3725,6 +3746,9 @@ export function WorkspaceShell() {
               hasIdentity={!!identity}
               hasCourse={courseEntryId !== null}
               onLearnLinks={() => courseEntryId !== null && selectWork(courseEntryId)}
+              showcase={galleryShowcase}
+              onOpenShowcaseWork={(id) => selectWork(id)}
+              readOnlyDemo={demoReadOnly}
               onNewDocument={() => (identity ? handleCreateWork() : setShowIdentity(true))}
               onBrowseLibrary={() => setNavTab("library")}
               onImport={() => setShowImport(true)}

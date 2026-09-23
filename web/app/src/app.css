@@ -4732,6 +4732,68 @@ canvas._bridge {
   margin-top: 32px;
   max-width: 720px;
 }
+
+/* FR-77: gallery showcase — the marquee demo entries, gallery-orange
+   accent, first thing under the subtitle on seeded servers. */
+.welcome-showcase {
+  margin-top: 28px;
+  max-width: 720px;
+  width: 100%;
+  border: 1px solid rgba(240, 136, 62, 0.4);
+  border-radius: 10px;
+  padding: 16px 18px;
+  background: rgba(240, 136, 62, 0.06);
+  text-align: left;
+}
+.welcome-showcase-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.welcome-showcase-icon { color: #f0883e; font-size: 16px; }
+.welcome-showcase-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--text);
+}
+.welcome-showcase-ro {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #f0883e;
+  border: 1px solid rgba(240, 136, 62, 0.4);
+  border-radius: 8px;
+  padding: 2px 8px;
+}
+.welcome-showcase-desc {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.welcome-showcase-entries {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.welcome-showcase-entry {
+  border: 1px solid rgba(240, 136, 62, 0.45);
+  border-radius: 7px;
+  background: transparent;
+  color: #f0883e;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.welcome-showcase-entry:hover {
+  background: rgba(240, 136, 62, 0.12);
+  border-color: #f0883e;
+}
 .welcome-feature-card {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
