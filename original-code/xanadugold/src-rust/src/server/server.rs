@@ -6922,7 +6922,12 @@ impl Server {
         let runtime = tokio::runtime::Handle::try_current()
             .map_err(|e| ServerError::Internal(format!("no async runtime: {e}")))?;
         let fetch_url = trimmed.to_string();
-        let (body_bytes, final_url, content_type) = runtime.block_on(async {
+        // block_in_place: dispatch() runs inside the async WS handler;
+        // a bare Handle::block_on from that context errors out with
+        // "Cannot start a runtime from within a runtime" (found live
+        // calling web_fetch_sanitize over WS — the op only ever worked
+        // from non-async contexts). The LLM path uses the same guard.
+        let (body_bytes, final_url, content_type) = tokio::task::block_in_place(|| runtime.block_on(async {
             let client = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
                 .redirect(reqwest::redirect::Policy::limited(5))
@@ -6960,7 +6965,7 @@ impl Server {
                 limited.to_vec()
             };
             Ok::<_, ServerError>((bytes, final_url, ct))
-        })?;
+        }))?;
 
         let raw_html = String::from_utf8_lossy(&body_bytes).to_string();
 
