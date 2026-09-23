@@ -2865,6 +2865,14 @@ export function WorkspaceShell() {
                       const ends = linkEnds(link);
                       const extraEnds = ends.filter((e) => e.name !== "origin" && e.name !== "destination" && e.workId !== null && e.workId !== workBeId);
                       const multi = isMultiEnded(link);
+                      // ⇄ compare is offered on ANY closed link with two
+                      // distinct work ends — two-ended links (the most
+                      // common kind) were stranded without it, while the
+                      // Compare tab's empty state told users to click a
+                      // ⇄ that didn't exist on their rows.
+                      const comparable =
+                        multi ||
+                        (link.destination != null && link.destination !== link.origin);
                       const destTitle = isWebLink && destUrl
                         ? destUrl
                         : (link.destination_title || `Work 0x${link.destination.toString(16)}`);
@@ -2978,7 +2986,7 @@ export function WorkspaceShell() {
                                   ✓
                                 </button>
                               )}
-                              {multi && (
+                              {comparable && (
                                 <button
                                   className="ws-conn-delete"
                                   title="Compare all ends side by side"
