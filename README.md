@@ -21,8 +21,8 @@ The best demo of what Xudanu does: a seeded museum of live link structures — e
 | **The lobby** — the floor plan is wired with links: click a room name to walk there | **The Spectrum Sentence** — all six link types stacked on one sentence |
 | ![Rebuttal constellation](docs/screenshots/gallery-constellation.png) | ![Live window](docs/screenshots/gallery-live-window.png) |
 | **The Rebuttal Constellation** — three gathered passages, one end, one answer | **The Live Window** — transclusions: the text lives in the other document |
-| ![Five-way compare](docs/screenshots/gallery-compare.png) | |
-| **The Five-Way Junction** — one connection, five named ends, compared side by side | |
+| ![Five-way compare](docs/screenshots/gallery-compare.png) | ![Two drafts with beams](docs/screenshots/beams-final.png) |
+| **The Five-Way Junction** — one connection, five named ends, compared side by side | **The Two Drafts** — beams connect the same text carried across rearranged versions |
 
 Seed it on your own server (from a repo checkout, against a running local server):
 
