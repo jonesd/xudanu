@@ -217,9 +217,16 @@ export function MultiEndCompare({
     };
   }, [uniqueIds, clientRef, works]);
 
-  const otherWorks = works.filter(
-    (w) => !uniqueIds.includes(w.work_id) && w.work_id !== currentWorkId,
-  );
+  // Recent first, starred pinned — the same priority the Library list
+  // uses. The server's work_list order is HashMap order (arbitrary);
+  // an unsorted picker buried recently-used works under hundreds of
+  // older ones.
+  const otherWorks = works
+    .filter((w) => !uniqueIds.includes(w.work_id) && w.work_id !== currentWorkId)
+    .sort((a, b) => {
+      if ((!!a.is_starred) !== (!!b.is_starred)) return a.is_starred ? -1 : 1;
+      return (b.updated_at || 0) - (a.updated_at || 0);
+    });
 
   const maxCols = fullscreen ? 4 : 3;
   return (
