@@ -450,6 +450,7 @@ pub enum OperationCode {
     AdminEditPolicySet,
     AdminSessionKick,
     AdminAuditTail,
+    AdminSecurityLogVerify,
     AdminClubsList,
     AdminGrantAdmin,
     AdminRevokeAdmin,
@@ -841,6 +842,7 @@ impl OperationCode {
         (0x0f14, OperationCode::AdminEditPolicySet),
         (0x0f15, OperationCode::AdminSessionKick),
         (0x0f16, OperationCode::AdminAuditTail),
+        (0x0f1a, OperationCode::AdminSecurityLogVerify),
         (0x0f17, OperationCode::AdminClubsList),
         (0x0f18, OperationCode::AdminGrantAdmin),
         (0x0f19, OperationCode::AdminRevokeAdmin),
@@ -2114,6 +2116,12 @@ pub enum WireRequest {
     },
     #[cfg(feature = "serde")]
     AdminAuditTail,
+    /// Authoritative security/attribution chain verification (the
+    /// full walk, same as the verify-security-log CLI). Admin-gated.
+    /// Read-only. The audit tail's quick check may warn; only this
+    /// op's result may carry a tampering verdict.
+    #[cfg(feature = "serde")]
+    AdminSecurityLogVerify,
     #[cfg(feature = "serde")]
     AdminGrantAdmin {
         club_id: BeId,
@@ -4541,6 +4549,10 @@ pub struct ServerInfoPayload {
     pub version: String,
     pub session_count: usize,
     pub work_count: usize,
+    /// Soft-deleted (archived) works — reversible deletions. Admins
+    /// need corpus-churn visibility: deletions are quiet otherwise.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub archived_work_count: usize,
     pub club_count: usize,
     pub edition_count: usize,
     pub is_accepting_connections: bool,

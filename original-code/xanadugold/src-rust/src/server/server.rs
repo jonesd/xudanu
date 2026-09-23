@@ -7808,6 +7808,16 @@ impl Server {
         self.works.len()
     }
 
+    /// Soft-deleted (archived) works. Deletion is reversible here, so
+    /// the count is corpus churn, not data loss — but it belongs in
+    /// the admin's field of view.
+    pub fn archived_work_count(&self) -> usize {
+        self.works
+            .values()
+            .filter(|ws| ws.work().is_archived())
+            .count()
+    }
+
     pub fn public_work_list(&self) -> Vec<serde_json::Value> {
         self.public_work_list_search(None)
     }
@@ -12834,17 +12844,51 @@ impl Server {
         let seed = std::fs::read_to_string(dir.join("security.log.seed"))
             .map(|s| s.trim().to_string())
             .unwrap_or_default();
+        // Anchor derivation — LEDGER, not heuristics. The old approach
+        // (previous file's last line, ` chain=` extraction) silently
+        // fell back to the genesis seed whenever that line was a
+        // checkpoint/rotation record — ordinary operation after
+        // restarts — making the quick check report CHAIN INVALID with
+        // no tampering (found live 2026-09-23). The checkpoint records
+        // ARE the chain's positions: use the newest checkpoint that
+        // covers files BEFORE the current one; its head_hash is the
+        // expected chain head at this file's start. Seed remains the
+        // correct anchor only when no earlier files exist.
         let anchor = if log_files.len() >= 2 {
-            let prev_file = &log_files[log_files.len() - 2];
-            std::fs::read_to_string(prev_file)
-                .ok()
-                .and_then(|c| {
-                    c.lines()
-                        .filter(|l| !l.is_empty())
-                        .last()
-                        .and_then(|l| l.rfind(" chain=").map(|p| l[p + 7..].to_string()))
-                })
-                .unwrap_or(seed)
+            let prev_name = log_files[log_files.len() - 2]
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let from_checkpoint = crate::server::transport::log_checkpoint::load_checkpoints(
+                dir, "security",
+            )
+            .ok()
+            .and_then(|cps| {
+                let cp = cps
+                    .iter()
+                    .filter(|c| c.files_covered.iter().any(|f| *f == prev_name))
+                    .max_by_key(|c| c.seq)?;
+                Some(cp.head_hash.clone())
+            });
+            from_checkpoint.unwrap_or_else(|| {
+                // No checkpoint covering the previous file (the
+                // checkpoint may itself have failed — the bookkeeping
+                // bug family). Walk the previous file's lines BACKWARD
+                // to the last real chained entry, skipping trailing
+                // non-chain records (checkpoint/bookkeeping lines).
+                // The last chained entry's hash IS the head this file
+                // continues from.
+                std::fs::read_to_string(&log_files[log_files.len() - 2])
+                    .ok()
+                    .and_then(|c| {
+                        c.lines()
+                            .rev()
+                            .filter(|l| !l.is_empty())
+                            .find(|l| l.contains(" chain="))
+                            .and_then(|l| l.rfind(" chain=").map(|p| l[p + 7..].to_string()))
+                    })
+                    .unwrap_or(seed)
+            })
         } else {
             seed
         };
@@ -12861,6 +12905,52 @@ impl Server {
             .map(|l| l.to_string())
             .collect();
         Ok((tail, chain_valid))
+    }
+
+    /// Authoritative chain verification — the same full walk the
+    /// `verify-security-log` CLI performs (security + attribution logs
+    /// + key rotation chain). The audit tail's quick check covers only
+    /// the newest file; it may WARN on inconsistencies but must never
+    /// be the basis for a tampering verdict (a false "tampering
+    /// suspected" in the admin UI is a screenshot waiting for a forum
+    /// post — found live, 2026-09-23: metadata mismatch read as
+    /// tampering while this full walk passed).
+    pub fn admin_security_log_verify(
+        &self,
+        session_id: SessionId,
+    ) -> Result<serde_json::Value, ServerError> {
+        use crate::server::transport::log_checkpoint;
+        self.ensure_admin(session_id)?;
+        let dir = match self.data_dir.as_ref() {
+            Some(d) => d.clone(),
+            // In-memory server: there is no on-disk chain to verify.
+            // Report it as data, not an error — ephemeral servers are
+            // legitimate (tests, disposable sandboxes).
+            None => {
+                return Ok(serde_json::json!({
+                    "ok": true,
+                    "in_memory": true,
+                    "note": "in-memory server — no on-disk chain to verify",
+                }))
+            }
+        };
+
+        let (key_history, key_history_ok) = match log_checkpoint::load_key_history(&dir) {
+            Ok(h) => {
+                let ok = h.verify_rotation_chain().is_ok();
+                (Some(h), ok)
+            }
+            Err(_) => (None, false),
+        };
+        let sec = log_checkpoint::verify_security_log(&dir, key_history.as_ref());
+        let attr = log_checkpoint::verify_attribution_log(&dir, key_history.as_ref());
+
+        Ok(serde_json::json!({
+            "ok": sec.ok && attr.ok && key_history_ok,
+            "key_history": { "ok": key_history_ok, "keys": key_history.as_ref().map(|h| h.entry_count()).unwrap_or(0) },
+            "security": { "ok": sec.ok, "entries": sec.checked_entries, "checkpoints": sec.checkpoints, "lines": sec.lines },
+            "attribution": { "ok": attr.ok, "entries": attr.checked_entries, "checkpoints": attr.checkpoints, "lines": attr.lines },
+        }))
     }
 
     pub fn admin_active_sessions(
@@ -18197,6 +18287,7 @@ impl Server {
         serde_json::json!({
             "status": status,
             "works": self.works.len(),
+            "archived_works": self.archived_work_count(),
             "dirty_works": self
                 .works
                 .values()

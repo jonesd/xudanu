@@ -598,6 +598,15 @@ pub fn verify_security_log(data_dir: &Path, history: Option<&KeyHistory>) -> Ver
     let files = security_files_with_archives(data_dir);
     let seed = match std::fs::read_to_string(data_dir.join("security.log.seed")) {
         Ok(s) => s.trim().to_string(),
+        // A seed is created on first use; a fresh server with no
+        // security entries yet has an empty — trivially intact —
+        // chain. Missing seed + no log files is a PASS, not a
+        // failure (fresh deployments must not read as broken).
+        Err(_) if files.is_empty() => {
+            report.ok = true;
+            report.lines.push("no chain yet (fresh server, nothing logged)".into());
+            return report;
+        }
         Err(e) => {
             report.lines.push(format!("cannot read seed: {}", e));
             return report;
@@ -686,6 +695,13 @@ pub fn verify_attribution_log(data_dir: &Path, history: Option<&KeyHistory>) -> 
     let files = attribution_files_with_archives(data_dir);
     let seed = match std::fs::read_to_string(dir.join("attribution.log.seed")) {
         Ok(s) => s.trim().to_string(),
+        // Same as the security log: missing seed + no files = a fresh
+        // server with nothing attributed yet — trivially intact.
+        Err(_) if files.is_empty() => {
+            report.ok = true;
+            report.lines.push("no chain yet (fresh server, nothing attributed)".into());
+            return report;
+        }
         Err(e) => {
             report.lines.push(format!("cannot read seed: {}", e));
             return report;

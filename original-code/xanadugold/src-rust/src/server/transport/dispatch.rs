@@ -1841,6 +1841,7 @@ fn dispatch_inner(
                     version: env!("CARGO_PKG_VERSION").to_string(),
                     session_count: srv.session_count(),
                     work_count: srv.work_count(),
+                    archived_work_count: srv.archived_work_count(),
                     club_count: srv.club_count(),
                     edition_count: srv.edition_count(),
                     is_accepting_connections: srv.admin_is_accepting_connections(),
@@ -1860,6 +1861,7 @@ fn dispatch_inner(
                 version: env!("CARGO_PKG_VERSION").to_string(),
                 session_count: srv.session_count(),
                 work_count: srv.work_count(),
+                archived_work_count: srv.archived_work_count(),
                 club_count: srv.club_count(),
                 edition_count: srv.edition_count(),
                 is_accepting_connections: srv.admin_is_accepting_connections(),
@@ -4438,6 +4440,10 @@ fn dispatch_inner(
                 "chain_valid": valid,
             })))
         }
+        WireRequest::AdminSecurityLogVerify => {
+            let report = srv.admin_security_log_verify(session_id)?;
+            Ok(ResponseValue::Json(report))
+        }
         #[cfg(feature = "serde")]
         WireRequest::AdminEditPolicySet { policy } => {
             let parsed = match policy.as_str() {
@@ -5059,6 +5065,7 @@ fn dispatch_inner_read(
                     version: env!("CARGO_PKG_VERSION").to_string(),
                     session_count: srv.session_count(),
                     work_count: srv.work_count(),
+                    archived_work_count: srv.archived_work_count(),
                     club_count: srv.club_count(),
                     edition_count: srv.edition_count(),
                     is_accepting_connections: srv.admin_is_accepting_connections(),
@@ -5073,6 +5080,7 @@ fn dispatch_inner_read(
                 version: env!("CARGO_PKG_VERSION").to_string(),
                 session_count: srv.session_count(),
                 work_count: srv.work_count(),
+                archived_work_count: srv.archived_work_count(),
                 club_count: srv.club_count(),
                 edition_count: srv.edition_count(),
                 is_accepting_connections: srv.admin_is_accepting_connections(),

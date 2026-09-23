@@ -21,6 +21,7 @@ interface HealthData {
   edit_policy?: string;
   operations: number;
   works: number;
+  archived_works?: number;
   clubs: number;
   editions: number;
   links: number;
@@ -208,6 +209,34 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
     }
   }, [client]);
 
+  // ── Full chain verification ──
+  // A quick check may WARN; only the full walk (this op — the same
+  // code the verify-security-log CLI runs) may carry a tampering
+  // verdict. Never surface "tampering" from the tail heuristic: a
+  // false accusation in the admin UI is a screenshot waiting for a
+  // forum post.
+  const [verify, setVerify] = useState<{
+    ok: boolean;
+    key_history?: { ok: boolean; keys: number };
+    security?: { ok: boolean; entries: number; checkpoints: number; lines: string[] };
+    attribution?: { ok: boolean; entries: number; checkpoints: number; lines: string[] };
+  } | null>(null);
+  const [verifyBusy, setVerifyBusy] = useState(false);
+  const runVerify = useCallback(async () => {
+    if (!client) return;
+    setVerifyBusy(true);
+    try {
+      const resp = await client.sendRequest("admin_security_log_verify");
+      const val = (resp as { value?: unknown }).value ?? resp;
+      const inner = (val as { value?: unknown }).value ?? val;
+      setVerify(inner as typeof verify);
+    } catch (e) {
+      setVerify({ ok: false, security: { ok: false, entries: 0, checkpoints: 0, lines: [`request failed: ${e instanceof Error ? e.message : String(e)}`] } });
+    } finally {
+      setVerifyBusy(false);
+    }
+  }, [client]);
+
   // ── Policy (FR-45 P2) ──
   const [policyBusy, setPolicyBusy] = useState<string | null>(null);
   const [policyMsg, setPolicyMsg] = useState<string | null>(null);
@@ -317,6 +346,7 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
   const metrics = [
     { label: "Works", value: health?.works ?? "—" },
     { label: "Links", value: health?.links ?? "—" },
+    { label: "Archived Works", value: health?.archived_works ?? "—" },
     { label: "Editions", value: health?.editions ?? "—" },
     { label: "Clubs", value: health?.clubs ?? "—" },
     { label: "Blobs", value: health?.blobs ?? "—" },
@@ -607,13 +637,39 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
           <div style={{ maxWidth: 1100, margin: "0 auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: audit ? (audit.chain_valid ? "#3fb950" : "#f85149") : "#484f58" }} />
-                {audit ? (audit.chain_valid ? "Chain valid (last 200 lines)" : "CHAIN INVALID — tampering suspected") : "Not loaded"}
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: audit ? (audit.chain_valid ? "#3fb950" : "#d29922") : "#484f58" }} />
+                {audit
+                  ? audit.chain_valid
+                    ? "Quick check OK (recent entries)"
+                    : "Quick check found an inconsistency — run the full verification below (a quick check alone can never prove tampering)"
+                  : "Not loaded"}
               </span>
-              <button type="button" disabled={auditBusy} onClick={() => void loadAudit()} style={{ background: "#21262d", border: "1px solid #30363d", color: "#c9d1d9", borderRadius: "4px", padding: "4px 12px", cursor: "pointer", fontSize: 12 }}>
-                {auditBusy ? "Loading…" : "Load / refresh"}
-              </button>
+              <span style={{ display: "flex", gap: 8 }}>
+                <button type="button" disabled={verifyBusy} onClick={() => void runVerify()} style={{ background: "#21262d", border: "1px solid rgba(63,185,80,0.5)", color: "#3fb950", borderRadius: "4px", padding: "4px 12px", cursor: "pointer", fontSize: 12 }}>
+                  {verifyBusy ? "Verifying…" : "Run full verification"}
+                </button>
+                <button type="button" disabled={auditBusy} onClick={() => void loadAudit()} style={{ background: "#21262d", border: "1px solid #30363d", color: "#c9d1d9", borderRadius: "4px", padding: "4px 12px", cursor: "pointer", fontSize: 12 }}>
+                  {auditBusy ? "Loading…" : "Load / refresh"}
+                </button>
+              </span>
             </div>
+            {verify && (
+              <div style={{ marginBottom: 12, padding: "12px 14px", borderRadius: 6, border: `1px solid ${verify.ok ? "rgba(63,185,80,0.5)" : "rgba(248,81,73,0.5)"}`, background: verify.ok ? "rgba(63,185,80,0.07)" : "rgba(248,81,73,0.07)", fontSize: 13 }}>
+                <div style={{ fontWeight: 600, color: verify.ok ? "#3fb950" : "#f85149", marginBottom: 6 }}>
+                  {verify.ok ? "Verification passed — chains intact" : "VERIFICATION FAILED — this is the authoritative result"}
+                </div>
+                <div style={{ color: "#8b949e", fontSize: 12, lineHeight: 1.6 }}>
+                  {verify.security && `security: ${verify.security.ok ? "OK" : "FAIL"} · ${verify.security.entries} entries · ${verify.security.checkpoints} checkpoints`}
+                  {verify.attribution && ` — attribution: ${verify.attribution.ok ? "OK" : "FAIL"} · ${verify.attribution.entries} entries · ${verify.attribution.checkpoints} checkpoints`}
+                  {verify.key_history && ` — keys: ${verify.key_history.keys}`}
+                </div>
+                {(!verify.ok || verify.security?.lines.length) && (
+                  <div style={{ marginTop: 8, background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: 10, fontFamily: "JetBrains Mono, monospace", fontSize: 10, lineHeight: 1.5, color: "#c9d1d9", whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 180, overflowY: "auto" }}>
+                    {[...(verify.security?.lines ?? []), ...(verify.attribution?.lines ?? [])].join("\n")}
+                  </div>
+                )}
+              </div>
+            )}
             <div style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: "8px", padding: 14, fontFamily: "JetBrains Mono, monospace", fontSize: 11, lineHeight: 1.6, color: "#c9d1d9", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               {audit ? audit.lines.join("\n") || "(empty log)" : "Click Load to read the security log tail (admin only, read-only)."}
             </div>

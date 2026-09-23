@@ -658,6 +658,8 @@ impl JsonCodec {
             #[cfg(feature = "serde")]
             OperationCode::AdminAuditTail,
             #[cfg(feature = "serde")]
+            OperationCode::AdminSecurityLogVerify,
+            #[cfg(feature = "serde")]
             OperationCode::AdminClubsList,
             #[cfg(feature = "serde")]
             OperationCode::AdminNetworkStatus,
@@ -707,6 +709,8 @@ impl JsonCodec {
                 OperationCode::ServerDirectoryList => Ok(WireRequest::ServerDirectoryList),
                 #[cfg(feature = "serde")]
                 OperationCode::AdminAuditTail => Ok(WireRequest::AdminAuditTail),
+                #[cfg(feature = "serde")]
+                OperationCode::AdminSecurityLogVerify => Ok(WireRequest::AdminSecurityLogVerify),
                 #[cfg(feature = "serde")]
                 OperationCode::AdminClubsList => Ok(WireRequest::AdminClubsList),
                 #[cfg(feature = "serde")]
@@ -3852,6 +3856,8 @@ impl JsonCodec {
             }
             #[cfg(feature = "serde")]
             OperationCode::AdminAuditTail => Ok(WireRequest::AdminAuditTail),
+            #[cfg(feature = "serde")]
+            OperationCode::AdminSecurityLogVerify => Ok(WireRequest::AdminSecurityLogVerify),
             #[cfg(feature = "serde")]
             OperationCode::AdminClubsList => Ok(WireRequest::AdminClubsList),
             #[cfg(feature = "serde")]
