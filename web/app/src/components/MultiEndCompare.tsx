@@ -128,17 +128,33 @@ export function MultiEndCompare({
       (el) => el instanceof HTMLElement && (el as HTMLElement).dataset.col != null,
     ) as HTMLElement[];
     const out: Beam[] = [];
-    for (let ci = 0; ci + 1 < colEls.length; ci++) {
-      const aSpans = colEls[ci].querySelectorAll(".compare-hl[data-cidx]");
-      const bByCidx = new Map<string, HTMLElement>();
-      colEls[ci + 1].querySelectorAll(".compare-hl[data-cidx]").forEach((s) => {
+    // Beams connect SUBSTANTIAL carried passages only (the same bar as
+    // the meaningfulness banner): phrase-level matches beaming too
+    // produced a confetti of ~25 lines per pair that read as a
+    // "crashing wave", not as connections (user report). A shared
+    // region under this length is shared vocabulary, not carried text.
+    // Overlapping regions emit degenerate empty/fragment spans — match
+    // on each group's LONGEST span, never the first.
+    const SUBSTANTIAL = 40;
+    const bestByCidx = (root: HTMLElement) => {
+      const best = new Map<string, HTMLElement>();
+      root.querySelectorAll(".compare-hl[data-cidx]").forEach((s) => {
         const k = s.getAttribute("data-cidx") ?? "";
-        if (!bByCidx.has(k)) bByCidx.set(k, s as HTMLElement);
+        const el = s as HTMLElement;
+        const len = (el.textContent ?? "").trim().length;
+        if (!best.has(k) || len > (best.get(k)!.textContent ?? "").trim().length) best.set(k, el);
       });
-      aSpans.forEach((asEl) => {
-        const k = asEl.getAttribute("data-cidx") ?? "";
-        const bsEl = bByCidx.get(k);
-        if (!bsEl) return;
+      return best;
+    };
+    for (let ci = 0; ci + 1 < colEls.length; ci++) {
+      const aBest = bestByCidx(colEls[ci]);
+      const bBest = bestByCidx(colEls[ci + 1]);
+      for (const [k, asEl] of aBest) {
+        const bsEl = bBest.get(k);
+        if (!bsEl) continue;
+        const aLen = (asEl.textContent ?? "").trim().length;
+        const bLen = (bsEl.textContent ?? "").trim().length;
+        if (aLen < SUBSTANTIAL || bLen < SUBSTANTIAL) continue;
         const ra = asEl.getBoundingClientRect();
         const rb = bsEl.getBoundingClientRect();
         const cidx = Number(k);
@@ -150,7 +166,7 @@ export function MultiEndCompare({
           y2: rb.top + rb.height / 2 - grect.top,
           color: PAIR_COLORS[cidx % PAIR_COLORS.length],
         });
-      });
+      }
     }
     setBeams(out);
   }, []);
@@ -464,8 +480,8 @@ export function MultiEndCompare({
                       <path
                         d={d}
                         stroke={b.color}
-                        strokeWidth={focused ? 2.5 : 1.75}
-                        strokeOpacity={dimmed ? 0.15 : focused ? 1 : 0.7}
+                        strokeWidth={focused ? 2.5 : 1.1}
+                        strokeOpacity={dimmed ? 0.12 : focused ? 1 : 0.55}
                         fill="none"
                         pointerEvents="none"
                       />
