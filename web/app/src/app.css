@@ -2893,7 +2893,11 @@ body {
   padding: 1px 0;
 }
 .compare-hl:hover {
-  filter: brightness(1.4);
+  /* Emphasize with a heavier inset underline — never brighten the
+     background: white text on a brightness-boosted green wash was
+     unreadable (user report). */
+  filter: none;
+  box-shadow: inset 0 -3px 0 rgba(139, 148, 158, 0.6);
 }
 .cmp-unique {
   background: rgba(63, 185, 80, 0.18);

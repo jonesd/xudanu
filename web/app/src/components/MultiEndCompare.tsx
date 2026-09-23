@@ -281,6 +281,16 @@ export function MultiEndCompare({
           (() => {
             const anyShared = columns.some((c) => c.regions.length > 0);
             const totalShared = columns.reduce((n, c) => n + c.regions.length, 0);
+            // Meaningfulness: phrase-level matches (common words, short
+            // runs) inflate the count while carrying no information.
+            // A comparison is SUBSTANTIAL only when some shared run is
+            // long enough to be real carried content; otherwise say so
+            // plainly instead of presenting noise as findings.
+            const SUBSTANTIAL = 40;
+            const longestRun = columns.reduce(
+              (m, c) => Math.max(m, ...c.regions.map((r) => r.end - r.start), 0),
+              0,
+            );
             return (
               <div
                 style={{
@@ -288,13 +298,15 @@ export function MultiEndCompare({
                   padding: "6px 10px",
                   marginBottom: 8,
                   borderRadius: 6,
-                  background: anyShared ? "rgba(88,166,255,0.07)" : "rgba(139,148,158,0.08)",
-                  border: `1px solid ${anyShared ? "rgba(88,166,255,0.35)" : "#30363d"}`,
+                  background: longestRun >= SUBSTANTIAL ? "rgba(88,166,255,0.07)" : anyShared ? "rgba(210,153,34,0.07)" : "rgba(139,148,158,0.08)",
+                  border: `1px solid ${longestRun >= SUBSTANTIAL ? "rgba(88,166,255,0.35)" : anyShared ? "rgba(210,153,34,0.4)" : "#30363d"}`,
                   color: "#c9d1d9",
                 }}
               >
-                {anyShared
-                  ? `${columns.length} works compared · ${Math.round(totalShared / columns.length)} shared passage${Math.round(totalShared / columns.length) === 1 ? "" : "s"} on average — switch between “Shared passages” and “What differs” above`
+                {longestRun >= SUBSTANTIAL
+                  ? `${columns.length} works compared · ${Math.round(totalShared / columns.length)} shared passage${Math.round(totalShared / columns.length) === 1 ? "" : "s"} on average · longest shared run ${longestRun} characters — switch between “Shared passages” and “What differs” above`
+                  : anyShared
+                  ? `${columns.length} works compared · only scattered word matches (longest is ${longestRun} characters). These works share no substantial passages — there is nothing meaningful to learn from this comparison.`
                   : `${columns.length} works compared · they share no passages — these are independent texts. Every word is unique to its own work.`}
               </div>
             );
