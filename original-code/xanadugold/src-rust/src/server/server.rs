@@ -6927,45 +6927,47 @@ impl Server {
         // "Cannot start a runtime from within a runtime" (found live
         // calling web_fetch_sanitize over WS — the op only ever worked
         // from non-async contexts). The LLM path uses the same guard.
-        let (body_bytes, final_url, content_type) = tokio::task::block_in_place(|| runtime.block_on(async {
-            let client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
-                .redirect(reqwest::redirect::Policy::limited(5))
-                .user_agent("xudanu-web-fetch/1.0 (+https://xudanu.com)")
-                .build()
-                .map_err(|e| ServerError::Internal(format!("http client: {e}")))?;
-            let resp = client
-                .get(&fetch_url)
-                .send()
-                .await
-                .map_err(|e| ServerError::InvalidArgument(format!("fetch failed: {e}")))?;
-            let ct = resp
-                .headers()
-                .get(reqwest::header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("")
-                .to_string();
-            let final_url = resp.url().to_string();
-            if !ct.starts_with("text/html")
-                && !ct.starts_with("application/xhtml")
-                && !ct.starts_with("text/plain")
-            {
-                return Err(ServerError::InvalidArgument(format!(
-                    "refusing non-html content-type: {ct}"
-                )));
-            }
-            let limited = resp
-                .bytes()
-                .await
-                .map_err(|e| ServerError::InvalidArgument(format!("read failed: {e}")))?;
-            const MAX_BYTES: usize = 2 * 1024 * 1024;
-            let bytes = if limited.len() > MAX_BYTES {
-                limited[..MAX_BYTES].to_vec()
-            } else {
-                limited.to_vec()
-            };
-            Ok::<_, ServerError>((bytes, final_url, ct))
-        }))?;
+        let (body_bytes, final_url, content_type) = tokio::task::block_in_place(|| {
+            runtime.block_on(async {
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(10))
+                    .redirect(reqwest::redirect::Policy::limited(5))
+                    .user_agent("xudanu-web-fetch/1.0 (+https://xudanu.com)")
+                    .build()
+                    .map_err(|e| ServerError::Internal(format!("http client: {e}")))?;
+                let resp = client
+                    .get(&fetch_url)
+                    .send()
+                    .await
+                    .map_err(|e| ServerError::InvalidArgument(format!("fetch failed: {e}")))?;
+                let ct = resp
+                    .headers()
+                    .get(reqwest::header::CONTENT_TYPE)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string();
+                let final_url = resp.url().to_string();
+                if !ct.starts_with("text/html")
+                    && !ct.starts_with("application/xhtml")
+                    && !ct.starts_with("text/plain")
+                {
+                    return Err(ServerError::InvalidArgument(format!(
+                        "refusing non-html content-type: {ct}"
+                    )));
+                }
+                let limited = resp
+                    .bytes()
+                    .await
+                    .map_err(|e| ServerError::InvalidArgument(format!("read failed: {e}")))?;
+                const MAX_BYTES: usize = 2 * 1024 * 1024;
+                let bytes = if limited.len() > MAX_BYTES {
+                    limited[..MAX_BYTES].to_vec()
+                } else {
+                    limited.to_vec()
+                };
+                Ok::<_, ServerError>((bytes, final_url, ct))
+            })
+        })?;
 
         let raw_html = String::from_utf8_lossy(&body_bytes).to_string();
 
