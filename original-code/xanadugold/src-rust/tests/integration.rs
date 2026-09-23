@@ -1571,10 +1571,20 @@ async fn admin_security_log_verify_authoritative() {
     let dir = temp_data_dir("verify");
     let srv = TestServer::start_with_dir(Some(dir)).await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r, json_req(50, "admin_security_log_verify", None)).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(50, "admin_security_log_verify", None),
+    )
+    .await;
     assert_eq!(resp["type"], "response", "full body: {}", resp);
     let report = &resp["value"]["value"];
-    assert_eq!(report["ok"].as_bool(), Some(true), "fresh chain must verify: {:?}", report);
+    assert_eq!(
+        report["ok"].as_bool(),
+        Some(true),
+        "fresh chain must verify: {:?}",
+        report
+    );
     assert!(report["security"]["ok"].as_bool().unwrap());
     assert!(report["attribution"]["ok"].as_bool().unwrap());
 }
@@ -1584,8 +1594,17 @@ async fn admin_security_log_verify_requires_admin() {
     let srv = TestServer::start().await;
     let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
     let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
-    let resp = send_recv_json(&mut s, &mut r, json_req(50, "admin_security_log_verify", None)).await;
-    assert_eq!(resp["type"], "error", "anonymous sessions must not read chain verification: {}", resp);
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(50, "admin_security_log_verify", None),
+    )
+    .await;
+    assert_eq!(
+        resp["type"], "error",
+        "anonymous sessions must not read chain verification: {}",
+        resp
+    );
 }
 
 #[tokio::test]

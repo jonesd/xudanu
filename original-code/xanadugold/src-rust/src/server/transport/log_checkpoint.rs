@@ -604,7 +604,9 @@ pub fn verify_security_log(data_dir: &Path, history: Option<&KeyHistory>) -> Ver
         // failure (fresh deployments must not read as broken).
         Err(_) if files.is_empty() => {
             report.ok = true;
-            report.lines.push("no chain yet (fresh server, nothing logged)".into());
+            report
+                .lines
+                .push("no chain yet (fresh server, nothing logged)".into());
             return report;
         }
         Err(e) => {
@@ -699,7 +701,9 @@ pub fn verify_attribution_log(data_dir: &Path, history: Option<&KeyHistory>) -> 
         // server with nothing attributed yet — trivially intact.
         Err(_) if files.is_empty() => {
             report.ok = true;
-            report.lines.push("no chain yet (fresh server, nothing attributed)".into());
+            report
+                .lines
+                .push("no chain yet (fresh server, nothing attributed)".into());
             return report;
         }
         Err(e) => {

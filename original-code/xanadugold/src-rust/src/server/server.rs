@@ -12857,7 +12857,9 @@ impl Server {
             let mut ok = true;
             let mut prev = seed.clone();
             'outer: for f in &log_files {
-                let Ok(c) = std::fs::read_to_string(f) else { continue };
+                let Ok(c) = std::fs::read_to_string(f) else {
+                    continue;
+                };
                 for l in c.lines().filter(|l| !l.is_empty()) {
                     match ChainedLogWriter::<std::io::Sink>::verify_line(l, &prev) {
                         Ok(h) => prev = h,
