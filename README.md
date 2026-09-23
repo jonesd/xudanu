@@ -6,8 +6,10 @@
 
 | | |
 |---|---|
-| ![Connections](docs/screenshots/connections-panel.png) | ![Link types](docs/screenshots/link-types-multi.png) |
-| **Every connection is visible** — links and backlinks with type colors | **Typed links** — Comment, Reference, Disagreement, Quotation, See Also, Web |
+| ![Connections](docs/screenshots/right-panel-links.png) | ![Link types](docs/screenshots/link-types-multi.png) |
+| **The Links panel** — every connection touching this document, both directions. Click ⇄ to compare any link's ends side by side | **Typed links** — Comment, Reference, Disagreement, Quotation, See Also, Web — each with its own color in the margin |
+| ![Provenance](docs/screenshots/provenance-panel.png) | ![History](docs/screenshots/history-panel.png) |
+| **Provenance** — who wrote what: per-author attribution with cryptographic signatures | **History** — the revision timeline; every version remains addressable and comparable |
 | ![Trails](docs/screenshots/trails-panel.png) | ![Editor](docs/screenshots/editor-docuverse-practically.png) |
 | **Trails** — curated reading paths through the docuverse | **The editor** — writing with visible structure |
 
@@ -18,11 +20,11 @@ The best demo of what Xudanu does: a seeded museum of live link structures — e
 | | |
 |---|---|
 | ![Gallery lobby](docs/screenshots/gallery-lobby.png) | ![Spectrum sentence](docs/screenshots/gallery-spectrum.png) |
-| **The lobby** — the floor plan is wired with links: click a room name to walk there | **The Spectrum Sentence** — all six link types stacked on one sentence |
+| **The lobby** — the floor plan is wired with links: click a room name to walk there | **The Spectrum Sentence** — one sentence carrying all six link types at once; hover any underline to see the kind and destination |
 | ![Rebuttal constellation](docs/screenshots/gallery-constellation.png) | ![Live window](docs/screenshots/gallery-live-window.png) |
-| **The Rebuttal Constellation** — three gathered passages, one end, one answer | **The Live Window** — transclusions: the text lives in the other document |
+| **The Rebuttal Constellation** — the three underlined claims are one *gathered end* (chips read 1/2/3 of 3), all disputing the same rebuttal | **The Live Window** — barred passages are transclusions: not copies, but windows onto text that lives in the other document and updates with it |
 | ![Five-way compare](docs/screenshots/gallery-compare.png) | ![Two drafts with beams](docs/screenshots/beams-final.png) |
-| **The Five-Way Junction** — one connection, five named ends, compared side by side | **The Two Drafts** — beams connect the same text carried across rearranged versions |
+| **The Five-Way Junction** — one connection with five named ends, compared side by side | **The Two Drafts** — the curves are *beams*: each connects the same passage carried across the two versions, and follows it when either pane scrolls |
 
 Seed it on your own server (from a repo checkout, against a running local server):
 
