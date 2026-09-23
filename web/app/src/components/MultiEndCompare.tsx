@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import type { CrdtSyncClient, WorkListEntry, SharedRegion } from "../api/crdt_sync";
 import { highlightRegions } from "./ComparePanel";
 import { diffTexts, renderDiffSideHtml } from "../text-diff";
@@ -7,6 +7,18 @@ const PAIR_COLORS = [
   "#d29922", "#56b4e9", "#009e73", "#cc79a7",
   "#f0e442", "#e69f00", "#0072b2", "#d55e00",
 ];
+
+/** A drawn beam between two shared-passage highlights in adjacent
+ *  columns (Nelson's transpointing-windows lines — finally literal).
+ *  `cidx` is the shared-region group: same cidx = same carried text. */
+interface Beam {
+  cidx: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  color: string;
+}
 
 
 function highlightComplement(
@@ -90,6 +102,8 @@ export function MultiEndCompare({
   const [error, setError] = useState<string | null>(null);
   const [addWorkId, setAddWorkId] = useState<number | "">("");
   const [viewMode, setViewMode] = useState<"auto" | "diff" | "shared" | "unique">("auto");
+  const [focusCidx, setFocusCidx] = useState<number | null>(null);
+
   // Pairwise aligned diff (Myers over words) — the mode that reads
   // like a code compare when the texts are versions of one thing.
   const pairDiff = useMemo(
@@ -98,6 +112,75 @@ export function MultiEndCompare({
   );
   const autoMode: "diff" | "shared" = pairDiff && pairDiff.matchRatio >= 0.3 ? "diff" : "shared";
   const effMode = viewMode === "auto" ? autoMode : viewMode;
+
+  // ── Beams (transpointing windows, literally) ──────────────────────
+  // Drawn connections between shared-passage highlights in adjacent
+  // columns; same cidx = same carried text. Hover a beam (or a
+  // passage) to focus it — the rest dims. Beams track scrolling:
+  // connections follow content, per the 1972 sketch.
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const [beams, setBeams] = useState<Beam[]>([]);
+  const recomputeBeams = useCallback(() => {
+    const grid = gridRef.current;
+    if (!grid) { setBeams([]); return; }
+    const grect = grid.getBoundingClientRect();
+    const colEls = Array.from(grid.children).filter(
+      (el) => el instanceof HTMLElement && (el as HTMLElement).dataset.col != null,
+    ) as HTMLElement[];
+    const out: Beam[] = [];
+    for (let ci = 0; ci + 1 < colEls.length; ci++) {
+      const aSpans = colEls[ci].querySelectorAll(".compare-hl[data-cidx]");
+      const bByCidx = new Map<string, HTMLElement>();
+      colEls[ci + 1].querySelectorAll(".compare-hl[data-cidx]").forEach((s) => {
+        const k = s.getAttribute("data-cidx") ?? "";
+        if (!bByCidx.has(k)) bByCidx.set(k, s as HTMLElement);
+      });
+      aSpans.forEach((asEl) => {
+        const k = asEl.getAttribute("data-cidx") ?? "";
+        const bsEl = bByCidx.get(k);
+        if (!bsEl) return;
+        const ra = asEl.getBoundingClientRect();
+        const rb = bsEl.getBoundingClientRect();
+        const cidx = Number(k);
+        out.push({
+          cidx,
+          x1: ra.right - grect.left + 1,
+          y1: ra.top + ra.height / 2 - grect.top,
+          x2: rb.left - grect.left - 1,
+          y2: rb.top + rb.height / 2 - grect.top,
+          color: PAIR_COLORS[cidx % PAIR_COLORS.length],
+        });
+      });
+    }
+    setBeams(out);
+  }, []);
+  useEffect(() => {
+    if (effMode !== "shared" || columns.length < 2) { setBeams([]); return; }
+    let raf = 0;
+    const schedule = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(recomputeBeams); };
+    schedule();
+    // Scroll events don't bubble but DO capture — one capture listener
+    // on the grid catches every column's internal scrolling.
+    const grid = gridRef.current;
+    grid?.addEventListener("scroll", schedule, { capture: true, passive: true });
+    const ro = new ResizeObserver(schedule);
+    if (grid) ro.observe(grid);
+    return () => {
+      cancelAnimationFrame(raf);
+      grid?.removeEventListener("scroll", schedule, { capture: true } as EventListenerOptions);
+      ro.disconnect();
+    };
+  }, [effMode, columns, recomputeBeams, fullscreen]);
+  // Delegated hover on passage highlights: the beams answer.
+  const onGridMouseOver = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const t = e.target as HTMLElement;
+    const hl = t.closest?.(".compare-hl[data-cidx]") as HTMLElement | null;
+    if (hl) setFocusCidx(Number(hl.getAttribute("data-cidx")));
+  }, []);
+  const onGridMouseOut = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const t = e.target as HTMLElement;
+    if (t.closest?.(".compare-hl[data-cidx]")) setFocusCidx(null);
+  }, []);
 
   const uniqueIds = useMemo(() => {
     const seen = new Set<number>();
@@ -345,10 +428,56 @@ export function MultiEndCompare({
           </div>
         )}
         {!loading && columns.length >= 2 && (
-          <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(columns.length, maxCols)}, 1fr)`, gap: 8, flex: fullscreen ? 1 : undefined, minHeight: fullscreen ? 0 : undefined }}>
+          <div
+            ref={gridRef}
+            className={focusCidx != null ? "mc-beam-focus" : undefined}
+            onMouseOver={onGridMouseOver}
+            onMouseOut={onGridMouseOut}
+            style={{
+              position: "relative",
+              display: "grid",
+              gridTemplateColumns: `repeat(${Math.min(columns.length, maxCols)}, 1fr)`,
+              gap: 8,
+              flex: fullscreen ? 1 : undefined,
+              minHeight: fullscreen ? 0 : undefined,
+            }}
+          >
+            {focusCidx != null && (
+              <style>{`.mc-beam-focus .compare-hl:not([data-cidx="${focusCidx}"]) { opacity: 0.35; }`}</style>
+            )}
+            {effMode === "shared" && beams.length > 0 && (
+              <svg
+                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 5, overflow: "visible" }}
+                aria-hidden="true"
+              >
+                {beams.map((b, i) => {
+                  const dx = Math.max(18, (b.x2 - b.x1) / 2);
+                  const d = `M ${b.x1} ${b.y1} C ${b.x1 + dx} ${b.y1}, ${b.x2 - dx} ${b.y2}, ${b.x2} ${b.y2}`;
+                  const focused = focusCidx === b.cidx;
+                  const dimmed = focusCidx != null && !focused;
+                  return (
+                    <g key={i} style={{ pointerEvents: "visibleStroke", cursor: "pointer" }}
+                      onMouseEnter={() => setFocusCidx(b.cidx)}
+                      onMouseLeave={() => setFocusCidx(null)}
+                    >
+                      <path d={d} stroke="transparent" strokeWidth={12} fill="none" />
+                      <path
+                        d={d}
+                        stroke={b.color}
+                        strokeWidth={focused ? 2.5 : 1.75}
+                        strokeOpacity={dimmed ? 0.15 : focused ? 1 : 0.7}
+                        fill="none"
+                        pointerEvents="none"
+                      />
+                    </g>
+                  );
+                })}
+              </svg>
+            )}
             {columns.map((col, colIndex) => (
               <div
                 key={col.workId}
+                data-col={colIndex}
                 style={{
                   border: "1px solid #30363d",
                   borderRadius: 6,
