@@ -1255,6 +1255,58 @@ mod tests {
     }
 
     #[test]
+    fn minus_gold_transliteration_bug_vectors() {
+        // Gold's Sequence>>minus: put `other` at offset -diff in the
+        // diff <= 0 branch (where the result already starts at other's
+        // shift, so other belongs at offset 0). The bug was copied
+        // verbatim by the mechanical Smalltalk -> C++ translation and
+        // again by the 2026 Pharo revival — transliterations keep
+        // bugs. Found by Roger Gregory, September 2026, comparing the
+        // six implementations; oracle vectors from the live Pharo
+        // image:
+        //   1:5 - 0:1 = 0:      (wrong; correct is 0:-1,5)
+        //   2:7,8 - 0:1 = 2:6   (wrong; correct is 0:-1,0,7,8)
+        //   1:5 + 0:1 = 0:1,5   (plus was always correct)
+        // This implementation derives minus from the algebra — one
+        // loop over the union of both index ranges — which leaves no
+        // offset to get wrong.
+        let a = Sequence::from_numbers_with_shift(vec![5], 1);
+        let b = Sequence::from_numbers_with_shift(vec![1], 0);
+
+        let m = a.minus(&b);
+        assert_eq!(m.shift(), 0);
+        assert_eq!(m.at(0), -1, "subtrahend's leading digit must not vanish");
+        assert_eq!(m.at(1), 5);
+
+        let a2 = Sequence::from_numbers_with_shift(vec![7, 8], 2);
+        let m2 = a2.minus(&b);
+        assert_eq!(m2.shift(), 0);
+        assert_eq!(m2.at(0), -1);
+        assert_eq!(m2.at(1), 0);
+        assert_eq!(m2.at(2), 7);
+        assert_eq!(m2.at(3), 8);
+
+        let p = a.plus(&b);
+        assert_eq!(p.shift(), 0);
+        assert_eq!(p.at(0), 1);
+        assert_eq!(p.at(1), 5);
+
+        // The property that actually pins our semantics: minus is the
+        // algebraic inverse of plus (SequenceDsp::_inverse_transform
+        // depends on it). Note this is a DIFFERENT operation from
+        // Green's tumblersubtract, which produces a width.start RANGE
+        // (dsptumbler) — Gold's Sequence>>minus: is digit arithmetic,
+        // and Roger's corrected values are the digit-arithmetic ones.
+        assert_eq!(m.plus(&b), a, "minus/plus round-trip");
+        assert_eq!(m2.plus(&b), a2, "minus/plus round-trip");
+        assert_eq!(
+            Sequence::zero().minus(&b).plus(&b),
+            Sequence::zero(),
+            "inverse translation round-trip (Dsp::inverse path)"
+        );
+    }
+
+    #[test]
     fn intersect_above_above_same_boundary() {
         let a = SequenceRegion::above(Sequence::one(3), true);
         let b = SequenceRegion::above(Sequence::one(3), false);
