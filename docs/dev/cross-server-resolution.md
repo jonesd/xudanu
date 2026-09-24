@@ -78,7 +78,7 @@ This is in `src/server/server.rs::http_get_json` and the
 
 ### Cluster federation (FR-3, implemented but optional)
 
-Behind the `--enable-cluster` flag:
+Enabled by `--peer` flags (closed mode by default; `--federation-mode open` is opt-in):
 - Outbound dialer to peer servers
 - PeerPool with periodic sync/heartbeat
 - PBFT broadcast for state replication

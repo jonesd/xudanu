@@ -293,14 +293,14 @@ Ordered for progressive learning — each story builds on the previous one.
 **So that** I don't accidentally expose my server to cluster security risks
 
 ### Acceptance Criteria
-- Federation cluster (FR-3) is behind a `--enable-cluster` CLI flag (default: off)
-- When cluster is disabled:
+- Federation cluster (FR-3) is inactive unless `--peer` flags are given (default: off; this replaced the earlier `--enable-cluster` design)
+- When no peers are configured:
   - `/federation` WebSocket endpoint returns 404
   - No outbound dialer tasks are spawned
   - No federation frames are processed
   - `federation_is_peer_known` always returns `false`
   - All federation sync/import methods return `Err(ServerError::FeatureDisabled)`
-- When cluster is enabled (`--enable-cluster`):
+- When peers are configured (via `--peer`):
   - Existing FR-3 behavior works as before
   - Startup log shows: "WARNING: Cluster federation enabled. See federation-trust-analysis.html for security risks."
 - Documentation updated:

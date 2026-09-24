@@ -29,13 +29,27 @@ x-node: &node
 # and `docker inspect` process args). Put values in an uncommitted
 # .env file next to this compose file:
 #   echo "NODE1_ADMIN_PASSPHRASE=$(openssl rand -hex 24)" >> .env
+#   echo "NODE2_ADMIN_PASSPHRASE=$(openssl rand -hex 24)" >> .env
+#   ...
+# Fail-closed: a node WITHOUT a passphrase cannot be admin-logged-in
+# at all (the admin club's lock becomes an unopenable WallLock), so
+# a demo can deliberately expose admin on node 1 only.
+#
+# Security notes for this test bed:
+#   - Published ports bind to 127.0.0.1 only: the nodes are reachable
+#     from this machine, not the LAN. Inter-node federation traffic
+#     uses the internal bridge network (node1:8080 etc.), not the
+#     published ports, so the mesh is unaffected.
+#   - No --pin-members by default: peer admission is endorsement-based
+#     (min 2). For a persistent cluster, generate pinned-members.json
+#     (scripts/federation.sh does this for you) and add --pin-members.
 services:
   node1:
     <<: *node
     environment:
       - XUDANU_ADMIN_PASSPHRASE=${NODE1_ADMIN_PASSPHRASE:-}
     ports:
-      - "8081:8080"
+      - "127.0.0.1:8081:8080"
     volumes:
       - node1-data:/data
     command:
@@ -64,7 +78,7 @@ services:
   node2:
     <<: *node
     ports:
-      - "8082:8080"
+      - "127.0.0.1:8082:8080"
     volumes:
       - node2-data:/data
     command:
@@ -93,7 +107,7 @@ services:
   node3:
     <<: *node
     ports:
-      - "8083:8080"
+      - "127.0.0.1:8083:8080"
     volumes:
       - node3-data:/data
     command:
@@ -122,7 +136,7 @@ services:
   node4:
     <<: *node
     ports:
-      - "8084:8080"
+      - "127.0.0.1:8084:8080"
     volumes:
       - node4-data:/data
     command:
