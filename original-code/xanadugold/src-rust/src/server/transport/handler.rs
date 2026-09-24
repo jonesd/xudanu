@@ -60,6 +60,7 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/api/public/work/{work_id}", get(public_work_handler))
         .route("/api/public/shadow/{work_id}", get(public_shadow_handler))
         .route("/api/public/works", get(public_works_list_handler))
+        .route("/api/public/tumbler/{op}", get(tumbler_arith_handler))
         .route("/api/bloom-filter", get(bloom_filter_handler))
         .route("/api/public/identity", get(public_identity_handler))
         .route("/api/public/resolve", get(xan_resolve_handler))
@@ -442,6 +443,155 @@ async fn public_shadow_handler(
             (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
             (axum::http::header::ETAG, &etag),
             (axum::http::header::CACHE_CONTROL, "public, max-age=3600"),
+            (
+                axum::http::header::HeaderName::from_static("x-xudanu-served-by"),
+                "xudanu",
+            ),
+        ],
+        json.to_string(),
+    )
+        .into_response()
+}
+
+/// Parse Gold tumbler notation: `shift:d1,d2,...` (negative digits
+/// allowed, digits may be empty for zero). `1:5`, `2:7,8`, `0:1`.
+fn parse_tumbler_notation(s: &str) -> Option<crate::space::Sequence> {
+    let s = s.trim();
+    let (shift_s, digits_s) = s.split_once(':')?;
+    let shift: i64 = shift_s.trim().parse().ok()?;
+    let mut nums: Vec<i64> = Vec::new();
+    if !digits_s.trim().is_empty() {
+        for d in digits_s.split(',') {
+            nums.push(d.trim().parse::<i64>().ok()?);
+        }
+    }
+    Some(crate::space::Sequence::from_numbers_with_shift(nums, shift))
+}
+
+/// Format a Sequence back to Gold notation.
+fn format_tumbler_notation(seq: &crate::space::Sequence) -> String {
+    let digits: Vec<String> = seq.numbers().iter().map(|d| d.to_string()).collect();
+    format!("{}:{}", seq.shift(), digits.join(","))
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct TumblerQuery {
+    pub a: Option<String>,
+    pub b: Option<String>,
+}
+
+/// Public tumbler arithmetic — /api/public/tumbler/{op}?a=..&b=..
+///
+/// op ∈ `plus` | `minus` | `vectors`. Pure computation over the space
+/// algebra: no store access, no auth, read-only — the same public
+/// surface as /api/public/shadow. Exists so the Sequence arithmetic
+/// (Gold's Sequence>>plus:/minus:, independently derived here) can be
+/// checked against a RUNNING implementation with a single curl:
+///
+///   curl 'https://host/api/public/tumbler/minus?a=1:5&b=0:1'
+///   curl 'https://host/api/public/tumbler/vectors'
+///
+/// `vectors` runs the oracle set from Roger Gregory's six-
+/// implementations comparison (§5.5): the minus: transliteration bug
+/// vectors, plus the plus: control, plus the minus/plus round-trip.
+async fn tumbler_arith_handler(
+    State(state): State<SharedState>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    axum::extract::Path(op): axum::extract::Path<String>,
+    axum::extract::Query(q): axum::extract::Query<TumblerQuery>,
+) -> axum::response::Response {
+    if !state.rate_limiter.check_get(addr.ip()) {
+        tracing::warn!(target: "xudanu::security", ip = %addr, event = "SECURITY:rate_limited_get", "public API rate limit exceeded");
+        return (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            "rate limit exceeded",
+        )
+            .into_response();
+    }
+
+    let json = match op.as_str() {
+        "plus" | "minus" => {
+            let (Some(a_s), Some(b_s)) = (q.a.as_deref(), q.b.as_deref()) else {
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    "query params a= and b= required (tumbler notation, e.g. a=1:5&b=0:1)",
+                )
+                    .into_response();
+            };
+            let (Some(a), Some(b)) = (parse_tumbler_notation(a_s), parse_tumbler_notation(b_s))
+            else {
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    "bad tumbler notation — expected shift:digits, e.g. 1:5 or 2:7,8",
+                )
+                    .into_response();
+            };
+            let result = if op == "plus" {
+                a.plus(&b)
+            } else {
+                a.minus(&b)
+            };
+            serde_json::json!({
+                "op": op,
+                "a": format_tumbler_notation(&a),
+                "b": format_tumbler_notation(&b),
+                "result": format_tumbler_notation(&result),
+                "roundtrip_minus_plus": if op == "minus" { serde_json::json!(a.minus(&b).plus(&b) == a) } else { serde_json::Value::Null },
+            })
+        }
+        "vectors" => {
+            // Oracle set: Gregory, "Six Implementations of Xanadu",
+            // §5.5 (September 2026). Buggy values are what the
+            // transliterations produced; ours must match `expected`.
+            let cases: Vec<(&str, &str, &str, &str)> = vec![
+                ("1:5", "0:1", "minus", "0:-1,5"),
+                ("2:7,8", "0:1", "minus", "0:-1,0,7,8"),
+                ("1:5", "0:1", "plus", "0:1,5"),
+            ];
+            let mut out = Vec::new();
+            let mut all = true;
+            for (a_s, b_s, o, expected) in cases {
+                let a = parse_tumbler_notation(a_s).unwrap();
+                let b = parse_tumbler_notation(b_s).unwrap();
+                let r = if o == "plus" { a.plus(&b) } else { a.minus(&b) };
+                let got = format_tumbler_notation(&r);
+                let m = got == expected;
+                all &= m;
+                out.push(serde_json::json!({
+                    "a": a_s, "b": b_s, "op": o,
+                    "result": got,
+                    "expected": expected,
+                    "match": m,
+                }));
+            }
+            let rt = parse_tumbler_notation("1:5").unwrap();
+            let rtb = parse_tumbler_notation("0:1").unwrap();
+            let roundtrip = rt.minus(&rtb).plus(&rtb) == rt;
+            all &= roundtrip;
+            serde_json::json!({
+                "vectors": out,
+                "roundtrip_minus_plus": roundtrip,
+                "all_match": all,
+                "source": "jonesd/xudanu space/sequence.rs (commit 42681848, 2026-04-26)",
+                "reference": "Gregory, Six Implementations of Xanadu, section 5.5",
+            })
+        }
+        _ => {
+            return (
+                axum::http::StatusCode::NOT_FOUND,
+                "unknown op — use plus, minus, or vectors",
+            )
+                .into_response();
+        }
+    };
+
+    (
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/json; charset=utf-8",
+            ),
+            (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
             (
                 axum::http::header::HeaderName::from_static("x-xudanu-served-by"),
                 "xudanu",
@@ -2182,6 +2332,36 @@ async fn blob_upload_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- tumbler notation ----
+
+    #[test]
+    fn tumbler_notation_roundtrip() {
+        for s in ["1:5", "2:7,8", "0:1", "0:-1,5", "3:", "0:-1,0,7,8"] {
+            let parsed = parse_tumbler_notation(s).unwrap_or_else(|| panic!("parse failed: {s}"));
+            assert_eq!(format_tumbler_notation(&parsed), s, "notation round-trip");
+        }
+    }
+
+    #[test]
+    fn tumbler_notation_rejects_garbage() {
+        assert!(parse_tumbler_notation("15").is_none());
+        assert!(parse_tumbler_notation("a:5").is_none());
+        assert!(parse_tumbler_notation("1:x").is_none());
+        assert!(parse_tumbler_notation("1:2,").is_none());
+    }
+
+    #[test]
+    fn tumbler_vectors_handler_math() {
+        // The §5.5 oracle set — same math the /vectors endpoint runs.
+        let a = parse_tumbler_notation("1:5").unwrap();
+        let b = parse_tumbler_notation("0:1").unwrap();
+        assert_eq!(format_tumbler_notation(&a.minus(&b)), "0:-1,5");
+        let a2 = parse_tumbler_notation("2:7,8").unwrap();
+        assert_eq!(format_tumbler_notation(&a2.minus(&b)), "0:-1,0,7,8");
+        assert_eq!(format_tumbler_notation(&a.plus(&b)), "0:1,5");
+        assert_eq!(a.minus(&b).plus(&b), a, "round-trip");
+    }
 
     // ---- parse_work_id ----
 

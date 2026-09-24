@@ -43,7 +43,7 @@ impl Sequence {
         Sequence { shift: 0, numbers }
     }
 
-    fn from_numbers_with_shift(mut numbers: Vec<i64>, mut shift: i64) -> Self {
+    pub fn from_numbers_with_shift(mut numbers: Vec<i64>, mut shift: i64) -> Self {
         while numbers.last() == Some(&0) {
             numbers.pop();
         }
