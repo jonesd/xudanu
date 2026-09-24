@@ -52,9 +52,13 @@ jobs:
           # Tag push → build everything; workflow_dispatch → filter by inputs
           if [ "${{ github.event_name }}" = "push" ]; then
             TAG="${{ github.ref_name }}"
+            # macos-13 (the only Intel macOS runner) has been queueing for
+            # 15+ hours on recent releases, wedging the whole run "in progress".
+            # Intel macOS builds stay available via workflow_dispatch. Re-add:
+            #   {"target":"x86_64-apple-darwin","os":"macos-13","artifact":"xudanu-'"$TAG"'-x86_64-macos.tar.gz","run_test":true},
+            # once runner availability recovers.
             MATRIX='[
               {"target":"x86_64-unknown-linux-musl","os":"ubuntu-latest","artifact":"xudanu-'"$TAG"'-x86_64-linux-musl.tar.gz","run_test":true},
-              {"target":"x86_64-apple-darwin","os":"macos-13","artifact":"xudanu-'"$TAG"'-x86_64-macos.tar.gz","run_test":true},
               {"target":"aarch64-apple-darwin","os":"macos-latest","artifact":"xudanu-'"$TAG"'-aarch64-macos.tar.gz","run_test":true},
               {"target":"aarch64-unknown-linux-gnu","os":"ubuntu-latest","artifact":"xudanu-'"$TAG"'-aarch64-linux-gnu.tar.gz","run_test":false,"continue_on_error":true},
               {"target":"x86_64-pc-windows-msvc","os":"windows-latest","artifact":"xudanu-'"$TAG"'-x86_64-windows.zip","run_test":true}

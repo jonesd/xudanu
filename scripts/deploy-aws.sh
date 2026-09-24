@@ -14,7 +14,7 @@ set -euo pipefail
 # with a random value — SAVE IT; it is never printed again by design).
 
 DOMAIN="${1:-${DOMAIN:-xudanu.com}}"
-VERSION="${VERSION:-v1.14.2}"
+VERSION="${VERSION:-v1.14.3}"
 RELEASE="xudanu-${VERSION}-x86_64-linux-musl.tar.gz"
 URL="https://github.com/jonesd/xudanu/releases/download/${VERSION}/${RELEASE}"
 INSTALL_DIR="/opt/xudanu"
