@@ -1645,6 +1645,7 @@ fn dispatch_inner(
                     )| {
                         super::protocol::WorkListEntry {
                             tumbler: String::new(),
+                            kind: String::new(),
                             work_id,
                             owner,
                             revision_count,
@@ -1937,6 +1938,7 @@ fn dispatch_inner(
                         revision_count: ws.work().revision_count(),
                         is_grabbed: ws.grabber().is_some(),
                         char_count: ws.work().current_edition().to_text().len() as u64,
+                        kind: ws.work().kind().as_str().to_string(),
                         title: ws.cached_title().to_string(),
                         tumbler: srv.work_xan_address(*id).unwrap_or_default(),
                         read_club,
@@ -1981,6 +1983,7 @@ fn dispatch_inner(
                         work_id,
                         owner,
                         revision_count,
+                        kind: String::new(),
                         is_grabbed,
                         char_count: 0,
                         title: String::new(),
@@ -4184,6 +4187,7 @@ fn dispatch_inner(
                     )| {
                         super::protocol::WorkListEntry {
                             tumbler: String::new(),
+                            kind: String::new(),
                             work_id,
                             owner,
                             revision_count,
@@ -4933,6 +4937,7 @@ fn dispatch_inner_read(
                     )| {
                         super::protocol::WorkListEntry {
                             tumbler: String::new(),
+                            kind: String::new(),
                             work_id,
                             owner,
                             revision_count,
@@ -5134,6 +5139,7 @@ fn dispatch_inner_read(
                         revision_count: ws.work().revision_count(),
                         is_grabbed: ws.grabber().is_some(),
                         char_count: ws.work().current_edition().to_text().len() as u64,
+                        kind: ws.work().kind().as_str().to_string(),
                         title: ws.cached_title().to_string(),
                         tumbler: srv.work_xan_address(*id).unwrap_or_default(),
                         read_club,
@@ -5178,6 +5184,7 @@ fn dispatch_inner_read(
                         work_id,
                         owner,
                         revision_count,
+                        kind: String::new(),
                         is_grabbed,
                         char_count: 0,
                         title: String::new(),

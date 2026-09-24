@@ -3190,6 +3190,11 @@ pub struct WorkListEntry {
     pub is_grabbed: bool,
     #[cfg_attr(feature = "serde", serde(default))]
     pub char_count: u64,
+    /// FR-79: the work's kind (document, note, web-shadow, …) so
+    /// clients can render kind-specific chrome (the shadow banner)
+    /// without a second round trip.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub kind: String,
     #[cfg_attr(
         feature = "serde",
         serde(default, skip_serializing_if = "String::is_empty")

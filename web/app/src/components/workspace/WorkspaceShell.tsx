@@ -231,6 +231,20 @@ export function WorkspaceShell() {
     return domain.slice(0, 6) + "..." + domain.slice(-4);
   };
   const [viewingRevision, setViewingRevision] = useState<{ id: number; text: string } | null>(null);
+  const [shadowRefreshing, setShadowRefreshing] = useState(false);
+
+  // FR-79: when the current work is a web shadow, derive the honest
+  // banner info from the works entry (kind + source_edition_info).
+  const webShadowInfo = useMemo(() => {
+    if (workBeId === null) return null;
+    const entry = works.find((w) => w.work_id === workBeId);
+    if (!entry || entry.kind !== "web-shadow") return null;
+    const sourceUrl = entry.source_edition_info?.replace(/^web-shadow:/, "") ?? "";
+    const fetchedAt = entry.updated_at
+      ? new Date((entry.updated_at as number) * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+      : "recently";
+    return { sourceUrl, fetchedAt, hash8: "" };
+  }, [works, workBeId]);
   const [toast, setToast] = useState<string | null>(null);
   // FR-40 L3: the in-editor gather picker (span-level "add to this
   // end" from the selection actions bar).
@@ -1069,6 +1083,29 @@ export function WorkspaceShell() {
     }
     setTimeout(() => setToast(null), 5000);
   }, []);
+
+  // FR-79: re-fetch the shadow's source URL and append a revision if the
+  // live page changed. Toast tells the honest outcome either way.
+  const refreshShadow = useCallback(async () => {
+    if (workBeId === null || !clientRef.current) return;
+    const entry = works.find((w) => w.work_id === workBeId);
+    const sourceUrl = entry?.source_edition_info?.replace(/^web-shadow:/, "");
+    if (!sourceUrl) return;
+    setShadowRefreshing(true);
+    try {
+      const resp = await clientRef.current.sendRequest("web_shadow", { url: sourceUrl, refresh: true });
+      const val = (resp as { value?: { value?: { revised?: boolean } } })?.value?.value ?? {};
+      if (val.revised) {
+        showToast("Shadow refreshed — page changed, revision appended");
+      } else {
+        showToast("Shadow refreshed — page unchanged");
+      }
+    } catch {
+      showToast("Shadow refetch failed");
+    } finally {
+      setShadowRefreshing(false);
+    }
+  }, [workBeId, works, showToast]);
 
   // Exhibition boundary: an INDICATION when a work switch crosses in
   // or out of a grouped exhibition (cover + gathers links). Never
@@ -4346,6 +4383,58 @@ export function WorkspaceShell() {
               </header>
 
               <div className="ws-doc-scroll">
+                {webShadowInfo && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      flexWrap: "wrap",
+                      padding: "8px 14px",
+                      marginBottom: 10,
+                      background: "rgba(63,185,80,0.06)",
+                      border: "1px solid rgba(63,185,80,0.3)",
+                      borderRadius: 6,
+                      fontSize: 12,
+                      color: "var(--text-dim)",
+                    }}
+                  >
+                    <span style={{ fontSize: 14 }}>▤</span>
+                    <span>
+                      Live window onto{" "}
+                      <a
+                        href={webShadowInfo.sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: "var(--accent-blue)", wordBreak: "break-all" }}
+                      >
+                        {webShadowInfo.sourceUrl}
+                      </a>
+                    </span>
+                    <span>· fetched {webShadowInfo.fetchedAt}</span>
+                    <span style={{ fontFamily: "monospace", fontSize: 10 }}>
+                      #{webShadowInfo.hash8}…
+                    </span>
+                    <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                      <button
+                        type="button"
+                        disabled={shadowRefreshing}
+                        onClick={() => void refreshShadow()}
+                        style={{
+                          background: "transparent",
+                          border: "1px solid rgba(63,185,80,0.5)",
+                          color: "#3fb950",
+                          borderRadius: 4,
+                          padding: "2px 10px",
+                          fontSize: 11,
+                          cursor: shadowRefreshing ? "default" : "pointer",
+                        }}
+                      >
+                        {shadowRefreshing ? "Refetching…" : "Refetch"}
+                      </button>
+                    </span>
+                  </div>
+                )}
                 {viewingRevision && (
                   <div className="ws-revision-banner">
                     <span>Viewing revision v{viewingRevision.id} (read-only)</span>

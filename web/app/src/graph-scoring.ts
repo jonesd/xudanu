@@ -1,7 +1,7 @@
 // Graph relevance scoring — pure functions for testability.
 // See docs/dev/FR-21-graph-relevance.md for the design.
 
-export type WorkKind = "document" | "note" | "person" | "concept" | "collection" | "commentary" | "book";
+export type WorkKind = "document" | "note" | "person" | "concept" | "collection" | "commentary" | "book" | "web-shadow";
 
 // Type colors per the workspace graph mockup (FR-22 §"Visual: Larger Nodes with Icons").
 // These are the canonical type colors used in the graph legend, node fills, and any
@@ -24,6 +24,7 @@ export const KIND_COLOR: Record<WorkKind, string> = {
   collection: "#c084fc",    // mauve
   commentary: "#d8b4fe",    // mauve (slightly lighter to distinguish from collection)
   book: "#a78bfa",          // violet
+  "web-shadow": "#94a3b8",  // slate — a fetched page, not authored content
 };
 
 export const KIND_ICON: Record<WorkKind, string> = {
@@ -34,6 +35,7 @@ export const KIND_ICON: Record<WorkKind, string> = {
   collection: "●",   // rendered as SVG black circle, not text
   commentary: "💬",
   book: "📖",
+  "web-shadow": "🌐", // a page from the open web
 };
 
 // Icon color: most icons are white on colored bg, but Person and Collection
@@ -46,6 +48,7 @@ export const KIND_ICON_COLOR: Record<WorkKind, string> = {
   collection: "#000000",  // black dot on mauve (rendered as SVG circle)
   commentary: "#ffffff",
   book: "#ffffff",
+  "web-shadow": "#ffffff",
 };
 
 export interface GraphEdge {

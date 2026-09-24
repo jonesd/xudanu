@@ -483,6 +483,7 @@ export interface WorkListEntry {
   title: string;
   read_club: number | null;
   is_source?: boolean;
+  kind?: WorkKind;
   content_start_line?: number;
   content_end_line?: number;
   source_author_id?: number;
@@ -492,7 +493,7 @@ export interface WorkListEntry {
   content_crum?: string;
 }
 
-export type WorkKind = "document" | "note" | "person" | "concept" | "collection" | "commentary" | "book";
+export type WorkKind = "document" | "note" | "person" | "concept" | "collection" | "commentary" | "book" | "web-shadow";
 
 export type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -1691,7 +1692,7 @@ export class CrdtSyncClient {
     const resp = await this.sendRequest("work_kind_get", { work_id: workId });
     const val = extractValue(resp);
     const idx = typeof val === "number" ? val : 0;
-    return (["document", "note", "person", "concept", "collection", "commentary"][idx] || "document") as WorkKind;
+    return (["document", "note", "person", "concept", "collection", "commentary", "book", "web-shadow"][idx] || "document") as WorkKind;
   }
 
   async workKindSet(workId: number, kind: WorkKind): Promise<void> {
