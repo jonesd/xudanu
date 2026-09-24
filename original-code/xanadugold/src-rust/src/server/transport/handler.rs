@@ -410,11 +410,12 @@ async fn public_shadow_handler(
         None => return (axum::http::StatusCode::NOT_FOUND, "shadow not found").into_response(),
     };
 
-    let json = match state.server.with_server_ref(|srv| srv.public_shadow(work_id)) {
+    let json = match state
+        .server
+        .with_server_ref(|srv| srv.public_shadow(work_id))
+    {
         Ok(j) => j,
-        Err(_) => {
-            return (axum::http::StatusCode::NOT_FOUND, "shadow not found").into_response()
-        }
+        Err(_) => return (axum::http::StatusCode::NOT_FOUND, "shadow not found").into_response(),
     };
     let etag = format!("\"{}\"", json["content_hash_blake3"].as_str().unwrap_or(""));
 
@@ -440,10 +441,7 @@ async fn public_shadow_handler(
             ),
             (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
             (axum::http::header::ETAG, &etag),
-            (
-                axum::http::header::CACHE_CONTROL,
-                "public, max-age=3600",
-            ),
+            (axum::http::header::CACHE_CONTROL, "public, max-age=3600"),
             (
                 axum::http::header::HeaderName::from_static("x-xudanu-served-by"),
                 "xudanu",
