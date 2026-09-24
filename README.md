@@ -2,6 +2,8 @@
 
 ![Home — the invitation](docs/screenshots/home-landing.png)
 
+**📖 Documentation: [dgjones.info/xudanu](https://dgjones.info/xudanu/)** — user guide, architecture deep-dives, and interactive diagrams. See **[the Documentation section](#documentation)** below for a tour of the interesting parts.
+
 ## What it looks like
 
 | | |
@@ -72,6 +74,28 @@ Self-hosting is a first-class case, and the admin console is built for it: live 
 - **Compound document builder** — Assemble new documents from passages of existing works
 - **Image support** — Upload, crop, resize, caption persistence, layout mode with inline positioning
 - **Perspective view** — Spatial document landscape showing connected works
+
+---
+
+## Documentation
+
+[![Xudanu at a glance](docs/screenshots/docs-overview.png)](https://dgjones.info/xudanu/)
+
+The full documentation lives at **[dgjones.info/xudanu](https://dgjones.info/xudanu/)**. Every region of the map above is clickable there, opening the deep-dive page for that part of the system. A few of the interesting parts:
+
+| Deep dive | What you'll find |
+|---|---|
+| [Tumblers & Enfilades](https://dgjones.info/xudanu/document-space.html) | The mathematical foundation under every position, span, and address — why links survive edits: spans migrate because positions are addresses, not offsets |
+| [The Transclusion Engine](https://dgjones.info/xudanu/transclusion-engine.html) | Canopy trees, backfollow queries, and live content reuse — the structural heart of Xanadu |
+| [Transclusion Architecture](https://dgjones.info/xudanu/transclusion-architecture.html) | How our range-based transclusion works, and how it compares to Gold's enfilade/I-stream model |
+| [Provenance & Attribution](https://dgjones.info/xudanu/provenance-and-attribution.html) | "Who wrote this?" answered at the character level — Ed25519 span signing, tamper-evident logs, W3C PROV export |
+| [Ent, DagWood & Trace DAG](https://dgjones.info/xudanu/ent-dagwood-trace-dag.html) | The versioning spine adapted from Udanax Gold: partial-order branches that preserve conflicts instead of resolving them away |
+| [The Xanadu Network Guide](https://dgjones.info/xudanu/xanadu-network-guide.html) | Two independent servers sharing content via tumblers — verified working, with BLAKE3 checks and automatic backlinks |
+| [What People Said Killed Project Xanadu](https://dgjones.info/xudanu/xanadu-explainer.html) | The four standard objections to the 1960 design, answered by a running xanalogical system |
+| [From Udanax to Xudanu](https://dgjones.info/xudanu/udanax-to-xudanu.html) | The algorithms, the people, and the 35-year path from Nelson's vision to running Rust |
+| [Wire Protocol](https://dgjones.info/xudanu/wire-protocol.html) | The complete 140+ operation WebSocket API — the integration surface for building your own client |
+
+Also worth knowing: the [User Guide](https://dgjones.info/xudanu/user-guide.html), the [Technical Architecture](https://dgjones.info/xudanu/technical-architecture.html) deep-dive (Big-O analysis of every data structure), and the [Gold Heritage concept map](https://dgjones.info/xudanu/gold-heritage.html) tracing every Udanax-Gold concept to its Rust descendant.
 
 ---
 
