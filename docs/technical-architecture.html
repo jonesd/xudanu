@@ -156,6 +156,7 @@ td{
 }
 .fast{color:#3fb950;font-family:'JetBrains Mono',monospace;font-weight:600}
 .naive{color:#f85149;font-family:'JetBrains Mono',monospace}
+.gold{color:#d29922;font-family:'JetBrains Mono',monospace}
 
 .two-col{
   display:grid;
@@ -277,7 +278,7 @@ This document is written for the engineering team. Whether you're a junior devel
   <li><strong>Concrete examples</strong> with real data &mdash; not abstract descriptions</li>
   <li><strong>Worked walkthroughs</strong> of every major data structure and algorithm</li>
   <li><strong>SVG diagrams</strong> showing how components connect</li>
-  <li><strong>Big-O analysis</strong> with the naive baseline for comparison</li>
+  <li><strong>Big-O analysis</strong> with both the naive baseline and the original Udanax-Gold complexity for comparison</li>
   <li><strong>Source file references</strong> so you can jump straight to the code</li>
 </ul>
 
@@ -1470,71 +1471,85 @@ When concurrent edits need to be reconciled, Xudanu's current strategy is <stron
 <h2 id="s9">9. Big-O Performance Summary</h2>
 
 <p>
-This section consolidates the performance characteristics of every major operation. The "naive" column shows what the C++ Udanax-Gold code would have done if the disconnected components had been wired together with simple loops. The "Xudanu" column shows what the optimized Rust implementation achieves.
+This section consolidates the performance characteristics of every major operation. Three reference points: the <strong>naive</strong> column is what any straightforward implementation does (scan, compare, rewrite); the <strong>Udanax Gold</strong> column is what the 1992 C++ system actually achieved — its enfilades, canopy, and displacement algebra were genuinely sophisticated, and Xudanu inherits several of these structures directly; the <strong>Xudanu</strong> column is what the optimized Rust implementation achieves today.
 </p>
 
 <table>
   <tr>
     <th>Operation</th>
     <th>Naive</th>
-    <th>Xudanu</th>
+    <th>Udanax Gold (1992)</th>
+    <th>Xudanu (2026)</th>
     <th>How</th>
   </tr>
   <tr>
     <td>Find works containing text</td>
     <td class="naive">O(W &times; L)</td>
+    <td class="gold">O(log D &times; log N)</td>
     <td class="fast">O(U &times; A)</td>
-    <td><span class="accent-blue">Fingerprint HashMap</span> lookup. U = unique fingerprints in query, A = avg works per fingerprint. No document scanning.</td>
+    <td><span class="accent-blue">Fingerprint HashMap</span> lookup. U = unique fingerprints in query, A = avg works per fingerprint. No document scanning. Gold found candidates by canopy pruning (D = documents, N = elements); Xudanu's inverted index removes the tree walk.</td>
   </tr>
   <tr>
     <td>Find shared regions (diff)</td>
     <td class="naive">O(n &times; m)</td>
+    <td class="gold">O(1) per subtree (crums)</td>
     <td class="fast">O(L<sub>a</sub> + L<sub>b</sub>)</td>
-    <td><span class="accent-blue">BTreeSet</span> of fingerprints for O(1) membership test per element. Linear in document sizes, not their product.</td>
+    <td><span class="accent-blue">BTreeSet</span> of fingerprints for O(1) membership test per element. Linear in document sizes, not their product. Gold's subtree-hash equality (&ldquo;the enfilade advantage&rdquo;) compared identical subtrees without walking them — same idea, different substrate.</td>
   </tr>
   <tr>
     <td>Edition element listing</td>
     <td class="naive">O(n log n) every call</td>
+    <td class="gold">O(N) walk; amortized O(log N) with splaying</td>
     <td class="fast">O(1) after first</td>
-    <td><span class="accent-blue">OnceLock</span> cache on the Edition struct, shared via Arc. First call traverses the O-tree; subsequent calls return the cached Vec.</td>
+    <td><span class="accent-blue">OnceLock</span> cache on the Edition struct, shared via Arc. First call traverses the O-tree; subsequent calls return the cached Vec — beating even Gold's amortized splay access.</td>
   </tr>
   <tr>
     <td>Transclusion index lookup</td>
     <td class="naive">O(n) flat scan</td>
+    <td class="gold">O(log n) — Bert/canopy tree</td>
     <td class="fast">O(log n)</td>
-    <td><span class="accent-purple">Canopy-filtered</span> H-tree traversal. Flag bits prune entire subtrees in a single comparison.</td>
+    <td><span class="accent-purple">Canopy-filtered</span> H-tree traversal. Flag bits prune entire subtrees in a single comparison. Direct lineage: the canopy concept is inherited from Gold.</td>
   </tr>
   <tr>
     <td>Position transform (shift)</td>
     <td class="naive">O(n) rewrite</td>
+    <td class="gold">O(1) — DspLoaf</td>
     <td class="fast">O(1)</td>
-    <td><span class="accent-green">Dsp node</span> wraps the O-tree with an offset. No elements are touched; positions are adjusted on read.</td>
+    <td><span class="accent-green">Dsp node</span> wraps the O-tree with an offset. No elements are touched; positions are adjusted on read. This is Gold's displacement algebra, preserved as-is — the idea was already optimal.</td>
   </tr>
   <tr>
     <td>Shared region highlighting</td>
     <td class="naive">O(r &times; t)</td>
+    <td class="gold">&mdash; (frontend concern)</td>
     <td class="fast">O(r + t)</td>
     <td><span class="accent-blue">Sorted regions</span>, single pass through text. Regions are merged by position, not compared pairwise.</td>
   </tr>
   <tr>
     <td>Content deduplication</td>
     <td class="naive">O(n) compare each pair</td>
+    <td class="gold">O(1) — GrandMap ID association</td>
     <td class="fast">O(1) per element</td>
-    <td><span class="accent-green">BLAKE3 fingerprint</span> + HashMap lookup. Same content = same hash = same BeId. Instant.</td>
+    <td><span class="accent-green">BLAKE3 fingerprint</span> + HashMap lookup. Same content = same hash = same BeId. Instant. Gold's two-way ID space (`assignID`/`tryIntroduce`) achieved the same effect with 1990s structures.</td>
   </tr>
   <tr>
     <td>O-tree split</td>
     <td class="naive">N/A (unsplit)</td>
+    <td class="gold">splaying (amortized, on access)</td>
     <td class="fast">O(n)</td>
-    <td>One-time amortized cost when leaf exceeds <code>MAX_LEAF_SIZE</code>. Splits at median; depth grows as O(log n).</td>
+    <td>One-time amortized cost when leaf exceeds <code>MAX_LEAF_SIZE</code>. Splits at median; depth grows as O(log n). Weight-balanced shape (deterministic, reproducible crum comparison) instead of Gold's adaptive splay shape.</td>
   </tr>
   <tr>
     <td>Snapshot checkpoint</td>
     <td class="naive">N/A (no persistence)</td>
+    <td class="gold">persistent by design (disk-backed)</td>
     <td class="fast">O(state size)</td>
-    <td>Full serialize via serde_json. Atomic write to temp file + rename. Versioned with SHA-256 checksum.</td>
+    <td>Full serialize via serde_json. Atomic write to temp file + rename. Versioned with SHA-256 checksum. Gold's storage was disk-first — a different model, not a slower one.</td>
   </tr>
 </table>
+
+<p style="font-size:13px;color:#8b949e;margin-top:10px">
+Gold column source: reading analysis of the 1992 C++ source (423 files) — <a href="gold-xudanu-complexity.html">subsystem-by-subsystem comparison</a>. Complexity classes only; no runtime numbers exist for Gold. Where the table shows equal complexity (position transforms, index lookups), that is inheritance, not coincidence — the displacement algebra and canopy pruning are Gold's ideas running on a modern substrate.
+</p>
 
 <div class="legend">
   <div class="legend-item"><div class="legend-swatch" style="background:#3fb950"></div> Xudanu optimized</div>
