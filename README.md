@@ -81,7 +81,9 @@ Self-hosting is a first-class case, and the admin console is built for it: live 
 
 [![Xudanu at a glance](docs/screenshots/docs-overview.png)](https://dgjones.info/xudanu/)
 
-The full documentation lives at **[dgjones.info/xudanu](https://dgjones.info/xudanu/)**. Every region of the map above is clickable there, opening the deep-dive page for that part of the system. A few of the interesting parts:
+<sub>Static preview — the image opens the documentation home. On the site itself, this map is live: every region is separately clickable and opens that part's deep-dive.</sub>
+
+The full documentation lives at **[dgjones.info/xudanu](https://dgjones.info/xudanu/)**. Every region of the map above is clickable there, opening the deep-dive page for that part of the system — or follow the same deep-dives directly from the table below. A few of the interesting parts:
 
 | Deep dive | What you'll find |
 |---|---|

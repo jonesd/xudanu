@@ -155,7 +155,22 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
   <h2>Xudanu at a Glance <span class="badge badge-blue">CLICK ANY REGION</span></h2>
   <div style="background:#161b22;border:1px solid #21262d;border-radius:12px;padding:18px">
     <svg viewBox="0 0 920 470" width="100%" style="max-height:520px;font-family:'Inter',sans-serif" role="img" aria-label="Xudanu core architecture map">
-      <style>.coremap a{cursor:pointer}.coremap a:hover rect{filter:brightness(1.18)}.coremap text{fill:#c9d1d9}.coremap .lbl{fill:#e6edf3;font-weight:600}</style>
+      <style>.coremap a{cursor:pointer}.coremap a:hover rect{filter:brightness(1.18)}.coremap text{fill:#c9d1d9}.coremap .lbl{fill:#e6edf3;font-weight:600}
+      /* A slow pulse traveling through the regions signals the map is
+         interactive even before the first hover. Skipped entirely for
+         users who prefer reduced motion. */
+      @media (prefers-reduced-motion: no-preference){
+        @keyframes coremap-breathe{0%,100%{filter:brightness(1)}50%{filter:brightness(1.15)}}
+        .coremap a:nth-of-type(1) rect{animation:coremap-breathe 7.2s infinite 0.0s}
+        .coremap a:nth-of-type(2) rect{animation:coremap-breathe 7.2s infinite 0.8s}
+        .coremap a:nth-of-type(3) rect{animation:coremap-breathe 7.2s infinite 1.6s}
+        .coremap a:nth-of-type(4) rect{animation:coremap-breathe 7.2s infinite 2.4s}
+        .coremap a:nth-of-type(5) rect{animation:coremap-breathe 7.2s infinite 3.2s}
+        .coremap a:nth-of-type(6) rect{animation:coremap-breathe 7.2s infinite 4.0s}
+        .coremap a:nth-of-type(7) rect{animation:coremap-breathe 7.2s infinite 4.8s}
+        .coremap a:nth-of-type(8) rect{animation:coremap-breathe 7.2s infinite 5.6s}
+        .coremap a:nth-of-type(9) rect{animation:coremap-breathe 7.2s infinite 6.4s}
+      }</style>
       <g class="coremap">
         <!-- Browser -->
         <a href="collaborative-editing.html">

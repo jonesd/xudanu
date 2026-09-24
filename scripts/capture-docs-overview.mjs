@@ -21,6 +21,8 @@ const page = await browser.newPage({
 });
 await page.goto(URL_, { waitUntil: "networkidle" });
 await page.waitForTimeout(500);
+// Freeze the breathing animation so the static capture has a uniform map.
+await page.addStyleTag({ content: "* { animation: none !important; }" });
 
 // The glance map: the dark bordered card wrapping the SVG that contains g.coremap.
 const card = page.locator("div:has(> svg:has(g.coremap))").first();
