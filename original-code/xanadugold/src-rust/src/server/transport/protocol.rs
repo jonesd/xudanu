@@ -842,7 +842,7 @@ impl OperationCode {
         (0x0f14, OperationCode::AdminEditPolicySet),
         (0x0f15, OperationCode::AdminSessionKick),
         (0x0f16, OperationCode::AdminAuditTail),
-        (0x0f1a, OperationCode::AdminSecurityLogVerify),
+        (0x0f20, OperationCode::AdminSecurityLogVerify),
         (0x0f17, OperationCode::AdminClubsList),
         (0x0f18, OperationCode::AdminGrantAdmin),
         (0x0f19, OperationCode::AdminRevokeAdmin),
