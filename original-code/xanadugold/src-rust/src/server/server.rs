@@ -8549,7 +8549,6 @@ impl Server {
         let text = edition.to_text();
         let revision = ws.work.revision_count();
         let title = ws.title().to_string();
-
         let content_hash = {
             let mut hasher = blake3::Hasher::new();
             hasher.update(text.as_bytes());
@@ -8622,6 +8621,42 @@ impl Server {
             "server_namespace_id": self.server_namespace_id(),
             "server_public_key": server_pub_key_hex,
             "server_signature": server_sig_hex,
+        }))
+    }
+
+    /// FR-79: public shadow read for the overlay's HTTP surface —
+    /// text + metadata + BLAKE3 identity, served with an ETag keyed
+    /// on the content hash so caches never serve stale shadow text.
+    /// Only WebShadow-kind works are exposed here (the endpoint is
+    /// shadow-specific; general public reads use the work endpoint).
+    pub fn public_shadow(&self, work_be_id: BeId) -> Result<serde_json::Value, ServerError> {
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+        if ws.work.kind() != crate::edition::WorkKind::WebShadow {
+            return Err(ServerError::WorkNotFound(work_be_id));
+        }
+        let text = ws.work.current_edition().to_text();
+        let content_hash = blake3::hash(text.as_bytes()).to_hex().to_string();
+        let source_url = ws
+            .source_edition_info()
+            .and_then(|s| s.strip_prefix("web-shadow:"))
+            .unwrap_or_default()
+            .to_string();
+        let fetched_at = ws.latest_revision_timestamp().unwrap_or(0);
+        let revision = ws.work.revision_count();
+        let title = ws.title().to_string();
+        Ok(serde_json::json!({
+            "api_version": 1,
+            "work_id": format!("{:x}", work_be_id),
+            "title": title,
+            "source_url": source_url,
+            "text": text,
+            "content_hash_blake3": content_hash,
+            "fetched_at": fetched_at,
+            "revision": revision,
+            "hash_algorithm": "blake3",
         }))
     }
 

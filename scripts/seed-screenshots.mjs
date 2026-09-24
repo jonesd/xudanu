@@ -5,7 +5,7 @@
 // Usage: node scripts/seed-screenshots.mjs <ws-url> <admin-pass>
 //   e.g.  node scripts/seed-screenshots.mjs \
 //           "ws://localhost:8080/xudanu?format=json&version=2" \
-//           "greetingsforalltime"
+//           process.env.XUDANU_ADMIN_PASSPHRASE || (console.error("set XUDANU_ADMIN_PASSPHRASE"), process.exit(1))
 //
 // Creates:
 //   1. "The Docuverse, Practically" — hero essay with links + formatting

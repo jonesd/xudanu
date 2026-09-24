@@ -65,7 +65,7 @@ async function main() {
   await req("session_connect");
   const admin = val(await req("club_id_by_name", { name: "admin" }));
   await req("session_login", { club_id: admin });
-  await req("session_authenticate", { credential: { password: Array.from(new TextEncoder().encode("greetingsforalltime")) } });
+  await req("session_authenticate", { credential: { password: Array.from(new TextEncoder().encode(process.env.XUDANU_ADMIN_PASSPHRASE || (console.error("set XUDANU_ADMIN_PASSPHRASE"), process.exit(1)))) } });
   console.log("admin session open");
 
   const existing = val(await req("work_list", {}));

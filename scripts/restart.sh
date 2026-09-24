@@ -53,7 +53,8 @@ cd "$SRC_RUST"
   --allowed-origin http://localhost:5173 \
   --allowed-origin http://127.0.0.1:5173 \
   --csrf-token \
-  --admin-passphrase greetingsforalltime \
+  $XUDANU_ADMIN_PASSPHRASE \
+  --admin-passphrase "${XUDANU_ADMIN_PASSPHRASE:?set XUDANU_ADMIN_PASSPHRASE}" \
   --allow-loopback &
 BACKEND_PID=$!
 cd "$ROOT"

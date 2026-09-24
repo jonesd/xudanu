@@ -70,7 +70,7 @@
 ## Recommended session order (30–45 min)
 
 ### Setup (5 min)
-1. Run `node scripts/seed-screenshots.mjs "ws://localhost:8080/xudanu?format=json&version=2" "greetingsforalltime"`
+1. Run `node scripts/seed-screenshots.mjs "ws://localhost:8080/xudanu?format=json&version=2" "<admin-passphrase>"`
 2. Open http://localhost:5173 in Chrome, sign in as admin
 3. Set window to 1440×900, dark theme
 

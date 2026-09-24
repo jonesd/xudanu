@@ -58,6 +58,7 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/.well-known/xudanu-server.json", get(well_known_handler))
         .route("/.well-known/xanadu-server.json", get(well_known_handler))
         .route("/api/public/work/{work_id}", get(public_work_handler))
+        .route("/api/public/shadow/{work_id}", get(public_shadow_handler))
         .route("/api/public/works", get(public_works_list_handler))
         .route("/api/bloom-filter", get(bloom_filter_handler))
         .route("/api/public/identity", get(public_identity_handler))
@@ -378,6 +379,79 @@ async fn public_work_handler(
 #[derive(Debug, serde::Deserialize)]
 pub struct IdentityQuery {
     pub q: Option<String>,
+}
+
+/// FR-79: public shadow read — /api/public/shadow/{id}. ETag keyed on
+/// the BLAKE3 content hash (immutable per revision) so caches and the
+/// Stage-2 extension fetch with If-None-Match for free.
+async fn public_shadow_handler(
+    State(state): State<SharedState>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    axum::extract::Path(work_id_hex): axum::extract::Path<String>,
+    headers: axum::http::HeaderMap,
+) -> axum::response::Response {
+    if !crate::server::rate_limiter::validate_work_id_hex(&work_id_hex) {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            "invalid work ID format",
+        )
+            .into_response();
+    }
+    if !state.rate_limiter.check_get(addr.ip()) {
+        tracing::warn!(target: "xudanu::security", ip = %addr, event = "SECURITY:rate_limited_get", "public API rate limit exceeded");
+        return (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            "rate limit exceeded",
+        )
+            .into_response();
+    }
+    let work_id = match parse_work_id(&work_id_hex) {
+        Some(id) => id,
+        None => return (axum::http::StatusCode::NOT_FOUND, "shadow not found").into_response(),
+    };
+
+    let json = match state.server.with_server_ref(|srv| srv.public_shadow(work_id)) {
+        Ok(j) => j,
+        Err(_) => {
+            return (axum::http::StatusCode::NOT_FOUND, "shadow not found").into_response()
+        }
+    };
+    let etag = format!("\"{}\"", json["content_hash_blake3"].as_str().unwrap_or(""));
+
+    // If-None-Match against the content hash: a shadow's text is
+    // immutable within a revision, so a matching ETag is a free 304.
+    if let Some(inm) = headers.get(axum::http::header::IF_NONE_MATCH) {
+        if let Ok(inm_str) = inm.to_str() {
+            if inm_str.contains(etag.trim_matches('"')) {
+                return axum::response::Response::builder()
+                    .status(axum::http::StatusCode::NOT_MODIFIED)
+                    .header(axum::http::header::ETAG, &etag)
+                    .body(axum::body::Body::empty())
+                    .unwrap();
+            }
+        }
+    }
+
+    (
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/json; charset=utf-8",
+            ),
+            (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+            (axum::http::header::ETAG, &etag),
+            (
+                axum::http::header::CACHE_CONTROL,
+                "public, max-age=3600",
+            ),
+            (
+                axum::http::header::HeaderName::from_static("x-xudanu-served-by"),
+                "xudanu",
+            ),
+        ],
+        json.to_string(),
+    )
+        .into_response()
 }
 
 #[derive(Debug, serde::Deserialize)]

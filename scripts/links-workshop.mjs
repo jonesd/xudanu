@@ -10,7 +10,8 @@
 import WebSocket from "ws";
 
 const url = process.argv[2] ?? "ws://127.0.0.1:8080/xudanu?format=json";
-const passphrase = process.argv[3] ?? "greetingsforalltime";
+const passphrase = process.argv[3] ?? process.env.XUDANU_ADMIN_PASSPHRASE;
+if (!passphrase) { console.error("usage: node links-workshop.mjs <ws-url> <passphrase>  (or set XUDANU_ADMIN_PASSPHRASE)"); process.exit(1); }
 const originUrl = "http://localhost:5173";
 const ws = new WebSocket(url, { headers: { origin: originUrl } });
 

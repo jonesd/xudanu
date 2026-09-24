@@ -302,7 +302,7 @@ def compact_req(req: dict) -> str:
 import re as _re
 SENSITIVE_PATTERNS = [
     (_re.compile(r'[\w.+-]+@(?!example\.com)[\w.-]+\.[a-z]{2,}'), '<email>'),
-    (_re.compile(r'greetingsforalltime|admin12345|xudanu-demo-admin'), '<sanitized>'),
+    (_re.compile(r"<dev-passphrase>|admin12345|xudanu-demo-admin"), '<sanitized>'),
     (_re.compile(r'[0-9a-f]{64,}'), '<hash>'),
     (_re.compile(r'root@\d+\.\d+\.\d+\.\d+'), '<server>'),
 ]

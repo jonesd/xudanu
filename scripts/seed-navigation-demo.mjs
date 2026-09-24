@@ -82,7 +82,7 @@ async function main() {
     const _admin = value(await request("club_id_by_name", { name: "admin" }));
     await request("session_login", { club_id: _admin });
     await request("session_authenticate", {
-      credential: { password: Array.from(process.env.XUDANU_ADMIN_PASS || "greetingsforalltime").map(c => c.charCodeAt(0)) },
+      credential: { password: Array.from(process.env.XUDANU_ADMIN_PASS || process.env.XUDANU_ADMIN_PASSPHRASE || (console.error("set XUDANU_ADMIN_PASSPHRASE"), process.exit(1))).map(c => c.charCodeAt(0)) },
     });
   } catch {}
 
