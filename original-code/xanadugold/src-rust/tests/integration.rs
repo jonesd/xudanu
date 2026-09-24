@@ -1589,6 +1589,214 @@ async fn admin_security_log_verify_authoritative() {
     assert!(report["attribution"]["ok"].as_bool().unwrap());
 }
 
+/// FR-79 Stage 1: a minimal in-process HTTP server so web_shadow tests
+/// never touch the network. Serves the current page text as
+/// text/plain; the test can swap content between requests.
+async fn spawn_page_server() -> (
+    std::net::SocketAddr,
+    std::sync::Arc<std::sync::Mutex<String>>,
+) {
+    use std::sync::{Arc, Mutex};
+    let content: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "Shadow Test Page\n\nFirst body line with stable content for spans.\n\nSecond body line."
+            .to_string(),
+    ));
+    let content_for_task = content.clone();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let (mut sock, _) = match listener.accept().await {
+                Ok(x) => x,
+                Err(_) => continue,
+            };
+            let content = content_for_task.clone();
+            tokio::spawn(async move {
+                use futures_util::io::AsyncReadExt;
+                use tokio::io::AsyncWriteExt;
+                let mut buf = vec![0u8; 4096];
+                use tokio::io::AsyncReadExt as _;
+                let _ = sock.read(&mut buf).await;
+                let body = content.lock().unwrap().clone();
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+            });
+        }
+    });
+    (addr, content)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn web_shadow_create_idempotent_refresh() {
+    xudanu::server::server::set_allow_loopback(true);
+    let (page_addr, content) = spawn_page_server().await;
+    let url = format!("http://127.0.0.1:{}/page", page_addr.port());
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    // 1. Create
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(50, "web_shadow", Some(serde_json::json!({"url": url}))),
+    )
+    .await;
+    assert_eq!(resp["type"], "response", "create failed: {}", resp);
+    let r1 = &resp["value"]["value"];
+    assert_eq!(r1["created"].as_bool(), Some(true));
+    let wid = r1["work_id"].as_u64().unwrap();
+    let hash1 = r1["content_hash"].as_str().unwrap().to_string();
+    assert!(!hash1.is_empty());
+
+    // Kind is web-shadow; text is readable
+    let kind = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            51,
+            "work_kind_get",
+            Some(serde_json::json!({"work_id": wid})),
+        ),
+    )
+    .await;
+    assert_eq!(kind["value"]["value"], 7, "kind must be WebShadow (7)");
+
+    // 2. Idempotent: same URL returns the same work, no create
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(52, "web_shadow", Some(serde_json::json!({"url": url}))),
+    )
+    .await;
+    let r2 = &resp["value"]["value"];
+    assert_eq!(r2["work_id"].as_u64(), Some(wid));
+    assert_eq!(r2["created"].as_bool(), Some(false));
+    assert_eq!(r2["revised"].as_bool(), Some(false));
+    assert_eq!(r2["content_hash"].as_str(), Some(hash1.as_str()));
+
+    // 3. Link into a span of the shadow (the point of the whole FR)
+    let note = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            53,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "My note on the shadowed page"}})),
+        ),
+    )
+    .await;
+    let note_id = note["value"]["value"].as_u64().unwrap();
+    let stable = "stable content for spans";
+    let body_len = content.lock().unwrap().len() as u64;
+    let link = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            54,
+            "link_create",
+            Some(serde_json::json!({
+                "origin": note_id, "destination": wid,
+                "origin_ref": {"kind": "single", "work_context": note_id,
+                    "excerpt": "the note", "start_position": 0, "end_position": 7},
+                "destination_ref": {"kind": "single", "work_context": wid,
+                    "excerpt": stable,
+                    "start_position": body_len / 2, "end_position": body_len / 2 + 10},
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(
+        link["type"], "response",
+        "link into shadow failed: {}",
+        link
+    );
+
+    // 4. Refresh with CHANGED content appends a revision
+    {
+        let mut c = content.lock().unwrap();
+        *c = "Shadow Test Page\n\nThe page was edited — stable content for spans survives.\n\nNew trailing line.".to_string();
+    }
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            55,
+            "web_shadow",
+            Some(serde_json::json!({"url": url, "refresh": true})),
+        ),
+    )
+    .await;
+    let r3 = &resp["value"]["value"];
+    assert!(resp["type"] == "response", "refresh failed: {}", resp);
+    let dbg = serde_json::to_string(&resp["value"]).unwrap_or_default();
+    assert_eq!(r3["work_id"].as_u64(), Some(wid), "resp: {}", dbg);
+    assert_eq!(
+        r3["revised"].as_bool(),
+        Some(true),
+        "changed page must revise"
+    );
+    assert_eq!(r3["created"].as_bool(), Some(false));
+    let rev = r3["anchor_revision"].as_u64().unwrap();
+    let rc = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            60,
+            "work_revision_count",
+            Some(serde_json::json!({"work_id": wid})),
+        ),
+    )
+    .await;
+    // revision_count is 0-based on creation; the first refresh append
+    // makes it 1. What matters: the count MOVED and the hash changed.
+    assert!(
+        rev >= 1,
+        "revision must be appended, got {} — resp: {} — work_revision_count op: {}",
+        rev,
+        dbg,
+        rc
+    );
+    assert_eq!(
+        rc["value"]["value"].as_u64(),
+        Some(rev),
+        "payload anchor_revision must match the work's revision_count"
+    );
+    assert_ne!(r3["content_hash"].as_str(), Some(hash1.as_str()));
+
+    // 5. Refresh with UNCHANGED content is a no-op
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            56,
+            "web_shadow",
+            Some(serde_json::json!({"url": url, "refresh": true})),
+        ),
+    )
+    .await;
+    let r4 = &resp["value"]["value"];
+    assert_eq!(r4["revised"].as_bool(), Some(false));
+    assert_eq!(r4["anchor_revision"].as_u64(), Some(rev));
+
+    // 6. The link survived the refresh (still listed for the shadow)
+    let links = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            57,
+            "link_list_for_work",
+            Some(serde_json::json!({"work_id": wid})),
+        ),
+    )
+    .await;
+    let arr = links["value"]["value"]["entries"].as_array().unwrap();
+    assert!(!arr.is_empty(), "link into shadow must survive refresh");
+}
+
 #[tokio::test]
 async fn admin_security_log_verify_requires_admin() {
     let srv = TestServer::start().await;

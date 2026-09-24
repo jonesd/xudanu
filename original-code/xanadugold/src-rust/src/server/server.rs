@@ -315,7 +315,68 @@ pub struct CrossServerBacklink {
 
 const MAX_CROSS_SERVER_FETCH_BYTES: usize = 5 * 1024 * 1024;
 
+/// Normalize a URL to a shadow lookup key: lowercase scheme+host,
+/// path preserved, query dropped (tracking params make idempotency
+/// impossible), fragment dropped. None for non-http(s).
+fn normalize_shadow_url(url: &str) -> Option<String> {
+    let trimmed = url.trim();
+    let (scheme, rest) = if let Some(r) = trimmed.strip_prefix("https://") {
+        ("https", r)
+    } else if let Some(r) = trimmed.strip_prefix("http://") {
+        ("http", r)
+    } else {
+        return None;
+    };
+    let (host_port, path) = match rest.find('/') {
+        Some(i) => (&rest[..i], &rest[i..]),
+        None => (rest, "/"),
+    };
+    // Lowercase the host, keep any port as-is.
+    let (host, port) = match host_port.rsplit_once(':') {
+        Some((h, p)) if !h.contains(']') && p.chars().all(|c| c.is_ascii_digit()) => {
+            (h.to_ascii_lowercase(), Some(p.to_string()))
+        }
+        _ => (host_port.to_ascii_lowercase(), None),
+    };
+    let host = if host.starts_with('[') {
+        host // IPv6 brackets — already lowercased above
+    } else {
+        host
+    };
+    let path = path.split('#').next().unwrap_or("/");
+    let path = path.split('?').next().unwrap_or("/");
+    let path = if path.is_empty() { "/" } else { path };
+    Some(match port {
+        Some(p) => format!("{scheme}://{host}:{p}{path}"),
+        None => format!("{scheme}://{host}{path}"),
+    })
+}
+
+/// Shadow display title: the page's <title> when the sanitizer kept
+/// one, else a readable truncation of the first content line, else
+/// the host.
+fn shadow_title_from(url: &str, text: &str) -> String {
+    let first_line = text.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+    let candidate: String = first_line.trim().chars().take(80).collect();
+    if candidate.len() >= 8 {
+        format!("Shadow: {candidate}")
+    } else {
+        let host = url
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .split('/')
+            .next()
+            .unwrap_or(url);
+        format!("Shadow of {host}")
+    }
+}
+
 pub fn is_ssrf_address(addr: &str) -> bool {
+    // --allow-loopback (dev/testing flag): the operator has explicitly
+    // said loopback fetches are fine. Production default stays strict.
+    if ALLOW_LOOPBACK.load(AtomicOrdering::SeqCst) {
+        return false;
+    }
     // Normalize: strip scheme, then brackets/ports without breaking
     // bare or bracketed IPv6 literals ("::1" must survive intact —
     // a naive split(':') truncates it to "").
@@ -7022,6 +7083,144 @@ impl Server {
             content_type,
             imported_work_id,
         })
+    }
+
+    /// FR-79 Stage 1: create or return a web shadow for a URL — a
+    /// content-addressed mirror of the fetched page, stored as a work
+    /// of kind WebShadow so every Xudanu capability (typed links,
+    /// gathered ends, compare, provenance) works on web content.
+    ///
+    /// Idempotent by URL (shadow lookup: kind WebShadow + source info
+    /// "web-shadow:{normalized}"). `refresh` refetches; changed text
+    /// appends a NEW revision (never mutates — old spans keep their
+    /// revision and re-anchor via excerpt recovery), unchanged text is
+    /// a no-op. The BLAKE3 of the text is the content's identity.
+    pub fn web_shadow(
+        &mut self,
+        session_id: SessionId,
+        url: &str,
+        refresh: bool,
+        max_chars: Option<u64>,
+    ) -> Result<super::transport::protocol::WebShadowPayload, ServerError> {
+        use super::transport::protocol::WebShadowPayload;
+        self.ensure_authenticated(session_id)?;
+
+        // Normalize the lookup key: scheme + host + path, no fragment.
+        let normalized = normalize_shadow_url(url).ok_or_else(|| {
+            ServerError::InvalidArgument("url must be http:// or https://".into())
+        })?;
+        let shadow_key = format!("web-shadow:{normalized}");
+
+        // Existing shadow?
+        let existing: Option<(BeId, u64)> = self
+            .works
+            .iter()
+            .find(|(_, ws)| {
+                ws.work.kind() == crate::edition::WorkKind::WebShadow
+                    && ws
+                        .source_edition_info()
+                        .map(|s| s == shadow_key.as_str())
+                        .unwrap_or(false)
+            })
+            .map(|(id, ws)| (*id, ws.work().revision_count()));
+
+        if let (Some((wid, rev)), false) = (existing, refresh) {
+            let current = self
+                .works
+                .get(&wid)
+                .map(|ws| ws.work().current_edition().to_text())
+                .unwrap_or_default();
+            let hash = blake3::hash(current.as_bytes()).to_hex().to_string();
+            let fetched_at = self
+                .works
+                .get(&wid)
+                .and_then(|ws| ws.latest_revision_timestamp())
+                .unwrap_or(0);
+            return Ok(WebShadowPayload {
+                work_id: wid,
+                content_hash: hash,
+                final_url: normalized,
+                fetched_at,
+                anchor_revision: rev,
+                created: false,
+                revised: false,
+            });
+        }
+
+        // Fetch (reuses web_fetch_sanitize's SSRF-guarded, sanitized,
+        // block_in_place-correct fetch core).
+        let fetch = self.web_fetch_sanitize(session_id, url, max_chars, false, None)?;
+        let text = fetch.text;
+        if text.trim().is_empty() {
+            return Err(ServerError::InvalidArgument(
+                "fetched page had no text".into(),
+            ));
+        }
+        let hash = blake3::hash(text.as_bytes()).to_hex().to_string();
+        let now = Self::current_timestamp_secs();
+
+        match existing {
+            Some((wid, _)) => {
+                // Refresh: append a revision when the text changed.
+                let current = self
+                    .works
+                    .get(&wid)
+                    .map(|ws| ws.work().current_edition().to_text())
+                    .unwrap_or_default();
+                let revised = current.trim() != text.trim();
+                if revised {
+                    // Shadows aren't interactive edits — grab, revise,
+                    // release as one silent cycle. work_save_and_release
+                    // persists the revision atomically.
+                    self.work_grab(session_id, wid)?;
+                    let edition = crate::edition::Edition::from_text(&text);
+                    self.work_save_and_release(session_id, wid, edition)?;
+                }
+                let rev = self
+                    .works
+                    .get(&wid)
+                    .map(|ws| ws.work().revision_count())
+                    .unwrap_or(1);
+                Ok(WebShadowPayload {
+                    work_id: wid,
+                    content_hash: hash,
+                    final_url: fetch.final_url,
+                    fetched_at: now,
+                    anchor_revision: rev,
+                    created: false,
+                    revised,
+                })
+            }
+            None => {
+                // Create the shadow work.
+                let title = shadow_title_from(&fetch.final_url, &text);
+                let edition = crate::edition::Edition::from_text(&text);
+                let wid = self.create_work(session_id, edition)?;
+                self.set_work_title(wid, title);
+                if let Some(ws) = self.works.get_mut(&wid) {
+                    ws.mark_dirty();
+                }
+                self.work_kind_set(wid, crate::edition::WorkKind::WebShadow)?;
+                self.work_publish(session_id, wid)?;
+                if let Some(ws) = self.works.get_mut(&wid) {
+                    ws.source_edition_info = Some(shadow_key);
+                }
+                let rev = self
+                    .works
+                    .get(&wid)
+                    .map(|ws| ws.work().revision_count())
+                    .unwrap_or(1);
+                Ok(WebShadowPayload {
+                    work_id: wid,
+                    content_hash: hash,
+                    final_url: fetch.final_url,
+                    fetched_at: now,
+                    anchor_revision: rev,
+                    created: true,
+                    revised: false,
+                })
+            }
+        }
     }
 
     /// Readability-lite: HTML to flowing text. Removes script/style/

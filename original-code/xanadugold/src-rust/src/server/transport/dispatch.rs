@@ -1043,6 +1043,14 @@ fn dispatch_inner(
             )?;
             Ok(ResponseValue::WebFetchSanitizeResult(result))
         }
+        WireRequest::WebShadow {
+            url,
+            refresh,
+            max_chars,
+        } => {
+            let result = srv.web_shadow(session_id, &url, refresh.unwrap_or(false), max_chars)?;
+            Ok(ResponseValue::WebShadowResult(result))
+        }
         WireRequest::LatticeShadowEnroll { work_id } => {
             srv.ensure_admin(session_id)?;
             srv.enroll_lattice_shadow(session_id, work_id)?;

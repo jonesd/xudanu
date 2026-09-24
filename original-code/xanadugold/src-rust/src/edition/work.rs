@@ -17,6 +17,12 @@ pub enum WorkKind {
     Collection,
     Commentary,
     Book,
+    /// FR-79 web shadows: a content-addressed mirror of a fetched web
+    /// page. Read-mostly, refreshed by appending revisions (never
+    /// mutated), rendered with an honest "live window onto {url}"
+    /// banner. Links into shadows use the same span machinery as any
+    /// work; refetch re-anchors spans via excerpt recovery.
+    WebShadow,
 }
 
 impl Default for WorkKind {
@@ -35,6 +41,7 @@ impl WorkKind {
             WorkKind::Collection => "collection",
             WorkKind::Commentary => "commentary",
             WorkKind::Book => "book",
+            WorkKind::WebShadow => "web-shadow",
         }
     }
 
@@ -46,6 +53,7 @@ impl WorkKind {
             "collection" => WorkKind::Collection,
             "commentary" => WorkKind::Commentary,
             "book" => WorkKind::Book,
+            "web-shadow" | "webshadow" | "web_shadow" => WorkKind::WebShadow,
             _ => WorkKind::Document,
         }
     }

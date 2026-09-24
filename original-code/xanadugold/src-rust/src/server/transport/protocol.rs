@@ -181,6 +181,7 @@ pub enum OperationCode {
     WorkStar,
     WorkSetSource,
     WebFetchSanitize,
+    WebShadow,
     LatticeShadowEnroll,
     LatticeShadowStatus,
     LatticeShadowClear,
@@ -843,6 +844,7 @@ impl OperationCode {
         (0x0f15, OperationCode::AdminSessionKick),
         (0x0f16, OperationCode::AdminAuditTail),
         (0x0f20, OperationCode::AdminSecurityLogVerify),
+        (0x0f21, OperationCode::WebShadow),
         (0x0f17, OperationCode::AdminClubsList),
         (0x0f18, OperationCode::AdminGrantAdmin),
         (0x0f19, OperationCode::AdminRevokeAdmin),
@@ -1033,6 +1035,22 @@ pub enum WireRequest {
             serde(default, skip_serializing_if = "Option::is_none")
         )]
         title: Option<String>,
+    },
+    /// FR-79 Stage 1: create (or return) a web shadow — a
+    /// content-addressed mirror of a fetched page, stored as a work of
+    /// kind WebShadow. Idempotent by URL; refresh appends a revision.
+    WebShadow {
+        url: String,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        refresh: Option<bool>,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        max_chars: Option<u64>,
     },
     LatticeShadowEnroll {
         work_id: BeId,
@@ -2829,6 +2847,7 @@ pub enum ResponseValue {
     },
 
     WebFetchSanitizeResult(WebFetchSanitizePayload),
+    WebShadowResult(WebShadowPayload),
 
     SourceDetectResult {
         source_type: String,
@@ -4575,6 +4594,24 @@ pub struct WebFetchSanitizePayload {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub imported_work_id: Option<BeId>,
+}
+
+/// FR-79 web shadow result: everything the client needs to render the
+/// honest banner and know which revision spans anchor to.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebShadowPayload {
+    pub work_id: BeId,
+    /// BLAKE3 of the sanitized text — the content's identity.
+    pub content_hash: String,
+    pub final_url: String,
+    pub fetched_at: u64,
+    /// The revision number spans should reference; survives refreshes.
+    pub anchor_revision: u64,
+    /// True when this call created the shadow (vs returning existing).
+    pub created: bool,
+    /// True when refresh fetched changed content and appended a
+    /// revision. False on refresh with unchanged content.
+    pub revised: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

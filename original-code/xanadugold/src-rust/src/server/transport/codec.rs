@@ -3522,6 +3522,23 @@ impl JsonCodec {
                     title: args.title,
                 })
             }
+            OperationCode::WebShadow => {
+                #[derive(Deserialize)]
+                struct Args {
+                    url: String,
+                    #[serde(default)]
+                    refresh: Option<bool>,
+                    #[serde(default)]
+                    max_chars: Option<u64>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WebShadow {
+                    url: args.url,
+                    refresh: args.refresh,
+                    max_chars: args.max_chars,
+                })
+            }
             OperationCode::WorkUnstar => {
                 #[derive(Deserialize)]
                 struct Args {
