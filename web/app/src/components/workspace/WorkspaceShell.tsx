@@ -317,6 +317,13 @@ export function WorkspaceShell() {
   // like "Folksonomy" for empty works) out of the way.
   useEffect(() => {
     if (navTab === "compose") {
+      // Museum mode: composition is a real feature, disabled on this
+      // read-only demo. Show the placeholder instead of attaching the
+      // builder to a document that cannot accept inserts.
+      if (demoReadOnly) {
+        setShowCompoundBuilder(false);
+        return;
+      }
       // Compose into the current document only when it is editable;
       // opening someone else's (read-only) work and tapping Compose
       // otherwise attaches the builder to a document that cannot
@@ -3768,7 +3775,27 @@ export function WorkspaceShell() {
                 setDemoTrigger(true);
               }}
             />
-          ) : workBeId === null || navTab === "library" ? (
+           ) : navTab === "compose" && demoReadOnly ? (
+             <div className="ws-compose-placeholder" style={{ maxWidth: 620, margin: "80px auto", textAlign: "center", padding: "0 24px" }}>
+               <div style={{ fontSize: 44, marginBottom: 18 }}>▤</div>
+               <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 10 }}>The Compound Builder</h2>
+               <p style={{ color: "var(--text-dim)", fontSize: 15, lineHeight: 1.6, marginBottom: 8 }}>
+                 Compose new documents from passages of existing works — transcluded live, with every
+                 source credited and every quotation still a window onto its original.
+               </p>
+               <p style={{ color: "var(--text-dim)", fontSize: 14, marginBottom: 20 }}>
+                 Composition is disabled on this read-only demo.
+               </p>
+               <a
+                 href="https://github.com/jonesd/xudanu"
+                 target="_blank"
+                 rel="noopener noreferrer"
+                 style={{ color: "var(--accent-blue)", fontSize: 14 }}
+               >
+                 Run your own server — one binary or docker compose, two minutes →
+               </a>
+             </div>
+           ) : workBeId === null || navTab === "library" ? (
             <div className="ws-work-picker">
               <div className="ws-picker-header">
                 <h2>{navTab === "library" ? "Library" : "Xudanu workspace"}</h2>
