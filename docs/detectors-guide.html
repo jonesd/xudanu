@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Detectors, a programmer&rsquo;s walkthrough &mdash; Xudanu</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+code{font-family:'JetBrains Mono',monospace;font-size:.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-left:8px;vertical-align:middle;letter-spacing:.5px}
+.badge-blue{background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3)}
+.badge-gold{background:rgba(210,153,34,0.15);color:#d29922;border:1px solid rgba(210,153,34,0.3)}
+.footer{border-top:1px solid #21262d;margin-top:80px;padding-top:24px;font-size:12px;color:#484f58}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Detectors</h1>
+<p class="subtitle">A programmer&rsquo;s walkthrough: watching the literature from the wire up &mdash; what detectors are, what they&rsquo;re for, and a script you can run in the next minute.</p>
+
+<div class="gold"><strong>Heritage.</strong> Miller, &ldquo;The Open Society and Its Media&rdquo; (1994): <em>&ldquo;One can post a revision detector to find out when things are edited&hellip; Link detectors are a way of finding out when new links are made to existing material.&rdquo;</em> Detectors were Gold&rsquo;s fourth fundamental feature, after links, transclusion, and versioning. Miller&rsquo;s unification: <em>email is the special case</em> where a canonical point has a link detector on it &mdash; canonical documents become meeting places.</div>
+
+<h2>The concept in one paragraph</h2>
+<p>A detector is a persistent watch on one work. A <strong>link detector</strong> collects new links that land on the work &mdash; optionally filtered by a <em>set</em> of link types, a direction, and who authored the link. A <strong>revision detector</strong> collects new revisions, so a reader can do what Miller called <em>differential reading</em>: read only what changed since they last looked. The collection is the record: hits accumulate until you ack them, and acking marks read &mdash; it never deletes.</p>
+
+<h2>The WidgetPerfect scenario (why this feature exists)</h2>
+<p>Miller&rsquo;s demo story, restated for our wire: Dan writes a marketing requirement and links it, with a <code>requirement</code>-type link, to the passage in Ruth&rsquo;s technical plan it concerns. Ruth is not watching the phone &mdash; she has a <em>link detector</em> on her plan, filtered to <code>requirement</code> links. The link lands; the detector collects it; Ruth reads the collection at her leisure and revises the plan. John has a <em>revision detector</em> on the same plan; Ruth&rsquo;s revision is collected for him; he compares versions and updates the budget. Three people, two detector kinds, one typed link &mdash; and nobody had to be interrupted.</p>
+
+<h2>The surface</h2>
+<table>
+<tr><th>Operation</th><th>Wire code</th><th>What it does</th></tr>
+<tr><td><code>detector_create</code></td><td>0x0f22</td><td>Plant a watch: <code>{ work_id, kind: "links"|"revisions", match? }</code></td></tr>
+<tr><td><code>detector_list</code></td><td>0x0f23</td><td>Your detectors, each with hits since last ack and an <code>unread</code> count</td></tr>
+<tr><td><code>detector_ack</code></td><td>0x0f24</td><td>Mark a detector&rsquo;s hits read (kept, never deleted)</td></tr>
+<tr><td><code>detector_delete</code></td><td>0x0f25</td><td>Stop watching (owner only)</td></tr>
+</table>
+
+<p>The <code>match</code> object for link detectors is a <strong>predicate, never a single value</strong>:</p>
+<pre>{
+  "link_types": [1531, 7],     // a SET — empty or absent means ALL types
+  "direction":  "in",          // in | out | any
+  "from_clubs": [4112]         // only links by these authors — absent = anyone
+}</pre>
+<div class="gold"><strong>Why a set matters.</strong> Gold&rsquo;s <code>FeFillDetector</code> matched one exact element; Miller&rsquo;s link detectors matched one type each. That single-value shape is the limitation this design exists to avoid. The object is additive: span-level regions, authority filters, and endorsement ordering arrive with the fossil-engine integration without a wire break &mdash; clients treat unknown fields as &ldquo;no additional filter&rdquo;.</div>
+
+<h2>Run it yourself</h2>
+<p>The complete walkthrough lives in the repository as a runnable script &mdash; it plants both kinds, triggers each the way your code would, reads the collection, acks, and cleans up. It runs as the public session; no admin needed.</p>
+<pre>git clone https://github.com/jonesd/xudanu
+node examples/detectors.mjs                       # against a local server
+node examples/detectors.mjs wss://your-server/xudanu?format=json</pre>
+<p>Its narrated transcript (abbreviated):</p>
+<pre>&#9660; link detector #0 planted on the plan
+  match: {"link_types":[1531],"direction":"in"}
+
+&#9660; revision detector #1 planted on the plan
+
+&#9660; requirement link 0xab attached &mdash; detector fired silently
+&#9660; a Comment link also landed &mdash; filtered OUT by the type set
+&#9660; plan revised (duralum &rarr; titanalum) &mdash; revision detector fired
+
+&#9660; the collection:
+  #0 links     on 0x5fc &mdash; unread 1: link 0xab
+  #1 revisions on 0x5fc &mdash; unread 1: revision 1
+  acked #0: 1 hits marked read (kept, not deleted)
+  unread after ack: 0 (hits retained)</pre>
+
+<h2>What a programmer leans on</h2>
+<h3>Where the fires happen</h3>
+<p>Link detectors fire when types are applied (<code>link_set_types</code>) &mdash; the final type set is what the predicate evaluates, and one link collects exactly once no matter how often types are replayed. Revision detectors fire at the single commit choke point (<code>revise_work</code>): every path &mdash; <code>work_revise</code>, <code>work_save_and_release</code>, <code>work_set_text</code>, seeding &mdash; funnels through it.</p>
+<h3>Persistence and limits</h3>
+<p>Detectors and their hits live in a <code>detectors.json</code> sidecar saved with every checkpoint &mdash; restarts keep the collection. Each detector keeps at most 200 hits (oldest dropped when the cap is hit). Only the owning club sees a detector and its hits.</p>
+<h3>The 30-second poll</h3>
+<pre>setInterval(async () =&gt; {
+  const { detectors } = value(await send("detector_list"));
+  const unread = detectors.reduce((s, d) =&gt; s + d.unread, 0);
+  if (unread &gt; 0) renderBadge(unread);          // then ack on read
+}, 30_000);</pre>
+<p>v1 is pull-model by design: the collection is the contract, polling is the client&rsquo;s choice, and live push can ride the notification system later without changing any of the above.</p>
+
+<h2>What comes next</h2>
+<ul>
+<li><strong>Span-level detectors</strong> &mdash; watch a passage, not a whole work. The engine for this already exists: the fossil recorder (<code>RecorderQuery</code>) carries regions, authority clubs, and endorsement filters.</li>
+<li><strong>The WidgetPerfect room</strong> in the Gallery of Unusual Connections &mdash; the saga seeded as live works with real detectors you can read the collection of.</li>
+<li><strong>Endorsement ordering</strong> &mdash; Miller&rsquo;s reputation filtering sorts a collection; the endorsement machinery is already on the wire.</li>
+</ul>
+
+<div class="footer">Xudanu documentation &mdash; <a href="index.html">home</a> &middot; <a href="wire-protocol.html">Wire Protocol</a> &middot; <a href="federation-activation.html">Federation Activation</a> &middot; Feature spec: <code>docs/dev/FR-80-detectors.md</code> in the repository</div>
+</div>
+</body>
+</html>
