@@ -337,6 +337,7 @@ media(max-width:640px){
   <a href="#protocol">Wire Protocol</a>
   <div class="toc-section">Full Mapping</div>
   <a href="#full-table">Complete Concept Table</a>
+  <a href="#miller-eight">Miller&rsquo;s Eight Features</a>
   <a href="#rules">Nelson&rsquo;s 17 Rules</a>
 </div>
 
@@ -884,6 +885,80 @@ media(max-width:640px){
     <tr><td><code>XuPromise</code> (lazy eval)</td><td>Synchronous <code>Result</code></td><td>Simplified</td><td>Adequate for WebSocket model</td></tr>
   </tbody>
 </table>
+
+<!-- ===================== MILLER'S EIGHT ===================== -->
+
+<h2 id="miller-eight">Miller&rsquo;s Eight Features (1994): Status</h2>
+
+<p style="max-width:720px;margin:0 auto 20px;font-size:14px;color:#8b949e;line-height:1.7">
+In &ldquo;The Open Society and Its Media&rdquo; (Extropy 12, 1994; reprinted in <em>The Transhumanist Reader</em>, 2013),
+Mark Miller &mdash; with Tribble, Pandya, and Stiegler &mdash; listed what the running Gold system actually did:
+four fundamentals (links, transclusion, versioning, detectors) and four more (permissions, reputation filtering,
+multimedia, external transclusion). Every feature below exists in xudanu in some form; the honest gaps are marked.
+</p>
+
+<table>
+  <thead>
+    <tr><th width="26%">Feature (1994)</th><th width="30%">What Miller described</th><th>Xudanu today</th><th width="14%">Status</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Hyperlinks</strong></td>
+      <td>Fine-grained, bidirectional, and <em>extrinsic</em> &mdash; &ldquo;the ability to link into a document without editing it&rdquo;</td>
+      <td>Typed two-way links; connection-is-free (any reader may link to anything they can read); extrinsic by construction</td>
+      <td><span class="badge badge-done">DONE</span></td>
+    </tr>
+    <tr>
+      <td><strong>Transclusion</strong></td>
+      <td>Quoting without copying; content and arrangement separated, one pool</td>
+      <td>Content-addressed live windows (BLAKE3 identity), the compound builder, compare beams over shared content</td>
+      <td><span class="badge badge-done">DONE</span></td>
+    </tr>
+    <tr>
+      <td><strong>Versioning</strong></td>
+      <td>Historical trails; version compare; &ldquo;differential reading&rdquo; &mdash; read only what changed</td>
+      <td>Revision DAG with every version addressable; the compare view; revision timeline panel</td>
+      <td><span class="badge badge-done">DONE</span></td>
+    </tr>
+    <tr>
+      <td><strong>Detectors</strong></td>
+      <td>Link detectors (type-matched) and revision detectors; &ldquo;email is just the special case&rdquo; of a link detector on a canonical point</td>
+      <td>FR-80: watches with predicate matches (type sets, direction, authoring clubs), collected hits, ack &mdash; the WidgetPerfect room runs the 1994 demo story live. Span-level watches via the fossil engine are the next step</td>
+      <td><span class="badge badge-done">DONE</span></td>
+    </tr>
+    <tr>
+      <td><strong>Permissions</strong></td>
+      <td>The club system; bcc/cc meta-levels grown on demand; accountability &mdash; &ldquo;no official truths, only who said what&rdquo;</td>
+      <td>Clubs, read/edit/history clubs, the lock hierarchy, signed attribution. Recursive self-reading/self-editing club meta-levels are simplified (roster visibility is login-gated, not club-governed)</td>
+      <td><span class="badge badge-partial">PARTIAL</span></td>
+    </tr>
+    <tr>
+      <td><strong>Reputation-based filtering</strong></td>
+      <td>Endorsements against the junk problem; filter links by endorser and by type; guides endorsed by reputable parties</td>
+      <td>Endorsement ops on the wire, endorsed link types; the engine&rsquo;s <code>RecorderQuery</code> carries <code>authority_clubs</code> and <code>endorsement_filter</code> &mdash; user-facing ordering of collections is not yet built</td>
+      <td><span class="badge badge-partial">PARTIAL</span></td>
+    </tr>
+    <tr>
+      <td><strong>Multimedia</strong></td>
+      <td>Links, edits, transclusions, and compares on any media &mdash; &ldquo;no special cases for text&rdquo;</td>
+      <td>Images shipped (upload, crop, captions, inline layout); audio, drawings, video not yet</td>
+      <td><span class="badge badge-partial">PARTIAL</span></td>
+    </tr>
+    <tr>
+      <td><strong>External transclusion</strong></td>
+      <td>See other systems &ldquo;as if within&rdquo; the system: &ldquo;follow a link from a WAIS document into a Lexis document, even though neither system has any notion that such a link exists&rdquo;</td>
+      <td>FR-79 web shadows, stage 1 shipped: any public page becomes a content-hashed work you can link into (the 1994 sentence, with WAIS and Lexis swapped for the web). The overlay extension &mdash; marks on live pages &mdash; is stage 2, in progress</td>
+      <td><span class="badge badge-partial">IN PROGRESS</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<div style="max-width:720px;margin:24px auto 0;padding:16px 20px;background:rgba(210,153,34,0.06);border-left:3px solid #d29922;border-radius:0 6px 6px 0;font-size:13px;color:#8b949e;line-height:1.7">
+<strong style="color:#d29922">Three lines worth keeping.</strong>
+&ldquo;Documents are not islands&rdquo; &mdash; why we provide hypertext at all.
+&ldquo;Hearing the absence of a good response&rdquo; &mdash; bidirectional links reveal when there is <em>no</em> counterargument, which unidirectional media can never show.
+And the schools pathology: with one-way links, &ldquo;the very attempt to engage in healthy debate across schools accelerates the pathological division process&rdquo; &mdash; students following criticism links forward see only the other school&rsquo;s most-refuted ideas. Two-way links let them find the strongest challenges to their own.
+</div>
 
 <!-- ===================== 17 RULES ===================== -->
 
