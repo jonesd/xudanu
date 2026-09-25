@@ -339,6 +339,7 @@ impl super::server::Server {
         };
         let payload = detector.to_payload();
         self.detectors.insert(detector);
+        self.persist_detectors_best_effort();
         Ok(payload)
     }
 
@@ -372,6 +373,7 @@ impl super::server::Server {
         }
         let unread = d.unread();
         d.acked_upto = d.hits.len();
+        self.persist_detectors_best_effort();
         Ok(unread)
     }
 
@@ -386,6 +388,7 @@ impl super::server::Server {
             None => return Ok(false),
         }
         let removed = self.detectors.remove(detector_id);
+        self.persist_detectors_best_effort();
         Ok(removed)
     }
 
@@ -394,6 +397,9 @@ impl super::server::Server {
         let by_club = self.resolve_author_club(session_id);
         let now = crate::server::session_ticket::now_secs();
         let fired = self.detectors.fire_link(link_id, link, by_club, now);
+        if fired > 0 {
+            self.persist_detectors_best_effort();
+        }
         fired
     }
 
@@ -406,7 +412,23 @@ impl super::server::Server {
     ) -> usize {
         let now = crate::server::session_ticket::now_secs();
         let fired = self.detectors.fire_revision(work_id, revision, by_club, now);
+        if fired > 0 {
+            self.persist_detectors_best_effort();
+        }
         fired
+    }
+
+    /// Save on every mutation (create/ack/delete/fire). The earlier
+    /// checkpoint_completed hook fired too rarely in practice — the
+    /// sidecar went stale and a restart emptied the registry, losing
+    /// the WidgetPerfect collections. Mutations are rare; the write
+    /// is tiny; tickets use the same save-on-mutation discipline.
+    fn persist_detectors_best_effort(&self) {
+        if let Some(ref dir) = self.data_dir {
+            if let Err(e) = self.save_detectors_sidecar(dir) {
+                tracing::warn!("[detectors] sidecar persist failed: {e}");
+            }
+        }
     }
 
     /// Persist the registry (tmp + fsync + rename sidecar).

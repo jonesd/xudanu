@@ -158,6 +158,10 @@ pub(crate) struct WorkState {
     status_detectors: DetectorList,
     revision_detectors: DetectorList,
     pub(crate) cached_title: String,
+    /// True once work_set_title has named this work — explicit titles
+    /// survive revisions; untitled works keep auto-deriving from the
+    /// first line.
+    pub(crate) explicit_title: bool,
     is_source: bool,
     source_author_id: Option<BeId>,
     source_edition_info: Option<String>,
@@ -4566,6 +4570,7 @@ impl Server {
             status_detectors: DetectorList::new(),
             revision_detectors: DetectorList::new(),
             cached_title: title,
+            explicit_title: false,
             is_source: false,
             source_author_id: None,
             source_edition_info: None,
@@ -4709,6 +4714,7 @@ impl Server {
             status_detectors: DetectorList::new(),
             revision_detectors: DetectorList::new(),
             cached_title: title,
+            explicit_title: false,
             is_source: false,
             imported_by: None,
             content_start_line: None,
@@ -4852,6 +4858,7 @@ impl Server {
             status_detectors: DetectorList::new(),
             revision_detectors: DetectorList::new(),
             cached_title: title,
+            explicit_title: false,
             is_source: false,
             source_author_id: None,
             source_edition_info: None,
@@ -5034,7 +5041,15 @@ impl Server {
         ws.last_revision_author = author_club;
         ws.mark_dirty();
         ws.work.revise(edition);
-        ws.cached_title = Self::extract_title(ws.work.current_edition());
+        // Title rule: an EXPLICIT title (work_set_title) survives every
+        // revision. Only never-titled works auto-derive from the first
+        // line. The old unconditional re-derivation clobbered titled
+        // works on every set_text/element_insert — a day of
+        // "vanishing" seed works was find-by-title missing clobbered
+        // titles, not lost data.
+        if !ws.explicit_title {
+            ws.cached_title = Self::extract_title(ws.work.current_edition());
+        }
         // FR-58 S1: the work's text changed — its reuse postings are
         // stale; reindexed lazily on the next suggestion query.
         self.reuse.touch(work_be_id);
@@ -7459,6 +7474,7 @@ impl Server {
             status_detectors: DetectorList::new(),
             revision_detectors: DetectorList::new(),
             cached_title: title.clone(),
+            explicit_title: false,
             is_source: true,
             source_author_id: Some(author_id),
             source_edition_info: Some(edition_info),
@@ -10612,6 +10628,7 @@ impl Server {
     pub fn set_work_title(&mut self, work_be_id: BeId, title: String) {
         if let Some(ws) = self.works.get_mut(&work_be_id) {
             ws.cached_title = title;
+            ws.explicit_title = true;
         }
     }
 
@@ -13557,6 +13574,7 @@ impl Server {
             status_detectors: DetectorList::new(),
             revision_detectors: DetectorList::new(),
             cached_title: DEMO_TITLE.to_string(),
+            explicit_title: true,
             is_source: false,
             source_author_id: None,
             source_edition_info: None,
@@ -14308,6 +14326,10 @@ impl Server {
                         status_detectors: DetectorList::new(),
                         revision_detectors: DetectorList::new(),
                         cached_title: title,
+                        // A persisted custom_title is by construction an
+                        // explicit title (the save layer only stores it
+                        // when it differs from the auto-derived one).
+                        explicit_title: work_entry.custom_title.is_some(),
                         is_source: work_entry.is_source,
                         source_author_id: work_entry.source_author_id,
                         source_edition_info: work_entry.source_edition_info.clone(),
@@ -22972,6 +22994,7 @@ impl Server {
                     status_detectors: DetectorList::new(),
                     revision_detectors: DetectorList::new(),
                     cached_title: title,
+                    explicit_title: false,
                     is_source: false,
                     source_author_id: None,
                     source_edition_info: None,
@@ -26134,6 +26157,7 @@ pub(crate) mod persist_snapshot {
                     status_detectors: DetectorList::new(),
                     revision_detectors: DetectorList::new(),
                     cached_title: Self::extract_title(work.current_edition()),
+                    explicit_title: false,
                     is_source: ws_snap.is_source,
                     source_author_id: ws_snap.source_author_id,
                     source_edition_info: ws_snap.source_edition_info.clone(),
@@ -48688,6 +48712,37 @@ mod tests_revisions {
     }
 
     #[test]
+    fn explicit_title_survives_revisions() {
+        // The "vanishing works" root cause: every revise_work re-derived
+        // cached_title from the first line, clobbering work_set_title.
+        // A whole day of seed scripts missed works by title that were
+        // present the entire time under a clobbered name.
+        let (mut server, sid) = setup();
+        let work_id = server
+            .create_work(sid, Edition::from_text("First line becomes the auto title\nbody"))
+            .unwrap();
+        server.set_work_title(work_id, "My Explicit Title".to_string());
+        server
+            .work_set_text(sid, work_id, "Completely different first line\nbody")
+            .unwrap();
+        let ws = server.works.get(&work_id).unwrap();
+        assert_eq!(ws.cached_title(), "My Explicit Title");
+    }
+
+    #[test]
+    fn untitled_works_keep_auto_deriving() {
+        let (mut server, sid) = setup();
+        let work_id = server
+            .create_work(sid, Edition::from_text("Old first line\nbody"))
+            .unwrap();
+        server
+            .work_set_text(sid, work_id, "New first line\nbody")
+            .unwrap();
+        let ws = server.works.get(&work_id).unwrap();
+        assert!(ws.cached_title().contains("New first line"));
+    }
+
+    #[test]
     fn test_revisions_list_empty_work() {
         let (mut server, sid) = setup();
         let work_id = server.create_work(sid, Edition::from_text("")).unwrap();
@@ -53234,6 +53289,7 @@ mod a1_p2_club_branch_tests {
                 status_detectors: DetectorList::new(),
                 revision_detectors: DetectorList::new(),
                 cached_title: format!("club work {}", i),
+                explicit_title: false,
                 is_source: false,
                 source_author_id: None,
                 source_edition_info: None,
