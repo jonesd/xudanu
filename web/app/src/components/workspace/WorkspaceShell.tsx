@@ -30,7 +30,7 @@ import { AttributionPanel } from "../AttributionPanel";
 import { ServerDirectoryPanel } from "../ServerDirectoryPanel";
 import { loadThemeState, saveThemeState, activePalette } from "../../theme";
 import type { ThemeMode } from "../../theme";
-import type { WorkListEntry, TrailPayload, AgainHop } from "../../api/crdt_sync";
+import type { WorkListEntry, TrailPayload, AgainHop, DetectorInfo } from "../../api/crdt_sync";
 import type { License } from "../../api/crdt_sync";
 import { LICENSES } from "../../api/crdt_sync";
 import { HomeLanding } from "../HomeLanding";
@@ -1093,6 +1093,36 @@ export function WorkspaceShell() {
 
   // FR-79: re-fetch the shadow's source URL and append a revision if the
   // live page changed. Toast tells the honest outcome either way.
+  // ── FR-80: detectors (persistent watches on works) ──────────────
+  const [detectors, setDetectors] = useState<DetectorInfo[]>([]);
+  const detectorUnread = useMemo(
+    () => detectors.reduce((s, d) => s + (d.unread ?? 0), 0),
+    [detectors],
+  );
+  const refreshDetectors = useCallback(() => {
+    clientRef.current?.detectorList().then((list) => setDetectors(list)).catch(() => {});
+  }, [clientRef]);
+  useEffect(() => {
+    refreshDetectors();
+    const t = setInterval(refreshDetectors, 30_000); // pull model — the collection is the contract
+    return () => clearInterval(t);
+  }, [refreshDetectors]);
+
+  const watchWork = useCallback(
+    (kind: "links" | "revisions") => {
+      if (workBeId === null || !clientRef.current) return;
+      clientRef.current.detectorCreate(workBeId, kind, kind === "links" ? { direction: "in" } : undefined).then((d) => {
+        if (d) {
+          showToast(kind === "links" ? "Watching — new links to this work will be collected" : "Watching — new revisions will be collected");
+          refreshDetectors();
+        } else {
+          showToast("Could not plant the watch (are you signed in?)");
+        }
+      });
+    },
+    [workBeId, clientRef, showToast, refreshDetectors],
+  );
+
   const refreshShadow = useCallback(async () => {
     if (workBeId === null || !clientRef.current) return;
     const entry = works.find((w) => w.work_id === workBeId);
@@ -2779,6 +2809,17 @@ export function WorkspaceShell() {
                     + Add Link
                   </button>
                 )}
+                {workBeId !== null && (
+                  <button
+                    type="button"
+                    className="ws-action-btn"
+                    style={{ width: "100%", marginBottom: 8, justifyContent: "center" }}
+                    onClick={() => void watchWork("links")}
+                    title="FR-80 detector: collect new links that land on this work (see More ▸ Detectors)"
+                  >
+                    ◉ Watch for Links
+                  </button>
+                )}
                 {/* Link type filter */}
                 {transclusion.links.length > 0 && (
                   <div className="ws-link-filters">
@@ -3443,6 +3484,88 @@ export function WorkspaceShell() {
             )}
             {rightPanelTab === "more" && (
               <div className="ws-more-tab">
+                {/* FR-80: detectors — the collection is the record */}
+                <div className="ws-conn-header" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span>Detectors</span>
+                  {detectorUnread > 0 && (
+                    <span style={{ background: "#39d2c0", color: "#0d1117", borderRadius: 8, fontSize: 10, fontWeight: 700, padding: "1px 6px" }}>
+                      {detectorUnread} new
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-dim)", margin: "4px 0 8px" }}>
+                  Persistent watches: link detectors collect new links landing on a work; revision detectors collect new revisions. Miller&rsquo;s fourth fundamental feature, 1994.
+                </div>
+                {workBeId !== null && (
+                  <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                    <button type="button" className="ws-action-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => void watchWork("links")}>
+                      ◉ Watch this work (links)
+                    </button>
+                    <button type="button" className="ws-action-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => void watchWork("revisions")}>
+                      ◉ Watch (revisions)
+                    </button>
+                  </div>
+                )}
+                {detectors.length === 0 ? (
+                  <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 10 }}>
+                    No watches yet. Plant one from the Links panel or the buttons above.
+                  </div>
+                ) : (
+                  detectors.map((d) => {
+                    const title = works.find((w) => w.work_id === d.work_id)?.title ?? `0x${d.work_id.toString(16)}`;
+                    const typeNames = (d.match?.link_types ?? [])
+                      .map((t) => DEFAULT_LINK_TYPES.find((dt) => dt.type_id === t)?.name ?? `type ${t}`)
+                      .join(", ");
+                    return (
+                      <div key={d.detector_id} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "8px 10px", marginBottom: 8, fontSize: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontWeight: 600 }}>{d.kind === "links" ? "Links" : "Revisions"}</span>
+                          <span style={{ color: "var(--text-dim)" }}>on</span>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }} title={title}>{title}</span>
+                          {d.unread > 0 && (
+                            <span style={{ background: "#39d2c0", color: "#0d1117", borderRadius: 8, fontSize: 10, fontWeight: 700, padding: "1px 6px" }}>
+                              {d.unread}
+                            </span>
+                          )}
+                        </div>
+                        {typeNames && <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>types: {typeNames}</div>}
+                        {d.hits.length > 0 && (
+                          <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
+                            {d.hits.slice(-3).map((h, i) => (
+                              <div key={i}>
+                                {h.link_id ? `link 0x${h.link_id.toString(16)}` : `revision ${h.revision}`} · {new Date(h.at * 1000).toLocaleDateString()}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                          {d.unread > 0 && (
+                            <button
+                              type="button"
+                              className="ws-action-btn"
+                              style={{ padding: "2px 10px", fontSize: 11 }}
+                              onClick={() => {
+                                clientRef.current?.detectorAck(d.detector_id).then(() => refreshDetectors());
+                              }}
+                            >
+                              Ack {d.unread}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="ws-action-btn"
+                            style={{ padding: "2px 10px", fontSize: 11 }}
+                            onClick={() => {
+                              clientRef.current?.detectorDelete(d.detector_id).then(() => refreshDetectors());
+                            }}
+                          >
+                            Stop watching
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
                 {imageEntries.length > 0 && (
                   <div className="ws-image-gallery">
                     <div className="ws-conn-header">Images ({imageEntries.length})</div>
@@ -5476,6 +5599,23 @@ export function WorkspaceShell() {
                 onClick={() => setRightPanelTab(id)}
               >
                 {label}
+                {id === "more" && detectorUnread > 0 && (
+                  <span
+                    title={`${detectorUnread} collected — open More ▸ Detectors`}
+                    style={{
+                      marginLeft: 5,
+                      background: "#39d2c0",
+                      color: "#0d1117",
+                      borderRadius: 8,
+                      fontSize: 9,
+                      fontWeight: 700,
+                      padding: "1px 5px",
+                      verticalAlign: "middle",
+                    }}
+                  >
+                    {detectorUnread}
+                  </span>
+                )}
               </button>
             ))}
             {isTablet && (

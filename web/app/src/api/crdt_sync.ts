@@ -474,8 +474,32 @@ export interface TransclusionMarker {
   otherEndTitles?: string[];
 }
 
-export interface WorkListEntry {
+// ── FR-80: detectors (persistent watches on works) ────────────────
+export interface DetectorHit {
+  at: number;
+  link_id?: number;
+  by_club?: number;
+  revision?: number;
+}
+
+export interface DetectorMatch {
+  /** A SET of link type ids — empty/absent = all types. */
+  link_types?: number[];
+  direction?: "in" | "out" | "any";
+  from_clubs?: number[];
+}
+
+export interface DetectorInfo {
+  detector_id: number;
   work_id: number;
+  kind: "links" | "revisions";
+  match?: DetectorMatch;
+  created_at: number;
+  hits: DetectorHit[];
+  unread: number;
+}
+
+export interface WorkListEntry {  work_id: number;
   owner: number | null;
   revision_count: number;
   is_grabbed: boolean;
@@ -1952,6 +1976,52 @@ export class CrdtSyncClient {
       if (!this.isConnected()) {
         return this.lastCanEdit;
       }
+      return false;
+    }
+  }
+
+  // ── FR-80: detectors (persistent watches on works) ──────────────
+
+  async detectorCreate(
+    workId: number,
+    kind: "links" | "revisions",
+    match?: { link_types?: number[]; direction?: "in" | "out" | "any"; from_clubs?: number[] },
+  ): Promise<DetectorInfo | null> {
+    try {
+      const resp = await this.sendRequest("detector_create", { work_id: workId, kind, match });
+      return extractValue(resp) as DetectorInfo;
+    } catch {
+      return null;
+    }
+  }
+
+  async detectorList(): Promise<DetectorInfo[]> {
+    try {
+      const resp = await this.sendRequest("detector_list");
+      const val = extractValue(resp);
+      const payload = val as { detectors?: DetectorInfo[] } | DetectorInfo[];
+      return Array.isArray(payload) ? payload : (payload.detectors ?? []);
+    } catch {
+      return [];
+    }
+  }
+
+  async detectorAck(detectorId: number): Promise<number> {
+    try {
+      const resp = await this.sendRequest("detector_ack", { detector_id: detectorId });
+      const val = extractValue(resp) as { acked?: number } | number;
+      return typeof val === "number" ? val : (val.acked ?? 0);
+    } catch {
+      return 0;
+    }
+  }
+
+  async detectorDelete(detectorId: number): Promise<boolean> {
+    try {
+      const resp = await this.sendRequest("detector_delete", { detector_id: detectorId });
+      const val = extractValue(resp) as { deleted?: boolean } | boolean;
+      return typeof val === "boolean" ? val : (val.deleted ?? false);
+    } catch {
       return false;
     }
   }
