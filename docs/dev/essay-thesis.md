@@ -38,9 +38,12 @@ the spectrum; it does not sell one number.
 
 ## The line the piece turns on
 
-Miller said six months in 1994 — sincerely, and correctly. He was
-quoting 2026 units. The heartbeat didn't fail; it waited thirty
-years for the accelerant that could pay it.
+The design was complete decades ago and provably buildable — what
+it waited for was a cost curve it could afford. In 2026 the curve
+crossed under it: a 45-year-old vision, paid for long ago, became a
+small team's year. The question the essay leaves the reader with is
+not "why did Xanadu fail" but "what else is sitting finished in the
+literature, waiting for its curve."
 
 (Draft framing note: open on the minus: bug — a 1992 transliteration
 bug surviving every faithful translation, found by re-derivation,
