@@ -352,14 +352,26 @@ fn normalize_shadow_url(url: &str) -> Option<String> {
     })
 }
 
-/// Shadow display title: the page's <title> when the sanitizer kept
-/// one, else a readable truncation of the first content line, else
-/// the host.
-fn shadow_title_from(url: &str, text: &str) -> String {
-    let first_line = text.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
-    let candidate: String = first_line.trim().chars().take(80).collect();
-    if candidate.len() >= 8 {
-        format!("Shadow: {candidate}")
+/// Shadow display title: the page's <title> when present, else the
+/// first line that reads like content (attribute fragments from crude
+/// text extraction are skipped), else the host.
+fn shadow_title_from(url: &str, sanitized_html: &str, text: &str) -> String {
+    if let Some(t) = sanitized_html
+        .split("<title>")
+        .nth(1)
+        .and_then(|rest| rest.split("</title>").next())
+        .map(|t| t.trim())
+        .filter(|t| t.chars().count() >= 4)
+    {
+        return format!("Shadow: {}", t.chars().take(120).collect::<String>());
+    }
+    let candidate = text
+        .lines()
+        .map(|l| l.trim())
+        .find(|l| l.chars().count() >= 8 && !l.contains("=\"") && !l.starts_with("Jump to"))
+        .unwrap_or("");
+    if candidate.chars().count() >= 8 {
+        format!("Shadow: {}", candidate.chars().take(80).collect::<String>())
     } else {
         let host = url
             .trim_start_matches("https://")
@@ -7193,7 +7205,7 @@ impl Server {
             }
             None => {
                 // Create the shadow work.
-                let title = shadow_title_from(&fetch.final_url, &text);
+                let title = shadow_title_from(&fetch.final_url, &fetch.sanitized_html, &text);
                 let edition = crate::edition::Edition::from_text(&text);
                 let wid = self.create_work(session_id, edition)?;
                 self.set_work_title(wid, title);
