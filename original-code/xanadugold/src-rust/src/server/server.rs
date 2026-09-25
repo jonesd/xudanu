@@ -5135,6 +5135,10 @@ impl Server {
             Self::current_timestamp_secs(),
         );
         self.auto_checkpoint();
+        // FR-80: revision detectors fire at the single commit choke
+        // point — every path (work_revise, work_save_and_release,
+        // work_set_text, seeding) funnels through revise_work.
+        self.detectors_fire_revision(work_be_id, revision, author_club);
 
         Ok(revision)
     }
@@ -5156,8 +5160,6 @@ impl Server {
         let author_club = self.resolve_author_club(session_id);
 
         let revision = self.revise_work(work_be_id, session_id, new_edition, author_club)?;
-        // FR-80: revision detectors fire after the commit.
-        self.detectors_fire_revision(work_be_id, revision, author_club);
         Ok(revision)
     }
 
@@ -5291,8 +5293,6 @@ impl Server {
 
         let revision = self.revise_work(work_be_id, session_id, new_edition, author_club)?;
         self.grant_pending_grab(work_be_id);
-        // FR-80: revision detectors fire after the commit.
-        self.detectors_fire_revision(work_be_id, revision, author_club);
 
         Ok(revision)
     }
