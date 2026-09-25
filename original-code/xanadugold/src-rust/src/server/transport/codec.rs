@@ -638,6 +638,7 @@ impl JsonCodec {
             OperationCode::CryptoKeyHistory,
             OperationCode::FederationInfo,
             OperationCode::FederationPeers,
+            OperationCode::DetectorList,
             OperationCode::MembershipSync,
             OperationCode::MembershipLeave,
             OperationCode::MembershipList,
@@ -685,8 +686,9 @@ impl JsonCodec {
                 OperationCode::CryptoGetPublicKey => Ok(WireRequest::CryptoGetPublicKey),
                 OperationCode::CryptoKeyRotation => Ok(WireRequest::CryptoKeyRotation),
                 OperationCode::CryptoKeyHistory => Ok(WireRequest::CryptoKeyHistory),
-                OperationCode::FederationInfo => Ok(WireRequest::FederationInfo),
-                OperationCode::FederationPeers => Ok(WireRequest::FederationPeers),
+            OperationCode::FederationInfo => Ok(WireRequest::FederationInfo),
+            OperationCode::FederationPeers => Ok(WireRequest::FederationPeers),
+            OperationCode::DetectorList => Ok(WireRequest::DetectorList {}),
                 OperationCode::MembershipSync => Ok(WireRequest::MembershipSync),
                 OperationCode::MembershipLeave => Ok(WireRequest::MembershipLeave),
                 OperationCode::MembershipList => Ok(WireRequest::MembershipList),
@@ -2888,6 +2890,7 @@ impl JsonCodec {
             }
             OperationCode::FederationInfo => Ok(WireRequest::FederationInfo),
             OperationCode::FederationPeers => Ok(WireRequest::FederationPeers),
+            OperationCode::DetectorList => Ok(WireRequest::DetectorList {}),
             OperationCode::FederatedTransclusionQuery => {
                 #[derive(Deserialize)]
                 struct Args {
@@ -3537,6 +3540,44 @@ impl JsonCodec {
                     url: args.url,
                     refresh: args.refresh,
                     max_chars: args.max_chars,
+                })
+            }
+            OperationCode::DetectorCreate => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    kind: String,
+                    #[serde(default)]
+                    r#match: Option<super::protocol::DetectorMatchWire>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::DetectorCreate {
+                    work_id: args.work_id,
+                    kind: args.kind,
+                    r#match: args.r#match,
+                })
+            }
+            OperationCode::DetectorAck => {
+                #[derive(Deserialize)]
+                struct Args {
+                    detector_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::DetectorAck {
+                    detector_id: args.detector_id,
+                })
+            }
+            OperationCode::DetectorDelete => {
+                #[derive(Deserialize)]
+                struct Args {
+                    detector_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::DetectorDelete {
+                    detector_id: args.detector_id,
                 })
             }
             OperationCode::WorkUnstar => {

@@ -182,6 +182,10 @@ pub enum OperationCode {
     WorkSetSource,
     WebFetchSanitize,
     WebShadow,
+    DetectorCreate,
+    DetectorList,
+    DetectorAck,
+    DetectorDelete,
     LatticeShadowEnroll,
     LatticeShadowStatus,
     LatticeShadowClear,
@@ -845,6 +849,10 @@ impl OperationCode {
         (0x0f16, OperationCode::AdminAuditTail),
         (0x0f20, OperationCode::AdminSecurityLogVerify),
         (0x0f21, OperationCode::WebShadow),
+        (0x0f22, OperationCode::DetectorCreate),
+        (0x0f23, OperationCode::DetectorList),
+        (0x0f24, OperationCode::DetectorAck),
+        (0x0f25, OperationCode::DetectorDelete),
         (0x0f17, OperationCode::AdminClubsList),
         (0x0f18, OperationCode::AdminGrantAdmin),
         (0x0f19, OperationCode::AdminRevokeAdmin),
@@ -862,6 +870,35 @@ impl OperationCode {
             .iter()
             .find(|(c, _)| *c == code)
             .map(|(_, v)| v.clone())
+    }
+
+    /// Safe wire-code allocation for NEW operations: the next code
+    /// ABOVE the highest used code in `[floor, ceiling]`. Append-only
+    /// by design — old gaps stay gaps (they may be reserved for
+    /// historical layouts), and allocation stays monotonic within a
+    /// block. Use this, never hand-pick a code (the table predates
+    /// this helper with 26 historical duplicate codes;
+    /// `op_code_table_is_sound` catches collisions, this prevents
+    /// them).
+    ///
+    /// When registering a new op: run `OperationCode::next_free_code`
+    /// in a test or scratch main, use the returned code, and update
+    /// `next_free_code_matches_current_allocation` so the tripwire
+    /// stays honest.
+    pub fn next_free_code(floor: u16, ceiling: u16) -> Option<u16> {
+        let mut max = floor.saturating_sub(1); // empty block → allocate at floor
+        for (c, _) in Self::OP_CODE_TABLE {
+            if *c >= floor && *c <= ceiling && *c > max {
+                max = *c;
+            }
+        }
+        let candidate = max.checked_add(1).filter(|c| *c <= ceiling)?;
+        let taken = Self::OP_CODE_TABLE.iter().any(|(t, _)| *t == candidate);
+        if taken {
+            None
+        } else {
+            Some(candidate)
+        }
     }
 
     pub fn to_u16(self) -> u16 {
@@ -1051,6 +1088,30 @@ pub enum WireRequest {
             serde(default, skip_serializing_if = "Option::is_none")
         )]
         max_chars: Option<u64>,
+    },
+    /// FR-80: post a detector — a persistent watch on a work. Link
+    /// detectors collect new links landing on the work (optionally
+    /// filtered by a SET of types, direction, and authoring clubs);
+    /// revision detectors collect new revisions. The match is a
+    /// predicate object, never a single value (Gold's FeFillDetector
+    /// matched one exact element; Miller's link detectors one type —
+    /// the limitation this shape exists to avoid).
+    DetectorCreate {
+        work_id: BeId,
+        /// "links" | "revisions"
+        kind: String,
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        r#match: Option<DetectorMatchWire>,
+    },
+    DetectorList {},
+    DetectorAck {
+        detector_id: u64,
+    },
+    DetectorDelete {
+        detector_id: u64,
     },
     LatticeShadowEnroll {
         work_id: BeId,
@@ -2848,6 +2909,16 @@ pub enum ResponseValue {
 
     WebFetchSanitizeResult(WebFetchSanitizePayload),
     WebShadowResult(WebShadowPayload),
+    DetectorCreateResult(DetectorInfoPayload),
+    DetectorListResult {
+        detectors: Vec<DetectorInfoPayload>,
+    },
+    DetectorAckResult {
+        acked: u64,
+    },
+    DetectorDeleteResult {
+        deleted: bool,
+    },
 
     SourceDetectResult {
         source_type: String,
@@ -4619,6 +4690,49 @@ pub struct WebShadowPayload {
     pub revised: bool,
 }
 
+/// FR-80: the detector match predicate. Additive by design — clients
+/// treat unknown fields as "no additional filter", so span-level
+/// (region), authority, and endorsement fields can arrive later
+/// without a wire break (the fossil engine's RecorderQuery already
+/// models them).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetectorMatchWire {
+    /// A SET of link type ids — empty/absent means ALL types. Never a
+    /// single value (see FR-80: Gold's single-value limitation).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub link_types: Vec<u64>,
+    /// "in" (links landing on the work), "out" (links from it),
+    /// "any". Absent = "in".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<String>,
+    /// Only collect links authored by these clubs. Absent = anyone.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub from_clubs: Vec<BeId>,
+}
+
+/// One collected hit: what fired, when, and who did it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetectorHitPayload {
+    pub at: u64,
+    pub link_id: Option<u64>,
+    pub by_club: Option<BeId>,
+    pub revision: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetectorInfoPayload {
+    pub detector_id: u64,
+    pub work_id: BeId,
+    /// "links" | "revisions"
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub r#match: Option<DetectorMatchWire>,
+    pub created_at: u64,
+    /// Hits since the last ack (the unread collection).
+    pub hits: Vec<DetectorHitPayload>,
+    pub unread: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GrantPayload {
     pub club_id: BeId,
@@ -5059,6 +5173,22 @@ mod lattice_shadow_wire_tests {
             assert_eq!(variant.to_u16(), *code);
         }
         assert!(!OperationCode::OP_CODE_TABLE.is_empty());
+    }
+
+    #[test]
+    fn next_free_code_matches_current_allocation() {
+        // Allocation tripwire: the next free code in the 0x0f00 admin/
+        // API block. When you register a new op there, this test fails
+        // until you update the expectation — forcing you to have used
+        // the allocator rather than hand-picking.
+        let next = OperationCode::next_free_code(0x0f00, 0x0fff)
+            .expect("the 0x0f00 block must not be exhausted");
+        assert_eq!(next, 0x0f26, "next free 0x0f-block code moved — update this expectation after registering");
+        // The helper's result is by construction absent from the table.
+        let taken = OperationCode::OP_CODE_TABLE
+            .iter()
+            .any(|(c, _)| *c == next);
+        assert!(!taken);
     }
 
     #[test]

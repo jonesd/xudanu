@@ -785,6 +785,8 @@ pub struct Server {
         std::sync::Mutex<std::collections::HashMap<BeId, crate::edition::span_key::SpanKeyMap>>,
 
     pub(crate) grand_map: GrandMap,
+    /// FR-80: persistent detectors (link/revision watches).
+    pub(crate) detectors: super::detectors::DetectorRegistry,
     pub(crate) sessions: HashMap<SessionId, Session>,
     session_counter: u64,
     pub(crate) clubs: HashMap<BeId, Club>,
@@ -1570,6 +1572,7 @@ impl Server {
             grand_map,
             eviction: None,
             span_key_maps,
+            detectors: super::detectors::DetectorRegistry::default(),
             sessions: HashMap::new(),
             session_counter: 0,
             clubs: HashMap::new(),
@@ -3967,7 +3970,7 @@ impl Server {
         name
     }
 
-    fn resolve_author_club(&self, session_id: SessionId) -> Option<BeId> {
+    pub(crate) fn resolve_author_club(&self, session_id: SessionId) -> Option<BeId> {
         let session = self.sessions.get(&session_id)?;
         session
             .initial_login()
@@ -5153,6 +5156,8 @@ impl Server {
         let author_club = self.resolve_author_club(session_id);
 
         let revision = self.revise_work(work_be_id, session_id, new_edition, author_club)?;
+        // FR-80: revision detectors fire after the commit.
+        self.detectors_fire_revision(work_be_id, revision, author_club);
         Ok(revision)
     }
 
@@ -5286,6 +5291,8 @@ impl Server {
 
         let revision = self.revise_work(work_be_id, session_id, new_edition, author_club)?;
         self.grant_pending_grab(work_be_id);
+        // FR-80: revision detectors fire after the commit.
+        self.detectors_fire_revision(work_be_id, revision, author_club);
 
         Ok(revision)
     }
@@ -14011,7 +14018,10 @@ impl Server {
                 })
                 .collect();
             // Also load from the lightweight sidecar file (more recent than manifest)
-            if let Some(ref dir) = self.data_dir {
+            let detectors_dir_snapshot = self.data_dir.clone();
+            if let Some(ref dir) = detectors_dir_snapshot {
+                // FR-80 detectors registry (own sidecar)
+                self.load_detectors_sidecar(dir);
                 let sidecar = dir.join("ticket_nonces.json");
                 tracing::info!(
                     "[restore] looking for ticket nonce sidecar at {}",
@@ -15078,6 +15088,14 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        // FR-80: detectors sidecar rides along with every checkpoint
+        // (tiny; hits must survive restart — the collection is the
+        // record). Best-effort, same as daily history below.
+        if let Some(ref dir) = self.data_dir.clone() {
+            if let Err(e) = self.save_detectors_sidecar(&dir) {
+                tracing::warn!("[detectors] sidecar persist failed: {e}");
+            }
+        }
         // Daily narrative history: generate if there are changes
         // and today's entry doesn't exist yet. Best-effort — a
         // failure never blocks the checkpoint.
@@ -17347,6 +17365,9 @@ impl Server {
         let updated_link = self.links[&link_id].link.clone();
         self.canopy_remove_link(link_id, &old_link);
         self.canopy_insert_link(link_id, &updated_link);
+        // FR-80: link detectors fire on the final type set (every
+        // creation flow applies types; replays don't double-collect).
+        self.detectors_fire_link(_session_id, link_id, &updated_link);
         Ok(())
     }
 
@@ -25910,6 +25931,7 @@ pub(crate) mod persist_snapshot {
                 grand_map,
                 eviction: None,
                 span_key_maps: std::sync::Mutex::new(std::collections::HashMap::new()),
+                detectors: crate::server::detectors::DetectorRegistry::default(),
                 compound_segments: std::collections::HashMap::new(),
                 sessions: HashMap::new(),
                 session_counter: snapshot.session_counter,

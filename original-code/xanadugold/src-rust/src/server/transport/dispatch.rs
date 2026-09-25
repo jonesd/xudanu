@@ -1051,6 +1051,26 @@ fn dispatch_inner(
             let result = srv.web_shadow(session_id, &url, refresh.unwrap_or(false), max_chars)?;
             Ok(ResponseValue::WebShadowResult(result))
         }
+        WireRequest::DetectorCreate {
+            work_id,
+            kind,
+            r#match,
+        } => {
+            let result = srv.detector_create(session_id, work_id, &kind, r#match)?;
+            Ok(ResponseValue::DetectorCreateResult(result))
+        }
+        WireRequest::DetectorList {} => {
+            let result = srv.detector_list(session_id)?;
+            Ok(ResponseValue::DetectorListResult { detectors: result })
+        }
+        WireRequest::DetectorAck { detector_id } => {
+            let acked = srv.detector_ack(session_id, detector_id)?;
+            Ok(ResponseValue::DetectorAckResult { acked })
+        }
+        WireRequest::DetectorDelete { detector_id } => {
+            let deleted = srv.detector_delete(session_id, detector_id)?;
+            Ok(ResponseValue::DetectorDeleteResult { deleted })
+        }
         WireRequest::LatticeShadowEnroll { work_id } => {
             srv.ensure_admin(session_id)?;
             srv.enroll_lattice_shadow(session_id, work_id)?;
