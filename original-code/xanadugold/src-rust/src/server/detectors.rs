@@ -18,8 +18,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use super::error::ServerError;
-use super::SessionId;
 use super::transport::protocol::{DetectorHitPayload, DetectorInfoPayload, DetectorMatchWire};
+use super::SessionId;
 use crate::edition::links::HyperLink;
 use crate::edition::BeId;
 
@@ -111,9 +111,7 @@ impl Detector {
         if !touches {
             return false;
         }
-        if !self.link_types.is_empty()
-            && !link_types.iter().any(|t| self.link_types.contains(t))
-        {
+        if !self.link_types.is_empty() && !link_types.iter().any(|t| self.link_types.contains(t)) {
             return false;
         }
         if !self.from_clubs.is_empty() {
@@ -258,7 +256,13 @@ impl DetectorRegistry {
     }
 
     /// Fire point for revision commits.
-    pub fn fire_revision(&mut self, work_id: BeId, revision: u64, by_club: Option<BeId>, now: u64) -> usize {
+    pub fn fire_revision(
+        &mut self,
+        work_id: BeId,
+        revision: u64,
+        by_club: Option<BeId>,
+        now: u64,
+    ) -> usize {
         let mut fired = 0;
         for d in self.detectors.values_mut() {
             if d.kind != DetectorKind::Revisions || d.work_id != work_id {
@@ -359,7 +363,11 @@ impl super::server::Server {
             .collect())
     }
 
-    pub fn detector_ack(&mut self, session_id: SessionId, detector_id: u64) -> Result<u64, ServerError> {
+    pub fn detector_ack(
+        &mut self,
+        session_id: SessionId,
+        detector_id: u64,
+    ) -> Result<u64, ServerError> {
         self.ensure_logged_in(session_id)?;
         let owner = self
             .resolve_author_club(session_id)
@@ -377,7 +385,11 @@ impl super::server::Server {
         Ok(unread)
     }
 
-    pub fn detector_delete(&mut self, session_id: SessionId, detector_id: u64) -> Result<bool, ServerError> {
+    pub fn detector_delete(
+        &mut self,
+        session_id: SessionId,
+        detector_id: u64,
+    ) -> Result<bool, ServerError> {
         self.ensure_logged_in(session_id)?;
         let owner = self
             .resolve_author_club(session_id)
@@ -393,7 +405,12 @@ impl super::server::Server {
     }
 
     /// Fire link detectors at link_set_types time. Returns hits fired.
-    pub fn detectors_fire_link(&mut self, session_id: SessionId, link_id: u64, link: &HyperLink) -> usize {
+    pub fn detectors_fire_link(
+        &mut self,
+        session_id: SessionId,
+        link_id: u64,
+        link: &HyperLink,
+    ) -> usize {
         let by_club = self.resolve_author_club(session_id);
         let now = crate::server::session_ticket::now_secs();
         let fired = self.detectors.fire_link(link_id, link, by_club, now);
@@ -411,7 +428,9 @@ impl super::server::Server {
         by_club: Option<BeId>,
     ) -> usize {
         let now = crate::server::session_ticket::now_secs();
-        let fired = self.detectors.fire_revision(work_id, revision, by_club, now);
+        let fired = self
+            .detectors
+            .fire_revision(work_id, revision, by_club, now);
         if fired > 0 {
             self.persist_detectors_best_effort();
         }

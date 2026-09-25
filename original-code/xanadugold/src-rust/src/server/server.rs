@@ -48719,7 +48719,10 @@ mod tests_revisions {
         // present the entire time under a clobbered name.
         let (mut server, sid) = setup();
         let work_id = server
-            .create_work(sid, Edition::from_text("First line becomes the auto title\nbody"))
+            .create_work(
+                sid,
+                Edition::from_text("First line becomes the auto title\nbody"),
+            )
             .unwrap();
         server.set_work_title(work_id, "My Explicit Title".to_string());
         server

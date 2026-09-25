@@ -5183,11 +5183,12 @@ mod lattice_shadow_wire_tests {
         // the allocator rather than hand-picking.
         let next = OperationCode::next_free_code(0x0f00, 0x0fff)
             .expect("the 0x0f00 block must not be exhausted");
-        assert_eq!(next, 0x0f26, "next free 0x0f-block code moved — update this expectation after registering");
+        assert_eq!(
+            next, 0x0f26,
+            "next free 0x0f-block code moved — update this expectation after registering"
+        );
         // The helper's result is by construction absent from the table.
-        let taken = OperationCode::OP_CODE_TABLE
-            .iter()
-            .any(|(c, _)| *c == next);
+        let taken = OperationCode::OP_CODE_TABLE.iter().any(|(c, _)| *c == next);
         assert!(!taken);
     }
 
