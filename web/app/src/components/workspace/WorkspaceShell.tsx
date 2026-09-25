@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { storageGet, storageSet, storageRemove, storageClear } from "../../safe-storage";
+
+// Trim a long reference for display (head…tail); the full value is
+// one click away on the clipboard.
+function trimReference(s: string, head = 20, tail = 8): string {
+  return s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
+}
+
 import type { ReactNode } from "react";
 import { useCrdtSync } from "../../hooks/useCrdtSync";
 import { useWorkStore } from "../../store/work-store";
@@ -4383,35 +4390,58 @@ export function WorkspaceShell() {
               </header>
 
               <div className="ws-doc-scroll">
-                {webShadowInfo && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      flexWrap: "wrap",
-                      padding: "8px 14px",
-                      marginBottom: 10,
-                      background: "rgba(63,185,80,0.06)",
-                      border: "1px solid rgba(63,185,80,0.3)",
-                      borderRadius: 6,
-                      fontSize: 12,
-                      color: "var(--text-dim)",
-                    }}
-                  >
-                    <span style={{ fontSize: 14 }}>▤</span>
-                    <span>
-                      Live window onto{" "}
-                      <a
-                        href={webShadowInfo.sourceUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: "var(--accent-blue)", wordBreak: "break-all" }}
-                      >
-                        {webShadowInfo.sourceUrl}
-                      </a>
-                    </span>
-                    <span>· fetched {webShadowInfo.fetchedAt}</span>
+                 {webShadowInfo && (
+                   <div
+                     style={{
+                       display: "flex",
+                       alignItems: "center",
+                       gap: 10,
+                       flexWrap: "wrap",
+                       padding: "8px 14px",
+                       marginBottom: 10,
+                       background: "rgba(63,185,80,0.06)",
+                       border: "1px solid rgba(63,185,80,0.3)",
+                       borderRadius: 6,
+                       fontSize: 12,
+                       color: "var(--text-dim)",
+                     }}
+                   >
+                     <span style={{ fontSize: 14 }}>▤</span>
+                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                       Live window onto{" "}
+                       <button
+                         type="button"
+                         title={`${webShadowInfo.sourceUrl} — click to copy`}
+                         onClick={() => {
+                           navigator.clipboard
+                             .writeText(webShadowInfo.sourceUrl)
+                             .then(() => showToast("Reference copied"))
+                             .catch(() => showToast("Copy failed"));
+                         }}
+                         style={{
+                           background: "none",
+                           border: "none",
+                           padding: 0,
+                           color: "var(--accent-blue)",
+                           fontFamily: "monospace",
+                           fontSize: 11,
+                           cursor: "pointer",
+                           textDecoration: "underline dotted",
+                         }}
+                       >
+                         {trimReference(webShadowInfo.sourceUrl)}
+                       </button>
+                       <a
+                         href={webShadowInfo.sourceUrl}
+                         target="_blank"
+                         rel="noopener noreferrer"
+                         title="open the source page"
+                         style={{ color: "var(--accent-blue)", fontSize: 11, textDecoration: "none" }}
+                       >
+                         ↗
+                       </a>
+                     </span>
+                     <span>· fetched {webShadowInfo.fetchedAt}</span>
                     <span style={{ fontFamily: "monospace", fontSize: 10 }}>
                       #{webShadowInfo.hash8}…
                     </span>

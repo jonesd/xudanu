@@ -70,3 +70,8 @@ scripts/seed-convergence-essay.mjs
 
 # TLC model-checker checkpoint artifacts
 spec/**/states/
+
+# video pipeline intermediates
+docs/videos/reel/parts/
+docs/videos/reel/frame-*.png
+docs/videos/reel/page@*
