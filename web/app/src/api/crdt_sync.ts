@@ -494,6 +494,20 @@ export interface DetectorHit {
   revision?: number;
 }
 
+export interface GlobalSearchMatch {
+  char_offset: number;
+  line: number;
+  context: string;
+}
+
+export interface GlobalSearchResult {
+  work_id: number;
+  title?: string | null;
+  owner?: number | null;
+  revision_count?: number;
+  matches: GlobalSearchMatch[];
+}
+
 export interface DetectorMatch {
   /** A SET of link type ids — empty/absent = all types. */
   link_types?: number[];

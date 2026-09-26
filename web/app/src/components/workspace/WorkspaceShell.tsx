@@ -30,7 +30,7 @@ import { AttributionPanel } from "../AttributionPanel";
 import { ServerDirectoryPanel } from "../ServerDirectoryPanel";
 import { loadThemeState, saveThemeState, activePalette } from "../../theme";
 import type { ThemeMode } from "../../theme";
-import type { WorkListEntry, TrailPayload, AgainHop, DetectorInfo } from "../../api/crdt_sync";
+import type { WorkListEntry, TrailPayload, AgainHop, DetectorInfo, GlobalSearchResultItem } from "../../api/crdt_sync";
 import type { License } from "../../api/crdt_sync";
 import { LICENSES } from "../../api/crdt_sync";
 import { HomeLanding } from "../HomeLanding";
@@ -1099,6 +1099,34 @@ export function WorkspaceShell() {
     () => detectors.reduce((s, d) => s + (d.unread ?? 0), 0),
     [detectors],
   );
+  // ── Scale-readiness: corpus-wide content search ─────────────────
+  // Uses the server's inverted index — debounced, shown alongside
+  // title matches in the library picker.
+  const [contentResults, setContentResults] = useState<GlobalSearchResultItem[]>([]);
+  const [contentSearching, setContentSearching] = useState(false);
+  const contentSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (contentSearchTimer.current) clearTimeout(contentSearchTimer.current);
+    const q = searchQuery.trim();
+    if (q.length < 3) {
+      setContentResults([]);
+      setContentSearching(false);
+      return;
+    }
+    setContentSearching(true);
+    contentSearchTimer.current = setTimeout(() => {
+      clientRef.current
+        ?.globalTextSearch(q, 10)
+        .then((r) => setContentResults(r.results))
+        .catch(() => setContentResults([]))
+        .finally(() => setContentSearching(false));
+    }, 350);
+    return () => {
+      if (contentSearchTimer.current) clearTimeout(contentSearchTimer.current);
+    };
+  }, [searchQuery, clientRef]);
+
   const refreshDetectors = useCallback(() => {
     clientRef.current?.detectorList().then((list) => setDetectors(list)).catch(() => {});
   }, [clientRef]);
@@ -4026,12 +4054,50 @@ export function WorkspaceShell() {
               {worksError && <div className="ws-picker-error">Failed to load: {worksError}</div>}
               {worksLoading ? (
                 <div className="ws-placeholder"><div className="ws-placeholder-label">Loading works…</div></div>
-              ) : filteredWorks.length === 0 ? (
+              ) : filteredWorks.length === 0 && contentResults.length === 0 && !contentSearching ? (
                 <div className="ws-placeholder">
                   <div className="ws-placeholder-label">{works.length === 0 ? "No works yet" : "No matches"}</div>
                   <div className="ws-placeholder-sublabel">{works.length === 0 ? "Create your first work" : "Try a different search"}</div>
                 </div>
               ) : (
+                <>
+              {contentResults.length > 0 && (
+                <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--border, #30363d)" }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--accent-blue, #58a6ff)", marginBottom: 6 }}>
+                    Content matches ({contentResults.length} {contentResults.length === 1 ? "work" : "works"})
+                  </div>
+                  {contentResults.slice(0, 5).map((r) => {
+                    const work = works.find((w) => w.work_id === r.work_id);
+                    const title = work?.title ?? r.title ?? `work 0x${r.work_id.toString(16)}`;
+                    return (
+                      <div
+                        key={r.work_id}
+                        className="ws-work-item"
+                        style={{ cursor: "pointer", borderLeft: "3px solid var(--accent-blue, #58a6ff)", marginBottom: 4, padding: "4px 8px", borderRadius: 4 }}
+                        onClick={() => selectWork(r.work_id)}
+                        title={`Open "${title}" — ${r.matches?.length ?? 0} matches in content`}
+                      >
+                        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text, #e6edf3)" }}>{title}</div>
+                        {r.matches?.[0] && (
+                          <div style={{ fontSize: 11, color: "var(--text-dim, #8b949e)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            …{r.matches[0].context}…
+                          </div>
+                        )}
+                        {r.matches && r.matches.length > 1 && (
+                          <div style={{ fontSize: 10, color: "var(--text-dim, #8b949e)" }}>
+                            +{r.matches.length - 1} more match{r.matches.length > 2 ? "es" : ""}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {contentSearching && (
+                <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--text-dim, #8b949e)" }}>
+                  Searching content…
+                </div>
+              )}
                 <ul className="ws-work-list">
                    {filteredWorks.map((w) => {
                      const kind = kindCache.get(w.work_id) || "document";
@@ -4098,6 +4164,7 @@ export function WorkspaceShell() {
                     );
                   })}
                 </ul>
+                </>
               )}
             </div>
                 ) : docMode === "layout" && imageEntries.length > 0 ? null : (

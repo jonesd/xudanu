@@ -77,7 +77,7 @@ Self-hosting is a first-class case, and the admin console is built for it: live 
 
 ---
 
-## Documentation
+## Learn more about Xudanu
 
 [![Xudanu at a glance](docs/screenshots/docs-overview.png)](https://dgjones.info/xudanu/)
 
