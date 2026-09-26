@@ -64,7 +64,9 @@ node_modules/
 # Local-only working material — never publish
 private/
 community/
-content/
+content/*
+# Content-set manifest (W2): the curated release spec — tracked
+!content/sets/
 docs/gold-optimizations-coles-notes.txt
 scripts/seed-convergence-essay.mjs
 

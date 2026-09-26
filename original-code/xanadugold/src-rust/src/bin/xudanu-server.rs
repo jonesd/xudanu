@@ -136,7 +136,13 @@ fn cmd_init(data_dir: &str, passphrase: Option<&[u8]>) {
     // Fresh deployments ship a published, public-read demo work so the
     // welcome-page button works for anonymous visitors. Library callers
     // (tests, programmatic init) get a clean dir.
-    server.seed_demo_work();
+    // The core set (demo + Getting Started) is the first-run content;
+    // --no-onboarding suppresses it for operators who want a blank slate.
+    let no_onboarding = std::env::args().any(|a| a == "--no-onboarding");
+    if !no_onboarding {
+        server.seed_demo_work();
+        server.restore_examples_public();
+    }
     if let Err(e) = server.checkpoint_to_store() {
         eprintln!("Warning: demo seed checkpoint failed: {}", e);
     } else {

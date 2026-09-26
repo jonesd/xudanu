@@ -13635,6 +13635,13 @@ impl Server {
     /// dir initialization; the frontend opens it read-only if present.
     /// Existing data dirs are untouched (their demo may be created or
     /// refreshed via the admin path).
+    ///
+    /// CORE SET (W1 of the content-planes plan): the demo work plus a
+    /// Getting Started guide with a live example link. Versioned,
+    /// stamped in content-sets.json. Users own it on landing — upgrades
+    /// never re-seed (restore_examples is the deliberate pull).
+    pub const CORE_SET_VERSION: u64 = 1;
+
     pub fn seed_demo_work(&mut self) {
         const DEMO_TITLE: &str = "Xudanu Interactive Demo";
         let demo_text = [
@@ -13771,6 +13778,184 @@ impl Server {
     /// the demo read-only without any create permissions.
     pub fn demo_work(&self) -> Option<BeId> {
         self.demo_work_id
+    }
+
+    /// Seed the complete core set: the demo work + a Getting Started
+    /// guide with a live link to the demo. Idempotent by title —
+    /// existing works are NEVER overwritten (the user's copy wins;
+    /// collisions are skipped). Returns the Getting Started work id.
+    fn seed_core_set_internal(&mut self) -> Option<BeId> {
+        const GS_TITLE: &str = "Getting Started";
+        let demo_id = self.demo_work_id.or_else(|| {
+            // Demo work not seeded (e.g. an existing data dir): seed it now.
+            self.seed_demo_work();
+            self.demo_work_id
+        })?;
+
+        let gs_text = [
+            "Getting Started",
+            "",
+            "This short guide gets you connected in five minutes. The",
+            "underlined phrases below are live typed links — click one to",
+            "jump to the passage it connects to.",
+            "",
+            "1. Click the underlined phrase in this document to follow a",
+            "   live link. You just navigated by connection, not by URL.",
+            "",
+            "2. Open the Library, create a document, and type a sentence.",
+            "",
+            "3. Select some text and press Link to create a connection.",
+            "   Choose a type — Comment, Reference, Disagreement — and",
+            "   pick (or create) the target passage. The connection is",
+            "   two-way: readers on the other side find you too.",
+            "",
+            "4. Select a passage in another document and press Transclude",
+            "   to carry it here as a live window — not a copy. Edit the",
+            "   source and this window updates.",
+            "",
+            "5. Open the Attribution panel to see who wrote each passage.",
+            "   Every character carries cryptographic provenance.",
+            "",
+            "Ready for more? Open the Interactive Demo for a fuller tour,",
+            "or visit https://dgjones.info/xudanu/ for the documentation.",
+        ]
+        .join("\n");
+
+        // Skip if the user already has one (never overwrite).
+        if self.works.values().any(|ws| ws.cached_title() == GS_TITLE) {
+            tracing::info!(
+                "core set: Getting Started already present — skipping (user's copy wins)"
+            );
+            return None;
+        }
+
+        let edition = Edition::from_text(&gs_text);
+        let (be_id, elem) = self.grand_map.new_work_element(None);
+        self.grand_map.assign_new_id(elem);
+        let mut work = Work::new(be_id, edition);
+        work.set_tumbler_server(Some(self.tumbler_server_identity()));
+        work.set_owner(Some(self.system_clubs.admin_club));
+        work.set_read_club(Some(self.system_clubs.public_club));
+        let ws = WorkState {
+            work: work.clone(),
+            trace: self.fulltrace.new_trace(),
+            region: None,
+            chunk_ref: None,
+            prev_chunk_history: None,
+            dirty_gen: 0,
+            grabber: None,
+            grabbed_at: None,
+            grab_waiters: Vec::new(),
+            last_revision_author: None,
+            revision_authors: std::collections::HashMap::new(),
+            revision_timestamps: std::collections::HashMap::new(),
+            status_detectors: DetectorList::new(),
+            revision_detectors: DetectorList::new(),
+            cached_title: GS_TITLE.to_string(),
+            explicit_title: true,
+            is_source: false,
+            source_author_id: None,
+            source_edition_info: None,
+            imported_by: None,
+            content_start_line: None,
+            content_end_line: None,
+            source_fingerprint: None,
+        };
+        self.works.insert(be_id, ws);
+        self.work_publish(SessionId(0), be_id);
+        tracing::info!("core set: Getting Started seeded ({:04x})", be_id);
+
+        // One live example link: "Interactive Demo" → the demo work (See Also).
+        let demo_id_f = demo_id;
+        if let Some(phrase) = gs_text.find("Interactive Demo") {
+            let (s, e) = (phrase, phrase + "Interactive Demo".len());
+            let chain = self.compute_provenance_chain(be_id);
+            let o = crate::edition::links::HyperRef::single(
+                Some(Edition::from_text(&gs_text[s..e])),
+                Some(be_id),
+                None,
+                None,
+            )
+            .with_span(Some(s as i64), Some(e as i64))
+            .with_provenance_chain(chain);
+            let d = crate::edition::links::HyperRef::single(None, Some(demo_id_f), None, None);
+            let link = crate::edition::links::HyperLink::make(vec![5], o, d); // See Also
+            let seed_session = self.connect();
+            if let Err(err) = self.create_link_with_hyperlink_homed(seed_session, link, Some(be_id))
+            {
+                tracing::warn!("core set: example link failed: {}", err);
+            }
+            self.disconnect(seed_session);
+        }
+
+        Some(be_id)
+    }
+
+    /// Stamp the core set into the content-sets sidecar.
+    fn stamp_core_set(&self) {
+        let Some(dir) = self.data_dir.as_ref() else {
+            return;
+        };
+        let path = dir.join("content-sets.json");
+        let stamp = serde_json::json!({
+            "core": { "version": Self::CORE_SET_VERSION, "seeded_at": Self::current_timestamp_secs() },
+            "sets": {},
+        });
+        let _ = std::fs::write(&path, stamp.to_string());
+    }
+
+    /// Public wrapper for the init path: seed core set + stamp sidecar.
+    /// (The no-session variant avoids the admin auth the wire op requires
+    /// — cmd_init runs before any sessions exist.)
+    pub fn restore_examples_public(&mut self) {
+        self.seed_core_set_internal();
+        self.stamp_core_set();
+    }
+
+    /// Restore Examples (admin op): re-seed the core set. Never
+    /// overwrites — works with existing titles are skipped (the user's
+    /// copy always wins). Returns the number of works seeded.
+    pub fn restore_examples(&mut self, session_id: SessionId) -> Result<u64, ServerError> {
+        self.ensure_admin(session_id)?;
+        let before = self.works.len();
+        self.seed_core_set_internal();
+        let seeded = self.works.len() as u64 - before as u64;
+        self.stamp_core_set();
+        Ok(seeded)
+    }
+
+    /// Query: what content sets, what versions, is this server running?
+    pub fn content_sets(&self) -> serde_json::Value {
+        let Some(dir) = self.data_dir.as_ref() else {
+            return serde_json::json!({ "core": null, "sets": {} });
+        };
+        match std::fs::read_to_string(dir.join("content-sets.json")) {
+            Ok(text) => serde_json::from_str(&text)
+                .unwrap_or_else(|_| serde_json::json!({ "core": null, "sets": {} })),
+            Err(_) => serde_json::json!({ "core": null, "sets": {} }),
+        }
+    }
+
+    /// Record a content-set application (admin op, called by seeders
+    /// when they run — the server-side sidecar tracks what sets and
+    /// what versions each server is carrying).
+    pub fn content_set_record(
+        &mut self,
+        session_id: SessionId,
+        name: &str,
+        version: &str,
+    ) -> Result<(), ServerError> {
+        self.ensure_admin(session_id)?;
+        let Some(dir) = self.data_dir.as_ref().map(|d| d.to_path_buf()) else {
+            return Err(ServerError::InvalidArgument("no data dir".into()));
+        };
+        let mut current = self.content_sets();
+        current["sets"][name] = serde_json::json!({
+            "version": version,
+            "applied_at": Self::current_timestamp_secs(),
+        });
+        let _ = std::fs::write(dir.join("content-sets.json"), current.to_string());
+        Ok(())
     }
 
     /// Schema-drift self-heal: write a checkpoint immediately after

@@ -190,6 +190,9 @@ pub enum OperationCode {
     /// sign the manifest head with the server key. Detects any
     /// downstream modification of offsite copies.
     BackupManifest,
+    RestoreExamples,
+    ContentSets,
+    ContentSetRecord,
     LatticeShadowEnroll,
     LatticeShadowStatus,
     LatticeShadowClear,
@@ -858,6 +861,9 @@ impl OperationCode {
         (0x0f24, OperationCode::DetectorAck),
         (0x0f25, OperationCode::DetectorDelete),
         (0x0f26, OperationCode::BackupManifest),
+        (0x0f27, OperationCode::RestoreExamples),
+        (0x0f28, OperationCode::ContentSets),
+        (0x0f29, OperationCode::ContentSetRecord),
         (0x0f17, OperationCode::AdminClubsList),
         (0x0f18, OperationCode::AdminGrantAdmin),
         (0x0f19, OperationCode::AdminRevokeAdmin),
@@ -1113,6 +1119,12 @@ pub enum WireRequest {
     },
     DetectorList {},
     BackupManifest {},
+    RestoreExamples {},
+    ContentSets {},
+    ContentSetRecord {
+        name: String,
+        version: String,
+    },
     DetectorAck {
         detector_id: u64,
     },
@@ -2926,6 +2938,13 @@ pub enum ResponseValue {
         deleted: bool,
     },
     BackupManifestResult(BackupManifestPayload),
+    RestoreExamplesResult {
+        seeded: u64,
+    },
+    ContentSetsResult {
+        sets: serde_json::Value,
+    },
+    ContentSetRecordResult {},
 
     SourceDetectResult {
         source_type: String,
@@ -5246,7 +5265,7 @@ mod lattice_shadow_wire_tests {
         let next = OperationCode::next_free_code(0x0f00, 0x0fff)
             .expect("the 0x0f00 block must not be exhausted");
         assert_eq!(
-            next, 0x0f26,
+            next, 0x0f2a,
             "next free 0x0f-block code moved — update this expectation after registering"
         );
         // The helper's result is by construction absent from the table.

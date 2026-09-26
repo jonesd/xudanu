@@ -1089,6 +1089,18 @@ fn dispatch_inner(
             let manifest = srv.backup_manifest(session_id, None)?;
             Ok(ResponseValue::BackupManifestResult(manifest))
         }
+        WireRequest::RestoreExamples {} => {
+            let seeded = srv.restore_examples(session_id)?;
+            Ok(ResponseValue::RestoreExamplesResult { seeded })
+        }
+        WireRequest::ContentSets {} => {
+            let sets = srv.content_sets();
+            Ok(ResponseValue::ContentSetsResult { sets })
+        }
+        WireRequest::ContentSetRecord { name, version } => {
+            srv.content_set_record(session_id, &name, &version)?;
+            Ok(ResponseValue::ContentSetRecordResult {})
+        }
         WireRequest::LatticeShadowEnroll { work_id } => {
             srv.ensure_admin(session_id)?;
             srv.enroll_lattice_shadow(session_id, work_id)?;

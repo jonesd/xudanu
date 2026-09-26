@@ -1,0 +1,11 @@
+{
+  "$comment": "Content-set manifest: what seeders, at what versions, constitute the curated demo environment. The reset-to-curated procedure re-runs these in order. Seeders are idempotent by title; versions bump when a seeder's content changes meaningfully. The content_set_record op stamps the server-side sidecar (content-sets.json) when each seeder runs — a server always knows exactly what content sets it carries.",
+  "core": { "version": 1 },
+  "sets": [
+    { "name": "gallery-unusual",   "version": 1, "script": "scripts/seed-gallery-unusual.mjs" },
+    { "name": "exhibition-gathers","version": 1, "script": "scripts/seed-exhibition-gathers.mjs" },
+    { "name": "two-drafts",        "version": 1, "script": "scripts/seed-two-drafts.mjs" },
+    { "name": "web-shadow-demo",   "version": 1, "script": "scripts/seed-web-shadow-demo.mjs" },
+    { "name": "widgetperfect",     "version": 1, "script": "scripts/seed-widgetperfect.mjs" }
+  ]
+}

@@ -640,6 +640,8 @@ impl JsonCodec {
             OperationCode::FederationPeers,
             OperationCode::DetectorList,
             OperationCode::BackupManifest,
+            OperationCode::RestoreExamples,
+            OperationCode::ContentSets,
             OperationCode::MembershipSync,
             OperationCode::MembershipLeave,
             OperationCode::MembershipList,
@@ -691,6 +693,8 @@ impl JsonCodec {
                 OperationCode::FederationPeers => Ok(WireRequest::FederationPeers),
                 OperationCode::DetectorList => Ok(WireRequest::DetectorList {}),
                 OperationCode::BackupManifest => Ok(WireRequest::BackupManifest {}),
+                OperationCode::RestoreExamples => Ok(WireRequest::RestoreExamples {}),
+                OperationCode::ContentSets => Ok(WireRequest::ContentSets {}),
                 OperationCode::MembershipSync => Ok(WireRequest::MembershipSync),
                 OperationCode::MembershipLeave => Ok(WireRequest::MembershipLeave),
                 OperationCode::MembershipList => Ok(WireRequest::MembershipList),
@@ -2894,6 +2898,21 @@ impl JsonCodec {
             OperationCode::FederationPeers => Ok(WireRequest::FederationPeers),
             OperationCode::DetectorList => Ok(WireRequest::DetectorList {}),
             OperationCode::BackupManifest => Ok(WireRequest::BackupManifest {}),
+            OperationCode::RestoreExamples => Ok(WireRequest::RestoreExamples {}),
+            OperationCode::ContentSets => Ok(WireRequest::ContentSets {}),
+            OperationCode::ContentSetRecord => {
+                #[derive(Deserialize)]
+                struct Args {
+                    name: String,
+                    version: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ContentSetRecord {
+                    name: args.name,
+                    version: args.version,
+                })
+            }
             OperationCode::FederatedTransclusionQuery => {
                 #[derive(Deserialize)]
                 struct Args {
