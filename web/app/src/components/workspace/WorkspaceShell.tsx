@@ -3275,20 +3275,12 @@ export function WorkspaceShell() {
                               })}
                             </div>
                           )}
-                          {typeNames.length > 0 && (
-                            <div className="ws-conn-types">
-                              {typeNames.map((tn, i) => {
-                                const lt = DEFAULT_LINK_TYPES.find((t) => t.name === tn);
-                                return (
-                                  <span
-                                    key={i}
-                                    className="ws-conn-type-badge"
-                                    style={lt ? { background: lt.color + "20", color: lt.color, borderColor: lt.color + "60" } : {}}
-                                  >
-                                    {tn}
-                                  </span>
-                                );
-                              })}
+                           {/* Type badges are now shown inline in the title
+                               row (direction + type + excerpt). This section
+                               only renders clickable type-definition links
+                               (type_ends) — no duplicate badges. */}
+                           {(link.type_ends ?? []).length > 0 && (
+                             <div className="ws-conn-types">
                               {(link.type_ends ?? []).map(([tid, defWork], i) => {
                                 const t = DEFAULT_LINK_TYPES.find((x) => x.type_id === tid);
                                 if (!t) return null;
