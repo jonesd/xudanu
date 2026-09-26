@@ -888,6 +888,95 @@ async fn repl(client: &mut Client) -> Result<(), Box<dyn std::error::Error>> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
 
+    if args.len() >= 2 && args[1] == "backup-manifest" {
+        // xudanu-cli backup-manifest <ws-url> [--out <dir>]
+        // Admin passphrase: XUDANU_ADMIN_PASSPHRASE (never argv).
+        let mut out_dir = std::path::PathBuf::from(".");
+        let mut ws = None;
+        let mut i = 2;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--out" => {
+                    i += 1;
+                    out_dir =
+                        std::path::PathBuf::from(args.get(i).ok_or("--out requires a directory")?);
+                }
+                other => ws = Some(other.to_string()),
+            }
+            i += 1;
+        }
+        let ws = ws.ok_or("usage: xudanu-cli backup-manifest <ws-url> [--out <dir>]")?;
+        let pass = std::env::var("XUDANU_ADMIN_PASSPHRASE")
+            .map_err(|_| "set XUDANU_ADMIN_PASSPHRASE (never pass it as an argument)")?;
+        let url = if ws.starts_with("ws://") || ws.starts_with("wss://") {
+            ws
+        } else {
+            format!("ws://{ws}")
+        };
+        let url = format!("{}/xudanu?format=json&version=2", url.trim_end_matches('/'));
+        let mut client = Client::connect(&url).await?;
+        client.request("session_connect", None).await;
+        client.request("session_login_public", None).await;
+        let admin = client
+            .request(
+                "club_id_by_name",
+                Some(serde_json::json!({"name": "admin"})),
+            )
+            .await;
+        let club_id = admin["value"]["value"]
+            .as_u64()
+            .ok_or("admin club not found")?;
+        client
+            .request(
+                "session_login",
+                Some(serde_json::json!({"club_id": club_id})),
+            )
+            .await;
+        let pw: Vec<u8> = pass.chars().map(|c| c as u8).collect();
+        let auth = client
+            .request(
+                "session_authenticate",
+                Some(serde_json::json!({"credential": {"password": pw}})),
+            )
+            .await;
+        if auth["type"] == "error" {
+            return Err(format!("authentication failed: {}", auth["message"]).into());
+        }
+        let resp = client.request("backup_manifest", None).await;
+        if resp["type"] == "error" {
+            return Err(format!("backup_manifest failed: {}", resp["message"]).into());
+        }
+        let payload = &resp["value"]["value"];
+        let manifest = serde_json::to_string_pretty(payload)?;
+        let sig = payload["signature"].as_str().unwrap_or("").to_string();
+        std::fs::create_dir_all(&out_dir)?;
+        let mpath = out_dir.join("backup-manifest.json");
+        let spath = out_dir.join("backup-manifest.sig");
+        std::fs::write(&mpath, manifest.as_bytes())?;
+        std::fs::write(&spath, sig.as_bytes())?;
+        println!(
+            "manifest: {} files, head {}… → {}",
+            payload["file_count"],
+            payload["head"]
+                .as_str()
+                .unwrap_or("?")
+                .get(..12)
+                .unwrap_or("?"),
+            mpath.display()
+        );
+        return Ok(());
+    }
+
+    if args.len() >= 2 && args[1] == "backup-verify" {
+        // Local-only: verify a backup directory against its signed
+        // manifest. Exit 0 = intact; nonzero + named files otherwise.
+        if args.len() < 3 {
+            eprintln!("Usage: xudanu-cli backup-verify <backup-dir>");
+            std::process::exit(1);
+        }
+        return backup_verify(&args[2]);
+    }
+
     if args.len() >= 2 && args[1] == "verify-report" {
         if args.len() < 3 {
             eprintln!("Usage: xudanu-cli verify-report <report.json>");
@@ -954,6 +1043,152 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+/// Local verification of a backup directory against its signed
+/// manifest (see `backup-manifest`). Three checks, layered:
+///   1. per-file BLAKE3 vs manifest entry — catches any modified,
+///      missing, or extra file (each named)
+///   2. recomputed head vs manifest head — catches manifest edits
+///   3. Ed25519 signature over the head vs the embedded public key —
+///      catches forged manifests (only the key holder can re-sign)
+fn backup_verify(dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let root = std::path::Path::new(dir);
+    let manifest_raw = std::fs::read(root.join("backup-manifest.json"))
+        .map_err(|e| format!("no backup-manifest.json in {}: {e}", root.display()))?;
+    let manifest: serde_json::Value = serde_json::from_slice(&manifest_raw)?;
+    let expected_head = manifest["head"].as_str().unwrap_or("").to_string();
+    let sig_hex = std::fs::read_to_string(root.join("backup-manifest.sig"))
+        .unwrap_or_else(|_| manifest["signature"].as_str().unwrap_or("").to_string());
+    let sig_hex = sig_hex.trim().to_string();
+    let pk_hex = manifest["public_key"].as_str().unwrap_or("");
+
+    // 1. per-file digests
+    let files = manifest["files"].as_array().cloned().unwrap_or_default();
+    let mut mismatches: Vec<String> = Vec::new();
+    let mut entries: Vec<serde_json::Value> = Vec::new();
+    for f in &files {
+        let path = f["path"].as_str().unwrap_or("");
+        let expected = f["digest"].as_str().unwrap_or("");
+        let full = root.join(path);
+        match std::fs::read(&full) {
+            Ok(bytes) => {
+                let digest = blake3::hash(&bytes).to_hex().to_string();
+                if digest != expected {
+                    mismatches.push(format!("MODIFIED  {path}"));
+                }
+                entries.push(serde_json::json!({
+                    "path": path,
+                    "size": bytes.len() as u64,
+                    "digest": digest,
+                }));
+            }
+            Err(_) => mismatches.push(format!("MISSING   {path}")),
+        }
+    }
+    // extra files not in the manifest (ignore the manifest's own
+    // artifacts and status files, same exclusions as generation)
+    let excluded = |n: &str| {
+        n == "backup-status.json"
+            || n == "backup-manifest.json"
+            || n == "backup-manifest.sig"
+            || n.ends_with(".tmp")
+    };
+    let mut disk_paths: Vec<String> = Vec::new();
+    fn walk(
+        dir: &std::path::Path,
+        prefix: &str,
+        excluded: &dyn Fn(&str) -> bool,
+        out: &mut Vec<String>,
+    ) {
+        if let Ok(rd) = std::fs::read_dir(dir) {
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().to_string();
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, &format!("{prefix}{name}/"), excluded, out);
+                } else if !excluded(&name) {
+                    out.push(format!("{prefix}{name}"));
+                }
+            }
+        }
+    }
+    walk(root, "", &excluded, &mut disk_paths);
+    let listed: std::collections::HashSet<&str> =
+        files.iter().filter_map(|f| f["path"].as_str()).collect();
+    for p in disk_paths {
+        if !listed.contains(p.as_str()) {
+            mismatches.push(format!("EXTRA     {p}"));
+        }
+    }
+
+    // 2. head over the canonical sorted entries
+    entries.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
+    let body = serde_json::to_vec(&entries)?;
+    let head = blake3::hash(&body).to_hex().to_string();
+    let head_ok = head == expected_head;
+
+    // 3. signature over the head (signed as the head hex string bytes)
+    let mut sig_ok = false;
+    let mut sig_err = String::new();
+    if !sig_hex.is_empty() && !pk_hex.is_empty() {
+        let sig_bytes = hex_decode(&sig_hex)?;
+        let pk_bytes = hex_decode(pk_hex)?;
+        let mut pk = [0u8; 32];
+        let mut sb = [0u8; 64];
+        if pk_bytes.len() == 32 && sig_bytes.len() == 64 {
+            pk.copy_from_slice(&pk_bytes);
+            sb.copy_from_slice(&sig_bytes);
+            use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+            let sig_result = Signature::from_bytes(&sb);
+            match (VerifyingKey::from_bytes(&pk), sig_result) {
+                (Ok(vk), sig) => {
+                    sig_ok = vk.verify(expected_head.as_bytes(), &sig).is_ok();
+                    if !sig_ok {
+                        sig_err = "signature does not verify".into();
+                    }
+                }
+                _ => sig_err = "malformed key/signature".into(),
+            }
+        } else {
+            sig_err = "wrong key/signature length".into();
+        }
+    } else {
+        sig_err = "signature or public key absent".into();
+    }
+
+    // verdict
+    println!("backup-verify {}", root.display());
+    println!(
+        "  files: {} listed, {} mismatches",
+        files.len(),
+        mismatches.len()
+    );
+    println!(
+        "  head:   {}",
+        if head_ok {
+            "OK"
+        } else {
+            "MISMATCH (manifest edited)"
+        }
+    );
+    println!(
+        "  sig:    {}",
+        if sig_ok {
+            "OK".to_string()
+        } else {
+            format!("FAIL ({sig_err})")
+        }
+    );
+    for m in &mismatches {
+        println!("  {m}");
+    }
+    if mismatches.is_empty() && head_ok && sig_ok {
+        println!("INTACT — this directory matches its signed manifest exactly.");
+        Ok(())
+    } else {
+        std::process::exit(1);
+    }
 }
 
 fn hex_decode(s: &str) -> Result<Vec<u8>, String> {

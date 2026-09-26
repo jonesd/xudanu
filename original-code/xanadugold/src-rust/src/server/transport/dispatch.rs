@@ -31,6 +31,20 @@ fn build_link_payload(
 ) -> LinkPayload {
     let o_ref = link.end_at("LeftEnd").map(HyperRefPayload::from_hyper_ref);
     let d_ref = link.end_at("RightEnd").map(HyperRefPayload::from_hyper_ref);
+    // Reputation surfacing: named endorsers ride on the link row.
+    let endorsements: Vec<super::protocol::LinkEndorserPayload> = srv
+        .link_endorsements(link_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(
+            |(club_id, kind, timestamp)| super::protocol::LinkEndorserPayload {
+                club_id,
+                name: srv.club_display_name_by_id(club_id),
+                kind,
+                timestamp,
+            },
+        )
+        .collect();
     // Derived jump target: the FAR main end from the requesting
     // work's perspective, with that end's own work + span as one
     // unit. Gathered end-sets share the link's far end, so every
@@ -94,7 +108,6 @@ fn build_link_payload(
     let notify = srv.link_cross_server_notify(link_id);
     let author_club = srv.link_author_club(link_id);
     let author_name = author_club.and_then(|cid| srv.club_display_name_by_id(cid));
-    let endorsements = srv.link_endorsements(link_id).unwrap_or_default();
     let endorsement_count = endorsements.len() as u32;
     // Contested = had endorsements and lost them. Legacy links (created
     // before the endorsement system) have always had zero — not contested.
@@ -104,6 +117,7 @@ fn build_link_payload(
         origin,
         destination,
         is_open,
+        endorsements,
         origin_ref: o_ref,
         destination_ref: d_ref,
         origin_archived,
@@ -1070,6 +1084,10 @@ fn dispatch_inner(
         WireRequest::DetectorDelete { detector_id } => {
             let deleted = srv.detector_delete(session_id, detector_id)?;
             Ok(ResponseValue::DetectorDeleteResult { deleted })
+        }
+        WireRequest::BackupManifest {} => {
+            let manifest = srv.backup_manifest(session_id, None)?;
+            Ok(ResponseValue::BackupManifestResult(manifest))
         }
         WireRequest::LatticeShadowEnroll { work_id } => {
             srv.ensure_admin(session_id)?;

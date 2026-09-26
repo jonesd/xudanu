@@ -10214,6 +10214,125 @@ impl Server {
         );
     }
 
+    /// Signed backup manifest (FR-followup to the provenance review):
+    /// BLAKE3-digest every file in the data dir, sign the manifest
+    /// head with the server key. Ships with offsite copies so any
+    /// downstream modification is detectable, and each generation is
+    /// individually identifiable. Detects third-party/accidental
+    /// tampering; the operator can re-sign (only OTS anchoring of the
+    /// head or an external witness constrains that — see the
+    /// provenance review, CRITICAL-1).
+    ///
+    /// `provided`: when Some, the caller (admin) has already walked a
+    /// FROZEN COPY of the data dir and supplies the digest entries —
+    /// the server canonicalizes and signs that list. This is the
+    /// race-free path: manifesting the live data dir is inherently
+    /// racy (the admin login itself appends to the security log).
+    pub fn backup_manifest(
+        &mut self,
+        session_id: SessionId,
+        provided: Option<Vec<super::transport::protocol::BackupManifestEntry>>,
+    ) -> Result<super::transport::protocol::BackupManifestPayload, ServerError> {
+        use super::transport::protocol::BackupManifestEntry;
+        use super::transport::protocol::BackupManifestPayload;
+        self.ensure_admin(session_id)?;
+        let files: Vec<BackupManifestEntry> = match provided {
+            Some(entries) => entries,
+            None => self.backup_manifest_walk()?,
+        };
+        self.backup_manifest_sign(files)
+    }
+
+    fn backup_manifest_walk(
+        &self,
+    ) -> Result<Vec<super::transport::protocol::BackupManifestEntry>, ServerError> {
+        use super::transport::protocol::BackupManifestEntry;
+        let dir = self
+            .data_dir
+            .clone()
+            .ok_or_else(|| ServerError::InvalidArgument("no data dir (in-memory server)".into()))?;
+
+        // Exclusions: files the backup run itself writes after the
+        // manifest (they'd change between sign and verify), in-flight
+        // temporaries, and the manifest's own outputs from prior runs.
+        let excluded = |name: &str| {
+            name == "backup-status.json"
+                || name == "backup-manifest.json"
+                || name == "backup-manifest.sig"
+                || name.ends_with(".tmp")
+        };
+
+        let mut files: Vec<BackupManifestEntry> = Vec::new();
+        fn walker(
+            files: &mut Vec<BackupManifestEntry>,
+            d: &std::path::Path,
+            prefix: String,
+            excluded: &dyn Fn(&str) -> bool,
+        ) -> std::io::Result<()> {
+            for entry in std::fs::read_dir(d)? {
+                let entry = entry?;
+                let name = entry.file_name().to_string_lossy().to_string();
+                let path = entry.path();
+                if path.is_dir() {
+                    walker(files, &path, format!("{prefix}{name}/"), excluded)?;
+                    continue;
+                }
+                if excluded(&name) {
+                    continue;
+                }
+                let bytes = std::fs::read(&path)?;
+                let digest = blake3::hash(&bytes).to_hex().to_string();
+                files.push(BackupManifestEntry {
+                    path: format!("{prefix}{name}"),
+                    size: bytes.len() as u64,
+                    digest,
+                });
+            }
+            Ok(())
+        }
+        walker(&mut files, &dir, String::new(), &excluded)
+            .map_err(|e| ServerError::Internal(format!("manifest walk: {e}")))?;
+        Ok(files)
+    }
+
+    fn backup_manifest_sign(
+        &self,
+        mut files: Vec<super::transport::protocol::BackupManifestEntry>,
+    ) -> Result<super::transport::protocol::BackupManifestPayload, ServerError> {
+        use super::transport::protocol::BackupManifestPayload;
+        files.sort_by(|a, b| a.path.cmp(&b.path));
+
+        // Canonical body = sorted entries; head = BLAKE3 of that JSON.
+        // The head (not the whole file) is signed — verification
+        // recomputes both.
+        let body = serde_json::to_vec(&files)
+            .map_err(|e| ServerError::Internal(format!("manifest encode: {e}")))?;
+        let head = blake3::hash(&body).to_hex().to_string();
+        let signature =
+            crate::crypto::sign::sign_bytes(&self.server_keypair.signing_key, head.as_bytes())
+                .to_bytes()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>();
+        let public_key = self
+            .server_keypair
+            .signing_key
+            .verifying_key()
+            .to_bytes()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
+
+        Ok(BackupManifestPayload {
+            created_at: Self::current_timestamp_secs(),
+            file_count: files.len() as u64,
+            head,
+            signature,
+            public_key,
+            files,
+        })
+    }
+
     /// Off-machine backup status from data_dir/backup-status.json
     /// (written by scripts/backup-offsite.sh every run). Staleness
     /// is the monitoring signal; missing file = never backed up.

@@ -186,6 +186,10 @@ pub enum OperationCode {
     DetectorList,
     DetectorAck,
     DetectorDelete,
+    /// Signed backup manifest: digest every file in the data dir,
+    /// sign the manifest head with the server key. Detects any
+    /// downstream modification of offsite copies.
+    BackupManifest,
     LatticeShadowEnroll,
     LatticeShadowStatus,
     LatticeShadowClear,
@@ -853,6 +857,7 @@ impl OperationCode {
         (0x0f23, OperationCode::DetectorList),
         (0x0f24, OperationCode::DetectorAck),
         (0x0f25, OperationCode::DetectorDelete),
+        (0x0f26, OperationCode::BackupManifest),
         (0x0f17, OperationCode::AdminClubsList),
         (0x0f18, OperationCode::AdminGrantAdmin),
         (0x0f19, OperationCode::AdminRevokeAdmin),
@@ -1107,6 +1112,7 @@ pub enum WireRequest {
         r#match: Option<DetectorMatchWire>,
     },
     DetectorList {},
+    BackupManifest {},
     DetectorAck {
         detector_id: u64,
     },
@@ -2919,6 +2925,7 @@ pub enum ResponseValue {
     DetectorDeleteResult {
         deleted: bool,
     },
+    BackupManifestResult(BackupManifestPayload),
 
     SourceDetectResult {
         source_type: String,
@@ -3337,6 +3344,23 @@ pub struct CrossServerTransclusionPayload {
     pub text_len: u64,
 }
 
+/// One endorser on a link: the club, its display name (resolved
+/// server-side so clients avoid N+1 lookups), the endorsement kind,
+/// and when. Names are presentation-only; the trust claim is the
+/// club id — the viewer decides whose vouches they weigh.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkEndorserPayload {
+    pub club_id: BeId,
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub name: Option<String>,
+    /// "vouch" | "author" | "type"
+    pub kind: String,
+    pub timestamp: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinkPayload {
     pub link_id: BeId,
@@ -3349,6 +3373,14 @@ pub struct LinkPayload {
     /// never as a broken link.
     #[cfg_attr(feature = "serde", serde(default))]
     pub is_open: bool,
+    /// Reputation surfacing (Miller 1994): who vouched for this link.
+    /// Named endorsers first, counts secondary — sybils can mint
+    /// identities but can't become someone the viewer already trusts.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub endorsements: Vec<LinkEndorserPayload>,
     pub origin_ref: Option<HyperRefPayload>,
     pub destination_ref: Option<HyperRefPayload>,
     /// Ghost metadata for the origin endpoint (archived state + title + owner),
@@ -4731,6 +4763,36 @@ pub struct DetectorInfoPayload {
     /// Hits since the last ack (the unread collection).
     pub hits: Vec<DetectorHitPayload>,
     pub unread: u64,
+}
+
+/// Signed backup manifest: every file in the data dir at a point in
+/// time, BLAKE3-digested, with the manifest's own head hash signed
+/// by the server's Ed25519 key. Ships with offsite copies so ANY
+/// downstream modification (bitrot, bad transfer, ransomware on the
+/// backup box, third-party edits) is detectable — and each backup
+/// generation is individually identifiable.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupManifestEntry {
+    /// Path relative to the data dir, forward slashes.
+    pub path: String,
+    pub size: u64,
+    /// BLAKE3 of file contents, hex.
+    pub digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupManifestPayload {
+    pub created_at: u64,
+    pub file_count: u64,
+    /// BLAKE3 of the canonical manifest body (everything except this
+    /// head/signature/public-key block), hex — the signed value.
+    pub head: String,
+    /// Ed25519 signature over the head, hex.
+    pub signature: String,
+    /// Server verifying key at signing time, hex (also verifiable
+    /// against key_history epochs).
+    pub public_key: String,
+    pub files: Vec<BackupManifestEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
