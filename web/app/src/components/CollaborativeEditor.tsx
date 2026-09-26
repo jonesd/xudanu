@@ -772,7 +772,12 @@ function drawOverlay(
     }
     ctx.globalAlpha = 1;
 
-    if (showLinkDescriptions && typeStyle) {
+    // Progressive disclosure: type chips render persistently when
+    // showLinkDescriptions is on (expert preference), OR temporarily
+    // for the single hovered/focused link — new users hover the margin
+    // bar to learn what the color means, experts see clean bars.
+    const chipEligible = (showLinkDescriptions || focusLinkId === marker.linkId) && typeStyle;
+    if (chipEligible) {
       const textRightX = lastRect.right - rect.left;
       pendingDescs.push({
         firstTop,

@@ -326,7 +326,7 @@ export function WorkspaceShell() {
     try { return storageGet("xudanu_showProv") !== "false"; } catch { return true; }
   });
   const [showLinkDesc, setShowLinkDesc] = useState(() => {
-    try { return storageGet("xudanu_showLinkDesc") !== "false"; }
+    try { return storageGet("xudanu_showLinkDesc") === "true"; }
     catch { return true; }
   });
   const [showPerspective, setShowPerspective] = useState(false);
