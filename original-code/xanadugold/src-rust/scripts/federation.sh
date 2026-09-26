@@ -300,7 +300,24 @@ PYGEN
       [ "$j" -ne "$i" ] && peer_flags="$peer_flags --peer 127.0.0.1:$((BASE_PORT + j - 1))"
     done
 
+    # Serve the built frontend so each node has a UI.
+    # After `cd "$SCRIPT_DIR/.."` we're in src-rust/; the repo root
+    # is three levels up from there.
+    local repo_root
+    repo_root="$(cd "$SCRIPT_DIR/../../../../" && pwd)"
+    local static_dir="$repo_root/web/app/dist"
+
+    if [ ! -d "$static_dir" ] || [ ! -f "$static_dir/index.html" ]; then
+      echo "  WARNING: frontend not found at $static_dir — nodes will serve API only"
+      echo "  Build it: cd $repo_root/web/app && npm run build"
+      static_dir=""
+    fi
+
+    local static_flag=""
+    [ -n "$static_dir" ] && static_flag="--static-dir $static_dir"
+
     nohup "$BIN" run "127.0.0.1:$port" "$dir" \
+      $static_flag \
       $peer_flags --pin-members "$pin_file" \
       > "$LOG_DIR/node-$i.log" 2>&1 &
     local pid=$!
