@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { storageGet, storageSet, storageRemove, storageClear } from "../../safe-storage";
 
 // Trim a long reference for display (head…tail); the full value is
@@ -2977,20 +2977,27 @@ export function WorkspaceShell() {
                         )}
                         </div>
                       </div>
-                    ) : (
-                      <div>
-                        {openEndsBlock}
-                        {filteredLinks.map((link) => {
+                     ) : (
+                       <div>
+                         {openEndsBlock}
+                         {/* Grouped by far-end work: sort links by the
+                             work on the other end, render a group header
+                             when it changes, then show each connection
+                             with its type badge and excerpt underneath.
+                             Replaces the old flat list that repeated the
+                             work title for every link. */}
+                         {[...filteredLinks]
+                           .sort((a, b) => {
+                             const aEnd = (a.link_types || []).includes(6) ? -1 : (a.destination ?? a.origin);
+                             const bEnd = (b.link_types || []).includes(6) ? -1 : (b.destination ?? b.origin);
+                             return aEnd - bEnd;
+                           })
+                           .map((link, sortedIndex, sortedArr) => {
                       const isWebLink = (link.link_types || []).includes(6);
                       const destUrl = link.destination_ref?.excerpt;
                       const ends = linkEnds(link);
                       const extraEnds = ends.filter((e) => e.name !== "origin" && e.name !== "destination" && e.workId !== null && e.workId !== workBeId);
                       const multi = isMultiEnded(link);
-                      // ⇄ compare is offered on ANY closed link with two
-                      // distinct work ends — two-ended links (the most
-                      // common kind) were stranded without it, while the
-                      // Compare tab's empty state told users to click a
-                      // ⇄ that didn't exist on their rows.
                       const comparable =
                         multi ||
                         (link.destination != null && link.destination !== link.origin);
@@ -3006,21 +3013,89 @@ export function WorkspaceShell() {
                           void loadLinks(clientRef.current, workBeId, works);
                         }
                       };
+                      // Grouping: detect if this link's far-end differs
+                      // from the previous one → render a group header
+                      const farEnd = isWebLink ? -1 : (link.destination ?? link.origin);
+                      const prevLink = sortedIndex > 0 ? sortedArr[sortedIndex - 1] : null;
+                      const prevFarEnd = prevLink
+                        ? ((prevLink.link_types || []).includes(6) ? -1 : (prevLink.destination ?? prevLink.origin))
+                        : null;
+                      const isNewGroup = sortedIndex === 0 || farEnd !== prevFarEnd;
+                      // Count links in this group (for the header)
+                      const groupCount = isNewGroup
+                        ? sortedArr.filter(l => {
+                            const lEnd = (l.link_types || []).includes(6) ? -1 : (l.destination ?? l.origin);
+                            return lEnd === farEnd;
+                          }).length
+                        : 0;
+                      // The excerpt for this connection
+                      const connExcerpt = link.origin === workBeId
+                        ? (link.origin_ref?.excerpt || link.destination_ref?.excerpt || "")
+                        : (link.destination_ref?.excerpt || link.origin_ref?.excerpt || "");
+                      const direction = link.origin === workBeId ? "→" : "←";
+                      const typeColor = (link.link_types ?? []).length > 0
+                        ? DEFAULT_LINK_TYPES.find((t) => t.type_id === link.link_types![0])?.color ?? "#8b949e"
+                        : "#8b949e";
                       return (
-                        <div
-                          key={link.link_id}
-                          className="ws-conn-item"
-                          onClick={() => !isWebLink && !multi && selectWork(link.destination)}
-                          title={isWebLink && destUrl ? destUrl : undefined}
-                        >
-                          <div className="ws-conn-title-row">
-                            <div className="ws-conn-title">
+                        <React.Fragment key={link.link_id}>
+                          {isNewGroup && (
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                                padding: "5px 10px",
+                                marginTop: 6,
+                                background: "rgba(88,166,255,0.06)",
+                                borderBottom: "1px solid var(--border, #30363d)",
+                                borderRadius: "4px 4px 0 0",
+                                cursor: isWebLink ? "default" : "pointer",
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: "var(--text, #e6edf3)",
+                              }}
+                              onClick={() => !isWebLink && farEnd > 0 && selectWork(farEnd)}
+                              title={isWebLink ? destTitle : `Open "${destTitle}"`}
+                            >
                               {isWebLink ? "🔗 " : ""}{destTitle}
                               {!isWebLink && (() => {
-                                const dl = licenseCache.get(link.destination);
+                                const dl = licenseCache.get(farEnd);
                                 const di = dl ? LICENSES.find((l) => l.value === dl) : null;
                                 return di && dl !== "all-rights-reserved" ? <span className="ws-work-license-badge" title={di.label}>{di.short}</span> : null;
                               })()}
+                              <span style={{ fontSize: 10, fontWeight: 400, color: "var(--text-dim, #8b949e)" }}>
+                                {groupCount} {groupCount === 1 ? "connection" : "connections"}
+                              </span>
+                            </div>
+                          )}
+                        <div
+                          className="ws-conn-item"
+                          onClick={() => !isWebLink && !multi && selectWork(link.destination)}
+                          title={isWebLink && destUrl ? destUrl : undefined}
+                          style={{ paddingLeft: 14, borderLeft: `2px solid ${typeColor}60` }}
+                        >
+                          <div className="ws-conn-title-row">
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
+                              <span style={{ fontSize: 10, color: "#8b949e" }} title={direction === "→" ? "outgoing" : "incoming (backlink)"}>
+                                {direction}
+                              </span>
+                              {typeNames.map((tn, i) => {
+                                const lt = DEFAULT_LINK_TYPES.find((t) => t.name === tn);
+                                return (
+                                  <span
+                                    key={i}
+                                    className="ws-conn-type-badge"
+                                    style={lt ? { background: lt.color + "20", color: lt.color, borderColor: lt.color + "60" } : {}}
+                                  >
+                                    {tn}
+                                  </span>
+                                );
+                              })}
+                              {connExcerpt && (
+                                <span style={{ fontSize: 11, color: "var(--text-dim, #8b949e)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                                  &ldquo;{connExcerpt.slice(0, 50)}{connExcerpt.length > 50 ? "…" : ""}&rdquo;
+                                </span>
+                              )}
                               {link.home_document != null && link.home_document !== workBeId && (
                                 <span
                                   style={{ fontSize: 10, marginLeft: 4, color: "#8b949e", cursor: "pointer" }}
@@ -3030,7 +3105,7 @@ export function WorkspaceShell() {
                                     if (link.home_document != null) selectWork(link.home_document);
                                   }}
                                 >
-                                  ⌂ home
+                                  ⌂
                                 </span>
                               )}
                             </div>
@@ -3242,9 +3317,10 @@ export function WorkspaceShell() {
                             </div>
                           )}
                           </div>
-                        );
+                        </React.Fragment>
+                      );
                       })}
-                      </div>
+                       </div>
                     );
                   })()}
                   </div>
