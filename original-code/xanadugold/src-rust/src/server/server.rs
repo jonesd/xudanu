@@ -778,6 +778,97 @@ pub enum SpanKeyEdit {
     Delete { start: usize, end: usize },
 }
 
+// ── Scale-readiness: search index and work-list cache ────────────────
+
+/// Inverted text index: term → work IDs containing that term.
+/// Built lazily; dirty works re-indexed incrementally.
+#[derive(Default)]
+pub struct SearchIndexState {
+    /// term (lowercase) → works containing it
+    index: HashMap<String, HashSet<BeId>>,
+    /// Works already indexed (skip re-index unless dirty)
+    indexed_works: HashSet<BeId>,
+    /// Works that changed since last index build (re-index on next search)
+    dirty: HashSet<BeId>,
+    /// True once the initial full build has happened
+    built: bool,
+}
+
+impl SearchIndexState {
+    /// Extract search terms from text: lowercase words, split on
+    /// whitespace and punctuation boundaries.
+    fn extract_terms(text: &str) -> impl Iterator<Item = String> + '_ {
+        text.split(|c: char| c.is_whitespace() || c.is_ascii_punctuation())
+            .filter(|w| w.len() >= 2) // skip single chars and empty
+            .map(|w| w.to_lowercase())
+    }
+
+    fn index_work(&mut self, work_id: BeId, text: &str) {
+        // Remove old terms for this work
+        self.remove_work(work_id);
+        // Add new terms
+        for term in Self::extract_terms(text) {
+            self.index.entry(term).or_default().insert(work_id);
+        }
+        self.indexed_works.insert(work_id);
+        self.dirty.remove(&work_id);
+    }
+
+    fn remove_work(&mut self, work_id: BeId) {
+        if !self.indexed_works.contains(&work_id) {
+            return;
+        }
+        self.index.retain(|_, works| {
+            works.remove(&work_id);
+            !works.is_empty()
+        });
+        self.indexed_works.remove(&work_id);
+        self.dirty.remove(&work_id);
+    }
+
+    /// Find works containing ALL query terms (intersection).
+    /// Returns candidate work IDs for verification scanning.
+    fn candidates(&self, query: &str) -> Vec<BeId> {
+        let terms: Vec<String> = Self::extract_terms(query).collect();
+        if terms.is_empty() {
+            return Vec::new();
+        }
+        // Start with the rarest term's set (smallest intersection first)
+        let mut sets: Vec<&HashSet<BeId>> = terms
+            .iter()
+            .filter_map(|t| self.index.get(t.as_str()))
+            .collect();
+        if sets.is_empty() {
+            return Vec::new();
+        }
+        sets.sort_by_key(|s| s.len());
+        let first = sets[0];
+        if sets.len() == 1 {
+            return first.iter().copied().collect();
+        }
+        first
+            .iter()
+            .filter(|id| sets[1..].iter().all(|s| s.contains(id)))
+            .copied()
+            .collect()
+    }
+}
+
+/// Cached sorted work listing for O(limit) pagination.
+#[derive(Default)]
+pub struct WorkListCache {
+    /// Sorted by title for alphabetical listing; (title, work_id, readable_club)
+    entries: Vec<(String, BeId, Option<BeId>)>,
+    /// True when the cache needs rebuilding
+    dirty: bool,
+}
+
+impl WorkListCache {
+    fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+}
+
 pub struct Server {
     /// FR-76 Phase 2: transparent eviction manager — routes reads
     /// through active → cache → chunks for evicted works.
@@ -787,6 +878,18 @@ pub struct Server {
     /// maintenance via maintain_span_keys — wiring pending).
     pub(crate) span_key_maps:
         std::sync::Mutex<std::collections::HashMap<BeId, crate::edition::span_key::SpanKeyMap>>,
+
+    /// Scale-readiness: inverted text index for corpus-wide search.
+    /// Maps lowercase term → set of work IDs containing that term.
+    /// Built lazily on first search; incrementally maintained (dirty
+    /// works re-indexed on next search). Turns O(corpus) full-text
+    /// scan into O(candidates) verification scan.
+    pub(crate) search_index: std::sync::Mutex<SearchIndexState>,
+
+    /// Scale-readiness: cached work listing for fast pagination.
+    /// Rebuilt lazily when works change (creation, deletion, title
+    /// edit, archive). Turns O(n) iteration into O(limit) slice.
+    pub(crate) work_list_cache: std::sync::Mutex<WorkListCache>,
 
     pub(crate) grand_map: GrandMap,
     /// FR-80: persistent detectors (link/revision watches).
@@ -1577,6 +1680,8 @@ impl Server {
             eviction: None,
             span_key_maps,
             detectors: super::detectors::DetectorRegistry::default(),
+            search_index: std::sync::Mutex::new(SearchIndexState::default()),
+            work_list_cache: std::sync::Mutex::new(WorkListCache::default()),
             sessions: HashMap::new(),
             session_counter: 0,
             clubs: HashMap::new(),
@@ -4580,6 +4685,8 @@ impl Server {
             source_fingerprint: None,
         };
         self.works.insert(be_id, ws);
+        self.search_index_mark_dirty(be_id);
+        self.work_list_cache_mark_dirty();
         self.span_key_map_init(be_id);
 
         // Clone the links. Two passes: first map old link ids to new
@@ -4724,6 +4831,8 @@ impl Server {
             source_fingerprint: None,
         };
         self.works.insert(be_id, ws);
+        self.search_index_mark_dirty(be_id);
+        self.work_list_cache_mark_dirty();
         Ok(be_id)
     }
 
@@ -4868,6 +4977,8 @@ impl Server {
             source_fingerprint: None,
         };
         self.works.insert(be_id, ws);
+        self.search_index_mark_dirty(be_id);
+        self.work_list_cache_mark_dirty();
         self.span_key_map_init(be_id); // FR-38 S3: key map from birth
 
         let edition = self.works[&be_id].work.edition().clone();
@@ -5154,6 +5265,10 @@ impl Server {
         // point — every path (work_revise, work_save_and_release,
         // work_set_text, seeding) funnels through revise_work.
         self.detectors_fire_revision(work_be_id, revision, author_club);
+        // Scale-readiness: content changed — re-index on next search,
+        // rebuild the work-list cache on next listing.
+        self.search_index_mark_dirty(work_be_id);
+        self.work_list_cache_mark_dirty();
 
         Ok(revision)
     }
@@ -7642,6 +7757,8 @@ impl Server {
         }
         self.work_to_links.remove(&work_be_id);
         self.works.remove(&work_be_id);
+        self.search_index_remove(work_be_id);
+        self.work_list_cache_mark_dirty();
         tracing::info!(
             target: "xudanu::security",
             event = "SECURITY:work_admin_deleted",
@@ -19042,10 +19159,57 @@ impl Server {
         if query.is_empty() {
             return Vec::new();
         }
+
+        // ── Scale-readiness: use the inverted index to pre-filter ──
+        // Re-index dirty works, then use the index to find candidate
+        // work IDs. Verification scan (the original text search) runs
+        // only on candidates, not the whole corpus.
+        {
+            let mut idx = self.search_index.lock().unwrap_or_else(|e| e.into_inner());
+
+            // Build or refresh: index any dirty or new works
+            if !idx.built || !idx.dirty.is_empty() {
+                for (&work_id, ws) in &self.works {
+                    if !idx.built || idx.dirty.contains(&work_id) {
+                        let text = if self.otree_crdt.is_active(work_id) {
+                            self.otree_crdt.current_text(work_id).unwrap_or_default()
+                        } else {
+                            ws.work
+                                .current_edition()
+                                .all_entries()
+                                .iter()
+                                .filter_map(|(_, c)| c.element.as_text())
+                                .collect::<String>()
+                        };
+                        idx.index_work(work_id, &text);
+                    }
+                }
+                idx.built = true;
+            }
+        }
+
+        // Get candidates from the index (works containing ALL query terms)
+        let candidates: HashSet<BeId> = {
+            let idx = self.search_index.lock().unwrap_or_else(|e| e.into_inner());
+            idx.candidates(query).into_iter().collect()
+        };
+
+        // If the index produced no candidates, the corpus genuinely has
+        // no works containing all the query terms — return early.
+        // (This is the big win: skip scanning the entire corpus.)
+        if candidates.is_empty() {
+            return Vec::new();
+        }
+
+        // ── Verification scan on candidates only ──
         let query_lower = query.to_ascii_lowercase();
         let mut results = Vec::new();
 
-        for (&work_id, ws) in &self.works {
+        for &work_id in &candidates {
+            let ws = match self.works.get(&work_id) {
+                Some(ws) => ws,
+                None => continue,
+            };
             if !self.work_is_readable(session_id, &ws.work) {
                 continue;
             }
@@ -19102,6 +19266,28 @@ impl Server {
 
         results.sort_by(|a, b| b.matches.len().cmp(&a.matches.len()));
         results
+    }
+
+    /// Mark a work as needing re-indexing (called from revise_work,
+    /// create_work, work_set_text — anywhere content changes).
+    fn search_index_mark_dirty(&self, work_id: BeId) {
+        let mut idx = self.search_index.lock().unwrap_or_else(|e| e.into_inner());
+        idx.dirty.insert(work_id);
+    }
+
+    /// Mark a work as removed from the search index (work_admin_delete).
+    fn search_index_remove(&self, work_id: BeId) {
+        let mut idx = self.search_index.lock().unwrap_or_else(|e| e.into_inner());
+        idx.remove_work(work_id);
+    }
+
+    /// Mark the work-list cache as stale (any work change).
+    fn work_list_cache_mark_dirty(&self) {
+        let mut cache = self
+            .work_list_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        cache.mark_dirty();
     }
 
     pub fn render_transclusions(&self, work_id: BeId) -> Result<Vec<RenderedElement>, ServerError> {
@@ -26259,6 +26445,8 @@ pub(crate) mod persist_snapshot {
                 eviction: None,
                 span_key_maps: std::sync::Mutex::new(std::collections::HashMap::new()),
                 detectors: crate::server::detectors::DetectorRegistry::default(),
+                search_index: std::sync::Mutex::new(SearchIndexState::default()),
+                work_list_cache: std::sync::Mutex::new(WorkListCache::default()),
                 compound_segments: std::collections::HashMap::new(),
                 sessions: HashMap::new(),
                 session_counter: snapshot.session_counter,
