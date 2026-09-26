@@ -1071,10 +1071,10 @@ li{margin-bottom:4px}
 
 <ol>
   <li><strong class="cx cx-ok">Canopy cache</strong> &mdash; <strong>done</strong>: wired with invalidation, 100&times; speedup measured.</li>
-  <li><strong class="accent-blue">Differential revisions</strong> &mdash; moderate effort, big win for storage efficiency on long-lived documents.</li>
-  <li><strong class="accent-green">Intercomparison UI</strong> &mdash; <s>algorithms exist, just needs frontend work</s> <strong>SHIPPED</strong>: wire ops (<code>find_shared_regions</code>, <code>content_shared_region</code>) now feed <code>MultiEndCompare</code>, <code>ComparePanel</code>, and <code>ThreeWayDiffPanel</code>.</li>
-  <li><strong class="accent-purple">Persistent incremental backfollow</strong> &mdash; high effort, but essential for docuverse-scale transclusion queries. Study Gold's <code>RecorderFossil</code> pattern.</li>
-  <li><strong>Object stubbing</strong> &mdash; low priority until memory pressure becomes an issue.</li>
+  <li><strong class="cx cx-ok">Object stubbing</strong> &mdash; <strong>done</strong> (FR-76): the eviction manager replaces in-memory editions with sentinel stubs, routes reads transparently through active &rarr; cache &rarr; chunks.</li>
+  <li><strong class="cx cx-ok">Intercomparison UI</strong> &mdash; <strong>SHIPPED</strong>: wire ops (<code>find_shared_regions</code>, <code>content_shared_region</code>) feed <code>MultiEndCompare</code>, <code>ComparePanel</code>, and <code>ThreeWayDiffPanel</code> with content-match beams.</li>
+  <li><strong class="cx cx-ok">Differential revisions</strong> &mdash; <strong>already covered by content addressing</strong>: the BLAKE3 chunk store automatically deduplicates unchanged content between revisions (identical chunks = identical hashes = stored once). An explicit delta format would add complexity for marginal benefit. The remaining win would be chunk-size tuning for large works (the 22 chunks over 100KB could be split into finer-grained entry batches).</li>
+  <li><strong class="accent-purple">Persistent incremental backfollow</strong> &mdash; high effort. FR-80 detectors proved the architectural shape (predicate &rarr; collection &rarr; persistence &rarr; ack); the step is persisting the recorder's fossils and adding a content-match detector kind. Study Gold's <code>RecorderFossil</code> pattern; our <code>recorder_plant</code>/<code>recorder_process</code> engine is the in-memory foundation.</li>
 </ol>
 
 <div class="footer">
