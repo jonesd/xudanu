@@ -181,7 +181,7 @@ function linkTypeColor(tid: number | null | undefined): string | null {
 }
 
 const DESC_BOX_WIDTH = 210;
-const DESC_BOX_HEIGHT = 46;
+
 const DESC_BOX_GAP = 10;
 const DESC_BOX_RIGHT_MARGIN = 8;
 // Chip-only rest state: the descriptor renders as a compact type chip
@@ -802,7 +802,10 @@ function drawOverlay(
     ];
     for (const { desc, y: boxY } of drawOrder) {
       ctx.globalAlpha = markerFocusAlpha(desc.marker, focusLinkId);
-      if (desc.firstTop + DESC_BOX_HEIGHT < viewportTop || desc.firstTop > viewportBottom) continue;
+      // No viewport clip: the canvas covers the full document
+      // (contentH from editor.scrollHeight), so every chip renders.
+      // The old viewport check silently dropped chips near the
+      // bottom — "the last few buttons are missing" (user report).
       // Chip-only rest state (user design 2026-09-16): the box shows
       // just the type chip — compact, fixed-height, no content text in
       // canvas. Content (description, excerpt, far work) reads in the
@@ -1851,13 +1854,17 @@ export function CollaborativeEditor({
         ? { ...hit.marker, otherWorkTitle: `${hit.densityCount} links in this region` }
         : hit.marker;
       clearHoverTimer();
+      // Capture the rect BEFORE the timer: e.currentTarget is null
+      // by the time the 300ms callback fires (event cleanup), so
+      // reading it inside caused a silent error — setTooltipPos
+      // never ran, and the tooltip never appeared.
+      const hoverRect = e.currentTarget.getBoundingClientRect();
       scheduleHover(() => {
         setHoveredMarker(m);
         // Anchor to the ZONE, not the cursor: a cursor-following
         // tooltip dances as the pointer moves along the underline —
         // and dances away from the pointer's reach for its buttons.
-        const rect = e.currentTarget.getBoundingClientRect();
-        setTooltipPos({ x: rect.left + hit.x + hit.width / 2, y: rect.top + hit.y });
+        setTooltipPos({ x: hoverRect.left + hit.x + hit.width / 2, y: hoverRect.top + hit.y });
       });
     } else {
       setHoveredStack(null);
