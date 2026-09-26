@@ -49,7 +49,7 @@ Self-hosting is a first-class case, and the admin console is built for it: live 
 
 > **[Try it live](https://xudanu.com)** — a running server with the interactive Links Course: typed and multi-ended links, gathered end-sets, and live transclusions.
 > **[Read the documentation](https://dgjones.info/xudanu/)** — user guides, technical architecture, and visual diagrams.
-> **[Source on GitHub](https://github.com/jonesd/xudanu)** — releases with static binaries for Linux and macOS (Windows build in progress).
+> **[Source on GitHub](https://github.com/jonesd/xudanu)** — releases with static binaries for Linux, macOS, and Windows.
 > **[Docker image](https://github.com/jonesd/xudanu/pkgs/container/xudanu)** — `ghcr.io/jonesd/xudanu`, multi-arch, rebuilt on every release.
 >
 > **Start with [the Gallery of Unusual Connections](#the-gallery-of-unusual-connections)** — nine rooms of live link structures, seeded on your own server in one command. It is the best tour of what the system does.
