@@ -1305,6 +1305,9 @@ export function CollaborativeEditor({
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [showBoilerplate, setShowBoilerplate] = useState(false);
   const [hoveredMarker, setHoveredMarker] = useState<TransclusionMarker | null>(null);
+  /** Pinned (click): the tooltip stays put until outside click/Esc —
+   *  the hover-follow behavior made the OPEN button chaseable. */
+  const [pinnedMarker, setPinnedMarker] = useState(false);
   // Hover suppression during text selection: selecting across a linked
   // passage is the PRIMARY interaction (copy, re-link, quote) — the
   // tooltip must never block it. On mousedown, suppress hover until
@@ -1843,13 +1846,18 @@ export function CollaborativeEditor({
       }
       setHoveredStack(null);
       if (isSelectingRef.current) return;
+      if (pinnedMarker) return; // pinned: no reposition, no hide
       const m = (hit.densityCluster != null && hit.densityCount != null)
         ? { ...hit.marker, otherWorkTitle: `${hit.densityCount} links in this region` }
         : hit.marker;
       clearHoverTimer();
       scheduleHover(() => {
         setHoveredMarker(m);
-        setTooltipPos({ x: e.clientX, y: e.clientY });
+        // Anchor to the ZONE, not the cursor: a cursor-following
+        // tooltip dances as the pointer moves along the underline —
+        // and dances away from the pointer's reach for its buttons.
+        const rect = e.currentTarget.getBoundingClientRect();
+        setTooltipPos({ x: rect.left + hit.x + hit.width / 2, y: rect.top + hit.y });
       });
     } else {
       setHoveredStack(null);
@@ -1867,17 +1875,38 @@ export function CollaborativeEditor({
         setAuthorTooltip(bar);
       } else {
         setAuthorTooltip(null);
-        if (hoveredMarker) {
+        if (hoveredMarker && !pinnedMarker) {
           scheduleHideTooltip();
         }
       }
     }
-  }, [hoveredMarker, hoveredAnnotation, scheduleHideTooltip, pendingTransclusion, authorColorMap]);
+  }, [hoveredMarker, hoveredAnnotation, scheduleHideTooltip, pendingTransclusion, authorColorMap, pinnedMarker]);
 
   const handleOverlayMouseLeave = useCallback(() => {
+    if (pinnedMarker) return; // pinned survives leaving the canvas
     scheduleHideTooltip();
     clearHoverTimer();
-  }, [scheduleHideTooltip, clearHoverTimer]);
+  }, [scheduleHideTooltip, clearHoverTimer, pinnedMarker]);
+
+  // Pinned tooltip dismissal: Esc, or a click outside the tooltip.
+  useEffect(() => {
+    if (!pinnedMarker) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setPinnedMarker(false); setHoveredMarker(null); }
+    };
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && t.closest(".marker-tooltip")) return;
+      setPinnedMarker(false);
+      setHoveredMarker(null);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onClick);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onClick);
+    };
+  }, [pinnedMarker]);
 
   const handleOverlayMouseDown = useCallback(() => {
     isSelectingRef.current = true;
@@ -1917,6 +1946,12 @@ export function CollaborativeEditor({
       toggleClusterExpansion(hit.densityCluster);
       return;
     }
+    // Pin the tooltip at the click: OPEN (and every action in it)
+    // must be reachable without chasing a hover-following box.
+    setPinnedMarker(true);
+    setHoveredMarker(hit.marker);
+    const crect = e.currentTarget.getBoundingClientRect();
+    setTooltipPos({ x: crect.left + hit.x + hit.width / 2, y: crect.top + hit.y });
     if (e.detail === 2 && onEditLinkDescription && linkDescMap.has(hit.marker.linkId)) {
       const entry = linkDescMap.get(hit.marker.linkId);
       setEditingDesc({
@@ -2728,7 +2763,7 @@ export function CollaborativeEditor({
             <div
               className="marker-tooltip"
               onMouseEnter={cancelHideTooltip}
-              onMouseLeave={scheduleHideTooltip}
+              onMouseLeave={pinnedMarker ? undefined : scheduleHideTooltip}
               style={{
                 position: "fixed",
                 ...(tooltipPos.x > window.innerWidth - 320
@@ -2736,8 +2771,22 @@ export function CollaborativeEditor({
                   : { left: tooltipPos.x + 10 }),
                 top: Math.min(tooltipPos.y - 10, window.innerHeight - 280),
                 zIndex: 100,
+                ...(pinnedMarker ? {
+                  borderColor: "var(--accent-blue, #58a6ff)",
+                  boxShadow: "0 4px 20px rgba(88,166,255,0.25)",
+                } : {}),
               }}
             >
+              {pinnedMarker && (
+                <button
+                  type="button"
+                  onClick={() => { setPinnedMarker(false); setHoveredMarker(null); }}
+                  title="Close (or press Esc, or click anywhere outside)"
+                  style={{ position: "absolute", top: 4, right: 6, background: "none", border: "none", color: "#8b949e", cursor: "pointer", fontSize: 13, lineHeight: 1 }}
+                >
+                  ×
+                </button>
+              )}
               <div className="marker-tooltip-title" style={{ color: hoveredMarker.linkTypeId ? (linkTypeColor(hoveredMarker.linkTypeId) ?? hoveredMarker.color) : hoveredMarker.color }}>
                 {hoveredMarker.linkTypeId === 6 ? hoveredMarker.excerpt : hoveredMarker.otherWorkTitle}
               </div>
