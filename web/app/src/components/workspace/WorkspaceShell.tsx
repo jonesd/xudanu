@@ -3007,7 +3007,28 @@ export function WorkspaceShell() {
                               )}
                             </div>
                             <div style={{ display: "flex", gap: 4 }}>
-                              {(link.endorsement_count ?? 0) > 1 && (
+                              {(link.endorsements?.length ?? 0) > 0 ? (
+                                <span
+                                  className="ws-conn-type-badge"
+                                  style={{ background: "#3fb95015", color: "#3fb950", borderColor: "#3fb95040", display: "inline-flex", gap: 4, alignItems: "center" }}
+                                  title={link.endorsements!.map((e) => `${e.kind === "author" ? "author" : "vouch"}: ${e.name ?? "club 0x" + e.club_id.toString(16)}`).join("\n")}
+                                >
+                                  {(() => {
+                                    // Named-first: the trust claim is WHO vouched.
+                                    // Sybils can mint identities; they cannot become
+                                    // someone the viewer already trusts.
+                                    const vouchers = link.endorsements!.filter((e) => e.kind !== "author");
+                                    const shown = vouchers.slice(0, 2).map((e) => e.name ?? "0x" + e.club_id.toString(16));
+                                    const rest = vouchers.length - shown.length;
+                                    return (
+                                      <>
+                                        {shown.length > 0 && <span>✓ {shown.join(", ")}{rest > 0 ? ` +${rest}` : ""}</span>}
+                                        {shown.length === 0 && <span>✓ author</span>}
+                                      </>
+                                    );
+                                  })()}
+                                </span>
+                              ) : (link.endorsement_count ?? 0) > 1 ? (
                                 <span
                                   className="ws-conn-type-badge"
                                   style={{ background: "#3fb95015", color: "#3fb950", borderColor: "#3fb95040" }}
@@ -3015,7 +3036,7 @@ export function WorkspaceShell() {
                                 >
                                   ✓ {(link.endorsement_count ?? 1) - 1}
                                 </span>
-                              )}
+                              ) : null}
                               {link.link_contested && (
                                 <span
                                   className="ws-conn-type-badge"

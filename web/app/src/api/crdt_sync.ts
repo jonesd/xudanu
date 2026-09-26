@@ -149,6 +149,14 @@ export interface LlmUsageSummary {
   by_feature: Record<string, { count: number; prompt_chars: number; response_chars: number }>;
 }
 
+export interface LinkEndorser {
+  club_id: number;
+  name?: string | null;
+  /** "vouch" | "author" | "type" */
+  kind: string;
+  timestamp: number;
+}
+
 export interface LinkEntry {
   link_id: number;
   origin: number;
@@ -170,6 +178,10 @@ export interface LinkEntry {
   // created before authorship stamping.
   author_club?: number | null;
   author_name?: string | null;
+  /** Reputation surfacing (Miller 1994): named endorsers ride on the
+   *  link row — names first, counts secondary (sybils can mint
+   *  identities but can't become someone the viewer already trusts). */
+  endorsements?: LinkEndorser[];
   /** Gold trust chain: 1 = author only; 2+ = third-party vouches. */
   endorsement_count?: number;
   /** True when endorsements have been withdrawn (contested). */
