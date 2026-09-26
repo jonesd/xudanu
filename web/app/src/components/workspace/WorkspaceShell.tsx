@@ -7,6 +7,13 @@ function trimReference(s: string, head = 20, tail = 8): string {
   return s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
 }
 
+// Custom link type colors: mirrors CollaborativeEditor's palette so
+// custom types (Gathers, Requirement, etc.) get consistent coloring.
+const WS_LINK_TYPE_STYLES: Record<number, string> = {
+  1: "#58a6ff", 2: "#3fb950", 3: "#f85149", 4: "#a371f7", 5: "#d29922", 6: "#39d2c0", 8: "#f0883e",
+};
+const WS_CUSTOM_PALETTE = ["#f0883e", "#ff7b72", "#79c0ff", "#d2a8ff", "#7ee787", "#56d4dd", "#ffa657", "#ff9bce"];
+
 import type { ReactNode } from "react";
 import { useCrdtSync } from "../../hooks/useCrdtSync";
 import { useWorkStore } from "../../store/work-store";
@@ -3004,9 +3011,12 @@ export function WorkspaceShell() {
                       const destTitle = isWebLink && destUrl
                         ? destUrl
                         : (link.destination_title || `Work 0x${link.destination.toString(16)}`);
-                      const typeNames = (link.link_types || []).map(
-                        (tid) => DEFAULT_LINK_TYPES.find((t) => t.type_id === tid)?.name || `type ${tid}`
-                      );
+                       const typeNames = (link.link_types || []).map(
+                         (tid) =>
+                           transclusion.linkTypes.find((t) => t.type_id === tid)?.name ||
+                           DEFAULT_LINK_TYPES.find((t) => t.type_id === tid)?.name ||
+                           `type ${tid}`
+                       );
                       const notif = notifyStatus(link);
                       const reload = () => {
                         if (clientRef.current && workBeId !== null) {
@@ -3033,9 +3043,11 @@ export function WorkspaceShell() {
                         ? (link.origin_ref?.excerpt || link.destination_ref?.excerpt || "")
                         : (link.destination_ref?.excerpt || link.origin_ref?.excerpt || "");
                       const direction = link.origin === workBeId ? "→" : "←";
-                      const typeColor = (link.link_types ?? []).length > 0
-                        ? DEFAULT_LINK_TYPES.find((t) => t.type_id === link.link_types![0])?.color ?? "#8b949e"
-                        : "#8b949e";
+                       const typeColor = (link.link_types ?? []).length > 0
+                         ? (WS_LINK_TYPE_STYLES[link.link_types![0]] ??
+                            WS_CUSTOM_PALETTE[link.link_types![0] % WS_CUSTOM_PALETTE.length] ??
+                            "#8b949e")
+                         : "#8b949e";
                       return (
                         <React.Fragment key={link.link_id}>
                           {isNewGroup && (
@@ -3080,7 +3092,7 @@ export function WorkspaceShell() {
                                 {direction}
                               </span>
                               {typeNames.map((tn, i) => {
-                                const lt = DEFAULT_LINK_TYPES.find((t) => t.name === tn);
+                                const lt = { color: WS_LINK_TYPE_STYLES[link.link_types?.[i] ?? 0] ?? WS_CUSTOM_PALETTE[(link.link_types?.[i] ?? 0) % WS_CUSTOM_PALETTE.length] };
                                 return (
                                   <span
                                     key={i}
