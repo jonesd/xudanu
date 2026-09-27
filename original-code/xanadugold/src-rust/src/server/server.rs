@@ -12097,6 +12097,119 @@ impl Server {
         (filtered_nodes, filtered_edges)
     }
 
+    /// Save-on-mutation for trails: write trails.json synchronously on
+    /// every trail change. The async checkpoint is throttled to 15s and
+    /// background-executed — trails created between checkpoints were lost
+    /// on pkill/crash when the social chunk was orphaned or the dual-slot
+    /// restore missed it. This sidecar is belt-and-braces: independent of
+    /// the checkpoint/chunk/WAL machinery.
+    fn persist_trails_sidecar(&self) {
+        let Some(dir) = self.data_dir.as_ref() else {
+            return;
+        };
+        let entries: Vec<crate::persist::manifest::TrailManifestEntry> = self
+            .trails
+            .values()
+            .map(|t| crate::persist::manifest::TrailManifestEntry {
+                trail_id: t.trail_id,
+                owner_club: t.owner_club,
+                name: t.name.clone(),
+                introduction: t.introduction.clone(),
+                categories: t.categories.clone(),
+                published: t.published,
+                stops: t
+                    .stops
+                    .iter()
+                    .map(|s| crate::persist::manifest::TrailStopManifestEntry {
+                        work_id: s.work_id,
+                        char_start: s.char_start,
+                        char_end: s.char_end,
+                        note: s.note.clone(),
+                        server_domain: s.server_domain.clone(),
+                    })
+                    .collect(),
+                created_at: t.created_at,
+                updated_at: t.updated_at,
+                derived_work_id: t.derived_work_id,
+            })
+            .collect();
+        let payload = serde_json::json!({
+            "trail_counter": self.trail_counter,
+            "trails": entries,
+        });
+        let path = dir.join("trails.json");
+        let tmp = dir.join("trails.json.tmp");
+        if let Ok(json) = serde_json::to_string(&payload) {
+            let _ = std::fs::write(&tmp, json)
+                .and_then(|_| std::fs::rename(&tmp, &path))
+                .map_err(|e| tracing::warn!("[trails] sidecar persist failed: {e}"));
+        }
+    }
+
+    /// Restore trails from the sidecar. Called AFTER the manifest restore;
+    /// only overrides if the sidecar has MORE trails (it is always at
+    /// least as recent — written synchronously on the last mutation).
+    fn restore_trails_sidecar(&mut self) {
+        let Some(dir) = self.data_dir.as_ref().map(|d| d.to_path_buf()) else {
+            return;
+        };
+        let Ok(text) = std::fs::read_to_string(dir.join("trails.json")) else {
+            return;
+        };
+        let Ok(payload) = serde_json::from_str::<serde_json::Value>(&text) else {
+            tracing::warn!("[trails] sidecar unreadable");
+            return;
+        };
+        let sidecar_count = payload["trails"].as_array().map(|a| a.len()).unwrap_or(0);
+        if sidecar_count > self.trails.len() {
+            self.trails.clear();
+            if let Some(counter) = payload["trail_counter"].as_u64() {
+                self.trail_counter = counter;
+            }
+            if let Some(entries) = payload["trails"].as_array() {
+                for e in entries {
+                    let Ok(entry) = serde_json::from_value::<
+                        crate::persist::manifest::TrailManifestEntry,
+                    >(e.clone()) else {
+                        continue;
+                    };
+                    let trail_id = entry.trail_id;
+                    let now = Self::current_timestamp_secs();
+                    let stops: Vec<TrailStop> = entry
+                        .stops
+                        .into_iter()
+                        .map(|s| TrailStop {
+                            work_id: s.work_id,
+                            char_start: s.char_start,
+                            char_end: s.char_end,
+                            note: s.note,
+                            server_domain: None,
+                        })
+                        .collect();
+                    self.trails.insert(
+                        trail_id,
+                        TrailState {
+                            trail_id,
+                            owner_club: entry.owner_club,
+                            name: entry.name,
+                            introduction: entry.introduction,
+                            categories: entry.categories,
+                            published: entry.published,
+                            stops,
+                            created_at: entry.created_at,
+                            updated_at: entry.updated_at,
+                            derived_work_id: entry.derived_work_id,
+                        },
+                    );
+                }
+            }
+            tracing::info!(
+                "[trails] sidecar restored {} trail(s) (manifest had fewer)",
+                self.trails.len()
+            );
+        }
+    }
+
     fn trail_owner_club(&self, session_id: SessionId) -> Result<BeId, ServerError> {
         self.resolve_author_club(session_id)
             .ok_or_else(|| ServerError::InvalidArgument("no personal club for session".into()))
@@ -12304,6 +12417,7 @@ impl Server {
             tracing::warn!("WAL write failed for trail_create: {}", e);
         }
         self.auto_checkpoint();
+        self.persist_trails_sidecar();
         Ok(trail_id)
     }
 
@@ -12328,6 +12442,7 @@ impl Server {
             tracing::warn!("WAL write failed for trail_delete: {}", e);
         }
         self.auto_checkpoint();
+        self.persist_trails_sidecar();
         Ok(())
     }
 
@@ -12355,6 +12470,7 @@ impl Server {
             tracing::warn!("WAL write failed for trail_rename: {}", e);
         }
         self.auto_checkpoint();
+        self.persist_trails_sidecar();
         Ok(())
     }
 
@@ -12416,6 +12532,7 @@ impl Server {
             tracing::warn!("WAL write failed for trail_add_stop: {}", e);
         }
         self.auto_checkpoint();
+        self.persist_trails_sidecar();
         Ok(())
     }
 
@@ -12465,6 +12582,7 @@ impl Server {
             tracing::warn!("WAL write failed for trail_remove_stop: {}", e);
         }
         self.auto_checkpoint();
+        self.persist_trails_sidecar();
         Ok(())
     }
 
@@ -12503,6 +12621,7 @@ impl Server {
             .unwrap_or_default()
             .as_secs();
         self.auto_checkpoint();
+        self.persist_trails_sidecar();
         Ok(())
     }
 
@@ -12585,6 +12704,7 @@ impl Server {
             .unwrap_or_default()
             .as_secs();
         self.auto_checkpoint();
+        self.persist_trails_sidecar();
         Ok(())
     }
 
@@ -12610,6 +12730,7 @@ impl Server {
             .unwrap_or_default()
             .as_secs();
         self.auto_checkpoint();
+        self.persist_trails_sidecar();
         Ok(())
     }
 
@@ -14406,6 +14527,11 @@ impl Server {
                 );
             }
             self.compound_editions = manifest.compound_editions.into_iter().collect();
+            // Trail sidecar recovery: if the sidecar has MORE trails than the
+            // manifest/social chunk restored (checkpoint gap, chunk GC, dual-slot
+            // pick), the sidecar wins — it was written synchronously on the last
+            // mutation, so it is always at least as recent.
+            self.restore_trails_sidecar();
             // FR-23: Restore revision metadata
             self.revisions = manifest.revisions.clone();
             let rev_total: usize = self.revisions.values().map(|v| v.len()).sum();
@@ -49240,6 +49366,55 @@ mod tests_revisions {
             .unwrap();
         let ws = server.works.get(&work_id).unwrap();
         assert!(ws.cached_title().contains("New first line"));
+    }
+
+    #[test]
+    fn trail_sidecar_survives_checkpoint_gap() {
+        // The trail data-loss bug: trails exist in memory, the checkpoint
+        // is async/throttled (15s), and the social chunk can be orphaned.
+        // The sidecar must preserve trails independent of the checkpoint.
+        // Found in production: 2 user-created trails lost on restart.
+        let (mut server, sid) = setup();
+        let trail1 = server
+            .trail_create(sid, "Trail One".into(), None, vec![])
+            .unwrap();
+        let trail2 = server
+            .trail_create(sid, "Trail Two".into(), None, vec![])
+            .unwrap();
+        assert_eq!(server.trails.len(), 2);
+
+        // Simulate a checkpoint gap: trails in memory + sidecar, but the
+        // manifest/checkpoint never captured them (what happens on pkill
+        // between the auto_checkpoint flag and the background write).
+        // The sidecar was written synchronously by trail_create.
+        let tmp = std::env::temp_dir().join("xudanu-trail-sidecar-test");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        server.data_dir = Some(tmp.clone());
+        server.persist_trails_sidecar();
+
+        // Verify sidecar exists and has both trails
+        let sidecar = std::fs::read_to_string(tmp.join("trails.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&sidecar).unwrap();
+        assert_eq!(parsed["trails"].as_array().map(|a| a.len()), Some(2));
+        assert!(
+            parsed["trail_counter"].as_u64().unwrap() >= 2,
+            "counter should be >= 2"
+        );
+
+        // Simulate restart: fresh server, restore from sidecar
+        let mut server2 = Server::new();
+        server2.data_dir = Some(tmp);
+        server2.trails.clear();
+        server2.trail_counter = 0;
+        server2.restore_trails_sidecar();
+
+        // Trails must survive
+        assert_eq!(server2.trails.len(), 2, "trails lost on restart — the bug");
+        assert!(server2.trails.contains_key(&trail1));
+        assert!(server2.trails.contains_key(&trail2));
+        assert_eq!(server2.trails[&trail1].name, "Trail One");
+        assert_eq!(server2.trails[&trail2].name, "Trail Two");
     }
 
     #[test]
