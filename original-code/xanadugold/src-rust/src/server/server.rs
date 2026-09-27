@@ -43165,7 +43165,7 @@ mod tests {
     #[cfg(feature = "server")]
     fn pin_unpin_round_trip() {
         let (mut server, sid) = setup_logged_in_server();
-        let club = server.resolve_author_club(sid).unwrap();
+        let _club = server.resolve_author_club(sid).unwrap();
 
         server.set_connection_pin(sid, "link-1").unwrap();
         server.set_connection_pin(sid, "link-2").unwrap();

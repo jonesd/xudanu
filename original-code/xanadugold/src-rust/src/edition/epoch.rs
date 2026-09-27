@@ -451,9 +451,13 @@ mod tests {
         }
 
         let result = freeze_orgl(&orgl, None, &store).unwrap();
+        // 200ms ceiling: 100ms on a fast laptop is the target, but
+        // shared CI runners have 10-50% jitter. 200ms still catches
+        // real performance regressions (a quadratic freeze would be
+        // seconds, not 200ms). Was flaky on CI at 100ms.
         assert!(
-            result.freeze_duration_ms < 100.0,
-            "1000 entries should freeze in <100ms, took {:.1}ms",
+            result.freeze_duration_ms < 200.0,
+            "1000 entries should freeze in <200ms (100ms target, CI jitter), took {:.1}ms",
             result.freeze_duration_ms
         );
         assert_eq!(result.epoch.entry_count, 1000);

@@ -210,7 +210,7 @@ fn recover_unarchive_restores_archived_chunks() {
         let store = ChunkStore::open(&dir).unwrap();
         let hashes = store.all_chunk_hashes().unwrap();
         let victim = hashes.first().unwrap();
-        assert!(store.move_chunk_to_archive(victim).unwrap());
+        assert!(store.move_chunk_to_archive(victim, 1).unwrap());
         assert!(store.archived_chunk_count() >= 1);
     }
 
