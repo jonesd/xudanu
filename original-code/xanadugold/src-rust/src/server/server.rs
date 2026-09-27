@@ -8187,6 +8187,10 @@ impl Server {
         self.works.len()
     }
 
+    pub fn trail_count(&self) -> usize {
+        self.trails.len()
+    }
+
     /// Soft-deleted (archived) works. Deletion is reversible here, so
     /// the count is corpus churn, not data loss — but it belongs in
     /// the admin's field of view.
@@ -15808,6 +15812,11 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        // Migration: stamp the VERSION sidecar on every checkpoint so
+        // the upgrade command always knows which binary wrote this data.
+        if let Some(ref dir) = self.data_dir.clone() {
+            let _ = crate::persist::root_chunk::VersionStamp::current().write(dir);
+        }
         // FR-80: detectors sidecar rides along with every checkpoint
         // (tiny; hits must survive restart — the collection is the
         // record). Best-effort, same as daily history below.

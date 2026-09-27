@@ -27,6 +27,37 @@ impl From<std::io::Error> for MigrationError {
     }
 }
 
+/// Apply all registered migration steps from `from_version` to the
+/// current format. Returns the number of steps applied.
+/// Currently format v1 is the baseline — no steps exist yet.
+/// When adding v1→v2, add a match arm and a transform function.
+pub fn apply_migration_steps(
+    data_dir: &std::path::Path,
+    from_version: u32,
+) -> Result<usize, MigrationError> {
+    let _ = data_dir;
+    match from_version {
+        1 => Ok(0), // v1 is baseline, current is v1
+        _ => Err(MigrationError::NoStep(from_version)),
+    }
+}
+
+/// Recursively copy a directory (for upgrade backups).
+pub fn copy_dir(src: &std::path::Path, dst: &std::path::Path) -> Result<(), MigrationError> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if src_path.is_dir() {
+            copy_dir(&src_path, &dst_path)?;
+        } else {
+            std::fs::copy(&src_path, &dst_path)?;
+        }
+    }
+    Ok(())
+}
+
 pub fn rename_field(raw: &mut Value, old: &str, new: &str) -> Result<(), MigrationError> {
     if let Some(obj) = raw.as_object_mut() {
         if let Some(value) = obj.remove(old) {

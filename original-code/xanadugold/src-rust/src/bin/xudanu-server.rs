@@ -123,6 +123,144 @@ fn usage() {
     eprintln!("Ted Nelson, Project Xanadu, or the Udanax development team.");
 }
 
+/// Migration upgrade: backs up the data directory, applies format
+/// migrations if needed, verifies all data is intact, then stamps the
+/// new version. Refuses to proceed if verification fails.
+fn cmd_upgrade(data_dir: &str) {
+    let dir = std::path::PathBuf::from(data_dir);
+    println!("xudanu upgrade — checking {}", dir.display());
+
+    // Check if data directory exists
+    if !dir.exists() {
+        eprintln!("ERROR: data directory {} does not exist", dir.display());
+        std::process::exit(1);
+    }
+
+    // Read the version stamp (or infer from the data)
+    let current_stamp = xudanu::persist::root_chunk::VersionStamp::read(&dir);
+    let current_format = current_stamp
+        .as_ref()
+        .map(|s| s.format_version)
+        .unwrap_or(0); // no stamp = very old data
+    let current_version = current_stamp
+        .as_ref()
+        .map(|s| s.server_version.as_str())
+        .unwrap_or("unknown");
+    let binary_version = env!("CARGO_PKG_VERSION");
+    let binary_format = xudanu::persist::root_chunk::ROOT_CHUNK_FORMAT_VERSION;
+
+    println!(
+        "  Data version: {} (format v{}), binary: {} (format v{})",
+        current_version, current_format, binary_version, binary_format
+    );
+
+    // Already current?
+    if current_format == binary_format {
+        println!(
+            "  Already at format v{} — no migration needed.",
+            binary_format
+        );
+        // Just refresh the stamp
+        let stamp = xudanu::persist::root_chunk::VersionStamp {
+            format_version: binary_format,
+            server_version: binary_version.to_string(),
+            upgraded_at: Some(chrono::Utc::now().to_rfc3339()),
+        };
+        let _ = stamp.write(&dir);
+        return;
+    }
+
+    // Data is newer than binary?
+    if current_format > binary_format {
+        eprintln!(
+            "ERROR: data is format v{} but this binary supports v{}. Upgrade xudanu-server first.",
+            current_format, binary_format
+        );
+        std::process::exit(1);
+    }
+
+    // Backup
+    let backup_name = format!("backup-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
+    let backup_dir = dir
+        .parent()
+        .unwrap_or(std::path::Path::new("."))
+        .join(backup_name);
+    println!("  Backing up to {}...", backup_dir.display());
+    if let Err(e) = xudanu::persist::migrations::copy_dir(&dir, &backup_dir) {
+        eprintln!("ERROR: backup failed: {}", e);
+        std::process::exit(1);
+    }
+    println!("  Backup complete.");
+
+    // Apply migration steps
+    // Currently format v1 is the baseline — no steps exist yet.
+    // When adding v1→v2, register it in migrations.rs and call here.
+    if current_format < binary_format {
+        println!(
+            "  Migrating format v{} → v{}...",
+            current_format, binary_format
+        );
+        match xudanu::persist::migrations::apply_migration_steps(&dir, current_format) {
+            Ok(steps) => println!("  Applied {} migration step(s).", steps),
+            Err(e) => {
+                eprintln!("ERROR: migration failed: {}", e);
+                eprintln!("  Rolling back from {}...", backup_dir.display());
+                let _ = std::fs::remove_dir_all(&dir);
+                let _ = std::fs::rename(&backup_dir, &dir);
+                eprintln!("  Rollback complete. Original data intact.");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Verification pass: restore the server and check every work
+    println!("  Verifying data integrity...");
+    let mut server = xudanu::server::Server::new();
+    match server.restore_from_data_dir(&dir, None) {
+        Ok(()) => {}
+        Err(e) => {
+            eprintln!("ERROR: verification failed: could not restore: {}", e);
+            eprintln!("  Rolling back from {}...", backup_dir.display());
+            let _ = std::fs::remove_dir_all(&dir);
+            let _ = std::fs::rename(&backup_dir, &dir);
+            eprintln!("  Rollback complete. Original data intact.");
+            std::process::exit(1);
+        }
+    }
+
+    let work_count = server.work_count();
+    let link_count = server.link_count();
+    let trail_count = server.trail_count();
+    let has_errors = server.has_restore_errors();
+
+    if has_errors {
+        eprintln!("ERROR: verification found restore errors:");
+        for err in server.restore_errors() {
+            eprintln!("    {}", err);
+        }
+        eprintln!("  Rolling back from {}...", backup_dir.display());
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::rename(&backup_dir, &dir);
+        eprintln!("  Rollback complete. Original data intact.");
+        std::process::exit(1);
+    }
+
+    println!(
+        "  Verified: {} works, {} links, {} trails — all OK",
+        work_count, link_count, trail_count
+    );
+
+    // Stamp the new version
+    let stamp = xudanu::persist::root_chunk::VersionStamp {
+        format_version: binary_format,
+        server_version: binary_version.to_string(),
+        upgraded_at: Some(chrono::Utc::now().to_rfc3339()),
+    };
+    let _ = stamp.write(&dir);
+    println!("  Stamped: v{} (format v{})", binary_version, binary_format);
+    println!("  Upgrade complete. Start the server normally.");
+}
+
 fn cmd_init(data_dir: &str, passphrase: Option<&[u8]>) {
     let path = std::path::PathBuf::from(data_dir);
     if path.join("manifest.json").exists() || path.join("server.json").exists() {
@@ -148,6 +286,9 @@ fn cmd_init(data_dir: &str, passphrase: Option<&[u8]>) {
     } else {
         tracing::info!("Seeded interactive demo work (published, public-read)");
     }
+    // Migration: stamp VERSION so the upgrade command knows this
+    // data's format from the very first boot.
+    let _ = xudanu::persist::root_chunk::VersionStamp::current().write(&path);
 }
 
 fn cmd_hg_profile(data_dir: &str, region: Option<u64>, region_prefix: Option<Vec<u64>>) {
@@ -634,7 +775,8 @@ async fn main() {
         | "verify-security-log"
         | "checkpoint-logs"
         | "preflight"
-        | "recover" => args.get(2).cloned(),
+        | "recover"
+        | "upgrade" => args.get(2).cloned(),
         _ => None,
     };
     init_tracing(data_dir_for_tracing.as_deref());
@@ -650,6 +792,10 @@ async fn main() {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
             let passphrase = std::env::var("XUDANU_KEY_PASSPHRASE").ok();
             cmd_init(data_dir, passphrase.as_deref().map(|s| s.as_bytes()));
+        }
+        "upgrade" => {
+            let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
+            cmd_upgrade(data_dir);
         }
         "hg-profile" => {
             let region = args

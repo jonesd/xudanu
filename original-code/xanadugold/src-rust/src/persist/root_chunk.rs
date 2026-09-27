@@ -7,6 +7,41 @@ use crate::persist::manifest::RevisionMeta;
 
 pub const ROOT_CHUNK_FORMAT_VERSION: u32 = 1;
 
+/// Migration system: version stamp written to data/VERSION alongside
+/// the root chunk. Records which binary wrote this data and which
+/// format schema the chunks follow. The upgrade command reads this to
+/// determine whether a migration is needed.
+///
+/// This is a sidecar (not embedded in the postcard root chunk) because
+/// postcard is positional — adding a field there breaks every older
+/// binary's ability to read the chunk. A text sidecar is safe.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct VersionStamp {
+    pub format_version: u32,
+    pub server_version: String,
+    pub upgraded_at: Option<String>,
+}
+
+impl VersionStamp {
+    pub fn current() -> Self {
+        VersionStamp {
+            format_version: ROOT_CHUNK_FORMAT_VERSION,
+            server_version: env!("CARGO_PKG_VERSION").to_string(),
+            upgraded_at: None,
+        }
+    }
+
+    pub fn write(&self, data_dir: &std::path::Path) -> std::io::Result<()> {
+        let json = serde_json::to_string_pretty(self).map_err(|e| std::io::Error::other(e))?;
+        std::fs::write(data_dir.join("VERSION"), json)
+    }
+
+    pub fn read(data_dir: &std::path::Path) -> Option<Self> {
+        let text = std::fs::read_to_string(data_dir.join("VERSION")).ok()?;
+        serde_json::from_str(&text).ok()
+    }
+}
+
 pub const CHUNK_FORMAT_ROOT: u8 = 0x52;
 
 fn serialize_to_bytes<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, RootChunkError> {
