@@ -14281,6 +14281,30 @@ impl Server {
         passphrase: Option<&[u8]>,
     ) -> std::io::Result<()> {
         self.data_dir = Some(data_dir.to_path_buf());
+
+        // Migration: refuse to open data from a different format version.
+        // This prevents a newer binary from silently mangling older data.
+        // The user must run 'xudanu-server upgrade' explicitly.
+        if let Some(stamp) = crate::persist::root_chunk::VersionStamp::read(data_dir) {
+            let binary_format = crate::persist::root_chunk::ROOT_CHUNK_FORMAT_VERSION;
+            if stamp.format_version > binary_format {
+                return Err(std::io::Error::other(format!(
+                    "DATA FORMAT MISMATCH: data directory is format v{} (written by xudanu {}), \
+                     but this binary supports format v{}. \
+                     Upgrade xudanu-server to open this data.",
+                    stamp.format_version, stamp.server_version, binary_format
+                )));
+            }
+            if stamp.format_version < binary_format {
+                return Err(std::io::Error::other(format!(
+                    "DATA FORMAT UPGRADE NEEDED: data directory is format v{} (written by xudanu {}), \
+                     current is v{}. \
+                     Run: xudanu-server upgrade {}",
+                    stamp.format_version, stamp.server_version, binary_format, data_dir.display()
+                )));
+            }
+        }
+
         for name in &["manifest.json.tmp", "key_history.json.tmp"] {
             let p = data_dir.join(name);
             if p.exists() {
