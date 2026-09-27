@@ -354,7 +354,11 @@ impl ChunkStore {
     /// #142 archive-first GC: move a chunk to the archive tier
     /// instead of deleting it. Content-preserving; recovery via
     /// `restore_archived_chunk`. Returns false if no live chunk existed.
-    pub fn move_chunk_to_archive(&self, hash: &[u8; 32]) -> Result<bool, ChunkError> {
+    pub fn move_chunk_to_archive(
+        &self,
+        hash: &[u8; 32],
+        generation: u64,
+    ) -> Result<bool, ChunkError> {
         let src = match resolve_chunk_path(&self.base_dir, hash) {
             Some(p) => p,
             None => return Ok(false),
@@ -374,7 +378,15 @@ impl ChunkStore {
             // before the stamp would strand an archive entry with no
             // stamp — reap treats stamp-less entries as never-expiring
             // (safety default), so no premature deletion either way.
-            std::fs::write(&stamp, b"0").map_err(|e| ChunkError::Io(e.to_string()))?;
+            //
+            // C3 FIX: write the ACTUAL generation, not "0". The old
+            // code stamped every archive entry with generation 0, so
+            // reap_expired_archive(current_gen, grace=50) saw every
+            // entry as 50+ generations old and hard-deleted them
+            // within minutes of uptime. The 50-generation undo
+            // horizon didn't exist.
+            let gen_bytes = generation.to_string().into_bytes();
+            std::fs::write(&stamp, &gen_bytes).map_err(|e| ChunkError::Io(e.to_string()))?;
             std::fs::rename(&src, &dst).map_err(|e| ChunkError::Io(e.to_string()))?;
         }
         {

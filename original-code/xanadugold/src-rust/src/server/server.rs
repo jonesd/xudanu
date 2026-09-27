@@ -1224,6 +1224,9 @@ pub(crate) struct CheckpointPayload {
     chunk_store: Arc<crate::persist::chunk_store::ChunkStore>,
     manifest_path: std::path::PathBuf,
     data_dir: std::path::PathBuf,
+    /// H1 FIX: carry the link type registry through the checkpoint
+    /// (was hardcoded to vec![] — custom types lost on every restart).
+    link_type_registry: Vec<crate::persist::manifest::LinkTypeRegistryEntry>,
 
     // Typed snapshots: serialization (tag_json) happens in
     // checkpoint_persist on the blocking thread, NOT under the server
@@ -1502,7 +1505,7 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         links: Vec::new(),
         link_counter: payload.link_counter,
         links_chunk_hash: None,
-        link_type_registry: vec![],
+        link_type_registry: payload.link_type_registry.clone(),
         admin: payload.admin_entry.clone(),
         reconcile_store: payload.reconcile_store,
         reconcile_counter: payload.reconcile_counter,
@@ -11780,6 +11783,25 @@ impl Server {
         let Some(ls) = self.links.get_mut(&link_id) else {
             return;
         };
+        // C4 FIX: idempotent replay — the old code blind-pushed via
+        // with_attachment_added, so a crash-replay after an async
+        // checkpoint (which persists links but doesn't truncate the
+        // WAL) duplicated the attachment. Check if this exact attachment
+        // (same work, same span) already exists at this end.
+        let already_present = ls
+            .link
+            .attachments_at(&end_name)
+            .map(|existing| {
+                existing.iter().any(|a| {
+                    a.work_context() == hr.work_context()
+                        && a.start_position() == hr.start_position()
+                        && a.end_position() == hr.end_position()
+                })
+            })
+            .unwrap_or(false);
+        if already_present {
+            return; // idempotent: already persisted by the checkpoint
+        }
         ls.link = ls.link.with_attachment_added(&end_name, hr);
         if let Some(wid) = attachment_work {
             if !self
@@ -14399,6 +14421,21 @@ impl Server {
         self.operation_counter = manifest.operation_counter;
         self.system_clubs = manifest.system_clubs;
         self.link_counter = manifest.link_counter;
+        // H1 FIX: restore the link type registry — custom types (Gathers,
+        // Requirement, etc.) were silently lost on every restart because
+        // the checkpoint wrote vec![] and the restore never read the field.
+        // Without this, links carrying custom type IDs resolve to "type NNNN".
+        for entry in &manifest.link_type_registry {
+            self.link_type_registry.insert(entry.type_id, entry.clone());
+            self.link_type_names
+                .insert(entry.type_id, entry.name.clone());
+        }
+        if !manifest.link_type_registry.is_empty() {
+            tracing::info!(
+                "[restore] link type registry: {} custom type(s) restored",
+                manifest.link_type_registry.len()
+            );
+        }
         self.starred_works = if let Some(hash) = manifest.social_chunk_hash {
             {
                 let hex_str: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
@@ -14484,16 +14521,31 @@ impl Server {
                                     social.starred_works
                                 }
                                 Err(e) => {
-                                    tracing::warn!("social chunk parse error: {}", e);
+                                    tracing::error!("social chunk parse error: {}", e);
+                                    self.restore_errors.push(format!(
+                                        "social chunk parse error (stars/pins/trails/compound at risk): {}",
+                                        e
+                                    ));
                                     std::collections::HashMap::new()
                                 }
                             }
                         }
-                        Err(_) => std::collections::HashMap::new(),
+                        Err(e2) => {
+                            tracing::error!("social chunk untag error: {}", e2);
+                            self.restore_errors.push(format!(
+                                "social chunk untag error (stars/pins/trails/compound at risk): {}",
+                                e2
+                            ));
+                            std::collections::HashMap::new()
+                        }
                     }
                 }
-                Err(e) => {
-                    tracing::warn!("social chunk read error: {}", e);
+                Err(e3) => {
+                    tracing::error!("social chunk read error: {}", e3);
+                    self.restore_errors.push(format!(
+                        "social chunk read error (stars/pins/trails/compound at risk): {}",
+                        e3
+                    ));
                     std::collections::HashMap::new()
                 }
             }
@@ -14957,16 +15009,28 @@ impl Server {
                             })
                         }
                         Ok((format, _)) => {
-                            tracing::warn!("links chunk has unexpected format: {:#x}", format);
+                            tracing::error!("links chunk has unexpected format: {:#x}", format);
+                            self.restore_errors.push(format!(
+                                "links chunk unexpected format {:#x} — all links at risk",
+                                format
+                            ));
                             manifest.links.clone()
                         }
                         Err(e) => {
-                            tracing::warn!("links chunk untag failed: {}", e);
+                            tracing::error!("links chunk untag failed: {}", e);
+                            self.restore_errors.push(format!(
+                                "links chunk untag failed — all links at risk: {}",
+                                e
+                            ));
                             manifest.links.clone()
                         }
                     },
                     Err(e) => {
-                        tracing::warn!("links chunk read failed: {}", e);
+                        tracing::error!("links chunk read failed: {}", e);
+                        self.restore_errors.push(format!(
+                            "links chunk read failed — all links at risk: {}",
+                            e
+                        ));
                         manifest.links.clone()
                     }
                 }
@@ -15613,6 +15677,15 @@ impl Server {
             if !self.restore_errors.is_empty() {
                 return false;
             }
+            // C2 FIX: do NOT set checkpoint_in_flight here. The old code
+            // set the flag and returned true, but the 52 call sites discard
+            // the return value — no checkpoint was ever spawned. The flag
+            // then permanently wedged check_periodic_maintenance, which
+            // checks checkpoint_in_flight to decide whether to start one.
+            // Result: social-only servers (stars, pins, trails, links) could
+            // run for days without a checkpoint. The flag is now set only
+            // by the code that actually STARTS a checkpoint (checkpoint_async
+            // / checkpoint_commit_impl).
             if self.checkpoint_in_flight {
                 return false;
             }
@@ -15623,7 +15696,6 @@ impl Server {
             let elapsed = now.saturating_sub(self.last_checkpoint_time);
             if elapsed >= 15 {
                 if self.chunk_store.is_some() || self.checkpoint_path.is_some() {
-                    self.checkpoint_in_flight = true;
                     return true;
                 }
             }
@@ -27369,6 +27441,7 @@ pub(crate) mod persist_snapshot {
                 chunk_store,
                 manifest_path,
                 data_dir,
+                link_type_registry: self.link_type_registry.values().cloned().collect(),
                 content_address_data: self.content_address.clone(),
                 historical_authors_data: self.historical_authors.clone(),
                 annotations_data: annotations,
@@ -27849,7 +27922,7 @@ pub(crate) mod persist_snapshot {
                 links: Vec::new(),
                 link_counter: self.link_counter,
                 links_chunk_hash: None,
-                link_type_registry: vec![],
+                link_type_registry: self.link_type_registry.values().cloned().collect(),
                 admin: crate::persist::manifest::AdminEntry {
                     accepting_connections: self.admin.is_accepting_connections(),
                     shutdown_requested: self.admin.is_shutdown_requested(),
@@ -28469,7 +28542,10 @@ pub(crate) mod persist_snapshot {
                     if let Ok(()) = chunk_store.delete_chunk(hash) {
                         removed += 1;
                     }
-                } else if matches!(chunk_store.move_chunk_to_archive(hash), Ok(true)) {
+                } else if matches!(
+                    chunk_store.move_chunk_to_archive(hash, self.manifest_sequence),
+                    Ok(true)
+                ) {
                     archived += 1;
                 }
             }
@@ -38623,7 +38699,7 @@ mod tests {
         let hash = store.write_chunk(&data).unwrap();
         assert!(store.read_chunk(&hash).is_ok());
 
-        let moved = store.move_chunk_to_archive(&hash).unwrap();
+        let moved = store.move_chunk_to_archive(&hash, 1).unwrap();
         assert!(moved, "orphan should be archived");
         assert!(
             store.read_chunk(&hash).is_err(),
@@ -38662,14 +38738,14 @@ mod tests {
         let store = crate::persist::chunk_store::ChunkStore::open(&dir).unwrap();
         let hash = store.write_chunk(b"idempotent").unwrap();
 
-        assert!(store.move_chunk_to_archive(&hash).unwrap());
+        assert!(store.move_chunk_to_archive(&hash, 1).unwrap());
         // Second archive of the same (now-absent) live chunk: no-op.
-        assert!(!store.move_chunk_to_archive(&hash).unwrap());
+        assert!(!store.move_chunk_to_archive(&hash, 1).unwrap());
 
         // Restore, then archive again: content preserved both times.
         assert!(store.restore_archived_chunk(&hash).unwrap());
         assert_eq!(store.read_chunk(&hash).unwrap(), b"idempotent".to_vec());
-        assert!(store.move_chunk_to_archive(&hash).unwrap());
+        assert!(store.move_chunk_to_archive(&hash, 1).unwrap());
 
         // Backdate and reap twice.
         let archive_dir = dir.join("archive");
@@ -38712,7 +38788,7 @@ mod tests {
         let data = b"stampless survivor".to_vec();
         let hash = store.write_chunk(&data).unwrap();
         // Archive normally, then delete the stamp to simulate the crash window.
-        assert!(store.move_chunk_to_archive(&hash).unwrap());
+        assert!(store.move_chunk_to_archive(&hash, 1).unwrap());
         let archive_dir = dir.join("archive");
         let stamp = archive_dir.join(format!(
             "{}.gen",
@@ -38747,7 +38823,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let store = crate::persist::chunk_store::ChunkStore::open(&dir).unwrap();
         let hash = store.write_chunk(b"stale clock").unwrap();
-        store.move_chunk_to_archive(&hash).unwrap();
+        store.move_chunk_to_archive(&hash, 1).unwrap();
         let archive_dir = dir.join("archive");
         // Stamp claims gen 500; the server clock says 100.
         std::fs::write(
