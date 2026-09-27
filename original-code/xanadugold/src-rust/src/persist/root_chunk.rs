@@ -827,6 +827,26 @@ pub fn read_root_as_manifest(
         }
     }
 
+    // ── H3 FIX: collect FR-23 revision metadata from WorkStateChunks ──
+    // The revisions were written per-work into WorkStateChunk.revisions
+    // but never mapped back into the Manifest's revisions map on read.
+    // This restored them as an empty map, losing all revision notes.
+    let mut all_revisions: std::collections::HashMap<
+        BeId,
+        Vec<crate::persist::manifest::RevisionMeta>,
+    > = std::collections::HashMap::new();
+    if let Some(idx_hash) = root.works_index_hash {
+        if let Ok(idx) = read_works_index_chunk(&idx_hash, store) {
+            for entry in &idx.entries {
+                if let Ok(ws) = read_work_state_chunk(&entry.work_state_hash, store) {
+                    if !ws.revisions.is_empty() {
+                        all_revisions.insert(ws.be_id, ws.revisions.clone());
+                    }
+                }
+            }
+        }
+    }
+
     // ── Clubs ────────────────────────────────────────────────────────────────
     let mut all_club_refs = Vec::new();
     if let Some(idx_hash) = root.clubs_index_hash {
@@ -995,7 +1015,7 @@ pub fn read_root_as_manifest(
         compound_segments: vec![],
         social_chunk_hash: root.social_hash,
         ticket_nonces: std::collections::HashMap::new(),
-        revisions: std::collections::HashMap::new(),
+        revisions: all_revisions,
         lattice_primary_works: root.lattice_primary_works.clone(),
         lattice_write_works: root.lattice_write_works.clone(),
     };

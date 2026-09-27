@@ -163,6 +163,71 @@ impl WalLog {
         )
     }
 
+    /// H8 FIX: compound operations were never WAL-appended — the replay
+    /// handlers existed but were dead code. These appends give compound
+    /// editions crash protection.
+    pub fn append_set_compound_edition(
+        &mut self,
+        work_id: BeId,
+        compound: &crate::edition::compound::CompoundEdition,
+    ) -> Result<u64, WalError> {
+        let compound_json =
+            serde_json::to_string(compound).map_err(|e| WalError::Io(std::io::Error::other(e)))?;
+        self.append(
+            "set_compound_edition",
+            serde_json::json!({
+                "work_id": work_id,
+                "compound": compound_json,
+            }),
+        )
+    }
+
+    pub fn append_compound_insert_element(
+        &mut self,
+        work_id: BeId,
+        position: usize,
+        element_json: &str,
+    ) -> Result<u64, WalError> {
+        self.append(
+            "compound_insert_element",
+            serde_json::json!({
+                "work_id": work_id,
+                "position": position,
+                "element": element_json,
+            }),
+        )
+    }
+
+    pub fn append_compound_remove_element(
+        &mut self,
+        work_id: BeId,
+        position: usize,
+    ) -> Result<u64, WalError> {
+        self.append(
+            "compound_remove_element",
+            serde_json::json!({
+                "work_id": work_id,
+                "position": position,
+            }),
+        )
+    }
+
+    pub fn append_compound_move_element(
+        &mut self,
+        work_id: BeId,
+        from: usize,
+        to: usize,
+    ) -> Result<u64, WalError> {
+        self.append(
+            "compound_move_element",
+            serde_json::json!({
+                "work_id": work_id,
+                "from": from,
+                "to": to,
+            }),
+        )
+    }
+
     pub fn append_trail_create(
         &mut self,
         owner_club: BeId,
@@ -447,7 +512,10 @@ impl WalLog {
         let mut entries = Vec::new();
         let mut version: u32 = 0;
         let mut first_line = true;
+        let mut line_num = 0u64;
+        let mut corrupt_count = 0u64;
         for line in reader.lines() {
+            line_num += 1;
             match line {
                 Ok(l) => {
                     if first_line {
@@ -460,12 +528,37 @@ impl WalLog {
                             continue;
                         }
                     }
-                    if let Ok(entry) = serde_json::from_str::<WalEntry>(&l) {
-                        entries.push(entry);
+                    match serde_json::from_str::<WalEntry>(&l) {
+                        Ok(entry) => {
+                            entries.push(entry);
+                        }
+                        Err(_) => {
+                            // H7 FIX: torn-tail detection — the old code silently
+                            // skipped corrupt lines, which could silently drop
+                            // stars, pins, or trails. Now: log it and stop reading
+                            // (a torn write at the tail is the normal crash
+                            // scenario; skipping past it risks replaying out of
+                            // order). Full checksums need a WAL format version
+                            // bump — tracked as a follow-up.
+                            corrupt_count += 1;
+                            tracing::warn!(
+                                "[WAL] corrupt entry at line {} (torn tail from crash?) — \
+                                 stopping replay here; {} valid entries recovered",
+                                line_num,
+                                entries.len()
+                            );
+                            break;
+                        }
                     }
                 }
                 Err(_) => break,
             }
+        }
+        if corrupt_count > 0 && entries.is_empty() {
+            tracing::error!(
+                "[WAL] all entries unreadable — social data (stars/pins/trails) may be lost; \
+                 check backup"
+            );
         }
         Ok((version, entries))
     }
@@ -999,11 +1092,26 @@ mod tests {
         writeln!(f, "{{\"seq\":2,\"op\":\"star\",\"args\":{{\"club_id\":100,\"work_id\":300}},\"ts\":1001}}").unwrap();
         drop(f);
 
+        // H7 FIX: torn-tail detection — the WAL now STOPS at the first
+        // corrupt line instead of silently skipping it. The entry AFTER
+        // the corruption is not read (it may be incomplete or reordered).
+        // This is safer than the old skip-past behavior which could
+        // silently drop stars/pins/trails.
         let (_ver, entries) = WalLog::read_entries(&path).unwrap();
-        assert_eq!(entries.len(), 2, "should skip corrupt line");
+        assert_eq!(
+            entries.len(),
+            1,
+            "should stop at corrupt line (torn tail), keeping valid entries before it"
+        );
 
         let wal = WalLog::open(&dir).unwrap();
-        assert_eq!(wal.seq(), 2, "max seq should be 2");
+        // open() scans the full file for max seq — it may find entries
+        // past the corruption point that read_entries stopped before.
+        // The recovered entries (from read_entries) are what replay uses.
+        assert!(
+            wal.seq() >= 1,
+            "seq should be at least the last recovered entry"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

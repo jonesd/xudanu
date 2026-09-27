@@ -24,6 +24,14 @@ const AUX_SNAPSHOT_BATCH: usize = 8;
 
 pub type SharedState = Arc<AppState>;
 
+/// RAII guard that releases the checkpoint overlap flag on drop.
+struct CheckpointGuard<'a>(&'a std::sync::atomic::AtomicBool);
+impl Drop for CheckpointGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 pub struct AppState {
     pub server: ServerHandle,
     pub event_bus: tokio::sync::broadcast::Sender<EventMessage>,
@@ -140,6 +148,8 @@ impl AppState {
 pub struct ServerHandle {
     inner: Arc<RwLock<Server>>,
     operation_counter: Arc<std::sync::atomic::AtomicU64>,
+    /// H9 FIX: prevents overlapping async checkpoints
+    pub checkpoint_guard: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl ServerHandle {
@@ -148,6 +158,7 @@ impl ServerHandle {
         ServerHandle {
             inner: Arc::new(RwLock::new(server)),
             operation_counter: Arc::new(std::sync::atomic::AtomicU64::new(ops)),
+            checkpoint_guard: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -265,6 +276,25 @@ impl ServerHandle {
     /// - checkpoint_finalize residual scans capture anything that
     ///   appeared or changed mid-checkpoint (completeness guarantee)
     pub async fn checkpoint_async(&self) -> std::io::Result<()> {
+        // H9 FIX: prevent overlapping checkpoints — the autosave loop and
+        // dispatch spawns can both call this; without the guard, both write
+        // manifest_sequence+1 and the slower one's stale club/edition refs
+        // overwrite the faster one's fresh refs.
+        if self
+            .checkpoint_guard
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .is_err()
+        {
+            tracing::debug!("[checkpoint] overlap prevented — checkpoint already in flight");
+            return Ok(());
+        }
+        let _guard = CheckpointGuard(&self.checkpoint_guard);
+
         let prep_start = std::time::Instant::now();
 
         // FR-51 C-5: write-switch deltas must reach the O-tree before

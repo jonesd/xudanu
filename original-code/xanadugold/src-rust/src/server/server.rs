@@ -13824,6 +13824,12 @@ impl Server {
             let has_dirty = self.works.values().any(|ws| ws.chunk_ref.is_none())
                 || !self.dirty_clubs.is_empty();
             let needs_ckpt = has_dirty && self.auto_checkpoint();
+            if needs_ckpt {
+                // C2: this is the code that ACTUALLY starts a checkpoint
+                // (the dispatch spawn will pick it up), so THIS is where
+                // the flag belongs — not in auto_checkpoint itself.
+                self.checkpoint_in_flight = true;
+            }
             self.check_grab_timeouts();
             needs_ckpt
         } else {
@@ -14490,6 +14496,11 @@ impl Server {
                                     }
                                     self.compound_editions =
                                         social.compound_editions.into_iter().collect();
+                                    // H2 FIX: compound_segments were written to the
+                                    // social chunk but never read back — they were
+                                    // silently lost on every restart. Now restored.
+                                    self.compound_segments =
+                                        social.compound_segments.into_iter().collect();
                                     self.user_pins = social.user_pins;
                                     self.cross_server_backlinks = social
                                         .cross_server_backlinks
@@ -20115,6 +20126,11 @@ impl Server {
     ) -> Result<(), ServerError> {
         if !self.works.contains_key(&work_id) {
             return Err(ServerError::WorkNotFound(work_id));
+        }
+        // H8 FIX: WAL the compound change so crash-replay can restore it
+        // (was pure-memory until shutdown checkpoint).
+        if let Err(e) = self.wal.append_set_compound_edition(work_id, &compound) {
+            tracing::warn!("WAL write failed for set_compound_edition: {}", e);
         }
         self.derive_compound_segments(work_id, &compound);
         self.compound_editions.insert(work_id, compound);
@@ -28164,6 +28180,7 @@ pub(crate) mod persist_snapshot {
                 || !social.user_pins.is_empty()
                 || !social.trails.is_empty()
                 || !social.compound_editions.is_empty()
+                || !social.compound_segments.is_empty()
                 || !social.cross_server_backlinks.is_empty()
                 || !social.cross_server_links.is_empty()
             {
@@ -38879,7 +38896,7 @@ mod tests {
             .map(|r| r.current_root.root_hash)
             .expect("checkpointed work must have a chunk ref");
 
-        assert!(chunk_store.move_chunk_to_archive(&root_hash).unwrap());
+        assert!(chunk_store.move_chunk_to_archive(&root_hash, 1).unwrap());
         // Live read now fails (chunk gone) — simulate the loss.
         assert!(chunk_store.read_chunk(&root_hash).is_err());
         // Operator: restore.
@@ -38959,9 +38976,9 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let store = crate::persist::chunk_store::ChunkStore::open(&dir).unwrap();
         let old = store.write_chunk(b"old orphan").unwrap();
-        store.move_chunk_to_archive(&old).unwrap();
+        store.move_chunk_to_archive(&old, 1).unwrap();
         let fresh = store.write_chunk(b"fresh orphan").unwrap();
-        store.move_chunk_to_archive(&fresh).unwrap();
+        store.move_chunk_to_archive(&fresh, 1).unwrap();
 
         // Backdate the old chunk's stamp to gen 0; fresh stamps at 100.
         let archive_dir = dir.join("archive");
