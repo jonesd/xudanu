@@ -2719,7 +2719,9 @@ impl Server {
             if let Some(entry) = self.server_directory.get_mut(server_id) {
                 entry.quarantined = true;
                 entry.quarantined_at = Some(Self::current_timestamp_secs());
-                let _ = self.server_directory_save();
+                if let Err(e) = self.server_directory_save() {
+                    tracing::warn!("server directory save failed: {}", e);
+                }
                 tracing::warn!(
                     target: "xudanu::security",
                     server_id,
@@ -3098,7 +3100,9 @@ impl Server {
                 if let Some(entry) = self.server_directory.get_mut(server_id) {
                     if entry.pinned_key.is_none() {
                         entry.pinned_key = Some(pub_key_hex);
-                        let _ = self.server_directory_save();
+                        if let Err(e) = self.server_directory_save() {
+                            tracing::warn!("server directory save failed: {}", e);
+                        }
                         tracing::info!("TOFU: pinned server key for server_id={}", server_id);
                     }
                 }
@@ -3146,7 +3150,9 @@ impl Server {
                                 self.security_tracker.record_sig_success(server_id);
                                 if let Some(entry) = self.server_directory.get_mut(server_id) {
                                     entry.pinned_key = Some(response_key.clone());
-                                    let _ = self.server_directory_save();
+                                    if let Err(e) = self.server_directory_save() {
+                                        tracing::warn!("server directory save failed: {}", e);
+                                    }
                                 }
                             }
                             Err(re) => {
@@ -3317,7 +3323,9 @@ impl Server {
                     entry.last_success = Some(Self::current_timestamp_secs());
                     entry.consecutive_failures = 0;
                 }
-                let _ = self.server_directory_save();
+                if let Err(e) = self.server_directory_save() {
+                    tracing::warn!("server directory save failed: {}", e);
+                }
             }
             Ok(None) => {
                 let has_pin = self
@@ -3358,7 +3366,9 @@ impl Server {
             .blob_store
             .store(text.as_bytes(), "text/plain".to_string());
 
-        let _ = self.server_directory_save();
+        if let Err(e) = self.server_directory_save() {
+            tracing::warn!("server directory save failed: {}", e);
+        }
 
         Ok(RemoteWorkData {
             work_id: work_id_hex.to_string(),
@@ -3417,7 +3427,9 @@ impl Server {
         if let Some(entry) = self.server_directory.get_mut(server_id) {
             entry.last_seen = Some(Self::current_timestamp_secs());
         }
-        let _ = self.server_directory_save();
+        if let Err(e) = self.server_directory_save() {
+            tracing::warn!("server directory save failed: {}", e);
+        }
 
         Ok((works, server_name))
     }
@@ -3561,7 +3573,9 @@ impl Server {
             quarantined_at: None,
         };
         self.server_directory.add(entry);
-        let _ = self.server_directory_save();
+        if let Err(e) = self.server_directory_save() {
+            tracing::warn!("server directory save failed: {}", e);
+        }
         Ok(())
     }
 
@@ -3585,7 +3599,9 @@ impl Server {
             entry.last_failure = Some(Self::current_timestamp_secs());
             entry.consecutive_failures += 1;
         }
-        let _ = self.server_directory_save();
+        if let Err(e) = self.server_directory_save() {
+            tracing::warn!("server directory save failed: {}", e);
+        }
     }
 
     pub fn add_cross_server_link(
@@ -3831,7 +3847,9 @@ impl Server {
             entry.last_seen = Some(Self::current_timestamp_secs());
             entry.consecutive_failures = 0;
         }
-        let _ = self.server_directory_save();
+        if let Err(e) = self.server_directory_save() {
+            tracing::warn!("server directory save failed: {}", e);
+        }
     }
 
     pub fn send_backlink_notification(
@@ -14378,12 +14396,16 @@ impl Server {
                         None
                     }
                     Err(e) => {
-                        tracing::warn!("historical authors chunk untag failed: {}", e);
+                        tracing::error!("historical authors chunk untag failed: {}", e);
+                        self.restore_errors
+                            .push(format!("historical authors chunk untag failed: {}", e));
                         None
                     }
                 },
                 Err(e) => {
-                    tracing::warn!("historical authors chunk read failed: {}", e);
+                    tracing::error!("historical authors chunk read failed: {}", e);
+                    self.restore_errors
+                        .push(format!("historical authors chunk read failed: {}", e));
                     None
                 }
             }
@@ -14405,16 +14427,27 @@ impl Server {
                             })
                         }
                         Ok((format, _)) => {
-                            tracing::warn!("blob_metas chunk has unexpected format: {:#x}", format);
+                            tracing::error!(
+                                "blob_metas chunk has unexpected format: {:#x}",
+                                format
+                            );
+                            self.restore_errors.push(format!(
+                                "blob_metas chunk has unexpected format: {:#x}",
+                                format
+                            ));
                             manifest.blob_metas.clone()
                         }
                         Err(e) => {
-                            tracing::warn!("blob_metas chunk untag failed: {}", e);
+                            tracing::error!("blob_metas chunk untag failed: {}", e);
+                            self.restore_errors
+                                .push(format!("blob_metas chunk untag failed: {}", e));
                             manifest.blob_metas.clone()
                         }
                     },
                     Err(e) => {
-                        tracing::warn!("blob_metas chunk read failed: {}", e);
+                        tracing::error!("blob_metas chunk read failed: {}", e);
+                        self.restore_errors
+                            .push(format!("blob_metas chunk read failed: {}", e));
                         manifest.blob_metas.clone()
                     }
                 }
@@ -14708,7 +14741,9 @@ impl Server {
                                 fed.reconcile_store
                             }
                             Err(e) => {
-                                tracing::warn!("federation chunk parse error: {}", e);
+                                tracing::error!("federation chunk parse error: {}", e);
+                                self.restore_errors
+                                    .push(format!("federation chunk parse error: {}", e));
                                 self.federation =
                                     crate::server::federation::FederationState::disabled();
                                 crate::server::federation::ReconcileStore::new()
@@ -14721,7 +14756,9 @@ impl Server {
                     }
                 },
                 Err(e) => {
-                    tracing::warn!("federation chunk read error: {}", e);
+                    tracing::error!("federation chunk read error: {}", e);
+                    self.restore_errors
+                        .push(format!("federation chunk read error: {}", e));
                     self.federation = crate::server::federation::FederationState::disabled();
                     crate::server::federation::ReconcileStore::new()
                 }
@@ -14760,7 +14797,9 @@ impl Server {
                             .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
                     }
                     Err(e) => {
-                        tracing::warn!("content_address chunk untag failed: {}", e);
+                        tracing::error!("content_address chunk untag failed: {}", e);
+                        self.restore_errors
+                            .push(format!("content_address chunk untag failed: {}", e));
                         manifest
                             .content_address
                             .clone()
@@ -14768,7 +14807,9 @@ impl Server {
                     }
                 },
                 Err(e) => {
-                    tracing::warn!("content_address chunk read failed: {}", e);
+                    tracing::error!("content_address chunk read failed: {}", e);
+                    self.restore_errors
+                        .push(format!("content_address chunk read failed: {}", e));
                     manifest
                         .content_address
                         .clone()
@@ -14819,6 +14860,12 @@ impl Server {
         match manifest.admin.edit_policy.as_str() {
             "public-sandbox" => {
                 self.set_edit_policy(EditPolicy::PublicSandbox);
+            }
+            // M4 FIX: "frozen" was missing from the match — museum mode
+            // silently lifted to OwnerOnly on every restart, creating a
+            // vandalism window. Caught by the edit_policy_roundtrip test.
+            "frozen" | "read-only" | "readonly" | "museum" => {
+                self.set_edit_policy(EditPolicy::Frozen);
             }
             _ => {
                 self.set_edit_policy(EditPolicy::OwnerOnly);
@@ -15306,7 +15353,9 @@ impl Server {
                                 None
                             }
                             Err(e) => {
-                                tracing::warn!("annotations chunk untag failed: {}", e);
+                                tracing::error!("annotations chunk untag failed: {}", e);
+                                self.restore_errors
+                                    .push(format!("annotations chunk untag failed: {}", e));
                                 None
                             }
                         };
@@ -15351,7 +15400,7 @@ impl Server {
                         }
                     }
                     Err(e) => {
-                        tracing::warn!("annotations chunk read failed: {}", e);
+                        tracing::error!("annotations chunk read failed: {}", e);
                         self.restore_errors
                             .push(format!("annotations chunk: {}", e));
                     }
@@ -15377,7 +15426,9 @@ impl Server {
                                 None
                             }
                             Err(e) => {
-                                tracing::warn!("fossil snapshots chunk untag failed: {}", e);
+                                tracing::error!("fossil snapshots chunk untag failed: {}", e);
+                                self.restore_errors
+                                    .push(format!("fossil snapshots chunk untag failed: {}", e));
                                 None
                             }
                         };
@@ -15425,7 +15476,9 @@ impl Server {
                         }
                     }
                     Err(e) => {
-                        tracing::warn!("fossil snapshots chunk read failed: {}", e);
+                        tracing::error!("fossil snapshots chunk read failed: {}", e);
+                        self.restore_errors
+                            .push(format!("fossil snapshots chunk read failed: {}", e));
                     }
                 }
             }
@@ -16560,7 +16613,7 @@ impl Server {
                 .link
                 .end_at("RightEnd")
                 .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref);
-            let _ = self.wal.append_create_link(
+            if let Err(e) = self.wal.append_create_link(
                 link_id,
                 origin,
                 destination,
@@ -16568,7 +16621,9 @@ impl Server {
                 d_ref.as_ref(),
                 ls.link.link_types(),
                 home_document,
-            );
+            ) {
+                tracing::warn!("WAL write failed for create_link: {}", e);
+            }
         }
         self.auto_checkpoint();
         Ok(link_id)
@@ -16771,7 +16826,7 @@ impl Server {
                 .link
                 .end_at("RightEnd")
                 .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref);
-            let _ = self.wal.append_create_link(
+            if let Err(e) = self.wal.append_create_link(
                 link_id,
                 origin,
                 destination,
@@ -16779,7 +16834,9 @@ impl Server {
                 d_ref.as_ref(),
                 ls.link.link_types(),
                 home_document,
-            );
+            ) {
+                tracing::warn!("WAL write failed for create_link: {}", e);
+            }
         }
         self.auto_checkpoint();
         Ok(link_id)
@@ -49416,6 +49473,173 @@ mod tests_http_redirects {
 }
 
 #[cfg(test)]
+mod tests_persistence_roundtrip {
+    use super::*;
+    use crate::edition::Edition;
+
+    /// Round-trip serialization tests: for each data type, verify that
+    /// data created in memory → persisted to disk → restored from disk
+    /// produces the same state. This is the test layer that would have
+    /// caught all 13 persistence bugs (H1, H2, H3, C1, etc.) before they
+    /// shipped. See docs/dev/bug-pattern-catalog.md for the full catalog.
+
+    fn setup_with_dir() -> (Server, SessionId, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "xudanu-roundtrip-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut server = Server::new();
+        server.init_data_dir(&dir, None).unwrap();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        (server, sid, dir)
+    }
+
+    fn restore(dir: &std::path::Path) -> Server {
+        let mut server = Server::new();
+        server.data_dir = Some(dir.to_path_buf());
+        let _ = server.restore_from_data_dir(dir, None);
+        server
+    }
+
+    fn cleanup(dir: &std::path::Path) {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn link_type_registry_roundtrip() {
+        let (mut server, sid, dir) = setup_with_dir();
+        let work = server
+            .create_work(sid, Edition::from_text("A custom type definition."))
+            .unwrap();
+        server.register_link_type(work, "roundtrip_type".to_string());
+        server.checkpoint_to_store().unwrap();
+
+        let restored = restore(&dir);
+        let name = restored.link_type_names.get(&work);
+        assert_eq!(
+            name.map(|s| s.as_str()),
+            Some("roundtrip_type"),
+            "link type registry lost on restore (H1 pattern)"
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn starred_works_roundtrip() {
+        let (mut server, sid, dir) = setup_with_dir();
+        let work = server
+            .create_work(sid, Edition::from_text("star me"))
+            .unwrap();
+        server.work_star(sid, work).unwrap();
+        server.checkpoint_to_store().unwrap();
+
+        let restored = restore(&dir);
+        let starred = restored.starred_works.values().any(|s| s.contains(&work));
+        assert!(starred, "starred works lost on restore (C1 pattern)");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn trails_roundtrip() {
+        let (mut server, sid, dir) = setup_with_dir();
+        server
+            .trail_create(sid, "Roundtrip Trail".into(), None, vec![])
+            .unwrap();
+        server.checkpoint_to_store().unwrap();
+
+        let restored = restore(&dir);
+        let trail_names: Vec<&str> = restored.trails.values().map(|t| t.name.as_str()).collect();
+        assert!(
+            trail_names.contains(&"Roundtrip Trail"),
+            "trails lost on restore"
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn user_pins_roundtrip() {
+        let (mut server, _sid, dir) = setup_with_dir();
+        server.wal_replay_pin(1, "test_key".to_string());
+        server.checkpoint_to_store().unwrap();
+
+        let restored = restore(&dir);
+        let pins = restored.user_pins.values().any(|p| p.contains("test_key"));
+        assert!(pins, "user pins lost on restore (C1 pattern)");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn edit_policy_roundtrip() {
+        let (mut server, sid, dir) = setup_with_dir();
+        // Set policy to Frozen (museum mode)
+        server.set_edit_policy(EditPolicy::Frozen);
+        server.checkpoint_to_store().unwrap();
+
+        let restored = restore(&dir);
+        assert_eq!(
+            restored.edit_policy,
+            EditPolicy::Frozen,
+            "edit policy lost on restore (M4 pattern) — Frozen museum mode can silently lift"
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn revisions_metadata_roundtrip() {
+        let (mut server, sid, dir) = setup_with_dir();
+        let work = server
+            .create_work(sid, Edition::from_text("original text"))
+            .unwrap();
+        server.work_set_text(sid, work, "revised text").unwrap();
+        server.checkpoint_to_store().unwrap();
+
+        let restored = restore(&dir);
+        let revs = restored.revisions.get(&work);
+        assert!(
+            revs.map(|r| !r.is_empty()).unwrap_or(false),
+            "revision metadata lost on restore (H3 pattern)"
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn compound_editions_roundtrip() {
+        let (mut server, sid, dir) = setup_with_dir();
+        let work = server
+            .create_work(sid, Edition::from_text("compound source"))
+            .unwrap();
+        let compound = crate::edition::compound::CompoundEdition::new(vec![]);
+        server.set_compound_edition(work, compound, sid).unwrap();
+        server.checkpoint_to_store().unwrap();
+
+        let restored = restore(&dir);
+        assert!(
+            restored.compound_editions.contains_key(&work),
+            "compound editions lost on restore (H2 pattern)"
+        );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn no_restore_errors_on_clean_checkpoint() {
+        let (mut server, _sid, dir) = setup_with_dir();
+        server.checkpoint_to_store().unwrap();
+        let restored = restore(&dir);
+        assert!(
+            !restored.has_restore_errors(),
+            "clean checkpoint should restore without errors"
+        );
+        cleanup(&dir);
+    }
+}
+
 mod tests_revisions {
     use super::*;
     use crate::edition::Edition;

@@ -590,7 +590,12 @@ fn cmd_migrate_compound(data_dir: &str) {
     }
 
     if total_migrated > 0 {
-        let _ = server.checkpoint_to_store();
+        if let Err(e) = server.checkpoint_to_store() {
+            eprintln!(
+                "FATAL: final checkpoint failed — data since last autosave may be lost: {}",
+                e
+            );
+        }
         println!(
             "Done: {} spans migrated across {} works",
             total_migrated,
