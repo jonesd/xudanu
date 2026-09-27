@@ -1,0 +1,43 @@
+# Pattern Whitelist — known-safe instances of suspicious patterns
+# Format: <pattern>|<file-relative-to-src>|<line>
+# Each entry must have a justification comment above it.
+# Add entries ONLY after verifying the instance is safe.
+
+# server.rs:12189 — trails sidecar write already logs via map_err + tracing::warn
+silent-io|server/server.rs|12189
+
+# server_directory.rs — tmp dir cleanup, not data persistence
+silent-io|server/server_directory.rs|307
+silent-io|server/server_directory.rs|340
+
+# shared.rs:390 — OTS transport trait object reference, not I/O
+silent-io|server/transport/shared.rs|390
+
+# xudanu-server.rs:1075 — schema self-heal logs; failure doesn't lose data
+silent-restore|bin/xudanu-server.rs|1075
+
+# edition_chunks.rs:322,328 — provenance chunks are re-derivable from content
+silent-restore|persist/edition_chunks.rs|322
+silent-restore|persist/edition_chunks.rs|328
+
+# server.rs:12206 — trails sidecar unreadable; already restores empty (design: sidecar is best-effort)
+silent-restore|server/server.rs|12206
+
+# Flag lifecycle — all verified to have consumers:
+# admin.rs:64 — shutdown_requested consumed by is_shutdown_requested() in dispatch
+flag-lifecycle|server/admin.rs|64
+# server.rs:868 — dirty flag consumed by checkpoint_id_lists() and mark_dirty clearing
+flag-lifecycle|server/server.rs|868
+# server.rs:9625,9677 — lattice_shadow_enabled consumed by lattice_shadow_status()
+flag-lifecycle|server/server.rs|9625
+flag-lifecycle|server/server.rs|9677
+# server.rs:10202 — ots_anchor_enabled consumed by ots_take_request() in the interval task
+flag-lifecycle|server/server.rs|10202
+# server.rs:10213 — ots_anchor_requested consumed by ots_take_request() in the interval task
+flag-lifecycle|server/server.rs|10213
+# server.rs:13855 — checkpoint_in_flight consumed by checkpoint_commit_impl() and auto_checkpoint()
+flag-lifecycle|server/server.rs|13855
+# server.rs:23197 — tickets_dirty consumed by take_tickets_dirty() in the checkpoint path
+flag-lifecycle|server/server.rs|23197
+# server.rs:23548 — network_enabled consumed by network_is_enabled() in the dispatch path
+flag-lifecycle|server/server.rs|23548

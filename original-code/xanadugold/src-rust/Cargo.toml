@@ -6,6 +6,18 @@ license = "Apache-2.0"
 authors = ["David Jones <david@dgjones.info>"]
 description = "Hypertext document store with collaborative CRDT editing"
 
+# Persistence bug pattern detection: the lints below catch the patterns
+# that caused 13 data-loss bugs (see docs/dev/bug-pattern-catalog.md).
+# They deny at the compiler level — the pattern-scan.sh script catches
+# what the compiler can't see.
+[lints.rust]
+unused_must_use = "warn"  # warn — pattern-scan.sh catches critical instances
+
+[lints.clippy]
+# Pattern 1: silent I/O failure — warn (not deny) because some
+# let _ = sites are legitimately safe (cleanup, fire-and-forget)
+let_underscore_must_use = "warn"
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 

@@ -10334,11 +10334,15 @@ impl Server {
         if std::fs::create_dir_all(&dir).is_err() {
             return;
         }
-        let _ = std::fs::write(
+        if let Err(e) = std::fs::write(
             dir.join("receipt.ots"),
             crate::server::ots_anchor::frame_ots_file(digest, stream),
-        );
-        let _ = std::fs::write(dir.join("receipt-stream.bin"), stream);
+        ) {
+            tracing::warn!("[ots] receipt write failed: {}", e);
+        }
+        if let Err(e) = std::fs::write(dir.join("receipt-stream.bin"), stream) {
+            tracing::warn!("[ots] receipt stream write failed: {}", e);
+        }
         let meta = serde_json::json!({
             "digest": round.digest_hex,
             "status": round.status,
@@ -10346,10 +10350,12 @@ impl Server {
             "calendars": round.calendars,
             "updated_at": Self::current_timestamp_secs(),
         });
-        let _ = std::fs::write(
+        if let Err(e) = std::fs::write(
             dir.join("meta.json"),
             serde_json::to_vec_pretty(&meta).unwrap_or_default(),
-        );
+        ) {
+            tracing::warn!("[ots] meta write failed: {}", e);
+        }
     }
 
     /// Signed backup manifest (FR-followup to the provenance review):
@@ -14190,7 +14196,9 @@ impl Server {
             "core": { "version": Self::CORE_SET_VERSION, "seeded_at": Self::current_timestamp_secs() },
             "sets": {},
         });
-        let _ = std::fs::write(&path, stamp.to_string());
+        if let Err(e) = std::fs::write(&path, stamp.to_string()) {
+            tracing::warn!("[gc] archive stamp write failed: {}", e);
+        }
     }
 
     /// Public wrapper for the init path: seed core set + stamp sidecar.
@@ -14243,7 +14251,9 @@ impl Server {
             "version": version,
             "applied_at": Self::current_timestamp_secs(),
         });
-        let _ = std::fs::write(dir.join("content-sets.json"), current.to_string());
+        if let Err(e) = std::fs::write(dir.join("content-sets.json"), current.to_string()) {
+            tracing::warn!("[content-sets] sidecar write failed: {}", e);
+        }
         Ok(())
     }
 
@@ -23348,7 +23358,9 @@ impl Server {
             ws.work.retract(&endorsements);
             ws.mark_dirty();
         }
-        let _ = self.checkpoint_to_store();
+        if let Err(e) = self.checkpoint_to_store() {
+            tracing::warn!("checkpoint during policy change failed: {}", e);
+        }
         Ok(())
     }
 
