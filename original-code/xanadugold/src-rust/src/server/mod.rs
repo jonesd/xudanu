@@ -48,6 +48,7 @@ pub mod source_matcher;
 
 #[cfg(feature = "server")]
 pub mod transport;
+pub mod upgrade;
 
 #[cfg(feature = "server")]
 pub mod verification;

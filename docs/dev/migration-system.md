@@ -1,52 +1,59 @@
 # Migration & Upgrade System
 
-**Status:** building (September 2026)
+**Status:** core shipped with auto-migrate default (September 2026) — see [FR-82-data-migration.md](FR-82-data-migration.md) for the requirement-level spec
 **Requirement:** a user upgrading between versions must never lose or
 mangle content. Migration must be solid before the first external user.
 
 ## User Experience
 
 ```bash
-# What a user sees when upgrading:
+# Default: the user just starts the server after upgrading the binary.
 ./xudanu-server run 127.0.0.1:8080 ./data
+# (log) [migrate] data at format v3 < binary v4 — auto-migrating
+#        (backup → migrate → verify → stamp)
+# ...server boots on migrated data.
 
-# If data is from an older version, the server REFUSES to start:
-ERROR: data directory was written by xudanu v1.14.3 (format v3).
-Current version: v1.15.0 (format v4).
+# Operators who want explicit control:
+./xudanu-server run --no-auto-migrate 127.0.0.1:8080 ./data
+ERROR: DATA FORMAT UPGRADE NEEDED: data directory is format v3
+(written by xudanu v1.14.3), current is v4.
 Run: ./xudanu-server upgrade ./data
 
-# The upgrade command:
+# The explicit upgrade command (scripts, CI, recovery):
 ./xudanu-server upgrade ./data
 
-  Backing up to ./data-backup-20260927-140522/... done (42 MB)
-  Migrating format v3 → v4... done (3 steps)
-  Verifying 47 works, 156 links, 4 trails... all OK
-  Stamping version: v1.15.0 (format v4)
+  Data version: 1.14.3 (format v3), binary: 1.15.0 (format v4)
+  Backed up to ./backup-20260927-140522.
+  Migrated format v3 → v4 (1 step(s)).
+  Verified: 47 works, 156 links, 4 trails — all OK
+  Stamped: v1.15.0 (format v4)
   Upgrade complete. Start the server normally.
 
-# If verification fails:
-  ERROR: work 0x1234 checksum mismatch after migration.
-  Rolling back from backup... done.
-  Upgrade FAILED — original data intact, no changes made.
+# If verification fails (either door):
+  ERROR: verification found restore errors: work 0x1234 …
+  Rolling back from ./backup-20260927-140522...
+  Rollback complete. Original data intact.
 ```
 
 ## Design Principles
 
-1. **Refuse to open, don't auto-migrate** — the server refuses to
-   start on data from a different format version. This prevents a new
-   binary from silently mangling old data.
-
-2. **Backup first, always** — the upgrade command creates a full copy
-   of the data directory before any migration step.
-
-3. **Verify after migration** — every work is opened, every checksum
+1. **Auto-migrate by default, never auto-downgrade** — startup runs
+   the full safety pipeline on older data and boots; newer data
+   always refuses. `--no-auto-migrate` restores explicit-only.
+2. **One pipeline, two doors** — the `upgrade` command and startup
+   auto-migration run the identical backup → migrate → verify →
+   stamp code (src/server/upgrade.rs).
+3. **Backup first, always** — a full copy of the data directory
+   precedes any migration step.
+4. **Verify after migration** — every work is opened, every checksum
    checked, every link resolved. If ANYTHING fails, the backup is
    restored.
-
-4. **Idempotent** — running upgrade on already-current data is a no-op
+5. **Exclusive while migrating** — a PID-keyed MIGRATION.lock stops
+   concurrent servers from racing a half-migrated directory; stale
+   locks from crashed migrations are stolen.
+6. **Idempotent** — running upgrade on already-current data is a no-op
    with a clear message.
-
-5. **Rollback guaranteed** — if any step fails, the data directory is
+7. **Rollback guaranteed** — if any step fails, the data directory is
    restored from backup. The user's data is never in a half-migrated
    state.
 
@@ -118,12 +125,13 @@ Run: ./xudanu-server upgrade ./data
 
 ## Implementation Checklist
 
-- [ ] Version stamp: add `server_version` to root manifest + data/VERSION sidecar
-- [ ] Startup check: refuse to start if format_version doesn't match
-- [ ] `xudanu-server upgrade <dir>`: full backup → migrate → verify → stamp
-- [ ] Verification pass: open all works, check hashes, resolve links
-- [ ] Rollback: restore from backup on any failure
-- [ ] Register first migration step (v3 → v4, when we need one)
+- [x] Version stamp: `server_version` + format version in data/VERSION sidecar
+- [x] Startup check: refuse to start if format_version doesn't match (both directions)
+- [x] `xudanu-server upgrade <dir>`: full backup → migrate → verify → stamp
+- [x] Verification pass: restore all works, count links and trails, fail on restore errors
+- [x] Rollback: restore from backup on any failure
+- [ ] Register first migration step (v1 → v2, when we need one)
+- [ ] Dedicated tests for the two startup-refusal messages
 - [ ] Integration test: create data with format N, upgrade to N+1, verify
 - [ ] CI: run upgrade test on every release
-- [ ] Document the migration step authoring guide
+- [ ] Document the migration step authoring guide (FR-82 §Authoring)

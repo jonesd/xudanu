@@ -1425,6 +1425,59 @@ mod tests {
     // ── WorkStateChunk roundtrip ────────────────────────────────────────
 
     #[test]
+    fn version_stamp_write_read_roundtrip() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let stamp = VersionStamp {
+            format_version: ROOT_CHUNK_FORMAT_VERSION,
+            server_version: "9.9.9-test".to_string(),
+            upgraded_at: Some("2026-09-27T14:05:22+00:00".to_string()),
+        };
+        stamp.write(&dir).unwrap();
+
+        let back = VersionStamp::read(&dir).expect("stamp readable after write");
+        assert_eq!(back.format_version, stamp.format_version);
+        assert_eq!(back.server_version, "9.9.9-test");
+        assert_eq!(
+            back.upgraded_at.as_deref(),
+            Some("2026-09-27T14:05:22+00:00")
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn version_stamp_current_carries_binary_version() {
+        let stamp = VersionStamp::current();
+        assert_eq!(stamp.format_version, ROOT_CHUNK_FORMAT_VERSION);
+        assert!(!stamp.server_version.is_empty());
+        assert!(stamp.upgraded_at.is_none());
+    }
+
+    #[test]
+    fn version_stamp_missing_file_is_none() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(VersionStamp::read(&dir).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn version_stamp_corrupt_file_is_none_not_error() {
+        // A torn write must degrade to "stampless" (open normally,
+        // self-stamp later), never panic or wedge the server.
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("VERSION"), "{not json").unwrap();
+        assert!(VersionStamp::read(&dir).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn work_state_chunk_roundtrip() {
         let dir = temp_dir();
         let _ = std::fs::remove_dir_all(&dir);

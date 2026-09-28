@@ -94,6 +94,8 @@ fn usage() {
     );
     eprintln!("  --csrf-token             Require CSRF token for WebSocket connections");
     eprintln!("  --lattice-shadow         Enable the FR-51 dual-write lattice shadow (admin enrolls works)");
+    eprintln!("  --no-auto-migrate        Refuse older-format data with instructions instead of");
+    eprintln!("                           auto-migrating at startup (default: auto-migrate)");
     eprintln!("  --log-checkpoint-entries <n> Attribution checkpoint threshold (default 10000)");
     eprintln!("  --log-retention <n>      Keep files covered by the newest N checkpoints (default 0 = all)");
     eprintln!("  --log-retention-mode <m> Compaction mode: archive (default) or delete");
@@ -125,140 +127,77 @@ fn usage() {
 
 /// Migration upgrade: backs up the data directory, applies format
 /// migrations if needed, verifies all data is intact, then stamps the
-/// new version. Refuses to proceed if verification fails.
+/// new version. Refuses to proceed if verification fails. Thin CLI
+/// wrapper over the shared pipeline in xudanu::server::upgrade —
+/// startup auto-migration runs the identical code.
 fn cmd_upgrade(data_dir: &str) {
+    use xudanu::server::upgrade::{run_upgrade, UpgradeError};
     let dir = std::path::PathBuf::from(data_dir);
     println!("xudanu upgrade — checking {}", dir.display());
 
-    // Check if data directory exists
-    if !dir.exists() {
-        eprintln!("ERROR: data directory {} does not exist", dir.display());
-        std::process::exit(1);
-    }
-
-    // Read the version stamp (or infer from the data)
-    let current_stamp = xudanu::persist::root_chunk::VersionStamp::read(&dir);
-    let current_format = current_stamp
-        .as_ref()
-        .map(|s| s.format_version)
-        .unwrap_or(0); // no stamp = very old data
-    let current_version = current_stamp
-        .as_ref()
-        .map(|s| s.server_version.as_str())
-        .unwrap_or("unknown");
-    let binary_version = env!("CARGO_PKG_VERSION");
-    let binary_format = xudanu::persist::root_chunk::ROOT_CHUNK_FORMAT_VERSION;
-
-    println!(
-        "  Data version: {} (format v{}), binary: {} (format v{})",
-        current_version, current_format, binary_version, binary_format
-    );
-
-    // Already current?
-    if current_format == binary_format {
-        println!(
-            "  Already at format v{} — no migration needed.",
-            binary_format
-        );
-        // Just refresh the stamp
-        let stamp = xudanu::persist::root_chunk::VersionStamp {
-            format_version: binary_format,
-            server_version: binary_version.to_string(),
-            upgraded_at: Some(chrono::Utc::now().to_rfc3339()),
-        };
-        let _ = stamp.write(&dir);
-        return;
-    }
-
-    // Data is newer than binary?
-    if current_format > binary_format {
-        eprintln!(
-            "ERROR: data is format v{} but this binary supports v{}. Upgrade xudanu-server first.",
-            current_format, binary_format
-        );
-        std::process::exit(1);
-    }
-
-    // Backup
-    let backup_name = format!("backup-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
-    let backup_dir = dir
-        .parent()
-        .unwrap_or(std::path::Path::new("."))
-        .join(backup_name);
-    println!("  Backing up to {}...", backup_dir.display());
-    if let Err(e) = xudanu::persist::migrations::copy_dir(&dir, &backup_dir) {
-        eprintln!("ERROR: backup failed: {}", e);
-        std::process::exit(1);
-    }
-    println!("  Backup complete.");
-
-    // Apply migration steps
-    // Currently format v1 is the baseline — no steps exist yet.
-    // When adding v1→v2, register it in migrations.rs and call here.
-    if current_format < binary_format {
-        println!(
-            "  Migrating format v{} → v{}...",
-            current_format, binary_format
-        );
-        match xudanu::persist::migrations::apply_migration_steps(&dir, current_format) {
-            Ok(steps) => println!("  Applied {} migration step(s).", steps),
-            Err(e) => {
-                eprintln!("ERROR: migration failed: {}", e);
-                eprintln!("  Rolling back from {}...", backup_dir.display());
-                let _ = std::fs::remove_dir_all(&dir);
-                let _ = std::fs::rename(&backup_dir, &dir);
-                eprintln!("  Rollback complete. Original data intact.");
-                std::process::exit(1);
+    match run_upgrade(&dir) {
+        Ok(report) => {
+            println!(
+                "  Data version: {} (format v{}), binary: {} (format v{})",
+                report.data_version, report.from_format, report.binary_version, report.to_format
+            );
+            if report.already_current {
+                println!(
+                    "  Already at format v{} — no migration needed.",
+                    report.to_format
+                );
+                return;
             }
+            if let Some(ref backup) = report.backup_dir {
+                println!("  Backed up to {}.", backup.display());
+            }
+            println!(
+                "  Migrated format v{} → v{} ({} step(s)).",
+                report.from_format, report.to_format, report.steps_applied
+            );
+            println!(
+                "  Verified: {} works, {} links, {} trails — all OK",
+                report.work_count, report.link_count, report.trail_count
+            );
+            println!(
+                "  Stamped: v{} (format v{})",
+                report.binary_version, report.to_format
+            );
+            println!("  Upgrade complete. Start the server normally.");
         }
-    }
-
-    // Verification pass: restore the server and check every work
-    println!("  Verifying data integrity...");
-    let mut server = xudanu::server::Server::new();
-    match server.restore_from_data_dir(&dir, None) {
-        Ok(()) => {}
-        Err(e) => {
-            eprintln!("ERROR: verification failed: could not restore: {}", e);
-            eprintln!("  Rolling back from {}...", backup_dir.display());
-            let _ = std::fs::remove_dir_all(&dir);
-            let _ = std::fs::rename(&backup_dir, &dir);
+        Err(UpgradeError::NotADataDir(p)) => {
+            eprintln!(
+                "ERROR: {} does not exist or is not a xudanu data directory",
+                p.display()
+            );
+            std::process::exit(1);
+        }
+        Err(UpgradeError::NewerThanBinary {
+            data_format,
+            binary_format,
+        }) => {
+            eprintln!(
+                "ERROR: data is format v{} but this binary supports v{}. Upgrade xudanu-server first.",
+                data_format, binary_format
+            );
+            std::process::exit(1);
+        }
+        Err(UpgradeError::LockHeld(p)) => {
+            eprintln!("ERROR: {}", p.display());
+            eprintln!("  Another migration holds the lock. Wait for it to finish.");
+            std::process::exit(1);
+        }
+        Err(UpgradeError::RolledBack { reason, backup }) => {
+            eprintln!("ERROR: {}", reason);
+            eprintln!("  Rolling back from {}...", backup.display());
             eprintln!("  Rollback complete. Original data intact.");
             std::process::exit(1);
         }
-    }
-
-    let work_count = server.work_count();
-    let link_count = server.link_count();
-    let trail_count = server.trail_count();
-    let has_errors = server.has_restore_errors();
-
-    if has_errors {
-        eprintln!("ERROR: verification found restore errors:");
-        for err in server.restore_errors() {
-            eprintln!("    {}", err);
+        Err(UpgradeError::Io(e)) => {
+            eprintln!("ERROR: upgrade io failure: {}", e);
+            std::process::exit(1);
         }
-        eprintln!("  Rolling back from {}...", backup_dir.display());
-        let _ = std::fs::remove_dir_all(&dir);
-        let _ = std::fs::rename(&backup_dir, &dir);
-        eprintln!("  Rollback complete. Original data intact.");
-        std::process::exit(1);
     }
-
-    println!(
-        "  Verified: {} works, {} links, {} trails — all OK",
-        work_count, link_count, trail_count
-    );
-
-    // Stamp the new version
-    let stamp = xudanu::persist::root_chunk::VersionStamp {
-        format_version: binary_format,
-        server_version: binary_version.to_string(),
-        upgraded_at: Some(chrono::Utc::now().to_rfc3339()),
-    };
-    let _ = stamp.write(&dir);
-    println!("  Stamped: v{} (format v{})", binary_version, binary_format);
-    println!("  Upgrade complete. Start the server normally.");
 }
 
 fn cmd_init(data_dir: &str, passphrase: Option<&[u8]>) {
@@ -1022,6 +961,12 @@ async fn main() {
                     }
                     "--dev" => {
                         dev_mode = true;
+                    }
+                    "--no-auto-migrate" => {
+                        // FR-82: refuse older-format data with
+                        // instructions instead of auto-migrating at
+                        // startup (operators, scripted upgrades).
+                        xudanu::server::upgrade::set_no_auto_migrate(true);
                     }
                     "--ots-anchor" => {
                         ots_anchor = true;

@@ -14282,26 +14282,81 @@ impl Server {
     ) -> std::io::Result<()> {
         self.data_dir = Some(data_dir.to_path_buf());
 
-        // Migration: refuse to open data from a different format version.
-        // This prevents a newer binary from silently mangling older data.
-        // The user must run 'xudanu-server upgrade' explicitly.
-        if let Some(stamp) = crate::persist::root_chunk::VersionStamp::read(data_dir) {
+        // Migration (FR-82): never open data across format versions
+        // silently. Newer-than-binary always refuses (no
+        // auto-downgrade). Older-than-binary auto-migrates by
+        // default — the same backup → migrate → verify → stamp
+        // pipeline the `upgrade` command runs — unless the operator
+        // opted out (--no-auto-migrate / XUDANU_NO_AUTO_MIGRATE=1),
+        // in which case it refuses with instructions. Stampless
+        // manifest-bearing dirs are the pre-sidecar (v1.14.4) era:
+        // baseline format, gated the same way once formats advance.
+        {
+            use crate::server::upgrade as upgrade_mod;
+            let stamp = crate::persist::root_chunk::VersionStamp::read(data_dir);
+            let stamp_present = stamp.is_some();
+            let data_format = stamp
+                .as_ref()
+                .map(|s| s.format_version)
+                .unwrap_or(upgrade_mod::STAMPLESS_FORMAT);
             let binary_format = crate::persist::root_chunk::ROOT_CHUNK_FORMAT_VERSION;
-            if stamp.format_version > binary_format {
-                return Err(std::io::Error::other(format!(
-                    "DATA FORMAT MISMATCH: data directory is format v{} (written by xudanu {}), \
-                     but this binary supports format v{}. \
-                     Upgrade xudanu-server to open this data.",
-                    stamp.format_version, stamp.server_version, binary_format
-                )));
-            }
-            if stamp.format_version < binary_format {
-                return Err(std::io::Error::other(format!(
-                    "DATA FORMAT UPGRADE NEEDED: data directory is format v{} (written by xudanu {}), \
-                     current is v{}. \
-                     Run: xudanu-server upgrade {}",
-                    stamp.format_version, stamp.server_version, binary_format, data_dir.display()
-                )));
+            let manifest_present = stamp_present
+                || data_dir.join("root_manifest.json").exists()
+                || data_dir.join("manifest.json").exists();
+
+            if manifest_present {
+                if data_format > binary_format {
+                    return Err(std::io::Error::other(format!(
+                        "DATA FORMAT MISMATCH: data directory is format v{} (written by xudanu {}), \
+                         but this binary supports format v{}. \
+                         Upgrade xudanu-server to open this data.",
+                        data_format,
+                        stamp
+                            .as_ref()
+                            .map(|s| s.server_version.as_str())
+                            .unwrap_or("unknown"),
+                        binary_format
+                    )));
+                }
+                if data_format < binary_format {
+                    match upgrade_mod::startup_gate_decision() {
+                        // The pipeline's verification restore: the
+                        // data is migrated, the stamp lands after
+                        // verify — proceed.
+                        upgrade_mod::StartupGate::Proceed => {}
+                        upgrade_mod::StartupGate::AutoMigrate => {
+                            tracing::info!(
+                                "[migrate] data at format v{} < binary v{} — auto-migrating \
+                                 (backup → migrate → verify → stamp)",
+                                data_format,
+                                binary_format
+                            );
+                            upgrade_mod::run_upgrade(data_dir).map_err(|e| {
+                                std::io::Error::other(format!(
+                                    "AUTO-MIGRATION FAILED: {}. \
+                                     Fix the cause and start again, or run: \
+                                     xudanu-server upgrade {}",
+                                    e,
+                                    data_dir.display()
+                                ))
+                            })?;
+                        }
+                        upgrade_mod::StartupGate::Refuse => {
+                            return Err(std::io::Error::other(format!(
+                                "DATA FORMAT UPGRADE NEEDED: data directory is format v{} (written by xudanu {}), \
+                                 current is v{}. \
+                                 Run: xudanu-server upgrade {}",
+                                data_format,
+                                stamp
+                                    .as_ref()
+                                    .map(|s| s.server_version.as_str())
+                                    .unwrap_or("unknown"),
+                                binary_format,
+                                data_dir.display()
+                            )));
+                        }
+                    }
+                }
             }
         }
 
@@ -28381,6 +28436,15 @@ pub(crate) mod persist_snapshot {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
+            // Migration (FR-82): stamp the VERSION sidecar on the sync
+            // path too — checkpoint_completed covers the async path;
+            // tests, recovery, and library embedders use this one, and
+            // the stamp must always reflect the binary that wrote the
+            // snapshot. Best-effort: a stamp failure must not fail the
+            // checkpoint (the next checkpoint retries).
+            if let Err(e) = crate::persist::root_chunk::VersionStamp::current().write(data_dir) {
+                tracing::warn!("[checkpoint] VERSION stamp write failed: {e}");
+            }
             Ok(())
         }
 
