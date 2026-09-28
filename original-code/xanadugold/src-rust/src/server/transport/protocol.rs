@@ -3338,6 +3338,16 @@ pub struct WorkListEntry {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub content_crum: Option<String>,
+    /// Abstract rung (semantic zoom): first ~140 chars of the work's
+    /// text, whitespace-collapsed — the "medium" size between title
+    /// and full document for library rows and hover popups. Empty
+    /// for very large works (graceful title-only) and hand-built
+    /// payloads.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "String::is_empty")
+    )]
+    pub preview: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

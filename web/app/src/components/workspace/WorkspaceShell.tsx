@@ -1463,6 +1463,9 @@ export function WorkspaceShell() {
   }
 
   useEffect(() => {
+    // Canonical previous-value ref: the write below is the intended
+    // mutation (track the last-seen save state).
+    // eslint-disable-next-line react-hooks/immutability
     if (saveState === "error" && prevSaveState.current !== "error") {
       showToast("Save error — changes may not be saved. Check connection.");
     }
@@ -1882,6 +1885,8 @@ export function WorkspaceShell() {
             ],
           });
         } catch {
+          // Best-effort padding insert; the plain-position path below
+          // recovers.
         }
         insertPos = text.length + padding.length;
       } else {
@@ -1975,7 +1980,7 @@ export function WorkspaceShell() {
       try {
         await doInsert();
         showToast(`✓ Image placed (${pendingImage.byte_size.toLocaleString()} bytes)`);
-      } catch (e) {
+      } catch {
         try {
           await new Promise(r => setTimeout(r, 2000));
           await doInsert();
@@ -4205,6 +4210,23 @@ export function WorkspaceShell() {
                           {w.is_source && <span title="Imported source work" style={{ marginRight: 2 }}>{"\u{1F4D6}"}</span>}
                           {w.title || `Work 0x${w.work_id.toString(16)}`}
                         </div>
+                        {w.preview && (
+                          <div
+                            className="ws-work-preview"
+                            title={w.preview}
+                            style={{
+                              fontSize: 11,
+                              color: "#7d8590",
+                              marginTop: 1,
+                              marginBottom: 1,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {w.preview}
+                          </div>
+                        )}
                         <div className="ws-work-meta">
                           <code>0x{w.work_id.toString(16)}</code>
                           {w.updated_at && <span>· updated {new Date(w.updated_at * 1000).toISOString().slice(0, 10)}</span>}
@@ -4407,7 +4429,7 @@ export function WorkspaceShell() {
                             onClick={async () => {
                               setMoreMenuOpen(false);
                               try { await crdt.shareWork(); showToast("Work published — now accessible from other servers"); }
-                              catch (e) { showToast("Publish failed"); }
+                              catch { showToast("Publish failed"); }
                             }}
                           >
                             Publish to network
@@ -4765,6 +4787,7 @@ export function WorkspaceShell() {
                 {viewingRevision ? (
                   <div style={{ padding: "16px 0", maxWidth: "38em", margin: "0 auto", fontFamily: "Source Serif 4, Georgia, serif", fontSize: 16, lineHeight: 1.7, color: "#000", whiteSpace: "pre-wrap" }}>
                     {viewingRevision.text
+                      // eslint-disable-next-line no-control-regex -- strips display-hostile control chars while preserving \t\n\r
                       .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
                       .replace(/\ufffc/g, "[image]")
                       .replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]{50,}/g, "[image]")

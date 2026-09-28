@@ -541,6 +541,8 @@ export interface WorkListEntry {  work_id: number;
   is_starred?: boolean;
   updated_at?: number;
   content_crum?: string;
+  /** Abstract rung: first ~140 chars, whitespace-collapsed. */
+  preview?: string;
 }
 
 export type WorkKind = "document" | "note" | "person" | "concept" | "collection" | "commentary" | "book" | "web-shadow";

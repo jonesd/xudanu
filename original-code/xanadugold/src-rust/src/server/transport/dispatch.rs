@@ -18,6 +18,34 @@ fn llm_semaphore() -> &'static tokio::sync::Semaphore {
 /// two-ended fast path, derived type ends (Green's three-set,
 /// materialized on read), and home-document state.
 ///
+/// Abstract rung (semantic zoom): the "medium" size between title
+/// and full text — first ~140 chars, whitespace-collapsed, single
+/// pass with early exit. Called with text the listing already
+/// materialized for char_count, so the preview rides along free.
+fn preview_from_text(text: &str) -> String {
+    const PREVIEW_CHARS: usize = 140;
+    let mut out = String::new();
+    let mut count = 0usize;
+    let mut in_ws = false;
+    for ch in text.chars() {
+        if count >= PREVIEW_CHARS {
+            break;
+        }
+        if ch.is_whitespace() {
+            in_ws = !out.is_empty();
+            continue;
+        }
+        if in_ws {
+            out.push(' ');
+            count += 1;
+            in_ws = false;
+        }
+        out.push(ch);
+        count += 1;
+    }
+    out
+}
+
 /// `requesting_work`: the work the listing was requested FOR — the
 /// perspective the derived `jump_target` is computed from. None when
 /// no single perspective applies (link_get without a viewing work).
@@ -1711,6 +1739,7 @@ fn dispatch_inner(
                             is_starred: starred.contains(&work_id),
                             updated_at: None,
                             content_crum: None,
+                            preview: String::new(),
                         }
                     },
                 )
@@ -1982,12 +2011,13 @@ fn dispatch_inner(
                 }
                 total += 1;
                 if total > offset_val as u64 && entries.len() < limit_val {
+                    let text = ws.work().current_edition().to_text();
                     entries.push(super::protocol::WorkListEntry {
                         work_id: *id,
                         owner: ws.work().owner(),
                         revision_count: ws.work().revision_count(),
                         is_grabbed: ws.grabber().is_some(),
-                        char_count: ws.work().current_edition().to_text().len() as u64,
+                        char_count: text.len() as u64,
                         kind: ws.work().kind().as_str().to_string(),
                         title: ws.cached_title().to_string(),
                         tumbler: srv.work_xan_address(*id).unwrap_or_default(),
@@ -2004,6 +2034,7 @@ fn dispatch_inner(
                             .current_edition()
                             .crum()
                             .map(|c| c.iter().map(|b| format!("{:02x}", b)).collect()),
+                        preview: preview_from_text(&text),
                     });
                 }
             }
@@ -2047,6 +2078,7 @@ fn dispatch_inner(
                         is_starred: starred.contains(&work_id),
                         updated_at: None,
                         content_crum: None,
+                        preview: String::new(),
                     }
                 })
                 .collect();
@@ -4253,6 +4285,7 @@ fn dispatch_inner(
                             is_starred: starred.contains(&work_id),
                             updated_at: None,
                             content_crum: None,
+                            preview: String::new(),
                         }
                     },
                 )
@@ -5003,6 +5036,7 @@ fn dispatch_inner_read(
                             is_starred: starred.contains(&work_id),
                             updated_at: None,
                             content_crum: None,
+                            preview: String::new(),
                         }
                     },
                 )
@@ -5183,12 +5217,13 @@ fn dispatch_inner_read(
                 }
                 total += 1;
                 if total > offset_val as u64 && entries.len() < limit_val {
+                    let text = ws.work().current_edition().to_text();
                     entries.push(super::protocol::WorkListEntry {
                         work_id: *id,
                         owner: ws.work().owner(),
                         revision_count: ws.work().revision_count(),
                         is_grabbed: ws.grabber().is_some(),
-                        char_count: ws.work().current_edition().to_text().len() as u64,
+                        char_count: text.len() as u64,
                         kind: ws.work().kind().as_str().to_string(),
                         title: ws.cached_title().to_string(),
                         tumbler: srv.work_xan_address(*id).unwrap_or_default(),
@@ -5205,6 +5240,7 @@ fn dispatch_inner_read(
                             .current_edition()
                             .crum()
                             .map(|c| c.iter().map(|b| format!("{:02x}", b)).collect()),
+                        preview: preview_from_text(&text),
                     });
                 }
             }
@@ -5248,6 +5284,7 @@ fn dispatch_inner_read(
                         is_starred: starred.contains(&work_id),
                         updated_at: None,
                         content_crum: None,
+                        preview: String::new(),
                     }
                 })
                 .collect();
