@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Xudanu Overlay",
+  "version": "0.1.0",
+  "description": "See Xudanu marks on ordinary web pages. Read-only: the server resolves every anchor; marks that cannot prove their passage do not render.",
+  "permissions": ["storage", "scripting"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html"
+}

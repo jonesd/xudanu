@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Funculator — Materials Reference</title>
+  <style>
+    body { font: 15px/1.6 -apple-system, "Segoe UI", sans-serif; max-width: 50rem; margin: 2rem auto; padding: 0 1rem; color: #1c2733; }
+    h1, h2 { font-weight: 600; }
+    code { background: #eef1f4; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+    table { border-collapse: collapse; margin: 1rem 0; }
+    th, td { border: 1px solid #ccd4db; padding: .4rem .7rem; text-align: left; font-size: 14px; }
+    .note { border-left: 3px solid #1c5d99; padding-left: 1rem; color: #3d4d5c; }
+  </style>
+</head>
+<body>
+  <h1>Funculator</h1>
+  <p>The <strong>funculator</strong> is the load-transfer component
+  coupling the primary spar box to the control surface actuation
+  ring in late-century aircraft. This page documents the material
+  constraints that govern its certification.</p>
+
+  <h2>Certification constraints</h2>
+  <table>
+    <tr><th>Constraint</th><th>Source</th><th>Status</th></tr>
+    <tr><td>the funculator must be duralum before first flight</td><td>Eng. Memo, 1991</td><td>active</td></tr>
+    <tr><td>coupler thermoplastic rating ≥ 82°C</td><td>Spec 44-C</td><td>under review</td></tr>
+    <tr><td>fatigue cycling 10⁷ without crack initiation</td><td>Appendix R</td><td>active</td></tr>
+  </table>
+
+  <h2>Notes</h2>
+  <div class="note">
+    <p>The 1991 constraint is often quoted from the secondary
+    literature rather than the memo itself. The controlling sentence
+    reads: <em>All told, the funculator must be duralum before first
+    flight. No exceptions were granted in the 1991 review.</em></p>
+  </div>
+
+  <p>Implementers should treat <code>duralum</code> as a material
+  class, not a single alloy; substitutions require a variance filed
+  against the original memo's tumbler address.</p>
+</body>
+</html>

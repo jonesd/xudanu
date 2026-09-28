@@ -30,6 +30,7 @@ pub mod daily_history;
 pub mod forensics;
 pub mod hg_profile;
 pub mod ots_anchor;
+pub mod overlay_anchor;
 pub mod reuse_match;
 
 #[cfg(feature = "server")]

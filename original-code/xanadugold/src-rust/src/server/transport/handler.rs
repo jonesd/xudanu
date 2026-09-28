@@ -59,6 +59,7 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/.well-known/xanadu-server.json", get(well_known_handler))
         .route("/api/public/work/{work_id}", get(public_work_handler))
         .route("/api/public/shadow/{work_id}", get(public_shadow_handler))
+        .route("/api/overlay/marks", post(overlay_marks_handler))
         .route("/api/public/works", get(public_works_list_handler))
         .route("/api/public/tumbler/{op}", get(tumbler_arith_handler))
         .route("/api/bloom-filter", get(bloom_filter_handler))
@@ -478,6 +479,121 @@ fn format_tumbler_notation(seq: &crate::space::Sequence) -> String {
 pub struct TumblerQuery {
     pub a: Option<String>,
     pub b: Option<String>,
+}
+
+/// FR-79 Stage 2 (spec 2.3): POST /api/overlay/marks — the
+/// extension's one query. Body: { url, page_text? }. The SERVER
+/// resolves mark anchors against the exact page_text the extension
+/// extracted (one anchoring implementation), returning char-offset
+/// resolutions in that same text. Public, rate-limited (60/min/IP),
+/// CORS-open, ETag keyed on shadow hash + link set with a short
+/// max-age so the detector+overlay loop stays fresh.
+#[derive(Debug, serde::Deserialize)]
+pub struct OverlayMarksBody {
+    pub url: String,
+    pub page_text: Option<String>,
+}
+
+async fn overlay_marks_handler(
+    State(state): State<SharedState>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    axum::Json(body): axum::Json<OverlayMarksBody>,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    if !state.rate_limiter.check_overlay(addr.ip()) {
+        tracing::warn!(target: "xudanu::security", ip = %addr, event = "SECURITY:rate_limited_overlay", "overlay marks rate limit exceeded");
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")],
+            "rate limit exceeded",
+        )
+            .into_response();
+    }
+
+    let url_trim = body.url.trim().to_string();
+    if url_trim.is_empty() || url_trim.len() > 2048 {
+        return (
+            StatusCode::BAD_REQUEST,
+            [(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")],
+            "url must be 1..=2048 chars",
+        )
+            .into_response();
+    }
+    if let Some(ref pt) = body.page_text {
+        // Mirrors web_fetch's cap: text spines are readable text, not
+        // payloads. (The default body limit already bounds the JSON
+        // envelope; this bounds the field explicitly.)
+        if pt.len() > 2 * 1024 * 1024 {
+            return (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                [(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")],
+                "page_text exceeds 2 MB",
+            )
+                .into_response();
+        }
+    }
+
+    let json = match state
+        .server
+        .with_server_ref(|srv| srv.overlay_marks(&url_trim, body.page_text.as_deref()))
+    {
+        Ok(j) => j,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                [(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")],
+                format!("bad request: {e}"),
+            )
+                .into_response()
+        }
+    };
+
+    // ETag over the shadow hash + mark identities + resolutions:
+    // changes when links change or the page resolves differently.
+    let etag_input = format!(
+        "{}|{}",
+        json["shadow"]["content_hash_blake3"].as_str().unwrap_or(""),
+        json["marks"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .map(|m| {
+                        format!(
+                            "{}:{}",
+                            m["link_id"].as_str().unwrap_or("?"),
+                            m["resolution"]
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_default()
+    );
+    let etag = format!("\"{}\"", blake3::hash(etag_input.as_bytes()).to_hex());
+
+    (
+        StatusCode::OK,
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/json; charset=utf-8",
+            ),
+            (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+            (axum::http::header::ETAG, etag.as_str()),
+            // Short: a link created a second ago should appear on the
+            // reader's next page view (the detector+overlay loop),
+            // but a 30s shared-cache window still absorbs refreshes.
+            (axum::http::header::CACHE_CONTROL, "public, max-age=30"),
+            (
+                axum::http::header::HeaderName::from_static("x-xudanu-served-by"),
+                "xudanu",
+            ),
+        ],
+        json.to_string(),
+    )
+        .into_response()
 }
 
 /// Public tumbler arithmetic — /api/public/tumbler/{op}?a=..&b=..

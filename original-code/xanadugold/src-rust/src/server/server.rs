@@ -8837,6 +8837,261 @@ impl Server {
         }))
     }
 
+    /// FR-79 Stage 2 (spec 2.3): the overlay marks query. Given the
+    /// URL a browser is visiting and (optionally) the text spine the
+    /// extension extracted from the page, return every link whose
+    /// end is attached to a span of the shadow of that URL — the
+    /// mark descriptors plus, when page text is supplied, the
+    /// SERVER-SIDE resolution of each mark against that exact text
+    /// (one anchoring implementation; the extension never matches
+    /// text itself).
+    ///
+    /// Public, no session: rate-limited at the HTTP layer. No shadow
+    /// for the URL is the common case and exits cheap.
+    pub fn overlay_marks(
+        &self,
+        url: &str,
+        page_text: Option<&str>,
+    ) -> Result<serde_json::Value, ServerError> {
+        use crate::server::overlay_anchor::{
+            excerpt_with_context, resolve_anchor, MAX_CONTEXT_CHARS, MAX_EXCERPT_CHARS,
+        };
+
+        let normalized = normalize_shadow_url(url).ok_or_else(|| {
+            ServerError::InvalidArgument("url must be http:// or https://".into())
+        })?;
+        let shadow_key = format!("web-shadow:{normalized}");
+
+        let shadow_id = self
+            .works
+            .iter()
+            .find(|(_, ws)| {
+                ws.work.kind() == crate::edition::WorkKind::WebShadow
+                    && ws
+                        .source_edition_info()
+                        .map(|s| s == shadow_key.as_str())
+                        .unwrap_or(false)
+            })
+            .map(|(id, _)| *id);
+
+        let Some(shadow_id) = shadow_id else {
+            // No shadow for this URL: nothing to render.
+            return Ok(serde_json::json!({
+                "api_version": 1,
+                "url": normalized,
+                "shadow": serde_json::Value::Null,
+                "mark_count": 0,
+                "marks": [],
+            }));
+        };
+
+        let ws = self.works.get(&shadow_id).expect("found above");
+        let shadow_text = ws.work.current_edition().to_text();
+        let shadow_hash = blake3::hash(shadow_text.as_bytes()).to_hex().to_string();
+        let total_chars = shadow_text.chars().count();
+        let fingerprint_match = page_text
+            .map(|pt| blake3::hash(pt.as_bytes()).to_hex().to_string() == shadow_hash)
+            .unwrap_or(false);
+
+        let mut marks = Vec::new();
+        if let Some(link_ids) = self.work_to_links.get(&shadow_id) {
+            for &lid in link_ids {
+                let Some(ls) = self.links.get(&lid) else {
+                    continue;
+                };
+                let direction = if ls.origin == shadow_id {
+                    "outgoing"
+                } else {
+                    "incoming"
+                };
+                let far_id = if ls.origin == shadow_id {
+                    ls.destination
+                } else {
+                    Some(ls.origin)
+                };
+
+                // Every attachment that lands on the shadow is its
+                // own mark (gathered ends render one ribbon each).
+                for end_name in ls.link.end_names() {
+                    let Some(attachments) = ls.link.attachments_at(end_name) else {
+                        continue;
+                    };
+                    for hr in attachments {
+                        if hr.work_context() != Some(shadow_id) {
+                            continue;
+                        }
+                        let (Some(s0), Some(e0)) = (hr.start_position(), hr.end_position()) else {
+                            continue;
+                        };
+                        let (mut s, mut e) = (s0.max(0) as usize, e0.max(0) as usize);
+                        if s >= e || s >= total_chars {
+                            continue;
+                        }
+                        e = e.min(total_chars);
+
+                        // Extract the excerpt, preferring the
+                        // attachment's own stored material (the span
+                        // text at CREATION time). After a shadow
+                        // refresh the stored offsets are stale: if
+                        // current[s..e] no longer matches the stored
+                        // excerpt, re-anchor on the read path (find
+                        // the passage in the current revision) —
+                        // page redesign = a big edit, and an anchor
+                        // that survives a Xudanu revision survives a
+                        // redesign. If the passage is gone from the
+                        // shadow entirely, the stored excerpt still
+                        // resolves against the live page (excerpt
+                        // tier, no context) — or hides.
+                        let stored_excerpt: String =
+                            hr.excerpt().map(|ed| ed.to_text()).unwrap_or_default();
+                        let (mut excerpt, mut before, mut after) =
+                            excerpt_with_context(&shadow_text, s, e);
+                        if !stored_excerpt.is_empty() && stored_excerpt.trim() != excerpt.trim() {
+                            match resolve_anchor(&shadow_text, &stored_excerpt, "", "") {
+                                Some(ra) => {
+                                    s = ra.start;
+                                    e = ra.end.max(ra.start + 1).min(total_chars);
+                                    let (ex2, b2, a2) = excerpt_with_context(&shadow_text, s, e);
+                                    excerpt = ex2;
+                                    before = b2;
+                                    after = a2;
+                                }
+                                None => {
+                                    excerpt =
+                                        stored_excerpt.chars().take(MAX_EXCERPT_CHARS).collect();
+                                    before = String::new();
+                                    after = String::new();
+                                }
+                            }
+                        }
+                        if excerpt.trim().is_empty() {
+                            continue; // fail closed: no proof, no mark
+                        }
+                        let excerpt_hash = blake3::hash(excerpt.as_bytes()).to_hex().to_string();
+
+                        // Resolution. Fingerprint: the page IS the
+                        // current revision and the (possibly
+                        // re-anchored) span still extracts the
+                        // excerpt → offsets authoritative.
+                        let span_excerpt: String = shadow_text
+                            .chars()
+                            .skip(s)
+                            .take((e - s).min(MAX_EXCERPT_CHARS))
+                            .collect();
+                        let resolution = if fingerprint_match && span_excerpt == excerpt {
+                            Some(serde_json::json!({
+                                "start": s,
+                                "end": e,
+                                "how": "fingerprint",
+                            }))
+                        } else {
+                            page_text.and_then(|pt| {
+                                resolve_anchor(pt, &excerpt, &before, &after).map(|r| {
+                                    serde_json::json!({
+                                        "start": r.start,
+                                        "end": r.end,
+                                        "how": r.how.as_str(),
+                                    })
+                                })
+                            })
+                        };
+
+                        // The far end's own span, for click-through.
+                        let far_span = far_id.and_then(|fid| {
+                            let far_hr = if end_name == "RightEnd" {
+                                ls.link.end_at("LeftEnd")
+                            } else if end_name == "LeftEnd" {
+                                ls.link.end_at("RightEnd")
+                            } else {
+                                // Gathered/typed end: first attachment
+                                // that lives on the far work.
+                                ls.link.ends().values().flatten().find(|a| {
+                                    a.work_context() == Some(fid) && a.start_position().is_some()
+                                })
+                            };
+                            far_hr.and_then(|hr| {
+                                let (fs, fe) = (hr.start_position()?, hr.end_position()?);
+                                Some(serde_json::json!({ "start": fs, "end": fe }))
+                            })
+                        });
+
+                        // Registry names first; the built-in 1-7
+                        // vocabulary as fallback (seeding the
+                        // registry is optional on fresh servers);
+                        // never a bare "type 1488".
+                        let builtin_name = |tid: u64| -> Option<&'static str> {
+                            match tid {
+                                1 => Some("Comment"),
+                                2 => Some("Reference"),
+                                3 => Some("Disagreement"),
+                                4 => Some("Quotation"),
+                                5 => Some("See Also"),
+                                6 => Some("Web Link"),
+                                7 => Some("Trail"),
+                                _ => None,
+                            }
+                        };
+                        let type_names: Vec<String> = ls
+                            .link
+                            .link_types()
+                            .iter()
+                            .map(|&tid| {
+                                self.link_type_registry
+                                    .get(&tid)
+                                    .map(|e| e.name.clone())
+                                    .or_else(|| builtin_name(tid).map(|s| s.to_string()))
+                                    .unwrap_or_else(|| format!("type {}", tid))
+                            })
+                            .collect();
+
+                        let far = far_id.map(|fid| {
+                            let (_, far_title, _) = self.link_endpoint_meta(fid);
+                            serde_json::json!({
+                                "work_id": format!("{:x}", fid),
+                                "title": far_title,
+                            })
+                        });
+
+                        marks.push(serde_json::json!({
+                            "link_id": format!("{:x}", lid),
+                            "direction": direction,
+                            "excerpt": excerpt,
+                            "excerpt_hash_blake3": excerpt_hash,
+                            "link_types": ls.link.link_types(),
+                            "link_type_names": type_names,
+                            "far": far,
+                            "far_span": far_span,
+                            "author": ls.author_club
+                                .and_then(|cid| self.club_display_name_by_id(cid)),
+                            "endorsement_count": ls.endorsements.len(),
+                            "resolution": resolution,
+                        }));
+                    }
+                }
+            }
+        }
+
+        let mark_count = marks.len();
+        Ok(serde_json::json!({
+            "api_version": 1,
+            "url": normalized,
+            "shadow": {
+                "work_id": format!("{:x}", shadow_id),
+                "content_hash_blake3": shadow_hash,
+                "revision": ws.work.revision_count(),
+                "fetched_at": ws.latest_revision_timestamp().unwrap_or(0),
+            },
+            "fingerprint_match": fingerprint_match,
+            "mark_count": mark_count,
+            "marks": marks,
+            // Contract constants echoed for consumers (spec 2.2).
+            "limits": {
+                "max_excerpt_chars": MAX_EXCERPT_CHARS,
+                "max_context_chars": MAX_CONTEXT_CHARS,
+            },
+        }))
+    }
+
     /// FR-41 S2: transclude a selected span of a REMOTE work into a
     /// local document, by reference. The flow:
     ///
@@ -32008,15 +32263,13 @@ mod tests {
         assert!(text_a.contains("source document"));
 
         // The target work's metadata is still in the works HashMap
-        // (only the edition was evicted)
+        // (only the edition was evicted) — the title read is the
+        // point: it must not panic or fail after eviction.
         let ws_b = server.works.get(&wid_b).unwrap();
-        assert!(
-            ws_b.title().len() >= 0,
-            "target work metadata should still be accessible"
-        );
+        let _title = ws_b.title();
 
         // Cleanup
-        let _ = std::fs::remove_dir_all(&dir);
+        drop(std::fs::remove_dir_all(&dir));
     }
 
     /// Evict a work, then verify transclusion-related reads work.

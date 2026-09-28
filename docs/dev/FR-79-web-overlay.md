@@ -1,6 +1,6 @@
 # FR-79: The Web Overlay — Xudanu as the Connection Layer of the WWW
 
-**Status:** Stage 1 specified, not started
+**Status:** Stage 1 shipped (v1.14.4); Stage 2 implemented (server + extension + E2E walkthrough; browser-render pass pending manual fixture run)
 **Created:** 2026-09-23
 **Tradition:** Nelson's transquotation and the Little Transquoter
 (2004–05, Andrew Pam): portion addresses on web pages, each excerpt
@@ -145,12 +145,33 @@ return the mark descriptors. Rate-limited; no session needed.
 
 ### 2.4 Exit criteria
 
-- [ ] marks render on 3 representative real pages (article, docs,
-      blog) and survive a simulated edit of the page text
-- [ ] zero render on pages with no marks; no errors on hostile DOMs
-- [ ] click-through lands at the exact span in Xudanu
-- [ ] extension passes store review hygiene (permissions minimal:
-      activeTab + host permissions optional per-server)
+- [x] anchoring resolver: contiguous → space-joined → collapsed
+      passes, whitespace/case tolerant, char-offset safe
+      (src/server/overlay_anchor.rs, 11 unit tests)
+- [x] `POST /api/overlay/marks` public endpoint: rate-limited
+      (60/min/IP), CORS, ETag + max-age=30, 2 MB cap, no-session
+      (src/server/server.rs overlay_marks, transport/handler.rs)
+- [x] server-side resolution against the caller's exact page text:
+      fingerprint → context → excerpt → hidden, proven by
+      integration test across edit/move/delete/no-shadow cases
+      (tests/integration.rs overlay_marks_endpoint_full_flow)
+- [x] read-path re-anchoring: stale spans after a shadow refresh
+      re-anchor via the stored excerpt (page redesign = a big edit)
+- [x] E2E walkthrough without a browser: examples/overlay.mjs
+      (shadow → typed link → marks → edited page → deleted passage
+      → unshadowed URL)
+- [x] MV3 extension skeleton: minimal permissions (storage,
+      scripting + optional host grant), dynamic content-script
+      registration, options page, service-worker relay
+      (web/extension/)
+- [x] content script: code-point-indexed text spine (matches server
+      char offsets), CSS Custom Highlight tint + margin ribbons
+      (right = incoming, left = outgoing), hover tooltip,
+      click-through to `?work=0x…#C…`, silent failure everywhere
+- [ ] manual render pass on the three fixtures (article/docs/blog)
+      and the simulated-edit survival run (web/extension/fixtures/
+      README.md) — the rendering half of this criterion
+- [ ] extension store review hygiene pass (permissions audit)
 
 ---
 

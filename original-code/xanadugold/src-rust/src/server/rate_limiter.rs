@@ -5,6 +5,11 @@ use std::time::{Duration, Instant};
 
 const RATE_WINDOW: Duration = Duration::from_secs(60);
 const GET_LIMIT: u32 = 120;
+/// FR-79 Stage 2: overlay marks queries per minute, per IP. Each
+/// query carries the page's text spine (up to 2 MB) and runs
+/// excerpt resolution server-side — browsing generates one per page
+/// load; scrapes generate hundreds.
+const OVERLAY_LIMIT: u32 = 60;
 const NOTIFY_LIMIT: u32 = 30;
 const NOTIFY_WINDOW: Duration = Duration::from_secs(3600);
 /// FR-41 S1: federated search fan-outs per minute, per session.
@@ -25,6 +30,7 @@ struct NotifyEntry {
 
 pub struct RateLimiter {
     get_entries: Mutex<HashMap<IpAddr, RateEntry>>,
+    overlay_by_ip: Mutex<HashMap<IpAddr, RateEntry>>,
     notify_by_ip: Mutex<HashMap<IpAddr, NotifyEntry>>,
     notify_by_server: Mutex<HashMap<String, NotifyEntry>>,
     federated_search_by_session: Mutex<HashMap<u64, RateEntry>>,
@@ -34,10 +40,27 @@ impl RateLimiter {
     pub fn new() -> Self {
         RateLimiter {
             get_entries: Mutex::new(HashMap::new()),
+            overlay_by_ip: Mutex::new(HashMap::new()),
             notify_by_ip: Mutex::new(HashMap::new()),
             notify_by_server: Mutex::new(HashMap::new()),
             federated_search_by_session: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// FR-79 Stage 2: rate-limit overlay marks queries per IP.
+    pub fn check_overlay(&self, ip: IpAddr) -> bool {
+        let mut entries = self.overlay_by_ip.lock().unwrap();
+        let now = Instant::now();
+        let entry = entries.entry(ip).or_insert(RateEntry {
+            count: 0,
+            window_start: now,
+        });
+        if now.duration_since(entry.window_start) > RATE_WINDOW {
+            entry.count = 0;
+            entry.window_start = now;
+        }
+        entry.count += 1;
+        entry.count <= OVERLAY_LIMIT
     }
 
     /// FR-41 S1: rate-limit federated-search fan-outs per session.

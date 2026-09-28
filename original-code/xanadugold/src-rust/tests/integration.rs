@@ -1797,6 +1797,247 @@ async fn web_shadow_create_idempotent_refresh() {
     assert!(!arr.is_empty(), "link into shadow must survive refresh");
 }
 
+/// FR-79 Stage 2 (spec 2.3/2.4): the overlay marks endpoint over
+/// HTTP. Creates a shadow + a typed link onto a span, then:
+/// 1. exact page text → fingerprint resolution with authoritative
+///    offsets
+/// 2. edited page text (passage moved) → context/excerpt resolution
+///    at the new offsets (read-path re-anchoring through the stored
+///    excerpt)
+/// 3. page without the passage → resolution null (hidden, not error)
+/// 4. URL with no shadow → cheap empty exit
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn overlay_marks_endpoint_full_flow() {
+    xudanu::server::server::set_allow_loopback(true);
+    let (page_addr, content) = spawn_page_server().await;
+    let url = format!("http://127.0.0.1:{}/page", page_addr.port());
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    // Shadow + a Disagreement link onto "stable content for spans".
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(50, "web_shadow", Some(serde_json::json!({"url": url}))),
+    )
+    .await;
+    assert_eq!(resp["type"], "response", "shadow create failed: {}", resp);
+    let wid = resp["value"]["value"]["work_id"].as_u64().unwrap();
+
+    let note = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            51,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "I dispute the middle of this page"}})),
+        ),
+    )
+    .await;
+    let note_id = note["value"]["value"].as_u64().unwrap();
+
+    let body_text = content.lock().unwrap().clone();
+    // The shadow's text is the SANITIZED fetch; spans resolve against
+    // it, not the raw body (whitespace may differ).
+    let shadow_probe: serde_json::Value = reqwest::Client::new()
+        .get(format!("http://{}/api/public/shadow/{:x}", srv.addr, wid))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let shadow_text = shadow_probe["text"].as_str().unwrap().to_string();
+    let stable = "stable content for spans";
+    let span_start = shadow_text.find(stable).unwrap();
+    let link = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            52,
+            "link_create",
+            Some(serde_json::json!({
+                "origin": note_id, "destination": wid,
+                "origin_ref": {"kind": "single", "work_context": note_id,
+                    "start_position": 0, "end_position": 8},
+                "destination_ref": {"kind": "single", "work_context": wid,
+                    "excerpt": stable,
+                    "start_position": span_start as i64,
+                    "end_position": (span_start + stable.len()) as i64},
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(link["type"], "response", "link create failed: {}", link);
+    // Type the link: Disagreement = 3.
+    let link_id = link["value"]["value"].as_u64().unwrap();
+    let typed = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            53,
+            "link_set_types",
+            Some(serde_json::json!({"link_id": link_id, "link_types": [3]})),
+        ),
+    )
+    .await;
+    assert_eq!(typed["type"], "response", "typing failed: {}", typed);
+
+    let client = reqwest::Client::new();
+    let marks_url = format!("http://{}/api/overlay/marks", srv.addr);
+
+    // 1. Exact page text → fingerprint. The extension's spine for
+    //    an unedited page equals the shadow's sanitized text.
+    let out: serde_json::Value = client
+        .post(&marks_url)
+        .json(&serde_json::json!({"url": url, "page_text": shadow_text}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        out["shadow"]["work_id"].as_str().unwrap(),
+        format!("{:x}", wid)
+    );
+    assert_eq!(out["mark_count"], 1, "one mark: {}", out);
+    let mark = &out["marks"][0];
+    assert_eq!(mark["direction"], "incoming");
+    assert_eq!(mark["link_type_names"][0], "Disagreement");
+    assert_eq!(
+        mark["far"]["work_id"].as_str().unwrap(),
+        format!("{:x}", note_id)
+    );
+    assert_eq!(
+        mark["resolution"]["how"],
+        "fingerprint",
+        "exact page text must fingerprint-resolve: {}",
+        serde_json::to_string(mark).unwrap()
+    );
+    assert_eq!(
+        mark["resolution"]["start"].as_u64(),
+        Some(span_start as u64)
+    );
+    assert_eq!(
+        mark["resolution"]["end"].as_u64(),
+        Some((span_start + stable.len()) as u64)
+    );
+    assert!(
+        mark["excerpt"].as_str().unwrap().contains("stable content"),
+        "excerpt: {}",
+        mark["excerpt"]
+    );
+
+    // ETag present + short cache.
+    let resp = client
+        .post(&marks_url)
+        .json(&serde_json::json!({"url": url, "page_text": body_text}))
+        .send()
+        .await
+        .unwrap();
+    assert!(resp.headers().get("etag").is_some(), "ETag required");
+    let cc = resp
+        .headers()
+        .get("cache-control")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    assert!(cc.contains("max-age=30"), "cache-control: {}", cc);
+
+    // 2. Edited page: a new paragraph is inserted before the
+    // passage. The shadow is refreshed (its text moves too), then
+    // the marks query runs against the LIVE edited page.
+    let edited = format!(
+        "Shadow Test Page\n\nA brand new editorial paragraph.\n\n{} content survives here.\n\nSecond body line.",
+        stable
+    );
+    {
+        let mut c = content.lock().unwrap();
+        *c = edited.clone();
+    }
+    let refreshed = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            54,
+            "web_shadow",
+            Some(serde_json::json!({"url": url, "refresh": true})),
+        ),
+    )
+    .await;
+    assert_eq!(
+        refreshed["value"]["value"]["revised"].as_bool(),
+        Some(true),
+        "refresh must revise: {}",
+        refreshed
+    );
+
+    let out2: serde_json::Value = client
+        .post(&marks_url)
+        .json(&serde_json::json!({"url": url, "page_text": edited}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(out2["mark_count"], 1, "mark survives the edit: {}", out2);
+    let mark2 = &out2["marks"][0];
+    let how = mark2["resolution"]["how"].as_str().unwrap_or("null");
+    let new_start = edited.find(stable).unwrap() as u64;
+    let got_start = mark2["resolution"]["start"].as_u64().unwrap_or(u64::MAX);
+    assert!(
+        how == "fingerprint" || how == "context" || how == "excerpt",
+        "must resolve via a proof tier, got: {}",
+        serde_json::to_string(mark2).unwrap()
+    );
+    assert_eq!(got_start, new_start, "offsets land at the moved passage");
+
+    // 3. Page where the passage is gone → hidden, not an error.
+    let gone = "Shadow Test Page\n\nEverything here is different now. Nothing survives.\n\nFin."
+        .to_string();
+    let out3: serde_json::Value = client
+        .post(&marks_url)
+        .json(&serde_json::json!({"url": url, "page_text": gone}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(out3["mark_count"], 1);
+    assert!(
+        out3["marks"][0]["resolution"].is_null(),
+        "unprovable mark must hide: {}",
+        out3["marks"][0]
+    );
+
+    // 4. No shadow for this URL → cheap empty exit.
+    let out4: serde_json::Value = client
+        .post(&marks_url)
+        .json(&serde_json::json!({
+            "url": format!("http://127.0.0.1:{}/never-shadowed", page_addr.port()),
+            "page_text": "some page"
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(out4["shadow"].is_null());
+    assert_eq!(out4["mark_count"], 0);
+
+    // 5. Bad requests are rejected, not crashed.
+    let bad = client
+        .post(&marks_url)
+        .json(&serde_json::json!({"url": "ftp://nope", "page_text": "x"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), 400);
+}
+
 #[tokio::test]
 async fn admin_security_log_verify_requires_admin() {
     let srv = TestServer::start().await;
