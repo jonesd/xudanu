@@ -133,9 +133,12 @@ RUST_LOG=${RUST_LOG:-info} nohup "$BINARY" \
 SRV_PID=$!
 
 # Wait for server to actually be listening
+# 120s budget: restore time grows with the corpus (499 works +
+# session tickets ≈ 35-40s as of Sep 2026); 30s timed out and the
+# script killed a healthy server mid-restore.
 echo -n "  Waiting for server on :${PORT}"
 OK=0
-for i in $(seq 1 30); do
+for i in $(seq 1 120); do
     if ! kill -0 "$SRV_PID" 2>/dev/null; then
         echo ""
         echo "ERROR: server crashed. Last log lines:"
