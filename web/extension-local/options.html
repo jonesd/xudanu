@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Xudanu Overlay</title>
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; max-width: 34rem; margin: 3rem auto; padding: 0 1rem; color: #1c2733; }
+    h1 { font-size: 1.25rem; }
+    label { display: block; font-weight: 600; margin: 1.2rem 0 .3rem; }
+    input[type="url"] { width: 100%; box-sizing: border-box; padding: .45rem .6rem; font: inherit; border: 1px solid #b7c2cc; border-radius: 6px; }
+    .row { display: flex; gap: .6rem; margin-top: 1.2rem; }
+    button { font: inherit; padding: .45rem 1rem; border-radius: 6px; border: 1px solid #b7c2cc; background: #fff; cursor: pointer; }
+    button.primary { background: #1c5d99; border-color: #1c5d99; color: #fff; }
+    #status { margin-top: 1rem; padding: .6rem .8rem; border-radius: 6px; display: none; }
+    #status.ok { display: block; background: #e7f5ec; color: #1a5e2d; }
+    #status.err { display: block; background: #fbe9e7; color: #8c2f21; }
+    small { color: #5b6a77; }
+  </style>
+</head>
+<body>
+  <h1>Xudanu Overlay</h1>
+  <p>See Xudanu marks on ordinary web pages. Read-only: your Xudanu
+  server resolves every anchor; marks that cannot prove their
+  passage do not render.</p>
+
+  <label for="server">Xudanu server</label>
+  <input id="server" type="url" placeholder="https://xudanu.example.com" />
+  <small>The server that holds your shadows and links — e.g. the one you use in the browser app.</small>
+
+  <div class="row">
+    <button id="save">Save</button>
+    <button id="test">Test connection</button>
+    <button id="enable" class="primary">Enable overlay on sites</button>
+    <button id="disable">Disable</button>
+  </div>
+
+  <div id="status"></div>
+
+  <p><small>Enabling asks for host permission to run on pages you
+  visit. Nothing is sent anywhere except the page URL and its
+  extracted text — to your server.</small></p>
+
+  <script src="options.js"></script>
+</body>
+</html>

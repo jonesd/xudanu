@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Xudanu Overlay (local dev)",
+  "version": "0.2.0",
+  "description": "Local-dev variant: static registration, host permissions for localhost only — no Enable flow needed. The production manifest (manifest.json) uses optional permissions + dynamic registration.",
+  "permissions": ["storage", "scripting"],
+  "host_permissions": ["http://127.0.0.1:8899/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1:8899/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

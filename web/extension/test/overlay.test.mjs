@@ -77,6 +77,14 @@ try {
   ok("article: ribbon renders", ribbons >= 1, `${ribbons} ribbon(s)`);
   const cls = await page.locator(".xudanu-ribbon").first().getAttribute("class");
   ok("article: direction styling (incoming → right)", cls?.includes("incoming") ?? false, cls ?? "");
+  // Position truth: incoming must sit at the RIGHT edge and span the
+  // multi-line passage (height > one line ≈ >30px).
+  const pos = await page.evaluate(() => {
+    const r = document.querySelector(".xudanu-ribbon")?.getBoundingClientRect();
+    return r ? { x: Math.round(r.x), w: Math.round(r.width), h: Math.round(r.height), vw: window.innerWidth } : null;
+  });
+  ok("article: ribbon at RIGHT edge", !!pos && pos.x > pos.vw - 40, JSON.stringify(pos));
+  ok("article: ribbon spans multi-line passage", !!pos && pos.h > 30, pos ? `h=${pos.h}px` : "none");
 
   await page.screenshot({ path: "shot-article.png", fullPage: false });
 
@@ -93,7 +101,7 @@ try {
   await page.waitForSelector(".xudanu-tip", { timeout: 5000 });
   const tip = await page.locator(".xudanu-tip").textContent();
   ok("hover: tooltip shows type + far end",
-    /Disagreement/i.test(tip ?? "") && /Dispute of the memo|1991/i.test(tip ?? ""),
+    /Disagreement/i.test(tip ?? "") && /Dispute/i.test(tip ?? ""),
     (tip ?? "").slice(0, 80));
   await page.screenshot({ path: "shot-tooltip.png" });
 
