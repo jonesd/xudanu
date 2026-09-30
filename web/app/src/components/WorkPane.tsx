@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CollaborativeEditor } from "./CollaborativeEditor";
 import type { CrdtSyncClient } from "../api/crdt_sync";
 
 /**
@@ -54,7 +53,8 @@ interface WorkPaneProps {
 export function WorkPane({
   client,
   workId,
-  connected,
+  // connected: unused in the text renderer; kept in the prop API
+  connected: _connected,
   onClose,
   onSelectionChange,
   onHoldEnd,
@@ -72,6 +72,39 @@ export function WorkPane({
   const [revision, setRevision] = useState(0);
   const loadSeq = useRef(0);
   const bodyRef = useRef<HTMLDivElement | null>(null);
+
+  // Selection from a SINGLE text node: offsets are exact by
+  // construction (UTF-16 indices into `text`, the same semantics as
+  // text.slice) and the DOM never rebuilds under React re-renders —
+  // the full editor remounted and cleared selections mid-drag when
+  // driven from a foreign parent (found in live slice-1 testing).
+  const computeSelection = useCallback((): WorkPaneSelection | null => {
+    const node = bodyRef.current;
+    const domSel = window.getSelection();
+    if (!node || !domSel || domSel.rangeCount === 0 || domSel.isCollapsed) return null;
+    const range = domSel.getRangeAt(0);
+    if (!node.contains(range.commonAncestorContainer)) return null;
+    const measure = (side: "start" | "end"): number => {
+      const r = document.createRange();
+      r.selectNodeContents(node);
+      if (side === "start") {
+        r.setEnd(range.startContainer, range.startOffset);
+      } else {
+        r.setEnd(range.endContainer, range.endOffset);
+      }
+      return r.toString().length; // UTF-16 code units — slice parity
+    };
+    const start = measure("start");
+    const end = measure("end");
+    if (end <= start) return null;
+    return { start, end, text: text.slice(start, end) };
+  }, [text]);
+
+  const reportSelection = useCallback(() => {
+    const s = computeSelection();
+    setSel(s);
+    onSelectionChange?.(s);
+  }, [computeSelection, onSelectionChange]);
 
   const load = useCallback(async () => {
     if (!client) return;
@@ -105,25 +138,7 @@ export function WorkPane({
     }
   }, [loading, error, initialScrollTop, workId]);
 
-  const handleSelection = useCallback(
-    (start: number | null, end: number | null) => {
-      if (start == null || end == null || start === end) {
-        setSel(null);
-        onSelectionChange?.(null);
-        return;
-      }
-      const s = Math.min(start, end);
-      const e = Math.max(start, end);
-      const selection: WorkPaneSelection = {
-        start: s,
-        end: e,
-        text: text.slice(s, e),
-      };
-      setSel(selection);
-      onSelectionChange?.(selection);
-    },
-    [text, onSelectionChange],
-  );
+
 
   return (
     <div
@@ -170,7 +185,15 @@ export function WorkPane({
         {sel && onHoldEnd && (
           <button
             type="button"
-            onClick={() => onHoldEnd(sel)}
+            onClick={() => {
+              // Visual truth: the DOM selection's text is the excerpt
+              // (immune to offset drift when rendered text differs
+              // from the raw model — transclusions, quotes, compound
+              // segments). Editor offsets remain the span anchor.
+              const domText = window.getSelection()?.toString() ?? "";
+              const holdText = domText.trim().length > 0 ? domText : sel.text;
+              onHoldEnd({ ...sel, text: holdText });
+            }}
             style={{
               fontSize: "calc(var(--ws-font, 14px) - 1px)",
               padding: "2px 8px",
@@ -244,6 +267,7 @@ export function WorkPane({
         className="work-pane-body"
         ref={bodyRef}
         onScroll={(e) => onScrollRemember?.((e.target as HTMLDivElement).scrollTop)}
+        onMouseUp={reportSelection}
         style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative" }}
       >
         {loading && (
@@ -258,16 +282,37 @@ export function WorkPane({
           </div>
         )}
         {!loading && !error && (
-          <CollaborativeEditor
-            text={text}
-            workId={workId}
-            editable={false}
-            connected={connected}
-            attributionSpans={[]}
-            onCursorChange={() => {}}
-            onSelectionChange={handleSelection}
-            highlightRange={held ?? undefined}
-          />
+          <div
+            className="work-pane-text"
+            style={{
+              whiteSpace: "pre-wrap",
+              userSelect: "text",
+              padding: "10px 14px",
+              fontFamily: "'Source Serif 4', Georgia, serif",
+              fontSize: "var(--ws-font, 14px)",
+              lineHeight: 1.7,
+              color: "#e8e6e0",
+              minHeight: "100%",
+            }}
+          >
+            {held ? (
+              <>
+                {text.slice(0, held.start)}
+                <mark
+                  style={{
+                    background: "rgba(28, 93, 153, 0.35)",
+                    color: "inherit",
+                    padding: 0,
+                  }}
+                >
+                  {text.slice(held.start, held.end)}
+                </mark>
+                {text.slice(held.end)}
+              </>
+            ) : (
+              text
+            )}
+          </div>
         )}
       </div>
     </div>

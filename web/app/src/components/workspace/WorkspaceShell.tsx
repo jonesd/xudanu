@@ -199,6 +199,14 @@ export function WorkspaceShell() {
   // with scroll memory and a held connection end. No cap: layout is
   // the user's call.
   const [panes, setPanes] = useState<PaneState[]>([]);
+  // Live (un-held) selection in the most recently selected pane —
+  // lets the connect bar wake on select+select without requiring
+  // Hold-as-end for the common two-document case.
+  const [paneLive, setPaneLive] = useState<{
+    key: string;
+    workId: number;
+    sel: WorkPaneSelection;
+  } | null>(null);
   const [annotationTarget, setAnnotationTarget] = useState<{ start: number; end: number } | null>(null);
   const [themeState, setThemeState] = useState(() => loadThemeState());
   const [themePickerOpen, setThemePickerOpen] = useState(false);
@@ -3833,15 +3841,26 @@ export function WorkspaceShell() {
     [panes],
   );
 
-  // The two-ended create: primary selection + first held end, or the
-  // first two held ends. More than two held = slice 4's gather.
+  // The two-ended create: primary selection pairs with the pane's
+  // HELD end or its LIVE selection (select + select wakes the bar);
+  // two held ends also pair. More than two held = slice 4's gather.
   const connectPair: [PaneEnd, PaneEnd] | null = useMemo(() => {
-    const candidates = mainEnd ? [mainEnd, ...heldFromPanes] : heldFromPanes;
+    const liveEnd: PaneEnd | null =
+      paneLive && paneLive.sel.end > paneLive.sel.start
+        ? {
+            workId: paneLive.workId,
+            start: paneLive.sel.start,
+            end: paneLive.sel.end,
+            text: paneLive.sel.text,
+          }
+        : null;
+    const farCandidates = heldFromPanes.length > 0 ? heldFromPanes : liveEnd ? [liveEnd] : [];
+    const candidates = mainEnd ? [mainEnd, ...farCandidates] : farCandidates;
     if (candidates.length >= 2 && canConnect(candidates[0], candidates[1])) {
       return [candidates[0], candidates[1]];
     }
     return null;
-  }, [mainEnd, heldFromPanes]);
+  }, [mainEnd, heldFromPanes, paneLive]);
 
   const [paneConnectType, setPaneConnectType] = useState(2); // Reference
   const createPaneConnection = useCallback(async () => {
@@ -3856,6 +3875,7 @@ export function WorkspaceShell() {
       }
       showToast(`✓ Connected “${chipExcerpt(a.text, 20)}” → “${chipExcerpt(b.text, 20)}”`);
       setPanes((prev) => prev.map((p) => (p.held ? { ...p, held: null } : p)));
+      setPaneLive(null);
       setSelectionRange(null);
       if (workBeId != null) loadLinks(c, workBeId, works);
     } catch (e) {
@@ -3878,10 +3898,7 @@ export function WorkspaceShell() {
 
   return (
     <div className={`ws-shell ${activeCssClass} ${navTab === "compose" ? "ws-mode-compose" : ""} ${navTab === "library" ? "ws-mode-library" : ""} ${workBeId !== null ? "ws-mode-doc" : ""} ${workBeId === null && navTab !== "library" ? "ws-mode-welcome" : ""}`}
-      style={{
-        ...(panes.length > 0 ? { paddingRight: `${paneAreaVw}vw` } : {}),
-        ["--ws-font" as string]: `${uiFontSize}px`,
-      }}
+      style={{ ["--ws-font" as string]: `${uiFontSize}px` }}
     >
       {connected && !worksLoading && works.length === 0 && !landingDismissed && workBeId === null && (
         <HomeLanding
@@ -4105,6 +4122,27 @@ export function WorkspaceShell() {
                           <span style={{ color: KIND_COLOR[kind], fontSize: "calc(var(--ws-font, 14px) - 1px)", marginRight: 4 }}>{KIND_ICON[kind]}</span>
                           <span className="ws-concept-name">{title.length > 22 ? title.slice(0, 20) + "…" : title}</span>
                           <span style={{ color: "#6e7681", fontSize: 10, marginLeft: "auto", fontFamily: "monospace", flexShrink: 0 }}>0x{w.work_id.toString(16)}</span>
+                          <button
+                            type="button"
+                            title="Open beside — pin this work in a pane (FR-84)"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openBeside(w.work_id);
+                            }}
+                            style={{
+                              fontSize: 10,
+                              padding: "0 4px",
+                              marginLeft: 4,
+                              borderRadius: 4,
+                              border: "1px solid #30363d",
+                              background: "transparent",
+                              color: "#8b949e",
+                              cursor: "pointer",
+                              flexShrink: 0,
+                            }}
+                          >
+                            ⧉
+                          </button>
                         </li>
                       );
                     })}
@@ -4135,7 +4173,8 @@ export function WorkspaceShell() {
         )}
 
         {/* Document surface */}
-        <main className={`ws-doc-surface ${canEdit ? "editable" : "readonly"} ${editorMode === "reading" ? "reading-mode" : ""} ${studioActive ? "ws-studio-paper" : ""}`}>
+<div className="ws-doc-columns" style={{ display: "flex", flex: 1, minWidth: 0 }}>
+                <main className={`ws-doc-surface ${canEdit ? "editable" : "readonly"} ${editorMode === "reading" ? "reading-mode" : ""} ${studioActive ? "ws-studio-paper" : ""}`}>
           {invalidWorkId !== null ? (
             <div className="ws-empty-doc">
               <h2>Work 0x{invalidWorkId.toString(16)} not found</h2>
@@ -5913,7 +5952,38 @@ export function WorkspaceShell() {
               onNavigateToWork={selectWork}
             />
           )}
-        </main>
+</main>
+        {panes.length > 0 && (
+          <div
+            className="ws-panes"
+            style={{
+              display: "flex",
+              flex: `0 0 ${paneAreaVw}vw`,
+              minWidth: 0,
+              borderLeft: "1px solid #21262d",
+            }}
+          >
+            {panes.map((p) => (
+              <div key={p.key} style={{ flex: 1, minWidth: 240, display: "flex" }}>
+                <WorkPane
+                  client={clientRef.current}
+                  connected={connected}
+                  workId={p.workId}
+                  held={p.held}
+                  initialScrollTop={p.scrollTop}
+                  onScrollRemember={(top) => rememberPaneScroll(p.key, top)}
+                  onSelectionChange={(s) =>
+                    setPaneLive(s ? { key: p.key, workId: p.workId, sel: s } : null)
+                  }
+                  onHoldEnd={(sel) => holdFromPane(p.key, sel)}
+                  onPromote={p.workId === workBeId ? undefined : () => promotePane(p.workId)}
+                  onClose={() => closePane(p.key)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+        </div>
 
         {/* Right panel */}
         <aside
@@ -6844,39 +6914,6 @@ export function WorkspaceShell() {
             selectWork(id);
           }}
         />
-      )}
-
-      {/* FR-84: the pane area — N pinned works beside the primary. */}
-      {panes.length > 0 && (
-        <div
-          className="ws-pane-area"
-          style={{
-            position: "fixed",
-            top: 52,
-            right: 0,
-            bottom: 0,
-            width: `${paneAreaVw}vw`,
-            display: "flex",
-            zIndex: 900,
-            boxShadow: "-8px 0 24px rgba(0,0,0,0.35)",
-          }}
-        >
-          {panes.map((p) => (
-            <div key={p.key} style={{ flex: 1, minWidth: 260, display: "flex" }}>
-              <WorkPane
-                client={clientRef.current}
-                connected={connected}
-                workId={p.workId}
-                held={p.held}
-                initialScrollTop={p.scrollTop}
-                onScrollRemember={(top) => rememberPaneScroll(p.key, top)}
-                onHoldEnd={(sel) => holdFromPane(p.key, sel)}
-                onPromote={p.workId === workBeId ? undefined : () => promotePane(p.workId)}
-                onClose={() => closePane(p.key)}
-              />
-            </div>
-          ))}
-        </div>
       )}
 
       {/* FR-84: the two-ended connection bar. */}
