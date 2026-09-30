@@ -1069,6 +1069,9 @@ pub struct Server {
     pub(crate) public_address: Option<String>,
     server_directory: crate::server::server_directory::ServerDirectory,
     ticket_nonces: std::collections::HashMap<[u8; 16], u64>,
+    /// FR-83: set while the post-bind background chunk verification
+    /// (lazy restore) is walking the store; surfaced in /health.
+    background_verifying: std::sync::Arc<std::sync::atomic::AtomicBool>,
     tickets_dirty: bool,
 }
 
@@ -1401,6 +1404,7 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
                     None
                 }
             },
+            title: dw.cached_title.clone(),
         });
     }
 
@@ -1790,6 +1794,9 @@ impl Server {
             server_directory: crate::server::server_directory::ServerDirectory::new(),
             ticket_nonces: HashMap::new(),
             tickets_dirty: false,
+            // FR-83: true while the post-bind background chunk
+            // verification is walking the store (lazy restore only).
+            background_verifying: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             // TODO: Annotations use a simple HashMap for pragmatic first implementation.
             // Migrate to Ent/AssertionStore (src/ent/content.rs) for proper versioning,
             // transclusion survival, and materialize_annotation_indexed support.
@@ -5028,6 +5035,9 @@ impl Server {
     }
 
     pub fn work_edition(&self, work_be_id: BeId) -> Result<Edition, ServerError> {
+        // FR-83: callers must pre-thaw (dispatch pre-pass or explicit
+        // ensure_materialized); the debug_assert in Work::edition is
+        // the tripwire for anyone who forgets.
         let ws = self
             .works
             .get(&work_be_id)
@@ -5042,6 +5052,8 @@ impl Server {
         mut edition: Edition,
         author_club: Option<BeId>,
     ) -> Result<u64, ServerError> {
+        // FR-83: writing to a lazy-restored work thaws it first.
+        self.ensure_materialized(work_be_id)?;
         if edition.to_text().len() > Self::MAX_TEXT_LEN {
             return Err(ServerError::InvalidArgument(format!(
                 "document too large: {} bytes (max {} bytes per revision)",
@@ -5324,6 +5336,9 @@ impl Server {
             self.consequence_tracker.begin_operation(),
         );
         self.ensure_session(session_id)?;
+        // FR-83: interactive editing starts with a grab — thaws here
+        // so every edit path works on a real edition.
+        self.ensure_materialized(work_be_id)?;
         if self.is_source_work(work_be_id) {
             return Err(ServerError::InvalidArgument(
                 "source works are immutable".into(),
@@ -11850,6 +11865,7 @@ impl Server {
         is_private: bool,
     ) {
         let _ = self.get_work_loaded(work_id);
+        let _ = self.ensure_materialized(work_id);
         if let Some(ws) = self.works.get(&work_id) {
             let edition = ws.work.current_edition();
             self.otree_crdt.initialize_from_edition(work_id, &edition);
@@ -12580,6 +12596,19 @@ impl Server {
         session_id: SessionId,
         trail_id: BeId,
     ) -> Result<BeId, ServerError> {
+        // FR-83: the derived spec excerpts each stop's work — thaws
+        // every stop's source before reading.
+        if let Some(t) = self.trails.get(&trail_id) {
+            let stop_ids: Vec<BeId> = t
+                .stops
+                .iter()
+                .filter(|s| s.server_domain.is_none())
+                .map(|s| s.work_id)
+                .collect();
+            for wid in stop_ids {
+                let _ = self.ensure_materialized(wid);
+            }
+        }
         let owner = self.trail_owner_club(session_id)?;
         let t = self
             .trails
@@ -14699,17 +14728,62 @@ impl Server {
             ));
         };
 
-        let verify_report =
-            crate::persist::verify::verify_store_with_manifest(&manifest, &chunk_store);
-        if !verify_report.is_ok() {
-            tracing::warn!(
-                "Data verification found issues: {} corrupt chunks, {} missing chunks, {} deserialization errors",
-                verify_report.chunks_corrupt.len(),
-                verify_report.chunks_missing.len(),
-                verify_report.deserialization_errors.len(),
-            );
-            for err in &verify_report.deserialization_errors {
-                tracing::warn!("  - {}", err);
+        // FR-83: under lazy restore the chunk verification pass (a
+        // full disk walk — ~30s on the dev corpus) moves OFF the
+        // boot path: it runs on a background thread while the server
+        // serves. Write-time hashes + the chained security log
+        // already vouch for integrity; this pass detects on-disk
+        // rot. /health reports it as background_verification.
+        let lazy_flag_early = std::env::var("XUDANU_LAZY_RESTORE").as_deref() == Ok("1");
+        if lazy_flag_early {
+            self.background_verifying
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            let bg_manifest = manifest.clone();
+            let bg_dir = data_dir.to_path_buf();
+            let bg_flag = self.background_verifying.clone();
+            std::thread::spawn(move || {
+                let started = std::time::Instant::now();
+                // Independent read-only handle — no shared state with
+                // the serving server.
+                let Ok(bg_store) = crate::persist::chunk_store::ChunkStore::open(&bg_dir) else {
+                    tracing::warn!("[background verification] could not open chunk store");
+                    bg_flag.store(false, std::sync::atomic::Ordering::Relaxed);
+                    return;
+                };
+                let verify_report =
+                    crate::persist::verify::verify_store_with_manifest(&bg_manifest, &bg_store);
+                if !verify_report.is_ok() {
+                    tracing::warn!(
+                        "[background verification] found issues: {} corrupt chunks, {} missing chunks, {} deserialization errors",
+                        verify_report.chunks_corrupt.len(),
+                        verify_report.chunks_missing.len(),
+                        verify_report.deserialization_errors.len(),
+                    );
+                    for err in &verify_report.deserialization_errors {
+                        tracing::warn!("  - {}", err);
+                    }
+                } else {
+                    tracing::info!(
+                        "[background verification] {} chunks verified clean in {:.1}s",
+                        verify_report.chunks_verified,
+                        started.elapsed().as_secs_f32()
+                    );
+                }
+                bg_flag.store(false, std::sync::atomic::Ordering::Relaxed);
+            });
+        } else {
+            let verify_report =
+                crate::persist::verify::verify_store_with_manifest(&manifest, &chunk_store);
+            if !verify_report.is_ok() {
+                tracing::warn!(
+                    "Data verification found issues: {} corrupt chunks, {} missing chunks, {} deserialization errors",
+                    verify_report.chunks_corrupt.len(),
+                    verify_report.chunks_missing.len(),
+                    verify_report.deserialization_errors.len(),
+                );
+                for err in &verify_report.deserialization_errors {
+                    tracing::warn!("  - {}", err);
+                }
             }
         }
 
@@ -15282,11 +15356,30 @@ impl Server {
         if let Some(ft) = &manifest.fulltrace {
             self.fulltrace = crate::ent::ent::Ent::restore(ft.clone());
         }
+        let lazy_restore = std::env::var("XUDANU_LAZY_RESTORE").as_deref() == Ok("1");
+        if lazy_restore {
+            tracing::info!(
+                "[restore] FR-83 lazy restore ENABLED — works restore as \
+                 metadata; editions thaw from chunks on first access"
+            );
+        }
         for work_entry in &manifest.works {
-            match crate::persist::edition_chunks::work_from_chunks_current(
-                &work_entry.work_ref,
-                &chunk_store,
-            ) {
+            // FR-83: lazy restore builds metadata-only Works (sentinel
+            // edition, chunk_ref retained) — the corpus never
+            // hydrates at boot. Thaw is lossless via the chunk path.
+            let work_result = if lazy_restore {
+                Ok(
+                    crate::persist::edition_chunks::work_metadata_from_chunks_ref(
+                        &work_entry.work_ref,
+                    ),
+                )
+            } else {
+                crate::persist::edition_chunks::work_from_chunks_current(
+                    &work_entry.work_ref,
+                    &chunk_store,
+                )
+            };
+            match work_result {
                 Ok(work) => {
                     let source_fingerprint =
                         work_entry.source_fingerprint.as_ref().and_then(|fp| {
@@ -15305,10 +15398,20 @@ impl Server {
                     );
                     work.set_kind(work_entry.kind);
                     work.set_license(work_entry.license);
-                    let title = work_entry
-                        .custom_title
-                        .clone()
-                        .unwrap_or_else(|| Self::extract_title(&work.current_edition()));
+                    let title = if !work_entry.title.is_empty() {
+                        // FR-83: the checkpoint-cached effective title —
+                        // manifest is self-sufficient; no edition read.
+                        work_entry.title.clone()
+                    } else if !work.edition_materialized() {
+                        // Lazy work with a legacy manifest entry: no
+                        // edition to extract from. Backfilled at thaw.
+                        work_entry.custom_title.clone().unwrap_or_default()
+                    } else {
+                        work_entry
+                            .custom_title
+                            .clone()
+                            .unwrap_or_else(|| Self::extract_title(&work.current_edition()))
+                    };
                     if let Some(hc) = work_entry.history_club {
                         work.set_history_club(Some(hc));
                     }
@@ -15655,13 +15758,21 @@ impl Server {
         }
         if !restored_from_snapshot {
             for (wid, ws) in &self.works {
-                let prop = BackfollowEngine::make_work_prop(
-                    &ws.work,
-                    ws.work.read_club(),
-                    ws.work.edit_club(),
-                );
-                self.backfollow
-                    .register_work_with_prop(&ws.work, *wid, None, prop);
+                // FR-83: unmaterialized works register metadata-only
+                // (same shape as the snapshot path's misses); full
+                // content registration happens at thaw, in
+                // ensure_materialized.
+                if ws.work.edition_materialized() {
+                    let prop = BackfollowEngine::make_work_prop(
+                        &ws.work,
+                        ws.work.read_club(),
+                        ws.work.edit_club(),
+                    );
+                    self.backfollow
+                        .register_work_with_prop(&ws.work, *wid, None, prop);
+                } else {
+                    self.backfollow.register_work_meta_only(*wid, &ws.work);
+                }
             }
         }
 
@@ -15713,6 +15824,11 @@ impl Server {
                             >(payload)
                             {
                                 for (work_id, _annotations) in &all_anns {
+                                    // FR-83: annotated works thaw at
+                                    // restore (bounded — the set is
+                                    // small) so otree init sees real
+                                    // editions.
+                                    let _ = self.ensure_materialized(*work_id);
                                     if let Some(ws) = self.works.get(work_id) {
                                         let edition = ws.work.current_edition();
                                         self.otree_crdt.initialize_from_edition(*work_id, &edition);
@@ -16607,6 +16723,110 @@ impl Server {
             .as_ref()
             .map(|e| e.is_evicted(work_id))
             .unwrap_or(false)
+    }
+
+    /// FR-83: THE universal thaw gate. Guarantees a work's edition is
+    /// materialized before the caller touches it. Cheap when already
+    /// loaded (one flag read); on a lazy-restored work it rebuilds the
+    /// edition from the CHUNK path (lossless — never the FR-76
+    /// eviction store, which drops non-text elements).
+    ///
+    /// Usage — first line of any method that reads a work's edition:
+    ///     self.ensure_materialized(work_id)?;
+    ///     let ws = self.works.get(&work_id)...;
+    pub fn ensure_materialized(&mut self, work_id: BeId) -> Result<(), ServerError> {
+        if self
+            .works
+            .get(&work_id)
+            .map(|ws| ws.work.edition_materialized())
+            .unwrap_or(false)
+        {
+            return Ok(());
+        }
+        let (chunk_ref, store) = {
+            let ws = self
+                .works
+                .get(&work_id)
+                .ok_or(ServerError::WorkNotFound(work_id))?;
+            let ref_ = ws.chunk_ref.clone().ok_or_else(|| {
+                ServerError::Internal(format!(
+                    "work 0x{:x} unmaterialized with no chunk_ref — cannot thaw",
+                    work_id
+                ))
+            })?;
+            let store = self
+                .chunk_store
+                .clone()
+                .ok_or_else(|| ServerError::Internal("no chunk store".into()))?;
+            (ref_, store)
+        };
+        let work = crate::persist::edition_chunks::work_from_chunks_current(&chunk_ref, &store)
+            .map_err(|e| {
+                ServerError::Internal(format!("thaw of work 0x{:x} failed: {}", work_id, e))
+            });
+        let work = match work {
+            Ok(w) => w,
+            Err(e) => {
+                // Lazy equivalent of eager restore's quarantine: the
+                // corruption is discovered at thaw instead of boot.
+                // Same contract — the entry is preserved (chunks
+                // untouched), surfaced in restore_errors, and the
+                // work leaves the active map.
+                let msg = format!("work {} (thaw): {}", work_id, e);
+                tracing::error!(
+                    "Work {} could not be thawed ({}). Entry quarantined: \
+                     chunks preserved on disk; retry on next start.",
+                    work_id,
+                    e
+                );
+                self.restore_errors.push(msg);
+                if let Some(ws) = self.works.remove(&work_id) {
+                    let entry = crate::persist::manifest::WorkEntry {
+                        trace_branch: Some(ws.trace.branch().to_u64()),
+                        trace_position: Some(ws.trace.position()),
+                        be_id: work_id,
+                        work_ref: chunk_ref,
+                        is_source: ws.is_source,
+                        source_author_id: ws.source_author_id,
+                        source_edition_info: ws.source_edition_info.clone(),
+                        content_start_line: ws.content_start_line,
+                        content_end_line: ws.content_end_line,
+                        source_fingerprint: ws.source_fingerprint.map(|fp| fp.to_vec()),
+                        is_archived: ws.work.is_archived(),
+                        lifecycle_history: ws.work.lifecycle_history().to_vec(),
+                        history_club: ws.work.history_club(),
+                        kind: ws.work.kind(),
+                        license: ws.work.license(),
+                        custom_title: None,
+                        title: ws.cached_title.clone(),
+                    };
+                    self.quarantined_works.push(entry);
+                }
+                return Err(ServerError::Internal(format!(
+                    "thaw of work 0x{:x} failed: {}",
+                    work_id, e
+                )));
+            }
+        };
+        // Swap in the hydrated Work wholesale — it is field-identical
+        // to the metadata Work plus the real edition. cached_title
+        // and WorkState bookkeeping stay authoritative as restored.
+        if let Some(ws) = self.works.get_mut(&work_id) {
+            ws.work = work;
+        }
+        // FR-83: the lazy restore deferred backfollow content
+        // registration — complete it now that the edition is real.
+        if let Some(ws) = self.works.get(&work_id) {
+            let prop = BackfollowEngine::make_work_prop(
+                &ws.work,
+                ws.work.read_club(),
+                ws.work.edit_club(),
+            );
+            self.backfollow
+                .register_work_with_prop(&ws.work, work_id, None, prop);
+        }
+        tracing::debug!(work_id, "work thawed from chunks (lazy restore)");
+        Ok(())
     }
 
     /// Eviction statistics (cache hits, misses, disk reads, etc.).
@@ -19603,6 +19823,9 @@ impl Server {
         };
         serde_json::json!({
             "status": status,
+            "background_verification": self
+                .background_verifying
+                .load(std::sync::atomic::Ordering::Relaxed),
             "works": self.works.len(),
             "archived_works": self.archived_work_count(),
             "dirty_works": self
@@ -27220,6 +27443,9 @@ pub(crate) mod persist_snapshot {
                 server_directory: crate::server::server_directory::ServerDirectory::new(),
                 ticket_nonces: HashMap::new(),
                 tickets_dirty: false,
+                background_verifying: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
+                    false,
+                )),
             };
             for club_snap in &snapshot.clubs {
                 let work = club_snap
@@ -27537,13 +27763,20 @@ pub(crate) mod persist_snapshot {
                             kind: ws.work.kind(),
                             license: ws.work.license(),
                             custom_title: {
-                                let auto = Server::extract_title(&ws.work.current_edition());
+                                // Lazy works: no edition to extract
+                                // from; the title field carries it.
+                                let auto = if ws.work.edition_materialized() {
+                                    Server::extract_title(&ws.work.current_edition())
+                                } else {
+                                    String::new()
+                                };
                                 if ws.cached_title != auto {
                                     Some(ws.cached_title.clone())
                                 } else {
                                     None
                                 }
                             },
+                            title: ws.cached_title.clone(),
                         });
                 } else {
                     partial.dirty_work_gens.push((*id, ws.dirty_gen));
@@ -28136,13 +28369,20 @@ pub(crate) mod persist_snapshot {
                     kind: ws.work.kind(),
                     license: ws.work.license(),
                     custom_title: {
-                        let auto = Server::extract_title(&ws.work.current_edition());
+                        // Lazy works: no edition to extract from —
+                        // the title field below carries the cache.
+                        let auto = if ws.work.edition_materialized() {
+                            Server::extract_title(&ws.work.current_edition())
+                        } else {
+                            String::new()
+                        };
                         if ws.cached_title != auto {
                             Some(ws.cached_title.clone())
                         } else {
                             None
                         }
                     },
+                    title: ws.cached_title.clone(),
                 });
             }
 
@@ -30561,6 +30801,7 @@ mod tests {
 
         let ed_v3 = Edition::from_text("Completely new content");
         server.work_revise(sid, doc, ed_v3).unwrap();
+        server.ensure_materialized(doc).unwrap();
         assert_eq!(
             server.work_edition(doc).unwrap().to_text(),
             "Completely new content"
@@ -30677,6 +30918,7 @@ mod tests {
         {
             let mut server = Server::restore_from_file(&dir.snapshot_path()).unwrap();
             assert_eq!(server.work_count(), 1);
+            server.ensure_materialized(doc_id).unwrap();
             assert_eq!(
                 server.work_edition(doc_id).unwrap().to_text(),
                 "hello world"
@@ -40707,6 +40949,7 @@ mod tests {
             server.restore_from_data_dir(&data_dir, None).unwrap();
 
             assert_eq!(server.work_count(), 1);
+            server.ensure_materialized(doc_id).unwrap();
             assert_eq!(
                 server.work_edition(doc_id).unwrap().to_text(),
                 "hello world"
@@ -41052,6 +41295,12 @@ mod tests {
         {
             let mut server = Server::new();
             server.restore_from_data_dir(&data_dir, None).unwrap();
+            // Lazy restore discovers corruption at THAW, not boot —
+            // thaw every work (no-op when materialized) to reach the
+            // same post-boot state eager mode has.
+            for id in [keeper_id, victim_id] {
+                let _ = server.ensure_materialized(id);
+            }
 
             assert_eq!(server.work_count(), 1, "only keeper loads");
             assert!(server.works.contains_key(&keeper_id));
@@ -41070,6 +41319,9 @@ mod tests {
         {
             let mut server = Server::new();
             server.restore_from_data_dir(&data_dir, None).unwrap();
+            for id in [keeper_id, victim_id] {
+                let _ = server.ensure_materialized(id);
+            }
             assert_eq!(server.work_count(), 1);
             assert_eq!(server.quarantined_works.len(), 1);
             assert_eq!(server.quarantined_works[0].be_id, victim_id);
@@ -41082,6 +41334,7 @@ mod tests {
             let mut server = Server::new();
             server.restore_from_data_dir(&data_dir, None).unwrap();
             assert_eq!(server.work_count(), 2);
+            server.ensure_materialized(victim_id).unwrap();
             assert!(server.quarantined_works.is_empty());
             assert!(
                 server
@@ -41557,6 +41810,7 @@ mod tests {
             server.restore_from_data_dir(&data_dir, None).unwrap();
 
             assert_eq!(server.work_count(), 1);
+            server.ensure_materialized(doc_id).unwrap();
             assert_eq!(
                 server.work_edition(doc_id).unwrap().to_text(),
                 "async checkpoint content"
@@ -41619,6 +41873,7 @@ mod tests {
         {
             let mut server = Server::new();
             server.restore_from_data_dir(&data_dir, None).unwrap();
+            server.ensure_materialized(doc_id).unwrap();
             assert_eq!(
                 server.work_edition(doc_id).unwrap().to_text(),
                 "original content",
@@ -41680,11 +41935,13 @@ mod tests {
         let restored_a = {
             let mut server = Server::new();
             server.restore_from_data_dir(&data_dir_a, None).unwrap();
+            server.ensure_materialized(doc_a).unwrap();
             server.work_edition(doc_a).unwrap().to_text()
         };
         let restored_b = {
             let mut server = Server::new();
             server.restore_from_data_dir(&data_dir_b, None).unwrap();
+            server.ensure_materialized(doc_b).unwrap();
             server.work_edition(doc_b).unwrap().to_text()
         };
 
@@ -41733,6 +41990,8 @@ mod tests {
 
             // CRDT session opens on the work (with the current
             // edition as base, as production dispatch does).
+            server.ensure_materialized(doc_id).unwrap();
+            server.ensure_materialized(doc_id).unwrap();
             let base_edition = server.work_edition(doc_id).unwrap();
             server
                 .otree_crdt
@@ -41778,6 +42037,7 @@ mod tests {
         {
             let mut server = Server::new();
             server.restore_from_data_dir(&data_dir, None).unwrap();
+            server.ensure_materialized(doc_id).unwrap();
             let text = server.work_edition(doc_id).unwrap().to_text();
             assert_eq!(
                 text, "baseINSERTED  content",
@@ -41849,10 +42109,12 @@ mod tests {
         {
             let mut server = Server::new();
             server.restore_from_data_dir(&data_dir, None).unwrap();
+            server.ensure_materialized(early_id).unwrap();
             assert_eq!(
                 server.work_edition(early_id).unwrap().to_text(),
                 "early work"
             );
+            server.ensure_materialized(raced_id).unwrap();
             assert_eq!(
                 server.work_edition(raced_id).unwrap().to_text(),
                 "raced work",
@@ -41928,6 +42190,7 @@ mod tests {
         {
             let mut server = Server::new();
             server.restore_from_data_dir(&data_dir, None).unwrap();
+            server.ensure_materialized(doc_id).unwrap();
             assert_eq!(
                 server.work_edition(doc_id).unwrap().to_text(),
                 "version two",
@@ -42030,6 +42293,9 @@ mod tests {
             server
                 .restore_from_data_dir(&data_dir_sliced, None)
                 .unwrap();
+            for id in &ids {
+                server.ensure_materialized(*id).unwrap();
+            }
             ids.iter()
                 .map(|id| server.work_edition(*id).unwrap().to_text())
                 .collect()
@@ -42039,6 +42305,9 @@ mod tests {
             server
                 .restore_from_data_dir(&data_dir_oneshot, None)
                 .unwrap();
+            for id in &ids {
+                server.ensure_materialized(*id).unwrap();
+            }
             ids.iter()
                 .map(|i| server.work_edition(*i).unwrap().to_text())
                 .collect()
@@ -42483,6 +42752,7 @@ mod tests {
             let result = server.restore_from_data_dir(&data_dir, None);
             assert!(result.is_ok(), "should recover despite stale tmp file");
 
+            server.ensure_materialized(doc_id).unwrap();
             let text = server.work_edition(doc_id).unwrap().to_text();
             assert_eq!(text, "stable");
         }
@@ -44658,6 +44928,7 @@ mod tests {
                 .trail_add_stop(sid, trail, src, Some(0), Some(9), None, None)
                 .unwrap();
             wid = server.ensure_trail_derived_work(sid, trail).unwrap();
+            server.ensure_materialized(wid).unwrap();
             let text = server.work_text_fresh(wid).unwrap();
             assert_eq!(text, "persisted");
             // Explicit checkpoint (production persists via the
@@ -44671,6 +44942,7 @@ mod tests {
             server.restore_from_data_dir(&data_dir, None).unwrap();
             let sid = server.connect();
             server.login_public(sid).unwrap();
+            server.ensure_materialized(wid).unwrap();
             // Trail remembers its derived work.
             let payload = server.trail_get(sid, trail).unwrap();
             assert_eq!(payload.derived_work_id, Some(wid));
@@ -46090,6 +46362,12 @@ mod tests {
         drop(server);
         let mut restored = Server::new();
         restored.restore_from_data_dir(&dir, None).unwrap();
+        // Lazy restore: probe needs content fingerprints — thaw all
+        // first (no-op in eager mode).
+        let all_ids: Vec<_> = restored.works.keys().copied().collect();
+        for id in all_ids {
+            let _ = restored.ensure_materialized(id);
+        }
 
         assert_eq!(
             probe(&restored, 'a'),
@@ -55154,6 +55432,7 @@ mod cutover_integration_tests {
             server.lattice_is_write_primary(work),
             "write-promote survives restart"
         );
+        server.ensure_materialized(work).unwrap();
         assert_eq!(
             server.work_edition(work).unwrap().to_text(),
             "write restart body!",
@@ -55492,6 +55771,7 @@ mod cutover_integration_tests {
         assert_eq!(text, "restart body!");
 
         // Edition agrees (the enfilade is the persistence layer).
+        server.ensure_materialized(work).unwrap();
         assert_eq!(
             server.work_edition(work).unwrap().to_text(),
             "restart body!"

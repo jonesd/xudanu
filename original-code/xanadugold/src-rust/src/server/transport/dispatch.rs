@@ -198,6 +198,23 @@ fn is_frozen_mutation(req: &WireRequest) -> bool {
     )
 }
 
+/// FR-83 lazy restore: read ops whose handlers touch editions. The
+/// dispatch pre-pass thaws these targets under the write lock before
+/// the read runs under the read lock. Anything missed here trips the
+/// debug-assert in Work::edition (lazy test suite enforces).
+fn pre_thaw_targets(request: &WireRequest) -> Vec<crate::edition::backend::BeId> {
+    use crate::edition::backend::BeId;
+    match request {
+        WireRequest::WorkGetEdition { work_id } => vec![*work_id],
+        WireRequest::FindSharedRegions { work_a, work_b, .. } => vec![*work_a, *work_b],
+        WireRequest::SharedCrumRegions { work_ids } => work_ids.clone(),
+        WireRequest::RenderTransclusions { work_id } => vec![*work_id],
+        WireRequest::AttributionQuery { work_id, .. } => vec![*work_id],
+        WireRequest::AttributionQueryResolved { work_id } => vec![*work_id],
+        _ => Vec::<BeId>::new(),
+    }
+}
+
 pub fn dispatch(
     state: &SharedState,
     session_id: crate::server::SessionId,
@@ -258,6 +275,23 @@ pub fn dispatch(
 
     let is_work_create = matches!(request, WireRequest::WorkCreate { .. });
     let is_read = request.is_readonly();
+
+    // FR-83 lazy restore: read ops that touch editions take the write
+    // lock BRIEFLY first and thaw their target works. Deep read
+    // helpers stay &self (read-parallelism intact); the debug-assert
+    // in Work::edition is the tripwire for any op missed here.
+    if is_read {
+        let targets = pre_thaw_targets(&request);
+        if !targets.is_empty() {
+            state.server.with_server(|srv| {
+                for wid in targets {
+                    if let Err(e) = srv.ensure_materialized(wid) {
+                        tracing::debug!("[thaw] work {:x} pre-thaw failed: {}", wid, e);
+                    }
+                }
+            });
+        }
+    }
 
     let result = {
         let guard_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

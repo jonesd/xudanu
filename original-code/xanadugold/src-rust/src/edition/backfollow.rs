@@ -533,6 +533,22 @@ impl BackfollowEngine {
         BertProp::new(permissions, endorsements, false, false)
     }
 
+    /// FR-83 lazy restore: prop for an unmaterialized work —
+    /// permissions only. Content endorsements derive from the
+    /// edition (wrapper specs scan content), which isn't in RAM yet;
+    /// the full prop installs at thaw (ensure_materialized →
+    /// register_work_with_prop).
+    pub fn make_work_prop_lazy(work: &Work) -> BertProp {
+        let mut permissions = Vec::new();
+        if let Some(rc) = work.read_club() {
+            permissions.push(super::grandmap::Id::global(rc as i64));
+        }
+        if let Some(ec) = work.edit_club() {
+            permissions.push(super::grandmap::Id::global(ec as i64));
+        }
+        BertProp::new(permissions, Vec::new(), false, false)
+    }
+
     pub fn unregister_edition(&mut self, edition_id: u64, edition: &Edition) {
         if self.edition_metas.remove(&edition_id).is_some() {
             let elem = RangeElement::edition(edition_id);
@@ -1264,7 +1280,11 @@ impl BackfollowEngine {
     /// entry-index walks — O(1) per work at restore after the
     /// snapshot import. The plain indexes came from the snapshot.
     pub fn register_work_meta_only(&mut self, work_id: u64, work: &Work) {
-        let prop = Self::make_work_prop(work, work.read_club(), work.edit_club());
+        let prop = if work.edition_materialized() {
+            Self::make_work_prop(work, work.read_club(), work.edit_club())
+        } else {
+            Self::make_work_prop_lazy(work)
+        };
         let flags = prop.flags();
         let bert_crum = self.bert_canopy.make_crum(flags);
         let sensor_crum = self.sensor_canopy.make_crum(0);

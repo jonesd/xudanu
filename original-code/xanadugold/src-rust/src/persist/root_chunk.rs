@@ -857,6 +857,9 @@ pub fn read_root_as_manifest(
                 kind: ws.kind,
                 license: ws.license,
                 custom_title: ws.custom_title,
+                // Recovery path: WorkStateChunk carries custom_title
+                // only; the effective title re-derives at restore.
+                title: String::new(),
             };
             all_work_entries.push(work_entry);
         }
@@ -1995,6 +1998,7 @@ mod tests {
             kind: Default::default(),
             license: Default::default(),
             custom_title: None,
+            title: String::new(),
         };
         let _ = mk_work_entry;
 

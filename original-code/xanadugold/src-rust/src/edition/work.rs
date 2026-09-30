@@ -202,6 +202,11 @@ pub struct Work {
     be_id: BeId,
     owner: Option<BeId>,
     current_edition: Edition,
+    /// FR-83 lazy restore: false while the edition is a sentinel and
+    /// the real one still lives only in chunks (the WorkState holds
+    /// the chunk_ref to thaw it). Runtime-only — never serialized
+    /// (persistence maps fields explicitly via WorkChunkRef).
+    edition_materialized: bool,
     revision_count: u64,
     revision_history: BTreeMap<u64, Edition>,
     read_club: Option<BeId>,
@@ -223,6 +228,7 @@ impl Work {
             be_id,
             owner: None,
             current_edition: edition,
+            edition_materialized: true,
             revision_count: 0,
             revision_history: BTreeMap::new(),
             read_club: None,
@@ -244,6 +250,7 @@ impl Work {
             be_id,
             owner,
             current_edition: edition,
+            edition_materialized: true,
             revision_count: 0,
             revision_history: BTreeMap::new(),
             read_club: None,
@@ -258,6 +265,17 @@ impl Work {
             tumbler_server: None,
             tumbler_path: None,
         }
+    }
+
+    /// FR-83 lazy restore: mark the edition as a sentinel (real one
+    /// still in chunks). Only lazy restore calls this; every other
+    /// constructor materializes.
+    pub fn mark_edition_unmaterialized(&mut self) {
+        self.edition_materialized = false;
+    }
+
+    pub fn edition_materialized(&self) -> bool {
+        self.edition_materialized
     }
 
     pub fn be_id(&self) -> BeId {
@@ -383,10 +401,24 @@ impl Work {
     }
 
     pub fn edition(&self) -> &Edition {
+        // FR-83: the ONE choke point. An unmaterialized work's
+        // edition is a sentinel — reading it means a consumer
+        // skipped its thaw gate. Fail here (debug/test builds) so
+        // the test suite mechanically enumerates ungated paths.
+        debug_assert!(
+            self.edition_materialized,
+            "edition accessed on unmaterialized work 0x{:x} — missing thaw gate",
+            self.be_id
+        );
         &self.current_edition
     }
 
     pub fn current_edition(&self) -> &Edition {
+        debug_assert!(
+            self.edition_materialized,
+            "edition accessed on unmaterialized work 0x{:x} — missing thaw gate",
+            self.be_id
+        );
         &self.current_edition
     }
 

@@ -26,6 +26,7 @@ fn make_work_entry(
         kind: crate::edition::WorkKind::Document,
         license: crate::edition::License::AllRightsReserved,
         custom_title: None,
+        title: String::new(),
     }
 }
 
@@ -585,6 +586,7 @@ mod tests {
             kind: crate::edition::WorkKind::Document,
             license: crate::edition::License::AllRightsReserved,
             custom_title: None,
+            title: String::new(),
         });
         let path = manifest::manifest_path(&dir);
 
@@ -614,6 +616,7 @@ mod tests {
             history_club: None,
             kind: crate::edition::WorkKind::Document,
             license: crate::edition::License::AllRightsReserved,
+            title: String::new(),
             custom_title: None,
         });
         manifest::write_manifest(&mut m, &path).unwrap();
@@ -662,6 +665,7 @@ mod tests {
             lifecycle_history: Vec::new(),
             history_club: None,
             kind: crate::edition::WorkKind::Document,
+            title: String::new(),
             license: crate::edition::License::AllRightsReserved,
             custom_title: None,
         });

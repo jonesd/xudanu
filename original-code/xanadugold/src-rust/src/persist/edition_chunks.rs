@@ -432,6 +432,37 @@ pub fn work_from_chunks_current(
     Ok(work)
 }
 
+/// FR-83 lazy restore: build the Work's METADATA from the chunk ref
+/// without hydrating the edition — same field-for-field assignments
+/// as `work_from_chunks_current`, but the edition is an empty
+/// sentinel flagged unmaterialized. Thaw later via
+/// `work_from_chunks_current` (lossless, chunk-based — never the
+/// FR-76 eviction store, which is lossy for non-text elements).
+pub fn work_metadata_from_chunks_ref(chunk_ref: &WorkChunkRef) -> Work {
+    let mut work = Work::new(chunk_ref.be_id, Edition::from_text(""));
+    work.mark_edition_unmaterialized();
+    work.set_owner(chunk_ref.owner);
+    work.set_read_club(chunk_ref.read_club);
+    work.set_edit_club(chunk_ref.edit_club);
+    work.set_tumbler_server(chunk_ref.tumbler_server.clone());
+    work.set_tumbler_path_override(chunk_ref.tumbler_path.clone());
+    for s in &chunk_ref.sponsors {
+        work.add_sponsor(*s);
+    }
+    if !chunk_ref.endorsements.is_empty() {
+        let es = crate::edition::endorsement::EndorsementSet::from_endorsements(
+            chunk_ref
+                .endorsements
+                .iter()
+                .map(|&(c, t)| crate::edition::endorsement::Endorsement::new(c, t))
+                .collect(),
+        );
+        work.endorse(&es);
+    }
+    work.set_revision_count(chunk_ref.revision_count);
+    work
+}
+
 pub fn work_load_revision(
     work_chunk_ref: &WorkChunkRef,
     revision: u64,

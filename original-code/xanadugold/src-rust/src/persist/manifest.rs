@@ -206,6 +206,15 @@ pub struct WorkEntry {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub custom_title: Option<String>,
+    /// FR-83: the effective (cached) title as of checkpoint — makes
+    /// the manifest self-sufficient for listings and lazy restore,
+    /// which never extract from the edition. Empty in legacy
+    /// manifests: fall back to custom_title / extraction.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "String::is_empty")
+    )]
+    pub title: String,
 }
 
 /// Metadata for a single revision of a work. Per FR-23.
@@ -1626,6 +1635,7 @@ mod tests {
             kind: crate::edition::WorkKind::Document,
             license: crate::edition::License::AllRightsReserved,
             custom_title: None,
+            title: String::new(),
         });
         manifest.links.push(LinkEntry {
             link_id: 50,
