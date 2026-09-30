@@ -130,3 +130,19 @@ for the next session:
       during reconnection; retry should re-resolve the client
 - [ ] Small-screen layout: connect bar + hold chip + Aa button
       compete for bottom space on laptop screens
+
+## UX design decision (user, Sep 30 evening)
+
+Link type labels: REMOVE the persistent colored type chips/buttons
+from the editor — they draw the eye too hard. The margin bars carry
+the color (kind signal); hover over bar or underlined text reveals
+the tooltip (type name, far-end title, direction, excerpt, Go-to).
+Same pattern as the overlay extension (ribbons + hover).
+
+Tooltip tidy-up:
+- hide "Open Origin" unless the marker IS a transclusion
+- hide provenance hop count unless > 0
+- hide end-set info unless gathered
+- drop raw hex ID from Go-to button (title suffices)
+
+Links panel: resolve custom type names (fixes "type 1488" display).
