@@ -207,6 +207,11 @@ export function WorkspaceShell() {
     workId: number;
     sel: WorkPaneSelection;
   } | null>(null);
+  // The MAIN document's held end. The browser allows exactly ONE
+  // selection — selecting in a pane clears the main doc's selection,
+  // so a main-document end must be HELD to survive (symmetric with
+  // the pane's Hold-as-end).
+  const [mainHeld, setMainHeld] = useState<PaneEnd | null>(null);
   const [annotationTarget, setAnnotationTarget] = useState<{ start: number; end: number } | null>(null);
   const [themeState, setThemeState] = useState(() => loadThemeState());
   const [themePickerOpen, setThemePickerOpen] = useState(false);
@@ -3841,9 +3846,10 @@ export function WorkspaceShell() {
     [panes],
   );
 
-  // The two-ended create: primary selection pairs with the pane's
-  // HELD end or its LIVE selection (select + select wakes the bar);
-  // two held ends also pair. More than two held = slice 4's gather.
+  // The two-ended create: held ends pair first (they survive
+  // selection moves — the browser has one selection), falling back
+  // to live selections (main selection or pane selection) for the
+  // select+select fast path. More than two held = slice 4's gather.
   const connectPair: [PaneEnd, PaneEnd] | null = useMemo(() => {
     const liveEnd: PaneEnd | null =
       paneLive && paneLive.sel.end > paneLive.sel.start
@@ -3855,12 +3861,13 @@ export function WorkspaceShell() {
           }
         : null;
     const farCandidates = heldFromPanes.length > 0 ? heldFromPanes : liveEnd ? [liveEnd] : [];
-    const candidates = mainEnd ? [mainEnd, ...farCandidates] : farCandidates;
+    const nearCandidates = mainHeld ?? mainEnd;
+    const candidates = nearCandidates ? [nearCandidates, ...farCandidates] : farCandidates;
     if (candidates.length >= 2 && canConnect(candidates[0], candidates[1])) {
       return [candidates[0], candidates[1]];
     }
     return null;
-  }, [mainEnd, heldFromPanes, paneLive]);
+  }, [mainEnd, mainHeld, heldFromPanes, paneLive]);
 
   const [paneConnectType, setPaneConnectType] = useState(2); // Reference
   const createPaneConnection = useCallback(async () => {
@@ -3876,6 +3883,7 @@ export function WorkspaceShell() {
       showToast(`✓ Connected “${chipExcerpt(a.text, 20)}” → “${chipExcerpt(b.text, 20)}”`);
       setPanes((prev) => prev.map((p) => (p.held ? { ...p, held: null } : p)));
       setPaneLive(null);
+      setMainHeld(null);
       setSelectionRange(null);
       if (workBeId != null) loadLinks(c, workBeId, works);
     } catch (e) {
@@ -6915,6 +6923,89 @@ export function WorkspaceShell() {
           }}
         />
       )}
+
+      {/* FR-84: main-document hold chip. The browser has one
+          selection; this preserves the main end across pane
+          selections. mousedown-prevent keeps the selection alive
+          while clicking. */}
+      {mainHeld ? (
+        <div
+          className="ws-hold-chip"
+          style={{
+            position: "fixed",
+            bottom: 64,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 1100,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: "#10222f",
+            border: "1px solid #1c5d99",
+            borderRadius: 10,
+            padding: "6px 10px",
+            fontSize: "var(--ws-font, 14px)",
+            color: "#9ecbff",
+            boxShadow: "0 4px 14px rgba(0,0,0,0.35)",
+            maxWidth: "min(70vw, 480px)",
+          }}
+        >
+          <span style={{ fontSize: "calc(var(--ws-font, 14px) - 2px)", color: "#7d8590" }}>
+            held:
+          </span>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            “{chipExcerpt(mainHeld.text)}”
+          </span>
+          <button
+            type="button"
+            title="Release held end"
+            onClick={() => setMainHeld(null)}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#8b949e",
+              cursor: "pointer",
+              fontSize: "calc(var(--ws-font, 14px) - 1px)",
+              padding: "0 2px",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      ) : mainEnd && !connectPair ? (
+        <button
+          type="button"
+          className="ws-hold-chip-btn"
+          // preventDefault on mousedown so clicking the chip doesn't
+          // collapse the selection it captures.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            if (mainEnd) setMainHeld(mainEnd);
+          }}
+          style={{
+            position: "fixed",
+            bottom: 64,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 1100,
+            background: "#10222f",
+            border: "1px solid #30363d",
+            borderRadius: 10,
+            padding: "6px 12px",
+            fontSize: "var(--ws-font, 14px)",
+            color: "#e8e6e0",
+            cursor: "pointer",
+            boxShadow: "0 4px 14px rgba(0,0,0,0.35)",
+            maxWidth: "min(70vw, 480px)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title="Hold this selection as one end of a connection — it survives selecting in a pane"
+        >
+          ⌖ Hold “{chipExcerpt(mainEnd.text)}” as end
+        </button>
+      ) : null}
 
       {/* FR-84: the two-ended connection bar. */}
       {connectPair && (
