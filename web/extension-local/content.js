@@ -277,10 +277,9 @@
     if (inflight) return;
     inflight = true;
     try {
-      // IDEMPOTENT RENDER: multiple injection sources (persisted
-      // dynamic registration + fresh loads) can coexist — always
-      // clear any existing render before drawing.
-      clearRender();
+      // NOTE: do NOT clear before a successful re-query — a failed
+      // background re-render must never blank an existing render.
+      // clearRender() runs only after new marks are in hand.
       const { serverUrl } = await chrome.storage.local.get({ serverUrl: "" });
       if (!serverUrl || !/^https?:\/\//.test(location.href)) {
         statusPill(serverUrl ? "page not http(s)" : "no server configured", "#c47c12");
@@ -301,8 +300,11 @@
       if (!resp || !resp.ok) {
         statusPill("marks query failed: " + (resp && resp.error), "#c0392b");
         console.debug("[xudanu] marks response not ok:", resp && resp.error);
-        return; // silent by design
+        return; // silent by design — prior render (if any) stands
       }
+      // Atomic swap: build fresh, remove old only once new marks
+      // are in hand.
+      clearRender();
       const n = render(resp.body, serverUrl.replace(/\/+$/, ""), spine.segments);
       statusPill(
         n > 0 ? `${n} mark(s) rendered` : "no marks for this page",
