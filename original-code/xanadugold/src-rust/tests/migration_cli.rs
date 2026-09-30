@@ -592,6 +592,36 @@ fn startup_auto_migrates_older_data_through_the_chain() {
 }
 
 #[test]
+fn upgrade_verification_hydrates_all_works_under_lazy_restore() {
+    // FR-82/83 interplay: under lazy restore, a plain restore
+    // verifies only metadata — the upgrade's verify step must
+    // deliberately thaw EVERY work (chunk reads = the verification)
+    // and fail into rollback on any unthawable one.
+    let _guard = AUTO_MIGRATE_TEST_MUTEX
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    xudanu::server::Server::set_lazy_restore_override(Some(true));
+
+    let parent = temp_parent("cli_lazy_verify");
+    let dir = parent.join("data");
+    build_server_data(&dir, 3);
+    // Force the migration path (backup → steps → verify) with a
+    // custom chain so hydration actually runs inside run_upgrade.
+    xudanu::server::upgrade::set_step_override(Some(vec![marker_step(0, 1, "v0-to-v1")]));
+    write_stamp(&dir, 0, "0.0.1-ancient");
+
+    let report = xudanu::server::upgrade::run_upgrade(&dir).expect("upgrade under lazy verify");
+    assert_eq!(report.work_count, 3, "all works verified (thawed)");
+
+    // And the upgraded data reads correctly afterward (eager).
+    assert_eq!(restored_work_count(&dir), 3);
+
+    xudanu::server::upgrade::set_step_override(None);
+    xudanu::server::Server::set_lazy_restore_override(None);
+    let _ = std::fs::remove_dir_all(&parent);
+}
+
+#[test]
 fn startup_auto_migrate_failure_rolls_back_and_refuses_to_boot() {
     let _guard = AUTO_MIGRATE_TEST_MUTEX.lock().unwrap();
     // A chain with a gap from v0: migration must fail, roll back,

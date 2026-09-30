@@ -292,6 +292,25 @@ pub fn run_upgrade_with(
             let errs = server.restore_errors().join("; ");
             return Err(format!("verification found restore errors: {}", errs));
         }
+        // FR-82/83 interplay: verification is DELIBERATE full
+        // hydration — under lazy restore the restore alone verifies
+        // only metadata; thawing every work reads and rebuilds every
+        // edition from chunks, which is the verification's point.
+        // A thaw failure (corrupt/mangled chunk) fails the upgrade
+        // into rollback, exactly like an eager-restore failure.
+        let ids: Vec<_> = server.works.keys().copied().collect();
+        let mut thaw_failures = Vec::new();
+        for id in ids {
+            if let Err(e) = server.ensure_materialized(id) {
+                thaw_failures.push(format!("work {:x}: {}", id, e));
+            }
+        }
+        if !thaw_failures.is_empty() {
+            return Err(format!(
+                "verification found unthawable works: {}",
+                thaw_failures.join("; ")
+            ));
+        }
         Ok((
             server.work_count(),
             server.link_count(),

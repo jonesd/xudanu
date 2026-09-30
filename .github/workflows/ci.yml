@@ -53,6 +53,34 @@ jobs:
           workspaces: original-code/xanadugold/src-rust -> target
       - run: cargo test --features server --lib
         working-directory: original-code/xanadugold/src-rust
+      # FR-83 lazy-restore discipline: the same lib suite under the
+      # lazy flag — gates are enforced by the debug-assert choke point.
+      - run: XUDANU_LAZY_RESTORE=1 cargo test --features server --lib
+        working-directory: original-code/xanadugold/src-rust
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: dtolnay/rust-toolchain@5b842231ba77f5c045dba54ac5560fed2db780e2 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: original-code/xanadugold/src-rust -> target
+      # The cross-cutting suite CI never ran: HTTP handlers, WS
+      # protocol, federation, migration CLI, overlay endpoint. A
+      # federation membership regression lived here undetected for
+      # weeks because --lib alone was green (Sep 30, 2026).
+      # Skip with "[skip integration]" in the commit message.
+      - name: Run integration suites
+        if: ${{ !contains(github.event.head_commit.message, '[skip integration]') }}
+        run: |
+          cargo test --features server --test integration --test migration_cli --test recover_cli
+        working-directory: original-code/xanadugold/src-rust
 
   clippy:
     name: Clippy

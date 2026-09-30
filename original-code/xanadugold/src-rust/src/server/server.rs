@@ -1201,6 +1201,10 @@ impl Default for Server {
     }
 }
 
+/// FR-83: programmatic override for lazy restore (tests/embedders);
+/// 0 = follow XUDANU_LAZY_RESTORE, 1 = forced off, 2 = forced on.
+static LAZY_RESTORE_OVERRIDE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
 #[cfg(feature = "server")]
 pub(crate) struct DirtyWorkData {
     be_id: BeId,
@@ -14734,7 +14738,7 @@ impl Server {
         // serves. Write-time hashes + the chained security log
         // already vouch for integrity; this pass detects on-disk
         // rot. /health reports it as background_verification.
-        let lazy_flag_early = std::env::var("XUDANU_LAZY_RESTORE").as_deref() == Ok("1");
+        let lazy_flag_early = Self::lazy_restore_enabled();
         if lazy_flag_early {
             self.background_verifying
                 .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -15356,7 +15360,7 @@ impl Server {
         if let Some(ft) = &manifest.fulltrace {
             self.fulltrace = crate::ent::ent::Ent::restore(ft.clone());
         }
-        let lazy_restore = std::env::var("XUDANU_LAZY_RESTORE").as_deref() == Ok("1");
+        let lazy_restore = Self::lazy_restore_enabled();
         if lazy_restore {
             tracing::info!(
                 "[restore] FR-83 lazy restore ENABLED — works restore as \
@@ -16723,6 +16727,55 @@ impl Server {
             .as_ref()
             .map(|e| e.is_evicted(work_id))
             .unwrap_or(false)
+    }
+
+    /// FR-83: is lazy restore enabled? Env flag (XUDANU_LAZY_RESTORE=1)
+    /// with a programmatic override for tests/embedders (avoids env
+    /// races in parallel test binaries).
+    pub fn lazy_restore_enabled() -> bool {
+        match LAZY_RESTORE_OVERRIDE.load(std::sync::atomic::Ordering::Relaxed) {
+            1 => false,
+            2 => true,
+            _ => std::env::var("XUDANU_LAZY_RESTORE").as_deref() == Ok("1"),
+        }
+    }
+
+    /// Test/embedder hook: force lazy restore on/off regardless of
+    /// the env var. None restores env-driven behavior.
+    pub fn set_lazy_restore_override(v: Option<bool>) {
+        LAZY_RESTORE_OVERRIDE.store(
+            match v {
+                Some(false) => 1,
+                Some(true) => 2,
+                None => 0,
+            },
+            std::sync::atomic::Ordering::Relaxed,
+        );
+    }
+
+    /// FR-79/83: pre-thaw the shadow work for a URL (overlay marks
+    /// handler). URL-keyed, so the lookup happens server-side.
+    pub fn prethaw_shadow(&mut self, url: &str) {
+        let Some(normalized) = normalize_shadow_url(url) else {
+            return;
+        };
+        let shadow_key = format!("web-shadow:{normalized}");
+        let shadow_id = self
+            .works
+            .iter()
+            .find(|(_, ws)| {
+                ws.work.kind() == crate::edition::WorkKind::WebShadow
+                    && ws
+                        .source_edition_info()
+                        .map(|s| s == shadow_key.as_str())
+                        .unwrap_or(false)
+            })
+            .map(|(id, _)| *id);
+        if let Some(id) = shadow_id {
+            if let Err(e) = self.ensure_materialized(id) {
+                tracing::debug!("[thaw] shadow prethaw failed for {}: {}", url, e);
+            }
+        }
     }
 
     /// FR-83: THE universal thaw gate. Guarantees a work's edition is

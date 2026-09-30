@@ -354,6 +354,11 @@ async fn public_work_handler(
         Some(id) => id,
         None => return (axum::http::StatusCode::NOT_FOUND, "work not found").into_response(),
     };
+    // FR-83: public reads serve real editions — thaw before the
+    // read-lock call (no-op when materialized).
+    state.server.with_server(|srv| {
+        let _ = srv.ensure_materialized(work_id);
+    });
 
     match state
         .server
@@ -411,6 +416,10 @@ async fn public_shadow_handler(
         Some(id) => id,
         None => return (axum::http::StatusCode::NOT_FOUND, "shadow not found").into_response(),
     };
+    // FR-83: the shadow's text is the response — thaw first.
+    state.server.with_server(|srv| {
+        let _ = srv.ensure_materialized(work_id);
+    });
 
     let json = match state
         .server
@@ -520,6 +529,14 @@ async fn overlay_marks_handler(
             "url must be 1..=2048 chars",
         )
             .into_response();
+    }
+    // FR-83: marks resolution reads the shadow's edition — thaw it
+    // server-side before the read-lock call (URL-keyed lookup).
+    {
+        let url_for_thaw = url_trim.clone();
+        state
+            .server
+            .with_server(|srv| srv.prethaw_shadow(&url_for_thaw));
     }
     if let Some(ref pt) = body.page_text {
         // Mirrors web_fetch's cap: text spines are readable text, not
@@ -1143,6 +1160,10 @@ async fn public_work_range_handler(
         Some(id) => id,
         None => return (axum::http::StatusCode::NOT_FOUND, "work not found").into_response(),
     };
+    // FR-83: the range serves edition text — thaw first.
+    state.server.with_server(|srv| {
+        let _ = srv.ensure_materialized(work_id);
+    });
 
     match state
         .server
