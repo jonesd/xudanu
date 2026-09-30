@@ -256,7 +256,14 @@ async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
         );
     }
     (
-        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        [
+            (axum::http::header::CONTENT_TYPE, "application/json"),
+            // CORS-open like the other public surfaces: the extension's
+            // "Test connection" pings /health BEFORE its host permission
+            // is granted — without ACAO the ping is CORS-blocked and the
+            // options flow dead-ends at Enable.
+            (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+        ],
         value.to_string(),
     )
 }
@@ -506,7 +513,10 @@ async fn cors_preflight_handler() -> impl axum::response::IntoResponse {
                 axum::http::header::ACCESS_CONTROL_ALLOW_METHODS,
                 "POST, OPTIONS",
             ),
-            (axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS, "Content-Type"),
+            (
+                axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS,
+                "Content-Type",
+            ),
             (axum::http::header::ACCESS_CONTROL_MAX_AGE, "86400"),
         ],
     )

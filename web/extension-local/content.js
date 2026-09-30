@@ -292,11 +292,18 @@
       }
       console.debug("[xudanu] querying", serverUrl, "spine", spine.text.length, "chars,", spine.segments.length, "segments");
       statusPill("querying server…");
-      const resp = await chrome.runtime.sendMessage({
-        type: "marks",
-        url: location.href,
-        text: spine.text,
-      });
+      async function sendMarks(url, text) {
+        // MV3 service workers sleep; the first message after idle can
+        // race the wake and close the channel. One retry after a beat
+        // lands once the worker is up.
+        try {
+          return await chrome.runtime.sendMessage({ type: "marks", url, text });
+        } catch (e) {
+          await new Promise((r) => setTimeout(r, 350));
+          return chrome.runtime.sendMessage({ type: "marks", url, text });
+        }
+      }
+      const resp = await sendMarks(location.href, spine.text);
       if (!resp || !resp.ok) {
         statusPill("marks query failed: " + (resp && resp.error), "#c0392b");
         console.debug("[xudanu] marks response not ok:", resp && resp.error);
@@ -347,14 +354,14 @@
     if (repositionTimer) return;
     repositionTimer = setTimeout(() => {
       repositionTimer = null;
-      const c = document.getElementById(CONTAINER_ID);
-      if (!c) return;
-      clearRender();
+      // No clearRender here: run() swaps atomically, so a failed
+      // re-query (e.g. a sleeping service worker's channel closing)
+      // leaves the existing render standing.
       run();
     }, 1500);
   }).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
 
-  window.addEventListener("resize", () => { clearRender(); run(); });
+  window.addEventListener("resize", () => run());
   window.addEventListener("popstate", () => run());
   window.__xudanuOverlayRefresh = run;
 
