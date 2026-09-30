@@ -59,7 +59,10 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/.well-known/xanadu-server.json", get(well_known_handler))
         .route("/api/public/work/{work_id}", get(public_work_handler))
         .route("/api/public/shadow/{work_id}", get(public_shadow_handler))
-        .route("/api/overlay/marks", post(overlay_marks_handler))
+        .route(
+            "/api/overlay/marks",
+            post(overlay_marks_handler).options(cors_preflight_handler),
+        )
         .route("/api/public/works", get(public_works_list_handler))
         .route("/api/public/tumbler/{op}", get(tumbler_arith_handler))
         .route("/api/bloom-filter", get(bloom_filter_handler))
@@ -488,6 +491,25 @@ fn format_tumbler_notation(seq: &crate::space::Sequence) -> String {
 pub struct TumblerQuery {
     pub a: Option<String>,
     pub b: Option<String>,
+}
+
+/// CORS preflight for the overlay marks endpoint. The route is
+/// public and CORS-open by spec (FR-79 §2.3); JSON POSTs from
+/// browser contexts without host permission preflight first —
+/// without this, the OPTIONS 404s and the fetch fails.
+async fn cors_preflight_handler() -> impl axum::response::IntoResponse {
+    (
+        axum::http::StatusCode::NO_CONTENT,
+        [
+            (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+            (
+                axum::http::header::ACCESS_CONTROL_ALLOW_METHODS,
+                "POST, OPTIONS",
+            ),
+            (axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS, "Content-Type"),
+            (axum::http::header::ACCESS_CONTROL_MAX_AGE, "86400"),
+        ],
+    )
 }
 
 /// FR-79 Stage 2 (spec 2.3): POST /api/overlay/marks — the

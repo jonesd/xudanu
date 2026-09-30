@@ -168,9 +168,23 @@ return the mark descriptors. Rate-limited; no session needed.
       char offsets), CSS Custom Highlight tint + margin ribbons
       (right = incoming, left = outgoing), hover tooltip,
       click-through to `?work=0x…#C…`, silent failure everywhere
-- [ ] manual render pass on the three fixtures (article/docs/blog)
-      and the simulated-edit survival run (web/extension/fixtures/
-      README.md) — the rendering half of this criterion
+- [x] render pass on the three fixtures (article/docs/blog) —
+      automated: Playwright harness (web/extension/test/) drives the
+      real content script in Chromium (test-variant manifest: static
+      registration scoped to the fixture server, since Chrome can't
+      grant the production manifest's optional host permissions
+      without a gesture; branded Chrome 137+ also dropped
+      --load-extension, so the harness uses Playwright's Chromium
+      build). Verifies: ribbons on all three page shapes, direction
+      styling, hover tooltip (type + far end + proof tier),
+      click-through deep link, edit survival, zero render on
+      unshadowed pages, console hygiene. First live run caught and
+      fixed: missing CORS preflight on the marks endpoint (OPTIONS
+      404 → fetch fail) and a MutationObserver self-trigger loop in
+      the content script (render → mutation → re-render churn).
+- [ ] manual: the production-manifest flow (options UI: server URL,
+      Test connection, Enable → dynamic permission grant +
+      registration) — the one path automation can't gesture through
 - [ ] extension store review hygiene pass (permissions audit)
 
 ---

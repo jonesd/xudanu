@@ -250,23 +250,50 @@
       if (!serverUrl || !/^https?:\/\//.test(location.href)) return;
       const spine = extractSpine();
       if (!spine.text.trim()) return;
+      console.debug("[xudanu] querying", serverUrl, "spine", spine.text.length, "chars,", spine.segments.length, "segments");
       const resp = await chrome.runtime.sendMessage({
         type: "marks",
         url: location.href,
         text: spine.text,
       });
-      if (!resp || !resp.ok) return; // silent by design
-      render(resp.body, serverUrl.replace(/\/+$/, ""), spine.segments);
-    } catch (_) {
+      if (!resp || !resp.ok) {
+        console.debug("[xudanu] marks response not ok:", resp && resp.error);
+        return; // silent by design
+      }
+      const n = render(resp.body, serverUrl.replace(/\/+$/, ""), spine.segments);
+      console.debug("[xudanu] rendered", n, "marks");
+    } catch (e) {
       // Never surface errors to the page.
+      console.debug("[xudanu] run failed:", String(e));
     } finally {
       inflight = false;
     }
   }
 
   // Reposition (not re-query) when the page shifts under us.
+  // SELF-MUTATION GUARD: our own container, tooltips, and style
+  // element must not retrigger the observer — otherwise render →
+  // mutation → clear → render loops forever and ribbons never
+  // stabilize (found by the Playwright hover-stability check).
   let repositionTimer = null;
-  new MutationObserver(() => {
+  const isOwnMutation = (m) => {
+    const t = m.target;
+    if (!(t instanceof Node)) return false;
+    if (t === document.documentElement || t === document.body) {
+      // Only "ours" if the added/removed nodes are our elements.
+      return [...m.addedNodes, ...m.removedNodes].every(
+        (n) =>
+          n instanceof Element &&
+          (n.id === CONTAINER_ID ||
+            n.id === "__xudanu_overlay_style" ||
+            n.classList?.contains("xudanu-tip"))
+      );
+    }
+    const el = t instanceof Element ? t : t.parentElement;
+    return !!el && (el.id === CONTAINER_ID || el.closest?.(`#${CONTAINER_ID}, .xudanu-tip`) != null);
+  };
+  new MutationObserver((muts) => {
+    if (muts.every(isOwnMutation)) return;
     if (repositionTimer) return;
     repositionTimer = setTimeout(() => {
       repositionTimer = null;
