@@ -112,3 +112,21 @@ Reuse the range ops; preview resolves server-side.
 3. Should the pending-connection bar survive pane collapse (parking
    a half-made connection)? (Recommendation: yes — held selections
    already survive; parity for the two-ended bar.)
+
+## Session notes (Sep 30, 2026 — user-tested slice 1)
+
+First cross-pane link created end-to-end. Issues found in testing,
+for the next session:
+
+- [ ] Pane link markers: panes render plain text with no underlines
+      — the far document's connection landscape is invisible. One
+      color per KIND (the spectrum-sentence language), visible from
+      both ends. This is the top priority.
+- [ ] Marker tooltip "Go to" overlaps the link below (positioning
+      grows downward into the next marker)
+- [ ] Held end should survive work switches (verify: does mainHeld
+      persist across selectWork?)
+- [ ] Pane WebSocket error handling: clientRef.current can go stale
+      during reconnection; retry should re-resolve the client
+- [ ] Small-screen layout: connect bar + hold chip + Aa button
+      compete for bottom space on laptop screens
