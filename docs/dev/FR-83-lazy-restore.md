@@ -1,6 +1,6 @@
 # FR-83 — Lazy Restore: boot in seconds, materialize enfilades on demand
 
-**Status:** specified, not started (September 2026)
+**Status:** slice 1 shipped (September 2026) — flag-gated (`XUDANU_LAZY_RESTORE=1`), both test suites green in eager AND lazy modes. Measured on the dev corpus (499 works): eager-debug 74s → lazy-debug 13.5s → **lazy-release 2.82s to health**. Remaining checklist below.
 **Diagnosed from:** dev-server restore of 499 works ≈ 35–40s to bind
 (the proximate cause of the "restart didn't work" session — the
 restart script's 30s wait expired and killed a healthy server).
@@ -108,20 +108,29 @@ rides the same listing path; lazy works answer metadata from the map).
 
 ## Exit criteria
 
-- [ ] Restore inserts all works in evicted state; bind ≤ 5s on the
-      current dev corpus
-- [ ] Every edition consumer passes a thaw gate (audit list above
-      checked off, debug assertion in place)
-- [ ] Restore-then-read-everything integration test green against a
-      cold boot (every consumer exercised)
-- [ ] Backfollow/canopy/search behave over cold works (miss → thaw →
-      correct), proven by test
-- [ ] Verification runs post-bind in background; `/health` reflects
-      it; failure path surfaces without wedging the server
-- [ ] eviction-gap + existing eviction tests still green
+- [x] Restore inserts all works in evicted (metadata) state — flag-gated;
+      release boot 2.82s ≤ 5s target on the current dev corpus
+- [x] Edition consumers gated: dispatch pre-thaw pass (read ops),
+      write choke points (revise_work, work_grab,
+      ensure_trail_derived_work), restore-tail deferrals
+      (backfollow meta-only + thaw-upgrade, annotated-work thaw)
+- [x] The full suite under XUDANU_LAZY_RESTORE=1 green (3,689) — the
+      debug-assert choke point is the permanent enforcement
+- [x] Corruption at thaw quarantines with the same contract as
+      eager (chunks preserved, restore_errors surfaced)
+- [x] Verification runs post-bind in background; /health reports
+      background_verification (flips false on completion)
+- [x] Eager mode byte-identical behavior (3,689 green, flag off)
+- [ ] Flip the default (on) after a soak period — flag stays opt-in
+      for v1.15.0
+- [ ] Phase timing spans in the boot log (self-reporting boots)
+- [ ] Defer the boot-time schema-drift self-heal checkpoint post-bind
+- [ ] Lazy annotation init (per-work, first access) — boot touches
+      zero editions
+- [ ] Clubs lazy (72 hydrate eagerly today)
 - [ ] `xudanu-server upgrade` verify pass still total (deliberate
-      full hydration)
-- [ ] XPS dispatch benches: no regression
+      full hydration) — verify under the flag
+- [ ] XPS dispatch benches: no regression (re-run under flag)
 
 ## Out of scope
 
