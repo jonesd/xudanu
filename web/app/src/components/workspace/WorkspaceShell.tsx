@@ -367,8 +367,11 @@ export function WorkspaceShell() {
     try { return storageGet("xudanu_showProv") !== "false"; } catch { return true; }
   });
   const [showLinkDesc, setShowLinkDesc] = useState(() => {
+    // Design decision (Sep 30): type chips OFF by default — the margin
+    // bars carry the color (kind), hover reveals the detail. Users can
+    // opt back in via the More menu.
     try { return storageGet("xudanu_showLinkDesc") === "true"; }
-    catch { return true; }
+    catch { return false; }
   });
   const [showPerspective, setShowPerspective] = useState(false);
   const [showCompoundBuilder, setShowCompoundBuilder] = useState(false);
