@@ -18,6 +18,23 @@ import type { ReactNode } from "react";
 import { useCrdtSync } from "../../hooks/useCrdtSync";
 import { useWorkStore } from "../../store/work-store";
 import { useTransclusion, DEFAULT_LINK_TYPES } from "../../hooks/useTransclusion";
+// FR-84 split authoring: N panes + the two-ended connection bar.
+import { WorkPane, type WorkPaneSelection } from "../WorkPane";
+import {
+  addPane,
+  removePane,
+  setPaneScroll,
+  setPaneHeld,
+  heldEnds,
+  type PaneState,
+} from "../../pane-registry";
+import { canConnect, buildLinkRefs, chipExcerpt, type PaneEnd } from "../../split-authoring";
+// System-wide font preference: one knob, every surface scales.
+import {
+  readUiFontSize,
+  writeUiFontSize,
+  nextUiFontSize,
+} from "../../ui-font";
 import { linkEnds, isMultiEnded, multiEndWorkIds, notifyStatus, gatherableEnds } from "../../link-ends";
 import { MultiEndCompare } from "../MultiEndCompare";
 import { useCompoundEdition } from "../../hooks/useCompoundEdition";
@@ -178,6 +195,10 @@ export function WorkspaceShell() {
     return null;
   });
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
+  // FR-84 split authoring: the pane registry — N pinned works, each
+  // with scroll memory and a held connection end. No cap: layout is
+  // the user's call.
+  const [panes, setPanes] = useState<PaneState[]>([]);
   const [annotationTarget, setAnnotationTarget] = useState<{ start: number; end: number } | null>(null);
   const [themeState, setThemeState] = useState(() => loadThemeState());
   const [themePickerOpen, setThemePickerOpen] = useState(false);
@@ -2601,7 +2622,7 @@ export function WorkspaceShell() {
                     padding: "2px 8px", borderRadius: 3, textTransform: "uppercase",
                     letterSpacing: 0.5, userSelect: "none",
                   }}>Remote</span>
-                  <span style={{ fontSize: 12, fontWeight: 600 }}>
+                  <span style={{ fontSize: "var(--ws-font, 14px)", fontWeight: 600 }}>
                     From {remoteView.originServerName}
                   </span>
                   <span style={{ fontSize: 10, color: "var(--text-dim)" }}>
@@ -2611,7 +2632,7 @@ export function WorkspaceShell() {
                     type="button"
                     onClick={() => setRemoteView(null)}
                     style={{
-                      marginLeft: "auto", fontSize: 11, padding: "4px 12px",
+                      marginLeft: "auto", fontSize: "calc(var(--ws-font, 14px) - 1px)", padding: "4px 12px",
                       border: "1px solid var(--border)", borderRadius: 4,
                       background: "var(--bg-surface)", cursor: "pointer",
                     }}
@@ -2624,7 +2645,7 @@ export function WorkspaceShell() {
                   display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap",
                   background: "var(--bg-elevated)",
                 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)" }}>
+                  <span style={{ fontSize: "calc(var(--ws-font, 14px) - 1px)", fontWeight: 600, color: "var(--text)" }}>
                     Actions:
                   </span>
                   <button
@@ -2642,7 +2663,7 @@ export function WorkspaceShell() {
                       setRemoteView(null);
                     }}
                     style={{
-                      marginLeft: "auto", fontSize: 12, padding: "6px 14px",
+                      marginLeft: "auto", fontSize: "var(--ws-font, 14px)", padding: "6px 14px",
                       border: "2px solid var(--green)", borderRadius: 6,
                       background: "var(--green)", color: "#fff",
                       cursor: canEdit ? "pointer" : "not-allowed",
@@ -2674,7 +2695,7 @@ export function WorkspaceShell() {
                       }
                     }}
                     style={{
-                      marginLeft: "auto", fontSize: 11, padding: "4px 12px",
+                      marginLeft: "auto", fontSize: "calc(var(--ws-font, 14px) - 1px)", padding: "4px 12px",
                       border: "1px solid var(--green)", borderRadius: 4,
                       background: "var(--green)", color: "#fff", cursor: canEdit ? "pointer" : "not-allowed",
                       opacity: canEdit ? 1 : 0.5,
@@ -2730,7 +2751,7 @@ export function WorkspaceShell() {
                       }
                     }}
                     style={{
-                      fontSize: 12, padding: "6px 14px",
+                      fontSize: "var(--ws-font, 14px)", padding: "6px 14px",
                       border: "2px solid var(--amber)", borderRadius: 6,
                       background: "var(--amber)", color: "#111",
                       cursor: canEdit && workBeId !== null ? "pointer" : "not-allowed",
@@ -2741,7 +2762,7 @@ export function WorkspaceShell() {
                   </button>
                 </div>
                 {remoteActionError && (
-                  <div style={{ padding: "4px 16px", fontSize: 11, color: "var(--red)", background: "var(--bg-elevated)" }}>
+                  <div style={{ padding: "4px 16px", fontSize: "calc(var(--ws-font, 14px) - 1px)", color: "var(--red)", background: "var(--bg-elevated)" }}>
                     {remoteActionError}
                   </div>
                 )}
@@ -3067,7 +3088,7 @@ export function WorkspaceShell() {
                                 borderBottom: "1px solid var(--border, #30363d)",
                                 borderRadius: "4px 4px 0 0",
                                 cursor: isWebLink ? "default" : "pointer",
-                                fontSize: 12,
+                                fontSize: "var(--ws-font, 14px)",
                                 fontWeight: 600,
                                 color: "var(--text, #e6edf3)",
                               }}
@@ -3109,7 +3130,7 @@ export function WorkspaceShell() {
                                 );
                               })}
                               {connExcerpt && (
-                                <span style={{ fontSize: 11, color: "var(--text-dim, #8b949e)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                                <span style={{ fontSize: "calc(var(--ws-font, 14px) - 1px)", color: "var(--text-dim, #8b949e)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
                                   &ldquo;{connExcerpt.slice(0, 50)}{connExcerpt.length > 50 ? "…" : ""}&rdquo;
                                 </span>
                               )}
@@ -3260,7 +3281,7 @@ export function WorkspaceShell() {
                             </div>
                           </div>
                           {extraEnds.length > 0 && (
-                            <div style={{ fontSize: 11, color: "#8b949e", marginTop: 2 }}>
+                            <div style={{ fontSize: "calc(var(--ws-font, 14px) - 1px)", color: "#8b949e", marginTop: 2 }}>
                               {"+ "}
                               {extraEnds.map((e, i) => {
                                 const w = works.find((x) => x.work_id === e.workId);
@@ -3409,7 +3430,7 @@ export function WorkspaceShell() {
                           <div className="ws-conn-title">
                             ↗ {sourceTitle}
                             {sr.source_changed && (
-                              <span style={{ color: "#d29922", fontSize: 11, marginLeft: 4 }} title="Source was edited after this transclusion was created">
+                              <span style={{ color: "#d29922", fontSize: "calc(var(--ws-font, 14px) - 1px)", marginLeft: 4 }} title="Source was edited after this transclusion was created">
                                 ⚠ changed
                               </span>
                             )}
@@ -3627,7 +3648,7 @@ export function WorkspaceShell() {
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize: 11, color: "var(--text-dim)", margin: "4px 0 8px" }}>
+                <div style={{ fontSize: "calc(var(--ws-font, 14px) - 1px)", color: "var(--text-dim)", margin: "4px 0 8px" }}>
                   Persistent watches: link detectors collect new links landing on a work; revision detectors collect new revisions. Miller&rsquo;s fourth fundamental feature, 1994.
                 </div>
                 {workBeId !== null && (
@@ -3641,7 +3662,7 @@ export function WorkspaceShell() {
                   </div>
                 )}
                 {detectors.length === 0 ? (
-                  <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 10 }}>
+                  <div style={{ fontSize: "var(--ws-font, 14px)", color: "var(--text-dim)", marginBottom: 10 }}>
                     No watches yet. Plant one from the Links panel or the buttons above.
                   </div>
                 ) : (
@@ -3662,9 +3683,9 @@ export function WorkspaceShell() {
                             </span>
                           )}
                         </div>
-                        {typeNames && <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>types: {typeNames}</div>}
+                        {typeNames && <div style={{ fontSize: "calc(var(--ws-font, 14px) - 1px)", color: "var(--text-dim)", marginTop: 2 }}>types: {typeNames}</div>}
                         {d.hits.length > 0 && (
-                          <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
+                          <div style={{ fontSize: "calc(var(--ws-font, 14px) - 1px)", color: "var(--text-dim)", marginTop: 4 }}>
                             {d.hits.slice(-3).map((h, i) => (
                               <div key={i}>
                                 {h.link_id ? `link 0x${h.link_id.toString(16)}` : `revision ${h.revision}`} · {new Date(h.at * 1000).toLocaleDateString()}
@@ -3756,8 +3777,112 @@ export function WorkspaceShell() {
     </>
   );
 
+  // ── FR-84 split authoring: derived ends + handlers ──────────────
+  const openBeside = useCallback((id: number) => {
+    setPanes((prev) => addPane(prev, id));
+  }, []);
+
+  const closePane = useCallback((key: string) => {
+    setPanes((prev) => removePane(prev, key));
+  }, []);
+
+  const rememberPaneScroll = useCallback((key: string, top: number) => {
+    setPanes((prev) => setPaneScroll(prev, key, top));
+  }, []);
+
+  const holdFromPane = useCallback((key: string, sel: WorkPaneSelection) => {
+    setPanes((prev) => setPaneHeld(prev, key, sel));
+  }, []);
+
+  // Promotion: this pane's work takes the editing focus; the old
+  // primary stays visible by becoming a pane (no lost context).
+  const promotePane = useCallback(
+    (paneWorkId: number) => {
+      if (paneWorkId === workBeId) return;
+      setPanes((prev) => {
+        let next = prev;
+        if (workBeId != null) next = addPane(next, workBeId);
+        return removePane(next, panes.find((p) => p.workId === paneWorkId)?.key ?? "");
+      });
+      selectWork(paneWorkId);
+    },
+    [workBeId, panes, selectWork],
+  );
+
+  const mainEnd: PaneEnd | null = useMemo(() => {
+    if (workBeId == null || !selectionRange || selectionRange.end <= selectionRange.start) {
+      return null;
+    }
+    const src = getSourceText();
+    return {
+      workId: workBeId,
+      start: selectionRange.start,
+      end: selectionRange.end,
+      text: src.slice(selectionRange.start, selectionRange.end),
+    };
+  }, [workBeId, selectionRange, getSourceText]);
+
+  const heldFromPanes = useMemo<PaneEnd[]>(
+    () =>
+      heldEnds(panes).map((e) => ({
+        workId: e.workId,
+        start: e.start,
+        end: e.end,
+        text: e.text,
+      })),
+    [panes],
+  );
+
+  // The two-ended create: primary selection + first held end, or the
+  // first two held ends. More than two held = slice 4's gather.
+  const connectPair: [PaneEnd, PaneEnd] | null = useMemo(() => {
+    const candidates = mainEnd ? [mainEnd, ...heldFromPanes] : heldFromPanes;
+    if (candidates.length >= 2 && canConnect(candidates[0], candidates[1])) {
+      return [candidates[0], candidates[1]];
+    }
+    return null;
+  }, [mainEnd, heldFromPanes]);
+
+  const [paneConnectType, setPaneConnectType] = useState(2); // Reference
+  const createPaneConnection = useCallback(async () => {
+    const c = clientRef.current;
+    if (!c || !connectPair) return;
+    const [a, b] = connectPair;
+    const { originRef, destinationRef } = buildLinkRefs(a, b);
+    try {
+      const linkId = await c.linkCreate(a.workId, b.workId, originRef, destinationRef);
+      if (paneConnectType) {
+        await c.linkSetTypes(linkId, [paneConnectType]);
+      }
+      showToast(`✓ Connected “${chipExcerpt(a.text, 20)}” → “${chipExcerpt(b.text, 20)}”`);
+      setPanes((prev) => prev.map((p) => (p.held ? { ...p, held: null } : p)));
+      setSelectionRange(null);
+      if (workBeId != null) loadLinks(c, workBeId, works);
+    } catch (e) {
+      showToast("Connection failed: " + String(e));
+    }
+  }, [connectPair, paneConnectType, workBeId, works, loadLinks, showToast]);
+
+  const paneAreaVw = Math.min(panes.length * 30, 78);
+
+  // System font: persisted preference → CSS var for all chrome
+  // surfaces (--ws-font) + the editor's content size directly.
+  const [uiFontSize, setUiFontSize] = useState(readUiFontSize);
+  const cycleFontSize = useCallback(() => {
+    setUiFontSize((prev) => {
+      const next = nextUiFontSize(prev);
+      writeUiFontSize(next);
+      return next;
+    });
+  }, []);
+
   return (
-    <div className={`ws-shell ${activeCssClass} ${navTab === "compose" ? "ws-mode-compose" : ""} ${navTab === "library" ? "ws-mode-library" : ""} ${workBeId !== null ? "ws-mode-doc" : ""} ${workBeId === null && navTab !== "library" ? "ws-mode-welcome" : ""}`}>
+    <div className={`ws-shell ${activeCssClass} ${navTab === "compose" ? "ws-mode-compose" : ""} ${navTab === "library" ? "ws-mode-library" : ""} ${workBeId !== null ? "ws-mode-doc" : ""} ${workBeId === null && navTab !== "library" ? "ws-mode-welcome" : ""}`}
+      style={{
+        ...(panes.length > 0 ? { paddingRight: `${paneAreaVw}vw` } : {}),
+        ["--ws-font" as string]: `${uiFontSize}px`,
+      }}
+    >
       {connected && !worksLoading && works.length === 0 && !landingDismissed && workBeId === null && (
         <HomeLanding
           onCreate={createAndSelectWork}
@@ -3971,13 +4096,13 @@ export function WorkspaceShell() {
                                 }
                               } catch { /* network error — will retry */ }
                             }}
-                            style={{ cursor: "pointer", color: w.is_starred ? "#d29922" : "#6e7681", fontSize: 11, flexShrink: 0 }}
+                            style={{ cursor: "pointer", color: w.is_starred ? "#d29922" : "#6e7681", fontSize: "calc(var(--ws-font, 14px) - 1px)", flexShrink: 0 }}
                             title={w.is_starred ? "Unpin" : "Pin to top"}
                           >
                             {w.is_starred ? "\u2605" : "\u2606"}
                           </span>
-                          {w.is_source && <span style={{ fontSize: 11, marginRight: 2 }}>{"\u{1F4D6}"}</span>}
-                          <span style={{ color: KIND_COLOR[kind], fontSize: 11, marginRight: 4 }}>{KIND_ICON[kind]}</span>
+                          {w.is_source && <span style={{ fontSize: "calc(var(--ws-font, 14px) - 1px)", marginRight: 2 }}>{"\u{1F4D6}"}</span>}
+                          <span style={{ color: KIND_COLOR[kind], fontSize: "calc(var(--ws-font, 14px) - 1px)", marginRight: 4 }}>{KIND_ICON[kind]}</span>
                           <span className="ws-concept-name">{title.length > 22 ? title.slice(0, 20) + "…" : title}</span>
                           <span style={{ color: "#6e7681", fontSize: 10, marginLeft: "auto", fontFamily: "monospace", flexShrink: 0 }}>0x{w.work_id.toString(16)}</span>
                         </li>
@@ -4091,7 +4216,7 @@ export function WorkspaceShell() {
                  href="https://github.com/jonesd/xudanu"
                  target="_blank"
                  rel="noopener noreferrer"
-                 style={{ color: "var(--accent-blue)", fontSize: 14 }}
+                 style={{ color: "var(--accent-blue)", fontSize: "calc(var(--ws-font, 14px) + 1px)" }}
                >
                  Run your own server — one binary or docker compose, two minutes →
                </a>
@@ -4162,9 +4287,9 @@ export function WorkspaceShell() {
                         onClick={() => selectWork(r.work_id)}
                         title={`Open "${title}" — ${r.matches?.length ?? 0} matches in content`}
                       >
-                        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text, #e6edf3)" }}>{title}</div>
+                        <div style={{ fontSize: "var(--ws-font, 14px)", fontWeight: 600, color: "var(--text, #e6edf3)" }}>{title}</div>
                         {r.matches?.[0] && (
-                          <div style={{ fontSize: 11, color: "var(--text-dim, #8b949e)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <div style={{ fontSize: "calc(var(--ws-font, 14px) - 1px)", color: "var(--text-dim, #8b949e)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             …{r.matches[0].context}…
                           </div>
                         )}
@@ -4179,7 +4304,7 @@ export function WorkspaceShell() {
                 </div>
               )}
               {contentSearching && (
-                <div style={{ padding: "6px 14px", fontSize: 11, color: "var(--text-dim, #8b949e)" }}>
+                <div style={{ padding: "6px 14px", fontSize: "calc(var(--ws-font, 14px) - 1px)", color: "var(--text-dim, #8b949e)" }}>
                   Searching content…
                 </div>
               )}
@@ -4210,12 +4335,33 @@ export function WorkspaceShell() {
                           {w.is_source && <span title="Imported source work" style={{ marginRight: 2 }}>{"\u{1F4D6}"}</span>}
                           {w.title || `Work 0x${w.work_id.toString(16)}`}
                         </div>
+                        <button
+                          type="button"
+                          className="ws-open-beside"
+                          title="Open beside — pin this work in a pane next to the current document (FR-84)"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openBeside(w.work_id);
+                          }}
+                          style={{
+                            fontSize: 10,
+                            padding: "1px 6px",
+                            marginLeft: 6,
+                            borderRadius: 5,
+                            border: "1px solid #30363d",
+                            background: "transparent",
+                            color: "#8b949e",
+                            cursor: "pointer",
+                          }}
+                        >
+                          ⧉ beside
+                        </button>
                         {w.preview && (
                           <div
                             className="ws-work-preview"
                             title={w.preview}
                             style={{
-                              fontSize: 11,
+                              fontSize: "calc(var(--ws-font, 14px) - 1px)",
                               color: "#7d8590",
                               marginTop: 1,
                               marginBottom: 1,
@@ -4715,11 +4861,11 @@ export function WorkspaceShell() {
                        background: "rgba(63,185,80,0.06)",
                        border: "1px solid rgba(63,185,80,0.3)",
                        borderRadius: 6,
-                       fontSize: 12,
+                       fontSize: "var(--ws-font, 14px)",
                        color: "var(--text-dim)",
                      }}
                    >
-                     <span style={{ fontSize: 14 }}>▤</span>
+                     <span style={{ fontSize: "calc(var(--ws-font, 14px) + 1px)" }}>▤</span>
                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                        Live window onto{" "}
                        <button
@@ -4737,7 +4883,7 @@ export function WorkspaceShell() {
                            padding: 0,
                            color: "var(--accent-blue)",
                            fontFamily: "monospace",
-                           fontSize: 11,
+                           fontSize: "calc(var(--ws-font, 14px) - 1px)",
                            cursor: "pointer",
                            textDecoration: "underline dotted",
                          }}
@@ -4749,7 +4895,7 @@ export function WorkspaceShell() {
                          target="_blank"
                          rel="noopener noreferrer"
                          title="open the source page"
-                         style={{ color: "var(--accent-blue)", fontSize: 11, textDecoration: "none" }}
+                         style={{ color: "var(--accent-blue)", fontSize: "calc(var(--ws-font, 14px) - 1px)", textDecoration: "none" }}
                        >
                          ↗
                        </a>
@@ -4769,7 +4915,7 @@ export function WorkspaceShell() {
                           color: "#3fb950",
                           borderRadius: 4,
                           padding: "2px 10px",
-                          fontSize: 11,
+                          fontSize: "calc(var(--ws-font, 14px) - 1px)",
                           cursor: shadowRefreshing ? "default" : "pointer",
                         }}
                       >
@@ -4847,7 +4993,7 @@ export function WorkspaceShell() {
                           setRemoteView(null);
                         }}
                         style={{
-                          fontSize: 11, padding: "4px 12px",
+                          fontSize: "calc(var(--ws-font, 14px) - 1px)", padding: "4px 12px",
                           border: "1px solid var(--accent-blue)", borderRadius: 4,
                           background: "transparent", color: "var(--accent-blue)",
                           cursor: canEdit ? "pointer" : "not-allowed",
@@ -5091,7 +5237,7 @@ export function WorkspaceShell() {
                         onChange={(e) => setCommentOn((c) => (c ? { ...c, text: e.target.value } : c))}
                         placeholder="What do you want to say about this connection?"
                         rows={3}
-                        style={{ width: "100%", background: "var(--bg-secondary)", color: "var(--text-primary)", border: "1px solid var(--border)", borderRadius: 4, padding: 6, fontSize: 12, resize: "vertical" }}
+                        style={{ width: "100%", background: "var(--bg-secondary)", color: "var(--text-primary)", border: "1px solid var(--border)", borderRadius: 4, padding: 6, fontSize: "var(--ws-font, 14px)", resize: "vertical" }}
                       />
                       <button
                         type="button"
@@ -5189,17 +5335,17 @@ export function WorkspaceShell() {
                       <button type="button" className="ws-sel-btn" style={{ fontSize: 10, padding: "2px 12px", color: "var(--green)" }} onClick={() => setTagResult(null)}>OK</button>
                     </div>
                     {tagResult.new.length > 0 && (
-                      <p style={{ fontSize: 12, color: "var(--green)" }}>
+                      <p style={{ fontSize: "var(--ws-font, 14px)", color: "var(--green)" }}>
                         Created: {tagResult.new.map(t => t.name).join(", ")}
                       </p>
                     )}
                     {tagResult.linked.length > 0 && (
-                      <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                      <p style={{ fontSize: "var(--ws-font, 14px)", color: "var(--text-muted)" }}>
                         Linked: {tagResult.linked.map(t => t.name).join(", ")}
                       </p>
                     )}
                     {tagResult.new.length === 0 && tagResult.linked.length === 0 && (
-                      <p style={{ fontSize: 12, color: "var(--text-muted)" }}>(No concepts suggested)</p>
+                      <p style={{ fontSize: "var(--ws-font, 14px)", color: "var(--text-muted)" }}>(No concepts suggested)</p>
                     )}
                   </div>
                 )}
@@ -5223,7 +5369,7 @@ export function WorkspaceShell() {
                             border: "1px solid #30363d",
                             borderRadius: 4,
                             color: "#c9d1d9",
-                            fontSize: 12,
+                            fontSize: "var(--ws-font, 14px)",
                             padding: "3px 8px",
                             width: 260,
                             flexShrink: 0,
@@ -5372,7 +5518,7 @@ export function WorkspaceShell() {
                   editable={canEdit}
                   externalLinksEnabled={externalLinksEnabled}
                   readingMode={editorMode === "reading"}
-                  fontSize={14}
+                  fontSize={uiFontSize}
                   lineHeight={1.6}
                   transclusionMarkers={transclusion.markers}
                   pendingTransclusion={transclusion.pending}
@@ -6038,10 +6184,10 @@ export function WorkspaceShell() {
           <div style={{ fontSize: 13, color: "var(--text)", marginBottom: 8, fontWeight: 600 }}>
             Create same-document link
           </div>
-          <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 4 }}>
+          <div style={{ fontSize: "var(--ws-font, 14px)", color: "var(--text-dim)", marginBottom: 4 }}>
             <strong>From:</strong> "{sameDocDestCaptured.sourceText.slice(0, 50)}{sameDocDestCaptured.sourceText.length > 50 ? "…" : ""}"
           </div>
-          <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 12 }}>
+          <div style={{ fontSize: "var(--ws-font, 14px)", color: "var(--text-dim)", marginBottom: 12 }}>
             <strong>To:</strong> "{sameDocDestCaptured.destText.slice(0, 50)}{sameDocDestCaptured.destText.length > 50 ? "…" : ""}"
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
@@ -6060,7 +6206,7 @@ export function WorkspaceShell() {
                   borderRadius: 6,
                   background: "transparent",
                   color: t.color,
-                  fontSize: 12,
+                  fontSize: "var(--ws-font, 14px)",
                   fontWeight: 600,
                   cursor: "pointer",
                 }}
@@ -6105,7 +6251,7 @@ export function WorkspaceShell() {
               background: "transparent",
               border: "none",
               color: "var(--text-dim)",
-              fontSize: 12,
+              fontSize: "var(--ws-font, 14px)",
               cursor: "pointer",
               textDecoration: "underline",
             }}
@@ -6135,15 +6281,15 @@ export function WorkspaceShell() {
           <div style={{ fontSize: 13, color: "var(--text)", marginBottom: 8, fontWeight: 600 }}>
             Gathered {gatherPending.gathered.length + 1} passages
           </div>
-          <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 4 }}>
+          <div style={{ fontSize: "var(--ws-font, 14px)", color: "var(--text-dim)", marginBottom: 4 }}>
             <strong>1:</strong> "{gatherPending.sourceText.slice(0, 50)}{gatherPending.sourceText.length > 50 ? "\u2026" : ""}"
           </div>
           {gatherPending.gathered.map((g, i) => (
-            <div key={i} style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 4 }}>
+            <div key={i} style={{ fontSize: "var(--ws-font, 14px)", color: "var(--text-dim)", marginBottom: 4 }}>
               <strong>{i + 2}:</strong> "{g.text.slice(0, 50)}{g.text.length > 50 ? "\u2026" : ""}"
             </div>
           ))}
-          <div style={{ fontSize: 11, color: "var(--text-dim)", margin: "8px 0", fontStyle: "italic" }}>
+          <div style={{ fontSize: "calc(var(--ws-font, 14px) - 1px)", color: "var(--text-dim)", margin: "8px 0", fontStyle: "italic" }}>
             Together these form one end of a single link to {gatherPending.destWorkTitle}.
           </div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -6155,7 +6301,7 @@ export function WorkspaceShell() {
                 borderRadius: 6,
                 background: "transparent",
                 color: "var(--text-dim)",
-                fontSize: 12,
+                fontSize: "var(--ws-font, 14px)",
                 cursor: "pointer",
               }}
               onClick={() => {
@@ -6172,7 +6318,7 @@ export function WorkspaceShell() {
                 borderRadius: 6,
                 background: "var(--accent-blue, #58a6ff)",
                 color: "#fff",
-                fontSize: 12,
+                fontSize: "var(--ws-font, 14px)",
                 fontWeight: 600,
                 cursor: "pointer",
               }}
@@ -6217,7 +6363,7 @@ export function WorkspaceShell() {
                 background: "transparent",
                 border: "none",
                 color: "var(--text-dim)",
-                fontSize: 12,
+                fontSize: "var(--ws-font, 14px)",
                 cursor: "pointer",
                 textDecoration: "underline",
                 marginLeft: "auto",
@@ -6253,7 +6399,7 @@ export function WorkspaceShell() {
               borderRadius: 4,
               padding: "2px 10px",
               color: "#fff",
-              fontSize: 12,
+              fontSize: "var(--ws-font, 14px)",
               cursor: "pointer",
               marginLeft: 8,
             }}
@@ -6318,11 +6464,11 @@ export function WorkspaceShell() {
           <span style={{ fontWeight: 600, fontSize: 13 }}>
             {followTrail.name}
           </span>
-          <span style={{ fontSize: 11, opacity: 0.75 }}>
+          <span style={{ fontSize: "calc(var(--ws-font, 14px) - 1px)", opacity: 0.75 }}>
             stop {followIndex + 1} / {followTrail.stops.length}
           </span>
           {followTrail.stops[followIndex]?.note && (
-            <span style={{ fontSize: 11, opacity: 0.9, maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={followTrail.stops[followIndex].note ?? undefined}>
+            <span style={{ fontSize: "calc(var(--ws-font, 14px) - 1px)", opacity: 0.9, maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={followTrail.stops[followIndex].note ?? undefined}>
               {followTrail.stops[followIndex].note}
             </span>
           )}
@@ -6654,6 +6800,29 @@ export function WorkspaceShell() {
           {studio ? "◨ Classic" : "◧ Studio"}
         </button>
       )}
+      {!isPhone && (
+        <button
+          className="ws-font-size-fab"
+          onClick={cycleFontSize}
+          title={`Text size: ${uiFontSize}px — click to change (system-wide)`}
+          style={{
+            position: "fixed",
+            bottom: 64,
+            right: 16,
+            zIndex: 1200,
+            fontSize: "var(--ws-font, 14px)",
+            padding: "4px 10px",
+            borderRadius: 8,
+            border: "1px solid #30363d",
+            background: "#161b22",
+            color: "#e8e6e0",
+            cursor: "pointer",
+            opacity: 0.85,
+          }}
+        >
+          Aa {uiFontSize}
+        </button>
+      )}
       {beamsOpen && workBeId !== null && (
         <BeamsView
           client={clientRef.current}
@@ -6675,6 +6844,105 @@ export function WorkspaceShell() {
             selectWork(id);
           }}
         />
+      )}
+
+      {/* FR-84: the pane area — N pinned works beside the primary. */}
+      {panes.length > 0 && (
+        <div
+          className="ws-pane-area"
+          style={{
+            position: "fixed",
+            top: 52,
+            right: 0,
+            bottom: 0,
+            width: `${paneAreaVw}vw`,
+            display: "flex",
+            zIndex: 900,
+            boxShadow: "-8px 0 24px rgba(0,0,0,0.35)",
+          }}
+        >
+          {panes.map((p) => (
+            <div key={p.key} style={{ flex: 1, minWidth: 260, display: "flex" }}>
+              <WorkPane
+                client={clientRef.current}
+                connected={connected}
+                workId={p.workId}
+                held={p.held}
+                initialScrollTop={p.scrollTop}
+                onScrollRemember={(top) => rememberPaneScroll(p.key, top)}
+                onHoldEnd={(sel) => holdFromPane(p.key, sel)}
+                onPromote={p.workId === workBeId ? undefined : () => promotePane(p.workId)}
+                onClose={() => closePane(p.key)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* FR-84: the two-ended connection bar. */}
+      {connectPair && (
+        <div
+          className="ws-connect-bar"
+          style={{
+            position: "fixed",
+            bottom: 18,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 1100,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            background: "#10222f",
+            border: "1px solid #213040",
+            borderRadius: 10,
+            padding: "8px 12px",
+            boxShadow: "0 6px 24px rgba(0,0,0,0.4)",
+            maxWidth: "min(86vw, 720px)",
+            flexWrap: "wrap",
+          }}
+        >
+          <span
+            title={connectPair[0].text}
+            style={{ fontSize: "var(--ws-font, 14px)", color: "#9ecbff", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          >
+            “{chipExcerpt(connectPair[0].text)}”
+          </span>
+          <span style={{ color: "#7ee787", fontSize: "calc(var(--ws-font, 14px) + 1px)" }}>→</span>
+          <span
+            title={connectPair[1].text}
+            style={{ fontSize: "var(--ws-font, 14px)", color: "#ffa657", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          >
+            “{chipExcerpt(connectPair[1].text)}”
+          </span>
+          <select
+            value={paneConnectType}
+            onChange={(e) => setPaneConnectType(Number(e.target.value))}
+            style={{ fontSize: "var(--ws-font, 14px)", background: "#0d1117", color: "#e8e6e0", border: "1px solid #30363d", borderRadius: 6, padding: "3px 6px" }}
+          >
+            <option value={1}>Comment</option>
+            <option value={2}>Reference</option>
+            <option value={3}>Disagreement</option>
+            <option value={4}>Quotation</option>
+            <option value={5}>See Also</option>
+            <option value={7}>Trail</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => void createPaneConnection()}
+            style={{
+              fontSize: "var(--ws-font, 14px)",
+              padding: "4px 14px",
+              borderRadius: 8,
+              border: "1px solid #238636",
+              background: "#12261a",
+              color: "#7ee787",
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+          >
+            Connect
+          </button>
+        </div>
       )}
     </div>
   );

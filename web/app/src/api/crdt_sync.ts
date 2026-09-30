@@ -1948,6 +1948,28 @@ export class CrdtSyncClient {
     return v.title || "";
   }
 
+  /** FR-84: one-shot text fetch for any work (panes, previews,
+   * pickers). Independent of the CRDT stream (which is coupled to
+   * the single "open" work) — snapshot semantics: exactly what
+   * read-select panes and link anchoring want. */
+  async fetchWorkText(
+    workId: number,
+  ): Promise<{ title: string; text: string; revision: number }> {
+    const resp = await this.sendRequest("work_get_edition", { work_id: workId });
+    const v = extractValue(resp) as Record<string, unknown>;
+    const text =
+      (typeof v.text === "string" ? v.text : undefined) ??
+      (typeof (v as { edition?: { text?: string } }).edition?.text === "string"
+        ? ((v as { edition?: { text?: string } }).edition?.text as string)
+        : "") ??
+      "";
+    return {
+      title: (v.title as string) || "",
+      text,
+      revision: typeof v.revision === "number" ? v.revision : 0,
+    };
+  }
+
   async workVersionTimeline(workId: number): Promise<WorkVersionTimeline> {
     const resp = await this.sendRequest("work_version_timeline", { work_id: workId });
     return extractValue(resp) as WorkVersionTimeline;
