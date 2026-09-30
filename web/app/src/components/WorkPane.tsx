@@ -72,6 +72,17 @@ export function WorkPane({
   const [revision, setRevision] = useState(0);
   const loadSeq = useRef(0);
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  // Scroll memory fires on scroll END, not every pixel — per-pixel
+  // state updates re-render the whole shell and jank the main
+  // editor's cursor/scroll (found in live testing).
+  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleScroll = useCallback(() => {
+    if (scrollTimer.current) clearTimeout(scrollTimer.current);
+    const el = bodyRef.current;
+    if (!el) return;
+    const top = el.scrollTop;
+    scrollTimer.current = setTimeout(() => onScrollRemember?.(top), 250);
+  }, [onScrollRemember]);
 
   // Selection from a SINGLE text node: offsets are exact by
   // construction (UTF-16 indices into `text`, the same semantics as
@@ -266,7 +277,7 @@ export function WorkPane({
       <div
         className="work-pane-body"
         ref={bodyRef}
-        onScroll={(e) => onScrollRemember?.((e.target as HTMLDivElement).scrollTop)}
+        onScroll={handleScroll}
         onMouseUp={reportSelection}
         style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative" }}
       >
