@@ -193,6 +193,10 @@ pub enum OperationCode {
     RestoreExamples,
     ContentSets,
     ContentSetRecord,
+    /// FR-86: LLM as reader-critic — propose typed connections
+    /// for a work (server-side LLM; human confirms before links
+    /// are created).
+    LlmProposeConnections,
     LatticeShadowEnroll,
     LatticeShadowStatus,
     LatticeShadowClear,
@@ -864,6 +868,7 @@ impl OperationCode {
         (0x0f27, OperationCode::RestoreExamples),
         (0x0f28, OperationCode::ContentSets),
         (0x0f29, OperationCode::ContentSetRecord),
+        (0x0f2a, OperationCode::LlmProposeConnections),
         (0x0f17, OperationCode::AdminClubsList),
         (0x0f18, OperationCode::AdminGrantAdmin),
         (0x0f19, OperationCode::AdminRevokeAdmin),
@@ -1124,6 +1129,13 @@ pub enum WireRequest {
     ContentSetRecord {
         name: String,
         version: String,
+    },
+    /// FR-86: LLM as reader-critic — ask the server's LLM to read
+    /// a work and its connected works, then propose typed
+    /// connections. The proposals return for human confirm/edit/
+    /// reject; no links are created by this op.
+    LlmProposeConnections {
+        work_id: BeId,
     },
     DetectorAck {
         detector_id: u64,
@@ -5275,7 +5287,7 @@ mod lattice_shadow_wire_tests {
         let next = OperationCode::next_free_code(0x0f00, 0x0fff)
             .expect("the 0x0f00 block must not be exhausted");
         assert_eq!(
-            next, 0x0f2a,
+            next, 0x0f2b,
             "next free 0x0f-block code moved — update this expectation after registering"
         );
         // The helper's result is by construction absent from the table.

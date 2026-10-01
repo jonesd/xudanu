@@ -18285,6 +18285,21 @@ impl Server {
             .unwrap_or_default()
     }
 
+    /// FR-86: raw link ids touching a work (for LLM context
+    /// loading — lighter than list_links_for_work).
+    pub fn work_to_links_for_ids(&self, work_id: BeId) -> Option<Vec<BeId>> {
+        self.work_to_links
+            .get(&work_id)
+            .map(|s| s.iter().copied().collect())
+    }
+
+    /// FR-86: (origin, destination) for a link id.
+    pub fn link_state_for(&self, link_id: BeId) -> Option<(BeId, Option<BeId>)> {
+        self.links
+            .get(&link_id)
+            .map(|ls| (ls.origin, ls.destination))
+    }
+
     pub fn link_add_end(
         &mut self,
         _session_id: SessionId,

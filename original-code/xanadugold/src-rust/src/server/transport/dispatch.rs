@@ -1163,6 +1163,94 @@ fn dispatch_inner(
             srv.content_set_record(session_id, &name, &version)?;
             Ok(ResponseValue::ContentSetRecordResult {})
         }
+        WireRequest::LlmProposeConnections { work_id } => {
+            // FR-86: LLM as reader-critic. The server reads the
+            // work + its connected works, calls the LLM, and
+            // returns structured proposals. No links created — the
+            // human confirms via the normal link_create op.
+            srv.ensure_can_read(session_id, work_id)?;
+
+            let Some(llm) = crate::server::ollama::get_client() else {
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "LLM not configured — set OLLAMA_BASE_URL, OPENROUTER_API_KEY, or GITHUB_TOKEN"
+                        .into(),
+                ));
+            };
+
+            // Load the work's text + far-end works in one pass
+            let (title, text, far_ends) = {
+                // Public API: srv.work() for &Work (text),
+                // srv.works for WorkState (cached_title)
+                let w = srv
+                    .work(work_id)
+                    .map_err(|_| crate::server::ServerError::WorkNotFound(work_id))?;
+                let text = w.current_edition().to_text();
+                let title = srv
+                    .works
+                    .get(&work_id)
+                    .map(|ws| ws.cached_title().to_string())
+                    .unwrap_or_default();
+
+                let mut seen = std::collections::HashSet::new();
+                seen.insert(work_id);
+                let mut far: Vec<(u64, String, String)> = Vec::new();
+                if let Some(link_ids) = srv.work_to_links_for_ids(work_id) {
+                    for lid in link_ids {
+                        if let Some((origin, dest)) = srv.link_state_for(lid) {
+                            for wid in [origin, dest.unwrap_or(0)] {
+                                if wid != 0 && seen.insert(wid) && far.len() < 5 {
+                                    if let (Ok(fw), Some(fws)) =
+                                        (srv.work(wid), srv.works.get(&wid))
+                                    {
+                                        far.push((
+                                            wid,
+                                            fws.cached_title().to_string(),
+                                            fw.current_edition().to_text(),
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                (title, text, far)
+            };
+
+            // Bridge async LLM call from sync dispatch (same pattern
+            // as dispatch_narration)
+            let proposals = tokio::task::block_in_place(|| {
+                let rt = tokio::runtime::Handle::current();
+                rt.block_on(async {
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(60),
+                        llm.propose_connections(&text, &title, &far_ends),
+                    )
+                    .await
+                    .map_err(|_| crate::server::ServerError::Internal("LLM timeout (60s)".into()))?
+                    .map_err(|e| crate::server::ServerError::Internal(format!("LLM: {}", e)))
+                })
+            })?;
+
+            let json_proposals: Vec<serde_json::Value> = proposals
+                .iter()
+                .map(|p| {
+                    serde_json::json!({
+                        "excerpt": p.excerpt,
+                        "start": p.start,
+                        "end": p.end,
+                        "type_id": p.type_id,
+                        "reasoning": p.reasoning,
+                        "far_end_title": p.far_end_title,
+                    })
+                })
+                .collect();
+
+            Ok(ResponseValue::Json(serde_json::json!({
+                "proposals": json_proposals,
+                "model": llm.model_name(),
+                "backend": llm.backend_label(),
+            })))
+        }
         WireRequest::LatticeShadowEnroll { work_id } => {
             srv.ensure_admin(session_id)?;
             srv.enroll_lattice_shadow(session_id, work_id)?;

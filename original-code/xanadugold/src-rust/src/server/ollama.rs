@@ -9,6 +9,9 @@ pub enum LlmFeature {
     WritingFeedback,
     FindRelated,
     LinkSuggestion,
+    /// FR-86: LLM as reader-critic — proposed typed connections
+    /// entering the argument chain after human confirmation.
+    ArgumentProposal,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +100,7 @@ impl LlmUsageTracker {
                         LlmFeature::WritingFeedback => "writing_feedback",
                         LlmFeature::FindRelated => "find_related",
                         LlmFeature::LinkSuggestion => "link_suggestion",
+                        LlmFeature::ArgumentProposal => "argument_proposal",
                     };
                     (key.to_string(), v.clone())
                 })
@@ -261,6 +265,96 @@ impl LlmClient {
         }
     }
 
+    /// FR-86: LLM as reader-critic. Given a work's text and the
+    /// texts of its connected works, propose typed connections a
+    /// critical reader would make. Returns structured proposals for
+    /// human confirm/edit/reject — the LLM proposes, the human
+    /// decides.
+    pub async fn propose_connections(
+        &self,
+        work_text: &str,
+        work_title: &str,
+        far_ends: &[(u64, String, String)], // (work_id, title, text)
+    ) -> Result<Vec<ProposedConnection>, LlmError> {
+        let mut context = format!("Document: \"{}\"\n\n{}\n", work_title, work_text);
+        if !far_ends.is_empty() {
+            context.push_str("\n\nConnected works:\n");
+            for (i, (_, title, text)) in far_ends.iter().take(5).enumerate() {
+                context.push_str(&format!(
+                    "\n--- Connected work {} ---\n\"{}\"\n{}\n",
+                    i + 1,
+                    title,
+                    &text[..text.len().min(2000)]
+                ));
+            }
+        }
+
+        let prompt = format!(
+            r#"You are a critical reader in a hypertext system that supports fine-grained bidirectional typed connections.
+
+{}
+
+Available connection types:
+  1. Comment — a note about the passage
+  2. Reference — points to related content
+  3. Disagreement — disputes the passage's claim
+  4. Quotation — cites this passage elsewhere
+  5. See Also — suggests related reading
+
+Identify passages in the main document that a critical reader would connect to other content (in this document or in the connected works). For each, propose a typed connection.
+
+Format each proposal as JSON, one per line:
+{{"excerpt": "<the passage text, verbatim from the document>", "type": <1-5>, "reasoning": "<why this connection matters>", "far_end_title": "<title of the connected work, or null for same-document>"}}
+
+Rules:
+- Only use passages that appear VERBATIM in the document text
+- Quality over quantity: at most 3 proposals
+- Only propose connections you are confident about
+- Disagreements should cite specific evidence from the connected works
+- Respond with ONLY the JSON lines, no other text"#,
+            context
+        );
+
+        let response = self.generate(&prompt).await?;
+        usage_tracker().record(
+            LlmFeature::ArgumentProposal,
+            prompt.len() as u64,
+            response.len() as u64,
+        );
+
+        // Parse proposals: one JSON object per line
+        let mut proposals = Vec::new();
+        for line in response.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || !trimmed.starts_with('{') {
+                continue;
+            }
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                let excerpt = v["excerpt"].as_str().unwrap_or("");
+                let type_id = v["type"].as_u64().unwrap_or(0);
+                let reasoning = v["reasoning"].as_str().unwrap_or("");
+                let far_title = v["far_end_title"].as_str();
+
+                if excerpt.is_empty() || type_id < 1 || type_id > 5 {
+                    continue;
+                }
+
+                // Resolve the excerpt to a span in the work text
+                let start = work_text.find(excerpt);
+                if let Some(s) = start {
+                    proposals.push(ProposedConnection {
+                        excerpt: excerpt.to_string(),
+                        start: s,
+                        end: s + excerpt.len(),
+                        type_id: type_id as u64,
+                        reasoning: reasoning.to_string(),
+                        far_end_title: far_title.map(|t| t.to_string()),
+                    });
+                }
+            }
+        }
+        Ok(proposals)
+    }
     pub async fn generate(&self, prompt: &str) -> Result<String, LlmError> {
         match &self.backend {
             LlmBackend::OpenRouter { api_key, model } => {
@@ -497,6 +591,22 @@ impl LlmClient {
             }
         }
     }
+}
+
+/// FR-86: a structured connection proposal from the LLM.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProposedConnection {
+    /// The passage text (verbatim from the work).
+    pub excerpt: String,
+    /// Resolved span in the work text.
+    pub start: usize,
+    pub end: usize,
+    /// Link type (1=Comment, 2=Reference, 3=Disagreement, 4=Quotation, 5=See Also).
+    pub type_id: u64,
+    /// The LLM's reasoning for this connection.
+    pub reasoning: String,
+    /// Far-end work title (if connecting to another work).
+    pub far_end_title: Option<String>,
 }
 
 #[derive(Debug)]

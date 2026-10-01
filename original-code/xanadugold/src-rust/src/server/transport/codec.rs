@@ -2913,6 +2913,17 @@ impl JsonCodec {
                     version: args.version,
                 })
             }
+            OperationCode::LlmProposeConnections => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LlmProposeConnections {
+                    work_id: args.work_id,
+                })
+            }
             OperationCode::FederatedTransclusionQuery => {
                 #[derive(Deserialize)]
                 struct Args {
