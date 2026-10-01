@@ -34,6 +34,7 @@ import {
   disputeStatus as computeDisputeStatus,
   sortChainsBestFirst,
   linkWeight as chainLinkWeight,
+  isUncontested,
 } from "../../argument-structure";
 // System-wide font preference: one knob, every surface scales.
 import {
@@ -4438,6 +4439,17 @@ export function WorkspaceShell() {
                         onClick={() => selectWork(w.work_id)}
                       >
                         <div className="ws-work-title">
+                          {/* FR-85: absence indicator — uncontested works
+                              are quietly marked; the ABSENCE of criticism
+                              is itself a signal (Miller 1995). */}
+                          {workBeId != null && isUncontested(transclusion.links, w.work_id) && w.work_id !== workBeId && (
+                            <span
+                              title="Uncontested — no Disagreement links to this work"
+                              style={{ fontSize: 9, color: "#3fb95060", marginRight: 3 }}
+                            >
+                              {"\u2713"}
+                            </span>
+                          )}
                           <span
                             className="ws-work-kind-badge"
                             onClick={(e) => {

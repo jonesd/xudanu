@@ -2,6 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { LinkEntry } from "../api/crdt_sync";
 import { linkEnds } from "../link-ends";
 import { DEFAULT_LINK_TYPES } from "../hooks/useTransclusion";
+// FR-85: argument structure — dispute status and chain context.
+import {
+  disputeStatus,
+  type ArgumentChain,
+} from "../argument-structure";
 
 interface SyncClient {
   sendRequest: (op: string, params: Record<string, unknown>) => Promise<unknown>;
@@ -201,7 +206,32 @@ export function BeamsView({ client, currentWorkId, works, links, onClose }: Beam
     return DEFAULT_LINK_TYPES.filter((t) => ids.has(t.type_id));
   }, [links]);
 
+  // FR-85: dispute status per column work — computed from the
+  // current link set (incoming Disagreements to that work).
+  const disputeByColumn = useMemo(() => {
+    const map = new Map<number, { status: string; count: number }>();
+    for (const col of columns) {
+      const { status, chains } = disputeStatus(col.workId, links);
+      map.set(col.workId, { status, count: chains.length });
+    }
+    return map;
+  }, [columns, links]);
+
   const selected = links.find((l) => l.link_id === selectedLink) ?? null;
+
+  // FR-85: argument chain context for the selected link.
+  const selectedChain: ArgumentChain | null = useMemo(() => {
+    if (!selected) return null;
+    const { chains } = disputeStatus(currentWorkId, links);
+    // Is this link the root of a chain?
+    const asRoot = chains.find((c) => c.root.link_id === selected.link_id);
+    if (asRoot) return asRoot;
+    // Or is it a response in someone else's chain?
+    for (const chain of chains) {
+      if (chain.responses.some((r) => r.link_id === selected.link_id)) return chain;
+    }
+    return null;
+  }, [selected, currentWorkId, links]);
 
   const copyTumblers = useCallback(() => {
     if (!selected) return;
@@ -278,6 +308,26 @@ export function BeamsView({ client, currentWorkId, works, links, onClose }: Beam
             <button className="ws-beams-btn" onClick={copyTumblers}>Copy tumbler set</button>
             <button className="ws-beams-btn ghost" onClick={() => setSelectedLink(null)}>Dismiss</button>
           </div>
+          {selectedChain && (
+            <div className="ws-beams-chain" style={{ marginTop: 10, padding: "6px 8px", borderLeft: "2px solid #f85149", background: "rgba(248,81,73,0.05)", borderRadius: "0 4px 4px 0" }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: "#f85149", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Argument chain — {selectedChain.status} ({selectedChain.weight} endorsements)
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text)", marginTop: 4 }}>
+                ⚑ Disagreement from <b>{titleFor(selectedChain.root.origin)}</b>
+              </div>
+              {selectedChain.responses.map((r) => (
+                <div key={r.link_id} style={{ fontSize: 11, color: "var(--text-dim)", paddingLeft: 14, marginTop: 2 }}>
+                  ↳ Response from <b>{titleFor(r.origin)}</b>
+                </div>
+              ))}
+              {selectedChain.responses.length === 0 && (
+                <div style={{ fontSize: 10, color: "var(--amber)", paddingLeft: 14, marginTop: 2 }}>
+                  awaiting response
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -298,10 +348,31 @@ export function BeamsView({ client, currentWorkId, works, links, onClose }: Beam
           ))}
         </svg>
 
-        {columns.map((col) => (
+        {columns.map((col) => {
+          const dispute = disputeByColumn.get(col.workId);
+          return (
           <div className="ws-beams-doc" key={col.workId}>
             <div className="ws-beams-doc-head">
               <h3>{col.title}</h3>
+              {dispute && dispute.count > 0 && (
+                <span
+                  className="ws-beams-dispute"
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: "1px 6px",
+                    borderRadius: 6,
+                    marginLeft: 6,
+                    background:
+                      dispute.status === "disputed" ? "rgba(248,81,73,0.15)" : "rgba(63,185,80,0.12)",
+                    color: dispute.status === "disputed" ? "#f85149" : "#3fb950",
+                    border: `1px solid ${dispute.status === "disputed" ? "#f8514944" : "#3fb95044"}`,
+                  }}
+                  title={`${dispute.count} argument chain${dispute.count > 1 ? "s" : ""} — ${dispute.status}`}
+                >
+                  {dispute.status === "disputed" ? "⚑" : "✓"} {dispute.status}
+                </span>
+              )}
               {col.workId !== currentWorkId && (
                 <button className="ws-beams-doc-x" onClick={() => removeColumn(col.workId)} aria-label="Remove">
                   ✕
@@ -321,7 +392,8 @@ export function BeamsView({ client, currentWorkId, works, links, onClose }: Beam
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
