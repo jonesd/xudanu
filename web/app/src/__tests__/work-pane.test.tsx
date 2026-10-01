@@ -12,19 +12,48 @@ function mkClient(overrides: Partial<CrdtSyncClient> = {}): CrdtSyncClient {
       text: TEXT,
       revision: 3,
     })),
+    linkListForWork: vi.fn(async () => []),
     ...overrides,
   } as unknown as CrdtSyncClient;
 }
 
-/** jsdom selection helper: select [a,b) inside the pane's text node
- * and fire mouseup (the pane's capture point). */
+/** jsdom selection helper: select [a,b) inside the pane's text
+ * container — works with nested spans by using the container's
+ * full text content and creating a range by character offsets. */
 async function selectRange(a: number, b: number) {
   const el = document.querySelector(".work-pane-text") as HTMLElement;
   expect(el, "text container").toBeTruthy();
-  const node = el.firstChild as Text;
+  // Find the text nodes at offsets a and b
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let pos = 0;
+  let startNode: Text | null = null;
+  let startOffset = 0;
+  let endNode: Text | null = null;
+  let endOffset = 0;
+  let node: Text | null;
+  while ((node = walker.nextNode() as Text | null)) {
+    const len = node.textContent?.length ?? 0;
+    if (!startNode && pos + len > a) {
+      startNode = node;
+      startOffset = a - pos;
+    }
+    if (!endNode && pos + len >= b) {
+      endNode = node;
+      endOffset = b - pos;
+    }
+    pos += len;
+    if (startNode && endNode) break;
+  }
+  if (!startNode || !endNode) {
+    // Fallback: use the container itself
+    startNode = el.firstChild as Text;
+    endNode = el.firstChild as Text;
+    startOffset = a;
+    endOffset = b;
+  }
   const range = document.createRange();
-  range.setStart(node, a);
-  range.setEnd(node, b);
+  range.setStart(startNode, startOffset);
+  range.setEnd(endNode, endOffset);
   const sel = window.getSelection();
   sel?.removeAllRanges();
   sel?.addRange(range);
@@ -131,5 +160,48 @@ describe("WorkPane (text renderer)", () => {
     await waitFor(() => document.querySelector(".work-pane-text"));
     fireEvent.click(screen.getByTitle("Refresh snapshot"));
     await waitFor(() => expect(fetchText).toHaveBeenCalledTimes(2));
+  });
+
+  it("renders link markers with type-colored underlines", async () => {
+    const client = mkClient({
+      linkListForWork: vi.fn(async () => [
+        {
+          link_id: 1,
+          origin: 2,
+          destination: 1, // pane work is the destination
+          origin_ref: null,
+          destination_ref: {
+            work_context: 1,
+            start_position: 4,
+            end_position: 14,
+            excerpt: "funculator",
+          },
+          origin_title: "The Criticism",
+          destination_title: "Pane Fixture",
+          link_types: [3], // Disagreement
+        },
+      ]),
+    } as Partial<CrdtSyncClient>);
+    render(<WorkPane client={client} workId={1} connected={true} />);
+    await waitFor(() => document.querySelector(".work-pane-text"));
+    const underlined = document.querySelector(
+      ".work-pane-text span[style*='border-bottom']",
+    );
+    expect(underlined).toBeTruthy();
+    expect(underlined?.textContent).toBe("funculator");
+    // Color assertion: browsers normalize hex to rgb() in computed
+    // inline styles — accept either representation of red.
+    const styleAttr = underlined?.getAttribute("style") ?? "";
+    expect(styleAttr).toMatch(/(#f85149|rgb\(248,\s*81,\s*73\))/);
+    expect(underlined?.getAttribute("title")).toContain("The Criticism");
+  });
+
+  it("renders no markers when the work has no links", async () => {
+    render(<WorkPane client={mkClient()} workId={1} connected={true} />);
+    await waitFor(() => document.querySelector(".work-pane-text"));
+    const underlined = document.querySelectorAll(
+      ".work-pane-text span[style*='border-bottom']",
+    );
+    expect(underlined).toHaveLength(0);
   });
 });

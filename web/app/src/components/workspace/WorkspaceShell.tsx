@@ -4200,7 +4200,7 @@ export function WorkspaceShell() {
                           </span>
                           {w.is_source && <span style={{ fontSize: "calc(var(--ws-font, 14px) - 1px)", marginRight: 2 }}>{"\u{1F4D6}"}</span>}
                           <span style={{ color: KIND_COLOR[kind], fontSize: "calc(var(--ws-font, 14px) - 1px)", marginRight: 4 }}>{KIND_ICON[kind]}</span>
-                          <span className="ws-concept-name">{title.length > 22 ? title.slice(0, 20) + "…" : title}</span>
+                          <span className="ws-concept-name" title={title}>{title.length > 22 ? title.slice(0, 20) + "…" : title}</span>
                           <span style={{ color: "#6e7681", fontSize: 10, marginLeft: "auto", fontFamily: "monospace", flexShrink: 0 }}>0x{w.work_id.toString(16)}</span>
                           <button
                             type="button"
@@ -4463,7 +4463,7 @@ export function WorkspaceShell() {
                           </span>
                           {w.is_starred && <span className="ws-star">★</span>}
                           {w.is_source && <span title="Imported source work" style={{ marginRight: 2 }}>{"\u{1F4D6}"}</span>}
-                          {w.title || `Work 0x${w.work_id.toString(16)}`}
+                          <span title={w.title || `Work 0x${w.work_id.toString(16)}`}>{w.title || `Work 0x${w.work_id.toString(16)}`}</span>
                         </div>
                         <button
                           type="button"

@@ -1,5 +1,63 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CrdtSyncClient } from "../api/crdt_sync";
+import type { CrdtSyncClient, LinkEntry } from "../api/crdt_sync";
+
+/**
+ * Link-type colors — mirrors CollaborativeEditor's palette so the
+ * far document speaks the same visual language as the near one.
+ */
+const LINK_TYPE_COLORS: Record<number, string> = {
+  1: "#58a6ff", // Comment — blue
+  2: "#3fb950", // Reference — green
+  3: "#f85149", // Disagreement — red
+  4: "#a371f7", // Quotation — purple
+  5: "#d29922", // See Also — amber
+  6: "#39d2c0", // Web Link — teal
+  7: "#f0883e", // Trail — orange
+};
+
+interface PaneMark {
+  start: number;
+  end: number;
+  color: string;
+  linkId: number;
+  title: string;
+}
+
+/**
+ * Resolve link spans in the pane's text — the same excerpt-matching
+ * approach the Beams view uses: find the excerpt in the text, mark
+ * the span. Falls back to start/end positions when the excerpt
+ * can't be found (stale text vs stale offsets).
+ */
+function computeMarks(
+  text: string,
+  workId: number,
+  links: LinkEntry[],
+): PaneMark[] {
+  const marks: PaneMark[] = [];
+  for (const link of links) {
+    const color =
+      LINK_TYPE_COLORS[link.link_types?.[0] ?? 0] ?? "#8a8a96";
+    // Check both ends: the pane work could be origin or destination
+    for (const ref of [link.origin_ref, link.destination_ref]) {
+      if (!ref || ref.work_context !== workId) continue;
+      const start = ref.start_position;
+      const end = ref.end_position;
+      if (start == null || end == null || end <= start) continue;
+      const s = Math.max(0, Math.min(start, text.length));
+      const e = Math.min(end, text.length);
+      if (e <= s) continue;
+      const farTitle =
+        ref === link.origin_ref
+          ? link.destination_title ?? "unknown"
+          : link.origin_title ?? "unknown";
+      marks.push({ start: s, end: e, color, linkId: link.link_id, title: farTitle });
+    }
+  }
+  // Sort by start; on overlap, keep the first (same approach as
+  // Beams renderMarked)
+  return marks.sort((a, b) => a.start - b.start);
+}
 
 /**
  * FR-84 split authoring: a self-contained work pane.
@@ -70,6 +128,7 @@ export function WorkPane({
   const [error, setError] = useState<string | null>(null);
   const [sel, setSel] = useState<WorkPaneSelection | null>(null);
   const [revision, setRevision] = useState(0);
+  const [marks, setMarks] = useState<PaneMark[]>([]);
   const loadSeq = useRef(0);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   // Scroll memory fires on scroll END, not every pixel — per-pixel
@@ -129,6 +188,15 @@ export function WorkPane({
       setTitle(r.title || `Work 0x${workId.toString(16)}`);
       setRevision(r.revision);
       setSel(null);
+      // FR-84 pane markers: load the work's links and compute spans
+      // (the far document's connection landscape, visible).
+      try {
+        const links = await client.linkListForWork(workId);
+        if (seq !== loadSeq.current) return;
+        setMarks(computeMarks(r.text, workId, links));
+      } catch {
+        setMarks([]); // links are optional — don't fail the pane
+      }
     } catch (e) {
       if (seq !== loadSeq.current) return;
       setError(String(e));
@@ -306,23 +374,64 @@ export function WorkPane({
               minHeight: "100%",
             }}
           >
-            {held ? (
-              <>
-                {text.slice(0, held.start)}
-                <mark
-                  style={{
-                    background: "rgba(28, 93, 153, 0.35)",
-                    color: "inherit",
-                    padding: 0,
-                  }}
-                >
-                  {text.slice(held.start, held.end)}
-                </mark>
-                {text.slice(held.end)}
-              </>
-            ) : (
-              text
-            )}
+            {(() => {
+              // FR-84 pane markers: render the text with link-span
+              // underlines (same type-color palette as the main
+              // document) + the held highlight. Marks are
+              // non-interactive visual indicators; selection works
+              // through them (inline elements in the text flow).
+              type Seg = { text?: string; mark?: PaneMark; held?: boolean };
+              const segs: Seg[] = [];
+              let pos = 0;
+
+              // Merge marks + held span into a single sorted list
+              const all: Array<{ start: number; end: number; mark?: PaneMark; held?: boolean }> = [
+                ...marks.map((m) => ({ start: m.start, end: m.end, mark: m })),
+                ...(held ? [{ start: held.start, end: held.end, held: true }] : []),
+              ].sort((a, b) => a.start - b.start);
+
+              for (const span of all) {
+                if (span.start < pos) continue; // overlap — keep first
+                if (span.start > pos) segs.push({ text: text.slice(pos, span.start) });
+                const slice = text.slice(span.start, span.end);
+                if (span.held) {
+                  segs.push({ text: slice, held: true });
+                } else if (span.mark) {
+                  segs.push({ text: slice, mark: span.mark });
+                }
+                pos = span.end;
+              }
+              if (pos < text.length) segs.push({ text: text.slice(pos) });
+
+              return segs.map((seg, i) => {
+                if (seg.held) {
+                  return (
+                    <mark
+                      key={`h${i}`}
+                      style={{ background: "rgba(28, 93, 153, 0.35)", color: "inherit", padding: 0 }}
+                    >
+                      {seg.text}
+                    </mark>
+                  );
+                }
+                if (seg.mark) {
+                  return (
+                    <span
+                      key={`m${i}`}
+                      title={`${seg.mark.title} (link 0x${seg.mark.linkId.toString(16)})`}
+                      style={{
+                        borderBottom: `2px solid ${seg.mark.color}`,
+                        cursor: "default",
+                        paddingBottom: 1,
+                      }}
+                    >
+                      {seg.text}
+                    </span>
+                  );
+                }
+                return <span key={`t${i}`}>{seg.text}</span>;
+              });
+            })()}
           </div>
         )}
       </div>
