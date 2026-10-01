@@ -276,6 +276,10 @@
   grid-area: body;
   display: grid;
   grid-template-columns: 240px minmax(320px, 1fr) 320px;
+  /* Force the single row to the body's height — without this, the
+     implicit auto row grows to content size and the right panel
+     never overflows (it just pushes beyond the viewport, clipped). */
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   min-height: 0;
 }

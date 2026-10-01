@@ -6046,7 +6046,7 @@ export function WorkspaceShell() {
               </button>
             )}
           </div>
-          <div className="ws-tab-content">
+          <div className="ws-tab-content" style={{ overflowY: "auto", minHeight: 0, flex: 1, maxHeight: "calc(100vh - 120px)" }}>
             {rightPanelBody}
           </div>
           <button
