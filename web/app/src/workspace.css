@@ -3770,7 +3770,10 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 1;
+  /* FR-85: beams render ABOVE the document columns — the connections
+     are the story, not the background decoration. The hit paths
+     (transparent, stroke-width 14) re-enable clicking. */
+  z-index: 10;
 }
 .ws-beams-beam { fill: none; stroke-width: 2.5; opacity: 0.85; }
 .ws-beams-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; }
@@ -3786,6 +3789,10 @@
   border-radius: 4px;
   padding: 32px 36px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  /* Let the beams show through where they cross the document —
+     the connections are visible ON the text, not hidden behind
+     the opaque background. */
+  background: color-mix(in srgb, var(--bg-document, #faf9f6) 92%, transparent);
 }
 .ws-beams-doc-head {
   display: flex;
