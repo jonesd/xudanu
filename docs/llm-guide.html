@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM Integration &mdash; Xudanu</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+code{font-family:'JetBrains Mono',monospace;font-size:.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.green{background:rgba(63,185,80,0.06);border-left:3px solid #3fb950;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.green strong{color:#3fb950}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-left:8px;vertical-align:middle;letter-spacing:.5px}
+.badge-blue{background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3)}
+.badge-gold{background:rgba(210,153,34,0.15);color:#d29922;border:1px solid rgba(210,153,34,0.3)}
+.badge-green{background:rgba(63,185,80,0.15);color:#3fb950;border:1px solid rgba(63,185,80,0.3)}
+.badge-purple{background:rgba(163,113,247,0.15);color:#a371f7;border:1px solid rgba(163,113,247,0.3)}
+.footer{border-top:1px solid #21262d;margin-top:80px;padding-top:24px;font-size:12px;color:#484f58}
+
+/* Architecture diagram */
+.arch{display:flex;align-items:center;justify-content:center;gap:0;margin:32px 0;flex-wrap:wrap}
+.arch-box{border:1px solid #30363d;border-radius:8px;padding:14px 18px;text-align:center;min-width:140px;background:#161b22}
+.arch-box h4{font-size:12px;font-weight:600;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+.arch-box p{font-size:11px;color:#8b949e;line-height:1.4}
+.arch-arrow{color:#484f58;font-size:20px;padding:0 8px;flex-shrink:0}
+.arch-box.llm{border-color:#a371f7;background:rgba(163,113,247,0.05)}
+.arch-box.llm h4{color:#a371f7}
+.arch-box.human{border-color:#3fb950;background:rgba(63,185,80,0.05)}
+.arch-box.human h4{color:#3fb950}
+.arch-box.server{border-color:#58a6ff;background:rgba(88,166,255,0.05)}
+.arch-box.server h4{color:#58a6ff}
+.arch-box.store{border-color:#d29922;background:rgba(210,153,34,0.05)}
+.arch-box.store h4{color:#d29922}
+
+/* Feature cards */
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin:24px 0}
+.feature{border:1px solid #21262d;border-radius:8px;padding:18px;background:#161b22}
+.feature h4{font-size:14px;font-weight:600;margin-bottom:8px}
+.feature p{font-size:13px;color:#8b949e;line-height:1.5}
+.feature .tag{font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;display:inline-block;margin-bottom:6px}
+
+/* Flow diagram */
+.flow{margin:24px 0;padding:20px;background:#161b22;border:1px solid #30363d;border-radius:8px}
+.flow-step{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
+.flow-num{flex-shrink:0;width:24px;height:24px;border-radius:50%;background:rgba(88,166,255,0.15);color:#58a6ff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;border:1px solid rgba(88,166,255,0.3)}
+.flow-content{font-size:13px;color:#c9d1d9;line-height:1.5}
+.flow-content strong{color:#e6edf3}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>LLM Integration</h1>
+<p class="subtitle">Xudanu's LLM features: the machine as reader-critic, narrator, and categorizer &mdash; participating in the same hypertext as human readers, subject to the same social filtering.</p>
+
+<div class="gold"><strong>Heritage.</strong> Miller, &ldquo;The Open Society and Its Media&rdquo; (1995): <em>&ldquo;All readers of the system are potential authors.&rdquo;</em> The LLM is a reader. It reads, it connects, it participates. The community decides whether its contributions are worth reading.</div>
+
+<h2>The design principle</h2>
+<p>No special treatment. The LLM's arguments compete in the same marketplace of ideas as human arguments. Its connections carry the same typed vocabulary, the same span-level precision, the same bidirectional visibility. The only difference: a human confirms before any link enters the graph, and the provenance chain stamps the model identifier.</p>
+
+<table>
+<tr><th></th><th>Human critic</th><th>LLM critic</th></tr>
+<tr><td><strong>Attribution</strong></td><td>personal club</td><td>model identifier (FR-81)</td></tr>
+<tr><td><strong>Link types</strong></td><td>Disagreement, Reference, &hellip;</td><td>same vocabulary</td></tr>
+<tr><td><strong>Span-level</strong></td><td>drag-select</td><td>excerpt matching (same resolver)</td></tr>
+<tr><td><strong>Endorsement</strong></td><td>earned by reputation</td><td>earned by quality</td></tr>
+<tr><td><strong>Bidirectional</strong></td><td>&#10003;</td><td>&#10003; (same wire ops)</td></tr>
+<tr><td><strong>Confirmation</strong></td><td>n/a (self-authoring)</td><td>human confirms (safety)</td></tr>
+</table>
+
+<h2>Architecture</h2>
+
+<div class="arch">
+<div class="arch-box server"><h4>Client</h4><p>authoring UI<br>confirm / edit / reject</p></div>
+<div class="arch-arrow">&rarr;</div>
+<div class="arch-box server"><h4>Xudanu Server</h4><p>loads work + far-ends<br>builds prompt</p></div>
+<div class="arch-arrow">&rarr;</div>
+<div class="arch-box llm"><h4>LLM</h4><p>Ollama / OpenRouter<br>proposes connections</p></div>
+<div class="arch-arrow">&rarr;</div>
+<div class="arch-box human"><h4>Human</h4><p>confirms, edits,<br>or rejects</p></div>
+<div class="arch-arrow">&rarr;</div>
+<div class="arch-box store"><h4>Argument Chain</h4><p>FR-85 chains<br>endorsement-filtered</p></div>
+</div>
+
+<p>The LLM never creates links directly. It proposes them; a human decides. Confirmed proposals enter the same argument chains as human connections, carry model-ID provenance, and compete for endorsements identically.</p>
+
+<h2>The features</h2>
+
+<div class="features">
+<div class="feature">
+<span class="tag" style="background:rgba(163,113,247,0.15);color:#a371f7;border:1px solid rgba(163,113,247,0.3)">FR-86</span>
+<h4 style="color:#a371f7">Suggest Connections</h4>
+<p>The LLM reads a work and its connected works, then proposes typed connections (Disagreements, References, Comments) a critical reader would make. Proposals include span, type, reasoning, and confidence. Human confirms before any link is created.</p>
+</div>
+<div class="feature">
+<span class="tag" style="background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3)">shipped</span>
+<h4 style="color:#58a6ff">Diff Narration</h4>
+<p>When a work is revised, the LLM generates a natural-language summary of what changed. Powers Miller's <em>differential reading</em>: read only the difference since your last look.</p>
+</div>
+<div class="feature">
+<span class="tag" style="background:rgba(63,185,80,0.15);color:#3fb950;border:1px solid rgba(63,185,80,0.3)">shipped</span>
+<h4 style="color:#3fb950">Auto-Tag</h4>
+<p>The LLM categorizes a work into your existing concept taxonomy (or proposes new concepts). Helps organize large libraries without manual filing.</p>
+</div>
+<div class="feature">
+<span class="tag" style="background:rgba(210,153,34,0.15);color:#d29922;border:1px solid rgba(210,153,34,0.3)">shipped</span>
+<h4 style="color:#d29922">Find Related</h4>
+<p>The LLM identifies which existing works are semantically related to a new work, suggesting connections the reader might have missed.</p>
+</div>
+</div>
+
+<h2>Configuring Ollama</h2>
+
+<p>Three backends are supported, checked in priority order:</p>
+
+<table>
+<tr><th>Backend</th><th>Environment variables</th><th>Notes</th></tr>
+<tr><td><strong>Ollama</strong> (local)</td><td><code>OLLAMA_BASE_URL</code><br><code>OLLAMA_MODEL</code> (optional)</td><td>Runs on your machine. No data leaves your network.</td></tr>
+<tr><td><strong>OpenRouter</strong> (cloud)</td><td><code>OPENROUTER_API_KEY</code><br><code>OPENROUTER_MODEL</code> (optional)</td><td>Multiple providers through one API.</td></tr>
+<tr><td><strong>GitHub Models</strong></td><td><code>GITHUB_TOKEN</code></td><td>Uses <code>gpt-4o-mini</code>. Free tier available.</td></tr>
+</table>
+
+<h3>Local setup (macOS)</h3>
+<pre>
+# 1. Install Ollama
+brew install ollama
+
+# 2. Start the server (runs on port 11434)
+ollama serve
+
+# 3. Pull a model (one-time download)
+ollama pull qwen2.5:1.5b     # fast, good for proposals
+ollama pull llama3.1          # larger, better reasoning
+
+# 4. Start xudanu-server with the LLM enabled
+OLLAMA_BASE_URL=http://localhost:11434 \
+OLLAMA_MODEL=qwen2.5:1.5b \
+xudanu-server run 127.0.0.1:8080 data --allow-loopback \
+  --allowed-origin http://localhost:5173 --csrf-token
+</pre>
+
+<p>When the server starts, the log confirms: <code>llm: Ollama enabled (model=qwen2.5:1.5b at http://localhost:11434)</code></p>
+
+<p>If no LLM is configured, the features gracefully degrade: the "Suggest connections" button returns an explanatory message, auto-tag returns an empty list, narration returns a placeholder.</p>
+
+<h2>The FR-86 flow: propose &rarr; confirm &rarr; connect</h2>
+
+<div class="flow">
+<div class="flow-step"><div class="flow-num">1</div><div class="flow-content"><strong>Trigger.</strong> The reader clicks "Suggest connections" on any work. The client sends <code>llm_propose_connections</code> (wire op <code>0x0f2a</code>).</div></div>
+<div class="flow-step"><div class="flow-num">2</div><div class="flow-content"><strong>Context.</strong> The server loads the work's full text + the texts of up to 5 connected works (via the link graph). No manual feeding.</div></div>
+<div class="flow-step"><div class="flow-num">3</div><div class="flow-content"><strong>Prompt.</strong> The server builds a critical-reader prompt: the document, its connected works, the five connection types with definitions, and instructions to identify claimable passages. The LLM responds with structured JSON proposals.</div></div>
+<div class="flow-step"><div class="flow-num">4</div><div class="flow-content"><strong>Resolve.</strong> The server parses the proposals, verifies each excerpt appears verbatim in the text, and resolves the span. Invalid proposals are silently dropped.</div></div>
+<div class="flow-step"><div class="flow-num">5</div><div class="flow-content"><strong>Present.</strong> The client renders proposals as authoring cards: the passage (underlined), the proposed type, the reasoning, the confidence. The human can <strong>confirm</strong>, <strong>edit</strong> (adjust span or type), or <strong>reject</strong>.</div></div>
+<div class="flow-step"><div class="flow-num">6</div><div class="flow-content"><strong>Connect.</strong> Confirmed proposals are created via the standard <code>link_create</code> op. The link carries the LLM's model identifier in its provenance chain. It enters the argument chain, the Beams view, and the endorsement marketplace identically to human connections.</div></div>
+</div>
+
+<h3>Sample proposal response</h3>
+<pre>
+{
+  "proposals": [
+    {
+      "excerpt": "RLHF has been shown to produce models that are sycophantic",
+      "start": 184,
+      "end": 237,
+      "type_id": 3,
+      "reasoning": "The Response work disputes this claim, arguing that sycophancy is a training pipeline issue, not a fundamental alignment limitation",
+      "far_end_title": "AI Safety — The Response"
+    },
+    {
+      "excerpt": "approximately fifty dollars are spent on capability improvements",
+      "start": 842,
+      "end": 903,
+      "type_id": 3,
+      "reasoning": "The Response argues this ratio is misleading and closer to five-to-one when embedded safety work is counted",
+      "far_end_title": "AI Safety — The Response"
+    }
+  ],
+  "model": "qwen2.5:1.5b",
+  "backend": "Ollama"
+}
+</pre>
+
+<h2>What the research says</h2>
+
+<div class="note"><strong>From the 2024&ndash;2026 literature:</strong>
+<ul style="margin:8px 0 0 20px;font-size:13px">
+<li>LLMs are better at <strong>identifying weaknesses</strong> than suggesting fixes (Saqr 2025) &mdash; Disagreements will be their strongest contribution</li>
+<li>LLM arguments are <strong>linguistically different</strong> from human ones (D&ouml;nmez 2025) &mdash; more formal, less personal. The system does not disguise this; transparency is the design</li>
+<li>Hybrid LLM-symbolic <strong>outperforms pure LLM</strong> (Vasileiou 2026) &mdash; the LLM proposes, the formal link vocabulary validates</li>
+<li>Confidence scores are <strong>unreliable</strong> (Sanayei 2025) &mdash; the human-confirmation step is not optional</li>
+<li>Measured, evidence-focused style gets <strong>more endorsements</strong> than aggressive style (Verma 2025) &mdash; the prompt asks for restraint</li>
+</ul>
+</div>
+
+<h2>Trying it now</h2>
+
+<pre>
+# 1. Ensure Ollama is running
+ollama serve
+
+# 2. Start the dev server with LLM enabled
+OLLAMA_BASE_URL=http://localhost:11434 \
+OLLAMA_MODEL=qwen2.5:1.5b \
+~/code/xu-gold-2026/target/debug/xudanu-server \
+  run 127.0.0.1:8080 \
+  ~/code/xu-gold-2026/original-code/xanadugold/src-rust/data \
+  --allow-loopback \
+  --allowed-origin http://localhost:5173 \
+  --allowed-origin http://127.0.0.1:5173 \
+  --csrf-token
+
+# 3. Seed the demo works
+node examples/llm-demo.mjs
+
+# 4. Open the contested work in the browser
+#    http://localhost:5173/?work=0x<claims-id>
+
+# 5. Click "Suggest connections"
+#    The LLM reads the work + the connected critique
+#    and proposes typed connections
+</pre>
+
+<h2>Usage tracking</h2>
+<p>Every LLM call is tracked per feature in the usage tracker (<code>LlmUsageTracker</code>): prompt characters, response characters, call count. This is surfaced in the admin dashboard for cost monitoring.</p>
+
+<table>
+<tr><th>Feature</th><th>Tracker label</th><th>Typical usage</th></tr>
+<tr><td>Argument Proposal (FR-86)</td><td><code>argument_proposal</code></td><td>1 call per "Suggest connections" click</td></tr>
+<tr><td>Diff Narration</td><td><code>narration</code></td><td>1 call per revision compare</td></tr>
+<tr><td>Auto-Tag</td><td><code>auto_title</code></td><td>1 call per work (cached)</td></tr>
+<tr><td>Find Related</td><td><code>find_related</code></td><td>1 call per library scan</td></tr>
+</table>
+
+<div class="green"><strong>The Miller quote this design turns on:</strong> <em>&ldquo;All readers of the system are potential authors.&rdquo;</em> The LLM is a reader. It reads, it connects, it participates. The community decides whether its contributions are worth reading.</div>
+
+<div class="footer">
+<p>Xudanu LLM Integration &mdash; FR-86 (LLM as reader-critic), FR-85 (argument structure), FR-81 (ingress provenance). Part of the <a href="https://dgjones.info/xudanu/">Xudanu documentation</a>.</p>
+</div>
+
+</div>
+</body>
+</html>
