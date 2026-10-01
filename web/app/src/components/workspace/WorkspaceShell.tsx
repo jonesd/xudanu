@@ -29,6 +29,12 @@ import {
   type PaneState,
 } from "../../pane-registry";
 import { canConnect, buildLinkRefs, chipExcerpt, type PaneEnd } from "../../split-authoring";
+// FR-85 argument structure: dispute status, chains, best-against sorting.
+import {
+  disputeStatus as computeDisputeStatus,
+  sortChainsBestFirst,
+  linkWeight as chainLinkWeight,
+} from "../../argument-structure";
 // System-wide font preference: one knob, every surface scales.
 import {
   readUiFontSize,
@@ -3002,33 +3008,95 @@ export function WorkspaceShell() {
                       </div>
                     ) : null;
 
-                    return filteredLinks.length === 0 ? (
-                      <div>
-                        {openEndsBlock}
-                        <div className="ws-conn-empty">
-                        {transclusion.links.length === 0 ? (
-                          <>
-                            {"No outbound links. Select text and click \u201cLink\u201d to create one."}
-                            {courseEntryId !== null && (
-                              <>
-                                {" New here? "}
-                                <a
-                                  onClick={() => selectWork(courseEntryId)}
-                                  style={{ color: "var(--accent-blue, #58a6ff)", cursor: "pointer", textDecoration: "underline" }}
-                                >
-                                  Learn in five lessons {"\u2192"}
-                                </a>
-                              </>
-                            )}
-                          </>
-                        ) : (
-                          "No links match the active filter."
-                        )}
-                        </div>
-                      </div>
+                     return filteredLinks.length === 0 ? (
+                       <div>
+                         {openEndsBlock}
+                         <div className="ws-conn-empty">
+                         {transclusion.links.length === 0 ? (
+                           <>
+                             {"No outbound links. Select text and click \u201cLink\u201d to create one."}
+                             {courseEntryId !== null && (
+                               <>
+                                 {" New here? "}
+                                 <a
+                                   onClick={() => selectWork(courseEntryId)}
+                                   style={{ color: "var(--accent-blue, #58a6ff)", cursor: "pointer", textDecoration: "underline" }}
+                                 >
+                                   Learn in five lessons {"\u2192"}
+                                 </a>
+                               </>
+                             )}
+                           </>
+                         ) : (
+                           "No links match the active filter."
+                         )}
+                         </div>
+                       </div>
                      ) : (
                        <div>
                          {openEndsBlock}
+                         {/* FR-85: Argument chains — Disagreements render as
+                             threaded argument trees (dispute → response →
+                             counter), sorted by endorsement weight
+                             (best-against first), with dispute status. */}
+                         {(() => {
+                           if (workBeId == null) return null;
+                           const { status, chains } = computeDisputeStatus(workBeId, transclusion.links);
+                           if (chains.length === 0) return null;
+                           const sorted = sortChainsBestFirst(chains);
+                           return (
+                             <div className="ws-argument-chains" style={{ marginBottom: 12 }}>
+                               <div style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--red, #f85149)", padding: "4px 0" }}>
+                                 Arguments ({sorted.length}) — {status}
+                               </div>
+                               {sorted.map((chain) => (
+                                 <div key={`chain-${chain.root.link_id}`} style={{ marginBottom: 8, paddingLeft: 8, borderLeft: "2px solid var(--red, #f85149)" }}>
+                                   {/* Root: the Disagreement */}
+                                   <div className="ws-conn-item" style={{ cursor: "pointer" }} onClick={() => chain.root.jump_target && selectWork(chain.root.jump_target.work_id)}>
+                                     <div className="ws-conn-title-row">
+                                       <span style={{ fontSize: 10, fontWeight: 700, color: "var(--red, #f85149)" }}>{"\u2691"}</span>
+                                       <span className="ws-conn-title" style={{ fontSize: 11 }}>
+                                         {"\u2190 "}{chain.root.origin_title || `Work 0x${chain.root.origin.toString(16)}`}
+                                       </span>
+                                       {chain.root.author_name && (
+                                         <span style={{ fontSize: 9, color: "var(--green)" }}>· {chain.root.author_name}</span>
+                                       )}
+                                       <span style={{ fontSize: 9, color: "var(--text-dim)" }}>· {chain.weight} endorse{chain.weight === 1 ? "" : "s"}</span>
+                                       {chain.status === "disputed" && (
+                                         <span style={{ fontSize: 9, color: "var(--amber)", fontWeight: 600 }}>· awaiting response</span>
+                                       )}
+                                     </div>
+                                     {chain.root.origin_ref?.excerpt && (
+                                       <div className="ws-conn-excerpt" style={{ fontSize: 10 }}>
+                                         {"\u201c"}{chain.root.origin_ref.excerpt.slice(0, 60)}{"\u201d"}
+                                       </div>
+                                     )}
+                                   </div>
+                                   {/* Responses */}
+                                   {chain.responses.map((resp) => (
+                                     <div key={`resp-${resp.link_id}`} className="ws-conn-item" style={{ paddingLeft: 14, cursor: "pointer" }} onClick={() => resp.jump_target && selectWork(resp.jump_target.work_id)}>
+                                       <div className="ws-conn-title-row">
+                                         <span style={{ fontSize: 10, color: "var(--accent-blue, #58a6ff)" }}>{"\u21b3"}</span>
+                                         <span className="ws-conn-title" style={{ fontSize: 11 }}>
+                                           {resp.origin_title || `Work 0x${resp.origin.toString(16)}`}
+                                         </span>
+                                         {resp.author_name && (
+                                           <span style={{ fontSize: 9, color: "var(--green)" }}>· {resp.author_name}</span>
+                                         )}
+                                         <span style={{ fontSize: 9, color: "var(--text-dim)" }}>· {chainLinkWeight(resp)}</span>
+                                       </div>
+                                       {resp.origin_ref?.excerpt && (
+                                         <div className="ws-conn-excerpt" style={{ fontSize: 10 }}>
+                                           {"\u201c"}{resp.origin_ref.excerpt.slice(0, 60)}{"\u201d"}
+                                         </div>
+                                       )}
+                                     </div>
+                                   ))}
+                                 </div>
+                               ))}
+                             </div>
+                           );
+                         })()}
                          {/* Grouped by far-end work: sort links by the
                              work on the other end, render a group header
                              when it changes, then show each connection
