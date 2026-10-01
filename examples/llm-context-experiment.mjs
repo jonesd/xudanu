@@ -66,13 +66,18 @@ async function ollama(prompt, maxTokens = 500) {
 // ── Parse JSON-lines proposals ─────────────────────────────────────
 function parseProposals(response, workText) {
   const proposals = [];
-  for (const line of response.split("\n")) {
+  // Strip markdown code fences (```json ... ```)
+  const cleaned = response.replace(/```(?:json)?\n?/g, "").trim();
+  for (const line of cleaned.split("\n")) {
     const t = line.trim();
     if (!t.startsWith("{")) continue;
     try {
       const p = JSON.parse(t);
       if (p.excerpt && p.type >= 1 && p.type <= 5 && p.reasoning) {
-        const at = workText.indexOf(p.excerpt);
+        // Fuzzy excerpt match: try exact, then trimmed, then first 40 chars
+        let at = workText.indexOf(p.excerpt);
+        if (at < 0) at = workText.indexOf(p.excerpt.trim());
+        if (at < 0 && p.excerpt.length > 40) at = workText.indexOf(p.excerpt.slice(0, 40).trim());
         if (at >= 0) {
           proposals.push({ ...p, start: at, end: at + p.excerpt.length });
         }
@@ -147,58 +152,95 @@ async function loadContext() {
 }
 
 // ── Context strategies ─────────────────────────────────────────────
+const TYPE_DEFS = `  1. Comment — a note about the passage
+  2. Reference — points to related content in another work
+  3. Disagreement — disputes the passage's claim (MUST cite evidence from a connected work)
+  4. Quotation — cites this passage in another context
+  5. See Also — suggests related reading`;
+
+const FORMAT_INSTR = `Format each proposal as JSON, one per line:
+{"excerpt": "<passage verbatim from the document>", "type": <1-5>, "reasoning": "<cite a specific quote or claim from the target work>", "far_end_title": "<EXACT title of the target work>"}
+
+Example of a GOOD cross-work Disagreement:
+{"excerpt": "the funculator must be duralum before first flight", "type": 3, "reasoning": "The Response work argues this conflates two failure modes — the cost analysis in that work directly contradicts this choice", "far_end_title": "AI Safety — The Response"}
+
+Rules:
+- Only use passages that appear VERBATIM in the document
+- For Disagreements and References: far_end_title MUST be the title of one of the connected works (NOT null, NOT "same document")
+- Your reasoning MUST quote or paraphrase a specific claim from the target work
+- Quality over quantity: at most 3 proposals
+- Respond with ONLY the JSON lines, no code fences, no other text`;
+
 function buildPromptA(ctx) {
-  // Bare: just the work
-  return `You are a critical reader. Read this document and identify passages that deserve typed connections (Comment, Reference, Disagreement, Quotation, See Also).
+  return `You are a critical reader in a hypertext system. Read this document and identify passages that deserve typed connections to OTHER works.
+
+Connection types:
+${TYPE_DEFS}
 
 Document: "${ctx.workTitle}"
 ${ctx.workText}
 
-Format each proposal as JSON, one per line:
-{"excerpt": "<passage verbatim>", "type": <1-5>, "reasoning": "<why>", "far_end_title": null}
-Max 3 proposals. Only use passages that appear VERBATIM. Respond with ONLY JSON lines.`;
+${FORMAT_INSTR}`;
 }
 
 function buildPromptB(ctx) {
-  // Connected: + far-end works' texts
-  let p = buildPromptA(ctx);
-  p = p.replace("Format each proposal", `
-Connected works:
-${ctx.farEnds.map((f, i) => `--- Work ${i+1}: "${f.title}" ---
-${f.text.slice(0, 3000)}`).join("\n")}
+  const connected = ctx.farEnds.map((f, i) =>
+    `--- Work ${i+1}: "${f.title}" ---\n${f.text.slice(0, 3000)}`).join("\n");
+  return `You are a critical reader in a hypertext system. You are reading a document that is connected to other works. Your job is to identify passages in the main document that deserve typed connections to the CONNECTED WORKS listed below.
 
-Format each proposal`);
-  return p;
+Connection types:
+${TYPE_DEFS}
+
+Document under review: "${ctx.workTitle}"
+${ctx.workText}
+
+Connected works (these are the works you should connect TO):
+${connected}
+
+IMPORTANT: When you propose a Disagreement or Reference, the far_end_title must be the EXACT title of one of the connected works above. Do NOT propose same-document connections.
+
+${FORMAT_INSTR}`;
 }
 
 function buildPromptC(ctx) {
-  // Rich: + existing links + library
-  let p = buildPromptB(ctx);
+  const connected = ctx.farEnds.map((f, i) =>
+    `--- Work ${i+1}: "${f.title}" ---\n${f.text.slice(0, 4000)}`).join("\n");
   const linksBlock = ctx.linkSummaries.length > 0
-    ? `\nAlready-connected passages (DO NOT duplicate):
-${ctx.linkSummaries.map(l => `  [${l.type_name}] "${l.origin_excerpt.slice(0,60)}" ↔ "${l.dest_excerpt.slice(0,60)}"`).join("\n")}\n`
+    ? `\nAlready-connected passages (DO NOT duplicate these):\n${ctx.linkSummaries.map(l =>
+        `  [${l.type_name}] "${l.origin_excerpt.slice(0,60)}" ↔ "${l.dest_excerpt.slice(0,60)}"`).join("\n")}\n`
     : "";
-  const libBlock = `\nLibrary catalog:
-${ctx.library.slice(0, 20).map(t => `  - "${t}"`).join("\n")}\n`;
-  return p.replace("Format each proposal", linksBlock + libBlock + "\nFormat each proposal");
+  const libBlock = `\nOther works in the library (less relevant but potential See Also targets):\n${ctx.library.slice(0, 15).map(t => `  - "${t}"`).join("\n")}\n`;
+  return `You are a critical reader in a hypertext system. You see a document, its connected works, and the library catalog. Identify passages in the main document that deserve typed connections to the connected works.
+
+Connection types:
+${TYPE_DEFS}
+
+Document under review: "${ctx.workTitle}"
+${ctx.workText}
+
+Connected works:
+${connected}
+${linksBlock}${libBlock}
+IMPORTANT: far_end_title must be a connected work's title. Cite specific evidence in your reasoning.
+
+${FORMAT_INSTR}`;
 }
 
 function buildPromptD(ctx) {
-  // Guided: rich + specific exploration hints
+  // Guided: rich + strong-claim hints + explicit cross-work instruction
   const hints = [];
-  // Find strong claim sentences (heuristic: sentences with "must", "should", "cannot", "is the most")
   const sentences = ctx.workText.split(/[.!?]\s+/);
   for (const s of sentences) {
-    if (/\b(must|should|cannot|is the most|will not|has been shown|poses a unique)\b/i.test(s) && s.length > 30) {
-      hints.push(s.trim().slice(0, 100));
+    if (/\b(must|should|cannot|is the most|will not|has been shown|poses a unique|fifty dollars|too slow)\b/i.test(s) && s.length > 30) {
+      hints.push(s.trim().slice(0, 120));
     }
   }
   return buildPromptC(ctx).replace(
-    "Max 3 proposals.",
-    `Pay special attention to these strong claims:
+    "at most 3 proposals.",
+    `Pay special attention to these strong claims — each is a likely connection point:
 ${hints.slice(0, 5).map(h => `  ⚑ "${h}"`).join("\n")}
 
-These are the passages most likely to deserve connections. Max 3 proposals.`
+For each strong claim, check if a connected work disputes, supports, or cross-references it. at most 3 proposals.`
   );
 }
 
