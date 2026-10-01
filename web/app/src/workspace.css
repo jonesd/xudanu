@@ -1438,7 +1438,12 @@
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  /* Let the tab content scroll: the panel constrains its own bounds
+     (flex child of ws-body), but must not clip the scrolling
+     container inside it. min-height:0 makes the flex child
+     shrinkable so ws-tab-content's overflow: auto engages. */
   overflow: hidden;
+  min-height: 0;
 }
 .ws-right-panel .ws-rail-collapse {
   left: -10px;
@@ -1473,7 +1478,8 @@
 
 .ws-tab-content {
   flex: 1;
-  overflow: auto;
+  min-height: 0; /* flex child must shrink for overflow to engage */
+  overflow-y: auto;
   padding: 12px;
 }
 
