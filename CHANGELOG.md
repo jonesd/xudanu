@@ -6,6 +6,106 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.16.0] — 2026-10-01
+
+The **working-together** release: split-document authoring,
+argument structure, and the LLM reader-critic — three views of the
+same idea that documents answer each other.
+
+### FR-86 — LLM reader-critic (end to end)
+- Server: `llm_propose_connections` (0x0f2a) reads the work, its
+  connected works, existing link summaries, and the library
+  catalog (context strategy C — the experiments' winner), then
+  returns typed proposals. No links created — the human decides.
+- Client: "✨ Suggest connections" in the Links panel (75s
+  timeout — the model reads for up to a minute); proposal cards
+  with type badge, far-end work, excerpt, reasoning; dashed
+  borders and "not yet links" keep proposals visually distinct
+  from real links; Confirm = ordinary `link_create` with types in
+  one round trip, excerpt re-anchored against live text first
+  (misanchoring refused loudly); unmatched far-end titles disable
+  confirm
+- Prompt engineering findings: few-shot example with filled
+  `far_end_title` is the single biggest fix; explicit cross-work
+  instruction second. 1.5B model with good prompts outperforms 8B
+  with bad prompts. Best laptop model: mistral-nemo (6.7GB) —
+  produced the first cross-work Disagreement with cited evidence
+- 18 new frontend tests (llm-proposals.ts pure module); 2 server
+  tests (context loading)
+
+### FR-85 Phase 3a — exact argument chains
+- `responds_to` link property: `link_set_responds_to` (0x0f2b) —
+  a rebuttal names the disagreement it answers; persisted on
+  LinkEntry + LinkSnapshot (serde-defaulted, old checkpoints
+  restore unchanged); dangling targets rejected
+- Client chain computation prefers the exact property; the
+  type+direction+origin heuristic remains only for legacy links
+- "↩ respond" affordance on awaiting-response chains: creates the
+  response link from the current work (active selection rides as
+  the excerpt)
+- Phase 3b (Guides) remains
+
+### Federation "regression" — root-caused, was a test bug
+- New trace-capture harness in the integration tests: federation
+  dial/handshake/endorsement exchange was invisible (no tracing
+  subscriber in the test binary) — now captured and dumped on
+  failure
+- The capture showed the protocol working as designed: closed
+  mode with empty `pinned_members` can never converge (a fresh
+  peer's self-endorsement isn't from a known member; the first
+  endorsement would need a member that doesn't exist yet). Fixed
+  by pinning each server as the other's genesis member, as FR-75's
+  genesis-pinning design intends. Test converges instantly and is
+  un-#[ignore]]d after months
+
+### Internal
+- Fixed `llm_propose_connections` dispatch arity error hidden by
+  `server` feature gating (plain `cargo check` skips src/server/* —
+  use `cargo check --features server`)
+- `linkCreate` client method accepts link types (wire supported
+  them; the method didn't)
+- 3,691 lib tests green in BOTH eager and lazy restore modes;
+  325 integration; 969 frontend
+
+---
+
+## [v1.15.0] — 2026-09-30
+
+The **don't-wait** release: migration auto-migrate, lazy restore
+(opt-in), overlay Stage 2, and the abstract rung.
+
+### FR-82 — data migration
+- Auto-migrate at startup: backup → migrate → verify → stamp, with
+  rollback on failure; MIGRATION.lock (PID-keyed, stale-steal)
+  prevents concurrent races; `--no-auto-migrate` /
+  `XUDANU_NO_AUTO_MIGRATE=1` opt-out
+- Multi-revision step chains (MigrationStep registry +
+  apply_steps_with walker); VERSION sidecar stamps format history
+- 38 tests; both suites green in eager AND lazy modes
+
+### FR-83 — lazy restore (opt-in)
+- Metadata-only Works at boot; 74s → 2.82s (release, 499-work
+  corpus). Thaw via the lossless chunk path; debug_assert choke
+  point + full suite under `XUDANU_LAZY_RESTORE=1` enforces the
+  gates mechanically; quarantine-on-thaw preserves the eager-mode
+  corruption contract; post-bind background verification surfaces
+  in /health
+
+### FR-79 — overlay Stage 2
+- POST /api/overlay/marks (public, rate-limited 60/min/IP, CORS,
+  ETag + max-age=30, 2MB cap); overlay_anchor resolver (contiguous
+  → space-joined → collapsed passes, whitespace/case tolerant)
+- MV3 browser extension (web/extension/): highlight tint + margin
+  ribbons, hover tooltip, click-through to `?work=0x…#C…`;
+  Playwright harness green on three fixture pages
+
+### Also
+- Abstract rung: one-line previews in library listings (semantic
+  zoom)
+- CI integration job + lazy lib suite (first time integration
+  tests ran in CI — surfaced the federation test gap and an SSRF
+  test's parallel-unsafe precondition)
+
 ## [v1.13.0] — 2026-09-12
 
 The **tumbler** release: hierarchical universal addresses become
