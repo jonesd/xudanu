@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Argumentation Walkthrough &mdash; Xudanu</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+code{font-family:'JetBrains Mono',monospace;font-size:.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+kbd{font-family:'JetBrains Mono',monospace;font-size:11px;background:#161b22;border:1px solid #30363d;border-bottom-width:2px;border-radius:4px;padding:1px 6px;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.green{background:rgba(63,185,80,0.06);border-left:3px solid #3fb950;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.green strong{color:#3fb950}
+.red{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.red strong{color:#f85149}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-left:8px;vertical-align:middle;letter-spacing:.5px}
+.badge-blue{background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3)}
+.badge-red{background:rgba(248,81,73,0.15);color:#f85149;border:1px solid rgba(248,81,73,0.3)}
+.badge-green{background:rgba(63,185,80,0.15);color:#3fb950;border:1px solid rgba(63,185,80,0.3)}
+.badge-gold{background:rgba(210,153,34,0.15);color:#d29922;border:1px solid rgba(210,153,34,0.3)}
+.badge-grey{background:rgba(139,148,158,0.15);color:#8b949e;border:1px solid rgba(139,148,158,0.3)}
+.footer{border-top:1px solid #21262d;margin-top:80px;padding-top:24px;font-size:12px;color:#484f58}
+.steps{counter-reset:step;list-style:none;margin:20px 0}
+.steps li{counter-increment:step;position:relative;padding:12px 0 12px 56px;border-left:2px solid #21262d;margin-left:20px}
+.steps li::before{content:counter(step);position:absolute;left:-17px;top:10px;width:32px;height:32px;border-radius:50%;background:#161b22;border:2px solid #58a6ff;color:#58a6ff;font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+.steps li strong{color:#e6edf3}
+.ui{font-family:'JetBrains Mono',monospace;font-size:12px;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:10px 14px;margin:12px 0;color:#c9d1d9;white-space:pre;overflow-x:auto;line-height:1.8}
+.ui .c{color:#8b949e}.ui .r{color:#f85149}.ui .g{color:#3fb950}.ui .b{color:#58a6ff}.ui .y{color:#d29922}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Argumentation Walkthrough</h1>
+<p class="subtitle">How to disagree, respond, and endorse on Xudanu &mdash; without ever touching the numbers you're arguing about.</p>
+
+<div class="green">
+<strong>The one thing to know first:</strong> making any kind of link &mdash; including a Disagreement &mdash;
+never modifies either document's text. If a passage says <code>$12.40</code>, it still says
+<code>$12.40</code> after you dispute it, respond to it, and endorse it. Arguments live in the
+<em>connections between documents</em>, not inside them. You cannot corrupt a price by arguing about it.
+</div>
+
+<h2 id="what-you-see">1. What you're looking at</h2>
+
+<p>Open a document and click the <strong>Links</strong> tab (right panel). Three zones:</p>
+
+<div class="ui">┌ <span class="b">Links</span> tab ────────────────────────────────────┐
+│ <span class="b">[+ Add Link]</span>  <span class="y">[✨ Suggest connections]</span>            │
+│                                                      │
+│ Type filters:  <span class="b">Comment (1)</span> <span class="g">Reference (2)</span> <span class="r">Disagreement (2)</span> …│
+│                                                      │
+│ <span class="r">Arguments (2) — disputed</span>                          │
+│  ⚑ ← Dan's Requirement · public · 2 endorses         │
+│     ↳ Ruth's Rebuttal · public                       │
+│  ⚑ ← Consumer Division · awaiting response <span class="y">[↩ respond]</span>  │
+│     “price-sensitive”                                │
+│                                                      │
+│ Titanium Debate — Technical Plan (2 connections)     │
+│  → <span class="b">COMMENT ▾</span> “quoted passage…”  ✓ author  ✓ ✕     │
+└──────────────────────────────────────────────────────┘</div>
+
+<table>
+<tr><th>Element</th><th>Meaning</th></tr>
+<tr><td><span class="badge badge-red">⚑ Arguments (N)</span></td><td>Disagreements aimed at <em>this</em> document. This is your decision queue — each ⚑ is a dispute asking: <em>does it stand?</em></td></tr>
+<tr><td><span class="badge badge-red">disputed</span></td><td>At least one dispute has no answer yet</td></tr>
+<tr><td><span class="badge badge-green">rebutted</span></td><td>Every dispute has been answered</td></tr>
+<tr><td>“awaiting response”</td><td>This specific dispute is unanswered — the passage is contested and standing</td></tr>
+<tr><td>N endorses</td><td>How many people vouched for this link (creation counts as the author's vouch)</td></tr>
+<tr><td>“quoted passage”</td><td>The exact span under dispute</td></tr>
+<tr><td><span class="badge badge-grey">↩ respond</span></td><td>One click: answer this dispute from the document you're reading</td></tr>
+</table>
+
+<h3>In the text itself</h3>
+<p>Disputed passages carry a <span style="color:#f85149">colored underline</span> (the link type's color).
+The margin bars mark each line's connection activity: <strong>left side = links this document makes</strong>,
+<strong>right side = links aimed at it</strong>. A small amber chip <code>×N</code> means N links share that passage —
+hover any bar for details.</p>
+
+<h2 id="disagree">2. Disagree with something (the safe way)</h2>
+
+<p>Suppose a budget passage says <em>duralum funculator cost is $12.40</em> and your market data says otherwise.</p>
+
+<ol class="steps">
+<li><strong>Write your criticism as its own document.</strong> “Consumer Division Position — the aerospace case should not set the consumer bill of materials.” One claim, in your words. Your document; nobody else's.</li>
+<li><strong>Select the exact passage</strong> in your document that makes the claim (“the consumer segment is price-sensitive”).</li>
+<li><strong>Click Link</strong> → target the budget document's disputed passage → type <strong>Disagreement</strong>.</li>
+<li>Done. Their document now shows a ⚑ chain row with your work, <em>awaiting response</em>.</li>
+</ol>
+
+<div class="note">
+<strong>Why your own document?</strong> Xudanu's argument model is <em>extrinsic</em>: criticism lives in the
+critic's document, connected passage-to-passage. The disputed text is never edited — anyone can
+compare claims side by side, forever, and the history of who-disputed-what is preserved.
+</div>
+
+<h2 id="respond">3. Respond to a dispute</h2>
+
+<p>You're reading the plan and see <em>Consumer Division — awaiting response</em>.</p>
+
+<ol class="steps">
+<li><strong>Select the passage</strong> in <em>your</em> document that answers the criticism (optional — but it makes the response precise).</li>
+<li>Click <strong>↩ respond</strong> on the chain row.</li>
+<li>A Reference link is created from your selection to the criticism, stamped as the official answer. The chain flips to <strong>rebutted</strong>. No text changed anywhere.</li>
+</ol>
+
+<p>The status is <em>derived</em>, never stored — it always reflects the current link graph, so “disputed vs. rebutted” can't go stale or be gamed by editing a field.</p>
+
+<h2 id="endorse">4. Endorse (say “this connection is right”)</h2>
+
+<p>See a link you vouch for? Click the <strong>✓</strong> on its row. That's it. Endorsements are how
+the community sorts arguments: the Links panel and the argument map rank chains by total weight —
+Miller's “best argument against” is literally the heaviest branch. Withdrawing a vouch is the same button.</p>
+
+<h2 id="map">5. See the whole argument (Map tab)</h2>
+
+<p>The <strong>Map</strong> tab renders the argument as a tree: your document's contention at top (numbered <code>1</code>),
+objections in red below (<code>1.1</code>), responses in green beneath them (<code>1.1.1</code>), counter-disputes in red again.
+Heavier endorsement = stronger branch. Select any node and type to grow the argument —
+<strong>+ objection</strong> at the contention, <strong>+ response</strong> under any node. Each addition creates a real
+document and a real typed link, so the map is always the true state of the debate, never a diagram
+someone forgot to update.</p>
+
+<h2 id="undo">6. What if I get it wrong?</h2>
+
+<table>
+<tr><th>Action</th><th>Undo path</th></tr>
+<tr><td>Wrong link type</td><td>The colored type badge <em>is</em> a dropdown — change it in place</td></tr>
+<tr><td>Wrong link entirely</td><td><code>✕</code> on the row deletes it (your documents stay)</td></tr>
+<tr><td>Wrong endorsement</td><td>Click ✓ again to withdraw</td></tr>
+<tr><td>A document you created</td><td>Archive it — reversible, history kept</td></tr>
+<tr><td>Anything in the disputed document</td><td>Nothing to undo — linking never modified it</td></tr>
+</table>
+
+<div class="gold">
+<strong>For teams treating this as financial record:</strong> every mutation is journaled to disk
+before it's acknowledged (WAL, fsync-before-ack) — a crash loses nothing confirmed. Documents are
+never hard-deleted, only archived, and full revision history with per-author attribution is always
+available in the History tab. The chain-of-custody indicator (bottom bar, <em>chain valid</em>) verifies
+content integrity continuously.
+</div>
+
+<h2 id="llm">7. The AI reader-critic (optional)</h2>
+
+<p><strong>✨ Suggest connections</strong> asks the server's language model to read the document, its connected
+works, and the library — then propose typed connections. Proposals are <em>not links</em>: they arrive as
+cards you confirm, edit, or dismiss. A confirmed proposal becomes an ordinary link that competes for
+endorsements like any human-made one. Nothing machine-proposed enters the graph unreviewed.</p>
+
+<div class="note">
+<strong>Choosing a local model:</strong> the smallest models (1–2B parameters) struggle to produce
+usable cross-document proposals — expect empty or same-document suggestions. <strong>mistral-nemo and up</strong>
+(≈7B+) start generating effective results, including cross-document Disagreements with cited evidence.
+Set <code>OLLAMA_BASE_URL</code> and <code>OLLAMA_MODEL</code> when starting the server; larger models may take a
+couple of minutes on first read (model load) — the button says so.
+</div>
+
+<h2 id="cheatsheet">Quick reference</h2>
+
+<table>
+<tr><th>I want to…</th><th>Do this</th></tr>
+<tr><td>Note something about a passage</td><td>Select → Link → <strong>Comment</strong> (blue)</td></tr>
+<tr><td>Point to related content</td><td>Select → Link → <strong>Reference</strong> (green)</td></tr>
+<tr><td>Dispute a claim</td><td>From <em>your</em> document: select your claim → Link → target their passage → <strong>Disagreement</strong> (red)</td></tr>
+<tr><td>Answer a dispute</td><td><strong>↩ respond</strong> on the ⚑ row (select your answer passage first for precision)</td></tr>
+<tr><td>Vouch for a connection</td><td><strong>✓</strong> on the link row</td></tr>
+<tr><td>See the whole debate</td><td><strong>Map</strong> tab</td></tr>
+<tr><td>Get AI suggestions</td><td><strong>✨ Suggest connections</strong> — review every card before it becomes a link</td></tr>
+<tr><td>Check nothing was altered</td><td>History tab (revisions + authors) — or just note that linking never edits text</td></tr>
+</table>
+
+<div class="footer">
+Xudanu argumentation — design lineage: Mark Miller, <em>The Open Society and its Media</em> (1995);
+Buckingham Shum's ClaiMaker/Cohere (2002–2010). FR-85 Phase 1–3. This guide: docs/argumentation-guide.html.
+</div>
+
+</div>
+</body>
+</html>
