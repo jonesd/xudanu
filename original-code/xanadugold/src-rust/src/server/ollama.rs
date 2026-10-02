@@ -296,11 +296,13 @@ impl LlmClient {
         }
 
         if !far_ends.is_empty() {
-            context.push_str("\n\n=== Connected works (the literature this document lives in) ===\n");
+            context
+                .push_str("\n\n=== Connected works (the literature this document lives in) ===\n");
             for (i, (_, title, text)) in far_ends.iter().take(5).enumerate() {
                 context.push_str(&format!(
                     "\n--- Work {}: \"{}\" ---\n{}\n",
-                    i + 1, title,
+                    i + 1,
+                    title,
                     &text[..text.len().min(4000)]
                 ));
             }

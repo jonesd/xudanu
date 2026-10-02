@@ -29,7 +29,9 @@ mod trace_capture {
         pub fn recent_string(&self) -> String {
             let buf = self.0.lock().unwrap();
             let start = buf.len().saturating_sub(16_000);
-            String::from_utf8_lossy(&buf[start..]).trim_start().to_string()
+            String::from_utf8_lossy(&buf[start..])
+                .trim_start()
+                .to_string()
         }
     }
 
@@ -62,9 +64,10 @@ mod trace_capture {
         use tracing_subscriber::util::SubscriberInitExt;
         let _ = tracing_subscriber::registry()
             .with(tracing_subscriber::fmt::layer().with_writer(buf.clone()))
-            .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(
-                |_| tracing_subscriber::EnvFilter::new("info"),
-            ))
+            .with(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            )
             .try_init();
         buf.clone()
     }
@@ -8139,7 +8142,7 @@ async fn federation_activation_content_replication_end_to_end() {
 async fn federation_activation_membership_converges() {
     let trace = trace_capture::install();
     use std::time::Duration;
-    use xudanu::server::federation::{FederationConfig, FederationMode, PinnedMember, PeerAddress};
+    use xudanu::server::federation::{FederationConfig, FederationMode, PeerAddress, PinnedMember};
     use xudanu::server::transport::federation_active::{spawn_federation_tasks, PeerPool};
 
     let srv_a = FederationTestServer::start().await;
@@ -8167,7 +8170,10 @@ async fn federation_activation_membership_converges() {
         .state
         .server
         .with_server_ref(|s| s.server_verifying_key_hex());
-    assert!(!a_key.is_empty() && !b_key.is_empty(), "keys must exist before pinning");
+    assert!(
+        !a_key.is_empty() && !b_key.is_empty(),
+        "keys must exist before pinning"
+    );
 
     srv_a.state.server.with_server(|srv| {
         srv.set_federation_config(FederationConfig {
@@ -9784,9 +9790,13 @@ async fn persistence_link_responds_to_survives_restart() {
     let rebuttal = srv
         .create_work(session, xudanu::edition::Edition::from_text("in defense"))
         .unwrap();
-    let disagreement = srv.create_link(session, criticism, plan, None, None).unwrap();
+    let disagreement = srv
+        .create_link(session, criticism, plan, None, None)
+        .unwrap();
     srv.link_set_types(session, disagreement, vec![3]).unwrap();
-    let response = srv.create_link(session, rebuttal, criticism, None, None).unwrap();
+    let response = srv
+        .create_link(session, rebuttal, criticism, None, None)
+        .unwrap();
 
     // Exact semantics: mark the response as answering the disagreement.
     srv.link_set_responds_to(session, response, Some(disagreement))

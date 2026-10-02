@@ -36885,9 +36885,7 @@ mod tests {
                 )),
             )
             .unwrap();
-        server
-            .link_set_types(sid, link, vec![3])
-            .unwrap();
+        server.link_set_types(sid, link, vec![3]).unwrap();
 
         let summaries = server.llm_link_summaries(wa);
         assert_eq!(summaries.len(), 1, "one link touches wa");
@@ -36937,12 +36935,14 @@ mod tests {
         let named = server.llm_library_titles(wb);
         assert_eq!(
             named,
-            sorted.iter().map(|id| format!("title-{id}")).collect::<Vec<_>>(),
+            sorted
+                .iter()
+                .map(|id| format!("title-{id}"))
+                .collect::<Vec<_>>(),
             "newest first, wb excluded"
         );
         assert!(!named.iter().any(|t| t == &format!("title-{wb}")));
     }
-
 
     #[test]
     fn crdt_edit_club_blocks_unauthorized_session() {
