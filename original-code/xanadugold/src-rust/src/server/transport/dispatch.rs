@@ -164,6 +164,7 @@ fn build_link_payload(
         type_ends,
         home_document,
         home_archived,
+        responds_to: srv.link_responds_to(link_id),
         cross_server_notify_accepted: notify.as_ref().map(|n| n.accepted),
         cross_server_notify_error: notify.and_then(|n| n.error),
         jump_target,
@@ -189,6 +190,7 @@ fn is_frozen_mutation(req: &WireRequest) -> bool {
             | WireRequest::LinkCreate { .. }
             | WireRequest::LinkDelete { .. }
             | WireRequest::LinkSetTypes { .. }
+            | WireRequest::LinkSetRespondsTo { .. }
             | WireRequest::LinkAddEnd { .. }
             | WireRequest::LinkEndAddAttachment { .. }
             | WireRequest::LinkEndRemoveAttachment { .. }
@@ -2617,6 +2619,14 @@ fn dispatch_inner(
         } => {
             srv.ensure_authenticated(session_id)?;
             srv.link_set_types(session_id, link_id, link_types)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::LinkSetRespondsTo {
+            link_id,
+            responds_to,
+        } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.link_set_responds_to(session_id, link_id, responds_to)?;
             Ok(ResponseValue::Void)
         }
         WireRequest::LinkTypeRegister {

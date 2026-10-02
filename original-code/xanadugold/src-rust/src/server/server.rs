@@ -1184,6 +1184,12 @@ pub(crate) struct LinkState {
     /// Trust chain: who vouches for this link's claim. Auto-seeded
     /// with the author's endorsement at creation (Gold's model).
     pub(crate) endorsements: Vec<LinkEndorsement>,
+    /// FR-85 Phase 3: the link this link responds to (exact
+    /// argument-chain semantics). When a rebuttal link carries
+    /// responds_to = <disagreement link id>, the chain computation
+    /// is exact instead of heuristic. None = not a response (or a
+    /// legacy link created before the property existed).
+    responds_to: Option<BeId>,
 }
 
 /// Persisted outcome of a cross-server backlink notification.
@@ -12029,6 +12035,9 @@ impl Server {
                     // manifest restore path carries the field.
                     author_club: None,
                     endorsements: Vec::new(),
+                    // FR-85: responds_to is set post-creation (the
+                    // set op is checkpoint-persisted, not WAL'd).
+                    responds_to: None,
                 },
             );
             self.work_to_links
@@ -15614,6 +15623,7 @@ impl Server {
                     home_document: link.home_document,
                     author_club: link.author_club,
                     endorsements: Vec::new(),
+                    responds_to: link.responds_to,
                 },
             );
             for wid in restored_works {
@@ -17100,6 +17110,7 @@ impl Server {
                 home_document,
                 author_club,
                 endorsements,
+                responds_to: None,
             },
         );
         self.work_to_links
@@ -17211,6 +17222,7 @@ impl Server {
                 home_document,
                 author_club,
                 endorsements,
+                responds_to: None,
             },
         );
         self.work_to_links
@@ -17407,6 +17419,7 @@ impl Server {
                 home_document,
                 author_club,
                 endorsements,
+                responds_to: None,
             },
         );
         self.work_to_links
@@ -18783,6 +18796,41 @@ impl Server {
         // creation flow applies types; replays don't double-collect).
         self.detectors_fire_link(_session_id, link_id, &updated_link);
         Ok(())
+    }
+
+    /// FR-85 Phase 3: mark (or unmark) a link as a response to
+    /// another link. This makes argument-chain semantics exact —
+    /// the client's heuristic (type + direction + origin) remains
+    /// the fallback for links created before the property existed.
+    pub fn link_set_responds_to(
+        &mut self,
+        session_id: SessionId,
+        link_id: BeId,
+        responds_to: Option<BeId>,
+    ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(
+            self.consequence_tracker.clone(),
+            self.consequence_tracker.begin_operation(),
+        );
+        self.ensure_session(session_id)?;
+        // The target link must exist — a dangling responds_to would
+        // silently break every chain computation touching it.
+        if let Some(target) = responds_to {
+            if !self.links.contains_key(&target) {
+                return Err(ServerError::NotFound(format!("link {}", target)));
+            }
+        }
+        let ls = self
+            .links
+            .get_mut(&link_id)
+            .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+        ls.responds_to = responds_to;
+        Ok(())
+    }
+
+    /// FR-85 Phase 3: the link this link responds to, if any.
+    pub fn link_responds_to(&self, link_id: BeId) -> Option<BeId> {
+        self.links.get(&link_id).and_then(|ls| ls.responds_to)
     }
 
     pub fn register_link_type(&mut self, type_id: u64, name: String) {
@@ -27080,6 +27128,12 @@ pub(crate) mod persist_snapshot {
             serde(default, skip_serializing_if = "Option::is_none")
         )]
         author_club: Option<BeId>,
+        /// FR-85 Phase 3: the link this link responds to.
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        responds_to: Option<BeId>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -27338,6 +27392,7 @@ pub(crate) mod persist_snapshot {
                             home_document: ls.home_document,
                             cross_server_notify: ls.cross_server_notify.clone(),
                             author_club: ls.author_club,
+                            responds_to: ls.responds_to,
                         }
                     })
                     .collect(),
@@ -27721,6 +27776,7 @@ pub(crate) mod persist_snapshot {
                         home_document: ls.home_document,
                         author_club: ls.author_club,
                         endorsements: Vec::new(),
+                        responds_to: ls.responds_to,
                     },
                 );
                 server
@@ -28137,6 +28193,7 @@ pub(crate) mod persist_snapshot {
                             home_document: ls.home_document,
                             cross_server_notify: ls.cross_server_notify.clone(),
                             author_club: ls.author_club,
+                            responds_to: ls.responds_to,
                         }
                     })
                     .collect();
@@ -28660,6 +28717,7 @@ pub(crate) mod persist_snapshot {
                             home_document: ls.home_document,
                             cross_server_notify: ls.cross_server_notify.clone(),
                             author_club: ls.author_club,
+                            responds_to: ls.responds_to,
                         }
                     })
                     .collect();

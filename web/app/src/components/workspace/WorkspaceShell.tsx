@@ -2932,6 +2932,36 @@ export function WorkspaceShell() {
     }));
   }, []);
 
+  // FR-85 Phase 3: respond to a disagreement chain from the current
+  // work. Creates a Reference link to the criticism work carrying
+  // responds_to = <disagreement link id> — exact chain semantics.
+  // The current selection (if any) rides as the excerpt.
+  const respondToChain = useCallback(
+    async (rootLinkId: number, criticismWork: number) => {
+      const client = clientRef.current;
+      if (!client || workBeId == null) return;
+      if (criticismWork === workBeId) return;
+      try {
+        const sel =
+          selectionRange && selectionRange.end > selectionRange.start ? selectionRange : null;
+        const excerpt = sel ? text.slice(sel.start, sel.end) : undefined;
+        const linkId = await client.linkCreate(
+          workBeId,
+          criticismWork,
+          excerpt && sel ? { excerpt, start: sel.start, end: sel.end } : undefined,
+          undefined,
+          undefined,
+          [2], // Reference — a response references what it answers
+        );
+        await client.linkSetRespondsTo(linkId, rootLinkId);
+        void transclusion.loadLinks(client, workBeId, works);
+      } catch {
+        /* the chain row stays actionable — transient errors retry */
+      }
+    },
+    [clientRef, workBeId, selectionRange, text, works, transclusion],
+  );
+
 
   const rightPanelBody = (
     <>
@@ -3325,10 +3355,28 @@ export function WorkspaceShell() {
                                        {chain.root.author_name && (
                                          <span style={{ fontSize: 9, color: "var(--green)" }}>· {chain.root.author_name}</span>
                                        )}
-                                       <span style={{ fontSize: 9, color: "var(--text-dim)" }}>· {chain.weight} endorse{chain.weight === 1 ? "" : "s"}</span>
-                                       {chain.status === "disputed" && (
-                                         <span style={{ fontSize: 9, color: "var(--amber)", fontWeight: 600 }}>· awaiting response</span>
-                                       )}
+                                        <span style={{ fontSize: 9, color: "var(--text-dim)" }}>· {chain.weight} endorse{chain.weight === 1 ? "" : "s"}</span>
+                                        {chain.status === "disputed" && (
+                                          <span style={{ fontSize: 9, color: "var(--amber)", fontWeight: 600 }}>· awaiting response</span>
+                                        )}
+                                        {chain.status === "disputed" && chain.root.origin !== workBeId && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              void respondToChain(chain.root.link_id, chain.root.origin);
+                                            }}
+                                            style={{
+                                              fontSize: 9, background: "none",
+                                              border: "1px solid var(--amber)", borderRadius: 4,
+                                              color: "var(--amber)", padding: "0 6px", cursor: "pointer",
+                                              marginLeft: 4,
+                                            }}
+                                            title={`Respond from this work${selectionRange && selectionRange.end > selectionRange.start ? " — your selection rides as the excerpt" : " — select text first to anchor an excerpt"}`}
+                                          >
+                                            {"\u21a9 respond"}
+                                          </button>
+                                        )}
                                      </div>
                                      {chain.root.origin_ref?.excerpt && (
                                        <div className="ws-conn-excerpt" style={{ fontSize: 10 }}>

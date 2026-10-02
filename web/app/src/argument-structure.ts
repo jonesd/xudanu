@@ -43,15 +43,19 @@ function isDisagreement(link: LinkEntry): boolean {
 /**
  * Heuristic: is `candidate` a response to `disagreement`?
  *
- * A response is a link that:
+ * EXACT (FR-85 Phase 3): when the candidate carries
+ * `responds_to = <disagreement link id>`, the match is exact.
+ *
+ * HEURISTIC fallback (legacy links without the property):
  * - is NOT itself a Disagreement (it's a rebuttal, clarification, etc.)
  * - originates from a different work than the disputed work
  * - points to the disagreement's far-end work (where the criticism lives)
- *
- * Initially imprecise: we don't check temporal ordering or semantic
- * reference. A `responds_to` link property would make this exact.
  */
 function isResponseTo(candidate: LinkEntry, disagreement: LinkEntry, disputedWorkId: number): boolean {
+  // Exact property wins — set via link_set_responds_to.
+  if (candidate.responds_to != null) {
+    return candidate.responds_to === disagreement.link_id;
+  }
   if (isDisagreement(candidate)) return false;
   if (candidate.link_id === disagreement.link_id) return false;
   // The response must target the work where the criticism lives

@@ -1971,6 +1971,20 @@ impl JsonCodec {
                     link_types: args.link_types,
                 })
             }
+            OperationCode::LinkSetRespondsTo => {
+                #[derive(Deserialize)]
+                struct Args {
+                    link_id: BeId,
+                    #[serde(default)]
+                    responds_to: Option<BeId>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LinkSetRespondsTo {
+                    link_id: args.link_id,
+                    responds_to: args.responds_to,
+                })
+            }
             OperationCode::LinkTypeRegister => {
                 #[derive(Deserialize)]
                 struct Args {

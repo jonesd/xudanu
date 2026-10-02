@@ -52,6 +52,34 @@ describe("disputeStatus", () => {
     expect(result.chains[0].status).toBe("rebutted");
   });
 
+  it("exact responds_to property wins over the heuristic (FR-85 Phase 3)", () => {
+    // The response doesn't match the heuristic shape (it points at
+    // the disputed work, not the criticism work) — only the exact
+    // property makes it a response.
+    const links = [
+      mkDisagreement({ link_id: 1, origin: 100, destination: 200 }),
+      mkLink({ link_id: 2, origin: 300, destination: 200, link_types: [2], responds_to: 1 }),
+    ];
+    const result = disputeStatus(200, links);
+    expect(result.status).toBe("rebutted");
+    expect(result.chains[0].responses.map((r) => r.link_id)).toEqual([2]);
+  });
+
+  it("exact responds_to naming a different chain is not this chain's response", () => {
+    const links = [
+      mkDisagreement({ link_id: 1, origin: 100, destination: 200 }),
+      mkDisagreement({ link_id: 5, origin: 400, destination: 200 }),
+      // Heuristic shape matches chain 1, but the property names
+      // chain 5 — exact wins, chain 1 stays disputed.
+      mkLink({ link_id: 2, origin: 300, destination: 100, link_types: [2], responds_to: 5 }),
+    ];
+    const result = disputeStatus(200, links);
+    const chain1 = result.chains.find((c) => c.root.link_id === 1)!;
+    const chain5 = result.chains.find((c) => c.root.link_id === 5)!;
+    expect(chain1.responses).toHaveLength(0);
+    expect(chain5.responses).toHaveLength(1);
+  });
+
   it("does not count another Disagreement as a response", () => {
     const links = [
       mkDisagreement({ link_id: 1, origin: 100, destination: 200 }),

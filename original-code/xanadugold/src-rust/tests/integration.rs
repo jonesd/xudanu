@@ -9688,6 +9688,64 @@ async fn persistence_works_survive_restart() {
 }
 
 #[tokio::test]
+async fn persistence_link_responds_to_survives_restart() {
+    let dir = temp_data_dir("responds_to");
+
+    let mut srv = server_init(&dir);
+    let (session, _) = admin_session(&mut srv);
+
+    // The WidgetPerfect shape: disputed plan, criticism, rebuttal.
+    let plan = srv
+        .create_work(session, xudanu::edition::Edition::from_text("the plan"))
+        .unwrap();
+    let criticism = srv
+        .create_work(session, xudanu::edition::Edition::from_text("against it"))
+        .unwrap();
+    let rebuttal = srv
+        .create_work(session, xudanu::edition::Edition::from_text("in defense"))
+        .unwrap();
+    let disagreement = srv.create_link(session, criticism, plan, None, None).unwrap();
+    srv.link_set_types(session, disagreement, vec![3]).unwrap();
+    let response = srv.create_link(session, rebuttal, criticism, None, None).unwrap();
+
+    // Exact semantics: mark the response as answering the disagreement.
+    srv.link_set_responds_to(session, response, Some(disagreement))
+        .unwrap();
+    assert_eq!(srv.link_responds_to(response), Some(disagreement));
+
+    srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
+    drop(srv);
+
+    let srv2 = server_restore(&dir);
+    assert_eq!(
+        srv2.link_responds_to(response),
+        Some(disagreement),
+        "responds_to must survive restart (FR-85 Phase 3)"
+    );
+}
+
+#[tokio::test]
+async fn link_set_responds_to_rejects_dangling_target() {
+    let dir = temp_data_dir("responds_dangling");
+    let mut srv = server_init(&dir);
+    let (session, _) = admin_session(&mut srv);
+    let a = srv
+        .create_work(session, xudanu::edition::Edition::from_text("a"))
+        .unwrap();
+    let b = srv
+        .create_work(session, xudanu::edition::Edition::from_text("b"))
+        .unwrap();
+    let link = srv.create_link(session, a, b, None, None).unwrap();
+    // Link 999999 does not exist — a dangling responds_to would
+    // silently break chain computation.
+    let err = srv.link_set_responds_to(session, link, Some(999_999));
+    assert!(err.is_err(), "dangling responds_to target must be rejected");
+    // Clearing with None is always fine.
+    srv.link_set_responds_to(session, link, None).unwrap();
+    assert_eq!(srv.link_responds_to(link), None);
+}
+
+#[tokio::test]
 async fn persistence_keypair_identity_survives_restart() {
     let dir = temp_data_dir("keypair");
 

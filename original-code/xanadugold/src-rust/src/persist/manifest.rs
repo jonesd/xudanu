@@ -116,6 +116,13 @@ pub struct LinkEntry {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub cross_server_notify: Option<crate::server::server::CrossServerNotifyOutcome>,
+    /// FR-85 Phase 3: the link this link responds to — exact
+    /// argument-chain semantics. None = not a response.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub responds_to: Option<BeId>,
 }
 
 /// On-disk representation of a work entry in the manifest.
@@ -1649,6 +1656,7 @@ mod tests {
             home_document: None,
             cross_server_notify: None,
             author_club: None,
+            responds_to: None,
         });
         manifest.link_counter = 51;
 

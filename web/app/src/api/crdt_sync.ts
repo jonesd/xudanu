@@ -178,6 +178,10 @@ export interface LinkEntry {
   // created before authorship stamping.
   author_club?: number | null;
   author_name?: string | null;
+  /** FR-85 Phase 3: the link this link responds to — exact
+   *  argument-chain semantics. Absent on legacy links (heuristic
+   *  fallback applies). */
+  responds_to?: number | null;
   /** Reputation surfacing (Miller 1994): named endorsers ride on the
    *  link row — names first, counts secondary (sybils can mint
    *  identities but can't become someone the viewer already trusts). */
@@ -1380,6 +1384,15 @@ export class CrdtSyncClient {
 
   async linkSetTypes(linkId: number, linkTypes: number[]): Promise<void> {
     await this.sendRequest("link_set_types", { link_id: linkId, link_types: linkTypes });
+  }
+
+  /** FR-85 Phase 3: mark (or clear with null) a link as a response
+   * to another link. Makes argument chains exact — no heuristic. */
+  async linkSetRespondsTo(linkId: number, respondsTo: number | null): Promise<void> {
+    await this.sendRequest("link_set_responds_to", {
+      link_id: linkId,
+      responds_to: respondsTo,
+    });
   }
 
   async linkAddEnd(

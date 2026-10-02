@@ -302,6 +302,7 @@ pub enum OperationCode {
     LinkEndAddAttachment,
     LinkEndRemoveAttachment,
     LinkSetTypes,
+    LinkSetRespondsTo,
     LinkTypeRegister,
     LinkTypeList,
     LinkQuery,
@@ -869,6 +870,7 @@ impl OperationCode {
         (0x0f28, OperationCode::ContentSets),
         (0x0f29, OperationCode::ContentSetRecord),
         (0x0f2a, OperationCode::LlmProposeConnections),
+        (0x0f2b, OperationCode::LinkSetRespondsTo),
         (0x0f17, OperationCode::AdminClubsList),
         (0x0f18, OperationCode::AdminGrantAdmin),
         (0x0f19, OperationCode::AdminRevokeAdmin),
@@ -1601,6 +1603,14 @@ pub enum WireRequest {
     LinkSetTypes {
         link_id: BeId,
         link_types: Vec<u64>,
+    },
+    /// FR-85 Phase 3: mark (or clear, with None) this link as a
+    /// response to another link — exact argument-chain semantics.
+    /// The chain computation prefers the property and falls back to
+    /// the client heuristic for legacy links.
+    LinkSetRespondsTo {
+        link_id: BeId,
+        responds_to: Option<BeId>,
     },
     LinkTypeRegister {
         type_id: u64,
@@ -3472,6 +3482,13 @@ pub struct LinkPayload {
     /// True when at least one vouch has been withdrawn (contested).
     #[cfg_attr(feature = "serde", serde(default))]
     pub link_contested: bool,
+    /// FR-85 Phase 3: the link this link responds to, when it is a
+    /// response in an argument chain (exact semantics).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub responds_to: Option<BeId>,
     /// All named ends on the link (including LeftEnd/RightEnd + any custom ends).
     #[cfg_attr(
         feature = "serde",
@@ -5287,7 +5304,7 @@ mod lattice_shadow_wire_tests {
         let next = OperationCode::next_free_code(0x0f00, 0x0fff)
             .expect("the 0x0f00 block must not be exhausted");
         assert_eq!(
-            next, 0x0f2b,
+            next, 0x0f2c,
             "next free 0x0f-block code moved — update this expectation after registering"
         );
         // The helper's result is by construction absent from the table.

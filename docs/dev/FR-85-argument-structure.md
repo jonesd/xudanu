@@ -115,9 +115,15 @@ source. Built on compound-builder machinery + endorsement.
 ## Implementation
 
 - **Phase 1** (pure client): dispute status computation + argument
-  chains in the Links panel + best-against sorting.
-- **Phase 2**: absence indicators + Beams argument view.
-- **Phase 3**: Guide composition + `responds_to` link property.
+  chains in the Links panel + best-against sorting. ✅
+- **Phase 2**: absence indicators + Beams argument view. ✅
+- **Phase 3a**: `responds_to` link property — exact chain semantics. ✅
+  Wire op `link_set_responds_to` (0x0f2b); persisted on LinkEntry +
+  LinkSnapshot; exposed in LinkPayload; the client chain computation
+  prefers the exact property and keeps the heuristic only for legacy
+  links; "↩ respond" affordance on awaiting-response chains creates
+  the response link (current selection rides as the excerpt).
+- **Phase 3b**: Guide composition — remaining.
 
 ## Seeded demo scenarios
 
