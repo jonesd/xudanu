@@ -711,6 +711,10 @@ export function WorkspaceShell() {
   // trail being written — save-as-trail is one button away someday.
   const navBackRef = useRef<Array<{ workId: number; scrollTop: number }>>([]);
   const [navDepth, setNavDepth] = useState(0);
+  // Forward history (the › twin of the back stack): populated by
+  // going back, cleared by any new forward navigation.
+  const navForwardRef = useRef<Array<{ workId: number; scrollTop: number }>>([]);
+  const [navFwdDepth, setNavFwdDepth] = useState(0);
   const pendingRestoreRef = useRef<{ workId: number; scrollTop: number } | null>(null);
   // The scroll container depends on the editor mode: short works scroll
   // the editor container, long (virtualized) works scroll the editor
@@ -745,6 +749,11 @@ export function WorkspaceShell() {
       navBackRef.current.push({ workId: prevWorkRef.current, scrollTop: navScrollTop() });
       if (navBackRef.current.length > 50) navBackRef.current.shift();
       setNavDepth(navBackRef.current.length);
+      // New forward navigation invalidates the redo stack.
+      if (navForwardRef.current.length > 0) {
+        navForwardRef.current = [];
+        setNavFwdDepth(0);
+      }
       // Opening a document starts at its TOP: the scroll container
       // persists across work switches and would otherwise inherit the
       // previous document's offset (clamped wherever content allows).
@@ -1260,6 +1269,28 @@ export function WorkspaceShell() {
     const entry = navBackRef.current.pop();
     setNavDepth(navBackRef.current.length);
     if (!entry) return;
+    // Forward stack: leaving this page makes it reachable via ›.
+    if (prevWorkRef.current != null) {
+      navForwardRef.current.push({ workId: prevWorkRef.current, scrollTop: navScrollTop() });
+      setNavFwdDepth(navForwardRef.current.length);
+    }
+    if (entry.workId === prevWorkRef.current) {
+      const scroller = navScrollEl();
+      if (scroller) scroller.scrollTop = entry.scrollTop;
+      return;
+    }
+    pendingRestoreRef.current = entry;
+    selectWork(entry.workId, { back: true });
+  }, [selectWork]);
+
+  const handleNavForward = useCallback(() => {
+    const entry = navForwardRef.current.pop();
+    setNavFwdDepth(navForwardRef.current.length);
+    if (!entry) return;
+    if (prevWorkRef.current != null) {
+      navBackRef.current.push({ workId: prevWorkRef.current, scrollTop: navScrollTop() });
+      setNavDepth(navBackRef.current.length);
+    }
     if (entry.workId === prevWorkRef.current) {
       const scroller = navScrollEl();
       if (scroller) scroller.scrollTop = entry.scrollTop;
@@ -1981,6 +2012,10 @@ export function WorkspaceShell() {
         // undo this jump), then highlight + smooth-scroll to the span.
         if (workBeId != null) {
           navBackRef.current.push({ workId, scrollTop: navScrollTop() });
+          if (navForwardRef.current.length > 0) {
+            navForwardRef.current = [];
+            setNavFwdDepth(0);
+          }
           if (navBackRef.current.length > 50) navBackRef.current.shift();
           setNavDepth(navBackRef.current.length);
         }
@@ -4441,6 +4476,14 @@ export function WorkspaceShell() {
         backToTitle={
           navDepth > 0
             ? works.find((w) => w.work_id === navBackRef.current[navBackRef.current.length - 1]?.workId)
+                ?.title ?? null
+            : null
+        }
+        onGoForward={handleNavForward}
+        canGoForward={navFwdDepth > 0}
+        fwdTitle={
+          navFwdDepth > 0
+            ? works.find((w) => w.work_id === navForwardRef.current[navForwardRef.current.length - 1]?.workId)
                 ?.title ?? null
             : null
         }

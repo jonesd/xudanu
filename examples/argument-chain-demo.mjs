@@ -163,16 +163,16 @@ async function link(origin, destination, oRef, dRef) {
 
 // ── Chain 1: Dan's Disagreement, answered exactly ─────────────────
 const disagreement = await link(req, plan,
-  { excerpt: "titanalum funculator", start: titanalumAt, end: titanalumAt + 21 },
-  { excerpt: "duralum funculator because duralum provides", start: duralumAt, end: duralumAt + 42 });
+  { excerpt: "titanalum funculator", start: titanalumAt, end: titanalumAt + "titanalum funculator".length },
+  { excerpt: "duralum funculator because duralum provides", start: duralumAt, end: duralumAt + "duralum funculator because duralum provides".length });
 await request("link_set_types", { link_id: disagreement, link_types: [3] });
 say(`⚑ Disagreement 0x${disagreement.toString(16)}: Dan's Requirement → plan`);
 
 const rebuttalText = await textOf(rebuttal);
 const costAt = rebuttalText.indexOf("$815,000");
 const rebuttalLink = await link(rebuttal, req,
-  { excerpt: "$815,000", start: costAt, end: costAt + 9 },
-  { excerpt: "titanalum funculator", start: titanalumAt, end: titanalumAt + 21 });
+  { excerpt: "$815,000", start: costAt, end: costAt + "$815,000".length },
+  { excerpt: "titanalum funculator", start: titanalumAt, end: titanalumAt + "titanalum funculator".length });
 await request("link_set_types", { link_id: rebuttalLink, link_types: [2] });
 await request("link_set_responds_to", { link_id: rebuttalLink, responds_to: disagreement });
 say(`  ↳ Rebuttal 0x${rebuttalLink.toString(16)} (responds_to set — EXACT)`);
@@ -180,16 +180,16 @@ say(`  ↳ Rebuttal 0x${rebuttalLink.toString(16)} (responds_to set — EXACT)`)
 const counterText = await textOf(counter);
 const roiAt = counterText.indexOf("$4.2M annually");
 const counterLink = await link(counter, rebuttal,
-  { excerpt: "$4.2M annually", start: roiAt, end: roiAt + 14 },
-  { excerpt: "$815,000", start: costAt, end: costAt + 9 });
+  { excerpt: "$4.2M annually", start: roiAt, end: roiAt + "$4.2M annually".length },
+  { excerpt: "$815,000", start: costAt, end: costAt + "$815,000".length });
 await request("link_set_types", { link_id: counterLink, link_types: [2] });
 await request("link_set_responds_to", { link_id: counterLink, responds_to: disagreement });
 say(`  ↳ Counter 0x${counterLink.toString(16)} (responds_to set — EXACT)`);
 
 // ── Chain 2: Consumer Division, unanswered ─────────────────────────
 const consumerDisagreement = await link(consumer, plan,
-  { excerpt: "price-sensitive", start: consumerClaimAt, end: consumerClaimAt + 15 },
-  { excerpt: "duralum funculator because duralum provides", start: duralumAt, end: duralumAt + 42 });
+  { excerpt: "price-sensitive", start: consumerClaimAt, end: consumerClaimAt + "price-sensitive".length },
+  { excerpt: "duralum funculator because duralum provides", start: duralumAt, end: duralumAt + "duralum funculator because duralum provides".length });
 await request("link_set_types", { link_id: consumerDisagreement, link_types: [3] });
 say(`⚑ Disagreement 0x${consumerDisagreement.toString(16)}: Consumer Division → plan (awaiting response)`);
 
@@ -197,7 +197,7 @@ say(`⚑ Disagreement 0x${consumerDisagreement.toString(16)}: Consumer Division 
 const budgetText = await textOf(budget);
 const budgetCostAt = budgetText.indexOf("$815,000");
 const budgetLink = await link(budget, plan,
-  { excerpt: "$815,000", start: budgetCostAt, end: budgetCostAt + 9 },
+  { excerpt: "$815,000", start: budgetCostAt, end: budgetCostAt + "$815,000".length },
   { excerpt: "duralum funculator cost is $12.40",
     start: planText.indexOf("duralum funculator cost is"),
     end: planText.indexOf("duralum funculator cost is") + 32 });

@@ -135,6 +135,11 @@
 
 /* Back along the reading path (work + position stack). Sits between
    the brand and search; disabled at the path's start. */
+.ws-nav-history {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
 .ws-nav-back {
   display: inline-flex;
   align-items: center;
@@ -145,7 +150,9 @@
   border: 1px solid var(--border);
   border-radius: 7px;
   background: transparent;
-  color: var(--text);
+  /* Reading-path affordance: darker than body text-dim — it must
+     read as a button, not decoration. */
+  color: var(--text-strong, var(--text, #e6edf3));
   cursor: pointer;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
@@ -154,7 +161,7 @@
   border-color: var(--border-strong, var(--border));
 }
 .ws-nav-back:disabled {
-  opacity: 0.35;
+  opacity: 0.3;
   cursor: default;
 }
 
