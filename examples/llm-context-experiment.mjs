@@ -66,15 +66,32 @@ async function ollama(prompt, maxTokens = 500) {
 // ── Parse JSON-lines proposals ─────────────────────────────────────
 function parseProposals(response, workText) {
   const proposals = [];
-  // Strip markdown code fences (```json ... ```)
+  // Strip markdown code fences
   const cleaned = response.replace(/```(?:json)?\n?/g, "").trim();
+
+  // Try parsing as a JSON array first (some models wrap in [...])
+  try {
+    const arr = JSON.parse(cleaned);
+    if (Array.isArray(arr)) {
+      for (const p of arr) {
+        if (p.excerpt && p.type >= 1 && p.type <= 5 && p.reasoning) {
+          let at = workText.indexOf(p.excerpt);
+          if (at < 0) at = workText.indexOf(p.excerpt.trim());
+          if (at < 0 && p.excerpt.length > 40) at = workText.indexOf(p.excerpt.slice(0, 40).trim());
+          if (at >= 0) proposals.push({ ...p, start: at, end: at + p.excerpt.length });
+        }
+      }
+      return proposals;
+    }
+  } catch {}
+
+  // Fall back to line-by-line parsing
   for (const line of cleaned.split("\n")) {
     const t = line.trim();
     if (!t.startsWith("{")) continue;
     try {
       const p = JSON.parse(t);
       if (p.excerpt && p.type >= 1 && p.type <= 5 && p.reasoning) {
-        // Fuzzy excerpt match: try exact, then trimmed, then first 40 chars
         let at = workText.indexOf(p.excerpt);
         if (at < 0) at = workText.indexOf(p.excerpt.trim());
         if (at < 0 && p.excerpt.length > 40) at = workText.indexOf(p.excerpt.slice(0, 40).trim());
