@@ -171,7 +171,10 @@ describe("WorkPane (text renderer)", () => {
           destination: 1, // pane work is the destination
           origin_ref: null,
           destination_ref: {
+            kind: "single",
             work_context: 1,
+            original_context: null,
+            path_context: null,
             start_position: 4,
             end_position: 14,
             excerpt: "funculator",
@@ -181,7 +184,7 @@ describe("WorkPane (text renderer)", () => {
           link_types: [3], // Disagreement
         },
       ]),
-    } as Partial<CrdtSyncClient>);
+    } as unknown as Partial<CrdtSyncClient>);
     render(<WorkPane client={client} workId={1} connected={true} />);
     await waitFor(() => document.querySelector(".work-pane-text"));
     const underlined = document.querySelector(

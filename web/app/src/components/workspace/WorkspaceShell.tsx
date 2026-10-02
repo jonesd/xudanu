@@ -3165,7 +3165,7 @@ export function WorkspaceShell() {
                                  <div style={{ display: "flex", gap: 6 }}>
                                    <button
                                      type="button"
-                                     disabled={card.status === "confirming" || (card.farEndTitle != null && farEndId == null)}
+                                      disabled={card.farEndTitle != null && farEndId == null}
                                      onClick={() => void confirmProposal(card.key)}
                                      style={{
                                        fontSize: 9, background: "none",
