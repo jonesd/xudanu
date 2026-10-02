@@ -3073,7 +3073,7 @@ export function WorkspaceShell() {
                        title="Ask the server's LLM to read this work and propose connections — you confirm, edit, or reject each one"
                      >
                        {llmProps.status === "loading"
-                         ? "✨ reading… (up to a minute)"
+                         ? "✨ reading… (may take a few minutes on a local model)"
                          : "✨ Suggest connections"}
                      </button>
                      {llmProps.status === "error" && (

@@ -133,6 +133,127 @@ impl WalLog {
         )
     }
 
+    /// Work creation durability: works were previously protected
+    /// only by the ASYNC checkpoint — a hard kill between creation
+    /// and the next checkpoint LOST the work (observed in the wild:
+    /// five demo works vanished after SIGKILLs during a wedged
+    /// server). Text edits and links already had WAL coverage; now
+    /// creation does too.
+    pub fn append_work_create(
+        &mut self,
+        work_id: BeId,
+        owner: Option<BeId>,
+        title: &str,
+        text: &str,
+    ) -> Result<u64, WalError> {
+        let mut args = serde_json::json!({
+            "work_id": work_id,
+            "title": title,
+            "text": text,
+        });
+        if let Some(owner) = owner {
+            args["owner"] = serde_json::json!(owner);
+        }
+        self.append("work_create", args)
+    }
+
+    pub fn append_work_set_title(&mut self, work_id: BeId, title: &str) -> Result<u64, WalError> {
+        self.append(
+            "work_set_title",
+            serde_json::json!({
+                "work_id": work_id,
+                "title": title,
+            }),
+        )
+    }
+
+    /// Publication is part of visibility: a replayed-but-unpublished
+    /// work would exist yet be unreadable by the public session.
+    pub fn append_work_publish(&mut self, work_id: BeId) -> Result<u64, WalError> {
+        self.append(
+            "work_publish",
+            serde_json::json!({
+                "work_id": work_id,
+            }),
+        )
+    }
+
+    /// Argument-structure durability (FR-85): a link's TYPES carry
+    /// its meaning (Disagreement-ness); loses them silently breaks
+    /// every dispute chain touching the link.
+    pub fn append_link_set_types(
+        &mut self,
+        link_id: BeId,
+        link_types: &[u64],
+    ) -> Result<u64, WalError> {
+        self.append(
+            "link_set_types",
+            serde_json::json!({
+                "link_id": link_id,
+                "link_types": link_types,
+            }),
+        )
+    }
+
+    /// FR-85 Phase 3: exact chains — responds_to is the whole point.
+    pub fn append_link_set_responds_to(
+        &mut self,
+        link_id: BeId,
+        responds_to: Option<BeId>,
+    ) -> Result<u64, WalError> {
+        self.append(
+            "link_set_responds_to",
+            serde_json::json!({
+                "link_id": link_id,
+                "responds_to": responds_to,
+            }),
+        )
+    }
+
+    /// Deletions must outlive crashes too — otherwise the link
+    /// RESURRECTS from the last checkpoint (undead content is the
+    /// inverse of loss but the same severity class).
+    pub fn append_link_delete(&mut self, link_id: BeId) -> Result<u64, WalError> {
+        self.append(
+            "link_delete",
+            serde_json::json!({
+                "link_id": link_id,
+            }),
+        )
+    }
+
+    /// Archive must persist the same way (un-archive-on-crash would
+    /// resurrect drafts the user deliberately put away).
+    pub fn append_work_archive(&mut self, work_id: BeId) -> Result<u64, WalError> {
+        self.append(
+            "work_archive",
+            serde_json::json!({
+                "work_id": work_id,
+            }),
+        )
+    }
+
+    /// Reputation is content (Miller 1994): endorsements ride the WAL.
+    pub fn append_link_endorse(&mut self, link_id: BeId, club_id: BeId) -> Result<u64, WalError> {
+        self.append(
+            "link_endorse",
+            serde_json::json!({
+                "link_id": link_id,
+                "club_id": club_id,
+            }),
+        )
+    }
+
+    pub fn append_link_unendorse(&mut self, link_id: BeId, club_id: BeId) -> Result<u64, WalError> {
+        self.append(
+            "link_unendorse",
+            serde_json::json!({
+                "link_id": link_id,
+                "club_id": club_id,
+            }),
+        )
+    }
+
     pub fn append_unstar(&mut self, club_id: BeId, work_id: BeId) -> Result<u64, WalError> {
         self.append(
             "unstar",
@@ -371,19 +492,23 @@ impl WalLog {
         destination_ref: Option<&crate::server::transport::protocol::HyperRefPayload>,
         link_types: &[u64],
         home_document: Option<BeId>,
+        author_club: Option<BeId>,
     ) -> Result<u64, WalError> {
-        self.append(
-            "create_link",
-            serde_json::json!({
-                "link_id": link_id,
-                "origin": origin,
-                "destination": destination,
-                "origin_ref": origin_ref,
-                "destination_ref": destination_ref,
-                "link_types": link_types,
-                "home_document": home_document,
-            }),
-        )
+        let mut args = serde_json::json!({
+            "link_id": link_id,
+            "origin": origin,
+            "destination": destination,
+            "origin_ref": origin_ref,
+            "destination_ref": destination_ref,
+            "link_types": link_types,
+            "home_document": home_document,
+        });
+        // The author auto-endorsement (Gold's model) must replay
+        // with the link or every created link loses its seed vouch.
+        if let Some(cid) = author_club {
+            args["author_club"] = serde_json::json!(cid);
+        }
+        self.append("create_link", args)
     }
 
     pub fn append_link_add_end(
@@ -571,6 +696,102 @@ impl WalLog {
         let mut replayed = 0u64;
         for entry in entries {
             let result = match entry.op.as_str() {
+                "work_create" => {
+                    if let (Some(work_id), Some(title), Some(text)) = (
+                        entry.args.get("work_id").and_then(|v| v.as_u64()),
+                        entry.args.get("title").and_then(|v| v.as_str()),
+                        entry.args.get("text").and_then(|v| v.as_str()),
+                    ) {
+                        let owner = entry.args.get("owner").and_then(|v| v.as_u64());
+                        server.wal_replay_create_work(
+                            work_id,
+                            owner,
+                            title.to_string(),
+                            text.to_string(),
+                        );
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "work_set_title" => {
+                    if let (Some(work_id), Some(title)) = (
+                        entry.args.get("work_id").and_then(|v| v.as_u64()),
+                        entry.args.get("title").and_then(|v| v.as_str()),
+                    ) {
+                        server.wal_replay_work_set_title(work_id, title.to_string());
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "work_publish" => {
+                    if let Some(work_id) = entry.args.get("work_id").and_then(|v| v.as_u64()) {
+                        server.wal_replay_work_publish(work_id);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "link_set_types" => {
+                    if let (Some(link_id), Some(types)) = (
+                        entry.args.get("link_id").and_then(|v| v.as_u64()),
+                        entry.args.get("link_types").and_then(|v| v.as_array()),
+                    ) {
+                        let types: Vec<u64> = types.iter().filter_map(|t| t.as_u64()).collect();
+                        server.wal_replay_link_set_types(link_id, types);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "link_set_responds_to" => {
+                    if let Some(link_id) = entry.args.get("link_id").and_then(|v| v.as_u64()) {
+                        let responds_to = entry.args.get("responds_to").and_then(|v| v.as_u64());
+                        server.wal_replay_link_set_responds_to(link_id, responds_to);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "link_delete" => {
+                    if let Some(link_id) = entry.args.get("link_id").and_then(|v| v.as_u64()) {
+                        server.wal_replay_link_delete(link_id);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "work_archive" => {
+                    if let Some(work_id) = entry.args.get("work_id").and_then(|v| v.as_u64()) {
+                        server.wal_replay_work_archive(work_id);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "link_endorse" => {
+                    if let (Some(link_id), Some(club_id)) = (
+                        entry.args.get("link_id").and_then(|v| v.as_u64()),
+                        entry.args.get("club_id").and_then(|v| v.as_u64()),
+                    ) {
+                        server.wal_replay_link_endorse(link_id, club_id);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "link_unendorse" => {
+                    if let (Some(link_id), Some(club_id)) = (
+                        entry.args.get("link_id").and_then(|v| v.as_u64()),
+                        entry.args.get("club_id").and_then(|v| v.as_u64()),
+                    ) {
+                        server.wal_replay_link_unendorse(link_id, club_id);
+                        true
+                    } else {
+                        false
+                    }
+                }
                 "star" => {
                     if let (Some(club_id), Some(work_id)) = (
                         entry.args.get("club_id").and_then(|v| v.as_u64()),
@@ -818,6 +1039,8 @@ impl WalLog {
                             .get("home_document")
                             .and_then(|v| serde_json::from_value(v.clone()).ok())
                             .unwrap_or(None);
+                        let author_club: Option<BeId> =
+                            entry.args.get("author_club").and_then(|v| v.as_u64());
                         server.wal_replay_create_link(
                             link_id,
                             origin,
@@ -826,6 +1049,7 @@ impl WalLog {
                             d_ref,
                             link_types,
                             home_document,
+                            author_club,
                         );
                         true
                     } else {

@@ -4871,6 +4871,14 @@ impl Server {
         self.works.insert(be_id, ws);
         self.search_index_mark_dirty(be_id);
         self.work_list_cache_mark_dirty();
+        // WAL BEFORE ack (bulk path — same contract as create_work).
+        {
+            let text = self.works[&be_id].work.edition().to_text();
+            let wal_title = self.works[&be_id].cached_title.clone();
+            if let Err(e) = self.wal.append_work_create(be_id, owner, &wal_title, &text) {
+                tracing::warn!("[wal] work_create append failed: {}", e);
+            }
+        }
         Ok(be_id)
     }
 
@@ -5032,6 +5040,15 @@ impl Server {
         // Newly created works may share content with already-watched documents,
         // so planted recorders must be checked here just as they are in revise_work.
         self.trigger_planted_recorders(be_id);
+        // WAL BEFORE ack: creation outlives a hard kill even if the
+        // async checkpoint never lands (the five-lost-works lesson).
+        {
+            let text = self.works[&be_id].work.edition().to_text();
+            let wal_title = self.works[&be_id].cached_title.clone();
+            if let Err(e) = self.wal.append_work_create(be_id, owner, &wal_title, &text) {
+                tracing::warn!("[wal] work_create append failed: {}", e);
+            }
+        }
         self.auto_checkpoint();
 
         Ok(be_id)
@@ -7712,6 +7729,9 @@ impl Server {
         }
         ws.work.set_read_club(Some(self.system_clubs.public_club));
         ws.mark_dirty();
+        if let Err(e) = self.wal.append_work_publish(work_be_id) {
+            tracing::warn!("[wal] work_publish append failed: {}", e);
+        }
         self.update_work_prop_and_trigger(work_be_id);
         self.auto_checkpoint();
         Ok(())
@@ -7838,6 +7858,9 @@ impl Server {
             .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         ws.work.archive(actor, ts);
+        if let Err(e) = self.wal.append_work_archive(work_be_id) {
+            tracing::warn!("[wal] work_archive append failed: {}", e);
+        }
         self.auto_checkpoint();
         Ok(())
     }
@@ -8205,6 +8228,16 @@ impl Server {
         club.set_default_edit_club(default_edit_club);
         self.dirty_clubs.insert(club_id);
         self.auto_checkpoint();
+        Ok(())
+    }
+
+    /// Activate the write-ahead log on a server constructed without
+    /// `init_data_dir` (tests, embedders). Creation durability
+    /// (work_create/set_title/publish WAL entries) requires this.
+    /// Idempotent; fails if the log can't be opened.
+    pub fn enable_wal(&mut self, data_dir: &std::path::Path) -> std::io::Result<()> {
+        self.wal = crate::persist::wal::WalLog::open(data_dir)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         Ok(())
     }
 
@@ -10083,6 +10116,9 @@ impl Server {
                 kind: LinkEndorsementKind::Vouch,
                 timestamp: now,
             });
+            if let Err(e) = self.wal.append_link_endorse(link_id, club_id) {
+                tracing::warn!("[wal] link_endorse append failed: {}", e);
+            }
         }
         Ok(())
     }
@@ -10108,6 +10144,9 @@ impl Server {
             return Err(ServerError::InvalidArgument(
                 "no vouch from this club to withdraw".into(),
             ));
+        }
+        if let Err(e) = self.wal.append_link_unendorse(link_id, club_id) {
+            tracing::warn!("[wal] link_unendorse append failed: {}", e);
         }
         Ok(())
     }
@@ -11176,6 +11215,9 @@ impl Server {
         if let Some(ws) = self.works.get_mut(&work_be_id) {
             ws.cached_title = title;
             ws.explicit_title = true;
+            if let Err(e) = self.wal.append_work_set_title(work_be_id, &ws.cached_title) {
+                tracing::warn!("[wal] work_set_title append failed: {}", e);
+            }
         }
     }
 
@@ -11809,6 +11851,170 @@ impl Server {
         }
     }
 
+    /// WAL replay: reconstruct a work whose creation outlived the
+    /// last checkpoint. Idempotent — a checkpoint that already
+    /// captured the work makes this a no-op. The replayed work is
+    /// private (read_club None) until a `work_publish` replay lands.
+    /// Scope: plain-text works. Structured editions (compounds,
+    /// blobs) carry their own WAL ops and still checkpoint for the
+    /// container itself.
+    pub(crate) fn wal_replay_create_work(
+        &mut self,
+        work_id: BeId,
+        owner: Option<BeId>,
+        title: String,
+        text: String,
+    ) {
+        if self.works.contains_key(&work_id) {
+            return;
+        }
+        // Register under the FIXED id (crash made it authoritative)
+        // and keep the allocator past it so future ids never collide.
+        let element = Box::new(crate::edition::backend::BeWork { id: work_id, owner });
+        let id = self.grand_map.new_id();
+        if !self.grand_map.assign_id(&id, element) {
+            tracing::warn!(
+                work_id,
+                "wal_replay_create_work: id already assigned — skipping"
+            );
+            return;
+        }
+        if work_id >= self.grand_map.id_counter() {
+            self.grand_map.set_id_counter(work_id + 1);
+        }
+        let edition = crate::edition::Edition::from_text(&text);
+        let mut work = Work::new_with_owner(work_id, owner, edition);
+        work.set_tumbler_server(Some(self.tumbler_server_identity()));
+        // Creation default: owner-private. A work_publish replay
+        // flips this to the public club; the guard in that replay
+        // (read_club must be Some) mirrors real publish semantics.
+        if let Some(owner) = owner {
+            work.set_read_club(Some(owner));
+        }
+        let ws = WorkState {
+            work,
+            trace: self.fulltrace.new_trace(),
+            region: None,
+            chunk_ref: None,
+            prev_chunk_history: None,
+            dirty_gen: 0,
+            grabber: None,
+            grabbed_at: None,
+            grab_waiters: Vec::new(),
+            last_revision_author: None,
+            revision_authors: std::collections::HashMap::new(),
+            revision_timestamps: std::collections::HashMap::new(),
+            status_detectors: DetectorList::new(),
+            revision_detectors: DetectorList::new(),
+            cached_title: title,
+            explicit_title: false,
+            is_source: false,
+            imported_by: None,
+            content_start_line: None,
+            content_end_line: None,
+            source_author_id: None,
+            source_edition_info: None,
+            source_fingerprint: None,
+        };
+        self.works.insert(work_id, ws);
+        self.search_index_mark_dirty(work_id);
+        self.work_list_cache_mark_dirty();
+    }
+
+    pub(crate) fn wal_replay_work_set_title(&mut self, work_id: BeId, title: String) {
+        if let Some(ws) = self.works.get_mut(&work_id) {
+            ws.cached_title = title;
+            ws.explicit_title = true;
+            ws.mark_dirty();
+            self.search_index_mark_dirty(work_id);
+            self.work_list_cache_mark_dirty();
+        }
+    }
+
+    pub(crate) fn wal_replay_work_publish(&mut self, work_id: BeId) {
+        if let Some(ws) = self.works.get_mut(&work_id) {
+            if ws.work.read_club().is_some() {
+                ws.work.set_read_club(Some(self.system_clubs.public_club));
+                ws.mark_dirty();
+            }
+        }
+    }
+
+    pub(crate) fn wal_replay_link_set_types(&mut self, link_id: BeId, link_types: Vec<u64>) {
+        if let Some(ls) = self.links.get_mut(&link_id) {
+            let old_link = ls.link.clone();
+            ls.link = ls.link.with_link_types(link_types);
+            let updated = ls.link.clone();
+            // Canopy bits ride the type set — re-OR the leaves
+            // (detectors deliberately NOT re-fired: replays don't
+            // double-collect, same contract as link_set_types).
+            self.canopy_remove_link(link_id, &old_link);
+            self.canopy_insert_link(link_id, &updated);
+        }
+    }
+
+    pub(crate) fn wal_replay_link_set_responds_to(
+        &mut self,
+        link_id: BeId,
+        responds_to: Option<BeId>,
+    ) {
+        if let Some(ls) = self.links.get_mut(&link_id) {
+            ls.responds_to = responds_to;
+        }
+    }
+
+    pub(crate) fn wal_replay_link_delete(&mut self, link_id: BeId) {
+        if let Some(ls) = self.links.remove(&link_id) {
+            self.backfollow.unregister_link_content(&ls.link, link_id);
+            self.canopy_remove_link(link_id, &ls.link);
+            let mut works = vec![ls.origin];
+            works.extend(ls.destination);
+            works.extend(
+                ls.link
+                    .end_names()
+                    .iter()
+                    .filter_map(|n| ls.link.end_at(n).and_then(|hr| hr.work_context())),
+            );
+            if let Some(home) = ls.home_document {
+                works.push(home);
+            }
+            for wid in works {
+                if let Some(ids) = self.work_to_links.get_mut(&wid) {
+                    ids.retain(|id| *id != link_id);
+                }
+            }
+        }
+    }
+
+    pub(crate) fn wal_replay_work_archive(&mut self, work_id: BeId) {
+        if let Some(ws) = self.works.get_mut(&work_id) {
+            let ts = Self::current_timestamp_secs();
+            ws.work.archive(0, ts);
+        }
+    }
+
+    pub(crate) fn wal_replay_link_endorse(&mut self, link_id: BeId, club_id: BeId) {
+        if let Some(ls) = self.links.get_mut(&link_id) {
+            if !ls.endorsements.iter().any(|e| e.club_id == club_id) {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                ls.endorsements.push(LinkEndorsement {
+                    club_id,
+                    kind: LinkEndorsementKind::Vouch,
+                    timestamp: now,
+                });
+            }
+        }
+    }
+
+    pub(crate) fn wal_replay_link_unendorse(&mut self, link_id: BeId, club_id: BeId) {
+        if let Some(ls) = self.links.get_mut(&link_id) {
+            ls.endorsements.retain(|e| e.club_id != club_id);
+        }
+    }
+
     pub fn set_connection_pin(
         &mut self,
         session_id: SessionId,
@@ -12008,6 +12214,7 @@ impl Server {
         destination_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
         link_types: Vec<u64>,
         home_document: Option<BeId>,
+        author_club: Option<BeId>,
     ) {
         if !self.links.contains_key(&link_id) {
             let o_ref = origin_ref
@@ -12023,6 +12230,20 @@ impl Server {
                     crate::edition::links::HyperRef::single(None, Some(destination), None, None)
                 });
             let hyperlink = crate::edition::links::HyperLink::make(link_types, o_ref, d_ref);
+            // Gold's model: creation auto-seeds the author's vouch.
+            // The WAL carries the author club so the seed replays.
+            let endorsements = author_club
+                .map(|cid| {
+                    vec![LinkEndorsement {
+                        club_id: cid,
+                        kind: LinkEndorsementKind::Author,
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs(),
+                    }]
+                })
+                .unwrap_or_default();
             self.links.insert(
                 link_id,
                 LinkState {
@@ -12034,7 +12255,7 @@ impl Server {
                     // WAL records predate authorship stamping; the
                     // manifest restore path carries the field.
                     author_club: None,
-                    endorsements: Vec::new(),
+                    endorsements,
                     // FR-85: responds_to is set post-creation (the
                     // set op is checkpoint-persisted, not WAL'd).
                     responds_to: None,
@@ -17251,6 +17472,11 @@ impl Server {
                 .link
                 .end_at("RightEnd")
                 .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref);
+            let wal_author_club = ls
+                .endorsements
+                .iter()
+                .find(|e| matches!(e.kind, LinkEndorsementKind::Author))
+                .map(|e| e.club_id);
             if let Err(e) = self.wal.append_create_link(
                 link_id,
                 origin,
@@ -17259,6 +17485,7 @@ impl Server {
                 d_ref.as_ref(),
                 ls.link.link_types(),
                 home_document,
+                wal_author_club,
             ) {
                 tracing::warn!("WAL write failed for create_link: {}", e);
             }
@@ -17465,6 +17692,11 @@ impl Server {
                 .link
                 .end_at("RightEnd")
                 .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref);
+            let wal_author_club = ls
+                .endorsements
+                .iter()
+                .find(|e| matches!(e.kind, LinkEndorsementKind::Author))
+                .map(|e| e.club_id);
             if let Err(e) = self.wal.append_create_link(
                 link_id,
                 origin,
@@ -17473,6 +17705,7 @@ impl Server {
                 d_ref.as_ref(),
                 ls.link.link_types(),
                 home_document,
+                wal_author_club,
             ) {
                 tracing::warn!("WAL write failed for create_link: {}", e);
             }
@@ -18260,6 +18493,11 @@ impl Server {
             .links
             .remove(&link_id)
             .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+        // WAL BEFORE ack — else the link resurrects from the last
+        // checkpoint after a crash.
+        if let Err(e) = self.wal.append_link_delete(link_id) {
+            tracing::warn!("[wal] link_delete append failed: {}", e);
+        }
         self.backfollow.unregister_link_content(&ls.link, link_id);
         self.canopy_remove_link(link_id, &ls.link);
         // Clean every work registration: origin, destination, named
@@ -18785,7 +19023,10 @@ impl Server {
                 .links
                 .get_mut(&link_id)
                 .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
-            ls.link = ls.link.with_link_types(link_types);
+            ls.link = ls.link.with_link_types(link_types.clone());
+        }
+        if let Err(e) = self.wal.append_link_set_types(link_id, &link_types) {
+            tracing::warn!("[wal] link_set_types append failed: {}", e);
         }
         // FR-40 enfiladic matching: types carry the canopy bits —
         // remove+reinsert re-ORs every affected leaf.
@@ -18825,12 +19066,23 @@ impl Server {
             .get_mut(&link_id)
             .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
         ls.responds_to = responds_to;
+        if let Err(e) = self.wal.append_link_set_responds_to(link_id, responds_to) {
+            tracing::warn!("[wal] link_set_responds_to append failed: {}", e);
+        }
         Ok(())
     }
 
     /// FR-85 Phase 3: the link this link responds to, if any.
     pub fn link_responds_to(&self, link_id: BeId) -> Option<BeId> {
         self.links.get(&link_id).and_then(|ls| ls.responds_to)
+    }
+
+    /// The link's type set (test/embedder accessor — argument
+    /// structure reads types as meaning).
+    pub fn link_types_of(&self, link_id: BeId) -> Option<Vec<u64>> {
+        self.links
+            .get(&link_id)
+            .map(|ls| ls.link.link_types().to_vec())
     }
 
     pub fn register_link_type(&mut self, type_id: u64, name: String) {
@@ -29462,6 +29714,38 @@ pub(crate) mod persist_snapshot {
                 let _ = server.load_keypair_from_dir(data_dir, None);
                 server.restore_key_history_from_snapshot();
                 let _ = server.restore_blob_store(data_dir, snapshot.blob_metas.clone());
+                // WAL parity with restore_from_data_dir: open for
+                // writing AND replay entries the last checkpoint
+                // never captured. Without this, the file-restore
+                // path silently dropped post-checkpoint mutations
+                // (and journaled nothing afterwards) — a content-
+                // loss class found while hardening work_create.
+                match crate::persist::wal::WalLog::open(data_dir) {
+                    Ok(wal) => {
+                        server.wal = wal;
+                        let wal_path = data_dir.join("wal.log");
+                        if wal_path.exists() {
+                            match crate::persist::wal::WalLog::read_entries(&wal_path) {
+                                Ok((_ver, entries)) => {
+                                    let n = crate::persist::wal::WalLog::replay_entries(
+                                        &mut server,
+                                        &entries,
+                                    );
+                                    if n > 0 {
+                                        tracing::info!(
+                                            replayed = n,
+                                            "WAL replay after file-restore"
+                                        );
+                                    }
+                                }
+                                Err(e) => tracing::warn!("WAL read failed after restore: {}", e),
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("WAL open failed after restore: {}", e)
+                    }
+                }
             }
             server
         }

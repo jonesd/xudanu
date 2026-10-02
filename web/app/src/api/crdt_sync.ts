@@ -2012,15 +2012,16 @@ export class CrdtSyncClient {
 
   /** FR-86: ask the server's LLM (reader-critic) to propose typed
    * connections for a work. Slow — the model reads the work, its
-   * connected works, and the library catalog; the server cuts off
-   * at 60s so we allow 75s here (vs the default 30s request
+   * connected works, and the library catalog; local models may need
+   * 30-60s just to load before generating, so the server allows
+   * 180s and we allow 185s here (vs the default 30s request
    * timeout). Returns proposals for human confirm/edit/reject; no
    * links are created. */
   async llmProposeConnections(workId: number): Promise<LlmProposalResult> {
     const resp = await this.sendRequest(
       "llm_propose_connections",
       { work_id: workId },
-      75_000,
+      185_000,
     );
     const val = extractValue(resp) as Record<string, unknown>;
     const raw = (val.proposals as LlmConnectionProposal[]) || [];

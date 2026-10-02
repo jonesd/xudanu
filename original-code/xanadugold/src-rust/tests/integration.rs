@@ -9774,6 +9774,112 @@ async fn persistence_works_survive_restart() {
 }
 
 #[tokio::test]
+async fn persistence_work_create_survives_unclean_drop() {
+    // The five-lost-works lesson: works created after the last
+    // checkpoint used to vanish on a hard kill (creation had no WAL
+    // entry — only the async checkpoint protected it). Now the WAL
+    // carries work_create/set_title/publish, so an UNCLEAN drop
+    // (no final checkpoint — the SIGKILL case) loses nothing.
+    let dir = temp_data_dir("wal_work_create");
+
+    let mut srv = server_init(&dir);
+    srv.enable_wal(&dir).expect("wal must open");
+    let (session, _) = admin_session(&mut srv);
+    // Baseline: restore replays the WAL on top of this snapshot.
+    srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
+
+    let w1 = srv
+        .create_work(
+            session,
+            xudanu::edition::Edition::from_text("the titanium plan body"),
+        )
+        .unwrap();
+    srv.set_work_title(w1, "Titanium Plan".to_string());
+    srv.work_publish(session, w1).unwrap();
+    let w2 = srv
+        .create_work(
+            session,
+            xudanu::edition::Edition::from_text("second unclean work"),
+        )
+        .unwrap();
+    assert_eq!(srv.work_count(), 2);
+
+    // The full argument-structure surface: a typed link, an exact
+    // responds_to, an endorsement — plus a deletion and an archive
+    // (resurrections are the same severity class as losses).
+    let link = srv.create_link(session, w2, w1, None, None).unwrap();
+    srv.link_set_types(session, link, vec![3]).unwrap();
+    let doomed = srv.create_link(session, w2, w1, None, None).unwrap();
+    srv.link_set_responds_to(session, doomed, Some(link))
+        .unwrap();
+    srv.delete_link(session, doomed).unwrap();
+    let club = srv.link_endorsements(link).unwrap().len();
+    srv.link_endorse(session, link).unwrap();
+    srv.work_archive(session, w2).unwrap();
+
+    // NO checkpoint — simulate the hard kill.
+    drop(srv);
+
+    let srv2 = server_restore(&dir);
+    assert!(
+        srv2.work(w1).is_ok(),
+        "work {} must survive an unclean drop via WAL replay",
+        w1
+    );
+    assert!(
+        srv2.work(w2).is_ok(),
+        "work {} must survive an unclean drop via WAL replay",
+        w2
+    );
+    let title = srv2
+        .list_works_with_titles()
+        .iter()
+        .find(|(id, ..)| *id == w1)
+        .map(|row| row.4.clone())
+        .unwrap_or_default();
+    assert_eq!(title, "Titanium Plan", "titled-after-create must replay");
+    // Publish replayed: the work's read club is the public club.
+    let public = srv2.public_club_id();
+    assert!(
+        srv2.work(w1).unwrap().read_club() == Some(public),
+        "published work must be public after WAL replay"
+    );
+    // Typed link + endorsement survived; deleted link stayed dead;
+    // responds_to cleared with its link; archive held.
+    let types = srv2
+        .link_types_of(link)
+        .expect("typed link must survive unclean drop");
+    assert_eq!(
+        types,
+        vec![3],
+        "link TYPES must replay (argument structure)"
+    );
+    assert!(
+        !srv2.link_endorsements(link).unwrap().is_empty(),
+        "endorsement must replay (reputation is content)"
+    );
+    assert!(
+        srv2.link_state_for(doomed).is_none(),
+        "deleted link must STAY deleted after replay (no resurrection)"
+    );
+    assert!(
+        srv2.work(w2).unwrap().is_archived(),
+        "archived work must stay archived after replay"
+    );
+
+    // Idempotency: checkpoint the replayed state, restore again —
+    // exactly one copy, no duplicate-creation artifacts.
+    srv2.checkpoint_to_file(&dir.join("server.json")).unwrap();
+    drop(srv2);
+    let srv3 = server_restore(&dir);
+    assert_eq!(
+        srv3.work_count(),
+        2,
+        "WAL replay must be idempotent across checkpoint cycles"
+    );
+}
+
+#[tokio::test]
 async fn persistence_link_responds_to_survives_restart() {
     let dir = temp_data_dir("responds_to");
 

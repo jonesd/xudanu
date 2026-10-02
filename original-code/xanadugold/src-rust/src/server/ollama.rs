@@ -289,8 +289,8 @@ impl LlmClient {
                 context.push_str(&format!(
                     "  [{}] \"{}\" <-> \"{}\"\n",
                     link.type_name,
-                    &link.origin_excerpt[..link.origin_excerpt.len().min(60)],
-                    &link.dest_excerpt[..link.dest_excerpt.len().min(60)],
+                    truncate_char_safe(&link.origin_excerpt, 60),
+                    truncate_char_safe(&link.dest_excerpt, 60),
                 ));
             }
         }
@@ -303,7 +303,7 @@ impl LlmClient {
                     "\n--- Work {}: \"{}\" ---\n{}\n",
                     i + 1,
                     title,
-                    &text[..text.len().min(4000)]
+                    truncate_char_safe(text, 4000)
                 ));
             }
         }
@@ -354,31 +354,66 @@ Rules:
             response.len() as u64,
         );
 
+        // Normalize the model's output before parsing: strip code
+        // fences, then accept EITHER a JSON array of proposals
+        // (mistral-nemo and friends wrap everything in [...] on one
+        // line) OR line-by-line JSON objects. The experiments'
+        // parser learned this; the server parser must match or the
+        // proposals silently vanish.
+        let cleaned = response
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with("```"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut candidates: Vec<serde_json::Value> = Vec::new();
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&cleaned) {
+            match parsed {
+                serde_json::Value::Array(items) => candidates = items,
+                obj @ serde_json::Value::Object(_) => candidates.push(obj),
+                _ => {}
+            }
+        }
+        if candidates.is_empty() {
+            // Prose-wrapped output: scan for object lines instead.
+            for line in cleaned.lines() {
+                if line.starts_with('{') {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+                        candidates.push(v);
+                    }
+                }
+            }
+        }
+
         let mut proposals = Vec::new();
-        for line in response.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || !trimmed.starts_with('{') {
+        for v in candidates {
+            let excerpt = v["excerpt"].as_str().unwrap_or("");
+            let type_id = v["type"].as_u64().unwrap_or(0);
+            let reasoning = v["reasoning"].as_str().unwrap_or("");
+            // Small-model quirk: JSON null sometimes arrives as
+            // the STRING "null" (also quoted titles, padding
+            // whitespace) — normalize to a real title or None.
+            let far_title = v["far_end_title"]
+                .as_str()
+                .map(|t| t.trim().trim_matches('"').trim().to_string())
+                .filter(|t| {
+                    !t.is_empty()
+                        && !t.eq_ignore_ascii_case("null")
+                        && !t.eq_ignore_ascii_case("none")
+                });
+            if excerpt.is_empty() || type_id < 1 || type_id > 5 {
                 continue;
             }
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                let excerpt = v["excerpt"].as_str().unwrap_or("");
-                let type_id = v["type"].as_u64().unwrap_or(0);
-                let reasoning = v["reasoning"].as_str().unwrap_or("");
-                let far_title = v["far_end_title"].as_str();
-                if excerpt.is_empty() || type_id < 1 || type_id > 5 {
-                    continue;
-                }
-                let start = work_text.find(excerpt);
-                if let Some(s) = start {
-                    proposals.push(ProposedConnection {
-                        excerpt: excerpt.to_string(),
-                        start: s,
-                        end: s + excerpt.len(),
-                        type_id: type_id as u64,
-                        reasoning: reasoning.to_string(),
-                        far_end_title: far_title.map(|t| t.to_string()),
-                    });
-                }
+            let start = work_text.find(excerpt);
+            if let Some(s) = start {
+                proposals.push(ProposedConnection {
+                    excerpt: excerpt.to_string(),
+                    start: s,
+                    end: s + excerpt.len(),
+                    type_id: type_id as u64,
+                    reasoning: reasoning.to_string(),
+                    far_end_title: far_title,
+                });
             }
         }
         Ok(proposals)
@@ -488,7 +523,7 @@ Rules:
         tracing::info!("{} response body_len={}", label, raw.len());
 
         let chat: ChatResponse = serde_json::from_str(&raw)
-            .map_err(|e| LlmError::Parse(format!("{}: {}", e, &raw[..raw.len().min(200)])))?;
+            .map_err(|e| LlmError::Parse(format!("{}: {}", e, truncate_char_safe(&raw, 200))))?;
 
         chat.choices
             .first()
@@ -702,8 +737,23 @@ What changed?"#
     )
 }
 
+/// FR-86 hardening: byte-index truncation on multi-byte UTF-8
+/// panics (a far-end work with emoji cut at byte 4000 killed the
+/// dispatch task — the client saw a silent timeout, the log showed
+/// nothing). Walk back to the nearest char boundary instead.
+pub fn truncate_char_safe(s: &str, n: usize) -> &str {
+    if s.len() <= n {
+        return s;
+    }
+    let mut i = n;
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    &s[..i]
+}
+
 pub fn build_writing_feedback_prompt(content: &str) -> String {
-    let truncated = &content[..content.len().min(4000)];
+    let truncated = truncate_char_safe(content, 4000);
     format!(
         r#"You are a writing coach reviewing a document. Provide constructive feedback in 3-5 bullet points. Focus on clarity, structure, and persuasiveness. Be specific — quote passages that could be improved. If the writing is strong, say so and explain why.
 
@@ -719,7 +769,7 @@ Provide your feedback:"#
 }
 
 pub fn build_title_prompt(content: &str) -> String {
-    let truncated = &content[..content.len().min(2000)];
+    let truncated = truncate_char_safe(content, 2000);
     format!(
         r#"Generate a short document title (max 8 words) for the following content. Return ONLY the title, nothing else.
 
@@ -728,7 +778,7 @@ pub fn build_title_prompt(content: &str) -> String {
 }
 
 pub fn build_categorization_prompt(content: &str, existing_concepts: &[String]) -> String {
-    let truncated = &content[..content.len().min(2000)];
+    let truncated = truncate_char_safe(content, 2000);
     let concepts_list = if existing_concepts.is_empty() {
         "(none yet)".to_string()
     } else {
@@ -830,6 +880,25 @@ mod tests {
     fn llm_error_display_connection() {
         let err = LlmError::Connection("network unreachable".to_string());
         assert_eq!(format!("{}", err), "llm connection: network unreachable");
+    }
+
+    #[test]
+    fn truncate_char_safe_never_splits_multibyte() {
+        // Emoji are 4 bytes each: any cut inside must land on a
+        // boundary. This exact shape panicked the dispatch task in
+        // the live demo (silent client timeout).
+        let s = "😀".repeat(2000);
+        for n in [0, 1, 2, 3, 4, 5, 7, 8, 4000] {
+            let cut = truncate_char_safe(&s, n);
+            assert!(s.starts_with(cut));
+            assert!(cut.len() % 4 == 0, "cut at {} leaked a partial char", n);
+        }
+        // Mixed content: ASCII prefix + multi-byte tail.
+        let mixed = format!("{}{}", "abc".repeat(10), "héllo wörld é".repeat(500));
+        let cut = truncate_char_safe(&mixed, 100);
+        assert!(mixed.starts_with(cut));
+        // Short strings pass through untouched.
+        assert_eq!(truncate_char_safe("short", 100), "short");
     }
 
     #[test]

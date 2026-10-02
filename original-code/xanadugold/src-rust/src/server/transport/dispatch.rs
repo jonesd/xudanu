@@ -251,6 +251,16 @@ pub fn dispatch(
         return dispatch_narration(state, session_id, request);
     }
 
+    // FR-86: the LLM call runs up to 60s — it MUST happen outside
+    // the server state lock (the main dispatch path below holds it
+    // for the whole handler; doing the LLM call there wedged every
+    // other request incl. /health). Routed out early, same as
+    // narration: load context under a short-lived lock, release,
+    // then call the model with owned data.
+    if matches!(request, WireRequest::LlmProposeConnections { .. }) {
+        return dispatch_llm_propose(state, session_id, request);
+    }
+
     // Frozen policy (museum mode): the complete vandalism surface,
     // denied for non-admin sessions in one place. Reads, sessions,
     // and tickets pass; every corpus mutation does not.
@@ -349,6 +359,117 @@ pub fn dispatch(
     }
 
     result
+}
+
+/// FR-86: LLM as reader-critic — load the work + context under a
+/// short-lived server lock, release it, then let the model read for
+/// up to 60s WITHOUT holding the lock (see the routing comment in
+/// `dispatch`). The LLM proposes; the human confirms via the normal
+/// link_create op — no links are created here.
+fn dispatch_llm_propose(
+    state: &SharedState,
+    session_id: crate::server::SessionId,
+    request: WireRequest,
+) -> Result<ResponseValue, crate::server::ServerError> {
+    let work_id = match &request {
+        WireRequest::LlmProposeConnections { work_id } => *work_id,
+        _ => unreachable!(),
+    };
+
+    // Context strategy C, snapshot under one short lock hold:
+    // work text/title, up to 5 connected works' texts, existing
+    // link summaries (dedup), library titles (cross-work targets).
+    let (title, text, far_ends, existing_links, library_titles) =
+        state
+            .server
+            .with_server(|srv| -> Result<_, crate::server::ServerError> {
+                let _ = state.server.bump_operation_atomic();
+                srv.ensure_can_read(session_id, work_id)?;
+
+                let w = srv
+                    .work(work_id)
+                    .map_err(|_| crate::server::ServerError::WorkNotFound(work_id))?;
+                let text = w.current_edition().to_text();
+                let title = srv
+                    .works
+                    .get(&work_id)
+                    .map(|ws| ws.cached_title().to_string())
+                    .unwrap_or_default();
+
+                let mut seen = std::collections::HashSet::new();
+                seen.insert(work_id);
+                let mut far: Vec<(u64, String, String)> = Vec::new();
+                if let Some(link_ids) = srv.work_to_links_for_ids(work_id) {
+                    for lid in link_ids {
+                        if let Some((origin, dest)) = srv.link_state_for(lid) {
+                            for wid in [origin, dest.unwrap_or(0)] {
+                                if wid != 0 && seen.insert(wid) && far.len() < 5 {
+                                    if let (Ok(fw), Some(fws)) =
+                                        (srv.work(wid), srv.works.get(&wid))
+                                    {
+                                        far.push((
+                                            wid,
+                                            fws.cached_title().to_string(),
+                                            fw.current_edition().to_text(),
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                let existing_links = srv.llm_link_summaries(work_id);
+                let library_titles = srv.llm_library_titles(work_id);
+                Ok((title, text, far, existing_links, library_titles))
+            })?;
+
+    let llm = match crate::server::ollama::get_client() {
+        Some(c) => c,
+        None => {
+            return Err(crate::server::ServerError::InvalidArgument(
+                "LLM not configured — set OLLAMA_BASE_URL, OPENROUTER_API_KEY, or GITHUB_TOKEN"
+                    .into(),
+            ))
+        }
+    };
+
+    let proposals = tokio::task::block_in_place(|| {
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(async {
+            let _permit = llm_semaphore().acquire().await.map_err(|e| e.to_string())?;
+            // 180s: larger local models need 30-60s just to load on
+            // modest hardware before generating; a shorter cap
+            // cancels the request mid-load and the model never
+            // warms (observed with llama3.1 on 8GB laptops).
+            tokio::time::timeout(
+                std::time::Duration::from_secs(180),
+                llm.propose_connections(&text, &title, &far_ends, &existing_links, &library_titles),
+            )
+            .await
+            .map_err(|_| crate::server::ServerError::Internal("LLM timeout (180s)".into()))?
+            .map_err(|e| crate::server::ServerError::Internal(format!("LLM: {}", e)))
+        })
+    })?;
+
+    let json_proposals: Vec<serde_json::Value> = proposals
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "excerpt": p.excerpt,
+                "start": p.start,
+                "end": p.end,
+                "type_id": p.type_id,
+                "reasoning": p.reasoning,
+                "far_end_title": p.far_end_title,
+            })
+        })
+        .collect();
+
+    Ok(ResponseValue::Json(serde_json::json!({
+        "proposals": json_proposals,
+        "model": llm.model_name(),
+        "backend": llm.backend_label(),
+    })))
 }
 
 fn dispatch_narration(
@@ -1165,106 +1286,10 @@ fn dispatch_inner(
             srv.content_set_record(session_id, &name, &version)?;
             Ok(ResponseValue::ContentSetRecordResult {})
         }
-        WireRequest::LlmProposeConnections { work_id } => {
-            // FR-86: LLM as reader-critic. The server reads the
-            // work + its connected works, calls the LLM, and
-            // returns structured proposals. No links created — the
-            // human confirms via the normal link_create op.
-            srv.ensure_can_read(session_id, work_id)?;
-
-            let Some(llm) = crate::server::ollama::get_client() else {
-                return Err(crate::server::ServerError::InvalidArgument(
-                    "LLM not configured — set OLLAMA_BASE_URL, OPENROUTER_API_KEY, or GITHUB_TOKEN"
-                        .into(),
-                ));
-            };
-
-            // Load the work's text + far-end works in one pass
-            let (title, text, far_ends) = {
-                // Public API: srv.work() for &Work (text),
-                // srv.works for WorkState (cached_title)
-                let w = srv
-                    .work(work_id)
-                    .map_err(|_| crate::server::ServerError::WorkNotFound(work_id))?;
-                let text = w.current_edition().to_text();
-                let title = srv
-                    .works
-                    .get(&work_id)
-                    .map(|ws| ws.cached_title().to_string())
-                    .unwrap_or_default();
-
-                let mut seen = std::collections::HashSet::new();
-                seen.insert(work_id);
-                let mut far: Vec<(u64, String, String)> = Vec::new();
-                if let Some(link_ids) = srv.work_to_links_for_ids(work_id) {
-                    for lid in link_ids {
-                        if let Some((origin, dest)) = srv.link_state_for(lid) {
-                            for wid in [origin, dest.unwrap_or(0)] {
-                                if wid != 0 && seen.insert(wid) && far.len() < 5 {
-                                    if let (Ok(fw), Some(fws)) =
-                                        (srv.work(wid), srv.works.get(&wid))
-                                    {
-                                        far.push((
-                                            wid,
-                                            fws.cached_title().to_string(),
-                                            fw.current_edition().to_text(),
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                (title, text, far)
-            };
-
-            // Context strategy C (the experiments' winner): existing
-            // link summaries prevent duplicates; library titles give
-            // the model cross-work targets it can name.
-            let existing_links = srv.llm_link_summaries(work_id);
-            let library_titles = srv.llm_library_titles(work_id);
-
-            // Bridge async LLM call from sync dispatch (same pattern
-            // as dispatch_narration)
-            let proposals = tokio::task::block_in_place(|| {
-                let rt = tokio::runtime::Handle::current();
-                rt.block_on(async {
-                    tokio::time::timeout(
-                        std::time::Duration::from_secs(60),
-                        llm.propose_connections(
-                            &text,
-                            &title,
-                            &far_ends,
-                            &existing_links,
-                            &library_titles,
-                        ),
-                    )
-                    .await
-                    .map_err(|_| crate::server::ServerError::Internal("LLM timeout (60s)".into()))?
-                    .map_err(|e| crate::server::ServerError::Internal(format!("LLM: {}", e)))
-                })
-            })?;
-
-            let json_proposals: Vec<serde_json::Value> = proposals
-                .iter()
-                .map(|p| {
-                    serde_json::json!({
-                        "excerpt": p.excerpt,
-                        "start": p.start,
-                        "end": p.end,
-                        "type_id": p.type_id,
-                        "reasoning": p.reasoning,
-                        "far_end_title": p.far_end_title,
-                    })
-                })
-                .collect();
-
-            Ok(ResponseValue::Json(serde_json::json!({
-                "proposals": json_proposals,
-                "model": llm.model_name(),
-                "backend": llm.backend_label(),
-            })))
-        }
+        // LlmProposeConnections is routed to dispatch_llm_propose
+        // BEFORE the main dispatch (see dispatch) — running it here
+        // held the server state lock through a 60s LLM call and
+        // wedged the whole server incl. /health.
         WireRequest::LatticeShadowEnroll { work_id } => {
             srv.ensure_admin(session_id)?;
             srv.enroll_lattice_shadow(session_id, work_id)?;
