@@ -260,6 +260,32 @@ impl WalLog {
         self.append("work_revise", args)
     }
 
+    /// Permission durability: read/edit/history club assignments.
+    /// A crash reverting these flips visibility — a work made
+    /// private would reappear public, or vice versa. Upsert of the
+    /// full club set for the work (order-tolerant, idempotent).
+    pub fn append_work_set_clubs(
+        &mut self,
+        work_id: BeId,
+        read_club: Option<BeId>,
+        edit_club: Option<BeId>,
+        history_club: Option<BeId>,
+    ) -> Result<u64, WalError> {
+        let mut args = serde_json::json!({
+            "work_id": work_id,
+        });
+        if let Some(c) = read_club {
+            args["read_club"] = serde_json::json!(c);
+        }
+        if let Some(c) = edit_club {
+            args["edit_club"] = serde_json::json!(c);
+        }
+        if let Some(c) = history_club {
+            args["history_club"] = serde_json::json!(c);
+        }
+        self.append("work_set_clubs", args)
+    }
+
     /// Reputation is content (Miller 1994): endorsements ride the WAL.
     pub fn append_link_endorse(&mut self, link_id: BeId, club_id: BeId) -> Result<u64, WalError> {
         self.append(
@@ -833,6 +859,17 @@ impl WalLog {
                             .cloned()
                             .unwrap_or(serde_json::Value::Null);
                         server.wal_replay_work_revise(work_id, revision, snap);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "work_set_clubs" => {
+                    if let Some(work_id) = entry.args.get("work_id").and_then(|v| v.as_u64()) {
+                        let read = entry.args.get("read_club").and_then(|v| v.as_u64());
+                        let edit = entry.args.get("edit_club").and_then(|v| v.as_u64());
+                        let history = entry.args.get("history_club").and_then(|v| v.as_u64());
+                        server.wal_replay_work_set_clubs(work_id, read, edit, history);
                         true
                     } else {
                         false

@@ -22,8 +22,10 @@ wedge — see the LLM dispatch lock fix, same day).
 | Work creation | `work_create` | id + owner + title + text; fixed-id grand-map registration |
 | Revisions | `work_revise` | full WorkSnapshot per revision; revision-numbered replay is idempotent. Covers the whole funnel: work_revise, element_insert/remove_transclusion, set_text, save-and-release |
 | Titles / visibility | `work_set_title`, `work_publish` | owner-private until publish replay |
+| Permissions | `work_set_clubs` | read/edit/history club upsert at every permission mutation — a crash can no longer flip visibility either direction |
+| Duplication | rides `work_create` | work_duplicate bypasses create_work (own insert) — the copy journals at its insert; cloned links ride create_link |
 | Archive | `work_archive`, `work_unarchive` | symmetric — final state wins |
-| Text edits | `text_edit` | pre-existing (CRDT path) |
+| Text edits | — | CORRECTION (storage-mapping pass): `text_edit` WAL op exists but is dead code — never called. CRDT live-edit deltas (`crdt_apply_text_delta`) ride async checkpoints only; committed edits funnel through revise_work → `work_revise`. See accepted gaps |
 | Links | `create_link` (+ `author_club` seed), `link_add_end`, `link_set_types`, `link_set_responds_to`, `link_delete` | deletions replay (no resurrection) |
 | Link end attachments | `link_end_add_attachment`, `link_end_remove_attachment` | pre-existing (append + replay) — earlier draft of this doc wrongly listed as a gap |
 | Reputation | `link_endorse`, `link_unendorse` | author auto-seed rides create_link |
@@ -41,10 +43,7 @@ the WAL.
 
 ## Remaining gaps (accepted, with reasons)
 
-1. **CRDT hot-path edits between checkpoints** — the collaborative
-   editor's ops ride their own sync; a crash can lose the last
-   in-flight keystrokes (not yet committed via revise). Accepted:
-   collaboration protocol resyncs from peers/session buffers.
+1. **CRDT hot-path deltas between checkpoints** — `crdt_apply_text_delta` appends nothing (the `text_edit` WAL op is dead code, removed from the covered table). The async checkpoint fires per mutation dispatch, so the window is the in-flight checkpoint — seconds at most. Closing it properly wants group-commit (batch fsync every ~10ms), not per-keystroke fsync. Accepted for now; the collaboration protocol also resyncs from session buffers after reconnect.
 2. **Federation runtime-learned state** (remote origins, peer
    liveness) — re-converges from peers after reconnect; journaling
    would churn the WAL on every sync round.

@@ -9902,6 +9902,18 @@ async fn persistence_work_create_survives_unclean_drop() {
     // A revision after create (the element-op / set-text funnel).
     srv.work_set_text(session, w1, "the REVISED titanium plan body")
         .unwrap();
+    // Permission change on w2 (read club to the admin club = private;
+    // w1 keeps its publish-replay assertion).
+    let admin_club = srv
+        .club_names_list()
+        .iter()
+        .find(|(n, _)| &**n == "admin")
+        .map(|(_, id)| *id)
+        .unwrap();
+    srv.work_set_read_club(session, w2, Some(admin_club))
+        .unwrap();
+    // A duplicate (bypasses create_work — own insert path).
+    let dup = srv.work_duplicate(session, w1, None).unwrap();
 
     // NO checkpoint — simulate the hard kill.
     drop(srv);
@@ -9958,6 +9970,20 @@ async fn persistence_work_create_survives_unclean_drop() {
         "the REVISED titanium plan body",
         "post-create revision must replay (element-op funnel)"
     );
+    assert_eq!(
+        srv2.work(w2).unwrap().read_club(),
+        Some(admin_club),
+        "permission change must replay (crash must not flip visibility)"
+    );
+    assert!(
+        srv2.work(dup).is_ok(),
+        "duplicated work must survive unclean drop"
+    );
+    assert_eq!(
+        srv2.work(dup).unwrap().current_edition().to_text(),
+        "the REVISED titanium plan body",
+        "duplicate content must replay"
+    );
 
     // Idempotency: checkpoint the replayed state, restore again —
     // exactly one copy, no duplicate-creation artifacts.
@@ -9966,7 +9992,7 @@ async fn persistence_work_create_survives_unclean_drop() {
     let srv3 = server_restore(&dir);
     assert_eq!(
         srv3.work_count(),
-        2,
+        3,
         "WAL replay must be idempotent across checkpoint cycles"
     );
 }

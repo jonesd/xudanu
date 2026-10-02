@@ -4727,7 +4727,15 @@ impl Server {
         self.search_index_mark_dirty(be_id);
         self.work_list_cache_mark_dirty();
         self.span_key_map_init(be_id);
-
+        // WAL BEFORE ack (duplicates bypass create_work — the copy
+        // journals here; its link clones ride create_link's WAL).
+        {
+            let text = self.works[&be_id].work.edition().to_text();
+            let title = self.works[&be_id].cached_title.clone();
+            if let Err(e) = self.wal.append_work_create(be_id, owner, &title, &text) {
+                tracing::warn!("[wal] work_create (duplicate) append failed: {}", e);
+            }
+        }
         // Clone the links. Two passes: first map old link ids to new
         // ones by cloning through create_link (which stamps tumblers
         // and runs enforcement), then remap link-attachments to the
@@ -5685,6 +5693,7 @@ impl Server {
         }
         ws.work.set_read_club(club_id);
         ws.mark_dirty();
+        self.wal_journal_work_clubs(work_be_id);
         self.auto_checkpoint();
         Ok(())
     }
@@ -5707,6 +5716,7 @@ impl Server {
         if let Some(ws) = self.works.get_mut(&work_be_id) {
             ws.work.set_edit_club(club_id);
             ws.mark_dirty();
+            self.wal_journal_work_clubs(work_be_id);
         }
     }
 
@@ -5725,6 +5735,7 @@ impl Server {
             .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         ws.work.set_history_club(club_id);
+        self.wal_journal_work_clubs(work_be_id);
         self.auto_checkpoint();
         Ok(())
     }
@@ -11951,6 +11962,35 @@ impl Server {
             ws.mark_dirty();
             self.search_index_mark_dirty(work_id);
             self.work_list_cache_mark_dirty();
+        }
+    }
+
+    /// Journal the work's full permission set (read/edit/history
+    /// clubs). Called at each permission mutation.
+    pub(crate) fn wal_journal_work_clubs(&mut self, work_id: BeId) {
+        let Some(ws) = self.works.get(&work_id) else {
+            return;
+        };
+        let read = ws.work.read_club();
+        let edit = ws.work.edit_club();
+        let history = ws.work.history_club();
+        if let Err(e) = self.wal.append_work_set_clubs(work_id, read, edit, history) {
+            tracing::warn!("[wal] work_set_clubs append failed: {}", e);
+        }
+    }
+
+    pub(crate) fn wal_replay_work_set_clubs(
+        &mut self,
+        work_id: BeId,
+        read_club: Option<BeId>,
+        edit_club: Option<BeId>,
+        history_club: Option<BeId>,
+    ) {
+        if let Some(ws) = self.works.get_mut(&work_id) {
+            ws.work.set_read_club(read_club);
+            ws.work.set_edit_club(edit_club);
+            ws.work.set_history_club(history_club);
+            ws.mark_dirty();
         }
     }
 
