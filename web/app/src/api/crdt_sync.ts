@@ -478,6 +478,9 @@ export interface TransclusionMarker {
    * FELink:Descriptor pattern) — the human-readable label, used
    * when no link-description annotation exists. */
   descriptorExcerpt?: string;
+  /** Links sharing this exact span — the ×N chip above the margin
+   * bar; set on the hover clone so the tooltip can explain it. */
+  sameSpanCount?: number;
   /** FR-40: how many ends the link has (3+ = multi-ended; the
    * in-document view only shows the LOCAL end — this count tells
    * the reader the connection reaches further). */

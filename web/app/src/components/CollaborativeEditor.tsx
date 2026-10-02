@@ -133,6 +133,8 @@ interface MarkerHitZone {
   height: number;
   densityCluster?: number;
   densityCount?: number;
+  /** Links sharing this exact span (the ×N chip above the bar). */
+  sameSpanCount?: number;
   stackMarkers?: TransclusionMarker[];
   hoverOnly?: boolean;
   band?: boolean;
@@ -719,14 +721,31 @@ function drawOverlay(
     if (isIncoming) {
       const rightX = rect.width - 3 - effectiveLane * 4;
       ctx.fillRect(rightX, firstTop, 3, height);
-      // Rule 1: same-span count badge (drawn only on the first marker)
+      // Rule 1: same-span count badge (drawn only on the first
+      // marker) — a real chip, not a bare glyph: users read the old
+      // 10px amber "×2" as a stray cross. Dark plate + amber border
+      // + centered text, sitting clear of the bar.
       const sameSpanCluster = sameSpan.get(`${drawStart}..${drawEnd}`);
       if (sameSpanCluster && sameSpanCluster.indices[0] === mi) {
+        const label = `×${sameSpanCluster.count}`;
         ctx.save();
         ctx.font = "bold 10px 'JetBrains Mono', monospace";
+        const tw = ctx.measureText(label).width;
+        const chipW = tw + 8;
+        const chipH = 13;
+        const chipX = Math.min(rightX - chipW + 3, rect.width - chipW);
+        const chipY = firstTop - chipH - 2;
+        ctx.fillStyle = "rgba(13, 17, 23, 0.92)";
+        ctx.strokeStyle = "#d29922";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(chipX, chipY, chipW, chipH, 3);
+        ctx.fill();
+        ctx.stroke();
         ctx.fillStyle = "#d29922";
         ctx.textAlign = "center";
-        ctx.fillText(`×${sameSpanCluster.count}`, rightX + 1.5, firstTop - 3);
+        ctx.textBaseline = "middle";
+        ctx.fillText(label, chipX + chipW / 2, chipY + chipH / 2 + 0.5);
         ctx.restore();
       }
       if (marker.endSetTotal != null && marker.endSetTotal > 1) {
@@ -734,10 +753,13 @@ function drawOverlay(
       }
       hitZones.push({
         marker,
-        x: Math.max(0, rightX - 9),
-        y: firstTop,
-        width: Math.max(barWidth, 12),
-        height,
+        sameSpanCount: sameSpanCluster?.count,
+        // Generous plate: the 3px bar itself is too finicky to
+        // hover — 20px wide, 2px vertical padding.
+        x: Math.max(0, rightX - 17),
+        y: firstTop - 2,
+        width: Math.max(barWidth, 20),
+        height: height + 4,
       });
     } else {
       const leftX = effectiveLane * 4;
@@ -764,10 +786,10 @@ function drawOverlay(
 
       hitZones.push({
         marker,
-        x: leftX,
-        y: firstTop,
-        width: Math.max(barWidth, 12),
-        height,
+        x: Math.max(0, leftX - 6),
+        y: firstTop - 2,
+        width: Math.max(barWidth, 20),
+        height: height + 4,
       });
     }
     ctx.globalAlpha = 1;
@@ -1857,7 +1879,9 @@ export function CollaborativeEditor({
       if (pinnedMarker) return; // pinned: no reposition, no hide
       const m = (hit.densityCluster != null && hit.densityCount != null)
         ? { ...hit.marker, otherWorkTitle: `${hit.densityCount} links in this region` }
-        : hit.marker;
+        : hit.sameSpanCount != null && hit.sameSpanCount > 1
+          ? { ...hit.marker, sameSpanCount: hit.sameSpanCount }
+          : hit.marker;
       clearHoverTimer();
       // Capture the rect BEFORE the timer: e.currentTarget is null
       // by the time the 300ms callback fires (event cleanup), so
@@ -2811,6 +2835,11 @@ export function CollaborativeEditor({
                     ? `Compound — transcluded from`
                     : hoveredMarker.direction === "outgoing" ? "Transcluded to" : "Transcluded from"}
               </div>
+              {hoveredMarker.sameSpanCount != null && hoveredMarker.sameSpanCount > 1 && (
+                <div style={{ fontSize: 11, color: "#d29922", marginTop: 2 }}>
+                  ×{hoveredMarker.sameSpanCount} links share this passage — each has its own bar
+                </div>
+              )}
               {hoveredMarker.endSetTotal != null && hoveredMarker.endSetTotal > 1 && (
                 <div className="marker-tooltip-endset" style={{ fontSize: 11, color: "#7ee787", marginTop: 2 }}>
                   {"\u25E6"} gathered passage {hoveredMarker.endSetIndex ?? "?"} of {hoveredMarker.endSetTotal}
