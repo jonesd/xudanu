@@ -2003,6 +2003,7 @@ impl Server {
             }));
             self.dirty_clubs.insert(admin_club);
         }
+        self.wal_journal_club(admin_club);
         tracing::info!(
             event = "SECURITY:admin_passphrase_set",
             "admin passphrase credential installed"
@@ -5320,6 +5321,23 @@ impl Server {
             &updated_edition,
             Self::current_timestamp_secs(),
         );
+        // WAL BEFORE ack: every revision path (work_revise, element
+        // ops, set_text, save-and-release) funnels here — the whole
+        // edition journals so a crash can't silently revert content.
+        // The revision number makes replay idempotent against newer
+        // state.
+        {
+            let snap =
+                crate::edition::persistent::WorkSnapshot::from_work(&self.works[&work_be_id].work);
+            match serde_json::to_value(&snap) {
+                Ok(v) => {
+                    if let Err(e) = self.wal.append_work_revise(work_be_id, revision, v) {
+                        tracing::warn!("[wal] work_revise append failed: {}", e);
+                    }
+                }
+                Err(e) => tracing::warn!("[wal] work snapshot serialize failed: {}", e),
+            }
+        }
         self.auto_checkpoint();
         // FR-80: revision detectors fire at the single commit choke
         // point — every path (work_revise, work_save_and_release,
@@ -7978,6 +7996,9 @@ impl Server {
             .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         ws.work.unarchive(actor, ts);
+        if let Err(e) = self.wal.append_work_unarchive(work_be_id) {
+            tracing::warn!("[wal] work_unarchive append failed: {}", e);
+        }
         self.auto_checkpoint();
         Ok(())
     }
@@ -10301,6 +10322,7 @@ impl Server {
         let club = self.clubs.get_mut(&club_id).unwrap();
         club.set_region_prefix(Some(prefix.clone()));
         self.dirty_clubs.insert(club_id);
+        self.wal_journal_club(club_id);
         Ok(prefix)
     }
 
@@ -10406,6 +10428,7 @@ impl Server {
         let club = self.clubs.get_mut(&club_id).unwrap();
         club.set_region_prefix(Some(prefix.clone()));
         self.dirty_clubs.insert(club_id);
+        self.wal_journal_club(club_id);
         Ok(prefix)
     }
 
@@ -11993,6 +12016,45 @@ impl Server {
         }
     }
 
+    pub(crate) fn wal_replay_work_unarchive(&mut self, work_id: BeId) {
+        if let Some(ws) = self.works.get_mut(&work_id) {
+            let ts = Self::current_timestamp_secs();
+            ws.work.unarchive(0, ts);
+        }
+    }
+
+    /// WAL replay: adopt a revision newer than the live one. The
+    /// snapshot rebuilds the Work wholesale (same swap as the lazy
+    /// thaw path) — identity fields ride the snapshot.
+    pub(crate) fn wal_replay_work_revise(
+        &mut self,
+        work_id: BeId,
+        revision: u64,
+        snap: serde_json::Value,
+    ) {
+        let Some(ws) = self.works.get(&work_id) else {
+            return;
+        };
+        let cur_rev = ws.work.revision_count() as u64;
+        if cur_rev >= revision {
+            return; // newer state already present (checkpoint raced)
+        }
+        let Ok(snap) = serde_json::from_value::<crate::edition::persistent::WorkSnapshot>(snap)
+        else {
+            tracing::warn!(work_id, "[wal] work_revise snapshot unreadable — skipping");
+            return;
+        };
+        let new_work = snap
+            .to_work(crate::persist::FlockId::new(work_id, 0), None)
+            .work()
+            .clone();
+        if let Some(ws) = self.works.get_mut(&work_id) {
+            ws.work = new_work;
+        }
+        self.search_index_mark_dirty(work_id);
+        self.work_list_cache_mark_dirty();
+    }
+
     pub(crate) fn wal_replay_link_endorse(&mut self, link_id: BeId, club_id: BeId) {
         if let Some(ls) = self.links.get_mut(&link_id) {
             if !ls.endorsements.iter().any(|e| e.club_id == club_id) {
@@ -12013,6 +12075,110 @@ impl Server {
         if let Some(ls) = self.links.get_mut(&link_id) {
             ls.endorsements.retain(|e| e.club_id != club_id);
         }
+    }
+
+    /// Journal a club's complete state to the WAL (identity
+    /// durability). Called at every club mutation — upsert
+    /// semantics make replays idempotent and order-tolerant.
+    pub(crate) fn wal_journal_club(&mut self, club_id: BeId) {
+        let Some(club) = self.clubs.get(&club_id) else {
+            return;
+        };
+        let snap = serde_json::json!({
+            "be_id": club_id,
+            "name": club.name().map(|s| s.to_string()),
+            "display_name": club.display_name().map(|s| s.to_string()),
+            "is_personal": club.is_personal(),
+            "credential": club.credential(),
+            "encrypted_signing_key": club.encrypted_signing_key(),
+            "email": club.email().map(|s| s.to_string()),
+            "verified": club.is_verified(),
+            "default_read_club": club.default_read_club(),
+            "default_edit_club": club.default_edit_club(),
+            "signature_club": club.signature_club(),
+            "region_prefix": club.region_prefix().map(|p| p.to_vec()),
+            "members": club.members().iter().copied().collect::<Vec<BeId>>(),
+            "sponsored_works": club.sponsored_works().iter().copied().collect::<Vec<BeId>>(),
+        });
+        if let Err(e) = self.wal.append_club_upsert(snap) {
+            tracing::warn!("[wal] club_upsert append failed: {}", e);
+        }
+    }
+
+    pub(crate) fn wal_replay_club_upsert(&mut self, args: &serde_json::Value) {
+        let Some(be_id) = args.get("be_id").and_then(|v| v.as_u64()) else {
+            return;
+        };
+        let name = args.get("name").and_then(|v| v.as_str());
+        let description =
+            Edition::from_text(&format!("personal club: {}", name.unwrap_or("unnamed")));
+        let mut club = Club::new_with_owner(be_id, Some(be_id), description);
+        club.set_signature_club(args.get("signature_club").and_then(|v| v.as_u64()));
+        club.set_default_read_club(args.get("default_read_club").and_then(|v| v.as_u64()));
+        club.set_default_edit_club(args.get("default_edit_club").and_then(|v| v.as_u64()));
+        if let Some(name) = name {
+            club.set_name(name.to_string());
+            // Maintain the name index: drop any older mapping that
+            // pointed at this club, then insert the current one.
+            let stale: Vec<String> = self
+                .club_names
+                .iter()
+                .filter(|(_, id)| **id == be_id)
+                .map(|(n, _)| n.clone())
+                .collect();
+            for old in stale {
+                self.club_names.remove(&old);
+            }
+            self.club_names.insert(name.to_string(), be_id);
+        }
+        club.set_is_personal(
+            args.get("is_personal")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+        );
+        club.set_display_name(
+            args.get("display_name")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+        );
+        let credential: Option<crate::server::club::Credential> = args
+            .get("credential")
+            .filter(|v| !v.is_null())
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        club.set_credential(credential);
+        let enc_key: Option<crate::crypto::club_keys::EncryptedSigningKey> = args
+            .get("encrypted_signing_key")
+            .filter(|v| !v.is_null())
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        club.set_encrypted_signing_key(enc_key);
+        club.set_email(
+            args.get("email")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+        );
+        club.set_verified(
+            args.get("verified")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+        );
+        let region_prefix: Option<Vec<u64>> = args
+            .get("region_prefix")
+            .filter(|v| !v.is_null())
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        club.set_region_prefix(region_prefix);
+        if let Some(members) = args.get("members").and_then(|v| v.as_array()) {
+            for m in members.iter().filter_map(|v| v.as_u64()) {
+                club.add_member(m);
+            }
+        }
+        if let Some(sponsored) = args.get("sponsored_works").and_then(|v| v.as_array()) {
+            for w in sponsored.iter().filter_map(|v| v.as_u64()) {
+                club.add_sponsored_work(w);
+            }
+        }
+        self.clubs.insert(be_id, club);
+        self.dirty_clubs.insert(be_id);
+        self.personal_club_count = self.clubs.values().filter(|c| c.is_personal()).count();
     }
 
     pub fn set_connection_pin(
@@ -24541,10 +24707,39 @@ impl Server {
             self.network_enabled = true;
         }
         self.federation = crate::server::federation::FederationState::new(config);
+        self.wal_journal_federation();
     }
 
     pub fn federation_register_peer_key(&mut self, verifying_key_hex: String) {
         self.federation.register_peer_key(verifying_key_hex);
+        self.wal_journal_federation();
+    }
+
+    /// Journal the federation snapshot to the WAL. Called at every
+    /// operator-facing federation mutation.
+    pub(crate) fn wal_journal_federation(&mut self) {
+        let snap = self.federation.to_snapshot();
+        match serde_json::to_value(&snap) {
+            Ok(v) => {
+                if let Err(e) = self.wal.append_federation_state(v) {
+                    tracing::warn!("[wal] federation_state append failed: {}", e);
+                }
+            }
+            Err(e) => tracing::warn!("[wal] federation snapshot serialize failed: {}", e),
+        }
+    }
+
+    pub(crate) fn wal_replay_federation_state(&mut self, args: &serde_json::Value) {
+        match serde_json::from_value::<crate::server::federation::FederationSnapshot>(args.clone())
+        {
+            Ok(snap) => {
+                self.federation = crate::server::federation::FederationState::from_snapshot(&snap);
+                if self.federation.is_enabled() {
+                    self.network_enabled = true;
+                }
+            }
+            Err(e) => tracing::warn!("[wal] federation_state replay failed: {}", e),
+        }
     }
 
     pub fn federation_mark_peer_connected(&mut self, address: &str, server_id: String) {
@@ -25432,6 +25627,8 @@ impl Server {
         let tag = self.federation.membership_mut().next_tag(&server_id);
         self.federation.membership_mut().add_member(entry, tag);
         self.federation.membership_mut().exit_bootstrap();
+        // Genesis membership is operator intent — journal it.
+        self.wal_journal_federation();
     }
 
     pub fn membership_self_entry(&self) -> Option<crate::server::federation::MembershipEntry> {
@@ -25578,9 +25775,14 @@ impl Server {
             );
             return false;
         }
-        self.federation
+        let endorsed = self
+            .federation
             .membership_mut()
-            .endorse_member(server_id, proof)
+            .endorse_member(server_id, proof);
+        if endorsed {
+            self.wal_journal_federation();
+        }
+        endorsed
     }
 
     fn membership_verify_entry_endorsements(
@@ -25632,11 +25834,19 @@ impl Server {
 
     pub fn membership_leave(&mut self) -> bool {
         let server_id = self.federation_server_id();
-        self.federation.membership_mut().remove_member(&server_id)
+        let removed = self.federation.membership_mut().remove_member(&server_id);
+        if removed {
+            self.wal_journal_federation();
+        }
+        removed
     }
 
     pub fn membership_remove(&mut self, server_id: &str) -> bool {
-        self.federation.membership_mut().remove_member(server_id)
+        let removed = self.federation.membership_mut().remove_member(server_id);
+        if removed {
+            self.wal_journal_federation();
+        }
+        removed
     }
 
     pub fn membership_merge(&mut self, other: &crate::server::federation::MembershipState) {

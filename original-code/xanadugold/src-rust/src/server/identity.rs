@@ -111,6 +111,7 @@ impl Server {
                 session.set_club_signing_key(Some(signing_key));
             }
         }
+        self.wal_journal_club(club_id);
 
         Ok(())
     }
@@ -141,6 +142,7 @@ impl Server {
         club.set_credential(None);
         club.set_encrypted_signing_key(None);
         self.dirty_clubs.insert(club_id);
+        self.wal_journal_club(club_id);
         security_info!(
             club_id = ?club_id,
             session_id = session_id.as_u64(),
@@ -173,6 +175,7 @@ impl Server {
             .ok_or(ServerError::ClubNotFound(club_id))?;
         club.set_verified(true);
         self.dirty_clubs.insert(club_id);
+        self.wal_journal_club(club_id);
         Ok(())
     }
 
@@ -197,6 +200,7 @@ impl Server {
             .ok_or(ServerError::ClubNotFound(club_id))?;
         club.set_email(email);
         self.dirty_clubs.insert(club_id);
+        self.wal_journal_club(club_id);
         Ok(())
     }
 
@@ -281,6 +285,9 @@ impl Server {
         self.dirty_clubs.insert(be_id);
         self.club_names.insert(display_name, be_id);
         self.personal_club_count += 1;
+        // WAL BEFORE ack: a crash after signup must not lose the
+        // account (its works would replay orphaned).
+        self.wal_journal_club(be_id);
 
         let session = self
             .sessions
@@ -327,6 +334,7 @@ impl Server {
         self.dirty_clubs.insert(be_id);
         self.club_names.insert(name, be_id);
         self.personal_club_count += 1;
+        self.wal_journal_club(be_id);
 
         let session = self
             .sessions
@@ -420,6 +428,7 @@ impl Server {
             .ok_or(ServerError::ClubNotFound(club_id))?;
         club.add_member(member_id);
         self.dirty_clubs.insert(club_id);
+        self.wal_journal_club(club_id);
         self.refresh_all_session_authority();
         Ok(())
     }
@@ -445,6 +454,7 @@ impl Server {
             .ok_or(ServerError::ClubNotFound(club_id))?;
         club.remove_member(member_id);
         self.dirty_clubs.insert(club_id);
+        self.wal_journal_club(club_id);
         self.refresh_all_session_authority();
         Ok(())
     }

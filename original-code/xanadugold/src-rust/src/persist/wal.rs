@@ -233,6 +233,33 @@ impl WalLog {
         )
     }
 
+    /// Un-archive symmetry: crash must not re-bury a restored work.
+    pub fn append_work_unarchive(&mut self, work_id: BeId) -> Result<u64, WalError> {
+        self.append(
+            "work_unarchive",
+            serde_json::json!({
+                "work_id": work_id,
+            }),
+        )
+    }
+
+    /// Edition durability: the complete WorkSnapshot after a revision
+    /// (element inserts, transclusion removals, whole-edition
+    /// replaces). Revision number makes replay idempotent.
+    pub fn append_work_revise(
+        &mut self,
+        work_id: BeId,
+        revision: u64,
+        snap: serde_json::Value,
+    ) -> Result<u64, WalError> {
+        let mut args = serde_json::json!({
+            "work_id": work_id,
+            "revision": revision,
+        });
+        args["work"] = snap;
+        self.append("work_revise", args)
+    }
+
     /// Reputation is content (Miller 1994): endorsements ride the WAL.
     pub fn append_link_endorse(&mut self, link_id: BeId, club_id: BeId) -> Result<u64, WalError> {
         self.append(
@@ -252,6 +279,23 @@ impl WalLog {
                 "club_id": club_id,
             }),
         )
+    }
+
+    /// Identity durability: the club's complete serializable state at
+    /// the moment of mutation. A crash after signup must not lose
+    /// the account (works created under it would replay orphaned).
+    /// Upsert semantics — replay inserts or overwrites.
+    pub fn append_club_upsert(&mut self, club_json: serde_json::Value) -> Result<u64, WalError> {
+        self.append("club_upsert", club_json)
+    }
+
+    /// Federation durability: the complete FederationSnapshot at the
+    /// moment of mutation (config, peer keys, bootstrap membership,
+    /// governance). Runtime-learned state (remote origins, transient
+    /// peer liveness) re-converges from peers after reconnect — the
+    /// operator-configured parts are what must survive.
+    pub fn append_federation_state(&mut self, snap: serde_json::Value) -> Result<u64, WalError> {
+        self.append("federation_state", snap)
     }
 
     pub fn append_unstar(&mut self, club_id: BeId, work_id: BeId) -> Result<u64, WalError> {
@@ -770,6 +814,30 @@ impl WalLog {
                         false
                     }
                 }
+                "work_unarchive" => {
+                    if let Some(work_id) = entry.args.get("work_id").and_then(|v| v.as_u64()) {
+                        server.wal_replay_work_unarchive(work_id);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "work_revise" => {
+                    if let (Some(work_id), Some(revision)) = (
+                        entry.args.get("work_id").and_then(|v| v.as_u64()),
+                        entry.args.get("revision").and_then(|v| v.as_u64()),
+                    ) {
+                        let snap = entry
+                            .args
+                            .get("work")
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null);
+                        server.wal_replay_work_revise(work_id, revision, snap);
+                        true
+                    } else {
+                        false
+                    }
+                }
                 "link_endorse" => {
                     if let (Some(link_id), Some(club_id)) = (
                         entry.args.get("link_id").and_then(|v| v.as_u64()),
@@ -791,6 +859,14 @@ impl WalLog {
                     } else {
                         false
                     }
+                }
+                "club_upsert" => {
+                    server.wal_replay_club_upsert(&entry.args);
+                    true
+                }
+                "federation_state" => {
+                    server.wal_replay_federation_state(&entry.args);
+                    true
                 }
                 "star" => {
                     if let (Some(club_id), Some(work_id)) = (

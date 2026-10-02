@@ -9759,7 +9759,7 @@ async fn persistence_works_survive_restart() {
     srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
     drop(srv);
 
-    let srv2 = server_restore(&dir);
+    let mut srv2 = server_restore(&dir);
     assert_eq!(srv2.work_count(), 2, "work count should survive restart");
     assert!(
         srv2.work(w1).is_ok(),
@@ -9771,6 +9771,89 @@ async fn persistence_works_survive_restart() {
         "work {} should exist after restart",
         w2
     );
+}
+
+#[tokio::test]
+async fn persistence_club_identity_survives_unclean_drop() {
+    // The account-loss scenario: signup, set a password, create a
+    // work under the new identity — then a hard kill before any
+    // checkpoint. The club must replay (with its credential, so the
+    // password still works) and the work must not be orphaned.
+    let dir = temp_data_dir("wal_club_identity");
+
+    let mut srv = server_init(&dir);
+    srv.enable_wal(&dir).expect("wal must open");
+    srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
+
+    // Signup as a fresh public session.
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+    use xudanu::server::club::Credential;
+    let phc = xudanu::crypto::password::hash_password(b"correct horse battery").unwrap();
+    let club_id = srv
+        .create_personal_club(
+            sid,
+            "titanium-owner".to_string(),
+            Some(Credential::Password { phc_hash: phc }),
+            Some(b"correct horse battery".to_vec()),
+        )
+        .unwrap();
+
+    // A work created under the new identity.
+    let sid2 = srv.connect();
+    let _lock = srv.login(sid2, club_id).unwrap();
+    srv.authenticate_with_pending(
+        sid2,
+        &xudanu::server::lock::LockCredential::Password(b"correct horse battery".to_vec()),
+    )
+    .unwrap();
+    let work = srv
+        .create_work(
+            sid2,
+            xudanu::edition::Edition::from_text("owned by the new identity"),
+        )
+        .unwrap();
+
+    // NO checkpoint — hard kill.
+    drop(srv);
+
+    let mut srv2 = server_restore(&dir);
+    let club_found = srv2
+        .club_names_list()
+        .iter()
+        .any(|(n, id)| *id == club_id && &**n == "titanium-owner");
+    assert!(
+        club_found,
+        "personal club must survive an unclean drop via WAL replay"
+    );
+    // The work's owner is the replayed club — not orphaned.
+    let owner = srv2.work(work).unwrap().owner();
+    assert_eq!(
+        owner,
+        Some(club_id),
+        "work must stay owned by the replayed club"
+    );
+
+    // The credential replays: the password still opens the account.
+    let sid3 = srv2.connect();
+    let lock = srv2.login(sid3, club_id).unwrap();
+    srv2.authenticate_with_pending(
+        sid3,
+        &xudanu::server::lock::LockCredential::Password(b"correct horse battery".to_vec()),
+    )
+    .unwrap();
+    drop(lock);
+
+    // Idempotent across checkpoint cycles.
+    srv2.checkpoint_to_file(&dir.join("server.json")).unwrap();
+    drop(srv2);
+    let srv3 = server_restore(&dir);
+    let still_listed = srv3
+        .club_names_list()
+        .iter()
+        .any(|(n, id)| *id == club_id && &**n == "titanium-owner");
+    assert!(still_listed, "club survives checkpoint cycle exactly once");
+    assert!(srv3.work(work).is_ok());
 }
 
 #[tokio::test]
@@ -9813,14 +9896,17 @@ async fn persistence_work_create_survives_unclean_drop() {
     srv.link_set_responds_to(session, doomed, Some(link))
         .unwrap();
     srv.delete_link(session, doomed).unwrap();
-    let club = srv.link_endorsements(link).unwrap().len();
     srv.link_endorse(session, link).unwrap();
     srv.work_archive(session, w2).unwrap();
+    srv.work_unarchive(session, w2).unwrap();
+    // A revision after create (the element-op / set-text funnel).
+    srv.work_set_text(session, w1, "the REVISED titanium plan body")
+        .unwrap();
 
     // NO checkpoint — simulate the hard kill.
     drop(srv);
 
-    let srv2 = server_restore(&dir);
+    let mut srv2 = server_restore(&dir);
     assert!(
         srv2.work(w1).is_ok(),
         "work {} must survive an unclean drop via WAL replay",
@@ -9862,9 +9948,15 @@ async fn persistence_work_create_survives_unclean_drop() {
         srv2.link_state_for(doomed).is_none(),
         "deleted link must STAY deleted after replay (no resurrection)"
     );
+    // w2 was archived then UNARCHIVED — the final state must win.
     assert!(
-        srv2.work(w2).unwrap().is_archived(),
-        "archived work must stay archived after replay"
+        !srv2.work(w2).unwrap().is_archived(),
+        "unarchive must replay (crash must not re-bury a restored work)"
+    );
+    assert_eq!(
+        srv2.work(w1).unwrap().current_edition().to_text(),
+        "the REVISED titanium plan body",
+        "post-create revision must replay (element-op funnel)"
     );
 
     // Idempotency: checkpoint the replayed state, restore again —
@@ -9912,7 +10004,7 @@ async fn persistence_link_responds_to_survives_restart() {
     srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
     drop(srv);
 
-    let srv2 = server_restore(&dir);
+    let mut srv2 = server_restore(&dir);
     assert_eq!(
         srv2.link_responds_to(response),
         Some(disagreement),
@@ -9950,7 +10042,7 @@ async fn persistence_keypair_identity_survives_restart() {
     srv1.checkpoint_to_file(&dir.join("server.json")).unwrap();
     drop(srv1);
 
-    let srv2 = server_restore(&dir);
+    let mut srv2 = server_restore(&dir);
     let identity2 = srv2.federation_server_id();
     assert_eq!(identity1, identity2, "server identity must survive restart");
 }
@@ -9977,7 +10069,7 @@ async fn persistence_edition_content_survives_restart() {
     srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
     drop(srv);
 
-    let srv2 = server_restore(&dir);
+    let mut srv2 = server_restore(&dir);
     let work = srv2.work(wid).unwrap();
     let text: String = work
         .current_edition()
@@ -10015,7 +10107,7 @@ async fn persistence_blobs_survive_restart() {
     srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
     drop(srv);
 
-    let srv2 = server_restore(&dir);
+    let mut srv2 = server_restore(&dir);
     assert_eq!(srv2.blob_count(), 1, "blob count should survive restart");
     let data = srv2.blob_get(hash_u64).unwrap();
     assert_eq!(data, b"test-blob-data", "blob data should survive restart");
@@ -10034,7 +10126,7 @@ async fn persistence_club_names_survive_restart() {
     srv1.checkpoint_to_file(&dir.join("server.json")).unwrap();
     drop(srv1);
 
-    let srv2 = server_restore(&dir);
+    let mut srv2 = server_restore(&dir);
     let names2: Vec<String> = srv2
         .club_names_list()
         .iter()
@@ -10511,7 +10603,7 @@ fn grabbed_works_released_after_restart() {
     srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
     drop(srv);
 
-    let srv2 = server_restore(&dir);
+    let mut srv2 = server_restore(&dir);
     assert!(
         srv2.work_grabber(wid).unwrap().is_none(),
         "grabbed work should be released after restart — sessions don't survive"
