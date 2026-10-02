@@ -3597,7 +3597,7 @@ export function WorkspaceShell() {
                                     <>
                                       <span
                                         className="ws-conn-type-badge"
-                                        style={{ background: firstColor + "20", color: firstColor, borderColor: firstColor + "60" }}
+                                        style={{ background: firstColor + "20", color: firstColor, borderColor: firstColor + "60", flexShrink: 0 }}
                                       >
                                         {typeNames[0] ?? "link"}
                                       </span>
@@ -3628,9 +3628,22 @@ export function WorkspaceShell() {
                                         border: `1px solid ${firstColor}60`,
                                         color: firstColor,
                                         fontSize: 10,
-                                        padding: "1px 4px",
+                                        padding: "1px 18px 1px 6px",
                                         cursor: "pointer",
                                         borderRadius: 4,
+                                        flexShrink: 0,
+                                        /* The badge sits in a minWidth:0 flex row —
+                                           without these the native select overflows
+                                           its box and paints over the endorsement
+                                           badge / author beside it. */
+                                        appearance: "none",
+                                        WebkitAppearance: "none",
+                                        backgroundImage:
+                                          "linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%)",
+                                        backgroundPosition:
+                                          "calc(100% - 9px) calc(50% - 1px), calc(100% - 5px) calc(50% - 1px)",
+                                        backgroundSize: "4px 4px, 4px 4px",
+                                        backgroundRepeat: "no-repeat",
                                       }}
                                     >
                                       <option value={1}>Comment</option>
@@ -3661,7 +3674,7 @@ export function WorkspaceShell() {
                                 </span>
                               )}
                             </div>
-                            <div style={{ display: "flex", gap: 4 }}>
+                            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                               {(link.endorsements?.length ?? 0) > 0 ? (
                                 <span
                                   className="ws-conn-type-badge"
