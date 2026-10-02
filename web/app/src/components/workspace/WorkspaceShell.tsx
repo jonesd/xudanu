@@ -3565,8 +3565,8 @@ export function WorkspaceShell() {
                           style={{ paddingLeft: 14, borderLeft: `2px solid ${typeColor}60` }}
                         >
                           <div className="ws-conn-title-row">
-                            <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
-                              <span style={{ fontSize: 10, color: "#8b949e" }} title={direction === "→" ? "outgoing" : "incoming (backlink)"}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+                              <span style={{ fontSize: 10, color: "#8b949e", flexShrink: 0 }} title={direction === "→" ? "outgoing" : "incoming (backlink)"}>
                                 {direction}
                               </span>
                               {/* Type display: editable sessions get ONE colored
@@ -3657,7 +3657,7 @@ export function WorkspaceShell() {
                                 );
                               })()}
                               {connExcerpt && (
-                                <span style={{ fontSize: "calc(var(--ws-font, 14px) - 1px)", color: "var(--text-dim, #8b949e)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                                <span style={{ fontSize: "calc(var(--ws-font, 14px) - 1px)", color: "var(--text-dim, #8b949e)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "1 1 0%", minWidth: 0 }}>
                                   &ldquo;{connExcerpt.slice(0, 50)}{connExcerpt.length > 50 ? "…" : ""}&rdquo;
                                 </span>
                               )}
