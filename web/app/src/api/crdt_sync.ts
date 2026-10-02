@@ -547,6 +547,29 @@ export interface WorkListEntry {  work_id: number;
 
 export type WorkKind = "document" | "note" | "person" | "concept" | "collection" | "commentary" | "book" | "web-shadow";
 
+/** FR-86: one LLM-proposed connection. Proposals are NOT links —
+ * the human confirms, edits, or rejects; confirmed proposals become
+ * ordinary links via link_create. */
+export interface LlmConnectionProposal {
+  /** Passage text, verbatim from the work under review. */
+  excerpt: string;
+  /** Span in the work text (server-resolved; re-anchored client-side on confirm). */
+  start: number;
+  end: number;
+  /** Link type (1=Comment, 2=Reference, 3=Disagreement, 4=Quotation, 5=See Also). */
+  type_id: number;
+  /** The model's stated reason — shown on the card. */
+  reasoning: string;
+  /** Target work title, or null for same-document. */
+  far_end_title: string | null;
+}
+
+export interface LlmProposalResult {
+  proposals: LlmConnectionProposal[];
+  model: string;
+  backend: string;
+}
+
 export type SaveState = "idle" | "saving" | "saved" | "error";
 
 export type License = "all-rights-reserved" | "transcopyright" | "cc-by" | "cc-by-sa" | "public-domain";
@@ -1223,6 +1246,7 @@ export class CrdtSyncClient {
     originRef?: { excerpt: string; start: number; end: number },
     destinationRef?: { excerpt: string; start: number; end: number },
     homeDocument?: number,
+    linkTypes?: number[],
   ): Promise<number> {
     const payload: Record<string, unknown> = { origin, destination };
     if (originRef) {
@@ -1249,6 +1273,9 @@ export class CrdtSyncClient {
     }
     if (homeDocument !== undefined && homeDocument !== null) {
       payload.home_document = homeDocument;
+    }
+    if (linkTypes && linkTypes.length > 0) {
+      payload.link_types = linkTypes;
     }
     const resp = await this.sendRequest("link_create", payload);
     return extractValue(resp) as number;
@@ -1970,6 +1997,30 @@ export class CrdtSyncClient {
     };
   }
 
+  /** FR-86: ask the server's LLM (reader-critic) to propose typed
+   * connections for a work. Slow — the model reads the work, its
+   * connected works, and the library catalog; the server cuts off
+   * at 60s so we allow 75s here (vs the default 30s request
+   * timeout). Returns proposals for human confirm/edit/reject; no
+   * links are created. */
+  async llmProposeConnections(workId: number): Promise<LlmProposalResult> {
+    const resp = await this.sendRequest(
+      "llm_propose_connections",
+      { work_id: workId },
+      75_000,
+    );
+    const val = extractValue(resp) as Record<string, unknown>;
+    const raw = (val.proposals as LlmConnectionProposal[]) || [];
+    const proposals = raw.filter(
+      (p) => typeof p.excerpt === "string" && p.excerpt.length > 0 && p.type_id >= 1,
+    );
+    return {
+      proposals,
+      model: (val.model as string) || "unknown",
+      backend: (val.backend as string) || "",
+    };
+  }
+
   async workVersionTimeline(workId: number): Promise<WorkVersionTimeline> {
     const resp = await this.sendRequest("work_version_timeline", { work_id: workId });
     return extractValue(resp) as WorkVersionTimeline;
@@ -2314,7 +2365,7 @@ export class CrdtSyncClient {
 
   private static readonly REQUEST_TIMEOUT_MS = 30000;
 
-  sendRequest(op: string, payload?: object): Promise<unknown> {
+  sendRequest(op: string, payload?: object, timeoutMs?: number): Promise<unknown> {
     const p = new Promise((resolve, reject) => {
       const id = this.nextId();
       const frame: Record<string, unknown> = {
@@ -2333,12 +2384,13 @@ export class CrdtSyncClient {
         return;
       }
 
+      const timeout = timeoutMs ?? CrdtSyncClient.REQUEST_TIMEOUT_MS;
       const timer = setTimeout(() => {
         if (this.pending.has(id)) {
           this.pending.delete(id);
-          reject(new Error(`Request "${op}" timed out after ${CrdtSyncClient.REQUEST_TIMEOUT_MS}ms`));
+          reject(new Error(`Request "${op}" timed out after ${timeout}ms`));
         }
-      }, CrdtSyncClient.REQUEST_TIMEOUT_MS);
+      }, timeout);
 
       this.pending.set(id, (value, isError) => {
         clearTimeout(timer);

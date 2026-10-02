@@ -36,6 +36,17 @@ import {
   linkWeight as chainLinkWeight,
   isUncontested,
 } from "../../argument-structure";
+// FR-86 LLM reader-critic: proposal cards, far-end resolution,
+// confirm-time re-anchoring. The LLM proposes; the human confirms.
+import {
+  toCard,
+  resolveFarEndWork,
+  anchorExcerpt,
+  dedupeProposals,
+  linkTypeName,
+  linkTypeColor,
+  type ProposalCard,
+} from "../../llm-proposals";
 // System-wide font preference: one knob, every surface scales.
 import {
   readUiFontSize,
@@ -2814,6 +2825,114 @@ export function WorkspaceShell() {
               </div>
   ) : null;
 
+  // FR-86 LLM reader-critic: proposals live in panel state — they
+  // are never links until a human confirms one, and confirmed cards
+  // become ordinary link_create calls. Provenance (model id) shows
+  // in the section header; after confirm, the link competes in the
+  // endorsement marketplace like any other.
+  const [llmProps, setLlmProps] = useState<{
+    status: "idle" | "loading" | "ready" | "error";
+    model: string;
+    backend: string;
+    cards: ProposalCard[];
+    error: string | null;
+  }>({ status: "idle", model: "", backend: "", cards: [], error: null });
+
+  const suggestConnections = useCallback(async () => {
+    const client = clientRef.current;
+    if (!client || workBeId == null) return;
+    setLlmProps((s) => ({ ...s, status: "loading", error: null }));
+    try {
+      const result = await client.llmProposeConnections(workBeId);
+      // Belt-and-braces dedupe against links that already exist:
+      // each existing link contributes its excerpt on THIS work and
+      // the far end's title.
+      const titleFor = (wid: number | null | undefined) =>
+        wid == null ? null : (works.find((w) => w.work_id === wid)?.title ?? null);
+      const existing = transclusion.links.flatMap((l) => {
+        const ours = l.origin === workBeId ? l.origin_ref : l.destination === workBeId ? l.destination_ref : null;
+        const farWid = l.origin === workBeId ? l.destination : l.origin;
+        return ours?.excerpt ? [{ excerpt: ours.excerpt, farTitle: titleFor(farWid) }] : [];
+      });
+      const cards = dedupeProposals(
+        result.proposals.map(toCard),
+        existing,
+      );
+      setLlmProps({
+        status: "ready",
+        model: result.model,
+        backend: result.backend,
+        cards,
+        error: null,
+      });
+    } catch (e) {
+      setLlmProps((s) => ({
+        ...s,
+        status: "error",
+        error: e instanceof Error ? e.message : String(e),
+      }));
+    }
+  }, [clientRef, workBeId, works, transclusion.links]);
+
+  const confirmProposal = useCallback(
+    async (key: string) => {
+      const client = clientRef.current;
+      const card = llmProps.cards.find((c) => c.key === key);
+      if (!client || !card || workBeId == null) return;
+      setLlmProps((s) => ({
+        ...s,
+        cards: s.cards.map((c) => (c.key === key ? { ...c, status: "confirming" } : c)),
+      }));
+      try {
+        // Re-anchor the excerpt in the live text — the server's
+        // offsets were resolved against its snapshot and the work
+        // may have moved since the proposal arrived.
+        const span = anchorExcerpt(card.excerpt, text, card.start);
+        if (!span) {
+          throw new Error("passage no longer in the work — link would misanchor");
+        }
+        const farEndId = resolveFarEndWork(card.farEndTitle, works, workBeId);
+        if (card.farEndTitle && farEndId == null) {
+          throw new Error(`no work titled “${card.farEndTitle}” in the library`);
+        }
+        const linkId = await client.linkCreate(
+          workBeId,
+          farEndId ?? workBeId,
+          { excerpt: card.excerpt, start: span.start, end: span.end },
+          undefined,
+          undefined,
+          [card.typeId],
+        );
+        setLlmProps((s) => ({
+          ...s,
+          cards: s.cards.map((c) =>
+            c.key === key ? { ...c, status: "confirmed", linkId } : c,
+          ),
+        }));
+        // Refresh the links list so the new link shows immediately.
+        void transclusion.loadLinks(client, workBeId, works);
+      } catch (e) {
+        setLlmProps((s) => ({
+          ...s,
+          cards: s.cards.map((c) =>
+            c.key === key
+              ? { ...c, status: "error", error: e instanceof Error ? e.message : String(e) }
+              : c,
+          ),
+        }));
+      }
+    },
+    [clientRef, llmProps.cards, workBeId, text, works, transclusion],
+  );
+
+  const rejectProposal = useCallback((key: string) => {
+    setLlmProps((s) => ({
+      ...s,
+      cards: s.cards.map((c) => (c.key === key ? { ...c, status: "rejected" } : c)),
+    }));
+  }, []);
+
+
   const rightPanelBody = (
     <>
             {rightPanelTab === "provenance" && (
@@ -2893,17 +3012,161 @@ export function WorkspaceShell() {
                     + Add Link
                   </button>
                 )}
-                {workBeId !== null && (
-                  <button
-                    type="button"
-                    className="ws-action-btn"
-                    style={{ width: "100%", marginBottom: 8, justifyContent: "center" }}
-                    onClick={() => void watchWork("links")}
-                    title="FR-80 detector: collect new links that land on this work (see More ▸ Detectors)"
-                  >
-                    ◉ Watch for Links
-                  </button>
-                )}
+                 {workBeId !== null && (
+                   <button
+                     type="button"
+                     className="ws-action-btn"
+                     style={{ width: "100%", marginBottom: 8, justifyContent: "center" }}
+                     onClick={() => void watchWork("links")}
+                     title="FR-80 detector: collect new links that land on this work (see More ▸ Detectors)"
+                   >
+                     ◉ Watch for Links
+                   </button>
+                 )}
+                 {/* FR-86: LLM reader-critic. The model reads the
+                     work, its connected works, and the library, then
+                     proposes typed connections. Proposals are NOT
+                     links — each needs a human confirm, and confirmed
+                     proposals become ordinary links. */}
+                 {workBeId !== null && (
+                   <>
+                     <button
+                       type="button"
+                       className="ws-action-btn"
+                       style={{
+                         width: "100%", marginBottom: 8, justifyContent: "center",
+                         borderColor: "var(--amber)",
+                         color: llmProps.status === "loading" ? "var(--text-dim)" : "var(--amber)",
+                       }}
+                       disabled={llmProps.status === "loading"}
+                       onClick={() => void suggestConnections()}
+                       title="Ask the server's LLM to read this work and propose connections — you confirm, edit, or reject each one"
+                     >
+                       {llmProps.status === "loading"
+                         ? "✨ reading… (up to a minute)"
+                         : "✨ Suggest connections"}
+                     </button>
+                     {llmProps.status === "error" && (
+                       <div
+                         className="ws-conn-empty"
+                         style={{ marginBottom: 8, whiteSpace: "pre-wrap" }}
+                       >
+                         {llmProps.error}
+                       </div>
+                     )}
+                     {llmProps.cards.length > 0 && (
+                       <div className="ws-llm-proposals" style={{ marginBottom: 12 }}>
+                         <div
+                           style={{
+                             display: "flex", justifyContent: "space-between",
+                             alignItems: "baseline", padding: "4px 0",
+                           }}
+                         >
+                           <span
+                             style={{
+                               fontSize: 9, fontWeight: 600, textTransform: "uppercase",
+                               letterSpacing: 0.5, color: "var(--amber)",
+                             }}
+                           >
+                             Proposals ({llmProps.cards.filter((c) => c.status !== "rejected" && c.status !== "confirmed").length})
+                           </span>
+                           <span
+                             className="ws-placeholder-sublabel"
+                             style={{ fontSize: 9 }}
+                             title="Proposals are not links until you confirm them"
+                           >
+                             not yet links · {llmProps.model}
+                           </span>
+                         </div>
+                         {llmProps.cards.map((card) => {
+                           if (card.status === "rejected") return null;
+                           const farEndId = resolveFarEndWork(card.farEndTitle, works, workBeId);
+                           const color = linkTypeColor(card.typeId);
+                           return (
+                             <div
+                               key={card.key}
+                               style={{
+                                 border: `1px dashed ${card.status === "confirmed" ? "var(--green)" : color + "80"}`,
+                                 borderRadius: 6, padding: "6px 8px", marginBottom: 6,
+                                 opacity: card.status === "confirmed" ? 0.65 : 1,
+                               }}
+                             >
+                               <div style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
+                                 <span
+                                   style={{
+                                     fontSize: 9, fontWeight: 700, color,
+                                     border: `1px solid ${color}60`, borderRadius: 4,
+                                     padding: "0 4px", flexShrink: 0,
+                                   }}
+                                 >
+                                   {linkTypeName(card.typeId)}
+                                 </span>
+                                 {card.farEndTitle ? (
+                                   <span style={{ fontSize: 10, color: "var(--text)" }}>
+                                     → {card.farEndTitle}
+                                     {farEndId == null && (
+                                       <span style={{ color: "var(--red, #f85149)" }} title="No matching work in the library — confirm disabled">
+                                         {" "}⚠ unmatched
+                                       </span>
+                                     )}
+                                   </span>
+                                 ) : (
+                                   <span style={{ fontSize: 10, color: "var(--text-dim)" }}>same document</span>
+                                 )}
+                               </div>
+                               <div style={{ fontSize: 10, margin: "4px 0", color: "var(--text)" }}>
+                                 “{card.excerpt.length > 90 ? card.excerpt.slice(0, 90) + "…" : card.excerpt}”
+                               </div>
+                               {card.reasoning && (
+                                 <div style={{ fontSize: 9, color: "var(--text-dim)", fontStyle: "italic", marginBottom: 4 }}>
+                                   {card.reasoning.length > 140 ? card.reasoning.slice(0, 140) + "…" : card.reasoning}
+                                 </div>
+                               )}
+                               {card.status === "error" && card.error && (
+                                 <div style={{ fontSize: 9, color: "var(--red, #f85149)" }}>✗ {card.error}</div>
+                               )}
+                               {card.status === "confirmed" ? (
+                                 <div style={{ fontSize: 9, color: "var(--green)" }}>
+                                   ✓ confirmed — link #{card.linkId}
+                                 </div>
+                               ) : card.status === "confirming" ? (
+                                 <div style={{ fontSize: 9, color: "var(--text-dim)" }}>creating…</div>
+                               ) : (
+                                 <div style={{ display: "flex", gap: 6 }}>
+                                   <button
+                                     type="button"
+                                     disabled={card.status === "confirming" || (card.farEndTitle != null && farEndId == null)}
+                                     onClick={() => void confirmProposal(card.key)}
+                                     style={{
+                                       fontSize: 9, background: "none",
+                                       border: "1px solid var(--green)", borderRadius: 4,
+                                       color: "var(--green)", padding: "1px 8px", cursor: "pointer",
+                                     }}
+                                     title="Create this link (you can adjust it afterwards like any link)"
+                                   >
+                                     ✓ Confirm
+                                   </button>
+                                   <button
+                                     type="button"
+                                     onClick={() => rejectProposal(card.key)}
+                                     style={{
+                                       fontSize: 9, background: "none",
+                                       border: "1px solid var(--border)", borderRadius: 4,
+                                       color: "var(--text-dim)", padding: "1px 8px", cursor: "pointer",
+                                     }}
+                                     title="Dismiss this proposal — nothing is created"
+                                   >
+                                     ✕ Dismiss
+                                   </button>
+                                 </div>
+                               )}
+                             </div>
+                           );
+                         })}
+                       </div>
+                     )}
+                   </>
+                 )}
                 {/* Link type filter */}
                 {transclusion.links.length > 0 && (
                   <div className="ws-link-filters">

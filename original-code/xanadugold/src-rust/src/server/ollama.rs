@@ -274,43 +274,73 @@ impl LlmClient {
         &self,
         work_text: &str,
         work_title: &str,
-        far_ends: &[(u64, String, String)], // (work_id, title, text)
+        far_ends: &[(u64, String, String)],
+        existing_links: &[ExistingLinkSummary],
+        library_titles: &[String],
     ) -> Result<Vec<ProposedConnection>, LlmError> {
-        let mut context = format!("Document: \"{}\"\n\n{}\n", work_title, work_text);
-        if !far_ends.is_empty() {
-            context.push_str("\n\nConnected works:\n");
-            for (i, (_, title, text)) in far_ends.iter().take(5).enumerate() {
+        let mut context = format!(
+            "=== Document under review ===\n\"{}\"\n\n{}\n",
+            work_title, work_text
+        );
+
+        if !existing_links.is_empty() {
+            context.push_str("\n\n=== Already-connected passages (DO NOT duplicate) ===\n");
+            for link in existing_links.iter().take(15) {
                 context.push_str(&format!(
-                    "\n--- Connected work {} ---\n\"{}\"\n{}\n",
-                    i + 1,
-                    title,
-                    &text[..text.len().min(2000)]
+                    "  [{}] \"{}\" <-> \"{}\"\n",
+                    link.type_name,
+                    &link.origin_excerpt[..link.origin_excerpt.len().min(60)],
+                    &link.dest_excerpt[..link.dest_excerpt.len().min(60)],
                 ));
             }
         }
 
+        if !far_ends.is_empty() {
+            context.push_str("\n\n=== Connected works (the literature this document lives in) ===\n");
+            for (i, (_, title, text)) in far_ends.iter().take(5).enumerate() {
+                context.push_str(&format!(
+                    "\n--- Work {}: \"{}\" ---\n{}\n",
+                    i + 1, title,
+                    &text[..text.len().min(4000)]
+                ));
+            }
+        }
+
+        if !library_titles.is_empty() {
+            context.push_str("\n\n=== Library catalog (potential connection targets) ===\n");
+            for title in library_titles.iter().take(20) {
+                context.push_str(&format!("  - \"{}\"\n", title));
+            }
+        }
+
         let prompt = format!(
-            r#"You are a critical reader in a hypertext system that supports fine-grained bidirectional typed connections.
+            r#"You are a critical reader in a hypertext system with fine-grained bidirectional typed connections. You can see the document, its existing connections, the connected works' text, and the library catalog.
 
 {}
 
-Available connection types:
+=== Connection types ===
   1. Comment — a note about the passage
   2. Reference — points to related content
-  3. Disagreement — disputes the passage's claim
+  3. Disagreement — disputes the passage's claim (cite evidence)
   4. Quotation — cites this passage elsewhere
   5. See Also — suggests related reading
 
-Identify passages in the main document that a critical reader would connect to other content (in this document or in the connected works). For each, propose a typed connection.
+=== Task ===
+Identify passages in the main document that a critical reader would connect to other content. Consider:
+- Claims contradicted by evidence in connected works (Disagreement)
+- Concepts appearing in multiple works that should be cross-referenced (Reference)
+- Important passages deserving commentary (Comment)
+- Related works from the library not yet connected (See Also)
+
+DO NOT propose connections that already exist (listed above).
 
 Format each proposal as JSON, one per line:
-{{"excerpt": "<the passage text, verbatim from the document>", "type": <1-5>, "reasoning": "<why this connection matters>", "far_end_title": "<title of the connected work, or null for same-document>"}}
+{{"excerpt": "<passage text verbatim from document>", "type": <1-5>, "reasoning": "<why this matters, citing evidence>", "far_end_title": "<target work title, or null for same-document>"}}
 
 Rules:
-- Only use passages that appear VERBATIM in the document text
+- Passages must appear VERBATIM in the document text
 - Quality over quantity: at most 3 proposals
-- Only propose connections you are confident about
-- Disagreements should cite specific evidence from the connected works
+- Disagreements MUST cite specific evidence from connected works
 - Respond with ONLY the JSON lines, no other text"#,
             context
         );
@@ -322,7 +352,6 @@ Rules:
             response.len() as u64,
         );
 
-        // Parse proposals: one JSON object per line
         let mut proposals = Vec::new();
         for line in response.lines() {
             let trimmed = line.trim();
@@ -334,12 +363,9 @@ Rules:
                 let type_id = v["type"].as_u64().unwrap_or(0);
                 let reasoning = v["reasoning"].as_str().unwrap_or("");
                 let far_title = v["far_end_title"].as_str();
-
                 if excerpt.is_empty() || type_id < 1 || type_id > 5 {
                     continue;
                 }
-
-                // Resolve the excerpt to a span in the work text
                 let start = work_text.find(excerpt);
                 if let Some(s) = start {
                     proposals.push(ProposedConnection {
@@ -590,6 +616,30 @@ Rules:
                     .unwrap_or(false)
             }
         }
+    }
+}
+
+/// FR-86: summary of an existing connection (shown to the LLM
+/// so it doesn't propose duplicates).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExistingLinkSummary {
+    pub link_id: u64,
+    pub type_name: String,
+    pub origin_excerpt: String,
+    pub dest_excerpt: String,
+}
+
+/// FR-86: builtin link-type names (the prompt's own type table).
+/// Custom registered types render as "Type N" — the summary only
+/// needs a coarse label for "don't duplicate this".
+pub fn builtin_type_name(t: u64) -> &'static str {
+    match t {
+        1 => "Comment",
+        2 => "Reference",
+        3 => "Disagreement",
+        4 => "Quotation",
+        5 => "See Also",
+        _ => "Type",
     }
 }
 

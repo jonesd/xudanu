@@ -1216,6 +1216,12 @@ fn dispatch_inner(
                 (title, text, far)
             };
 
+            // Context strategy C (the experiments' winner): existing
+            // link summaries prevent duplicates; library titles give
+            // the model cross-work targets it can name.
+            let existing_links = srv.llm_link_summaries(work_id);
+            let library_titles = srv.llm_library_titles(work_id);
+
             // Bridge async LLM call from sync dispatch (same pattern
             // as dispatch_narration)
             let proposals = tokio::task::block_in_place(|| {
@@ -1223,7 +1229,13 @@ fn dispatch_inner(
                 rt.block_on(async {
                     tokio::time::timeout(
                         std::time::Duration::from_secs(60),
-                        llm.propose_connections(&text, &title, &far_ends),
+                        llm.propose_connections(
+                            &text,
+                            &title,
+                            &far_ends,
+                            &existing_links,
+                            &library_titles,
+                        ),
                     )
                     .await
                     .map_err(|_| crate::server::ServerError::Internal("LLM timeout (60s)".into()))?

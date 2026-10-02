@@ -18300,6 +18300,65 @@ impl Server {
             .map(|ls| (ls.origin, ls.destination))
     }
 
+    /// FR-86: link summaries for LLM context — type name plus both
+    /// end excerpts, light enough to inline in a prompt. The LLM
+    /// sees these as "already-connected passages, do not duplicate"
+    /// (context strategy C from the experiments).
+    pub fn llm_link_summaries(
+        &self,
+        work_id: BeId,
+    ) -> Vec<crate::server::ollama::ExistingLinkSummary> {
+        let mut out = Vec::new();
+        if let Some(ids) = self.work_to_links_for_ids(work_id) {
+            for lid in ids {
+                let Some(ls) = self.links.get(&lid) else {
+                    continue;
+                };
+                let type_name = ls
+                    .link
+                    .link_types()
+                    .first()
+                    .map(|t| crate::server::ollama::builtin_type_name(*t))
+                    .unwrap_or("Link")
+                    .to_string();
+                let origin_excerpt = ls
+                    .link
+                    .end_at("LeftEnd")
+                    .and_then(|r| r.excerpt())
+                    .map(|e| e.to_text())
+                    .unwrap_or_default();
+                let dest_excerpt = ls
+                    .link
+                    .end_at("RightEnd")
+                    .and_then(|r| r.excerpt())
+                    .map(|e| e.to_text())
+                    .unwrap_or_default();
+                out.push(crate::server::ollama::ExistingLinkSummary {
+                    link_id: lid,
+                    type_name,
+                    origin_excerpt,
+                    dest_excerpt,
+                });
+            }
+        }
+        out
+    }
+
+    /// FR-86: library catalog titles for LLM context — every work's
+    /// title except the one under review, newest first so a large
+    /// library's recent works are the ones the model sees (the
+    /// prompt builder caps at 20).
+    pub fn llm_library_titles(&self, exclude: BeId) -> Vec<String> {
+        let mut pairs: Vec<(BeId, String)> = self
+            .works
+            .iter()
+            .filter(|(id, _)| **id != exclude)
+            .map(|(id, ws)| (*id, ws.cached_title().to_string()))
+            .collect();
+        pairs.sort_by(|a, b| b.0.cmp(&a.0));
+        pairs.into_iter().map(|(_, t)| t).collect()
+    }
+
     pub fn link_add_end(
         &mut self,
         _session_id: SessionId,
@@ -36739,6 +36798,93 @@ mod tests {
         );
         assert!(chain[0].is_original);
     }
+
+    #[test]
+    fn llm_link_summaries_exposes_types_and_excerpts() {
+        let (mut server, sid) = setup_logged_in_server();
+        let wa = server
+            .create_work(sid, Edition::from_text("the fifty-dollar ratio hides it"))
+            .unwrap();
+        let wb = server
+            .create_work(sid, Edition::from_text("budget evidence here"))
+            .unwrap();
+        let link = server
+            .create_link(
+                sid,
+                wa,
+                wb,
+                Some(crate::edition::links::HyperRef::single(
+                    Some(Edition::from_text("fifty-dollar ratio")),
+                    Some(wa),
+                    None,
+                    None,
+                )),
+                Some(crate::edition::links::HyperRef::single(
+                    Some(Edition::from_text("budget evidence")),
+                    Some(wb),
+                    None,
+                    None,
+                )),
+            )
+            .unwrap();
+        server
+            .link_set_types(sid, link, vec![3])
+            .unwrap();
+
+        let summaries = server.llm_link_summaries(wa);
+        assert_eq!(summaries.len(), 1, "one link touches wa");
+        let s = &summaries[0];
+        assert_eq!(s.type_name, "Disagreement");
+        assert_eq!(s.origin_excerpt, "fifty-dollar ratio");
+        assert_eq!(s.dest_excerpt, "budget evidence");
+
+        // The far work sees the same summary set (bidirectional).
+        let far = server.llm_link_summaries(wb);
+        assert_eq!(far.len(), 1);
+        assert_eq!(far[0].type_name, "Disagreement");
+    }
+
+    #[test]
+    fn llm_library_titles_excludes_current_and_orders_newest_first() {
+        let (mut server, sid) = setup_logged_in_server();
+        let wa = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let wb = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let wc = server.create_work(sid, Edition::from_text("c")).unwrap();
+
+        let titles = server.llm_library_titles(wb);
+        assert!(!titles.is_empty(), "library has works");
+        // Excludes the work under review; newest (highest id) first.
+        assert_eq!(titles.len(), server.works.len() - 1);
+        assert_ne!(titles.first().map(|t| t.as_str()), None);
+        // wa and wc present, wb absent — titles default to empty
+        // strings for untitled works, so verify by exclusion via ids
+        // is not possible here; instead verify count and that the
+        // ordering is descending by work id via a fresh set.
+        let ids: Vec<BeId> = server
+            .works
+            .keys()
+            .copied()
+            .filter(|id| *id != wb)
+            .collect();
+        let mut sorted = ids.clone();
+        sorted.sort_by(|a, b| b.cmp(a));
+        assert_eq!(ids.len(), titles.len());
+        // Re-run with titles stamped to verify both exclusion and
+        // order precisely.
+        for id in &sorted {
+            if let Some(ws) = server.works.get_mut(id) {
+                ws.cached_title = format!("title-{id}");
+            }
+        }
+        let named = server.llm_library_titles(wb);
+        assert_eq!(
+            named,
+            sorted.iter().map(|id| format!("title-{id}")).collect::<Vec<_>>(),
+            "newest first, wb excluded"
+        );
+        assert!(!named.iter().any(|t| t == &format!("title-{wb}")));
+    }
+
 
     #[test]
     fn crdt_edit_club_blocks_unauthorized_session() {
