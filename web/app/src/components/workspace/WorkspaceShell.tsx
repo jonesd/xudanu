@@ -36,6 +36,9 @@ import {
   linkWeight as chainLinkWeight,
   isUncontested,
 } from "../../argument-structure";
+// FR-85 Phase 3b: the argument map — derived view over the link graph.
+import { ArgumentMap } from "../ArgumentMap";
+import type { MapNode } from "../../argument-map";
 // FR-86 LLM reader-critic: proposal cards, far-end resolution,
 // confirm-time re-anchoring. The LLM proposes; the human confirms.
 import {
@@ -2932,6 +2935,59 @@ export function WorkspaceShell() {
     }));
   }, []);
 
+  // ── FR-85 Phase 3b: the argument map ──────────────────────────────
+  // Selection is UI state only — the map itself derives from the
+  // link graph on every render and never persists.
+  const [argMapSelected, setArgMapSelected] = useState<string | null>(null);
+  const [argMapBusy, setArgMapBusy] = useState(false);
+
+  // Growing the map writes through the substrate: create the child
+  // work with the draft text (no focus switch — the map stays put),
+  // link it (Disagreement for objections, Reference for responses),
+  // and stamp responds_to so the tree nests exactly.
+  const addMapChild = useCallback(
+    async (parent: MapNode, kind: "objection" | "reason", text: string) => {
+      const client = clientRef.current;
+      if (!client || workBeId == null) return;
+      const parentWorkId = parent.workId ?? workBeId;
+      setArgMapBusy(true);
+      try {
+        const resp = (await client.sendRequest("work_create", {
+          edition: { text },
+        })) as Record<string, unknown>;
+        const val =
+          resp && typeof resp === "object" && "value" in resp ? resp.value : resp;
+        const childId =
+          typeof val === "number"
+            ? val
+            : val && typeof val === "object" && "work_id" in val
+              ? ((val as Record<string, unknown>).work_id as number)
+              : null;
+        if (childId == null) return;
+        await client.sendRequest("work_set_title", {
+          work_id: childId,
+          title: text.length > 80 ? text.slice(0, 80) : text,
+        });
+        const linkId = await client.linkCreate(
+          childId,
+          parentWorkId,
+          undefined,
+          undefined,
+          undefined,
+          [kind === "objection" ? 3 : 2],
+        );
+        if (parent.entryLinkId != null) {
+          await client.linkSetRespondsTo(linkId, parent.entryLinkId);
+        }
+        void transclusion.loadLinks(client, workBeId, works);
+      } finally {
+        setArgMapBusy(false);
+      }
+    },
+    [clientRef, workBeId, transclusion, works],
+  );
+
+
   // FR-85 Phase 3: respond to a disagreement chain from the current
   // work. Creates a Reference link to the criticism work carrying
   // responds_to = <disagreement link id> — exact chain semantics.
@@ -3876,8 +3932,29 @@ export function WorkspaceShell() {
                   )}
                 </div>
               </div>
-            )}
-            {rightPanelTab === "trails" && (
+             )}
+             {rightPanelTab === "map" && (
+               <div className="ws-map-tab">
+                 {/* FR-85 Phase 3b: the argument map — derived from
+                     the same link graph the Links panel renders, so
+                     the two surfaces can never disagree. */}
+                 {workBeId != null ? (
+                   <ArgumentMap
+                     rootWorkId={workBeId}
+                     links={transclusion.links}
+                     rootLabel={workMeta?.title || openWorkTitle || undefined}
+                     selectedId={argMapSelected}
+                     onSelect={setArgMapSelected}
+                     onJump={(wid) => selectWork(wid)}
+                     onAddChild={canEdit ? (parent, kind, text) => void addMapChild(parent, kind, text) : undefined}
+                     busy={argMapBusy}
+                   />
+                 ) : (
+                   <div className="ws-placeholder-sublabel">Open a work to map its argument.</div>
+                 )}
+               </div>
+             )}
+             {rightPanelTab === "trails" && (
               <div className="ws-trails-tab">
                 <div className="ws-trails-tab-header">
                   <span>Trails through this work</span>
@@ -6392,16 +6469,17 @@ export function WorkspaceShell() {
           className={`ws-right-panel ${rightPanelHidden ? "hidden" : ""} ${isTablet && openDrawer === "right" ? "drawer-open" : ""}`}
           data-drawer="right"
         >
-          <div className="ws-tabs">
-            {([
-              ["provenance", "Attribution"],
-              ["connections", "Links"],
-              ["trails", "Trails"],
-              ["timeline", "History"],
-              ["servers", "Servers"],
-              ["compare", "Compare"],
-              ["more", "More"],
-            ] as const).map(([id, label]) => (
+           <div className="ws-tabs">
+             {([
+               ["provenance", "Attribution"],
+               ["connections", "Links"],
+               ["map", "Map"],
+               ["trails", "Trails"],
+               ["timeline", "History"],
+               ["servers", "Servers"],
+               ["compare", "Compare"],
+               ["more", "More"],
+             ] as const).map(([id, label]) => (
               <button
                 key={id}
                 className={`ws-tab ${rightPanelTab === id ? "active" : ""}`}
@@ -7230,6 +7308,7 @@ export function WorkspaceShell() {
                 {([
                   ["provenance", "Attribution"],
                   ["connections", "Links"],
+                  ["map", "Map"],
                   ["trails", "Trails"],
                   ["timeline", "History"],
                   ["compare", "Compare"],
