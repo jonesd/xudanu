@@ -8,6 +8,68 @@ use xudanu::server::transport::{
 };
 use xudanu::server::Server;
 
+// ── Tracing-capture harness ─────────────────────────────────────────
+//
+// The federation membership regression was invisible because the
+// test binary installs no tracing subscriber — every dial/handshake/
+// endorsement log went to the void. This captures events into a
+// shared buffer so failing network tests can print the exchange
+// that led to the failure, and RUST_LOG still routes to stderr when
+// debugging interactively.
+mod trace_capture {
+    use std::sync::{Arc, Mutex, OnceLock};
+
+    #[derive(Clone)]
+    pub struct SharedBuf(Arc<Mutex<Vec<u8>>>);
+
+    impl SharedBuf {
+        fn new() -> Self {
+            SharedBuf(Arc::new(Mutex::new(Vec::new())))
+        }
+        pub fn recent_string(&self) -> String {
+            let buf = self.0.lock().unwrap();
+            let start = buf.len().saturating_sub(16_000);
+            String::from_utf8_lossy(&buf[start..]).trim_start().to_string()
+        }
+    }
+
+    impl std::io::Write for SharedBuf {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SharedBuf {
+        type Writer = SharedBuf;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    static BUF: OnceLock<SharedBuf> = OnceLock::new();
+
+    /// Install the capturing subscriber once per test binary. Safe
+    /// to call from any test; only the first call wins, later calls
+    /// share the same buffer. RUST_LOG additionally filters what is
+    /// captured (unset = INFO and up).
+    pub fn install() -> SharedBuf {
+        let buf = BUF.get_or_init(SharedBuf::new);
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+        let _ = tracing_subscriber::registry()
+            .with(tracing_subscriber::fmt::layer().with_writer(buf.clone()))
+            .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(
+                |_| tracing_subscriber::EnvFilter::new("info"),
+            ))
+            .try_init();
+        buf.clone()
+    }
+}
+
 fn parse_hash_hex(v: &serde_json::Value) -> u64 {
     if let Some(s) = v.as_str() {
         s.parse::<u64>()
@@ -8063,16 +8125,21 @@ async fn federation_activation_content_replication_end_to_end() {
 }
 
 #[tokio::test]
-// TRACKING (Sep 30, 2026): pre-existing regression — nodes dial but
-// membership never converges ("A knows 1, B knows 1"). Broken at
-// least as far back as d877a975; never caught because CI ran only
-// --lib. Needs a harness that captures tracing (dial/handshake/
-// endorsement exchange) to root-cause. Ignored until then so the
-// new CI integration job starts green and this stays VISIBLE.
-#[ignore = "federation membership regression under investigation (see tracking note)"]
+// Root-caused Oct 1, 2026 (trace-capture harness): NOT a server
+// regression — the test misconfigured closed mode. Closed-mode
+// genesis IS the pinned member set (FR-75 §genesis pinning); with
+// empty pinned_members, membership_bootstrap_init seeds only self
+// and exits bootstrap, after which join/sync admission correctly
+// refuses everyone ("insufficient endorsements: 0 < 2" — a fresh
+// peer's self-endorsement is not from a known member, and synced
+// entries need governance admission). Two fresh servers can never
+// bootstrap by endorsement alone: the first endorsement would need
+// a member that doesn't exist yet. Fixed by pinning each server as
+// the other's genesis member, as the FR-75 design intends.
 async fn federation_activation_membership_converges() {
+    let trace = trace_capture::install();
     use std::time::Duration;
-    use xudanu::server::federation::{FederationConfig, FederationMode, PeerAddress};
+    use xudanu::server::federation::{FederationConfig, FederationMode, PinnedMember, PeerAddress};
     use xudanu::server::transport::federation_active::{spawn_federation_tasks, PeerPool};
 
     let srv_a = FederationTestServer::start().await;
@@ -8081,13 +8148,38 @@ async fn federation_activation_membership_converges() {
     let a_port = srv_a.addr.port();
     let b_port = srv_b.addr.port();
 
+    // Closed-mode genesis: each server pins the other. The pinned
+    // entries are seeded admitted by membership_bootstrap_init, so
+    // both sides know the full member set before the first dial.
+    let a_id = srv_a
+        .state
+        .server
+        .with_server_ref(|s| s.federation_server_id());
+    let b_id = srv_b
+        .state
+        .server
+        .with_server_ref(|s| s.federation_server_id());
+    let a_key = srv_a
+        .state
+        .server
+        .with_server_ref(|s| s.server_verifying_key_hex());
+    let b_key = srv_b
+        .state
+        .server
+        .with_server_ref(|s| s.server_verifying_key_hex());
+    assert!(!a_key.is_empty() && !b_key.is_empty(), "keys must exist before pinning");
+
     srv_a.state.server.with_server(|srv| {
         srv.set_federation_config(FederationConfig {
             enabled: true,
             peers: vec![PeerAddress::new("127.0.0.1", b_port)],
             mode: FederationMode::Closed,
             min_endorsements: 2,
-            pinned_members: Vec::new(),
+            pinned_members: vec![PinnedMember {
+                server_id: b_id.clone(),
+                verifying_key_hex: b_key.clone(),
+                recovery_key_hex: String::new(),
+            }],
         });
         srv.membership_bootstrap_init();
     });
@@ -8098,19 +8190,15 @@ async fn federation_activation_membership_converges() {
             peers: vec![PeerAddress::new("127.0.0.1", a_port)],
             mode: FederationMode::Closed,
             min_endorsements: 2,
-            pinned_members: Vec::new(),
+            pinned_members: vec![PinnedMember {
+                server_id: a_id.clone(),
+                verifying_key_hex: a_key.clone(),
+                recovery_key_hex: String::new(),
+            }],
         });
         srv.membership_bootstrap_init();
     });
 
-    let a_key = srv_a
-        .state
-        .server
-        .with_server_ref(|s| s.server_verifying_key_hex());
-    let b_key = srv_b
-        .state
-        .server
-        .with_server_ref(|s| s.server_verifying_key_hex());
     srv_a
         .state
         .server
@@ -8119,15 +8207,6 @@ async fn federation_activation_membership_converges() {
         .state
         .server
         .with_server(|s| s.federation_register_peer_key(a_key));
-
-    let a_id = srv_a
-        .state
-        .server
-        .with_server_ref(|s| s.federation_server_id());
-    let b_id = srv_b
-        .state
-        .server
-        .with_server_ref(|s| s.federation_server_id());
 
     let pool_a = PeerPool::new();
     let pool_b = PeerPool::new();
@@ -8151,9 +8230,10 @@ async fn federation_activation_membership_converges() {
             let a_members = srv_a.state.server.with_server_ref(|s| s.membership_list());
             let b_members = srv_b.state.server.with_server_ref(|s| s.membership_list());
             panic!(
-                "Membership did not converge within 15s. A knows {} members, B knows {} members",
+                "Membership did not converge within 15s. A knows {} members, B knows {} members\n\n--- captured federation exchange (tail) ---\n{}",
                 a_members.len(),
-                b_members.len()
+                b_members.len(),
+                trace.recent_string(),
             );
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
