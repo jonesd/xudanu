@@ -3569,18 +3569,80 @@ export function WorkspaceShell() {
                               <span style={{ fontSize: 10, color: "#8b949e" }} title={direction === "→" ? "outgoing" : "incoming (backlink)"}>
                                 {direction}
                               </span>
-                              {typeNames.map((tn, i) => {
-                                const lt = { color: WS_LINK_TYPE_STYLES[link.link_types?.[i] ?? 0] ?? WS_CUSTOM_PALETTE[(link.link_types?.[i] ?? 0) % WS_CUSTOM_PALETTE.length] };
+                              {/* Type display: editable sessions get ONE colored
+                                  select (badge + picker merged — no duplicate
+                                  "Comment Comment ▾"); read-only keeps plain
+                                  badges. Extra types beyond the first render as
+                                  trailing badges either way. */}
+                              {(() => {
+                                const firstType = link.link_types?.[0] ?? 0;
+                                const firstColor =
+                                  WS_LINK_TYPE_STYLES[firstType] ??
+                                  WS_CUSTOM_PALETTE[firstType % WS_CUSTOM_PALETTE.length];
+                                const extraBadges = typeNames.slice(1).map((tn, i) => {
+                                  const t = link.link_types?.[i + 1] ?? 0;
+                                  const c = WS_LINK_TYPE_STYLES[t] ?? WS_CUSTOM_PALETTE[t % WS_CUSTOM_PALETTE.length];
+                                  return (
+                                    <span
+                                      key={`x-${i}`}
+                                      className="ws-conn-type-badge"
+                                      style={{ background: c + "20", color: c, borderColor: c + "60" }}
+                                    >
+                                      {tn}
+                                    </span>
+                                  );
+                                });
+                                if (!canEdit) {
+                                  return (
+                                    <>
+                                      <span
+                                        className="ws-conn-type-badge"
+                                        style={{ background: firstColor + "20", color: firstColor, borderColor: firstColor + "60" }}
+                                      >
+                                        {typeNames[0] ?? "link"}
+                                      </span>
+                                      {extraBadges}
+                                    </>
+                                  );
+                                }
                                 return (
-                                  <span
-                                    key={i}
-                                    className="ws-conn-type-badge"
-                                    style={lt ? { background: lt.color + "20", color: lt.color, borderColor: lt.color + "60" } : {}}
-                                  >
-                                    {tn}
-                                  </span>
+                                  <>
+                                    <select
+                                      className="ws-conn-type-badge"
+                                      value={firstType}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onChange={async (e) => {
+                                        e.stopPropagation();
+                                        const client = clientRef.current;
+                                        if (!client) return;
+                                        try {
+                                          await client.linkSetTypes(link.link_id, [parseInt(e.target.value, 10)]);
+                                          if (workBeId !== null) {
+                                            void loadLinks(client, workBeId, works);
+                                          }
+                                        } catch { /* best-effort */ }
+                                      }}
+                                      title="Change link type"
+                                      style={{
+                                        background: firstColor + "20",
+                                        border: `1px solid ${firstColor}60`,
+                                        color: firstColor,
+                                        fontSize: 10,
+                                        padding: "1px 4px",
+                                        cursor: "pointer",
+                                        borderRadius: 4,
+                                      }}
+                                    >
+                                      <option value={1}>Comment</option>
+                                      <option value={2}>Reference</option>
+                                      <option value={3}>Disagreement</option>
+                                      <option value={4}>Quotation</option>
+                                      <option value={5}>See Also</option>
+                                    </select>
+                                    {extraBadges}
+                                  </>
                                 );
-                              })}
+                              })()}
                               {connExcerpt && (
                                 <span style={{ fontSize: "calc(var(--ws-font, 14px) - 1px)", color: "var(--text-dim, #8b949e)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
                                   &ldquo;{connExcerpt.slice(0, 50)}{connExcerpt.length > 50 ? "…" : ""}&rdquo;
@@ -3630,50 +3692,19 @@ export function WorkspaceShell() {
                                   ✓ {(link.endorsement_count ?? 1) - 1}
                                 </span>
                               ) : null}
-                              {link.link_contested && (
-                                <span
-                                  className="ws-conn-type-badge"
-                                  style={{ background: "#f8514915", color: "#f85149", borderColor: "#f8514940" }}
-                                  title="Contested — endorsements withdrawn"
-                                >
-                                  ⚠ contested
-                                </span>
-                              )}
-                              {canEdit && (
-                                <select
-                                  className="ws-conn-type-badge"
-                                  value={link.link_types?.[0] ?? 0}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onChange={async (e) => {
-                                    e.stopPropagation();
-                                    const client = clientRef.current;
-                                    if (!client) return;
-                                    try {
-                                      await client.linkSetTypes(link.link_id, [parseInt(e.target.value, 10)]);
-                                      if (workBeId !== null) {
-                                        void loadLinks(client, workBeId, works);
-                                      }
-                                    } catch { /* best-effort */ }
-                                  }}
-                                  title="Change link type"
-                                  style={{
-                                    background: "var(--bg, #161b22)",
-                                    border: "1px solid var(--border, #30363d)",
-                                    color: "var(--text, #e6edf3)",
-                                    fontSize: 10,
-                                    padding: "1px 4px",
-                                    cursor: "pointer",
-                                    borderRadius: 4,
-                                  }}
-                                >
-                                  <option value={1}>Comment</option>
-                                  <option value={2}>Reference</option>
-                                  <option value={3}>Disagreement</option>
-                                  <option value={4}>Quotation</option>
-                                  <option value={5}>See Also</option>
-                                </select>
-                              )}
-                              {canEdit && (
+                               {link.link_contested && (
+                                 <span
+                                   className="ws-conn-type-badge"
+                                   style={{ background: "#f8514915", color: "#f85149", borderColor: "#f8514940" }}
+                                   title="Contested — endorsements withdrawn"
+                                 >
+                                   ⚠ contested
+                                 </span>
+                               )}
+                               {/* Type picker lives in the title row now —
+                                   badge and dropdown merged (was
+                                   "Comment [Comment ▾]"). */}
+                               {canEdit && (
                                 <button
                                   className="ws-conn-delete"
                                   title="Vouch for this connection (endorse)"
