@@ -764,12 +764,22 @@ fn call_tool(agent: &mut AgentSession, name: &str, args: &Value) -> Result<Value
             server
                 .ensure_can_read(session, work)
                 .map_err(|e| format!("work {} not readable: {}", work, e))?;
+            server
+                .ensure_materialized(work)
+                .map_err(|e| format!("materialize failed: {}", e))?;
             let edition = server
                 .work(work)
                 .map_err(|e| format!("work {} not found: {}", work, e))?
                 .current_edition()
                 .clone();
             let entries = edition.all_entries();
+            for (_, carrier) in &entries {
+                if let crate::edition::RangeElement::Transclusion { source_work_id, .. } =
+                    &carrier.element
+                {
+                    let _ = server.ensure_materialized(*source_work_id);
+                }
+            }
             let mut signatures_total = 0usize;
             let mut signatures_valid = 0usize;
             for span in &edition.span_provenance {
@@ -1247,11 +1257,24 @@ pub fn verify_data_dir(data_dir: &std::path::Path, works: &[u64]) -> Value {
 }
 
 fn verify_one_work_offline(server: &mut Server, session: SessionId, work: u64) -> Value {
+    // Lazy restore (FR-83): works restore as sentinel stubs; the
+    // thaw gate must run before any edition access.
+    if let Err(e) = server.ensure_materialized(work) {
+        return json!({"ok": false, "error": format!("materialize failed: {}", e)});
+    }
     let edition = match server.work(work) {
         Ok(ws) => ws.current_edition().clone(),
         Err(e) => return json!({"ok": false, "error": format!("work not found: {}", e)}),
     };
     let entries = edition.all_entries();
+    // Transclusion verification reads SOURCE works too — thaw them
+    // before the span checks touch their editions.
+    for (_, carrier) in &entries {
+        if let crate::edition::RangeElement::Transclusion { source_work_id, .. } = &carrier.element
+        {
+            let _ = server.ensure_materialized(*source_work_id);
+        }
+    }
     let mut spans = 0usize;
     let mut valid = 0usize;
     for span in &edition.span_provenance {
