@@ -99,6 +99,37 @@ jobs:
       - run: cargo clippy --features server -- -W clippy::all -A clippy::large-enum-variant -A clippy::manual-range-contains -A clippy::borrowed-box -A clippy::unnecessary-sort-by -A clippy::indexing_slicing
         working-directory: original-code/xanadugold/src-rust
 
+  # Frontend gate: typecheck + lint + unit tests + build. Before this
+  # job, frontend checks ran ONLY in the Release workflow — TS errors
+  # shipped to main undetected (Oct 3, 2026: argument-map breakage
+  # discovered by the local pre-push hook at v1.17.0 push time, after
+  # a day of green CI). The pre-push hook lives in .git/hooks
+  # (unversioned) so clones without it had no protection at all.
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/app/package-lock.json
+      - name: Typecheck
+        run: npx tsc -b
+        working-directory: web/app
+      - name: Lint
+        run: npm run lint
+        working-directory: web/app
+      - name: Unit tests
+        run: npm test
+        working-directory: web/app
+      - name: Build
+        run: npm run build
+        working-directory: web/app
+
   # Build-matrix: every configuration the crate promises must compile.
   # The default=[] build broke for ~3 months (May-Aug 2026) because CI
   # only ever built --features server; ungated serde/tracing refs

@@ -35,7 +35,7 @@ test("gather button computed styles when disabled", async ({ page }) => {
     const canvas = document.createElement("canvas");
     canvas.width = Math.ceil(r.width);
     canvas.height = Math.ceil(r.height);
-    const ctx = canvas.getContext("2d")!;
+    const _ctx = canvas.getContext("2d")!;
     const range = document.createRange();
     range.selectNodeContents(g);
     const span = range.getBoundingClientRect();

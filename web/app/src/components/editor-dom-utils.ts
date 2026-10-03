@@ -142,7 +142,7 @@ export function buildTransclusionDom(
         (sr) => sr.flat_start <= segStart && sr.flat_end >= segEnd,
       );
 
-      let chunk = resolvedText.slice(segStart, segEnd);
+      const chunk = resolvedText.slice(segStart, segEnd);
       if (chunk.length === 0) continue;
 
       if (coveringRanges.length === 0) {

@@ -142,7 +142,7 @@ export function autolinkEscaped(
   // (& became &amp; etc.), so match against the escaped forms.
   const re = /\b(https?:\/\/)([^\s&<]+(?:&amp;[^\s&<]*)*)/g;
   return escapedHtml.replace(re, (_whole, scheme, rest) => {
-    let url = scheme + rest;
+    const url = scheme + rest;
     let href = url;
     while (/[.,;:!?)]$/.test(href)) href = href.slice(0, -1);
     const shown = url.slice(0, href.length);

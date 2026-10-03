@@ -166,6 +166,7 @@ export function sanitizeRemoteText(text: unknown): string {
 
 export function sanitizeRemoteTitle(title: unknown): string {
   if (typeof title !== "string") return "";
+  // eslint-disable-next-line no-control-regex -- stripping control chars is the point
   const cleaned = title.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "").trim();
   return cleaned.slice(0, MAX_REMOTE_TITLE_CHARS);
 }

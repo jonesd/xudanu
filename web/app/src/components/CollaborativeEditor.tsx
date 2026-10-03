@@ -2400,6 +2400,7 @@ export function CollaborativeEditor({
             break;
           }
           if (sr.flat_start > start && sr.flat_start < end && sr.flat_end <= end) {
+            // span wholly inside the selection — nothing to split
           }
         }
       }
