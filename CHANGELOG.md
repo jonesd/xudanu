@@ -6,6 +6,83 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.17.0] — 2026-10-03
+
+The **agents welcome** release: the docuverse becomes an MCP tool
+source, provenance survives crashes, and FR-80 detectors fire the
+way Gold intended.
+
+### FR-141 — Docuverse MCP server (all four phases)
+- New `xudanu-mcp` binary: MCP (Model Context Protocol) server over
+  stdio JSON-RPC. Agents read, quote, link, and watch the docuverse
+  with every action signed as LLM-authored (`AuthorType::Llm` +
+  model identity).
+- Phase 1 read tools: `search_works`, `read_work` (transclusion-
+  resolved), `read_span` (revision-pinned, BLAKE3-hashed),
+  `find_backlinks`, `who_transcluded`, `get_prov` (W3C PROV-JSON),
+  `get_version_info`. Span references use a new canonical scheme:
+  `xudanu://work/<id>?rev=<n>#span=<s>,<e>`.
+- Phase 2 mutation tools behind `--enable-agent-writes`:
+  `create_work`, `transclude` (quotation as a live window onto its
+  source — hash-pinned, drift-detected), `create_link` (typed),
+  `revise`, `compare_versions` (provenance-labeled hunks).
+- Phase 3 detectors: `watch_work` / `detector_events` /
+  `detector_ack` / `unwatch_work` — the WidgetPerfect loop with
+  agents as the watchers.
+- Phase 4 verification kit: `verify_work` tool and standalone
+  `xudanu-verify` binary — chunk store, chained security +
+  attribution logs, key rotation chain, per-work provenance
+  signatures and transclusion drift (live / drifted / pinned
+  fallback), both legacy and root-chunk storage formats; exit-code
+  contract for CI.
+- Live-server transport: `xudanu-mcp --server ws://host:port`
+  talks to a RUNNING xudanu server (v2 JSON WebSocket with CSRF +
+  origin handling); data-dir mode opens a restored store directly.
+  Verified against a production-configured server.
+
+### Durability — provenance survives the crash window
+- WAL `work_create` entries now carry the full edition snapshot
+  (entries, element structure, span provenance) instead of text
+  only; crash-before-checkpoint no longer loses provenance or
+  transclusion elements. Legacy text-only entries still replay.
+- `xudanu-mcp` flushes a checkpoint at stdin EOF so agent writes
+  are never left WAL-only after a quick session.
+
+### FR-80 fixes (found via FR-141 testing)
+- Link detectors now fire on link **creation**, not only on
+  `link_set_types` — the `HyperLink::make` path previously
+  bypassed the hook entirely.
+- `fire_link` resolves the acting work from the link's origin
+  (LeftEnd) instead of HashMap iteration order — the self-watch
+  suppression was nondeterministic for two-ended links.
+
+### Deep-dive fixes from the Gold comparison
+- `work_delete_admin` now removes deleted works' link ids from
+  every affected work's link set (was keyed by link id in a
+  work-keyed map — stale entries lingered).
+- Transclusion depth limit is fail-visible: chains past
+  `INLINE_MAX_DEPTH` render a `…[transclusion depth limit]…` marker
+  instead of silent truncation; the dead `MAX_TRANSCLUSION_DEPTH`
+  constant is removed and the limit is empirically stack-safe
+  (256 with ~40% headroom; the old 1000 overflowed before firing).
+- Links surface as `"link"` instead of `"unknown"` in transcluder
+  queries.
+- Drift verification checks the pinned-revision original for
+  relocation heal, not the current-range excerpt.
+
+### Docs
+- `docs/FR-141-docuverse-mcp-server.md` — full design record.
+- `docs/demo-bidirectional-links.md` — the 90-second wow demo
+  (one command, seeded Links Course, browser).
+- AGENTS.md corrected: depth-guard semantics documented accurately.
+
+### Tests
+- 3,729 lib tests green (was 3,725 with 3 stale WAL-count failures
+  — updated to the post-b498c9d4 durability contract), 327
+  integration, 32 MCP unit + 2 live-server MCP integration.
+
+---
+
 ## [v1.16.0] — 2026-10-01
 
 The **working-together** release: split-document authoring,

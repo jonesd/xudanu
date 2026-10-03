@@ -22,6 +22,10 @@ pub mod keymaster;
 #[cfg(feature = "server")]
 pub mod lock;
 #[cfg(feature = "server")]
+pub mod mcp;
+#[cfg(feature = "server")]
+pub mod mcp_ws;
+#[cfg(feature = "server")]
 pub mod otree_crdt;
 #[cfg(feature = "server")]
 pub mod rate_limiter;

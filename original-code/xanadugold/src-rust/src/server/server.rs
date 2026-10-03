@@ -4197,7 +4197,7 @@ impl Server {
         }
     }
 
-    fn materialize_with_provenance(
+    pub(crate) fn materialize_with_provenance(
         &mut self,
         work_be_id: BeId,
         session_id: SessionId,
@@ -4732,7 +4732,16 @@ impl Server {
         {
             let text = self.works[&be_id].work.edition().to_text();
             let title = self.works[&be_id].cached_title.clone();
-            if let Err(e) = self.wal.append_work_create(be_id, owner, &title, &text) {
+            if let Err(e) = self.wal.append_work_create(
+                be_id,
+                owner,
+                &title,
+                &text,
+                serde_json::to_value(crate::edition::persistent::EditionSnapshot::from_edition(
+                    &self.works[&be_id].work.edition(),
+                ))
+                .ok(),
+            ) {
                 tracing::warn!("[wal] work_create (duplicate) append failed: {}", e);
             }
         }
@@ -4884,7 +4893,16 @@ impl Server {
         {
             let text = self.works[&be_id].work.edition().to_text();
             let wal_title = self.works[&be_id].cached_title.clone();
-            if let Err(e) = self.wal.append_work_create(be_id, owner, &wal_title, &text) {
+            if let Err(e) = self.wal.append_work_create(
+                be_id,
+                owner,
+                &wal_title,
+                &text,
+                serde_json::to_value(crate::edition::persistent::EditionSnapshot::from_edition(
+                    &self.works[&be_id].work.edition(),
+                ))
+                .ok(),
+            ) {
                 tracing::warn!("[wal] work_create append failed: {}", e);
             }
         }
@@ -5054,7 +5072,16 @@ impl Server {
         {
             let text = self.works[&be_id].work.edition().to_text();
             let wal_title = self.works[&be_id].cached_title.clone();
-            if let Err(e) = self.wal.append_work_create(be_id, owner, &wal_title, &text) {
+            if let Err(e) = self.wal.append_work_create(
+                be_id,
+                owner,
+                &wal_title,
+                &text,
+                serde_json::to_value(crate::edition::persistent::EditionSnapshot::from_edition(
+                    &self.works[&be_id].work.edition(),
+                ))
+                .ok(),
+            ) {
                 tracing::warn!("[wal] work_create append failed: {}", e);
             }
         }
@@ -7846,8 +7873,11 @@ impl Server {
             .unwrap_or_default();
         for link_id in affected_links {
             self.links.remove(&link_id);
-            if let Some(v) = self.work_to_links.get_mut(&link_id) {
-                v.retain(|id| *id != work_be_id && *id != link_id);
+            // The link's id appears in the link-sets of every work the
+            // link touches — remove it from all of them. (Keying by
+            // link_id here would miss: work_to_links is work-keyed.)
+            for v in self.work_to_links.values_mut() {
+                v.remove(&link_id);
             }
         }
         self.work_to_links.remove(&work_be_id);
@@ -11898,6 +11928,7 @@ impl Server {
         owner: Option<BeId>,
         title: String,
         text: String,
+        edition: Option<serde_json::Value>,
     ) {
         if self.works.contains_key(&work_id) {
             return;
@@ -11916,7 +11947,14 @@ impl Server {
         if work_id >= self.grand_map.id_counter() {
             self.grand_map.set_id_counter(work_id + 1);
         }
-        let edition = crate::edition::Edition::from_text(&text);
+        // Prefer the full edition snapshot (entries + span provenance);
+        // fall back to text-only for pre-snapshot WAL entries.
+        let edition = match edition.and_then(|v| {
+            serde_json::from_value::<crate::edition::persistent::EditionSnapshot>(v).ok()
+        }) {
+            Some(snap) => snap.to_edition(),
+            None => crate::edition::Edition::from_text(&text),
+        };
         let mut work = Work::new_with_owner(work_id, owner, edition);
         work.set_tumbler_server(Some(self.tumbler_server_identity()));
         // Creation default: owner-private. A work_publish replay
@@ -17696,6 +17734,9 @@ impl Server {
                 tracing::warn!("WAL write failed for create_link: {}", e);
             }
         }
+        // FR-80: fire link detectors on creation (untyped path — see
+        // note on create_link_with_hyperlink_homed).
+        self.detectors_fire_link(_session_id, link_id, &inserted);
         self.auto_checkpoint();
         Ok(link_id)
     }
@@ -17916,6 +17957,11 @@ impl Server {
                 tracing::warn!("WAL write failed for create_link: {}", e);
             }
         }
+        // FR-80: link detectors must fire on creation too — the
+        // set_types hook only covers links that later receive types;
+        // links created with HyperLink::make types bypass it (found
+        // via FR-141 Phase 3: agent-planted link watches never fired).
+        self.detectors_fire_link(_session_id, link_id, &inserted);
         self.auto_checkpoint();
         Ok(link_id)
     }
@@ -20535,6 +20581,8 @@ impl Server {
                     ("work".to_string(), wid, r.is_direct)
                 } else if let Some(eid) = elem.as_edition_id() {
                     ("edition".to_string(), eid, r.is_direct)
+                } else if let Some(lid) = elem.label_id_value() {
+                    ("link".to_string(), lid, r.is_direct)
                 } else {
                     ("unknown".to_string(), 0u64, r.is_direct)
                 }
@@ -22141,7 +22189,19 @@ impl Server {
         Ok(updated)
     }
 
-    const INLINE_MAX_DEPTH: usize = 1000;
+    /// Hard recursion guard for transclusion resolution. Cycles are
+    /// handled separately by the resolution stack; this limit only
+    /// fires on pathological chain depth and truncates visibly.
+    /// Empirically stack-safe: each nesting level costs several
+    /// recursive frames, and debug builds on a 2 MiB thread stack
+    /// overflow between 384 and 448 levels — 256 keeps ~40% headroom.
+    /// Raising this requires an iterative resolver (or a dedicated
+    /// large-stack resolution thread).
+    const INLINE_MAX_DEPTH: usize = 256;
+    /// Rendered in place of content past INLINE_MAX_DEPTH so deep-chain
+    /// truncation is visible rather than silent (same seam style as the
+    /// keyed-segment `…[awaiting source]…` placeholder).
+    const DEPTH_LIMIT_MARKER: &str = "…[transclusion depth limit]…";
 
     /// F9: resolve a RAW char range of a source work with nesting —
     /// text characters overlapping the range plus fully-resolved
@@ -22169,7 +22229,7 @@ impl Server {
                 Self::INLINE_MAX_DEPTH,
                 src_id
             );
-            return Ok(String::new());
+            return Ok(Self::DEPTH_LIMIT_MARKER.to_string());
         }
         if stack.contains(&src_id) {
             // Cycle: the original whole-work resolver returned the
@@ -22330,7 +22390,7 @@ impl Server {
                 Self::INLINE_MAX_DEPTH,
                 work_id
             );
-            return Ok(String::new());
+            return Ok(Self::DEPTH_LIMIT_MARKER.to_string());
         }
         if stack.contains(&work_id) {
             let ws = self
@@ -34300,6 +34360,43 @@ mod tests {
     }
 
     #[test]
+    fn admin_delete_cleans_link_index_for_all_affected_works() {
+        let (mut server, sid) = setup_logged_in_server();
+        let a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let b = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let c = server.create_work(sid, Edition::from_text("c")).unwrap();
+        let lab = server.create_link(sid, a, b, None, None).unwrap();
+        let lcb = server.create_link(sid, c, b, None, None).unwrap();
+
+        assert!(server.work_to_links[&a].contains(&lab));
+        assert!(server.work_to_links[&b].contains(&lab));
+        assert!(server.work_to_links[&c].contains(&lcb));
+
+        server.grant_admin_authority(sid).unwrap();
+        server.work_delete_admin(sid, b).unwrap();
+
+        assert!(!server.links.contains_key(&lab));
+        assert!(!server.links.contains_key(&lcb));
+        assert!(!server.work_to_links.contains_key(&b));
+        // Surviving works' link sets must not keep ids of links that
+        // were dropped together with the deleted work.
+        assert!(
+            !server
+                .work_to_links
+                .get(&a)
+                .is_some_and(|s| s.contains(&lab)),
+            "work A's link set kept stale link id"
+        );
+        assert!(
+            !server
+                .work_to_links
+                .get(&c)
+                .is_some_and(|s| s.contains(&lcb)),
+            "work C's link set kept stale link id"
+        );
+    }
+
+    #[test]
     #[cfg(feature = "server")]
     fn edit_policy_admin_set_persists_across_restart() {
         let data_dir = std::env::temp_dir().join(format!(
@@ -43581,7 +43678,13 @@ mod tests {
 
         server.work_star(sid, doc).unwrap();
         assert!(server.wal.is_enabled());
-        assert_eq!(server.wal.seq(), 1, "star should write WAL entry");
+        // work_create WALs since b498c9d4 (hard-kill survival), star
+        // adds one more.
+        assert_eq!(
+            server.wal.seq(),
+            2,
+            "create + star should write 2 WAL entries"
+        );
 
         let _ = std::fs::remove_dir_all(&data_dir);
     }
@@ -43598,8 +43701,8 @@ mod tests {
         server.work_unstar(sid, doc).unwrap();
         assert_eq!(
             server.wal.seq(),
-            2,
-            "star + unstar should write 2 WAL entries"
+            3,
+            "create + star + unstar should write 3 WAL entries"
         );
 
         let _ = std::fs::remove_dir_all(&data_dir);
@@ -43656,7 +43759,7 @@ mod tests {
         let doc = server.create_work(sid, Edition::from_text("test")).unwrap();
 
         server.work_star(sid, doc).unwrap();
-        assert_eq!(server.wal.seq(), 1);
+        assert_eq!(server.wal.seq(), 2, "create + star WAL entries");
 
         server.checkpoint_to_store().unwrap();
         assert_eq!(
@@ -45124,6 +45227,191 @@ mod tests {
             r0.flat_end > r1.flat_start || r1.flat_end > r0.flat_start,
             "transclusion ranges should overlap in resolved text"
         );
+    }
+
+    mod transclusion_property_tests {
+        use super::*;
+        use proptest::prelude::*;
+
+        fn carrier(elem: RangeElement) -> std::sync::Arc<crate::edition::range_element::Carrier> {
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(elem))
+        }
+
+        fn edition_from(elements: Vec<RangeElement>) -> Edition {
+            let entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> =
+                elements
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, e)| (i as i64, carrier(e)))
+                    .collect();
+            Edition::from_entries(entries)
+        }
+
+        fn sub_range(n: usize, a: usize, b: usize) -> (usize, usize) {
+            let s = a % n;
+            let e = s + 1 + (b % (n - s));
+            (s, e)
+        }
+
+        fn char_slice(src: &str, s: usize, e: usize) -> String {
+            src.chars().skip(s).take(e - s).collect()
+        }
+
+        proptest! {
+            #![proptest_config(proptest::test_runner::Config::with_cases(32))]
+
+            #[test]
+            fn random_dag_resolves_every_placement(
+                fragments in prop::collection::vec("[a-z ]{2,8}", 2..8),
+                taps in prop::collection::vec(
+                    prop::collection::vec((any::<u64>(), any::<u64>(), any::<u64>()), 0..3),
+                    1..7,
+                ),
+            ) {
+                let (mut server, sid) = setup_logged_in_server();
+                let mut ids: Vec<BeId> = Vec::new();
+                let mut lens: Vec<usize> = Vec::new();
+                for frag in &fragments {
+                    let id = server.create_work(sid, Edition::from_text(frag)).unwrap();
+                    ids.push(id);
+                    lens.push(frag.chars().count());
+                }
+                // Work 0 stays text-only; each later work transcludes
+                // earlier works (j < i keeps the graph acyclic) and gets
+                // one fresh text fragment of its own.
+                let n_extra = taps.len().min(ids.len() - 1);
+                let mut root_placements = 0usize;
+                for i in 1..=n_extra {
+                    let frag = fragments[i % fragments.len()].clone();
+                    let mut elements = vec![RangeElement::text(frag)];
+                    for (a, b, c) in &taps[i - 1] {
+                        let j = (*a as usize) % i;
+                        let len = lens[j].max(1);
+                        let (s, e) = sub_range(len, *b as usize, *c as usize);
+                        elements.push(RangeElement::transclusion(ids[j], s, e));
+                        if i == n_extra {
+                            root_placements += 1;
+                        }
+                    }
+                    let id = server.create_work(sid, edition_from(elements)).unwrap();
+                    ids.push(id);
+                    lens.push(fragments[i % fragments.len()].chars().count());
+                }
+                let root = *ids.last().unwrap();
+                let result = server.resolve_inline_transclusions(root).unwrap();
+                prop_assert!(
+                    result.span_ranges.len() >= root_placements,
+                    "expected at least {} span ranges, got {}: {:?}",
+                    root_placements,
+                    result.span_ranges.len(),
+                    result.text
+                );
+                for (i, span) in result.span_ranges.iter().enumerate() {
+                    prop_assert!(
+                        !span.resolved_content.is_empty(),
+                        "span {} resolved empty (text so far: {:?})",
+                        i,
+                        result.text
+                    );
+                }
+                prop_assert!(!result.text.is_empty());
+            }
+
+            #[test]
+            fn overlapping_ranges_render_exact_slices(
+                src in "[a-z]{10,30}",
+                a in any::<u64>(), b in any::<u64>(),
+                c in any::<u64>(), d in any::<u64>(),
+            ) {
+                let (mut server, sid) = setup_logged_in_server();
+                let source = server.create_work(sid, Edition::from_text(&src)).unwrap();
+                let n = src.chars().count();
+                let (s1, e1) = sub_range(n, a as usize, b as usize);
+                let (s2, e2) = sub_range(n, c as usize, d as usize);
+                let doc = server
+                    .create_work(
+                        sid,
+                        edition_from(vec![
+                            RangeElement::transclusion(source, s1, e1),
+                            RangeElement::transclusion(source, s2, e2),
+                        ]),
+                    )
+                    .unwrap();
+                let result = server.resolve_inline_transclusions(doc).unwrap();
+                prop_assert_eq!(result.span_ranges.len(), 2);
+                prop_assert_eq!(&result.span_ranges[0].resolved_content, &char_slice(&src, s1, e1));
+                prop_assert_eq!(&result.span_ranges[1].resolved_content, &char_slice(&src, s2, e2));
+            }
+
+            #[test]
+            fn ring_cycles_terminate_without_depth_marker(
+                n in 2usize..7,
+                fragments in prop::collection::vec("[a-z]{3,8}", 2..7),
+            ) {
+                let (mut server, sid) = setup_logged_in_server();
+                let count = n.max(2).min(fragments.len());
+                let mut ids: Vec<BeId> = Vec::new();
+                for frag in fragments.iter().take(count) {
+                    ids.push(server.create_work(sid, Edition::from_text(frag)).unwrap());
+                }
+                for i in 0..count {
+                    let target = ids[(i + 1) % count];
+                    server.work_grab(sid, ids[i]).unwrap();
+                    let entries = server
+                        .works
+                        .get(&ids[i])
+                        .unwrap()
+                        .work()
+                        .current_edition()
+                        .all_entries();
+                    let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> =
+                        entries.clone();
+                    let next = new_entries.last().map(|(p, _)| *p + 1).unwrap_or(0);
+                    new_entries.push((next, carrier(RangeElement::transclusion(target, 0, 999))));
+                    server
+                        .work_revise(sid, ids[i], Edition::from_entries(new_entries))
+                        .unwrap();
+                }
+                for (i, &id) in ids.iter().enumerate() {
+                    let result = server.resolve_inline_transclusions(id).unwrap();
+                    prop_assert!(
+                        !result.text.is_empty(),
+                        "ring member {} resolved empty",
+                        i
+                    );
+                    prop_assert!(
+                        !result.text.contains(Server::DEPTH_LIMIT_MARKER),
+                        "ring member {} hit the depth marker: {:?}",
+                        i,
+                        result.text
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn deep_chain_truncates_with_visible_marker() {
+            let (mut server, sid) = setup_logged_in_server();
+            let mut prev = server.create_work(sid, Edition::from_text("leaf")).unwrap();
+            for i in 1..(Server::INLINE_MAX_DEPTH + 2) {
+                let w = server
+                    .create_work(
+                        sid,
+                        edition_from(vec![
+                            RangeElement::text(format!("d{} ", i)),
+                            RangeElement::transclusion(prev, 0, 1_000_000),
+                        ]),
+                    )
+                    .unwrap();
+                prev = w;
+            }
+            let result = server.resolve_inline_transclusions(prev).unwrap();
+            assert!(
+                result.text.contains(Server::DEPTH_LIMIT_MARKER),
+                "expected visible depth marker, got: {:?}",
+                result.text
+            );
+        }
     }
 
     #[test]

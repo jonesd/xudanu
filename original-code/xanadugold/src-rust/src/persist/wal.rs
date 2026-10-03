@@ -145,6 +145,7 @@ impl WalLog {
         owner: Option<BeId>,
         title: &str,
         text: &str,
+        edition: Option<serde_json::Value>,
     ) -> Result<u64, WalError> {
         let mut args = serde_json::json!({
             "work_id": work_id,
@@ -153,6 +154,12 @@ impl WalLog {
         });
         if let Some(owner) = owner {
             args["owner"] = serde_json::json!(owner);
+        }
+        // The full edition snapshot keeps span provenance and element
+        // structure (transclusions) alive across a crash before the
+        // first checkpoint — text alone silently strips both.
+        if let Some(edition) = edition {
+            args["edition"] = edition;
         }
         self.append("work_create", args)
     }
@@ -773,11 +780,13 @@ impl WalLog {
                         entry.args.get("text").and_then(|v| v.as_str()),
                     ) {
                         let owner = entry.args.get("owner").and_then(|v| v.as_u64());
+                        let edition = entry.args.get("edition").cloned();
                         server.wal_replay_create_work(
                             work_id,
                             owner,
                             title.to_string(),
                             text.to_string(),
+                            edition,
                         );
                         true
                     } else {

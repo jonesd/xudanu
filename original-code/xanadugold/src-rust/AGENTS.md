@@ -52,8 +52,11 @@ frontend. The project is split across two trees:
   link addressing. `CompoundSpan::to_tumbler()` / `from_tumbler()` for
   transclusion coordinates.
 - **Compound documents**: inline `RangeElement::Transclusion` in the O-tree
-  (single source of truth — no side-table drift). 32-level recursive resolution
-  with cycle detection. Span migration through arbitrary deltas.
+  (single source of truth — no side-table drift). Recursive resolution with
+  cycle detection and a stack-safe depth guard (`INLINE_MAX_DEPTH = 256`,
+  truncates with a visible `…[transclusion depth limit]…` marker; deeper
+  chains need the planned iterative resolver). Span migration through
+  arbitrary deltas.
 - **Links & backlinks**: typed, bidirectional, unbreakable connections between
   passages. Five built-in types (Comment, Reference, Disagreement, Quotation,
   See Also). Span migration survives edits.

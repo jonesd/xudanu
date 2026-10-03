@@ -26,7 +26,6 @@ pub const MAX_ENTRIES: usize = 2_000_000;
 pub const MAX_SPANS: usize = 100_000;
 pub const MAX_TEXT_CHARS: usize = 50_000_000;
 pub const MAX_TEXT_ENTRY_CHARS: usize = 1_000_000;
-pub const MAX_TRANSCLUSION_DEPTH: usize = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvariantViolation {

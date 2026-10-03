@@ -230,7 +230,15 @@ impl DetectorRegistry {
             .filter_map(|r| r.work_context())
             .collect();
         let types = link.link_types().to_vec();
-        let acting_work = work_ids.first().copied().unwrap_or(0);
+        // The acting work is the link's ORIGIN, not whichever end
+        // iterates first — ends() is a HashMap, so first() made the
+        // self-watch suppression nondeterministic for two-ended links
+        // (found via FR-141 Phase 3: link watches fired at random).
+        let acting_work = link
+            .end_at("LeftEnd")
+            .and_then(|r| r.work_context())
+            .or_else(|| work_ids.first().copied())
+            .unwrap_or(0);
         let mut fired = 0;
         for d in self.detectors.values_mut() {
             if !d.matches_link(&work_ids, &types, by_club, acting_work) {
