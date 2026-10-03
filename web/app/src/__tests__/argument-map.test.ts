@@ -146,8 +146,6 @@ describe("buildArgumentMap", () => {
 });
 
 describe("layoutMap", () => {
-  const leaf = (id: string, depth = 0): never => ({ id, depth, children: [] }) as never;
-
   it("a lone root occupies one unit at the origin", () => {
     const { root } = buildArgumentMap(200, [], "Solo");
     const layout = layoutMap(root);

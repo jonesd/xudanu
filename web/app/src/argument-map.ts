@@ -153,7 +153,6 @@ export function buildArgumentMap(
         node.children.push({
           id: `G${r.link_id}`,
           workId: null,
-          ghostOf: null,
           entryLinkId: r.link_id,
           kind: "ghost",
           label,
@@ -191,7 +190,6 @@ export function buildArgumentMap(
       root.children.push({
         id: `G${l.link_id}`,
         workId: null,
-        ghostOf: null,
         entryLinkId: l.link_id,
         kind: "ghost",
         label,
@@ -251,7 +249,6 @@ export function buildArgumentMap(
       root.children.push({
         id: `G${l.link_id}`,
         workId: null,
-        ghostOf: null,
         entryLinkId: l.link_id,
         kind: "ghost",
         label,
@@ -310,7 +307,7 @@ export interface LayoutOptions {
  * parents center over their children's span. Children render below
  * parents, branching outward left-to-right (argument.io's shape).
  */
-export function layoutMap(root: MapNode, opts: LayoutOptions = {}): MapLayout {
+export function layoutMap(root: MapNode, _opts: LayoutOptions = {}): MapLayout {
   const nodes: PositionedNode[] = [];
   const edges: { parentId: string; childId: string }[] = [];
 
@@ -329,7 +326,7 @@ export function layoutMap(root: MapNode, opts: LayoutOptions = {}): MapLayout {
     }
     let cursor = left + (width - node.children.reduce((s, c) => s + widthOf(c), 0)) / 2;
     for (const child of node.children) {
-      const childCenter = place(child, cursor);
+      place(child, cursor);
       cursor += widthOf(child);
       edges.push({ parentId: node.id, childId: child.id });
     }

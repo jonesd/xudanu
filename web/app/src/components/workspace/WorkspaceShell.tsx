@@ -113,7 +113,7 @@ import "../../workspace.css";
 const WS_URL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/xudanu`;
 
 type LeftRailMode = "documents" | "outline";
-type RightPanelTab = "provenance" | "connections" | "trails" | "timeline" | "servers" | "compare" | "more";
+type RightPanelTab = "provenance" | "connections" | "trails" | "timeline" | "servers" | "compare" | "map" | "more";
 
 interface WorkMeta {
   title: string;
@@ -4021,7 +4021,7 @@ export function WorkspaceShell() {
                    <ArgumentMap
                      rootWorkId={workBeId}
                      links={transclusion.links}
-                     rootLabel={workMeta?.title || openWorkTitle || undefined}
+                     rootLabel={workMeta?.title || undefined}
                      selectedId={argMapSelected}
                      onSelect={setArgMapSelected}
                      onJump={(wid) => selectWork(wid)}
