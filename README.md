@@ -4,6 +4,24 @@
 
 **📖 Documentation: [dgjones.info/xudanu](https://dgjones.info/xudanu/)** — user guide, architecture deep-dives, and interactive diagrams. See **[the Documentation section](#documentation)** below for a tour of the interesting parts.
 
+## Try it in 90 seconds
+
+**With Docker** (seeds a demo corpus of linked lessons, public sandbox):
+
+```bash
+docker compose -f docker-compose.demo.yml up
+```
+
+**With a release binary** (no build, no dependencies — [downloads here](https://github.com/jonesd/xudanu/releases)):
+
+```bash
+./xudanu-server run 127.0.0.1:8080 demo-data --edit-policy public-sandbox --seed-links-demo
+```
+
+Then open **http://localhost:8080**. Create a criticism in one document, link it as a *disagreement* to a claim in another — and open the claim: your criticism is already there. Nobody edited it. That's what the web never shipped: **connections visible from both ends.**
+
+Full walkthrough: **[The 90-Second Bidirectional-Links Demo](original-code/xanadugold/src-rust/docs/demo-bidirectional-links.md)**.
+
 ## What it looks like
 
 | | |
@@ -491,7 +509,7 @@ Portions of this project are derived from **Udanax Gold (Xanadu 92.1)**, which w
 The original license is included in:
 
 ```
-original-code/xanadugold/LICENSE
+original-code/xanadugold/LICENSE-udanax-gold.txt
 ```
 
 ### Commercial Use

@@ -1,0 +1,45 @@
+# docker-compose.demo.yml — the 90-second Xudanu demo.
+#
+# One container, seeded with the Links Course corpus, public sandbox
+# editing. This is the "download and see it in one command" path:
+#
+#   docker compose -f docker-compose.demo.yml up
+#
+# Then open http://localhost:8080 — the seeded lessons are
+# pre-connected with typed links; open any two and watch the
+# connections panel show each from both ends. The walkthrough:
+# docs/demo-bidirectional-links.md
+#
+# Reset to a fresh demo: docker compose -f docker-compose.demo.yml down -v
+#
+# NOTE: public-sandbox means anyone who can reach the port can edit.
+# Fine on localhost; do not expose this compose to the internet.
+
+services:
+  xudanu-demo:
+    image: ghcr.io/jonesd/xudanu:latest
+    # Build locally instead of pulling:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - xudanu-demo-data:/data
+    command:
+      - "run"
+      - "0.0.0.0:8080"
+      - "/data"
+      - "--edit-policy"
+      - "public-sandbox"
+      - "--seed-links-demo"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  xudanu-demo-data:
