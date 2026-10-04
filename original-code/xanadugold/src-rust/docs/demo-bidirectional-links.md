@@ -33,10 +33,20 @@ list on the left, the editor in the middle, and a connections panel
 showing every link that touches the document you have open — in both
 directions.
 
-Open a couple of the Links Course lessons. Notice that opening Lesson
-1 shows connections arriving from the other lessons: those are
-backlinks — links other documents made *to* this one, visible here
-even though Lesson 1 was never edited to contain them.
+**Start with the Trails panel.** The seed includes two published
+tours: **The Curator's Tour** (ten rooms of unusual connection —
+every exhibit is the thing itself) and **The Links Course** (five
+lessons from the simple link to gathered end-sets, each with a live
+demonstration and a task you can actually do here, ending in a
+sandbox). On the hosted read-only instance
+([xudanu.com](https://xudanu.com)) the same tours are walkable but
+the tasks are frozen — run locally (or on the sandbox host) to do
+them.
+
+Opening any Links Course lesson shows connections arriving from the
+other lessons: those are backlinks — links other documents made *to*
+this one, visible here even though Lesson 1 was never edited to
+contain them.
 
 ## 3. The wow moment (do it yourself)
 
