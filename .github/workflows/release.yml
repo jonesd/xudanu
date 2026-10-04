@@ -176,9 +176,12 @@ jobs:
           mkdir -p dist
           cp target/${{ matrix.target }}/release/xudanu-server dist/
           cp target/${{ matrix.target }}/release/xudanu-cli dist/
+          cp target/${{ matrix.target }}/release/xudanu-mcp dist/ 2>/dev/null || true
+          cp target/${{ matrix.target }}/release/xudanu-verify dist/ 2>/dev/null || true
           cp target/${{ matrix.target }}/release/migrate_manifest dist/ 2>/dev/null || true
           cp target/${{ matrix.target }}/release/chunk_validator dist/ 2>/dev/null || true
           cp -r web/app/dist dist/
+          cp QUICKSTART.md dist/
           [ -f LICENSE ] && cp LICENSE dist/ || true
           [ -f NOTICE ] && cp NOTICE dist/ || true
           tar -czf ${{ matrix.artifact }} -C dist .
@@ -190,9 +193,12 @@ jobs:
           mkdir dist
           cp target/${{ matrix.target }}/release/xudanu-server.exe dist/
           cp target/${{ matrix.target }}/release/xudanu-cli.exe dist/
+          if (Test-Path target/${{ matrix.target }}/release/xudanu-mcp.exe) { cp target/${{ matrix.target }}/release/xudanu-mcp.exe dist/ }
+          if (Test-Path target/${{ matrix.target }}/release/xudanu-verify.exe) { cp target/${{ matrix.target }}/release/xudanu-verify.exe dist/ }
           cp target/${{ matrix.target }}/release/migrate_manifest.exe dist/
           cp target/${{ matrix.target }}/release/chunk_validator.exe dist/
           cp -r web/app/dist dist/
+          cp QUICKSTART.md dist/
           if (Test-Path LICENSE) { cp LICENSE dist/ }
           if (Test-Path NOTICE) { cp NOTICE dist/ }
           Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}
