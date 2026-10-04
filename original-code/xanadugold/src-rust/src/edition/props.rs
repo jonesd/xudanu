@@ -1,3 +1,5 @@
+// Derived from Udanax Gold (Xanadu 92.1), released 1999 under the MIT/X11
+// license — see NOTICE and THIRD_PARTY_LICENSES/udanax_gold.txt.
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 

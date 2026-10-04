@@ -77,3 +77,7 @@ spec/**/states/
 docs/videos/reel/parts/
 docs/videos/reel/frame-*.png
 docs/videos/reel/page@*
+
+# Tarball guard — never commit archive blobs (email-archive license exception risk)
+original-code/xanadugold/*.tar
+original-code/xanadugold/*.tar.gz
