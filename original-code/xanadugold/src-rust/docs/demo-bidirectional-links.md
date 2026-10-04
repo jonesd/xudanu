@@ -39,7 +39,9 @@ every exhibit is the thing itself) and **The Links Course** (five
 lessons from the simple link to gathered end-sets, each with a live
 demonstration and a task you can actually do here, ending in a
 sandbox). On the hosted read-only instance
-([xudanu.com](https://xudanu.com)) the same tours are walkable but
+([xudanu.com](https://xudanu.com)) the same tours, and the live sandbox
+at [demo.transclusion.org](https://demo.transclusion.org) has them
+doable are walkable but
 the tasks are frozen — run locally (or on the sandbox host) to do
 them.
 

@@ -20,7 +20,7 @@ docker compose -f docker-compose.demo.yml up
 
 Then open **http://localhost:8080**. Create a criticism in one document, link it as a *disagreement* to a claim in another — and open the claim: your criticism is already there. Nobody edited it. That's what the web never shipped: **connections visible from both ends.**
 
-No setup at all? Browse the hosted instance (read-only, seeded): **[xudanu.com](https://xudanu.com)**
+No setup at all? Browse the hosted read-only instance: **[xudanu.com](https://xudanu.com)** — or break things in the live public sandbox: **[demo.transclusion.org](https://demo.transclusion.org)**
 
 Full walkthrough: **[The 90-Second Bidirectional-Links Demo](original-code/xanadugold/src-rust/docs/demo-bidirectional-links.md)**.
 

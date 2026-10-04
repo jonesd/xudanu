@@ -82,6 +82,6 @@ fi
 echo ""
 echo "=== Demo deploy complete ==="
 echo "Container:  running on the server at 127.0.0.1:8081"
-echo "Public URL: https://demo.xudanu.com  (once DNS + proxy step above are done)"
+echo "Public URL: https://demo.transclusion.org  (once DNS + proxy step above are done)"
 echo "Reset:      ssh $SERVER 'cd $REMOTE_DIR && docker compose -p xudanu-demo down -v' && ./scripts/deploy-demo.sh"
 echo "Logs:       ssh $SERVER 'cd $REMOTE_DIR && docker compose -p xudanu-demo logs -f'"
