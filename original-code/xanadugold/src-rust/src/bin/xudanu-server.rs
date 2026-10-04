@@ -1234,13 +1234,24 @@ async fn main() {
                     tracing::info!("Edit policy: {} (operator-set)", policy.as_str());
                 }
                 None => {
-                    // Production servers are strict by default: only
-                    // signed-in identities can create/edit works.
-                    server.set_edit_policy(xudanu::server::EditPolicy::OwnerOnly);
-                    tracing::info!(
-                        "Edit policy: owner-only (default; anonymous sessions cannot create or edit works. \
-                         Pass --edit-policy public-sandbox for a wiki-style server.)"
-                    );
+                    if server.edit_policy_restored() {
+                        // The persisted policy wins over the default —
+                        // restarting a public-sandbox or frozen server
+                        // without repeating the flag must not silently
+                        // lock it down (or open it up).
+                        tracing::info!(
+                            "Edit policy: {} (persisted; kept)",
+                            server.edit_policy().as_str()
+                        );
+                    } else {
+                        // Fresh server: strict by default — only
+                        // signed-in identities can create/edit works.
+                        server.set_edit_policy(xudanu::server::EditPolicy::OwnerOnly);
+                        tracing::info!(
+                            "Edit policy: owner-only (default; anonymous sessions cannot create or edit works. \
+                             Pass --edit-policy public-sandbox for a wiki-style server.)"
+                        );
+                    }
                 }
             }
             if let Some(enabled) = network_flag {
@@ -1415,6 +1426,39 @@ async fn main() {
                         },
                     );
                 }
+                // Release layouts ship the web app beside the binary —
+                // serve it without asking (found via the new-user
+                // walkthrough: the spartan embedded page greeted every
+                // downloader while dist/ sat unused).
+                let static_dir = match static_dir {
+                    Some(dir) => Some(dir),
+                    None => {
+                        let local = std::path::PathBuf::from("dist");
+                        let beside_exe = std::env::current_exe()
+                            .ok()
+                            .and_then(|p| p.parent().map(|d| d.join("dist")));
+                        if local.is_dir() {
+                            tracing::info!("Serving frontend from ./dist (auto-detected)");
+                            Some(local)
+                        } else if let Some(dist) = beside_exe.filter(|p| p.is_dir()) {
+                            tracing::info!(
+                                "Serving frontend from {} (beside binary, auto-detected)",
+                                dist.display()
+                            );
+                            Some(dist)
+                        } else {
+                            tracing::warn!(
+                                "┌─ Web UI: serving the BUILT-IN MINIMAL PAGE\n\
+                                 │ The full web app was not found (no --static-dir, no ./dist beside\n\
+                                 │ the binary or working directory).\n\
+                                 │ FIX: extract the release archive fully so `dist/` sits next to\n\
+                                 │ `xudanu-server`, run the server from that directory, or pass\n\
+                                 │ `--static-dir <path-to-dist>`."
+                            );
+                            None
+                        }
+                    }
+                };
                 let app = AppState::new(server);
                 let app = match static_dir {
                     Some(ref dir) => {

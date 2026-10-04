@@ -940,6 +940,11 @@ pub struct Server {
     blob_store: BlobStore,
     pub allow_loopback_cross_server: bool,
     edit_policy: EditPolicy,
+    /// True when this boot loaded an edit policy from the persisted
+    /// manifest — the startup default must not clobber it (found via
+    /// the new-user walkthrough: a restarted public-sandbox server
+    /// silently reverted to owner-only).
+    edit_policy_restored: bool,
     checkpoint_path: Option<std::path::PathBuf>,
     pub(crate) data_dir: Option<std::path::PathBuf>,
     chunk_store: Option<Arc<crate::persist::chunk_store::ChunkStore>>,
@@ -1728,6 +1733,7 @@ impl Server {
             blob_store: BlobStore::in_memory(),
             allow_loopback_cross_server: false,
             edit_policy: EditPolicy::default(),
+            edit_policy_restored: false,
             checkpoint_path: None,
             data_dir: None,
             chunk_store: None,
@@ -1935,6 +1941,12 @@ impl Server {
 
     pub fn edit_policy(&self) -> EditPolicy {
         self.edit_policy
+    }
+
+    /// Whether this boot's edit policy came from the persisted
+    /// manifest (startup defaults must not override it).
+    pub fn edit_policy_restored(&self) -> bool {
+        self.edit_policy_restored
     }
 
     /// FR-45 P2: admin-gated runtime edit-policy change (persisted in
@@ -15771,6 +15783,7 @@ impl Server {
                 self.set_edit_policy(EditPolicy::OwnerOnly);
             }
         }
+        self.edit_policy_restored = true;
         tracing::info!(
             "Xudanu network (cross-server): {}",
             if self.network_enabled {
@@ -28079,6 +28092,7 @@ pub(crate) mod persist_snapshot {
                 blob_store: BlobStore::in_memory(),
                 allow_loopback_cross_server: false,
                 edit_policy: EditPolicy::default(),
+                edit_policy_restored: false,
                 checkpoint_path: None,
                 data_dir: None,
                 chunk_store: None,
@@ -34394,6 +34408,36 @@ mod tests {
                 .is_some_and(|s| s.contains(&lcb)),
             "work C's link set kept stale link id"
         );
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn edit_policy_restored_flag_guards_startup_default() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_edpolflag_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            assert!(
+                !server.edit_policy_restored(),
+                "fresh server must not claim a restored policy"
+            );
+            server.set_edit_policy(EditPolicy::PublicSandbox);
+            server.checkpoint_to_store().unwrap();
+        }
+        let mut restored = Server::new();
+        restored.restore_from_data_dir(&data_dir, None).unwrap();
+        assert!(restored.edit_policy_restored());
+        assert_eq!(restored.edit_policy(), EditPolicy::PublicSandbox);
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 
     #[test]
