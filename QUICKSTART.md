@@ -42,6 +42,11 @@ Connections visible from both ends: the thing the web never shipped.
 
 ## Notes
 
+- **macOS**: unsigned downloads are quarantined by Gatekeeper
+  ("Apple could not verify..."). Clear it for the whole folder with:
+  `xattr -rd com.apple.quarantine .` (run inside the extracted
+  directory), or allow individual binaries under System Settings →
+  Privacy & Security → Open Anyway.
 - `--edit-policy public-sandbox` lets anyone connect and edit — for
   local demos. Use `owner-only` (default) on anything exposed.
 - Data lives in the directory you name (`demo-data`). Wipe it and
