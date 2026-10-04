@@ -853,6 +853,7 @@ async fn main() {
             // companions) at startup — ships with the binary so end
             // users can recreate the demo with one flag.
             let mut seed_links_demo = false;
+            let mut seed_gallery = false;
             let mut seed_compound_demo_flag = false;
             let mut edit_policy: Option<xudanu::server::EditPolicy> =
                 std::env::var("XUDANU_EDIT_POLICY")
@@ -1079,6 +1080,9 @@ async fn main() {
                     "--seed-links-demo" => {
                         seed_links_demo = true;
                     }
+                    "--seed-gallery" => {
+                        seed_gallery = true;
+                    }
                     "--edit-policy" => {
                         i += 1;
                         let raw = args.get(i).map(|s| s.clone()).unwrap_or_else(|| {
@@ -1193,6 +1197,12 @@ async fn main() {
             }
             if seed_links_demo {
                 xudanu::server::seed_demo::seed_links_demo(&mut server);
+                // The base demo gets everything: the gallery rides
+                // along with the links course.
+                xudanu::server::seed_gallery::seed_gallery(&mut server);
+            }
+            if seed_gallery {
+                xudanu::server::seed_gallery::seed_gallery(&mut server);
             }
             if lattice_shadow_enabled {
                 server.enable_lattice_shadow();

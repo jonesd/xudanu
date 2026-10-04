@@ -42,6 +42,8 @@ pub mod ollama;
 pub mod seed_compound_demo;
 #[cfg(feature = "server")]
 pub mod seed_demo;
+#[cfg(feature = "server")]
+pub mod seed_gallery;
 pub mod server;
 pub mod server_directory;
 #[cfg(feature = "server")]
