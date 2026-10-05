@@ -252,6 +252,18 @@ impl ChunkStore {
     }
 
     fn cleanup_tmp_files(chunks_dir: &Path) {
+        // Only remove .tmp files older than the grace window. A concurrent
+        // writer (checkpoint, background verification opening its own
+        // handle) may be between File::create and rename right now; a
+        // fresh mtime means in-flight, not stale.
+        const TMP_GRACE: std::time::Duration = std::time::Duration::from_secs(60);
+        let cutoff = std::time::SystemTime::now()
+            .checked_sub(TMP_GRACE)
+            .unwrap_or(std::time::UNIX_EPOCH);
+        Self::cleanup_tmp_files_with_cutoff(chunks_dir, cutoff);
+    }
+
+    pub(crate) fn cleanup_tmp_files_with_cutoff(chunks_dir: &Path, cutoff: std::time::SystemTime) {
         let mut cleaned = 0u64;
         if let Ok(entries) = std::fs::read_dir(chunks_dir) {
             for entry in entries.flatten() {
@@ -262,6 +274,14 @@ impl ChunkStore {
                     for sub in sub_entries.flatten() {
                         let name = sub.file_name();
                         if name.to_string_lossy().ends_with(".tmp") {
+                            let stale = sub
+                                .metadata()
+                                .and_then(|m| m.modified())
+                                .map(|mt| mt < cutoff)
+                                .unwrap_or(false);
+                            if !stale {
+                                continue;
+                            }
                             if std::fs::remove_file(sub.path()).is_ok() {
                                 cleaned += 1;
                             }
@@ -659,6 +679,32 @@ mod tests {
 
         let read = store.read_chunk(&hash).unwrap();
         assert_eq!(read, data);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fresh_tmp_files_survive_concurrent_open() {
+        // Regression: background verification (lazy restore) opens its
+        // own ChunkStore while a checkpoint may sit between File::create
+        // and rename. cleanup_tmp_files must never reap a fresh .tmp.
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = ChunkStore::open(&dir).unwrap();
+        store.write_chunk(b"seed").unwrap();
+
+        let chunks_dir = dir.join("chunks");
+        let sub_dir = chunks_dir.join("zz");
+        std::fs::create_dir_all(&sub_dir).unwrap();
+        let in_flight = sub_dir.join("deadbeef.tmp");
+        std::fs::write(&in_flight, b"in flight").unwrap();
+
+        let _second = ChunkStore::open(&dir).unwrap();
+
+        assert!(
+            in_flight.exists(),
+            "fresh .tmp chunk file was deleted by a concurrent open"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
