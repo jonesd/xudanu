@@ -23,12 +23,16 @@ do right there.
 
 ## The one demo that matters
 
-1. Create a new work. Write a claim: `The funculator must be titanalum.`
-2. Create a second work. Write a criticism: `Titanalum is too expensive.`
-3. In the criticism, select text → create a link → target the claim → type: **disagreement**.
-4. Open the claim. The criticism is already there — nobody edited it.
+1. New work, one claimable sentence: `The grip assembly must be forged titanium.`
+2. Second work, one cost objection: `Sintered steel is plenty, and a fifth of the price.`
+3. Select the objection → Link → aim at the claim → type: **disagreement**.
+4. Open the claim. The objection is already there — nobody edited it.
 
 Connections visible from both ends: the thing the web never shipped.
+
+*(Demo lineage: the disputed-claim walkthrough is descended from the
+classic Xanadu demos — see "The Open Society and Its Media", §16.10.
+The sentences used here are our own.)*
 
 ## Also included
 

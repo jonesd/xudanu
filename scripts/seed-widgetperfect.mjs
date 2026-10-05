@@ -97,7 +97,7 @@ Margin thins; procurement is negotiating. The program stays on time.`;
 
 const SAGA_TEXT = `The WidgetPerfect Saga
 
-This room retells Mark Miller's 1994 demo story with live structure — the watches are real detectors and their collections hold the saga's events.
+This room retells the classic Xanadu demo story (told in "The Open Society and Its Media", §16.10, "The WidgetPerfect saga") with live structure — the watches are real detectors and their collections hold the saga's events.
 
 The story: Dan examines the competitor's partially modular widget. It is inferior, but its funculator is titanalum, and that matters. Dan writes a marketing requirement and links it — with a requirement link — to the passage in Ruth's technical plan that specifies duralum. Then Boeing calls about a $15M order, and Dan never quite gets around to telling Ruth.
 

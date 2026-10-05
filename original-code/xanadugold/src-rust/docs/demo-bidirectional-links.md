@@ -52,14 +52,18 @@ contain them.
 
 ## 3. The wow moment (do it yourself)
 
-1. Create a new work. Title it anything. Write a claim, e.g.
-   `The funculator must be made of titanalum.`
-2. Create a second work. Write a criticism, e.g.
-   `Titanalam is too expensive; duralum is sufficient.`
-3. Select text in the second work and create a link targeting the
-   first work. Choose the type **disagreement**.
-4. Now open the first work — the claim. The criticism is already
-   there, in its connections panel, typed and clickable.
+1. Make a work and put a claimable sentence in it — say,
+   `The grip assembly must be forged titanium.`
+2. Make a second work that disputes it on cost:
+   `Sintered steel is plenty, and a fifth of the price.`
+3. In the second work, select the dispute, click Link, aim it at the
+   first work, and type it **disagreement**.
+4. Reopen the claim. The objection is sitting in its connections panel,
+   typed and clickable.
+
+*(The disputed-material-claim shape of this demonstration descends from
+the classic Xanadu demos — retold in "The Open Society and Its Media",
+§16.10, "The WidgetPerfect saga". The sentences used here are ours.)*
 
 Nobody edited the claim document. The critic had no write access to
 it. The connection is visible from both ends anyway. Click it in
