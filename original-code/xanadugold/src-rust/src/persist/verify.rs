@@ -529,7 +529,7 @@ mod tests {
     }
 
     #[test]
-    fn chunk_store_cleanup_stale_tmp_on_open() {
+    fn chunk_store_cleanup_tmp_beyond_cutoff() {
         let dir = temp_dir();
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -543,15 +543,18 @@ mod tests {
         .unwrap();
         std::fs::write(chunks_dir.join("ab").join("other.tmp"), b"another stale").unwrap();
 
-        let store = ChunkStore::open(&dir).unwrap();
+        // A cutoff in the future treats freshly written .tmp files as
+        // beyond the grace window (equivalent to real staleness).
+        let future_cutoff = std::time::SystemTime::now() + std::time::Duration::from_secs(3600);
+        ChunkStore::cleanup_tmp_files_with_cutoff(&chunks_dir, future_cutoff);
 
         assert!(
             !chunks_dir.join("ab").join("abcdef123456.tmp").exists(),
-            "stale tmp should be cleaned up on open"
+            "tmp beyond the cutoff should be cleaned up"
         );
         assert!(
             !chunks_dir.join("ab").join("other.tmp").exists(),
-            "stale tmp should be cleaned up on open"
+            "tmp beyond the cutoff should be cleaned up"
         );
 
         let _ = std::fs::remove_dir_all(&dir);
