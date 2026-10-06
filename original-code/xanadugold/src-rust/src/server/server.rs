@@ -45819,7 +45819,11 @@ mod tests {
         let source = server
             .create_work(sid, Edition::from_text("hello world"))
             .unwrap();
-        // Work-level license default = ARR.
+        // This test exercises the overlay against a RESTRICTED work;
+        // set ARR explicitly (the create-time default is TCo).
+        server
+            .work_license_set(source, crate::edition::License::AllRightsReserved)
+            .unwrap();
         let s = server.work_span_license_classes(source, 0, 11).unwrap();
         assert!(
             s.total_class
@@ -45846,6 +45850,10 @@ mod tests {
         let (mut server, sid) = setup_logged_in_server();
         let source = server
             .create_work(sid, Edition::from_text("shared passage"))
+            .unwrap();
+        // Start from ARR explicitly (create-time default is TCo).
+        server
+            .work_license_set(source, crate::edition::License::AllRightsReserved)
             .unwrap();
 
         // Prime the overlay cache.

@@ -60,7 +60,10 @@ impl WorkKind {
 }
 
 /// The license under which a work is published. See FR-24.
-/// Defaults to AllRightsReserved (Berne Convention automatic copyright).
+/// Defaults to Transcopyright (TCo): transclusion by address is
+/// permitted with attribution — the licensing posture the Xanadu
+/// design intended for a transclusion-native medium. Authors who
+/// want the Berne default instead opt out to AllRightsReserved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum License {
@@ -78,7 +81,7 @@ pub enum License {
 
 impl Default for License {
     fn default() -> Self {
-        License::AllRightsReserved
+        License::Transcopyright
     }
 }
 
@@ -239,7 +242,7 @@ impl Work {
             is_archived: false,
             lifecycle_history: Vec::new(),
             kind: WorkKind::Document,
-            license: License::AllRightsReserved,
+            license: License::Transcopyright,
             tumbler_server: None,
             tumbler_path: None,
         }
@@ -261,7 +264,7 @@ impl Work {
             is_archived: false,
             lifecycle_history: Vec::new(),
             kind: WorkKind::Document,
-            license: License::AllRightsReserved,
+            license: License::Transcopyright,
             tumbler_server: None,
             tumbler_path: None,
         }
