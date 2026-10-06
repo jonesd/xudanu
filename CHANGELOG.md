@@ -6,6 +6,49 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.17.2] — 2026-10-06
+
+The **agents can actually connect** release: MCP over TLS, model
+guidance in the handshake, observability for operators — plus TCo as
+the default license and a batch of UX fixes.
+
+### Added
+- **MCP over `wss://`** (#204): the MCP client previously could not
+  reach any TLS-hosted server. TLS with webpki-root validation,
+  scheme-aware CSRF fetching, and an Origin header derived from the
+  target host (satisfying `--allowed-origin` gates).
+- **MCP instructions** (#208): the initialize handshake now carries
+  the house method for agents — search → read (transclusions
+  resolve) → quote via `read_span` with revision pinning → confirm
+  with `verify_work` → cite `xudanu://` refs — plus the
+  untrusted-corpus warning.
+- **MCP observability** (#209): `xudanu-mcp/<version>` User-Agent,
+  one aggregate WebSocket-connect log line, and an "agents welcome"
+  startup splash naming the on-ramp.
+- **Docs**: the [MCP Guide](https://dgjones.info/xudanu/mcp-guide.html)
+  (client setup for Claude Desktop / Cursor, tool catalog, trust
+  model) and [the pattern-language page](https://dgjones.info/xudanu/pattern-language.html)
+  mapping Maggie Appleton's eleven Xanadu patterns to live
+  implementations (#203, #207).
+
+### Changed
+- **Transcopyright is the default license** (#202): new works are
+  created as TCo — the posture the Xanadu design intended for a
+  transclusion-native medium. Opt out per work at any time; all five
+  licenses unchanged. FR-24 decision record updated (#200).
+
+### Fixed
+- **Web-link pre-fill** (#206): selecting a URL and choosing "Link to
+  a website" now pre-fills the URL field instead of forcing a retype.
+- **Login autofill** (#205): the identity field no longer advertises
+  `autoComplete="username"`, so browsers stop pre-filling stale club
+  names from previous server lifetimes.
+- **Friendlier AI-disabled message** (#210): users clicking Suggest
+  Connections without an LLM configured now get a plain-language
+  note instead of raw env-var instructions.
+
+---
+
 ## [v1.17.1] — 2026-10-05
 
 The reliability-and-provenance patch: an intermittent checkpoint
