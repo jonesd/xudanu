@@ -171,6 +171,12 @@ export function LinkCreator({
     } else if (mode === "remote") {
       setStep("remote");
     } else if (mode === "web") {
+      // If the selected passage is itself a URL, it is almost
+      // certainly the intended destination — pre-fill it.
+      const selected = source.text.trim();
+      if (/^https?:\/\//.test(selected)) {
+        setWebUrl(selected);
+      }
       setStep("web");
     }
   };

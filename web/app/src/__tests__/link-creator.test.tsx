@@ -208,4 +208,26 @@ describe("LinkCreator", () => {
       expect(csr.content_hash).toBe("ab".repeat(32));
     });
   });
+
+  it("pre-fills the web URL when the selected text is a URL", async () => {
+    const client = mkClient();
+    renderCreator({
+      client,
+      source: { workId: 0x10, workTitle: "My Essay", start: 0, end: 24, text: "https://electricmind.com" },
+    });
+
+    fireEvent.click(screen.getByText("Link to a website"));
+
+    const input = screen.getByPlaceholderText("https://example.com/article") as HTMLInputElement;
+    expect(input.value).toBe("https://electricmind.com");
+  });
+
+  it("does not pre-fill the web URL when the selected text is not a URL", async () => {
+    renderCreator({});
+
+    fireEvent.click(screen.getByText("Link to a website"));
+
+    const input = screen.getByPlaceholderText("https://example.com/article") as HTMLInputElement;
+    expect(input.value).toBe("");
+  });
 });
