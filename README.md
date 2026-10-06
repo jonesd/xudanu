@@ -89,7 +89,7 @@ Self-hosting is a first-class case, and the admin console is built for it: live 
 - **Real transclusion** — Content from one document appears live in another, with provenance tracing back to the source
 - **Exhibitions** — Group related works under a cover: a "Gathers" link from the cover to each member defines the unit. Crossing the boundary is an indication, never a barrier — the reader is told when they enter or leave, and nothing is hidden
 - **Real-time CRDT collaboration** — Multiple users editing the same document without locks
-- **Transcopyright licensing** — First system to natively support Ted Nelson's Transcopyright License (TCo). Per-work license metadata with compliance badges and attribution stamping
+- **Transcopyright licensing** — Native support for Ted Nelson's Transcopyright License (TCo), the licensing model the Xanadu design intended. Per-work license metadata with compliance badges and attribution stamping
 - **Cross-server federation** — Documents link across independent servers via BLAKE3-verified tumblers
 - **Compound document builder** — Assemble new documents from passages of existing works
 - **Image support** — Upload, crop, resize, caption persistence, layout mode with inline positioning
