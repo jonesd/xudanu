@@ -325,7 +325,7 @@ export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, 
         <input
           type="text"
           name="username"
-          autoComplete="username"
+          autoComplete="off"
           placeholder={isCreate ? "Display name" : "Identity name"}
           value={clubName}
           onChange={(e) => setClubName(e.target.value)}
