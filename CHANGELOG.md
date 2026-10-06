@@ -6,6 +6,37 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.17.1] — 2026-10-05
+
+The reliability-and-provenance patch: an intermittent checkpoint
+failure under lazy restore is fixed at the root, the new-user
+walkthrough auto-serves the full UI from release binaries, and the
+demo texts are back on solid provenance ground.
+
+### Fixed
+- **Lazy-restore checkpoint race** (#197): under
+  `XUDANU_LAZY_RESTORE=1`, the background verification thread's
+  `ChunkStore::open` ran `cleanup_tmp_files`, reaping in-flight
+  `.tmp` chunk files of a concurrent checkpoint — the rename then
+  failed with ENOENT (the intermittent
+  `network_toggle_default_off_admin_gated_persists` CI failure, and
+  a real boot-time autosave hazard). Tmp cleanup is now age-gated
+  to a 60s grace window; in-flight files are never touched.
+- **New-user walkthrough** (from v1.17.0 hotfix): plain `run` now
+  auto-detects and serves the built `dist/` beside the binary
+  instead of the spartan embedded page; edit policy persists across
+  restarts; a warning fires when serving the degraded UI.
+
+### Changed
+- **Demo provenance** (#198): the 90-second walkthrough, quickstart,
+  and video script now use our own example sentences (forged
+  titanium vs sintered steel) in place of the pair copied from the
+  Xanadu demo literature, with lineage notes crediting *The Open
+  Society and Its Media* §16.10; the WidgetPerfect saga seed cites
+  its source explicitly.
+
+---
+
 ## [v1.17.0] — 2026-10-03
 
 The **agents welcome** release: the docuverse becomes an MCP tool
