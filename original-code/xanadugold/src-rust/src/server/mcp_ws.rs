@@ -170,6 +170,12 @@ async fn async_connect(
         "Origin",
         format!("{}://{}", web_scheme, http_base).parse().unwrap(),
     );
+    request.headers_mut().insert(
+        "User-Agent",
+        format!("xudanu-mcp/{}", env!("CARGO_PKG_VERSION"))
+            .parse()
+            .unwrap(),
+    );
     let (stream, _) = tokio_tungstenite::connect_async(request)
         .await
         .map_err(|e| format!("connect failed: {}", e))?;
