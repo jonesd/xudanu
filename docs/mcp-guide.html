@@ -44,16 +44,48 @@ code{font-family:'JetBrains Mono',monospace}
 <div class="note"><strong>Standard configuration is read-only.</strong> The documented tools cannot modify anything. A write mode exists behind an explicit operator flag and is not covered by this guide; see <a href="#write-mode">the note at the end</a>.</div>
 
 <div class="toc">
-<a href="#quickstart">1. Quickstart</a>
-<a href="#clients">2. Client configuration</a>
-<a href="#tools">3. The tools</a>
-<a href="#addressing">4. Addressing: xudanu:// references</a>
-<a href="#visibility">5. What agents can see</a>
-<a href="#risks">6. The three risks, in plain language</a>
-<a href="#write-mode">7. Note on the write mode</a>
+<a href="#why">1. Why MCP — and when to use something else</a>
+<a href="#quickstart">2. Quickstart</a>
+<a href="#clients">3. Client configuration</a>
+<a href="#tools">4. The tools</a>
+<a href="#addressing">5. Addressing: xudanu:// references</a>
+<a href="#visibility">6. What agents can see</a>
+<a href="#risks">7. The three risks, in plain language</a>
+<a href="#write-mode">8. Note on the write mode</a>
 </div>
 
-<h2 id="quickstart">1. Quickstart</h2>
+<h2 id="why">1. Why MCP — and when to use something else</h2>
+
+<p>Xudanu content can be reached four ways, and they are good at different things. MCP is the one that turns the docuverse into <em>a conversation partner's reference shelf</em>: an LLM client that can search, read, trace connections, and verify quotations on your behalf, while you stay in the chat you already work in.</p>
+
+<p>The distinctive gain is <strong>grounded multi-step research</strong>. Ask "what disputes the spectrum sentence, and who wrote the passages doing the disputing?" and the agent chains the tools — search, read, backlinks, provenance — returning answers anchored to real spans with hashes, not recollections. Compared with pasting a page into a chat window, the agent reads the live corpus, cites it precisely, and cannot quietly misquote without the verification tools catching it.</p>
+
+<h3>The four access methods</h3>
+
+<table>
+<tr><th>Method</th><th>Best at</th><th>Limitations</th></tr>
+<tr><td><strong>Browser UI</strong><br><span style="color:#8b949e">xudanu.com, demo.xudanu.com, self-hosted</span></td><td>Reading and writing as a human: the visual link language (lanes, beams, compare), making connections, trails, provenance panels, editing</td><td>Manual — every question is your own clicks; no automation; findings don't arrive in your workflow</td></tr>
+<tr><td><strong>MCP + LLM client</strong><br><span style="color:#8b949e">this guide</span></td><td>Conversational research across many works: "find every disagreement about X", "summarize what links to Y", "trace who wrote this passage", monitoring a corpus with watches</td><td>Read-only in the standard configuration; returns text — the visual language doesn't come through; corpus text can mislead the agent (see <a href="#risks">risks</a>); needs an MCP-capable client</td></tr>
+<tr><td><strong>xudanu-cli</strong><br><span style="color:#8b949e">terminal</span></td><td>Scripting and operations: batch work creation, seeding, scripted links, quick checks from a shell</td><td>No natural-language layer; you think in operations, not questions</td></tr>
+<tr><td><strong>Wire protocol</strong><br><span style="color:#8b949e">WebSocket, 140+ ops</span></td><td>Building your own client or integration; full power, full control</td><td>You implement everything; see the <a href="wire-protocol.html">wire protocol</a> reference</td></tr>
+</table>
+
+<h3>Choosing, for users and support staff</h3>
+
+<table>
+<tr><th>You want to…</th><th>Use</th></tr>
+<tr><td>Browse, read, follow connections visually</td><td>Browser UI</td></tr>
+<tr><td>Write, make links, build trails</td><td>Browser UI (demo.xudanu.com needs no account)</td></tr>
+<tr><td>Ask a question that spans many works</td><td>MCP</td></tr>
+<tr><td>Verify exactly what a document said, and who wrote it</td><td>MCP (<code>read_span</code> + <code>verify_work</code> + <code>get_prov</code>)</td></tr>
+<tr><td>Watch a docuverse and be told when it changes</td><td>MCP (<code>watch_work</code>)</td></tr>
+<tr><td>Seed, batch-create, or script operations</td><td>xudanu-cli</td></tr>
+<tr><td>Build an app against Xudanu</td><td>Wire protocol</td></tr>
+</table>
+
+<div class="gold"><strong>Rule of thumb:</strong> humans read and write in the browser; agents research through MCP; scripts run through the CLI; everything else speaks the wire protocol.</div>
+
+<h2 id="quickstart">2. Quickstart</h2>
 
 <p>Three steps, no build, no account:</p>
 
@@ -77,7 +109,7 @@ chmod +x xudanu-mcp</pre>
 <pre>Search the docuverse for "spectrum sentence" and read that work.
 What connections touch it, and who wrote what?</pre>
 
-<h2 id="clients">2. Client configuration</h2>
+<h2 id="clients">3. Client configuration</h2>
 
 <h3>Claude Desktop</h3>
 <p>Edit <code>claude_desktop_config.json</code> (Settings → Developer → Edit Config) and add:</p>
@@ -113,7 +145,7 @@ What connections touch it, and who wrote what?</pre>
 
 <div class="gold"><strong>TLS is required for remote servers.</strong> <code>wss://</code> validates certificates against webpki roots — Let's Encrypt works, self-signed does not. Plain <code>ws://</code> is for local servers.</div>
 
-<h2 id="tools">3. The tools</h2>
+<h2 id="tools">4. The tools</h2>
 
 <table>
 <tr><th>Tool</th><th>What it does</th></tr>
@@ -130,7 +162,7 @@ What connections touch it, and who wrote what?</pre>
 <tr><td><code>detector_events</code> / <code>detector_ack</code> / <code>unwatch_work</code></td><td>Read, acknowledge, and retire watch events</td></tr>
 </table>
 
-<h2 id="addressing">4. Addressing: xudanu:// references</h2>
+<h2 id="addressing">5. Addressing: xudanu:// references</h2>
 
 <p>Tools that point at content use one canonical scheme:</p>
 
@@ -141,7 +173,7 @@ xudanu://work/&lt;id&gt;?rev=&lt;n&gt;#span=&lt;s&gt;,&lt;e&gt;  a range in a pi
 
 <p>Because positions are tumblers — addresses, not offsets — pinned references survive edits elsewhere in the document, and hash verification catches any drift.</p>
 
-<h2 id="visibility">5. What agents can see</h2>
+<h2 id="visibility">6. What agents can see</h2>
 
 <p>The MCP session is an anonymous session of the server, exactly like a first-time visitor in a browser:</p>
 
@@ -154,7 +186,7 @@ xudanu://work/&lt;id&gt;?rev=&lt;n&gt;#span=&lt;s&gt;,&lt;e&gt;  a range in a pi
 
 <p>The operating rule is simple: <strong>published means public</strong>. An MCP client reads what any reader reads — nothing more.</p>
 
-<h2 id="risks">6. The three risks, in plain language</h2>
+<h2 id="risks">7. The three risks, in plain language</h2>
 
 <h3>Risk 1 — data-dir mode is a skeleton key</h3>
 <p>The binary also accepts a data directory instead of <code>--server</code>, opening the store directly with <strong>no logins and no rules</strong>. That mode is for offline analysis of a <em>copy</em>. Never point it at a live production data directory, and never with writes enabled — two writers on one store can corrupt it.</p>
@@ -166,7 +198,7 @@ xudanu://work/&lt;id&gt;?rev=&lt;n&gt;#span=&lt;s&gt;,&lt;e&gt;  a range in a pi
 <h3>Risk 3 — model identity is self-reported</h3>
 <p>The write mode stamps revisions with a declared model identity. That label is what the operator typed, not a verified fact. It is attribution metadata, not authentication — do not build trust on it.</p>
 
-<h2 id="write-mode">7. Note on the write mode</h2>
+<h2 id="write-mode">8. Note on the write mode</h2>
 
 <p>An opt-in write mode exists (<code>--enable-agent-writes</code>): agents can create works, transclude, link, and revise, with every change stamped as LLM-authored in the provenance system and the chained audit log. It is additionally gated by the server's edit policy — an owner-only server refuses agent writes no matter what the client requests.</p>
 
