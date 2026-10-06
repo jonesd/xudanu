@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCP Guide — your docuverse as tools for LLM clients</title>
+<meta name="description" content="Connect MCP clients (Claude Desktop, Cursor, any MCP host) to a Xudanu docuverse: read-only agent tools, client configuration, the tool catalog, and the trust model.">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.65}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+code{font-family:'JetBrains Mono',monospace}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>MCP Guide</h1>
+<p class="subtitle">Your docuverse as tools for LLM clients — read-only by standard configuration</p>
+
+<p><strong>xudanu-mcp</strong> is a Model Context Protocol server that lets an LLM client — Claude Desktop, Cursor, or any MCP host — search and read a Xudanu docuverse like a research assistant: full-text search, transclusion-resolved reading, backlinks, provenance, version comparison, live watching. The agent becomes a user like any other, with the same read gates as everyone else.</p>
+
+<div class="note"><strong>Standard configuration is read-only.</strong> The documented tools cannot modify anything. A write mode exists behind an explicit operator flag and is not covered by this guide; see <a href="#write-mode">the note at the end</a>.</div>
+
+<div class="toc">
+<a href="#why">1. Why MCP — and when to use something else</a>
+<a href="#quickstart">2. Quickstart</a>
+<a href="#clients">3. Client configuration</a>
+<a href="#tools">4. The tools</a>
+<a href="#addressing">5. Addressing: xudanu:// references</a>
+<a href="#visibility">6. What agents can see</a>
+<a href="#risks">7. The three risks, in plain language</a>
+<a href="#write-mode">8. Note on the write mode</a>
+</div>
+
+<h2 id="why">1. Why MCP — and when to use something else</h2>
+
+<p>Xudanu content can be reached four ways, and they are good at different things. MCP is the one that turns the docuverse into <em>a conversation partner's reference shelf</em>: an LLM client that can search, read, trace connections, and verify quotations on your behalf, while you stay in the chat you already work in.</p>
+
+<p>The distinctive gain is <strong>grounded multi-step research</strong>. Ask "what disputes the spectrum sentence, and who wrote the passages doing the disputing?" and the agent chains the tools — search, read, backlinks, provenance — returning answers anchored to real spans with hashes, not recollections. Compared with pasting a page into a chat window, the agent reads the live corpus, cites it precisely, and cannot quietly misquote without the verification tools catching it.</p>
+
+<h3>The four access methods</h3>
+
+<table>
+<tr><th>Method</th><th>Best at</th><th>Limitations</th></tr>
+<tr><td><strong>Browser UI</strong><br><span style="color:#8b949e">xudanu.com, demo.xudanu.com, self-hosted</span></td><td>Reading and writing as a human: the visual link language (lanes, beams, compare), making connections, trails, provenance panels, editing</td><td>Manual — every question is your own clicks; no automation; findings don't arrive in your workflow</td></tr>
+<tr><td><strong>MCP + LLM client</strong><br><span style="color:#8b949e">this guide</span></td><td>Conversational research across many works: "find every disagreement about X", "summarize what links to Y", "trace who wrote this passage", monitoring a corpus with watches</td><td>Read-only in the standard configuration; returns text — the visual language doesn't come through; corpus text can mislead the agent (see <a href="#risks">risks</a>); needs an MCP-capable client</td></tr>
+<tr><td><strong>xudanu-cli</strong><br><span style="color:#8b949e">terminal</span></td><td>Scripting and operations: batch work creation, seeding, scripted links, quick checks from a shell</td><td>No natural-language layer; you think in operations, not questions</td></tr>
+<tr><td><strong>Wire protocol</strong><br><span style="color:#8b949e">WebSocket, 140+ ops</span></td><td>Building your own client or integration; full power, full control</td><td>You implement everything; see the <a href="wire-protocol.html">wire protocol</a> reference</td></tr>
+</table>
+
+<h3>Choosing, for users and support staff</h3>
+
+<table>
+<tr><th>You want to…</th><th>Use</th></tr>
+<tr><td>Browse, read, follow connections visually</td><td>Browser UI</td></tr>
+<tr><td>Write, make links, build trails</td><td>Browser UI (demo.xudanu.com needs no account)</td></tr>
+<tr><td>Ask a question that spans many works</td><td>MCP</td></tr>
+<tr><td>Verify exactly what a document said, and who wrote it</td><td>MCP (<code>read_span</code> + <code>verify_work</code> + <code>get_prov</code>)</td></tr>
+<tr><td>Watch a docuverse and be told when it changes</td><td>MCP (<code>watch_work</code>)</td></tr>
+<tr><td>Seed, batch-create, or script operations</td><td>xudanu-cli</td></tr>
+<tr><td>Build an app against Xudanu</td><td>Wire protocol</td></tr>
+</table>
+
+<div class="gold"><strong>Rule of thumb:</strong> humans read and write in the browser; agents research through MCP; scripts run through the CLI; everything else speaks the wire protocol.</div>
+
+<h2 id="quickstart">2. Quickstart</h2>
+
+<p>Three steps, no build, no account:</p>
+
+<p><strong>Step 1 — get the binary.</strong> Download <code>xudanu-mcp</code> for your platform from the <a href="https://github.com/jonesd/xudanu/releases">releases page</a> and make it executable:</p>
+
+<pre>curl -LO https://github.com/jonesd/xudanu/releases/latest/download/xudanu-v1.17.1-aarch64-macos.tar.gz
+tar xzf xudanu-v1.17.1-aarch64-macos.tar.gz
+chmod +x xudanu-mcp</pre>
+
+<p><strong>Step 2 — point it at a server.</strong> Any Xudanu server works. Two public ones:</p>
+
+<table>
+<tr><th>Server</th><th>URL</th><th>Policy</th></tr>
+<tr><td><a href="https://xudanu.com">xudanu.com</a></td><td><code>wss://xudanu.com/xudanu</code></td><td>Read-only for visitors (hosted instance)</td></tr>
+<tr><td><a href="https://demo.xudanu.com">demo.xudanu.com</a></td><td><code>wss://demo.xudanu.com/xudanu</code></td><td>Public sandbox, seeded demo corpus</td></tr>
+<tr><td>Your own</td><td><code>ws://127.0.0.1:8080/xudanu</code></td><td>Whatever you configured</td></tr>
+</table>
+
+<p><strong>Step 3 — register it with your client</strong> (next section), then ask your agent something like:</p>
+
+<pre>Search the docuverse for "spectrum sentence" and read that work.
+What connections touch it, and who wrote what?</pre>
+
+<h2 id="clients">3. Client configuration</h2>
+
+<h3>Claude Desktop</h3>
+<p>Edit <code>claude_desktop_config.json</code> (Settings → Developer → Edit Config) and add:</p>
+
+<pre>{
+  "mcpServers": {
+    "xudanu": {
+      "command": "/absolute/path/to/xudanu-mcp",
+      "args": ["--server", "wss://xudanu.com/xudanu"]
+    }
+  }
+}</pre>
+
+<h3>Cursor</h3>
+<p>In <code>.cursor/mcp.json</code> (project) or the global MCP settings — same shape:</p>
+
+<pre>{
+  "mcpServers": {
+    "xudanu": {
+      "command": "/absolute/path/to/xudanu-mcp",
+      "args": ["--server", "wss://demo.xudanu.com/xudanu"]
+    }
+  }
+}</pre>
+
+<h3>Any other MCP host</h3>
+<p>Anything that speaks MCP over stdio: point it at the binary with the same arguments. Test a connection by hand before wiring it into a client:</p>
+
+<pre>printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}' \
+  | ./xudanu-mcp --server wss://xudanu.com/xudanu</pre>
+
+<p>A <code>serverInfo</code> response naming <code>xudanu</code> means you're connected. Diagnostics go to stderr; the protocol conversation goes to stdout.</p>
+
+<div class="gold"><strong>TLS is required for remote servers.</strong> <code>wss://</code> validates certificates against webpki roots — Let's Encrypt works, self-signed does not. Plain <code>ws://</code> is for local servers.</div>
+
+<h2 id="tools">4. The tools</h2>
+
+<table>
+<tr><th>Tool</th><th>What it does</th></tr>
+<tr><td><code>search_works</code></td><td>Full-text search across works the session can read, with context snippets and metadata</td></tr>
+<tr><td><code>read_work</code></td><td>A work's full text, transclusions resolved (windows show their live source content)</td></tr>
+<tr><td><code>read_span</code></td><td>A specific span, optionally pinned to a revision; the returned excerpt is hash-stamped</td></tr>
+<tr><td><code>verify_work</code></td><td>Verify a previously returned span against its recorded hash — quotable with confidence</td></tr>
+<tr><td><code>find_backlinks</code></td><td>Every connection pointing at a work — the both-ends property, from the agent's chair</td></tr>
+<tr><td><code>who_transcluded</code></td><td>Which works reuse a passage, and where it came from</td></tr>
+<tr><td><code>get_prov</code></td><td>Authorship and lineage as W3C PROV-JSON</td></tr>
+<tr><td><code>get_version_info</code></td><td>Revision count and timeline for a work</td></tr>
+<tr><td><code>compare_versions</code></td><td>Two revisions side by side, differences labeled</td></tr>
+<tr><td><code>watch_work</code></td><td>Subscribe to changes on a work (detector)</td></tr>
+<tr><td><code>detector_events</code> / <code>detector_ack</code> / <code>unwatch_work</code></td><td>Read, acknowledge, and retire watch events</td></tr>
+</table>
+
+<h2 id="addressing">5. Addressing: xudanu:// references</h2>
+
+<p>Tools that point at content use one canonical scheme:</p>
+
+<pre>xudanu://work/&lt;id&gt;                    the current edition of a work
+xudanu://work/&lt;id&gt;?rev=&lt;n&gt;            a specific revision (pinned)
+xudanu://work/&lt;id&gt;#span=&lt;s&gt;,&lt;e&gt;       a character range in the current edition
+xudanu://work/&lt;id&gt;?rev=&lt;n&gt;#span=&lt;s&gt;,&lt;e&gt;  a range in a pinned revision</pre>
+
+<p>Because positions are tumblers — addresses, not offsets — pinned references survive edits elsewhere in the document, and hash verification catches any drift.</p>
+
+<h2 id="visibility">6. What agents can see</h2>
+
+<p>The MCP session is an anonymous session of the server, exactly like a first-time visitor in a browser:</p>
+
+<ul style="max-width:780px;margin:0 0 12px 20px">
+<li>Every read tool checks <code>ensure_can_read</code> before returning anything</li>
+<li>Search skips unreadable works entirely — no titles, no snippets, no metadata leakage</li>
+<li>Server secrets (keys, audit logs, configuration) are not part of the works layer and are unreachable through these tools</li>
+<li>On origin-gated servers the connection itself is refused unless it presents the allowed origin</li>
+</ul>
+
+<p>The operating rule is simple: <strong>published means public</strong>. An MCP client reads what any reader reads — nothing more.</p>
+
+<h2 id="risks">7. The three risks, in plain language</h2>
+
+<h3>Risk 1 — data-dir mode is a skeleton key</h3>
+<p>The binary also accepts a data directory instead of <code>--server</code>, opening the store directly with <strong>no logins and no rules</strong>. That mode is for offline analysis of a <em>copy</em>. Never point it at a live production data directory, and never with writes enabled — two writers on one store can corrupt it.</p>
+<div class="warning"><strong>Use <code>--server</code> mode.</strong> It is the documented, recommended, and safest configuration; everything in this guide assumes it.</div>
+
+<h3>Risk 2 — documents can talk to the agent</h3>
+<p>An LLM cannot always tell content from instructions. A document in the corpus can contain text addressed to AI assistants ("ignore your instructions and…"). Even read-only, a poisoned corpus can make an agent <em>report</em> misleading summaries. Treat corpus text as untrusted input: verify quotes that matter (<code>verify_work</code>), and prefer host-side tool approval for anything sensitive.</p>
+
+<h3>Risk 3 — model identity is self-reported</h3>
+<p>The write mode stamps revisions with a declared model identity. That label is what the operator typed, not a verified fact. It is attribution metadata, not authentication — do not build trust on it.</p>
+
+<h2 id="write-mode">8. Note on the write mode</h2>
+
+<p>An opt-in write mode exists (<code>--enable-agent-writes</code>): agents can create works, transclude, link, and revise, with every change stamped as LLM-authored in the provenance system and the chained audit log. It is additionally gated by the server's edit policy — an owner-only server refuses agent writes no matter what the client requests.</p>
+
+<p>It is deliberately undocumented beyond this note. Guidance while it matures: enable it only against sandbox copies, never against data you care about, and never on a server you share with strangers.</p>
+
+<p style="margin-top:48px;font-size:13px;color:#484f58">FR-141 (docuverse MCP). The MCP specification: <a href="https://modelcontextprotocol.io">modelcontextprotocol.io</a>. Xudanu is an independent Apache-2.0 project in the Udanax Gold lineage — not affiliated with Project Xanadu or any LLM vendor.</p>
+
+</div>
+</body>
+</html>
