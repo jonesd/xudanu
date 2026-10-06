@@ -40,6 +40,8 @@ The sentences used here are our own.)*
 - `xudanu-mcp` — MCP server (agents read, quote by transclusion, and
   link into the docuverse with signed LLM authorship):
   `xudanu-mcp --server ws://127.0.0.1:8080 --enable-agent-writes`
+  Read-only standard configuration and client setup (Claude Desktop,
+  Cursor): see the [MCP Guide](https://dgjones.info/xudanu/mcp-guide.html)
 - `xudanu-verify` — offline integrity checker for a data directory:
   `xudanu-verify demo-data`
 - `dist/` — the web frontend (serve with `--static-dir dist`)
