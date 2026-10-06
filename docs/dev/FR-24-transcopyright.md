@@ -26,13 +26,16 @@ The answer shapes:
 
 1. **`License` field on every work** — an enum stored alongside
    `WorkKind`, persisted to manifest, restored on restart. Defaults
-   to `AllRightsReserved` (the legal default under the Berne
-   Convention — no action required by the author). Five options:
+   to `Transcopyright` (revised 2026-10-05: originally defaulted to
+   `AllRightsReserved` under Berne caution; reversed because a
+   transclusion-native medium should presume transclusion with
+   attribution — the Xanadu posture. Authors opt out per work at any
+   time via `work_license_set`; nothing is locked in). Five options:
 
    | License | What it means | Why include it |
    |---|---|---|
-   | All Rights Reserved | Default. No transclusion rights granted. | Safe baseline; what copyright grants automatically |
-   | Transcopyright (TCo) | Transclusion by address is always allowed | Xudanu's unique differentiator; fits the architecture |
+   | All Rights Reserved | No transclusion rights granted. | Safe baseline; what copyright grants automatically |
+   | Transcopyright (TCo) | Default. Transclusion by address is always allowed | The posture the Xanadu design intended; native to this architecture |
    | CC-BY | Attribution required, reuse allowed | Most widely recognized permissive license |
    | CC-BY-SA | Attribution + share-alike | Common in open education and academia |
    | Public Domain (CC0) | No rights reserved | For authors who want maximum openness |
