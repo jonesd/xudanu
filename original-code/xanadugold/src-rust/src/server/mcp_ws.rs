@@ -116,12 +116,20 @@ async fn async_connect(
 > {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
+    // rustls 0.23 with multiple crypto backends available refuses to
+    // pick one implicitly; install ring as the process provider before
+    // the first TLS handshake (idempotent — later calls return Err,
+    // which is fine).
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let http_base = url
         .trim_start_matches("ws://")
         .trim_start_matches("wss://")
         .split('/')
         .next()
         .unwrap_or("127.0.0.1:8080");
+    let secure = url.starts_with("wss://");
+    let web_scheme = if secure { "https" } else { "http" };
 
     // Normalize: a bare host means the /xudanu endpoint.
     let url = if url
@@ -140,7 +148,7 @@ async fn async_connect(
         let sep = if url.contains('?') { '&' } else { '?' };
         format!("{}{}format=json&version=2", url, sep)
     };
-    if let Ok(resp) = reqwest::get(format!("http://{}/csrf-token", http_base)).await {
+    if let Ok(resp) = reqwest::get(format!("{}://{}/csrf-token", web_scheme, http_base)).await {
         if resp.status().is_success() {
             #[derive(serde::Deserialize)]
             struct CsrfResp {
@@ -158,9 +166,10 @@ async fn async_connect(
     let mut request = final_url
         .into_client_request()
         .map_err(|e| format!("bad url: {}", e))?;
-    request
-        .headers_mut()
-        .insert("Origin", "http://localhost:5173".parse().unwrap());
+    request.headers_mut().insert(
+        "Origin",
+        format!("{}://{}", web_scheme, http_base).parse().unwrap(),
+    );
     let (stream, _) = tokio_tungstenite::connect_async(request)
         .await
         .map_err(|e| format!("connect failed: {}", e))?;
