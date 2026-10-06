@@ -1525,6 +1525,10 @@ async fn main() {
                 addr,
                 if tls_cert.is_some() { " (TLS)" } else { "" }
             );
+            tracing::info!(
+                "agents welcome: xudanu-mcp --server ws://{}  (read-only; guide: https://dgjones.info/xudanu/mcp-guide.html)",
+                addr
+            );
 
             let shutdown_state = state.clone();
             let shutdown_data_dir = data_dir.clone();

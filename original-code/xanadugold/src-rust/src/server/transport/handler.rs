@@ -1583,6 +1583,18 @@ async fn ws_handler(
     State(state): State<SharedState>,
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
+    {
+        let ua = headers
+            .get("user-agent")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        tracing::info!(
+            target: "xudanu::server",
+            remote_addr = %addr,
+            user_agent = %ua,
+            "WebSocket connect"
+        );
+    }
     if let Some(ref allowed) = state.allowed_origins {
         let origin = headers
             .get("origin")
