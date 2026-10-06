@@ -427,7 +427,9 @@ fn dispatch_llm_propose(
         Some(c) => c,
         None => {
             return Err(crate::server::ServerError::InvalidArgument(
-                "LLM not configured — set OLLAMA_BASE_URL, OPENROUTER_API_KEY, or GITHUB_TOKEN"
+                "AI suggestions are not enabled on this server. An operator can enable them \
+                 by starting it with OLLAMA_BASE_URL (local Ollama) or OPENROUTER_API_KEY / \
+                 GITHUB_TOKEN (hosted models). Everything else works without AI."
                     .into(),
             ))
         }
