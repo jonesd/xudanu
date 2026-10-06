@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eleven Patterns, One Running System — the Xanadu pattern language, live in Xudanu</title>
+<meta name="description" content="A response to Maggie Appleton's 'The Pattern Language of Project Xanadu': each of her eleven Xanadu design patterns, mapped to a live, running implementation in Xudanu.">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.65}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.done{color:#3fb950;font-family:'JetBrains Mono',monospace;font-weight:600}
+.part{color:#d29922;font-family:'JetBrains Mono',monospace;font-weight:600}
+.notp{color:#f85149;font-family:'JetBrains Mono',monospace;font-weight:600}
+.pattern{margin-top:40px;padding:24px;background:#161b22;border:1px solid #21262d;border-radius:12px}
+.pattern h3{margin-top:0}
+.pattern .status{float:right;font-size:12px;font-family:'JetBrains Mono',monospace}
+.pattern .her-word{font-size:14px;color:#8b949e;font-style:italic;margin-bottom:10px}
+.pattern .ours{font-size:15px}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:inline-block;padding:3px 12px 3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Eleven Patterns, One Running System</h1>
+<p class="subtitle">The Xanadu pattern language — each pattern mapped to a live implementation in <a href="https://xudanu.com">Xudanu</a></p>
+
+<p>In <a href="https://maggieappleton.com/xanadu-patterns"><strong>The Pattern Language of Project Xanadu</strong></a>, Maggie Appleton reframes Xanadu: not a failed product but a <em>pattern language</em> — a set of design solutions that keep resurfacing across the web in partial, degraded forms. Her essay catalogs eleven patterns. This page is our response. To be precise about lineage: her catalog and this system share an ancestor — the Xanadu design — but neither came from the other. We built from the Udanax Gold codebase; she read the vision. What is new here is the mapping: her catalog, used as a checklist against a running system, pattern by pattern — and most of them can be clicked.</p>
+
+<div class="gold"><strong>Everything below is live.</strong> Exhibits live on <a href="https://xudanu.com">xudanu.com</a> (read-only) and <a href="https://demo.xudanu.com">demo.xudanu.com</a> (editable sandbox). Her essay's pattern descriptions are hers; the mapping and the implementations are ours.</div>
+
+<h2>The map</h2>
+<table>
+<tr><th>#</th><th>Pattern (her catalog)</th><th>In Xudanu</th><th>Status</th></tr>
+<tr><td>1</td><td><a href="#p1">Visible links</a></td><td>Typed lanes, colored underlines, hover tooltips with kind + far end</td><td class="done">running</td></tr>
+<tr><td>2</td><td><a href="#p2">Parallel documents</a></td><td>⇄ side-by-side compare; five-way junction</td><td class="done">running</td></tr>
+<tr><td>3</td><td><a href="#p3">Transpointing windows</a></td><td>Beams between panes that follow the text as either scrolls</td><td class="done">running</td></tr>
+<tr><td>4</td><td><a href="#p4">Transclusion</a></td><td>Live windows onto source text, pinned transclusions, provenance tracing</td><td class="done">running</td></tr>
+<tr><td>5</td><td><a href="#p5">Bi-directional links</a></td><td>The core: every connection visible from both ends</td><td class="done">running</td></tr>
+<tr><td>6</td><td><a href="#p6">Version control</a></td><td>Revision timeline; every version addressable and comparable</td><td class="done">running</td></tr>
+<tr><td>7</td><td><a href="#p7">Modular text blocks</a></td><td>Compound documents assembled from passages of existing works</td><td class="part">partial</td></tr>
+<tr><td>8</td><td><a href="#p8">Stable, universal addresses</a></td><td>Tumblers: hierarchical addresses that survive edits</td><td class="done">running</td></tr>
+<tr><td>9</td><td><a href="#p9">Annotation</a></td><td>Typed links as commentary; per-user annotations, optionally private</td><td class="done">running</td></tr>
+<tr><td>10</td><td><a href="#p10">Multiple views, spatial arrangements</a></td><td>Perspective view (document landscape); docuverse graph</td><td class="part">partial</td></tr>
+<tr><td>11</td><td><a href="#p11">Micropayments</a></td><td>Deliberately absent — Transcopyright licensing instead</td><td class="notp">by design</td></tr>
+</table>
+
+<h2>Pattern by pattern</h2>
+
+<div class="pattern" id="p1">
+<h3>1 · Visible links <span class="status done">running</span></h3>
+<p class="her-word">Her critique: the jump link is a gamble — you find out where you're going when you arrive. Hover previews and unfurls only get us to <em>semi-visible</em>.</p>
+<p class="ours">Every connection in Xudanu is visible before you follow it: color-coded by type, with a hover tooltip naming the kind of connection and its far end. The <a href="https://xudanu.com">Spectrum Sentence</a> in the Gallery of Unusual Connections carries all six link kinds on one sentence — hover any underline and you know exactly what it claims and where it leads. The open next step from her essay — previews that point at <em>specific text</em> in the destination — is where we're headed with span-level previews.</p>
+</div>
+
+<div class="pattern" id="p2">
+<h3>2 · Parallel documents <span class="status done">running</span></h3>
+<p class="her-word">Her point: quotations should sit beside their original context, making cherry-picking and misquoting hard.</p>
+<p class="ours">The ⇄ control in the links panel lays any connection's ends side by side; the Five-Way Junction compares one connection's five named ends in a single view. Version compare does the same across time (see pattern 6).</p>
+</div>
+
+<div class="pattern" id="p3">
+<h3>3 · Transpointing windows <span class="status done">running</span></h3>
+<p class="her-word">Her example cases (LiquidText, Roam hacks) show parts of documents visibly pointing at other parts.</p>
+<p class="ours">The Two Drafts exhibit: curved beams connect the same passage carried across two versions, and each beam follows its passage as either pane scrolls. Connections are drawn objects, not metaphors.</p>
+</div>
+
+<div class="pattern" id="p4">
+<h3>4 · Transclusion <span class="status done">running</span></h3>
+<p class="her-word">She keeps a separate essay on transclusion dreams — the same text, live in many places, permissions intact.</p>
+<p class="ours">Transclusion is native, not bolted on: barred passages in the Gallery's Live Window are windows onto text that lives elsewhere and updates with it. Every transclusion carries provenance back to its source (who wrote what, at character level, cryptographically signed). See <a href="transclusion-engine.html">the transclusion engine</a>.</p>
+</div>
+
+<div class="pattern" id="p5">
+<h3>5 · Bi-directional links <span class="status done">running</span></h3>
+<p class="her-word">Her history of bi-directional links asks why seventy-year-old ideas still aren't on the web.</p>
+<p class="ours">This is the core gesture: select text, click Link, choose the far end and the type. The connection is visible from both documents without either being edited. The <a href="https://demo.xudanu.com">sandbox</a> walks you through it in under a minute.</p>
+</div>
+
+<div class="pattern" id="p6">
+<h3>6 · Version control <span class="status done">running</span></h3>
+<p class="her-word">Git made programmers expect versioning; readers and writers still live without it.</p>
+<p class="ours">Every revision remains addressable; the History panel timelines them; any two versions compare side by side, with transclusion relations making the comparison structural rather than textual.</p>
+</div>
+
+<div class="pattern" id="p7">
+<h3>7 · Modular text blocks <span class="status part">partial</span></h3>
+<p class="her-word">Her essay turns to block-first construction here — and stops: this section is one of the stubs marked draft-in-progress.</p>
+<p class="ours">Compound documents assemble new works from passages of existing ones — blocks are ranges of real documents, with lineage, rather than free-floating Notion-style blocks. The block-level authoring UX is younger than the machinery under it. <em>This is one of the patterns we'd most like outside input on.</em></p>
+</div>
+
+<div class="pattern" id="p8">
+<h3>8 · Stable, universal addresses <span class="status done">running</span></h3>
+<p class="her-word">Her stub: the web addresses documents, not passages; link rot everywhere.</p>
+<p class="ours">Tumblers — from the Gold lineage — give every position a hierarchical address. Spans migrate as documents are edited because positions are addresses, not offsets. Cross-server federation verifies content by BLAKE3 hash at the far end. The deep dive is <a href="document-space.html">Tumblers &amp; Enfilades</a>.</p>
+</div>
+
+<div class="pattern" id="p9">
+<h3>9 · Annotation <span class="status done">running</span></h3>
+<p class="her-word">Marginalia on the web remains an unsolved guestbook problem in her sketch.</p>
+<p class="ours">Comments are typed links (Comment), so annotations are first-class connections: visible from the annotated document, attributable, and — for private notes — enforced private server-side. Detectors can watch a document and collect new commentary as it arrives.</p>
+</div>
+
+<div class="pattern" id="p10">
+<h3>10 · Multiple views, spatial arrangements <span class="status part">partial</span></h3>
+<p class="her-word">Graph previews are the weak version of the spatial Xanadu she sketches — and 3D flight demos are the disorienting one.</p>
+<p class="ours">The perspective view arranges connected works as a calm, navigable landscape — no flying. We are deliberately conservative here; her critique of XanaduSpace's disorientation is well taken. The docuverse mini-graph is the small-scale version.</p>
+</div>
+
+<div class="pattern" id="p11">
+<h3>11 · Micropayments <span class="status notp">by design absent</span></h3>
+<p class="her-word">The micropayments pattern closes her catalog — the part of Xanadu everyone argues about.</p>
+<p class="ours">Xudanu implements the other half of that bargain: <strong>Transcopyright</strong> licensing (TCo) is native — per-work license metadata, compliance badges, attribution stamping on transclusions. The server never handles money; that is a hard design rule. Licensing and compensation are conversation partners, and transclusion keeps the provenance that makes the conversation possible.</p>
+</div>
+
+<h2>An invitation</h2>
+
+<p>Her essay is marked draft-in-progress from pattern 7 onward — exactly the patterns where a running system has the most to offer and the most to learn. So: an open offer.</p>
+
+<div class="note"><strong>If you are reading this and writing about these patterns:</strong> pick one from the catalog — especially the unfinished ones — and we will build the next live exhibit for it, credited, on the sandbox. A pattern deserves a running example, and a running example deserves a critic. The <a href="https://github.com/jonesd/xudanu/discussions">GitHub discussions</a> are open.</p>
+
+<p style="margin-top:48px;font-size:13px;color:#484f58">Pattern catalog and framing: Maggie Appleton, <a href="https://maggieappleton.com/xanadu-patterns">The Pattern Language of Project Xanadu</a> (used with attribution; her text is hers). Implementation: <a href="https://github.com/jonesd/xudanu">Xudanu</a>, an independent Apache-2.0 project in the Udanax Gold lineage — not affiliated with Project Xanadu. The WidgetPerfect demonstration scenario that inspired several exhibits is from the Xanadu demo literature (see <em>The Open Society and Its Media</em> §16.10).</p>
+
+</div>
+</body>
+</html>
