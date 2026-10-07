@@ -3157,16 +3157,29 @@ export function WorkspaceShell() {
                        style={{
                          width: "100%", marginBottom: 8, justifyContent: "center",
                          borderColor: "var(--amber)",
-                         color: llmProps.status === "loading" ? "var(--text-dim)" : "var(--amber)",
+                         color: !crdt.llmEnabled || llmProps.status === "loading" ? "var(--text-dim)" : "var(--amber)",
                        }}
-                       disabled={llmProps.status === "loading"}
+                       disabled={llmProps.status === "loading" || !crdt.llmEnabled}
+                       title={crdt.llmEnabled
+                         ? "Ask the server's LLM to read this work and propose connections — you confirm, edit, or reject each one"
+                         : "AI suggestions are not enabled on this server — an operator can enable them (OLLAMA_BASE_URL for local models, or OPENROUTER_API_KEY / GITHUB_TOKEN for hosted)"}
                        onClick={() => void suggestConnections()}
-                       title="Ask the server's LLM to read this work and propose connections — you confirm, edit, or reject each one"
                      >
                        {llmProps.status === "loading"
                          ? "✨ reading… (may take a few minutes on a local model)"
                          : "✨ Suggest connections"}
                      </button>
+                     {!crdt.llmEnabled && (
+                       <div
+                         className="ws-conn-empty"
+                         style={{ marginBottom: 8, whiteSpace: "pre-wrap" }}
+                       >
+                         AI suggestions are not enabled on this server. An operator can
+                         enable them by starting it with OLLAMA_BASE_URL (local models)
+                         or OPENROUTER_API_KEY / GITHUB_TOKEN (hosted). Everything else
+                         works without AI.
+                       </div>
+                     )}
                      {llmProps.status === "error" && (
                        <div
                          className="ws-conn-empty"
@@ -4201,7 +4214,7 @@ export function WorkspaceShell() {
                   )}
                 </div>
                 <div style={{ fontSize: "calc(var(--ws-font, 14px) - 1px)", color: "var(--text-dim)", margin: "4px 0 8px" }}>
-                  Persistent watches: link detectors collect new links landing on a work; revision detectors collect new revisions. Miller&rsquo;s fourth fundamental feature, 1994.
+                  Persistent watches: link detectors collect new links landing on a work; revision detectors collect new revisions.
                 </div>
                 {workBeId !== null && (
                   <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
