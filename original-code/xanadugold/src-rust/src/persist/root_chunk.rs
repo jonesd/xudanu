@@ -1006,6 +1006,7 @@ pub fn read_root_as_manifest(
         checksum: String::new(),
         sequence: root.sequence,
         manifest_slot: 'a',
+        writer_tag: None,
         grand_map_id_counter: root.grand_map_id_counter,
         session_counter: root.session_counter,
         operation_counter: root.operation_counter,

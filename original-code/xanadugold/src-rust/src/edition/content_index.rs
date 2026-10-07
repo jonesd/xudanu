@@ -449,9 +449,14 @@ mod tests {
             .collect();
         let _idx = ContentMatchIndex::build(&refs);
         let elapsed = start.elapsed();
+        // The 5s budget is a release-build contract. Debug builds are
+        // 10-50x slower and the full test suite runs 24 threads in
+        // parallel; a fixed 5s wall clock flakes under that load.
+        let budget = if cfg!(debug_assertions) { 60.0 } else { 5.0 };
         assert!(
-            elapsed.as_secs_f64() < 5.0,
-            "1000 small works should index in <5s, took {:.1}ms",
+            elapsed.as_secs_f64() < budget,
+            "1000 small works should index in <{:.0}s, took {:.1}ms",
+            budget,
             elapsed.as_secs_f64() * 1000.0
         );
     }

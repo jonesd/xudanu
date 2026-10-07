@@ -444,6 +444,18 @@ pub struct Manifest {
     )]
     pub manifest_slot: char,
 
+    /// Writer fingerprint (git hash + profile + dirty flag) of the
+    /// binary that wrote this manifest. Restore refuses data stamped
+    /// by a different build unless XUDANU_ALLOW_FOREIGN_WRITER=1 —
+    /// the guard against WIP/main binary skew silently dropping
+    /// state at the next checkpoint. Absent on legacy manifests
+    /// (migration grace: warn and proceed).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub writer_tag: Option<String>,
+
     // ── v1 (baseline): core identity and content ──
     pub grand_map_id_counter: BeId,
     pub session_counter: u64,
@@ -770,8 +782,23 @@ pub fn rotate_manifest_backups(path: &Path, keep: usize) {
 
     while backups.len() > keep {
         let (_, oldest) = backups.remove(0);
-        if let Err(e) = std::fs::remove_file(&oldest) {
-            tracing::warn!("Failed to remove old backup {}: {}", oldest.display(), e);
+        // Archive, never delete: rotated manifests are the recovery
+        // history for a bad checkpoint (state dropped between two
+        // good manifests). They live in archive/manifests/, outside
+        // the rotation window, walked by `xudanu-server recover`.
+        let archive_dir = data_dir.join("archive").join("manifests");
+        let archived = archive_dir.join(oldest.file_name().unwrap_or_default());
+        if std::fs::create_dir_all(&archive_dir).is_ok() {
+            match std::fs::rename(&oldest, &archived) {
+                Ok(()) => {}
+                Err(_) => {
+                    // Cross-device or locked: fall back to copy+remove
+                    // so rotation still progresses.
+                    if std::fs::copy(&oldest, &archived).is_ok() {
+                        let _ = std::fs::remove_file(&oldest);
+                    }
+                }
+            }
         }
     }
 }
@@ -1369,6 +1396,7 @@ pub fn create_empty_manifest(
         checksum: String::new(),
         sequence: 0,
         manifest_slot: 'a',
+        writer_tag: None,
         grand_map_id_counter,
         session_counter: 0,
         operation_counter: 0,
@@ -2468,5 +2496,112 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+impl Manifest {
+    /// Writer fingerprint gate: refuse data written by a different
+    /// build unless XUDANU_ALLOW_FOREIGN_WRITER=1. Legacy manifests
+    /// without a tag pass with a warning. Returns Err(message) when
+    /// the caller must refuse.
+    pub fn check_writer_gate(&self, current_tag: &str) -> Result<(), String> {
+        match &self.writer_tag {
+            Some(tag) if tag != current_tag => {
+                let forced = std::env::var("XUDANU_ALLOW_FOREIGN_WRITER").as_deref() == Ok("1");
+                if !forced {
+                    return Err(format!(
+                        "DATA WRITTEN BY ANOTHER BUILD: manifest says writer '{}', this \
+                         binary is '{}'. Restoring and checkpointing with a different build \
+                         can silently drop state it does not model. Re-open with the original \
+                         build, or set XUDANU_ALLOW_FOREIGN_WRITER=1 to proceed anyway (a \
+                         pre-restore backup of manifests and WAL is strongly advised).",
+                        tag, current_tag
+                    ));
+                }
+                tracing::warn!(
+                    "[restore] foreign writer '{}' forced open (XUDANU_ALLOW_FOREIGN_WRITER=1)",
+                    tag
+                );
+                Ok(())
+            }
+            Some(_) => Ok(()),
+            None => {
+                tracing::warn!(
+                    "[restore] legacy manifest without writer tag — proceeding; the next \
+                     checkpoint stamps this build's tag"
+                );
+                Ok(())
+            }
+        }
+    }
+}
+
+#[doc(hidden)]
+impl Manifest {
+    /// Minimal all-empty manifest for tests and tooling.
+    pub fn empty_for_tests() -> Self {
+        Manifest {
+            fulltrace: None,
+            format_version: 0 as u32,
+            created_at: String::new(),
+            server_version: String::new(),
+            checksum: String::new(),
+            sequence: 0 as u64,
+            manifest_slot: 'a',
+            writer_tag: None,
+            grand_map_id_counter: 0 as BeId,
+            session_counter: 0 as u64,
+            operation_counter: 0 as u64,
+            system_clubs: crate::server::SystemClubs {
+                public_club: 1000,
+                admin_club: 1001,
+                access_club: 1002,
+                empty_club: 1003,
+            },
+            works: Vec::new(),
+            clubs: Vec::new(),
+            standalone_editions: Vec::new(),
+            admin: crate::persist::manifest::AdminEntry {
+                accepting_connections: true,
+                shutdown_requested: false,
+                grants: Vec::new(),
+                network_enabled: false,
+                external_links_enabled: false,
+                edit_policy: "owner-only".to_string(),
+            },
+            key_history: None,
+            links_hash: None,
+            links: Vec::new(),
+            link_counter: 0 as BeId,
+            links_chunk_hash: None,
+            link_type_registry: Vec::new(),
+            reconcile_store: Default::default(),
+            reconcile_counter: 0 as u64,
+            federation: None,
+            federation_chunk_hash: None,
+            content_address_hash: None,
+            content_address: None,
+            content_address_chunk_hash: None,
+            blob_metas_hash: None,
+            blob_metas: Vec::new(),
+            blob_metas_chunk_hash: None,
+            historical_authors_hash: None,
+            historical_authors: None,
+            historical_authors_chunk_hash: None,
+            annotations_hash: None,
+            fossil_snapshots_hash: None,
+            backfollow_snapshot_hash: None,
+            recorder_journal_hash: None,
+            starred_works: Default::default(),
+            trails: Vec::new(),
+            trail_counter: 0 as BeId,
+            compound_editions: Vec::new(),
+            compound_segments: Vec::new(),
+            social_chunk_hash: None,
+            ticket_nonces: Default::default(),
+            lattice_primary_works: Vec::new(),
+            lattice_write_works: Vec::new(),
+            revisions: Default::default(),
+        }
     }
 }
