@@ -54,10 +54,26 @@ pub struct WalLog {
 impl WalLog {
     pub fn open(data_dir: &Path) -> Result<Self, WalError> {
         let path = data_dir.join(WAL_FILENAME);
-        let needs_header = !path.exists()
-            || std::fs::metadata(&path)
-                .map(|m| m.len() == 0)
-                .unwrap_or(true);
+        // Sanitize a torn tail before appending: a crash mid-write
+        // can leave a partial final line, and read_entries stops at
+        // the first corrupt line — so any entry appended after the
+        // tear would be permanently unreachable on future replays.
+        // Truncate the file to the end of the last VALID entry so
+        // appends continue the parseable stream.
+        let valid_len = Self::last_valid_boundary(&path)?;
+        if let Ok(md) = std::fs::metadata(&path) {
+            if md.len() > valid_len {
+                tracing::warn!(
+                    "[WAL] torn tail: truncating {} garbage byte(s) before appending \
+                     (crash during a previous write)",
+                    md.len() - valid_len
+                );
+                let f = std::fs::OpenOptions::new().write(true).open(&path)?;
+                f.set_len(valid_len)?;
+                f.sync_all()?;
+            }
+        }
+        let needs_header = valid_len == 0;
         let seq = Self::read_max_seq(&path)?;
         let mut file = std::fs::OpenOptions::new()
             .create(true)
@@ -76,6 +92,57 @@ impl WalLog {
             file: Some(file),
             append_count: 0,
         })
+    }
+
+    /// Byte offset one past the last complete, parseable entry line
+    /// (or 0 when the file holds nothing valid). Mirrors the parse
+    /// rules of read_entries: first line may be the version header;
+    /// an unparseable line ends the valid region.
+    fn last_valid_boundary(path: &Path) -> Result<u64, WalError> {
+        if !path.exists() {
+            return Ok(0);
+        }
+        let data = std::fs::read(path)?;
+        if data.is_empty() {
+            return Ok(0);
+        }
+        let mut boundary: u64 = 0;
+        let mut first_line = true;
+        let mut pos: usize = 0;
+        while pos < data.len() {
+            let Some(nl) = data[pos..].iter().position(|b| *b == b'\n') else {
+                break; // trailing bytes without newline: torn tail
+            };
+            let line = &data[pos..pos + nl];
+            let line_end = pos + nl + 1;
+            if first_line {
+                first_line = false;
+                if serde_json::from_str::<serde_json::Value>(
+                    std::str::from_utf8(line).unwrap_or(""),
+                )
+                .ok()
+                .and_then(|v| v.get("version").and_then(|x| x.as_u64()))
+                .is_some()
+                {
+                    boundary = line_end as u64;
+                    pos = line_end;
+                    continue;
+                }
+            }
+            // A trailing empty line at EOF is not a torn entry.
+            if line.is_empty() {
+                boundary = line_end as u64;
+                pos = line_end;
+                continue;
+            }
+            if serde_json::from_str::<WalEntry>(std::str::from_utf8(line).unwrap_or("")).is_ok() {
+                boundary = line_end as u64;
+                pos = line_end;
+            } else {
+                break;
+            }
+        }
+        Ok(boundary)
     }
 
     pub fn disabled() -> Self {
@@ -455,6 +522,43 @@ impl WalLog {
         )
     }
 
+    pub fn append_trail_publish(&mut self, trail_id: BeId) -> Result<u64, WalError> {
+        self.append(
+            "trail_publish",
+            serde_json::json!({
+                "trail_id": trail_id,
+            }),
+        )
+    }
+
+    pub fn append_work_license_set(
+        &mut self,
+        work_id: BeId,
+        license: &crate::edition::License,
+    ) -> Result<u64, WalError> {
+        self.append(
+            "work_license_set",
+            serde_json::json!({
+                "work_id": work_id,
+                "license": license.as_str(),
+            }),
+        )
+    }
+
+    pub fn append_work_kind_set(
+        &mut self,
+        work_id: BeId,
+        kind: &crate::edition::WorkKind,
+    ) -> Result<u64, WalError> {
+        self.append(
+            "work_kind_set",
+            serde_json::json!({
+                "work_id": work_id,
+                "kind": kind.as_str(),
+            }),
+        )
+    }
+
     pub fn append_trail_rename(
         &mut self,
         trail_id: BeId,
@@ -652,13 +756,36 @@ impl WalLog {
         )
     }
 
+    /// Rotate instead of destroy: the current `wal.log` becomes
+    /// `wal.log.1` (shifting older segments down), and a fresh
+    /// `wal.log` starts. Rotated segments are recovery material for a
+    /// bad checkpoint — the incident class where the checkpoint drops
+    /// state and the WAL held the only good copy. They are not
+    /// auto-replayed (that state is already checkpointed when the
+    /// rotation happens); `xudanu-server recover` walks them.
     pub fn truncate(&mut self) -> Result<(), WalError> {
+        const SEGMENTS: u32 = 3;
         self.append_count = 0;
         if self.file.is_none() {
             return Ok(());
         }
         self.file = None;
         {
+            let dir = self
+                .path
+                .parent()
+                .ok_or_else(|| WalError::Io(std::io::Error::other("wal: no parent dir")))?;
+            for i in (1..SEGMENTS).rev() {
+                let from = dir.join(format!("{}.{}", WAL_FILENAME, i));
+                let to = dir.join(format!("{}.{}", WAL_FILENAME, i + 1));
+                if from.exists() {
+                    let _ = std::fs::rename(&from, &to);
+                }
+            }
+            let first = dir.join(format!("{}.1", WAL_FILENAME));
+            if self.path.exists() {
+                let _ = std::fs::rename(&self.path, &first);
+            }
             let mut f = std::fs::OpenOptions::new()
                 .create(true)
                 .write(true)
@@ -1031,6 +1158,47 @@ impl WalLog {
                 "trail_delete" => {
                     if let Some(trail_id) = entry.args.get("trail_id").and_then(|v| v.as_u64()) {
                         server.wal_replay_trail_delete(trail_id);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "trail_publish" => {
+                    if let Some(trail_id) = entry.args.get("trail_id").and_then(|v| v.as_u64()) {
+                        server.wal_replay_trail_publish(trail_id);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "work_license_set" => {
+                    if let (Some(work_id), Some(license)) = (
+                        entry.args.get("work_id").and_then(|v| v.as_u64()),
+                        entry.args.get("license").and_then(|v| v.as_str()),
+                    ) {
+                        server.wal_replay_work_license_set(work_id, license);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "work_kind_set" => {
+                    if let (Some(work_id), Some(kind)) = (
+                        entry.args.get("work_id").and_then(|v| v.as_u64()),
+                        entry.args.get("kind").and_then(|v| v.as_str()),
+                    ) {
+                        server.wal_replay_work_kind_set(work_id, kind);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "trail_rename" => {
+                    if let (Some(trail_id), Some(new_name)) = (
+                        entry.args.get("trail_id").and_then(|v| v.as_u64()),
+                        entry.args.get("new_name").and_then(|v| v.as_str()),
+                    ) {
+                        server.wal_replay_trail_rename(trail_id, new_name);
                         true
                     } else {
                         false

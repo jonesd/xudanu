@@ -1511,6 +1511,7 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         checksum: String::new(),
         sequence: payload.manifest_sequence + 1,
         manifest_slot: next_slot,
+        writer_tag: Some(env!("XUDANU_WRITER_TAG").to_string()),
         backfollow_snapshot_hash: None,
         recorder_journal_hash: None,
         grand_map_id_counter: payload.grand_map_id_counter,
@@ -2435,6 +2436,7 @@ impl Server {
             "protocol_version": 1,
             "api_version": 1,
             "implementation": "xudanu",
+            "server_version": env!("CARGO_PKG_VERSION"),
             "server_name": self.server_name,
             "server_description": self.server_description,
             "public_address": self.public_address,
@@ -12398,6 +12400,32 @@ impl Server {
         self.trails.remove(&trail_id);
     }
 
+    pub(crate) fn wal_replay_trail_publish(&mut self, trail_id: BeId) {
+        if let Some(t) = self.trails.get_mut(&trail_id) {
+            t.published = true;
+        }
+    }
+
+    pub(crate) fn wal_replay_work_license_set(&mut self, work_id: BeId, license: &str) {
+        if let Some(ws) = self.works.get_mut(&work_id) {
+            ws.work
+                .set_license(crate::edition::License::from_str_loose(license));
+        }
+    }
+
+    pub(crate) fn wal_replay_work_kind_set(&mut self, work_id: BeId, kind: &str) {
+        if let Some(ws) = self.works.get_mut(&work_id) {
+            ws.work
+                .set_kind(crate::edition::WorkKind::from_str_loose(kind));
+        }
+    }
+
+    pub(crate) fn wal_replay_trail_rename(&mut self, trail_id: BeId, new_name: &str) {
+        if let Some(t) = self.trails.get_mut(&trail_id) {
+            t.name = new_name.to_string();
+        }
+    }
+
     pub(crate) fn wal_replay_trail_add_stop(
         &mut self,
         trail_id: BeId,
@@ -12971,52 +12999,66 @@ impl Server {
             tracing::warn!("[trails] sidecar unreadable");
             return;
         };
-        let sidecar_count = payload["trails"].as_array().map(|a| a.len()).unwrap_or(0);
-        if sidecar_count > self.trails.len() {
-            self.trails.clear();
-            if let Some(counter) = payload["trail_counter"].as_u64() {
+        // Merge, never replace: the sidecar is a recovery layer. A
+        // sidecar entry resurrects a trail the manifest lost; a trail
+        // already restored from the manifest/WAL is kept as-is (it is
+        // at least as new). The old replace-if-bigger heuristic could
+        // drop manifest-newer trails when a stale-but-larger sidecar
+        // was present.
+        if let Some(counter) = payload["trail_counter"].as_u64() {
+            if counter > self.trail_counter {
                 self.trail_counter = counter;
             }
-            if let Some(entries) = payload["trails"].as_array() {
-                for e in entries {
-                    let Ok(entry) = serde_json::from_value::<
-                        crate::persist::manifest::TrailManifestEntry,
-                    >(e.clone()) else {
-                        continue;
-                    };
-                    let trail_id = entry.trail_id;
-                    let now = Self::current_timestamp_secs();
-                    let stops: Vec<TrailStop> = entry
-                        .stops
-                        .into_iter()
-                        .map(|s| TrailStop {
-                            work_id: s.work_id,
-                            char_start: s.char_start,
-                            char_end: s.char_end,
-                            note: s.note,
-                            server_domain: None,
-                        })
-                        .collect();
-                    self.trails.insert(
-                        trail_id,
-                        TrailState {
-                            trail_id,
-                            owner_club: entry.owner_club,
-                            name: entry.name,
-                            introduction: entry.introduction,
-                            categories: entry.categories,
-                            published: entry.published,
-                            stops,
-                            created_at: entry.created_at,
-                            updated_at: entry.updated_at,
-                            derived_work_id: entry.derived_work_id,
-                        },
-                    );
+        }
+        let before = self.trails.len();
+        let mut resurrected = 0u64;
+        if let Some(entries) = payload["trails"].as_array() {
+            for e in entries {
+                let Ok(entry) = serde_json::from_value::<
+                    crate::persist::manifest::TrailManifestEntry,
+                >(e.clone()) else {
+                    continue;
+                };
+                let trail_id = entry.trail_id;
+                if self.trails.contains_key(&trail_id) {
+                    continue;
                 }
+                let stops: Vec<TrailStop> = entry
+                    .stops
+                    .into_iter()
+                    .map(|s| TrailStop {
+                        work_id: s.work_id,
+                        char_start: s.char_start,
+                        char_end: s.char_end,
+                        note: s.note,
+                        server_domain: None,
+                    })
+                    .collect();
+                self.trails.insert(
+                    trail_id,
+                    TrailState {
+                        trail_id,
+                        owner_club: entry.owner_club,
+                        name: entry.name,
+                        introduction: entry.introduction,
+                        categories: entry.categories,
+                        published: entry.published,
+                        stops,
+                        created_at: entry.created_at,
+                        updated_at: entry.updated_at,
+                        derived_work_id: entry.derived_work_id,
+                    },
+                );
+                resurrected += 1;
             }
-            tracing::info!(
-                "[trails] sidecar restored {} trail(s) (manifest had fewer)",
-                self.trails.len()
+        }
+        if resurrected > 0 {
+            tracing::warn!(
+                "[trails] sidecar resurrected {} trail(s) missing from manifest/WAL \
+                 (restored total: {}, had {})",
+                resurrected,
+                self.trails.len(),
+                before
             );
         }
     }
@@ -13527,6 +13569,9 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        if let Err(e) = self.wal.append_trail_publish(trail_id) {
+            tracing::error!("WAL append failed for trail_publish {}: {}", trail_id, e);
+        }
         self.auto_checkpoint();
         self.persist_trails_sidecar();
         Ok(())
@@ -15217,6 +15262,13 @@ impl Server {
                 format!("no manifest.json found in {}", data_dir.display()),
             ));
         };
+
+        if let Err(msg) = manifest.check_writer_gate(env!("XUDANU_WRITER_TAG")) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                msg,
+            ));
+        }
 
         // FR-83: under lazy restore the chunk verification pass (a
         // full disk walk — ~30s on the dev corpus) moves OFF the
@@ -19719,6 +19771,9 @@ impl Server {
             .ok_or(ServerError::InvalidArgument("work not found".into()))?;
         ws.work.set_kind(kind);
         ws.dirty_gen = ws.dirty_gen.wrapping_add(1);
+        if let Err(e) = self.wal.append_work_kind_set(work_id, &kind) {
+            tracing::error!("WAL append failed for work_kind_set {}: {}", work_id, e);
+        }
         self.auto_checkpoint();
         Ok(())
     }
@@ -19742,6 +19797,9 @@ impl Server {
             .ok_or(ServerError::InvalidArgument("work not found".into()))?;
         ws.work.set_license(license);
         ws.dirty_gen = ws.dirty_gen.wrapping_add(1);
+        if let Err(e) = self.wal.append_work_license_set(work_id, &license) {
+            tracing::error!("WAL append failed for work_license_set {}: {}", work_id, e);
+        }
         self.auto_checkpoint();
         Ok(())
     }
@@ -29329,6 +29387,7 @@ pub(crate) mod persist_snapshot {
                 checksum: String::new(),
                 sequence: self.manifest_sequence + 1,
                 manifest_slot: next_slot,
+                writer_tag: Some(env!("XUDANU_WRITER_TAG").to_string()),
                 grand_map_id_counter: self.grand_map.id_counter(),
                 session_counter: self.session_counter,
                 operation_counter: self.operation_counter,
