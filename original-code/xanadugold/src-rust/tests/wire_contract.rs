@@ -369,10 +369,7 @@ fn operation_table_matches_contract_pin() {
         .iter()
         .map(|(code, op)| (*code, format!("{:?}", op)))
         .collect();
-    let pinned: Vec<(u16, String)> = PINNED
-        .iter()
-        .map(|(c, n)| (*c, n.to_string()))
-        .collect();
+    let pinned: Vec<(u16, String)> = PINNED.iter().map(|(c, n)| (*c, n.to_string())).collect();
 
     let added: Vec<_> = live.iter().filter(|l| !pinned.contains(l)).collect();
     let removed: Vec<_> = pinned.iter().filter(|p| !live.contains(p)).collect();
