@@ -158,8 +158,8 @@ What connections touch it, and who wrote what?</pre>
 <tr><td><code>get_prov</code></td><td>Authorship and lineage as W3C PROV-JSON</td></tr>
 <tr><td><code>get_version_info</code></td><td>Revision count and timeline for a work</td></tr>
 <tr><td><code>compare_versions</code></td><td>Two revisions side by side, differences labeled</td></tr>
-<tr><td><code>watch_work</code></td><td>Subscribe to changes on a work (detector)</td></tr>
-<tr><td><code>detector_events</code> / <code>detector_ack</code> / <code>unwatch_work</code></td><td>Read, acknowledge, and retire watch events</td></tr>
+<tr><td><code>watch_work</code></td><td>Plant a persistent detector on a work. <code>kind</code> is <code>links</code> (fires when links land on it) or <code>revisions</code> (fires when revised); optional <code>link_type</code> (built-in type name — e.g. <code>disagreement</code>) and <code>direction</code> (<code>in</code>/<code>out</code>/<code>any</code>) filters are planted server-side</td></tr>
+<tr><td><code>detector_events</code> / <code>detector_ack</code> / <code>unwatch_work</code></td><td>Read, acknowledge, and retire watch events; the response's <code>unread_total</code> is the aggregate digest count across all your watches</td></tr>
 </table>
 
 <h2 id="addressing">5. Addressing: xudanu:// references</h2>
@@ -197,6 +197,19 @@ xudanu://work/&lt;id&gt;?rev=&lt;n&gt;#span=&lt;s&gt;,&lt;e&gt;  a range in a pi
 
 <h3>Risk 3 — model identity is self-reported</h3>
 <p>The write mode stamps revisions with a declared model identity. That label is what the operator typed, not a verified fact. It is attribution metadata, not authentication — do not build trust on it.</p>
+
+<h3>The standing-watch pattern (and its one rule)</h3>
+<p>"Monitor this docuverse and tell me when someone disputes the budget claim" decomposes into an agent's two moments and the server's constant:</p>
+<pre>search_works("budget claim")                     ← the agent resolves language → work id
+watch_work(id, kind=links, link_type=disagreement,
+           direction=in)                          ← the SERVER plants the watch
+   … time passes; hits collect server-side …
+detector_events()  →  unread_total, hits          ← the agent reads what collected
+   + read_work / read_span on each hit            ← and interprets
+"Two new disputes since Tuesday: …"               ← the agent tells the human
+detector_ack(id)                                  ← marks read; never deletes</pre>
+<p>The watch and its collection live on the server, not the agent: close the client, restart everything — hits keep accumulating. "Tell me" is poll-based (MCP has no push): ask your assistant "anything new on my watches?" on a schedule, or have a scheduled invocation check <code>unread_total</code> and only report when it moves.</p>
+<div class="gold"><strong>The one rule for judgment in the pipeline:</strong> an LLM may <em>annotate and rank</em> the collection, never <em>gate</em> it. Collect every matching event deterministically; let a model tag, prioritize, or summarize on read. A mediocre summary is recoverable; a silently dropped event is not — collection is ground truth, interpretation is a view.</div>
 
 <h2 id="write-mode">8. Note on the write mode</h2>
 

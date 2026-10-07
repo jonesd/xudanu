@@ -753,9 +753,15 @@ fn call_tool(agent: &mut AgentSession, name: &str, args: &Value) -> Result<Value
                     })
                 })
                 .collect();
+            let unread_total: u64 = detectors
+                .iter()
+                .filter(|d| filter.is_none_or(|f| d.detector_id == f))
+                .map(|d| d.unread as u64)
+                .sum();
             Ok(json!({
                 "detectors": entries,
-                "total": entries.len()
+                "total": entries.len(),
+                "unread_total": unread_total
             }))
         }
         "detector_ack" => {
