@@ -1,0 +1,72 @@
+:root {
+  --ink: #d8d3c8;
+  --ink-dim: #8a857b;
+  --paper: #101014;
+  --paper-inset: #16161c;
+  --rule: #2a2a33;
+  --accent: #d29922;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+#app { height: 100%; }
+
+.gate {
+  max-width: 420px; margin: 18vh auto; text-align: center;
+}
+.gate h1 { font-weight: 400; letter-spacing: 0.5px; }
+.gate h1 span, .mark span { color: var(--accent); font-style: italic; }
+.gate button {
+  background: none; border: 1px solid var(--accent); color: var(--accent);
+  padding: 8px 26px; font: inherit; cursor: pointer; border-radius: 3px;
+}
+.gate button:hover { background: rgba(210,153,34,0.12); }
+
+header {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 14px 22px; border-bottom: 1px solid var(--rule);
+}
+.mark { font-size: 19px; }
+
+.frame { display: grid; grid-template-columns: 300px 1fr; height: calc(100% - 59px); }
+nav {
+  border-right: 1px solid var(--rule); padding: 18px; overflow-y: auto;
+}
+main { overflow-y: auto; padding: 40px 56px; }
+
+input {
+  width: 100%; background: var(--paper-inset); color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 3px; padding: 7px 10px;
+  font: inherit; font-size: 15px;
+}
+
+nav a, .stops a {
+  display: block; color: var(--ink); text-decoration: none;
+  padding: 5px 0; border-bottom: 1px dotted var(--rule); cursor: pointer;
+}
+nav a:hover, .stops a:hover { color: var(--accent); }
+#results { margin-bottom: 22px; }
+h3 {
+  font-weight: 400; text-transform: lowercase; letter-spacing: 1px;
+  color: var(--ink-dim); font-size: 13px; margin: 0 0 8px;
+}
+
+article { max-width: 640px; margin: 0 auto; }
+article h2 { font-weight: 400; font-size: 26px; margin: 0 0 24px; }
+.prose {
+  font: inherit; white-space: pre-wrap; font-family: inherit;
+  margin: 0; hyphens: auto;
+}
+.stops { padding-left: 20px; }
+.stops li { margin: 10px 0; }
+
+.quiet { color: var(--ink-dim); }
+.small { font-size: 14px; }
