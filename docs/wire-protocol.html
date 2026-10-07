@@ -45,6 +45,10 @@ td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
 <h1>Wire Protocol</h1>
 <p class="subtitle">The 140+ operation WebSocket API: message framing, JSON and binary codecs, connection lifecycle, subscription model, and rate limiting &mdash; the complete integration surface for building clients and tools.</p>
 
+<div class="callout" style="background:rgba(210,153,34,0.08);border-left:3px solid #d29922;padding:14px 18px;margin:20px 0;border-radius:0 6px 6px 0;">
+<strong>Protocol contract</strong> (declared 2026-10-07). Within <code>api_version: 1</code>, this protocol is a compatibility contract: changes are <strong>additive only</strong>. New operations may be appended; an existing operation's code, name, or payload fields must not be renamed, renumbered, or removed. The operation table is pinned by <code>tests/wire_contract.rs</code> &mdash; a removal or renumbering fails CI. Breaking changes require an <code>api_version</code> bump and a deprecation cycle announced here. Payload shape follows the same rule: fields are added with defaults, never renamed. Third-party clients and alternate UIs may build on this surface.
+</div>
+
 <div class="toc">
   <a href="#overview" class="toc-section">1. Overview</a>
   <a href="#transport" class="toc-section">2. Transport Layer</a>

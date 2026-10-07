@@ -115,7 +115,7 @@ The full documentation lives at **[dgjones.info/xudanu](https://dgjones.info/xud
 | [The Xanadu Network Guide](https://dgjones.info/xudanu/xanadu-network-guide.html) | Two independent servers sharing content via tumblers — verified working, with BLAKE3 checks and automatic backlinks |
 | [What People Said Killed Project Xanadu](https://dgjones.info/xudanu/xanadu-explainer.html) | The four standard objections to the 1960 design, answered by a running xanalogical system |
 | [From Udanax to Xudanu](https://dgjones.info/xudanu/udanax-to-xudanu.html) | The algorithms, the people, and the 35-year path from Nelson's vision to running Rust |
-| [Wire Protocol](https://dgjones.info/xudanu/wire-protocol.html) | The complete 140+ operation WebSocket API — the integration surface for building your own client |
+| [Wire Protocol](https://dgjones.info/xudanu/wire-protocol.html) | The complete 140+ operation WebSocket API — the integration surface for building your own client. **Declared a compatibility contract**: within `api_version` 1, changes are additive-only and the op table is CI-pinned |
 
 Also worth knowing: the [User Guide](https://dgjones.info/xudanu/user-guide.html), the [Technical Architecture](https://dgjones.info/xudanu/technical-architecture.html) deep-dive (Big-O analysis of every data structure), and the [Gold Heritage concept map](https://dgjones.info/xudanu/gold-heritage.html) tracing every Udanax-Gold concept to its Rust descendant.
 
