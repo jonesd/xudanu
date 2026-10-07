@@ -6,6 +6,47 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.17.3] — 2026-10-06
+
+The **durability** release: four data-loss mechanisms fixed, and the
+test instruments that enforce the fix forever (FR-142).
+
+### Fixed
+- **WAL torn-tail poisoning**: a crash mid-append left a partial
+  line and every later append landed behind it, unreachable — the
+  next crash silently discarded everything written since. `WalLog::
+  open` now sanitizes to the last valid entry boundary before
+  appending. Found by the new chaos harness on its first run.
+- **WAL coverage gaps**: `trail_publish`, `work_license_set`,
+  `work_kind_set` were checkpoint-only; `trail_rename` was WAL'd but
+  never replayed. All four now appended, replayed, crash-tested.
+- **Checkpoint no longer destroys recovery material**: the WAL
+  rotates (`wal.log.1..3`) instead of truncating to zero; rotated
+  manifests are archived (`archive/manifests/`) instead of deleted.
+- **Binary skew guard**: every manifest carries a writer
+  fingerprint (git hash + profile + dirty via new `build.rs`);
+  restore refuses data written by a different build unless
+  `XUDANU_ALLOW_FOREIGN_WRITER=1`.
+- **Trails sidecar restore is a merge** — resurrects trails lost
+  from WAL and manifest, never drops manifest trails (the old
+  replace-if-bigger heuristic could wipe newer trails).
+- Content-index timing test is build-aware (no more debug-build
+  flakes under parallel load).
+
+### Added
+- `tests/durability.rs` — 20 deterministic crash tests; three
+  failure scenarios per op class plus sidecar-rescue and
+  writer-gate tests. **A failure there is a data-loss bug by
+  definition.**
+- `tests/durability_chaos.rs` — seeded, model-checked chaos harness
+  (14 op classes × crash/checkpoint/torn-tail/corrupt-byte).
+- `docs/dev/persistence-map.md` — every data kind: saved, loaded,
+  recovered, failure modes; recovery-manager design.
+- `docs/dev/FR-142-storage-durability.md` — the contract and the
+  test-driven iteration record.
+
+---
+
 ## [v1.17.2] — 2026-10-06
 
 The **agents can actually connect** release: MCP over TLS, model
