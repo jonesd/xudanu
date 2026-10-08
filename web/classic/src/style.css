@@ -7,6 +7,18 @@
   --accent: #d29922;
 }
 
+/* Paper skin — the mockup look: cream stock, black ink,
+   crooked overlapping windows, straight beams with crinkles. */
+body.paper {
+  --ink: #1d1a15;
+  --ink-dim: #6f6759;
+  --paper: #f4efe3;
+  --paper-inset: #faf6ec;
+  --rule: #b3a893;
+  --accent: #8a6d1f;
+}
+body.paper .win { box-shadow: 2px 3px 0 rgba(29, 26, 21, 0.16); }
+
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body {
@@ -164,3 +176,19 @@ mark { color: inherit; border-radius: 2px; padding: 0 1px; }
 }
 .revise-btn.ghosted { border-color: var(--rule); color: var(--ink-dim); }
 .revise-btn:hover { background: rgba(210, 153, 34, 0.12); }
+
+/* Link authoring + column focus */
+.pane.focused { border-color: var(--accent); }
+.type-panel {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  z-index: 30; background: var(--paper-inset); border: 1px solid var(--rule);
+  border-radius: 6px; padding: 14px 18px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+.type-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 360px; margin: 10px 0 12px; }
+.type-pick {
+  background: none; border: 1px solid var(--rule); color: var(--ink);
+  border-radius: 999px; padding: 3px 12px; font: inherit; font-size: 13px;
+  cursor: pointer;
+}
+.type-pick:hover { background: rgba(255, 255, 255, 0.06); }

@@ -182,7 +182,18 @@ export class WindowsView {
     const cols = bestCols;
     const w = bestW;
     const h = Math.max(96, bestH);
+    const paper = this.paper();
     const pinnedBoxes = this.sats.filter((s) => s.pinned).map((s) => ({ x: s.x, y: s.y, w: s.w, h: s.h }));
+    if (paper) {
+      this.sats.forEach((s, i) => {
+        if (s.pinned) return;
+        s.w = w;
+        s.h = Math.min(h, 220);
+        s.x = zoneX + (i % 2) * 210 + Math.floor(i / 2) * 46;
+        s.y = 16 + Math.floor(i / 2) * 156 + (i % 2) * 38;
+      });
+      return;
+    }
     this.sats.forEach((s, i) => {
       if (s.pinned) return;
       s.w = w;
@@ -275,7 +286,7 @@ export class WindowsView {
         .map((s) => {
           const c = typeColor((s.link.link_types ?? [0])[0]);
           const farTitle = s.side === "out" ? s.link.destination_title ?? s.data.title : s.link.origin_title ?? s.data.title;
-          return `<section class="win sat" id="win-${s.key}" style="left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px;z-index:${s.z}">
+          return `<section class="win sat" id="win-${s.key}" style="left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px;z-index:${s.z}${this.paper() ? `;transform:rotate(${(((s.link.link_id * 7) % 5) - 2) * 0.7}deg)` : ""}">
           <div class="win-head" data-drag="${s.key}" style="border-bottom:2px solid ${c}">
             <h3 title="${esc(farTitle)}">${esc(farTitle.slice(0, 44))}</h3>
             <span class="win-tools">
@@ -458,6 +469,27 @@ export class WindowsView {
     }
   }
 
+  private paper(): boolean {
+    return document.body.classList.contains("paper");
+  }
+
+  /** Small zigzag "crinkle" at a beam endpoint — the mockup's mark
+   *  for a connected passage. dir points along the beam. */
+  private crinkle(x: number, y: number, dx: number, dy: number): string {
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len;
+    const uy = dy / len;
+    const px = -uy;
+    const py = ux;
+    let d = `M ${x} ${y}`;
+    for (let i = 1; i <= 4; i++) {
+      const along = i * 3;
+      const side = i % 2 === 1 ? 3 : -3;
+      d += ` L ${(x + ux * along + px * side).toFixed(1)} ${(y + uy * along + py * side).toFixed(1)}`;
+    }
+    return d;
+  }
+
   private drawBeams(): void {
     const svg = this.root.querySelector<SVGSVGElement>("#beamfield");
     if (!svg || !this.center) return;
@@ -497,9 +529,16 @@ export class WindowsView {
         x2 = dr.left - stageR.left;
         y2 = dr.top + 24 - stageR.top;
       }
-      const mid = (x1 + x2) / 2;
-      const c = typeColor((s.link.link_types ?? [0])[0]);
-      paths += `<path d="M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}" fill="none" stroke="${c}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.85"><animate attributeName="stroke-dashoffset" from="18" to="0" dur="1.2s" repeatCount="indefinite"/></path>`;
+      if (this.paper()) {
+        const ink = "#1d1a15";
+        paths += `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} L ${x2.toFixed(1)} ${y2.toFixed(1)}" fill="none" stroke="${ink}" stroke-width="1"/>`;
+        paths += `<path d="${this.crinkle(x1, y1, x2 - x1, y2 - y1)}" fill="none" stroke="${ink}" stroke-width="1"/>`;
+        paths += `<path d="${this.crinkle(x2, y2, x1 - x2, y1 - y2)}" fill="none" stroke="${ink}" stroke-width="1"/>`;
+      } else {
+        const mid = (x1 + x2) / 2;
+        const c = typeColor((s.link.link_types ?? [0])[0]);
+        paths += `<path d="M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}" fill="none" stroke="${c}" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.85"><animate attributeName="stroke-dashoffset" from="18" to="0" dur="1.2s" repeatCount="indefinite"/></path>`;
+      }
     }
     svg.innerHTML = paths;
   }

@@ -135,10 +135,10 @@ export class ClassicClient {
   }
 
   async search(query: string, max = 20): Promise<SearchEntry[]> {
-    const r = val<{ entries?: SearchEntry[] } | SearchEntry[]>(
+    const r = val<{ results?: SearchEntry[]; entries?: SearchEntry[] } | SearchEntry[]>(
       await this.request("global_text_search", { query, max_results: max }),
     );
-    return Array.isArray(r) ? r : (r.entries ?? []);
+    return Array.isArray(r) ? r : (r.results ?? r.entries ?? []);
   }
 
   async readWork(workId: number): Promise<string> {
@@ -171,6 +171,31 @@ export class ClassicClient {
 
   async saveAndRelease(workId: number, text: string): Promise<void> {
     await this.request("work_save_and_release", { work_id: workId, edition: { text } });
+  }
+
+  /** Create a two-ended typed link (the LinkCreator wire shape). */
+  async createLink(args: {
+    origin: number;
+    destination: number;
+    originRef?: { excerpt: string; start: number; end: number };
+    destinationRef?: { excerpt: string; start: number; end: number };
+    linkTypes?: number[];
+  }): Promise<number> {
+    const ref = (workId: number, r: { excerpt: string; start: number; end: number }) => ({
+      kind: "single",
+      work_context: workId,
+      original_context: null,
+      path_context: null,
+      excerpt: r.excerpt,
+      start_position: r.start,
+      end_position: r.end,
+    });
+    const payload: Record<string, unknown> = { origin: args.origin, destination: args.destination };
+    if (args.originRef) payload.origin_ref = ref(args.origin, args.originRef);
+    if (args.destinationRef) payload.destination_ref = ref(args.destination, args.destinationRef);
+    if (args.linkTypes && args.linkTypes.length > 0) payload.link_types = args.linkTypes;
+    const r = await this.request("link_create", payload);
+    return typeof r === "number" ? r : Number((r as { link_id?: number })?.link_id ?? 0);
   }
 }
 
