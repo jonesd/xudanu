@@ -4511,6 +4511,7 @@ export function WorkspaceShell() {
           url.searchParams.delete("demo");
           window.history.replaceState({}, "", url.toString());
         }}
+        classicWorkId={workBeId}
         searchQuery={searchQuery}
         onSearchChange={(q) => {
           setSearchQuery(q);

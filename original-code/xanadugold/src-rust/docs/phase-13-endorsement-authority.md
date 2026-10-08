@@ -1,5 +1,13 @@
 # Phase 13: Endorsement Authority + Wire Operations
 
+> **Provenance.** This document is an interpretation of the released
+> [Udanax Gold](../../LICENSE-udanax-gold.txt) source code (Copyright
+> 1979–1999 Udanax.com), written in 2026 by the xudanu project. It is
+> **not** Project Xanadu documentation — none was released with the
+> code, and none is known to exist publicly. Where the source is
+> ambiguous, the reading is ours; the code itself is the primary
+> source and final authority.
+
 ## Overview
 
 Phase 13 wires the endorsement system into the server API with proper authority validation, matching the C++ `validateEndorsement`/`validateSignature` pattern. Endorsements are publicly readable but can only be modified by sessions with signature authority for the clubs referenced in the endorsement.

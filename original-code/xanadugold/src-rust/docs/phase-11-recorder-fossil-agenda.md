@@ -1,5 +1,13 @@
 # Phase 11: Recorder / Fossil / Agenda + Admin Monitoring
 
+> **Provenance.** This document is an interpretation of the released
+> [Udanax Gold](../../LICENSE-udanax-gold.txt) source code (Copyright
+> 1979–1999 Udanax.com), written in 2026 by the xudanu project. It is
+> **not** Project Xanadu documentation — none was released with the
+> code, and none is known to exist publicly. Where the source is
+> ambiguous, the reading is ours; the code itself is the primary
+> source and final authority.
+
 ## Overview
 
 Phase 11 adds the Recorder system — a mechanism for registering persistent queries that accumulate results over time as content flows through the server. This is the Rust equivalent of the C++ `ResultRecorder` / `RecorderFossil` / `AgendaItem` subsystem from `tcludex.hxx`, plus an admin health monitoring endpoint.

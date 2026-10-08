@@ -33,9 +33,18 @@ interface Frame {
   type: string;
   id?: number;
   op?: string;
+  code?: string;
   payload?: Record<string, unknown>;
   value?: unknown;
   message?: string;
+}
+
+export class WireError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.code = code;
+  }
 }
 
 function val<T>(v: unknown): T {
@@ -104,7 +113,7 @@ export class ClassicClient {
       const p = this.pending.get(f.id);
       if (p) {
         this.pending.delete(f.id);
-        if (f.type === "error") p.reject(new Error(`${f.op ?? "op"}: ${f.message ?? "?"}`));
+        if (f.type === "error") p.reject(new WireError(`${f.op ?? "op"}: ${f.message ?? "?"}`, f.code));
         else p.resolve(f.value);
       }
     }
@@ -126,15 +135,23 @@ export class ClassicClient {
   }
 
   async search(query: string, max = 20): Promise<SearchEntry[]> {
-    const r = val<{ entries?: SearchEntry[] } | SearchEntry[]>(
+    const r = val<{ results?: SearchEntry[]; entries?: SearchEntry[] } | SearchEntry[]>(
       await this.request("global_text_search", { query, max_results: max }),
     );
-    return Array.isArray(r) ? r : (r.entries ?? []);
+    return Array.isArray(r) ? r : (r.results ?? r.entries ?? []);
   }
 
   async readWork(workId: number): Promise<string> {
     const e = val<{ text?: string }>(await this.request("work_get_edition", { work_id: workId }));
     return e?.text ?? "";
+  }
+
+
+  async linksFor(workId: number): Promise<LinkEntryClassic[]> {
+    const r = val<{ entries?: LinkEntryClassic[] } | LinkEntryClassic[]>(
+      await this.request("link_list_for_work", { work_id: workId }),
+    );
+    return Array.isArray(r) ? r : (r.entries ?? []);
   }
 
   async trails(): Promise<TrailEntry[]> {
@@ -143,4 +160,70 @@ export class ClassicClient {
     );
     return Array.isArray(r) ? r : (r.trails ?? []);
   }
+
+  async grab(workId: number): Promise<void> {
+    await this.request("work_grab", { work_id: workId });
+  }
+
+  async release(workId: number): Promise<void> {
+    await this.request("work_release", { work_id: workId });
+  }
+
+  async saveAndRelease(workId: number, text: string): Promise<void> {
+    await this.request("work_save_and_release", { work_id: workId, edition: { text } });
+  }
+
+  /** Create a two-ended typed link (the LinkCreator wire shape). */
+  async createLink(args: {
+    origin: number;
+    destination: number;
+    originRef?: { excerpt: string; start: number; end: number };
+    destinationRef?: { excerpt: string; start: number; end: number };
+    linkTypes?: number[];
+  }): Promise<number> {
+    const ref = (workId: number, r: { excerpt: string; start: number; end: number }) => ({
+      kind: "single",
+      work_context: workId,
+      original_context: null,
+      path_context: null,
+      excerpt: r.excerpt,
+      start_position: r.start,
+      end_position: r.end,
+    });
+    const payload: Record<string, unknown> = { origin: args.origin, destination: args.destination };
+    if (args.originRef) payload.origin_ref = ref(args.origin, args.originRef);
+    if (args.destinationRef) payload.destination_ref = ref(args.destination, args.destinationRef);
+    if (args.linkTypes && args.linkTypes.length > 0) payload.link_types = args.linkTypes;
+    const r = await this.request("link_create", payload);
+    return typeof r === "number" ? r : Number((r as { link_id?: number })?.link_id ?? 0);
+  }
 }
+
+export interface LinkRef {
+  kind: string;
+  work_context?: number;
+  original_context?: number | null;
+  excerpt?: string;
+  start_position?: number;
+  end_position?: number;
+}
+
+export interface LinkEntryClassic {
+  link_id: number;
+  origin: number;
+  destination: number | null;
+  origin_ref?: LinkRef;
+  destination_ref?: LinkRef;
+  origin_title?: string;
+  destination_title?: string;
+  link_types?: number[];
+}
+
+export const LINK_TYPE_NAMES: Record<number, { name: string; color: string }> = {
+  1: { name: "comment", color: "#7aa2f7" },
+  2: { name: "reference", color: "#9ece6a" },
+  3: { name: "disagreement", color: "#f7768e" },
+  4: { name: "quotation", color: "#e0af68" },
+  5: { name: "see also", color: "#bb9af7" },
+  6: { name: "web", color: "#7dcfff" },
+};

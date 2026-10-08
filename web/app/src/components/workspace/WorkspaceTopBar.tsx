@@ -32,6 +32,9 @@ interface WorkspaceTopBarProps {
   canGoForward?: boolean;
   fwdTitle?: string | null;
   onCreateWork: () => void;
+  /** FR-144: open the current work in the classic (Xanadu) client.
+   *  Rendered only when a work is open. */
+  classicWorkId?: number | null;
   themeMode: ThemeMode;
   themePickerOpen: boolean;
   onToggleThemePicker: () => void;
@@ -84,6 +87,7 @@ export function WorkspaceTopBar({
   canGoForward,
   fwdTitle,
   onCreateWork,
+  classicWorkId,
   themeMode,
   themePickerOpen,
   onToggleThemePicker,
@@ -217,6 +221,16 @@ export function WorkspaceTopBar({
         >
           Compose
         </button>
+        {classicWorkId != null && (
+          <a
+            className="ws-nav-tab"
+            href={`/classic/index.html#w${classicWorkId}`}
+            title="Open this work in the classic Xanadu client"
+            style={{ textDecoration: "none" }}
+          >
+            Classic&nbsp;↗
+          </a>
+        )}
       </nav>
 
       <div className="ws-top-bar-actions">

@@ -1,5 +1,13 @@
 # Phase 16: Content Replication (G-Set CRDT)
 
+> **Provenance.** This document is an interpretation of the released
+> [Udanax Gold](../../LICENSE-udanax-gold.txt) source code (Copyright
+> 1979–1999 Udanax.com), written in 2026 by the xudanu project. It is
+> **not** Project Xanadu documentation — none was released with the
+> code, and none is known to exist publicly. Where the source is
+> ambiguous, the reading is ours; the code itself is the primary
+> source and final authority.
+
 ## Goal
 
 Content created on Server A is verifiably available on Server B. Immutable content uses a G-Set CRDT (set union converges). BLAKE3 verification means no trust in the sending server is required.

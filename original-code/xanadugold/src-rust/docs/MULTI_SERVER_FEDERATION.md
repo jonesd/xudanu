@@ -1,5 +1,13 @@
 # Multi-Server Federation Attestation Design
 
+> **Provenance.** This document is an interpretation of the released
+> [Udanax Gold](../../LICENSE-udanax-gold.txt) source code (Copyright
+> 1979–1999 Udanax.com), written in 2026 by the xudanu project. It is
+> **not** Project Xanadu documentation — none was released with the
+> code, and none is known to exist publicly. Where the source is
+> ambiguous, the reading is ours; the code itself is the primary
+> source and final authority.
+
 ## Overview
 Design a unified attestation system supporting both single-server installations (1 machine) and cluster deployments (3-6 machines) with seamless scalability, building upon existing provenance and attestation infrastructure.
 

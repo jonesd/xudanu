@@ -3,6 +3,7 @@ import { defineConfig } from "vite";
 // Phase A dev shape: proxy to a local xudanu-server (default :8080),
 // same pattern as web/app — the server sees same-origin traffic.
 export default defineConfig({
+  base: "./",
   server: {
     port: 5174,
     proxy: {

@@ -181,6 +181,7 @@ jobs:
           cp target/${{ matrix.target }}/release/migrate_manifest dist/ 2>/dev/null || true
           cp target/${{ matrix.target }}/release/chunk_validator dist/ 2>/dev/null || true
           cp -r web/app/dist dist/
+          cp -r web/classic/dist dist/classic
           cp QUICKSTART.md dist/
           [ -f LICENSE ] && cp LICENSE dist/ || true
           [ -f NOTICE ] && cp NOTICE dist/ || true
@@ -198,6 +199,7 @@ jobs:
           cp target/${{ matrix.target }}/release/migrate_manifest.exe dist/
           cp target/${{ matrix.target }}/release/chunk_validator.exe dist/
           cp -r web/app/dist dist/
+          cp -r web/classic/dist dist/classic
           cp QUICKSTART.md dist/
           if (Test-Path LICENSE) { cp LICENSE dist/ }
           if (Test-Path NOTICE) { cp NOTICE dist/ }

@@ -1,5 +1,13 @@
 # Xudanu: The "u" Is For New
 
+> **Provenance.** This document is an interpretation of the released
+> [Udanax Gold](../../LICENSE-udanax-gold.txt) source code (Copyright
+> 1979–1999 Udanax.com), written in 2026 by the xudanu project. It is
+> **not** Project Xanadu documentation — none was released with the
+> code, and none is known to exist publicly. Where the source is
+> ambiguous, the reading is ours; the code itself is the primary
+> source and final authority.
+
 **Hypertext infrastructure for documents that outlive their authors.**
 
 Xudanu (pronounced *zoo-dah-noo*) is a reinterpretation of Ted Nelson's Xanadu vision — not a faithful recreation, but an engineering-first approach that keeps what works and replaces what doesn't. The name has history: Xanadu was reversed to Udanax Gold (the 1999 codebase), and a collaborator reversed it again to Xudanu — where the "u" sounds like "new". Hypertext for today, built on the principles that were right all along.

@@ -1,5 +1,13 @@
 # Xudanu Architecture: Three-Layer Model
 
+> **Provenance.** This document is an interpretation of the released
+> [Udanax Gold](../../LICENSE-udanax-gold.txt) source code (Copyright
+> 1979–1999 Udanax.com), written in 2026 by the xudanu project. It is
+> **not** Project Xanadu documentation — none was released with the
+> code, and none is known to exist publicly. Where the source is
+> ambiguous, the reading is ours; the code itself is the primary
+> source and final authority.
+
 ## Overview
 
 Xudanu is built as a layered system, separating the core hypertext engine from the applications that use it. This document describes the three layers and how different clients can be built on top of the server.

@@ -1,1 +1,1 @@
-{"root":["./src/client.ts","./src/main.ts"],"version":"5.9.3"}
+{"root":["./src/client.ts","./src/editor.ts","./src/main.ts","./src/windows.ts"],"version":"5.9.3"}

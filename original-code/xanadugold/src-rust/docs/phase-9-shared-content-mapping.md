@@ -1,5 +1,13 @@
 # Phase 9: Shared Content Mapping
 
+> **Provenance.** This document is an interpretation of the released
+> [Udanax Gold](../../LICENSE-udanax-gold.txt) source code (Copyright
+> 1979–1999 Udanax.com), written in 2026 by the xudanu project. It is
+> **not** Project Xanadu documentation — none was released with the
+> code, and none is known to exist publicly. Where the source is
+> ambiguous, the reading is ours; the code itself is the primary
+> source and final authority.
+
 ## Overview
 
 This phase completes the shared content detection and mapping system. While many pieces were built in earlier phases (positional `shared_region`, `shared_with`, `not_shared_with`, `map_shared_to`, `find_content_shared_regions`, `ContentAddressIndex`, `TransclusionIndex`), Phase 9 adds **content-fingerprint-based** detection (not just positional matching) and proper mapping types for shared content relationships.

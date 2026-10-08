@@ -1,5 +1,13 @@
 # Phase 12: Modern Encryption
 
+> **Provenance.** This document is an interpretation of the released
+> [Udanax Gold](../../LICENSE-udanax-gold.txt) source code (Copyright
+> 1979–1999 Udanax.com), written in 2026 by the xudanu project. It is
+> **not** Project Xanadu documentation — none was released with the
+> code, and none is known to exist publicly. Where the source is
+> ambiguous, the reading is ours; the code itself is the primary
+> source and final authority.
+
 ## Overview
 
 Phase 12 replaces the original Udanax Gold placeholder crypto (`NoEncrypter`/`NoScrambler`) with production-grade modern cryptography. The system uses Ed25519 for identity and signing, X25519 for key exchange, ChaCha20-Poly1305 for authenticated encryption, HKDF-SHA256 for key derivation, and Argon2id for password hashing. Key rotation with signed chain history is built in from day one.

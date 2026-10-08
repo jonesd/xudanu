@@ -23,7 +23,10 @@ for arg in "$@"; do
     esac
 done
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Resolve from the pushing worktree when invoked as a git hook (cwd is
+# the worktree root); fall back to the script's own location for manual
+# runs. Required because this repo is used through linked worktrees.
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || (cd "$(dirname "$0")/.." && pwd))"
 SRC_RUST="$REPO_ROOT/original-code/xanadugold/src-rust"
 WEB_APP="$REPO_ROOT/web/app"
 
