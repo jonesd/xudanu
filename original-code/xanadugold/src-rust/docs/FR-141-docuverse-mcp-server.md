@@ -1,5 +1,13 @@
 # FR-141: Docuverse MCP Server — Agents as First-Class Readers and Authors
 
+> **Provenance.** This document is an interpretation of the released
+> [Udanax Gold](../../LICENSE-udanax-gold.txt) source code (Copyright
+> 1979–1999 Udanax.com), written in 2026 by the xudanu project. It is
+> **not** Project Xanadu documentation — none was released with the
+> code, and none is known to exist publicly. Where the source is
+> ambiguous, the reading is ours; the code itself is the primary
+> source and final authority.
+
 Status: Shipped — all four phases, plus live-server transport.
 Phase 1 (read-only tools, stdio JSON-RPC, xudanu://work URIs).
 Phase 2 (create_work / transclude / create_link / revise /

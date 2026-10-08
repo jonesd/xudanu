@@ -1,5 +1,13 @@
 # Xudanu Feature Status
 
+> **Provenance.** This document is an interpretation of the released
+> [Udanax Gold](../../LICENSE-udanax-gold.txt) source code (Copyright
+> 1979–1999 Udanax.com), written in 2026 by the xudanu project. It is
+> **not** Project Xanadu documentation — none was released with the
+> code, and none is known to exist publicly. Where the source is
+> ambiguous, the reading is ours; the code itself is the primary
+> source and final authority.
+
 > **Last updated:** 2026-08-06
 > **Version:** 1.2.0
 > **Tests:** 2764+ Rust lib tests, 271 integration tests, 548 frontend tests (~3583 total)

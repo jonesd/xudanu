@@ -1,5 +1,13 @@
 # Phase 10: Full Transclusion Queries + Bundle Stepper
 
+> **Provenance.** This document is an interpretation of the released
+> [Udanax Gold](../../LICENSE-udanax-gold.txt) source code (Copyright
+> 1979–1999 Udanax.com), written in 2026 by the xudanu project. It is
+> **not** Project Xanadu documentation — none was released with the
+> code, and none is known to exist publicly. Where the source is
+> ambiguous, the reading is ours; the code itself is the primary
+> source and final authority.
+
 ## Overview
 
 Phase 10 adds full range-based transclusion queries and an ordered bundle stepper with merge-sort for the O-tree. These features enable querying which editions/works contain content from a specific region of an edition, and retrieving edition contents in sorted order directly from the O-tree structure.

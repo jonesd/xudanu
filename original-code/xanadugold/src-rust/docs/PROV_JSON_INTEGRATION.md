@@ -1,5 +1,13 @@
 # PROV-JSON Integration for Existing Provenance Model
 
+> **Provenance.** This document is an interpretation of the released
+> [Udanax Gold](../../LICENSE-udanax-gold.txt) source code (Copyright
+> 1979–1999 Udanax.com), written in 2026 by the xudanu project. It is
+> **not** Project Xanadu documentation — none was released with the
+> code, and none is known to exist publicly. Where the source is
+> ambiguous, the reading is ours; the code itself is the primary
+> source and final authority.
+
 ## Analysis: Can We Extend Our Model to Work with PROV-JSON?
 
 **Answer: YES** - Our existing provenance model aligns well with W3C PROV concepts and can be extended to support PROV-JSON export while maintaining backward compatibility.
