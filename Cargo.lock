@@ -4357,7 +4357,7 @@ dependencies = [
 
 [[package]]
 name = "xudanu"
-version = "1.17.3"
+version = "1.18.0"
 dependencies = [
  "ammonia",
  "anyhow",
