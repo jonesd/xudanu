@@ -3669,6 +3669,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tungstenite",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
@@ -4356,7 +4357,7 @@ dependencies = [
 
 [[package]]
 name = "xudanu"
-version = "1.17.0"
+version = "1.17.3"
 dependencies = [
  "ammonia",
  "anyhow",
