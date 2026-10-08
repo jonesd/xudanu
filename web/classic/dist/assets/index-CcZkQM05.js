@@ -48,7 +48,7 @@
           <button id="mode-toggle" title="switch posture">${m===`windows`?`⧉ windows`:`▤ panes`}</button>
           <button id="skin-toggle" title="switch skin — ink or the mockup paper look">${h===`paper`?`paper`:`ink`}</button>
         </span>
-        ${T?`<a class="head-link" href="/?work=0x${T.workId.toString(16)}" title="open this work in the workspace">workspace ↗</a>`:``}
+        ${T?`<a class="head-link" href="/workspace?work=0x${T.workId.toString(16)}" title="open this work in the workspace">workspace ↗</a>`:``}
         <span id="head-status" class="quiet small"></span>
         <span class="quiet">${O(p.serverName)} · v${O(p.serverVersion||`?`)} · api ${p.apiVersion}</span>
       </div>

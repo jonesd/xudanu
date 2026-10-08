@@ -172,7 +172,33 @@ async fn vendor_handler(
         .into_response()
 }
 
-async fn index_handler(State(state): State<SharedState>) -> impl IntoResponse {
+/// v1.18.1 classic-first landing helper: translate a legacy workspace
+/// deep link (`?work=0x<hex>`) to the classic client's hash form.
+fn legacy_work_link(query: Option<&str>) -> Option<String> {
+    let v = query?.strip_prefix("work=0x")?;
+    let hex: String = v.chars().take_while(|c| c.is_ascii_hexdigit()).collect();
+    let id = u64::from_str_radix(&hex, 16).ok()?;
+    Some(format!("/classic/index.html#w{}", id))
+}
+
+async fn index_handler(
+    axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
+    State(state): State<SharedState>,
+) -> impl IntoResponse {
+    // v1.18.1 classic-first landing: when the static tree carries the
+    // classic client, "/" welcomes readers in the Xanadu posture; the
+    // workspace shell lives at /workspace (see static_fallback_handler).
+    if let Some(dir) = &state.static_dir {
+        if tokio::fs::metadata(dir.join("classic").join("index.html"))
+            .await
+            .is_ok()
+        {
+            if let Some(dest) = legacy_work_link(uri.query()) {
+                return axum::response::Redirect::temporary(&dest).into_response();
+            }
+            return axum::response::Redirect::temporary("/classic/").into_response();
+        }
+    }
     let html = match &state.static_dir {
         Some(dir) => match tokio::fs::read_to_string(dir.join("index.html")).await {
             Ok(content) => {
@@ -194,6 +220,7 @@ async fn index_handler(State(state): State<SharedState>) -> impl IntoResponse {
         [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
         html,
     )
+        .into_response()
 }
 
 async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
@@ -1531,28 +1558,54 @@ async fn static_fallback_handler(
     axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
     State(state): State<SharedState>,
 ) -> impl IntoResponse {
-    // Client-side routes (e.g. /explore, /doc/123) have no physical file
-    // behind them: serve the SPA shell so deep links and crawlers get a
-    // 200 + HTML instead of a 404. Extension misses (e.g. /missing.js)
-    // stay 404 so broken asset references remain diagnosable — but only
-    // on MISS: real files must be served whatever their extension.
+    // v1.18.1 classic-first landing: when the static tree carries the
+    // classic client, "/" welcomes readers in the Xanadu posture and
+    // the workspace shell lives at /workspace. Legacy workspace deep
+    // links (/?work=0x<hex>) translate to classic hashes (#w<decimal>).
+    // Embedded-app deployments (no static dir) keep the old behavior.
     let path = uri.path().trim_start_matches('/');
-    if path.is_empty() {
-        return serve_index_html(&state).await;
-    }
     let dir = match &state.static_dir {
-        Some(d) => d,
+        Some(d) => d.clone(),
         None => {
-            // No static dir (embedded-app deployments): nothing to serve
-            // but the shell. Asset-like paths still 404.
             if std::path::Path::new(path).extension().is_some() {
                 return axum::http::StatusCode::NOT_FOUND.into_response();
             }
             return serve_index_html(&state).await;
         }
     };
+    let has_classic = tokio::fs::metadata(dir.join("classic").join("index.html"))
+        .await
+        .is_ok();
+    if path.is_empty() {
+        if has_classic {
+            if let Some(dest) = legacy_work_link(uri.query()) {
+                return axum::response::Redirect::temporary(&dest).into_response();
+            }
+            return axum::response::Redirect::temporary("/classic/").into_response();
+        }
+        return serve_index_html(&state).await;
+    }
+    if has_classic && (path == "workspace" || path == "workspace/") {
+        return serve_index_html(&state).await;
+    }
+    // Directory requests with a trailing slash serve that directory's
+    // index.html (e.g. /classic/) instead of falling through to the
+    // workspace SPA shell.
+    if path.ends_with('/') {
+        let index = dir.join(format!("{}index.html", path));
+        if index.starts_with(&dir) {
+            if let Ok(bytes) = tokio::fs::read(&index).await {
+                let mime = mime_guess::from_path(&index).first_or_octet_stream();
+                return (
+                    [(axum::http::header::CONTENT_TYPE, mime.to_string())],
+                    bytes,
+                )
+                    .into_response();
+            }
+        }
+    }
     let file_path = dir.join(path);
-    if !file_path.starts_with(dir) {
+    if !file_path.starts_with(&dir) {
         return axum::http::StatusCode::FORBIDDEN.into_response();
     }
     match tokio::fs::read(&file_path).await {

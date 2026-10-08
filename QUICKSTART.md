@@ -13,13 +13,40 @@ dependencies.
     --edit-policy public-sandbox --seed-links-demo
 ```
 
-Then open **http://127.0.0.1:8080** in your browser.
+Then open **http://127.0.0.1:8080** — you land in the **classic
+client**: two columns, underlines, ink lines between passages. Click
+**connect**, then take a tour from the left panel.
 
 The seed flag creates two guided tours (Trails panel):
 **The Curator's Tour** — ten rooms of unusual connections, every
 exhibit the thing itself — and **The Links Course** — five lessons
 from the simple link to gathered end-sets, each with a task you can
 do right there.
+
+## Your first ten minutes (the reading posture)
+
+1. Click **connect**, open **The Links Course** in the trails panel,
+   and walk Lesson 1 — click underlines to open far ends in the right
+   column; that sideways walk is the whole navigation model.
+2. Select a passage in the left column, press **⧉**, and connect it —
+   to a passage in the right column or to any work from search — then
+   pick the kind of connection. You have just authored a link.
+3. Press **✎** on any work to revise it (grab-and-release; ⌘↵ saves,
+   esc cancels; arrows at the column's edge jump between columns).
+4. The **ink / paper** toggle shifts skins: 1972 mockup register vs
+   colored beams. **⧉ windows / ▤ panes** shifts postures: transpointing
+   windows vs parallel pages.
+
+## The two postures
+
+- `/` — the **classic client**: reading, wandering, revising,
+  connecting. The Xanadu posture.
+- `/workspace` — the **full workspace**: provenance panels, gathers,
+  multi-ended compare, live CRDT collaboration, document map.
+
+They are two faces of one docuverse: **workspace ↗** / **Classic ↗**
+jump between them carrying your place. Same works, same links, same
+provenance.
 
 ## The one demo that matters
 
