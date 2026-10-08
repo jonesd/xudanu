@@ -33,9 +33,18 @@ interface Frame {
   type: string;
   id?: number;
   op?: string;
+  code?: string;
   payload?: Record<string, unknown>;
   value?: unknown;
   message?: string;
+}
+
+export class WireError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.code = code;
+  }
 }
 
 function val<T>(v: unknown): T {
@@ -104,7 +113,7 @@ export class ClassicClient {
       const p = this.pending.get(f.id);
       if (p) {
         this.pending.delete(f.id);
-        if (f.type === "error") p.reject(new Error(`${f.op ?? "op"}: ${f.message ?? "?"}`));
+        if (f.type === "error") p.reject(new WireError(`${f.op ?? "op"}: ${f.message ?? "?"}`, f.code));
         else p.resolve(f.value);
       }
     }
@@ -137,10 +146,59 @@ export class ClassicClient {
     return e?.text ?? "";
   }
 
+
+  async linksFor(workId: number): Promise<LinkEntryClassic[]> {
+    const r = val<{ entries?: LinkEntryClassic[] } | LinkEntryClassic[]>(
+      await this.request("link_list_for_work", { work_id: workId }),
+    );
+    return Array.isArray(r) ? r : (r.entries ?? []);
+  }
+
   async trails(): Promise<TrailEntry[]> {
     const r = val<TrailEntry[] | { trails?: TrailEntry[] }>(
       await this.request("trail_list_published", {}),
     );
     return Array.isArray(r) ? r : (r.trails ?? []);
   }
+
+  async grab(workId: number): Promise<void> {
+    await this.request("work_grab", { work_id: workId });
+  }
+
+  async release(workId: number): Promise<void> {
+    await this.request("work_release", { work_id: workId });
+  }
+
+  async saveAndRelease(workId: number, text: string): Promise<void> {
+    await this.request("work_save_and_release", { work_id: workId, edition: { text } });
+  }
 }
+
+export interface LinkRef {
+  kind: string;
+  work_context?: number;
+  original_context?: number | null;
+  excerpt?: string;
+  start_position?: number;
+  end_position?: number;
+}
+
+export interface LinkEntryClassic {
+  link_id: number;
+  origin: number;
+  destination: number | null;
+  origin_ref?: LinkRef;
+  destination_ref?: LinkRef;
+  origin_title?: string;
+  destination_title?: string;
+  link_types?: number[];
+}
+
+export const LINK_TYPE_NAMES: Record<number, { name: string; color: string }> = {
+  1: { name: "comment", color: "#7aa2f7" },
+  2: { name: "reference", color: "#9ece6a" },
+  3: { name: "disagreement", color: "#f7768e" },
+  4: { name: "quotation", color: "#e0af68" },
+  5: { name: "see also", color: "#bb9af7" },
+  6: { name: "web", color: "#7dcfff" },
+};
