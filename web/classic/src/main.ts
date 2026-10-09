@@ -305,9 +305,19 @@ window.onpopstate = () => {
   if (wm) {
     void openWork(Number(wm[1]), "A", false);
   } else {
+    // Trail or home entries: leave the reading surface — back must
+    // close the panes, not just re-render the sidebar. An active edit
+    // is canceled (with release) exactly as any other navigation does.
+    if (editing) {
+      void editor?.cancel(editing.workId).finally(() => render());
+      editor = null;
+      editing = null;
+    }
     openTrailId = tm ? Number(tm[1]) : null;
-    if (paneA) renderTrailsNav();
-    else render();
+    paneA = null;
+    paneB = null;
+    activeLink = null;
+    render();
   }
 };
 
