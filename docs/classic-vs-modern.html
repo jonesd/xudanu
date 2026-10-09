@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Classic vs Workspace — a side-by-side guide</title>
+<style>
+  body { background:#0d1117; color:#c9d1d9; font:16px/1.65 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; margin:0; padding:40px 20px; }
+  main { max-width:1180px; margin:0 auto; }
+  h1 { font-size:26px; font-weight:600; color:#e6edf3; }
+  h2 { font-size:19px; font-weight:600; color:#e6edf3; margin-top:44px; }
+  p { max-width:760px; }
+  a { color:#58a6ff; }
+  .panel { background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px 20px; margin:18px 0; }
+  .pair { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:14px 0; }
+  @media (max-width:900px){ .pair { grid-template-columns:1fr; } }
+  figure { margin:0; background:#161b22; border:1px solid #21262d; border-radius:10px; overflow:hidden; }
+  figure img { width:100%; display:block; }
+  figcaption { padding:10px 14px; font-size:13px; color:#8b949e; }
+  figcaption strong { color:#c9d1d9; }
+  table { border-collapse:collapse; width:100%; margin:14px 0; font-size:14.5px; }
+  th, td { text-align:left; padding:9px 12px; border:1px solid #30363d; vertical-align:top; }
+  th { background:#161b22; color:#e6edf3; }
+  td:first-child { color:#e6edf3; width:22%; }
+  code { background:#21262d; border-radius:4px; padding:1px 6px; font-size:13.5px; }
+  .muted { color:#8b949e; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Classic vs Workspace — the same docuverse in two postures</h1>
+  <div class="panel">
+    <p><strong>One model, two faces.</strong> Both clients speak the same frozen wire
+    contract to the same server: every work, link, gather, and revision you create in
+    either is immediately real in both. The <strong>classic</strong> client is the
+    reading-and-connecting posture &mdash; parallel pages, visible connections, the
+    register of the 1972 drawings. The <strong>workspace</strong> is the workbench &mdash;
+    live collaborative editing, provenance panels, gathers, and the document map.
+    Switch between them at any time: <code>workspace &#8599;</code> in the classic
+    header, <code>Classic &#8599;</code> in the workspace top bar (it always knows
+    which work you have open).</p>
+  </div>
+
+  <h2>Reading a typed connection</h2>
+  <p>The same two works, joined by a typed link. Classic draws the connection as an
+  ink line between the passages; the workspace underlines both ends and lists the
+  connection in its panel. Both are the same link record &mdash; hover either end for
+  its type (here: <em>disagreement</em>, in red).</p>
+  <div class="pair">
+    <figure>
+      <img src="img/rosetta-classic-link.png" alt="Classic, paper skin: two pages side by side, colored underlines and an ink line between the passages">
+      <figcaption><strong>Classic</strong> &mdash; panes, paper skin. Underlines are live connections; click one and the far page opens beside it, joined by a beam. &#9656; = ink/paper skins, &#11036;/&#9638; = windows/panes postures.</figcaption>
+    </figure>
+    <figure>
+      <img src="img/rosetta-modern-work.png" alt="Workspace: the same work in the editor, underlined passages, links panel">
+      <figcaption><strong>Workspace</strong> &mdash; the same work in the editor. Selection offers <code>Transclude</code>, <code>Link</code>, and the green <code>Gather</code>; the right panels carry connections, provenance, and history.</figcaption>
+    </figure>
+  </div>
+
+  <h2>Gathering passages into one end</h2>
+  <p>A <em>gather</em> is one connection whose end is filled <strong>jointly</strong> by several
+  passages &mdash; not three links, but one link with a set. In classic, every member of a
+  gathered end shares one colour (below: two underlines, one connection; hover for
+  &ldquo;gathered passage i of N&rdquo;). Make one by selecting a passage, pressing
+  <code>&#11016;</code>, and choosing <em>gather into an existing end</em>. In the
+  workspace, select the passage and press the green <code>Gather</code> button.</p>
+  <div class="pair">
+    <figure>
+      <img src="img/rosetta-classic-gather.png" alt="Classic: a work with two passages of one gathered end, sharing one underline colour">
+      <figcaption><strong>Classic</strong> &mdash; the two same-colour underlines are the two passages of one gathered end. The beam inspector (click any line) names the connection behind them.</figcaption>
+    </figure>
+    <figure>
+      <img src="img/rosetta-modern-work.png" alt="Workspace: the same gathered passages underlined in the editor">
+      <figcaption><strong>Workspace</strong> &mdash; the same gathered members in the editor; the Links panel groups them under their connection.</figcaption>
+    </figure>
+  </div>
+
+  <h2>Editing and creating</h2>
+  <p>Classic edits through the same CRDT path as the workspace &mdash; grab-and-release
+  happens invisibly; <code>&#8984;&#8629;</code> saves, <code>esc</code> cancels, arrows at
+  the column edge jump between pages. A new work is one press of <code>+</code>, born
+  straight into editing; its title becomes its first line. The workspace simply saves as
+  you type (about 1.5&nbsp;s after you pause), every pause a revision.</p>
+  <div class="pair">
+    <figure>
+      <img src="img/rosetta-classic-edit.png" alt="Classic: the revise surface over the left page">
+      <figcaption><strong>Classic</strong> &mdash; the revise surface: the page becomes editable in place; the bar under it saves or cancels.</figcaption>
+    </figure>
+    <figure>
+      <img src="img/rosetta-modern-home.png" alt="Workspace welcome: gallery entries and Create">
+      <figcaption><strong>Workspace</strong> &mdash; the welcome screen: one-click gallery entries, Create, import, and the library.</figcaption>
+    </figure>
+  </div>
+
+  <h2>Rosetta — the same act, both names</h2>
+  <table>
+    <tr><th>Act</th><th>Classic</th><th>Workspace</th></tr>
+    <tr><td>Open a work</td><td>search, a trail stop, or a shared <code>#w&lt;id&gt;</code> link</td><td>library, <code>&#8984;K</code> search, or <code>?work=0x&lt;id&gt;</code></td></tr>
+    <tr><td>Follow a connection</td><td>click an underline &mdash; far page opens beside (3rd page follows)</td><td>click the underline &mdash; jump, or open Compare for both ends at once</td></tr>
+    <tr><td>Make a link</td><td>select &rarr; <code>&#11016;</code> &rarr; pick far passage/work &rarr; choose the kind</td><td>select &rarr; <code>Link</code> &rarr; wizard (target, type, extra ends)</td></tr>
+    <tr><td>Gather</td><td>select &rarr; <code>&#11016;</code> &rarr; <em>gather into an existing end</em></td><td>select &rarr; green <code>Gather</code> &rarr; pick the end</td></tr>
+    <tr><td>Revise text</td><td><code>&#9998;</code;> &rarr; type &rarr; <code>&#8984;&#8629;</code> (invisible hold, CRDT save)</td><td>just type &mdash; autosave, revision slider for history</td></tr>
+    <tr><td>New work</td><td><code>+</code> &rarr; born editing; title = first line</td><td><code>Create</code> / import a file / transclude into a new work</td></tr>
+    <tr><td>Same-content passages</td><td>identity boxes with <code>&#8617; source</code> tabs</td><td>attribution panel and provenance chain</td></tr>
+    <tr><td>Trails</td><td>sidebar, chevron-expanded stops</td><td>Trails panel with progress</td></tr>
+    <tr><td>Switch</td><td><code>workspace &#8599;</code> (carries the open work)</td><td><code>Classic &#8599;</code> (always present, carries the work when open)</td></tr>
+    <tr><td>Looks</td><td>ink / paper skins; panes / transpointing-windows postures</td><td>themes and palettes</td></tr>
+  </table>
+
+  <p class="muted">Everything above is one docuverse on one server &mdash; the two
+  clients are <a href="provenance.html">independent implementations</a> of the same
+  published wire contract, which is the point: the model is the product, and the faces
+  are swappable.</p>
+  <p><a href="index.html">&larr; back to the documentation</a></p>
+</main>
+</body>
+</html>

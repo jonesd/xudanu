@@ -137,11 +137,26 @@ interface Mark {
   start: number;
   end: number;
   link: LinkEntryClassic;
+  ordinal?: { i: number; n: number };
 }
 
 function marksFor(pane: Pane): Mark[] {
   const out: Mark[] = [];
   for (const l of pane.links) {
+    // Gathered ends: when the local end carries an end-set with
+    // several passages, every member on this work is a mark with its
+    // ordinal ("passage i of N") — the singletons are member 1 and
+    // must not double-emit.
+    const localEnd = l.origin === pane.workId ? "LeftEnd" : "RightEnd";
+    const members = (l.end_sets ?? []).find(([name, refs]) => name === localEnd && refs.length > 1)?.[1];
+    if (members) {
+      members.forEach((m, i) => {
+        if (m.work_context === pane.workId && m.start_position !== undefined) {
+          out.push({ start: m.start_position, end: m.end_position ?? m.start_position, link: l, ordinal: { i: i + 1, n: members.length } });
+        }
+      });
+      continue;
+    }
     if (l.origin === pane.workId && l.origin_ref?.start_position !== undefined) {
       out.push({ start: l.origin_ref.start_position, end: l.origin_ref.end_position ?? l.origin_ref.start_position, link: l });
     }
@@ -160,7 +175,8 @@ function renderText(pane: Pane): string {
     if (m.start < pos || m.start > pane.text.length) continue;
     html += esc(pane.text.slice(pos, m.start));
     const t = typeOf(m.link);
-    html += `<mark data-link="${m.link.link_id}" style="border-bottom:2px solid ${t.color};background:${t.color}18;cursor:pointer" title="${esc(t.name)} → ${esc(farTitle(m.link, pane.workId))}">${esc(pane.text.slice(m.start, Math.min(m.end, pane.text.length)))}</mark>`;
+    const ord = m.ordinal ? ` (gathered passage ${m.ordinal.i} of ${m.ordinal.n})` : "";
+    html += `<mark data-link="${m.link.link_id}" style="border-bottom:2px solid ${t.color};background:${t.color}18;cursor:pointer" title="${esc(t.name)}${esc(ord)} → ${esc(farTitle(m.link, pane.workId))}">${esc(pane.text.slice(m.start, Math.min(m.end, pane.text.length)))}</mark>`;
     pos = Math.min(m.end, pane.text.length);
   }
   html += esc(pane.text.slice(pos));
@@ -237,6 +253,7 @@ function paneHtml(p: Pane, tag: string, closable: boolean, isEditing = false): s
   const focused = !isEditing && focusPane === tag ? " focused" : "";
   return `<section class="pane${focused}" id="pane-${tag}">
     <div class="pane-head"><h2>${esc(p.title)}</h2>${headBtns}</div>
+    <div class="searchhl-layer" id="searchhl-${tag}"></div>
     <div class="tboxes" id="tboxes-${tag}"></div>
     <div class="pane-scroll pane-editing-${isEditing ? "on" : "off"}" id="scroll-${tag}">${body}</div>
     ${bar}
@@ -256,6 +273,76 @@ function typePanelHtml(): string {
   </div>`;
 }
 
+interface GatherableEnd {
+  linkId: number;
+  endName: string;
+  label: string;
+  count: number;
+  color: string;
+}
+
+/** Ends of existing links on the left work that this work's side
+ *  can absorb another passage into (any end with members). */
+function gatherableEnds(): GatherableEnd[] {
+  if (!paneA) return [];
+  const out: GatherableEnd[] = [];
+  const seen = new Set<string>();
+  for (const l of paneA.links) {
+    const localEnd = l.origin === paneA.workId ? "LeftEnd" : "RightEnd";
+    if (l.origin !== paneA.workId && l.destination !== paneA.workId) continue;
+    const key = `${l.link_id}:${localEnd}`;
+    if (seen.has(key)) continue;
+    const members = (l.end_sets ?? []).find(([n]) => n === localEnd)?.[1]
+      ?? (l.origin === paneA.workId
+        ? (l.origin_ref ? [l.origin_ref] : [])
+        : (l.destination_ref ? [l.destination_ref] : []));
+    if (!members || members.length === 0) continue;
+    seen.add(key);
+    const mine = members.find((m) => m.work_context === paneA!.workId) ?? members[0];
+    out.push({
+      linkId: l.link_id,
+      endName: localEnd,
+      label: (mine?.excerpt || farTitle(l, paneA.workId) || `link ${l.link_id}`).slice(0, 40),
+      count: members.length,
+      color: typeOf(l).color,
+    });
+  }
+  return out;
+}
+
+function gatherPanelHtml(): string {
+  const ends = gatherableEnds();
+  if (ends.length === 0) return "";
+  const chips = ends
+    .map((e) => `<button class="type-pick gather-pick" data-gather-link="${e.linkId}" data-gather-end="${e.endName}" style="border-color:${e.color};color:${e.color}">+ ${esc(e.label)} <span class="quiet">(${e.count})</span></button>`)
+    .join("");
+  return `<div class="type-panel" id="gather-panel">
+    <h3>or gather this passage into an existing end</h3>
+    <div class="type-row">${chips}</div>
+  </div>`;
+}
+
+async function gatherDraftSelection(linkId: number, endName: string): Promise<void> {
+  if (!client || !paneA || !draft || draft.stage !== "origin") return;
+  const d = draft;
+  draft = null;
+  try {
+    await client.gatherInto(linkId, endName, {
+      workContext: paneA.workId,
+      excerpt: d.excerpt,
+      start: d.start,
+      end: d.end,
+    });
+  } catch (e) {
+    setStatus((e as Error).message);
+    render();
+    return;
+  }
+  paneA = { ...paneA, links: await client.linksFor(paneA.workId) };
+  render();
+  setStatus("gathered — the passage joined the end");
+}
+
 function beginLinkFromSelection(): void {
   if (!paneA) return;
   const live = selectionIn(paneA, "scroll-a");
@@ -265,8 +352,8 @@ function beginLinkFromSelection(): void {
     return;
   }
   draft = { stage: "origin", start: s.start, end: s.end, excerpt: paneA.text.slice(s.start, s.end) };
-  setStatus(paneB ? "origin held — select in the right column and press ⤳, or click any work" : "origin held — click a work for the far end");
   render();
+  setStatus(paneB ? "origin held — select in the right column and press ⤳, or click any work" : "origin held — click a work for the far end");
 }
 
 function farFromPaneB(): void {
@@ -296,15 +383,15 @@ function farFromPaneB(): void {
     farTitle: paneB.title,
     farRef: s ? { start: s.start, end: s.end, excerpt: paneB.text.slice(s.start, s.end) } : undefined,
   };
-  setStatus("choose the kind of connection");
   render();
+  setStatus("choose the kind of connection");
 }
 
 function chooseFarWork(workId: number, title: string): void {
   if (!draft || draft.stage !== "origin") return;
   draft = { stage: "far", start: draft.start, end: draft.end, excerpt: draft.excerpt, farWork: workId, farTitle: title };
-  setStatus("choose the kind of connection");
   render();
+  setStatus("choose the kind of connection");
 }
 
 async function commitDraft(type: number): Promise<void> {
@@ -324,7 +411,6 @@ async function commitDraft(type: number): Promise<void> {
     render();
     return;
   }
-  setStatus("connection made");
   paneA = { ...paneA, links: await client.linksFor(paneA.workId) };
   if (d.farRef && paneB && paneB.workId === d.farWork) {
     paneB = { ...paneB, links: await client.linksFor(d.farWork) };
@@ -332,12 +418,13 @@ async function commitDraft(type: number): Promise<void> {
   } else {
     await openWork(d.farWork, "B");
   }
+  setStatus("connection made");
 }
 
 function cancelDraft(): void {
   draft = null;
-  setStatus("");
   render();
+  setStatus("");
 }
 
 function render(): void {
@@ -349,52 +436,7 @@ function render(): void {
       <button id="connect">connect</button>
       <p id="gate-status" class="quiet"></p>
     </div>`;
-    document.getElementById("connect")!.onclick = async () => {
-      const status = document.getElementById("gate-status")!;
-      status.textContent = "connecting…";
-      try {
-        client = new ClassicClient();
-        await client.connect();
-window.onpopstate = () => {
-  if (!client) return;
-  const wm = /^#w(\d+)$/.exec(location.hash);
-  const tm = /^#t(\d+)$/.exec(location.hash);
-  if (wm) {
-    void openWork(Number(wm[1]), "A", false);
-  } else {
-    // Trail or home entries: leave the reading surface — back must
-    // close the panes, not just re-render the sidebar. An active edit
-    // is canceled (with release) exactly as any other navigation does.
-    if (editing) {
-      void editor?.cancel(editing.workId).finally(() => render());
-      editor = null;
-      editing = null;
-    }
-    openTrailId = tm ? Number(tm[1]) : null;
-    paneA = null;
-    paneB = null;
-    paneC = null;
-    activeLink = null;
-    render();
-  }
-};
-
-window.addEventListener("keydown", (e) => {
-  if (!e.altKey || e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-  const inField = (document.activeElement as HTMLElement | null)?.closest?.("input, textarea");
-  if (inField) return;
-  e.preventDefault();
-  if (e.key === "ArrowLeft") history.back();
-  else history.forward();
-});
-
-render();
-        const wm = /^#w(\d+)$/.exec(location.hash);
-        if (wm) void openWork(Number(wm[1]), "A", false);
-      } catch (e) {
-        status.textContent = String(e instanceof Error ? e.message : e);
-      }
-    };
+    document.getElementById("connect")!.onclick = () => void connect();
     return;
   }
 
@@ -409,6 +451,7 @@ render();
         ${paneC ? paneHtml(paneC, "c", true, !!editing && editing.pane === "c" && editing.workId === paneC.workId) : `<section class="pane ghost" id="pane-c"><div class="pane-head"><h2 class="quiet">—</h2></div><div class="pane-scroll"><p class="quiet">Follow another connection and a third page opens here — the parallel-pages posture.</p></div></section>`}
         <svg id="beams"></svg>
         ${inspectLink !== null ? beamPanelHtml() : ""}
+        ${draft && draft.stage === "origin" ? gatherPanelHtml() : ""}
         ${draft && draft.stage === "far" ? typePanelHtml() : ""}
       </div>`
     : openTrail
@@ -425,6 +468,7 @@ render();
           <button id="hist-fwd" title="forward (alt-→)">›</button>
           <button id="mode-toggle" title="switch posture">${mode === "windows" ? "⧉ windows" : "▤ panes"}</button>
           <button id="skin-toggle" title="switch skin — ink or the mockup paper look">${skin === "paper" ? "paper" : "ink"}</button>
+          <button id="new-work" title="create a new work in the docuverse">+</button>
         </span>
         ${paneA ? `<a class="head-link" href="/workspace?work=0x${paneA.workId.toString(16)}" title="open this work in the workspace">workspace ↗</a>` : ""}
         <span id="head-status" class="quiet small"></span>
@@ -462,6 +506,7 @@ render();
     localStorage.setItem("xudanu_classic_skin", skin);
     render();
   };
+  document.getElementById("new-work")!.onclick = () => void createAndEdit();
   if (windowsMode) {
     const stage = document.getElementById("stage")!;
     winView = new WindowsView(
@@ -481,6 +526,7 @@ render();
   wireBeams();
   observeBeams();
   drawAllTBoxes();
+  drawAllSearchHl();
 }
 }
 
@@ -491,11 +537,36 @@ function wireLinkDraft(): void {
   document.querySelectorAll<HTMLButtonElement>("button.type-pick").forEach((b) => {
     b.onclick = () => void commitDraft(Number(b.dataset.type));
   });
+  document.querySelectorAll<HTMLButtonElement>(".gather-pick").forEach((b) => {
+    b.onclick = () => void gatherDraftSelection(Number(b.dataset.gatherLink), b.dataset.gatherEnd ?? "LeftEnd");
+  });
 }
 
 function wireHistoryButtons(): void {
   document.getElementById("hist-back")?.addEventListener("click", () => history.back());
   document.getElementById("hist-fwd")?.addEventListener("click", () => history.forward());
+}
+
+async function createAndEdit(): Promise<void> {
+  if (!client) return;
+  if (mode !== "panes") {
+    mode = "panes";
+    localStorage.setItem("xudanu_classic_mode", mode);
+  }
+  setStatus("creating…");
+  let workId: number;
+  try {
+    workId = await client.createWork("");
+  } catch (e) {
+    setStatus((e as Error).message);
+    return;
+  }
+  // Born editing: the new work opens straight into the revise surface —
+  // type, ⌘↵, and it exists in the shared docuverse with its title
+  // derived from the first line.
+  await openWork(workId, "A");
+  await startEditing("a");
+  setStatus("new work — write, ⌘↵ saves");
 }
 
 async function startEditing(pane: Col = "a"): Promise<void> {
@@ -609,17 +680,68 @@ function wireRevise(): void {
   }
 }
 
+let searchQuery = "";
+
+/** Connect (and reconnect): the socket can drop under us — a server
+ *  restart, a laptop waking. Instead of every request timing out, we
+ *  reconnect, restore the session, and re-render; an in-progress edit
+ *  is abandoned (its grab died with the socket — the server released
+ *  it on disconnect). */
+async function connect(): Promise<void> {
+  const gate = document.getElementById("gate-status");
+  if (gate) gate.textContent = "connecting…";
+  const c = new ClassicClient();
+  c.onDrop = () => {
+    setStatus("connection dropped — reconnecting…");
+    void (async () => {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await new Promise((r) => setTimeout(r, 1000 + attempt * 1000));
+        try {
+          await connect();
+          if (paneA) await openWork(paneA.workId, "A", false);
+          setStatus("reconnected");
+          return;
+        } catch {
+          /* retry */
+        }
+      }
+      setStatus("connection lost — reload the page");
+    })();
+  };
+  try {
+    await c.connect();
+  } catch (e) {
+    if (gate) gate.textContent = String(e instanceof Error ? e.message : e);
+    return;
+  }
+  client = c;
+  if (editing) {
+    editor = null;
+    editing = null;
+  }
+  draft = null;
+  render();
+  const wm = /^#w(\d+)$/.exec(location.hash);
+  if (wm) void openWork(Number(wm[1]), "A", false);
+}
+
 function wireSearch(): void {
   document.getElementById("search")!.onsubmit = async (ev) => {
     ev.preventDefault();
     const q = (document.getElementById("q") as HTMLInputElement).value.trim();
     if (!q || !client) return;
+    searchQuery = q;
     try {
       const entries = await client.search(q);
       document.getElementById("results")!.innerHTML =
         entries.length === 0
           ? `<p class="quiet small">nothing found</p>`
-          : entries.map((e) => `<a href="#" data-work="${e.work_id}">${esc(e.title || `work ${e.work_id}`)}</a>`).join("");
+          : entries
+              .map((e) => {
+                const ctx = e.matches?.[0]?.context;
+                return `<a href="#" data-work="${e.work_id}">${esc(e.title || `work ${e.work_id}`)}${ctx ? `<span class="quiet small" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">…${esc(ctx)}…</span>` : ""}</a>`;
+              })
+              .join("");
       document.querySelectorAll<HTMLAnchorElement>("#results a[data-work]").forEach((a) => {
         a.onclick = (ev2) => {
           ev2.preventDefault();
@@ -794,6 +916,33 @@ function wireClose(): void {
   });
 }
 
+function onHashNav(): void {
+  if (!client) return;
+  const wm = /^#w(\d+)$/.exec(location.hash);
+  const tm = /^#t(\d+)$/.exec(location.hash);
+  if (wm) {
+    void openWork(Number(wm[1]), "A", false);
+  } else {
+    // Trail or home entries: leave the reading surface — back must
+    // close the panes, not just re-render the sidebar. An active edit
+    // is canceled (with release) exactly as any other navigation does.
+    if (editing) {
+      void editor?.cancel(editing.workId).finally(() => render());
+      editor = null;
+      editing = null;
+    }
+    openTrailId = tm ? Number(tm[1]) : null;
+    paneA = null;
+    paneB = null;
+    paneC = null;
+    activeLink = null;
+    render();
+  }
+}
+
+window.onpopstate = onHashNav;
+window.addEventListener("hashchange", onHashNav);
+
 /** Every link shared between two columns — the Pyxi view: all
  *  connections drawn at once, passage to passage, across every
  *  pair of open pages. */
@@ -922,6 +1071,64 @@ function drawAllTBoxes(): void {
   drawTBoxes("c");
 }
 
+/** Find-the-term: translucent marker over every occurrence of the
+ *  live search query in each open page. Drawn as an overlay (like
+ *  the identity boxes) so text segmentation never changes. */
+function drawSearchHl(tag: Col): void {
+  const pane = paneAt(tag);
+  const layer = document.getElementById(`searchhl-${tag}`);
+  const pre = document.querySelector<HTMLElement>(`#scroll-${tag} pre`);
+  if (!layer || !pre || !pane || !searchQuery) {
+    if (layer) layer.innerHTML = "";
+    return;
+  }
+  const layerR = layer.getBoundingClientRect();
+  const hay = pane.text.toLowerCase();
+  const needle = searchQuery.toLowerCase();
+  const hits: number[] = [];
+  let at = hay.indexOf(needle);
+  while (at !== -1 && hits.length < 50) {
+    hits.push(at);
+    at = hay.indexOf(needle, at + needle.length);
+  }
+  if (hits.length === 0) {
+    layer.innerHTML = "";
+    return;
+  }
+  const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+  let html = "";
+  for (const h of hits) {
+    const range = document.createRange();
+    let pos = 0;
+    let anchored = false;
+    for (const node of nodes) {
+      if (!anchored && pos + node.length > h) {
+        range.setStart(node, h - pos);
+        anchored = true;
+      }
+      if (anchored && pos + node.length >= h + needle.length) {
+        range.setEnd(node, h + needle.length - pos);
+        break;
+      }
+      pos += node.length;
+    }
+    if (!range.collapsed) {
+      for (const rect of range.getClientRects()) {
+        html += `<div class="searchhl" style="left:${(rect.left - layerR.left).toFixed(1)}px;top:${(rect.top - layerR.top).toFixed(1)}px;width:${rect.width.toFixed(1)}px;height:${rect.height.toFixed(1)}px"></div>`;
+      }
+    }
+  }
+  layer.innerHTML = html;
+}
+
+function drawAllSearchHl(): void {
+  drawSearchHl("a");
+  drawSearchHl("b");
+  drawSearchHl("c");
+}
+
 function observeBeams(): void {
   beamObserver?.disconnect();
   const sa = document.getElementById("scroll-a");
@@ -931,6 +1138,7 @@ function observeBeams(): void {
   const redraw = () => {
     drawBeams();
     drawAllTBoxes();
+    drawAllSearchHl();
   };
   sa.addEventListener("scroll", redraw, { passive: true });
   sb.addEventListener("scroll", redraw, { passive: true });

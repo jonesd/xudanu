@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { connect, makeWorks } from "./helpers";
+import { openHash, connect, makeWorks } from "./helpers";
 
 test.describe("Pyxi panes — every shared connection drawn at once", () => {
   test("all links between the two open works draw beams, passage to passage", async ({ page }) => {
@@ -36,7 +36,7 @@ test.describe("Pyxi panes — every shared connection drawn at once", () => {
       ws.close();
     }, { a, b });
 
-    await page.goto(`/#w${a}`);
+    await openHash(page, a);
     // open the far end by clicking the first underline
     await page.locator("#scroll-a mark[data-link]").first().click();
     await expect(page.locator("#pane-b:not(.ghost) h2")).toContainText("far end");

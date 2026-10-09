@@ -228,3 +228,11 @@ body.paper .win.sat { transform: rotate(var(--tilt, 0.8deg)); }
   cursor: pointer;
 }
 .type-pick:hover { background: rgba(255, 255, 255, 0.06); }
+
+/* Find-the-term: translucent marker over search hits. */
+.searchhl-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.searchhl {
+  position: absolute; background: rgba(210, 200, 80, 0.28);
+  border-radius: 2px; pointer-events: none;
+}
+body.paper .searchhl { background: rgba(180, 140, 40, 0.18); }

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { connect, makeWorks } from "./helpers";
+import { openHash, connect, makeWorks } from "./helpers";
 
 test.describe("many columns — the 1972 parallel-pages posture", () => {
   test("following connections grows a third page with beams criss-crossing", async ({ page }) => {
@@ -37,7 +37,7 @@ test.describe("many columns — the 1972 parallel-pages posture", () => {
     }, { a });
 
     // open page one; its underline opens page two
-    await page.goto(`/#w${a}`);
+    await openHash(page, a);
     await expect(page.locator("#pane-a h2")).toContainText("PAGE ONE");
     await page.locator("#scroll-a mark").first().click();
     await expect(page.locator("#pane-b:not(.ghost) h2")).toContainText("PAGE TWO");

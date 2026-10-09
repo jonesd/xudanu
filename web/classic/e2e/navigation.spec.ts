@@ -5,13 +5,19 @@ import { connect } from "./helpers";
  *  if the trail list re-rendered mid-click (async trails fetch can
  *  replace the anchor between visibility and click). */
 async function openStop(page: Page, n: number): Promise<void> {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    // ensure the accordion is open before each attempt — a collapsed
+    // list (or one re-rendered mid-click) makes the click a no-op
+    if ((await page.locator(".trail-stops a").count()) === 0) {
+      await page.locator("#trails a[data-trail]").first().click();
+      await expect(page.locator(".trail-stops a").first()).toBeVisible({ timeout: 4000 });
+    }
     await page.locator(".trail-stops a").nth(n).click();
     try {
       await expect(page.locator("#pane-a h2")).not.toBeEmpty({ timeout: 4000 });
       return;
     } catch {
-      /* list likely re-rendered; click again */
+      /* retry */
     }
   }
   throw new Error("trail stop never opened a work");

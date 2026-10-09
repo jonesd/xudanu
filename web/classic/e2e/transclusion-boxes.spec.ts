@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { connect } from "./helpers";
+import { openHash, connect } from "./helpers";
 
 test.describe("transclusion identity boxes", () => {
   test("a placed transclusion displays resolved content in a Nelson box with its source tab", async ({ page }) => {
@@ -33,7 +33,7 @@ test.describe("transclusion identity boxes", () => {
       return { src, holder };
     });
 
-    await page.goto(`/#w${ids.holder}`);
+    await openHash(page, ids.holder);
     await expect(page.locator("#pane-a h2")).toContainText("Holder opening");
 
     // The reading surface shows the RESOLVED text: the live window's

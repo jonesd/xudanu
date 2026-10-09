@@ -65,3 +65,12 @@ export async function connect(page: Page): Promise<void> {
   await page.getByRole("button", { name: "connect" }).click();
   await expect(page.locator("header .mark")).toContainText("Xudanu", { timeout: 15_000 });
 }
+
+/** Navigate to a work AFTER connecting, in-page: setting the hash
+ *  fires the app's hashchange handler (a fragment-only page.goto can
+ *  skip event dispatch under automation). */
+export async function openHash(page: import("@playwright/test").Page, workId: number): Promise<void> {
+  await page.evaluate((id) => {
+    location.hash = `#w${id}`;
+  }, workId);
+}

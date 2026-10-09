@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { connect, makeWorks } from "./helpers";
+import { openHash, connect, makeWorks } from "./helpers";
 
 test.describe("beam as object — the connection line is a thing", () => {
   test("clicking a beam opens an inspector naming its type and both ends", async ({ page }) => {
@@ -11,7 +11,7 @@ test.describe("beam as object — the connection line is a thing", () => {
       { excerpt: "origin page", start: 0, end: 11 },
     );
 
-    await page.goto(`/#w${a}`);
+    await openHash(page, a);
     await page.locator("#scroll-a mark").first().click();
     await expect(page.locator("#pane-b:not(.ghost) h2")).toContainText("destination page");
     await expect(page.locator("#beams path")).toHaveCount(2); // line + hit twin

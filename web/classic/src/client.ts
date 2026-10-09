@@ -64,6 +64,9 @@ export class ClassicClient {
   private nextId = 1;
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private wellKnown: WellKnown | null = null;
+  /** Fires when the socket drops after a successful connect; the app
+   *  uses it to reconnect instead of timing out every request. */
+  onDrop: (() => void) | null = null;
 
   get serverName(): string {
     return this.wellKnown?.server_name ?? "";
@@ -96,6 +99,14 @@ export class ClassicClient {
       ws.onerror = () => reject(new Error("websocket connect failed"));
     });
     ws.onmessage = (ev) => this.onFrame(String(ev.data));
+    ws.onclose = () => {
+      if (this.ws === ws) {
+        this.ws = null;
+        for (const [, p] of this.pending) p.reject(new Error("connection dropped"));
+        this.pending.clear();
+        this.onDrop?.();
+      }
+    };
     this.ws = ws;
 
     await this.request("session_connect");
@@ -165,6 +176,14 @@ export class ClassicClient {
     await this.request("work_grab", { work_id: workId });
   }
 
+  /** Create a new work in the shared docuverse; returns its id. */
+  async createWork(text = ""): Promise<number> {
+    const r = val<number | { work_id?: number }>(
+      await this.request("work_create", { edition: { text } }),
+    );
+    return typeof r === "number" ? r : Number(r?.work_id ?? 0);
+  }
+
   async release(workId: number): Promise<void> {
     await this.request("work_release", { work_id: workId });
   }
@@ -217,8 +236,30 @@ export class ClassicClient {
     if (args.originRef) payload.origin_ref = ref(args.origin, args.originRef);
     if (args.destinationRef) payload.destination_ref = ref(args.destination, args.destinationRef);
     if (args.linkTypes && args.linkTypes.length > 0) payload.link_types = args.linkTypes;
-    const r = await this.request("link_create", payload);
-    return typeof r === "number" ? r : Number((r as { link_id?: number })?.link_id ?? 0);
+    const r = val<number>(await this.request("link_create", payload));
+    return typeof r === "number" ? r : 0;
+  }
+
+  /** Gather: add a passage to an EXISTING end of a link — one
+   *  connection, many passages jointly filling one blank. */
+  async gatherInto(
+    linkId: number,
+    endName: string,
+    attachment: { workContext: number; excerpt: string; start: number; end: number },
+  ): Promise<void> {
+    await this.request("link_end_add_attachment", {
+      link_id: linkId,
+      end_name: endName,
+      attachment: {
+        kind: "single",
+        work_context: attachment.workContext,
+        original_context: null,
+        path_context: null,
+        excerpt: attachment.excerpt,
+        start_position: attachment.start,
+        end_position: attachment.end,
+      },
+    });
   }
 }
 
@@ -231,10 +272,18 @@ export interface LinkRef {
   end_position?: number;
 }
 
+export interface EndSetRef {
+  work_context: number;
+  excerpt?: string | null;
+  start_position?: number;
+  end_position?: number;
+}
+
 export interface LinkEntryClassic {
   link_id: number;
   origin: number;
   destination: number | null;
+  end_sets?: Array<[string, EndSetRef[]]>;
   origin_ref?: LinkRef;
   destination_ref?: LinkRef;
   origin_title?: string;

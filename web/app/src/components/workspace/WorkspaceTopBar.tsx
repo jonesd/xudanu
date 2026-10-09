@@ -221,16 +221,14 @@ export function WorkspaceTopBar({
         >
           Compose
         </button>
-        {classicWorkId != null && (
-          <a
-            className="ws-nav-tab"
-            href={`/classic/index.html#w${classicWorkId}`}
-            title="Open this work in the classic Xanadu client"
-            style={{ textDecoration: "none" }}
-          >
-            Classic&nbsp;↗
-          </a>
-        )}
+        <a
+          className="ws-nav-tab"
+          href={classicWorkId != null ? `/classic/index.html#w${classicWorkId}` : "/classic/"}
+          title={classicWorkId != null ? "Open this work in the classic Xanadu client" : "Open the classic Xanadu client"}
+          style={{ textDecoration: "none" }}
+        >
+          Classic&nbsp;↗
+        </a>
       </nav>
 
       <div className="ws-top-bar-actions">

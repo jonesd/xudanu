@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { connect, makeWorks } from "./helpers";
+import { openHash, connect, makeWorks } from "./helpers";
 
 test.describe("classic editing through the CRDT delta path", () => {
   test("a save revises the text and the underline follows its words", async ({ page }) => {
@@ -11,7 +11,7 @@ test.describe("classic editing through the CRDT delta path", () => {
       { excerpt: "MOVEME", start: 5, end: 11 },
     );
 
-    await page.goto(`/#w${a}`);
+    await openHash(page, a);
     await expect(page.locator("#pane-a h2")).toContainText("XXXX MOVEME");
     await expect(page.locator("#scroll-a mark[data-link]")).toHaveText("MOVEME");
 
@@ -34,7 +34,7 @@ test.describe("classic editing through the CRDT delta path", () => {
     await connect(page);
     const { a } = await makeWorks(page, { text: "stable text" }, { text: "other" });
 
-    await page.goto(`/#w${a}`);
+    await openHash(page, a);
     await page.locator('[data-revise-pane="a"]').click();
     await page.locator("#revise-text").fill("ESCAPED EDIT");
     await page.keyboard.press("Escape");
