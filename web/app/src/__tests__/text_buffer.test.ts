@@ -337,21 +337,21 @@ describe("TextBuffer", () => {
 
     it("inserts a section before a later heading (flat semantics preserved)", () => {
       const buf = new TextBuffer("# One\n\ntext\n\n# Two\n\ntext\n\n# Three\n\ntext");
-      const out = buf.moveSectionBefore(lineOf(buf.text, "# Three"), lineOf(buf.text, "# Two"));
+      const out = buf.moveSectionBefore(lineOf(buf.getText(), "# Three"), lineOf(buf.getText(), "# Two"));
       expect(out.indexOf("# Three")).toBeLessThan(out.indexOf("# Two"));
       expect(out.indexOf("# Three")).toBeGreaterThan(out.indexOf("# One"));
     });
 
     it("inserts before a NESTED subsection — the case moveSection cannot express", () => {
       const buf = new TextBuffer(NESTED);
-      const out = buf.moveSectionBefore(lineOf(buf.text, "# Gamma"), lineOf(buf.text, "## Beta"));
+      const out = buf.moveSectionBefore(lineOf(buf.getText(), "# Gamma"), lineOf(buf.getText(), "## Beta"));
       expect(out.indexOf("# Gamma")).toBeLessThan(out.indexOf("## Beta"));
       expect(out.indexOf("# Gamma")).toBeGreaterThan(out.indexOf("# Alpha"));
     });
 
     it("drops at the very top with -1, ahead of the preamble", () => {
       const buf = new TextBuffer(NESTED);
-      const out = buf.moveSectionBefore(lineOf(buf.text, "# Gamma"), -1);
+      const out = buf.moveSectionBefore(lineOf(buf.getText(), "# Gamma"), -1);
       expect(out.startsWith("# Gamma")).toBe(true);
       expect(out.indexOf("# Gamma")).toBeLessThan(out.indexOf("# Alpha"));
       // all three headings survive the move
@@ -361,19 +361,19 @@ describe("TextBuffer", () => {
     it("is a no-op when the target heading is inside the moved section", () => {
       const buf = new TextBuffer(NESTED);
       // Alpha's section contains Beta; moving Alpha before Beta must not tear itself apart
-      const out = buf.moveSectionBefore(lineOf(buf.text, "# Alpha"), lineOf(buf.text, "## Beta"));
-      expect(out).toBe(buf.text);
+      const out = buf.moveSectionBefore(lineOf(buf.getText(), "# Alpha"), lineOf(buf.getText(), "## Beta"));
+      expect(out).toBe(buf.getText());
     });
 
     it("moving a section before its own heading is a no-op", () => {
       const buf = new TextBuffer(NESTED);
-      const out = buf.moveSectionBefore(lineOf(buf.text, "# Gamma"), lineOf(buf.text, "# Gamma"));
-      expect(out).toBe(buf.text);
+      const out = buf.moveSectionBefore(lineOf(buf.getText(), "# Gamma"), lineOf(buf.getText(), "# Gamma"));
+      expect(out).toBe(buf.getText());
     });
 
     it("moves a later section before an earlier one without losing text", () => {
       const buf = new TextBuffer("# One\n\ntext\n\n# Two\n\ntext\n\n# Three\n\ntext");
-      const out = buf.moveSectionBefore(lineOf(buf.text, "# Three"), lineOf(buf.text, "# One"));
+      const out = buf.moveSectionBefore(lineOf(buf.getText(), "# Three"), lineOf(buf.getText(), "# One"));
       expect(out.indexOf("# Three")).toBeLessThan(out.indexOf("# One"));
       expect(out.split("# ").length - 1).toBe(3); // all three sections survive
     });
