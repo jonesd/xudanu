@@ -670,7 +670,7 @@ function renderTrailsNav(): void {
       .map((t) => {
         const open = openTrailId === t.trail_id;
         return (
-          `<a href="#" data-trail="${t.trail_id}"${open ? ` class="open"` : ""}>${esc(t.name)}</a>` +
+          `<a href="#" data-trail="${t.trail_id}"${open ? ` class="open"` : ""}>${open ? "&#9662; " : "&#9656; "}${esc(t.name)}</a>` +
           (open
             ? `<div class="trail-stops">` +
               t.stops
@@ -681,29 +681,36 @@ function renderTrailsNav(): void {
         );
       })
       .join("");
-  el.querySelectorAll<HTMLAnchorElement>("a[data-trail]").forEach((a) => {
-    a.onclick = (ev) => {
-      ev.preventDefault();
-      const tid = Number(a.dataset.trail);
-      const opening = openTrailId !== tid;
-      openTrailId = opening ? tid : null;
-      if (opening && !paneA) history.pushState({ t: tid }, "", `#t${tid}`);
-      if (paneA) renderTrailsNav();
-      else render();
-    };
-  });
-  el.querySelectorAll<HTMLAnchorElement>("a[data-work]").forEach((a) => {
-    a.onclick = (ev) => {
-      ev.preventDefault();
-      const wid = Number(a.dataset.work);
-      if (draft && draft.stage === "origin") {
-        chooseFarWork(wid, a.textContent?.trim() ?? `work ${wid}`);
-        return;
-      }
-      void openWork(wid, "A");
-    };
-  });
 }
+
+/** Trails clicks are delegated at the document level: re-renders swap
+ *  the sidebar's innerHTML wholesale, and per-anchor handlers bound in
+ *  that window could vanish mid-click (a silently swallowed click). */
+document.addEventListener("click", (ev) => {
+  const a = (ev.target as HTMLElement).closest?.("a");
+  if (!a) return;
+  const trail = a.dataset.trail;
+  const work = a.dataset.work;
+  if (trail !== undefined) {
+    ev.preventDefault();
+    const tid = Number(trail);
+    const opening = openTrailId !== tid;
+    openTrailId = opening ? tid : null;
+    if (opening && !paneA) history.pushState({ t: tid }, "", `#t${tid}`);
+    if (paneA) renderTrailsNav();
+    else render();
+    return;
+  }
+  if (work !== undefined && a.closest("#trails")) {
+    ev.preventDefault();
+    const wid = Number(work);
+    if (draft && draft.stage === "origin") {
+      chooseFarWork(wid, a.textContent?.trim() ?? `work ${wid}`);
+      return;
+    }
+    void openWork(wid, "A");
+  }
+});
 
 function wireMainWorkLinks(): void {
   document.querySelectorAll<HTMLAnchorElement>("main a[data-work]").forEach((a) => {
