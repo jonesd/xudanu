@@ -172,6 +172,26 @@ mark { color: inherit; border-radius: 2px; padding: 0 1px; }
 body.paper .tbox { border-color: #1d1a15; background: rgba(29, 26, 21, 0.03); }
 body.paper .tbox-tab { color: #1d1a15; border-color: #1d1a15; background: #faf6ec; }
 
+/* Tilt pass — the mockups' pages are never quite rectilinear. Angles
+   stay subtle so beam/box anchors (client rects of rotated lines)
+   remain honest to within a couple of pixels. */
+body.paper #pane-a { transform: rotate(-0.45deg); }
+body.paper #pane-b { transform: rotate(0.5deg); }
+body.paper #pane-c { transform: rotate(-0.3deg); }
+body.paper .win.sat { transform: rotate(var(--tilt, 0.8deg)); }
+
+/* Beam-as-object: connection lines are clickable things. */
+#beams path.beam-hit { pointer-events: stroke; cursor: pointer; }
+.beam-panel {
+  position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+  z-index: 30; background: var(--paper-inset); border: 1px solid var(--rule);
+  border-radius: 6px; padding: 12px 16px; min-width: 320px; max-width: 560px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.beam-panel .bp-type { font-size: 12px; letter-spacing: 1px; text-transform: lowercase; }
+.beam-panel .bp-row { margin: 6px 0; font-size: 13.5px; }
+.beam-panel .bp-excerpt { color: var(--ink-dim); font-style: italic; }
+
 /* Phase D: revise surface */
 .revise {
   display: block; flex: 1; width: 100%; background: transparent;

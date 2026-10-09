@@ -107,6 +107,22 @@ function setPane(tag: Col, p: Pane | null): void {
   else paneC = p;
 }
 let activeLink: LinkEntryClassic | null = null;
+let inspectLink: number | null = null;
+
+function beamPanelHtml(): string {
+  const id = inspectLink;
+  const l = [paneA, paneB, paneC].flatMap((p) => (p ? p.links : [])).find((x) => x.link_id === id);
+  if (!l) return "";
+  const t = typeOf(l);
+  const oex = l.origin_ref?.excerpt?.trim();
+  const dex = l.destination_ref?.excerpt?.trim();
+  return `<div class="beam-panel" id="beam-panel">
+    <div class="bp-type" style="color:${t.color}">${esc(t.name)} · link ${l.link_id}</div>
+    <div class="bp-row"><strong>${esc(l.origin_title ?? `work ${l.origin}`)}</strong>${oex ? `<div class="bp-excerpt">“${esc(oex.slice(0, 90))}”</div>` : ""}</div>
+    <div class="bp-row"><strong>${esc(l.destination_title ?? `work ${l.destination}`)}</strong>${dex ? `<div class="bp-excerpt">“${esc(dex.slice(0, 90))}”</div>` : ""}</div>
+    <button id="beam-close" class="revise-btn ghosted" style="margin-top:8px">close</button>
+  </div>`;
+}
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -392,6 +408,7 @@ render();
         ${paneB ? paneHtml(paneB, "b", true, !!editing && editing.pane === "b" && editing.workId === paneB.workId) : `<section class="pane ghost" id="pane-b"><div class="pane-head"><h2 class="quiet">—</h2></div><div class="pane-scroll"><p class="quiet">Click an underline to open its far end here.</p></div></section>`}
         ${paneC ? paneHtml(paneC, "c", true, !!editing && editing.pane === "c" && editing.workId === paneC.workId) : `<section class="pane ghost" id="pane-c"><div class="pane-head"><h2 class="quiet">—</h2></div><div class="pane-scroll"><p class="quiet">Follow another connection and a third page opens here — the parallel-pages posture.</p></div></section>`}
         <svg id="beams"></svg>
+        ${inspectLink !== null ? beamPanelHtml() : ""}
         ${draft && draft.stage === "far" ? typePanelHtml() : ""}
       </div>`
     : openTrail
@@ -461,6 +478,7 @@ render();
     wireConns();
     wireClose();
     drawBeams();
+  wireBeams();
   observeBeams();
   drawAllTBoxes();
 }
@@ -742,6 +760,23 @@ async function follow(linkId: number, from: Col = "a"): Promise<void> {
   render();
 }
 
+function wireBeams(): void {
+  const svg = document.getElementById("beams");
+  svg?.addEventListener("click", (ev) => {
+    const hit = (ev.target as SVGElement).closest?.("path[data-link]") as SVGPathElement | null;
+    if (!hit) return;
+    const id = Number(hit.dataset.link);
+    const l = [paneA, paneB, paneC].flatMap((p) => (p ? p.links : [])).find((x) => x.link_id === id) ?? null;
+    inspectLink = l ? id : null;
+    activeLink = l;
+    render();
+  });
+  document.getElementById("beam-close")?.addEventListener("click", () => {
+    inspectLink = null;
+    render();
+  });
+}
+
 function wireClose(): void {
   document.querySelectorAll<HTMLButtonElement>("[data-close-pane]").forEach((b) => {
     b.addEventListener("click", () => {
@@ -807,14 +842,16 @@ function drawBeams(): void {
       const y2 = ry.bottom - 1 - svgR.top;
       const active = activeLink?.link_id === l.link_id;
       const t = typeOf(l);
-      if (paper) {
-        paths += `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} L ${x2.toFixed(1)} ${y2.toFixed(1)}"
-          fill="none" stroke="${ink}" stroke-width="${active ? 1.2 : 0.8}" opacity="${active ? 0.95 : 0.6}"/>`;
-      } else {
-        const mid = (x1 + x2) / 2;
-        paths += `<path d="M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}"
-          fill="none" stroke="${t.color}" stroke-width="${active ? 1.6 : 1.1}" stroke-dasharray="5 4" opacity="${active ? 0.85 : 0.4}">${active ? '<animate attributeName="stroke-dashoffset" from="18" to="0" dur="1.2s" repeatCount="indefinite"/>' : ""}</path>`;
-      }
+      const d = paper
+        ? `M ${x1.toFixed(1)} ${y1.toFixed(1)} L ${x2.toFixed(1)} ${y2.toFixed(1)}`
+        : `M ${x1} ${y1} C ${(x1 + x2) / 2} ${y1}, ${(x1 + x2) / 2} ${y2}, ${x2} ${y2}`;
+      const stroke = paper ? ink : t.color;
+      const width = active ? (paper ? 1.2 : 1.6) : paper ? 0.8 : 1.1;
+      const opacity = active ? (paper ? 0.95 : 0.85) : paper ? 0.6 : 0.4;
+      paths += `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${width}"${paper ? "" : ' stroke-dasharray="5 4"'} opacity="${opacity}">${!paper && active ? '<animate attributeName="stroke-dashoffset" from="18" to="0" dur="1.2s" repeatCount="indefinite"/>' : ""}</path>`;
+      // Beam-as-object: an invisible wide twin makes the line itself
+      // clickable (pointer-events: stroke on the hit path only).
+      paths += `<path class="beam-hit" d="${d}" fill="none" stroke="#000" stroke-opacity="0" stroke-width="12" data-link="${l.link_id}"/>`;
     }
   }
   svg.innerHTML = paths;

@@ -43,11 +43,11 @@ test.describe("Pyxi panes — every shared connection drawn at once", () => {
 
     // Three shared links → three beams, each anchored to its own pair
     // of passages (svg paths under #beams).
-    await expect(page.locator("#beams path")).toHaveCount(3);
+    await expect(page.locator("#beams path:not(.beam-hit)")).toHaveCount(3);
 
     // paper skin renders them straight: every path is an M..L, no curves
     await page.locator("#skin-toggle").click();
-    const first = await page.locator("#beams path").first().getAttribute("d");
+    const first = await page.locator("#beams path:not(.beam-hit)").first().getAttribute("d");
     expect(first).toMatch(/^M [\d.]+ [\d.]+ L /);
   });
 });
