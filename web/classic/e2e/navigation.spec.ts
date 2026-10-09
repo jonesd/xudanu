@@ -1,5 +1,21 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { connect } from "./helpers";
+
+/** Click a trail stop and wait for the work to land — retries once
+ *  if the trail list re-rendered mid-click (async trails fetch can
+ *  replace the anchor between visibility and click). */
+async function openStop(page: Page, n: number): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await page.locator(".trail-stops a").nth(n).click();
+    try {
+      await expect(page.locator("#pane-a h2")).not.toBeEmpty({ timeout: 4000 });
+      return;
+    } catch {
+      /* list likely re-rendered; click again */
+    }
+  }
+  throw new Error("trail stop never opened a work");
+}
 
 test.describe("classic navigation", () => {
   test("connect, open the Links Course from the trails panel, walk a lesson", async ({ page }) => {
@@ -12,7 +28,7 @@ test.describe("classic navigation", () => {
     expect(await stops.count()).toBeGreaterThanOrEqual(5);
 
     // Open the first stop: it lands in the left column, hash deep-links it.
-    await stops.nth(0).click();
+    await openStop(page, 0);
     // The pane heading is the work's first line (not its title).
     await expect(page.locator("#pane-a h2")).not.toBeEmpty();
     await expect(page).toHaveURL(/#w\d+$/);
@@ -38,7 +54,7 @@ test.describe("classic navigation", () => {
     await page.locator("#trails a[data-trail]").first().click();
     const stops = page.locator(".trail-stops a");
     await expect(stops.first()).toBeVisible();
-    await stops.nth(0).click();
+    await openStop(page, 0);
     const heading = page.locator("#pane-a h2");
     await expect(heading).not.toBeEmpty();
     const openedHeading = ((await heading.textContent()) ?? "").trim().slice(0, 20);

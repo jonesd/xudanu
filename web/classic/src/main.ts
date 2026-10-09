@@ -14,28 +14,28 @@ let client: ClassicClient | null = null;
 let mode: "panes" | "windows" = localStorage.getItem("xudanu_classic_mode") === "windows" ? "windows" : "panes";
 let skin: "ink" | "paper" = localStorage.getItem("xudanu_classic_skin") === "paper" ? "paper" : "ink";
 let winView: WindowsView | null = null;
-let focusPane: "a" | "b" = "a";
+let focusPane: Col = "a";
 let editor: WorkEditor | null = null;
-let editing: { workId: number; pane: "a" | "b" } | null = null;
+let editing: { workId: number; pane: Col } | null = null;
 let statusTimer: number | null = null;
 
 type LinkDraft =
   | { stage: "origin"; start: number; end: number; excerpt: string }
   | { stage: "far"; start: number; end: number; excerpt: string; farWork: number; farTitle: string; farRef?: { start: number; end: number; excerpt: string } };
 let draft: LinkDraft | null = null;
-let lastSel: { pane: "a" | "b"; start: number; end: number } | null = null;
+let lastSel: { pane: Col; start: number; end: number } | null = null;
 
 document.addEventListener("selectionchange", () => {
   const sel = window.getSelection();
-  if (!sel || sel.isCollapsed || !paneA) return;
-  const inA = selectionIn(paneA, "scroll-a");
-  if (inA) {
-    lastSel = { pane: "a", ...inA };
-    return;
-  }
-  if (paneB) {
-    const inB = selectionIn(paneB, "scroll-b");
-    if (inB) lastSel = { pane: "b", ...inB };
+  if (!sel || sel.isCollapsed) return;
+  for (const tag of COLS) {
+    const pane = paneAt(tag);
+    if (!pane) continue;
+    const hit = selectionIn(pane, `scroll-${tag}`);
+    if (hit) {
+      lastSel = { pane: tag, ...hit };
+      return;
+    }
   }
 });
 
@@ -94,6 +94,18 @@ async function fetchPane(client: ClassicClient, workId: number): Promise<Pane> {
 
 let paneA: Pane | null = null;
 let paneB: Pane | null = null;
+let paneC: Pane | null = null;
+const COLS = ["a", "b", "c"] as const;
+type Col = (typeof COLS)[number];
+
+function paneAt(tag: Col): Pane | null {
+  return tag === "a" ? paneA : tag === "b" ? paneB : paneC;
+}
+function setPane(tag: Col, p: Pane | null): void {
+  if (tag === "a") paneA = p;
+  else if (tag === "b") paneB = p;
+  else paneC = p;
+}
 let activeLink: LinkEntryClassic | null = null;
 
 function esc(s: string): string {
@@ -165,6 +177,7 @@ async function openWork(workId: number, pane: "A" | "B", push = true): Promise<v
   if (pane === "A") {
     paneA = p;
     paneB = null;
+    paneC = null;
     activeLink = null;
     if (push) history.pushState({ w: workId }, "", `#w${workId}`);
   } else {
@@ -190,14 +203,14 @@ function paneHtml(p: Pane, tag: string, closable: boolean, isEditing = false): s
     tools.push(`<button class="close-pane" id="link-start" title="connect this selection">⧉</button>`);
     tools.push(`<button class="close-pane" data-revise-pane="a" title="revise this work">✎</button>`);
   }
-  if (tag === "b" && !isEditing) {
+  if (tag !== "a" && !isEditing) {
     if (draft && draft.stage === "origin") {
       tools.push(`<button class="close-pane" id="link-far" title="use this selection (or the whole work) as the far end">⤳</button>`);
     } else {
       tools.push(`<button class="close-pane" data-revise-pane="b" title="revise this work">✎</button>`);
     }
   }
-  if (closable) tools.push(`<button class="close-pane" id="close-pane">×</button>`);
+  if (closable) tools.push(`<button class="close-pane" data-close-pane="${tag}">×</button>`);
   const headBtns = tools.join("");
   const body = isEditing
     ? `<textarea id="revise-text" class="revise" spellcheck="false">${esc(p.text)}</textarea>`
@@ -241,9 +254,23 @@ function beginLinkFromSelection(): void {
 }
 
 function farFromPaneB(): void {
-  if (!draft || draft.stage !== "origin" || !paneB) return;
-  const live = selectionIn(paneB, "scroll-b");
-  const s = live ?? (lastSel?.pane === "b" ? { start: lastSel.start, end: lastSel.end } : null);
+  if (!draft || draft.stage !== "origin") return;
+  const tags: Col[] = ["b", "c"];
+  let s: { start: number; end: number } | null = null;
+  let farPane: Pane | null = null;
+  for (const tag of tags) {
+    const pane = paneAt(tag);
+    if (!pane) continue;
+    const live = selectionIn(pane, `scroll-${tag}`);
+    const hit = live ?? (lastSel?.pane === tag ? { start: lastSel.start, end: lastSel.end } : null);
+    if (hit) {
+      s = hit;
+      farPane = pane;
+      break;
+    }
+  }
+  if (!farPane || !s) return;
+  const paneB = farPane;
   draft = {
     stage: "far",
     start: draft.start,
@@ -330,6 +357,7 @@ window.onpopstate = () => {
     openTrailId = tm ? Number(tm[1]) : null;
     paneA = null;
     paneB = null;
+    paneC = null;
     activeLink = null;
     render();
   }
@@ -359,9 +387,10 @@ render();
   const main = windowsMode
     ? `<div id="stage" class="stage"></div>`
     : paneA
-    ? `<div class="panes" id="panes">
+    ? `<div class="panes" id="panes" style="grid-template-columns:repeat(3,1fr)">
         ${paneHtml(paneA!, "a", false, !!editing && editing.workId === paneA!.workId)}
-        ${paneB ? paneHtml(paneB, "b", true, !!editing && editing.pane === "b" && editing.workId === paneB.workId) : `<section class="pane ghost" id="pane-b"><div class="pane-head"><h2 class="quiet">—</h2></div><div class="pane-scroll"><p class="quiet">Click an underline or a connection to open its far end here, joined by a beam.</p></div></section>`}
+        ${paneB ? paneHtml(paneB, "b", true, !!editing && editing.pane === "b" && editing.workId === paneB.workId) : `<section class="pane ghost" id="pane-b"><div class="pane-head"><h2 class="quiet">—</h2></div><div class="pane-scroll"><p class="quiet">Click an underline to open its far end here.</p></div></section>`}
+        ${paneC ? paneHtml(paneC, "c", true, !!editing && editing.pane === "c" && editing.workId === paneC.workId) : `<section class="pane ghost" id="pane-c"><div class="pane-head"><h2 class="quiet">—</h2></div><div class="pane-scroll"><p class="quiet">Follow another connection and a third page opens here — the parallel-pages posture.</p></div></section>`}
         <svg id="beams"></svg>
         ${draft && draft.stage === "far" ? typePanelHtml() : ""}
       </div>`
@@ -451,10 +480,10 @@ function wireHistoryButtons(): void {
   document.getElementById("hist-fwd")?.addEventListener("click", () => history.forward());
 }
 
-async function startEditing(pane: "a" | "b" = "a"): Promise<void> {
+async function startEditing(pane: Col = "a"): Promise<void> {
   if (!client || editing) return;
   if (mode === "windows" && pane !== "a") return;
-  const target = pane === "a" ? paneA : paneB;
+  const target = paneAt(pane);
   if (!target) return;
   setStatus("opening…");
   const ed = new CrdtEditor(client);
@@ -497,8 +526,8 @@ async function commitEditing(): Promise<void> {
   if (mode === "windows" && winView) {
     await winView.refreshCenter();
     winView.setEditing(null);
-  } else if (pane === "b" && paneB) {
-    paneB = await fetchPane(client, workId);
+  } else if (pane !== "a" && paneAt(pane)) {
+    setPane(pane, await fetchPane(client, workId));
     render();
   } else {
     paneA = await fetchPane(client, workId);
@@ -691,48 +720,59 @@ function wireConns(): void {
   });
 }
 
-async function follow(linkId: number, from: "a" | "b" = "a"): Promise<void> {
+async function follow(linkId: number, from: Col = "a"): Promise<void> {
   if (!client) return;
-  const src = from === "a" ? paneA : paneB;
+  const src = paneAt(from);
   if (!src) return;
   const l = src.links.find((x) => x.link_id === linkId);
   if (!l) return;
   const far = farId(l, src.workId);
   if (far === null) return;
   activeLink = l;
-  const other = from === "a" ? paneB : paneA;
-  if (!other || other.workId !== far) {
+  const have = [paneA, paneB, paneC].some((q) => q?.workId === far);
+  if (!have) {
     const p = await fetchPane(client, far);
-    if (from === "a") paneB = p;
-    else paneA = p;
+    // The '72 gesture: following a connection ADDS a page — the
+    // empty column fills before any column is replaced; at the cap
+    // the third gives way.
+    if (!paneB) paneB = p;
+    else if (!paneC && mode === "panes") paneC = p;
+    else paneB = p;
   }
   render();
 }
 
 function wireClose(): void {
-  document.getElementById("close-pane")?.addEventListener("click", () => {
-    paneB = null;
-    activeLink = null;
-    render();
+  document.querySelectorAll<HTMLButtonElement>("[data-close-pane]").forEach((b) => {
+    b.addEventListener("click", () => {
+      setPane((b.dataset.closePane ?? "b") as Col, null);
+      activeLink = null;
+      render();
+    });
   });
 }
 
-/** Every link that touches both open works — the Pyxi view: all
- *  connections drawn at once, passage to passage. */
-function sharedLinks(): LinkEntryClassic[] {
-  if (!paneA || !paneB) return [];
-  const inB = new Set(paneB.links.map((l) => l.link_id));
-  return paneA.links.filter((l) => inB.has(l.link_id));
+/** Every link shared between two columns — the Pyxi view: all
+ *  connections drawn at once, passage to passage, across every
+ *  pair of open pages. */
+function sharedLinksBetween(x: Col, y: Col): LinkEntryClassic[] {
+  const px = paneAt(x);
+  const py = paneAt(y);
+  if (!px || !py) return [];
+  const inY = new Set(py.links.map((l) => l.link_id));
+  return px.links.filter((l) => inY.has(l.link_id));
 }
+
+const COLUMN_PAIRS: Array<[Col, Col]> = [
+  ["a", "b"],
+  ["a", "c"],
+  ["b", "c"],
+];
 
 function drawBeams(): void {
   const svg = document.getElementById("beams") as SVGSVGElement | null;
-  if (!svg || !paneA || !paneB) {
-    if (svg) svg.innerHTML = "";
-    return;
-  }
   const panes = document.getElementById("panes");
-  if (!panes) return;
+  if (!svg || !panes) return;
   const svgR = panes.getBoundingClientRect();
   svg.setAttribute("width", String(svgR.width));
   svg.setAttribute("height", String(svgR.height));
@@ -749,28 +789,32 @@ function drawBeams(): void {
   };
 
   let paths = "";
-  for (const l of sharedLinks()) {
-    const markA = document.querySelector<HTMLElement>(`#scroll-a mark[data-link~="${l.link_id}"]`);
-    const markB = document.querySelector<HTMLElement>(`#scroll-b mark[data-link~="${l.link_id}"]`);
-    if (!markA && !markB) continue;
-    const headA = document.querySelector<HTMLElement>("#pane-a .pane-head");
-    const headB = document.querySelector<HTMLElement>("#pane-b .pane-head");
-    if (!headA || !headB) continue;
-    const ra = markA ? lastLine(markA) : headA.getBoundingClientRect();
-    const rb = markB ? firstLine(markB) : headB.getBoundingClientRect();
-    const x1 = ra.right - svgR.left;
-    const y1 = ra.bottom - 1 - svgR.top;
-    const x2 = rb.left - svgR.left;
-    const y2 = rb.bottom - 1 - svgR.top;
-    const active = activeLink?.link_id === l.link_id;
-    const t = typeOf(l);
-    if (paper) {
-      paths += `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} L ${x2.toFixed(1)} ${y2.toFixed(1)}"
-        fill="none" stroke="${ink}" stroke-width="${active ? 1.2 : 0.8}" opacity="${active ? 0.95 : 0.6}"/>`;
-    } else {
-      const mid = (x1 + x2) / 2;
-      paths += `<path d="M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}"
-        fill="none" stroke="${t.color}" stroke-width="${active ? 1.6 : 1.1}" stroke-dasharray="5 4" opacity="${active ? 0.85 : 0.4}">${active ? '<animate attributeName="stroke-dashoffset" from="18" to="0" dur="1.2s" repeatCount="indefinite"/>' : ""}</path>`;
+  // Every pair of open pages: connections drawn across all of them —
+  // the 1972 figure's criss-crossing lines between parallel pages.
+  for (const [x, y] of COLUMN_PAIRS) {
+    for (const l of sharedLinksBetween(x, y)) {
+      const markX = document.querySelector<HTMLElement>(`#scroll-${x} mark[data-link~="${l.link_id}"]`);
+      const markY = document.querySelector<HTMLElement>(`#scroll-${y} mark[data-link~="${l.link_id}"]`);
+      if (!markX && !markY) continue;
+      const headX = document.querySelector<HTMLElement>(`#pane-${x} .pane-head`);
+      const headY = document.querySelector<HTMLElement>(`#pane-${y} .pane-head`);
+      if (!headX || !headY) continue;
+      const rx = markX ? lastLine(markX) : headX.getBoundingClientRect();
+      const ry = markY ? firstLine(markY) : headY.getBoundingClientRect();
+      const x1 = rx.right - svgR.left;
+      const y1 = rx.bottom - 1 - svgR.top;
+      const x2 = ry.left - svgR.left;
+      const y2 = ry.bottom - 1 - svgR.top;
+      const active = activeLink?.link_id === l.link_id;
+      const t = typeOf(l);
+      if (paper) {
+        paths += `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} L ${x2.toFixed(1)} ${y2.toFixed(1)}"
+          fill="none" stroke="${ink}" stroke-width="${active ? 1.2 : 0.8}" opacity="${active ? 0.95 : 0.6}"/>`;
+      } else {
+        const mid = (x1 + x2) / 2;
+        paths += `<path d="M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}"
+          fill="none" stroke="${t.color}" stroke-width="${active ? 1.6 : 1.1}" stroke-dasharray="5 4" opacity="${active ? 0.85 : 0.4}">${active ? '<animate attributeName="stroke-dashoffset" from="18" to="0" dur="1.2s" repeatCount="indefinite"/>' : ""}</path>`;
+      }
     }
   }
   svg.innerHTML = paths;
@@ -782,8 +826,8 @@ let beamObserver: ResizeObserver | null = null;
  *  the same content as a passage elsewhere gets a box (not an
  *  underline: underlines are links; boxes are identity). Drawn as an
  *  overlay so text segmentation never changes. */
-function drawTBoxes(tag: "a" | "b"): void {
-  const pane = tag === "a" ? paneA : paneB;
+function drawTBoxes(tag: Col): void {
+  const pane = paneAt(tag);
   const layer = document.getElementById(`tboxes-${tag}`);
   const scroll = document.getElementById(`scroll-${tag}`);
   const pre = document.querySelector<HTMLElement>(`#scroll-${tag} pre`);
@@ -831,12 +875,14 @@ function drawTBoxes(tag: "a" | "b"): void {
 function drawAllTBoxes(): void {
   drawTBoxes("a");
   drawTBoxes("b");
+  drawTBoxes("c");
 }
 
 function observeBeams(): void {
   beamObserver?.disconnect();
   const sa = document.getElementById("scroll-a");
   const sb = document.getElementById("scroll-b");
+  const sc = document.getElementById("scroll-c");
   if (!sa || !sb) return;
   const redraw = () => {
     drawBeams();
@@ -844,6 +890,7 @@ function observeBeams(): void {
   };
   sa.addEventListener("scroll", redraw, { passive: true });
   sb.addEventListener("scroll", redraw, { passive: true });
+  sc?.addEventListener("scroll", redraw, { passive: true });
   window.addEventListener("resize", redraw);
   beamObserver = new ResizeObserver(redraw);
   beamObserver.observe(sa);
@@ -859,11 +906,14 @@ window.addEventListener("keydown", (e) => {
   if (inField || editing || draft || !client || !paneA || mode !== "panes") return;
   const sel = window.getSelection();
   if (sel && !sel.isCollapsed) return;
-  if (e.key === "ArrowRight" && paneB) {
-    focusPane = "b";
+  if (e.key === "ArrowRight") {
+    // cycle focus through the open pages: a → b → c → c
+    if (focusPane === "a" && paneB) focusPane = "b";
+    else if (focusPane === "b" && paneC) focusPane = "c";
     render();
   } else if (e.key === "ArrowLeft") {
-    focusPane = "a";
+    if (focusPane === "c" && paneB) focusPane = "b";
+    else focusPane = "a";
     render();
   } else if (e.key === "Enter") {
     e.preventDefault();
