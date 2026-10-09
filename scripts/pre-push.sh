@@ -136,6 +136,13 @@ else
     if npx vite build 2>&1; then ok; else
         echo ""; echo "FAIL: Vite build failed. This WILL fail the release build."; exit 1
     fi
+    # Vite empties the output dir — the classic client's deployed
+    # bundle lives inside it and must be restored after every app
+    # build, or the server's classic-first landing silently breaks.
+    if [ -d "$REPO_ROOT/web/classic/dist" ]; then
+        rsync -a --delete "$REPO_ROOT/web/classic/dist/" "$REPO_ROOT/web/app/dist/classic/"
+        echo "classic client restored into web/app/dist/classic"
+    fi
 fi
 
 # ── Optional: Release build check ───────────────────────────────────────────
