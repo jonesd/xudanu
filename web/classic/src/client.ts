@@ -173,6 +173,15 @@ export class ClassicClient {
     await this.request("work_save_and_release", { work_id: workId, edition: { text } });
   }
 
+  /** CRDT-path edit: apply a text delta (the same op the workspace's
+   *  collaborative editor uses). The session must hold the grab. */
+  async reviseDelta(
+    workId: number,
+    ops: Array<{ type: string; count?: number; text?: string }>,
+  ): Promise<void> {
+    await this.request("work_revise_delta", { work_id: workId, base_revision: 0, ops });
+  }
+
   /** Create a two-ended typed link (the LinkCreator wire shape). */
   async createLink(args: {
     origin: number;

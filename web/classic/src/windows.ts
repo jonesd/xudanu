@@ -278,7 +278,7 @@ export class WindowsView {
         <div class="win-head" data-drag="center"><h2>${esc(this.center.title)}</h2>${this.editText === null ? `<span class="win-tools"><button class="tool" id="revise-start" title="revise this work">✎</button></span>` : ""}</div>
         ${this.editText !== null
           ? `<textarea id="revise-text" class="revise" spellcheck="false">${esc(this.editText)}</textarea>
-             <div class="revise-bar"><button id="revise-save" class="revise-btn">save</button><button id="revise-cancel" class="revise-btn ghosted">cancel</button><span class="quiet small">grabbed — ⌘↵ saves · esc cancels</span></div>`
+             <div class="revise-bar"><button id="revise-save" class="revise-btn">save</button><button id="revise-cancel" class="revise-btn ghosted">cancel</button><span class="quiet small">editing — ⌘↵ saves · esc cancels</span></div>`
           : `<div class="win-body" id="body-center"><pre class="prose">${this.marksHtml(this.center, "center")}</pre></div>
              <div class="win-foot"><div class="chips">${chips}${unfoldAll}</div></div>`}
       </section>

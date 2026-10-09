@@ -5,7 +5,7 @@ import {
   type LinkEntryClassic,
   type TrailEntry,
 } from "./client";
-import { GrabReviseEditor, type WorkEditor } from "./editor";
+import { CrdtEditor, type WorkEditor } from "./editor";
 import { WindowsView } from "./windows";
 
 const app = document.getElementById("app")!;
@@ -190,7 +190,7 @@ function paneHtml(p: Pane, tag: string, closable: boolean, isEditing = false): s
     ? `<textarea id="revise-text" class="revise" spellcheck="false">${esc(p.text)}</textarea>`
     : `<pre class="prose">${renderText(p)}</pre>`;
   const bar = isEditing
-    ? `<div class="revise-bar"><button id="revise-save" class="revise-btn">save</button><button id="revise-cancel" class="revise-btn ghosted">cancel</button><span class="quiet small">grabbed — ⌘↵ saves · esc cancels · → at the edge jumps columns</span></div>`
+    ? `<div class="revise-bar"><button id="revise-save" class="revise-btn">save</button><button id="revise-cancel" class="revise-btn ghosted">cancel</button><span class="quiet small">editing — ⌘↵ saves · esc cancels · → at the edge jumps columns</span></div>`
     : "";
   const focused = !isEditing && focusPane === tag ? " focused" : "";
   return `<section class="pane${focused}" id="pane-${tag}">
@@ -431,14 +431,14 @@ async function startEditing(pane: "a" | "b" = "a"): Promise<void> {
   if (mode === "windows" && pane !== "a") return;
   const target = pane === "a" ? paneA : paneB;
   if (!target) return;
-  setStatus("grabbing…");
-  const ed = new GrabReviseEditor(client);
+  setStatus("opening…");
+  const ed = new CrdtEditor(client);
   try {
     await ed.begin(target.workId);
   } catch (e) {
     const we = e as WireError;
     if (we.code === "not_grabbed" || /not grabbed|is locked/i.test(we.message ?? "")) {
-      setStatus("held by another session — try again shortly");
+      setStatus("another session is editing this work — try again shortly");
     } else {
       setStatus(we.message ?? String(e));
     }
@@ -448,10 +448,10 @@ async function startEditing(pane: "a" | "b" = "a"): Promise<void> {
   editing = { workId: target.workId, pane: mode === "windows" ? "a" : pane };
   if (mode === "windows" && winView) {
     winView.setEditing(paneA!.text);
-    setStatus("grabbed — you hold this work");
+    setStatus("editing — ⌘↵ saves · esc cancels");
   } else {
     render();
-    setStatus("grabbed — you hold this work");
+    setStatus("editing — ⌘↵ saves · esc cancels");
   }
 }
 
