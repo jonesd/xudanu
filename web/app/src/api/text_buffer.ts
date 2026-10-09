@@ -225,6 +225,45 @@ export class TextBuffer {
     }
     return this.text;
   }
+
+  /** Move a section to directly BEFORE the heading at `toHeadingLine`
+   *  (insertion at that heading's start offset). moveSection inserts
+   *  after the END of the target's section — and a section absorbs its
+   *  nested children, so "insert before a subsection" cannot be
+   *  expressed with it. This is the primitive nested outlines need;
+   *  `toHeadingLine === -1` inserts at the very top, before any
+   *  preamble. */
+  moveSectionBefore(fromHeadingLine: number, toHeadingLine: number): string {
+    const section = this.getSectionRange(fromHeadingLine);
+    const sectionText = this.getLinesRange(section.startLine, section.endLine);
+    const startChar = this.getCharOffset(section.startLine);
+    const endChar = this.getCharOffset(section.endLine);
+
+    let insertChar: number;
+    if (toHeadingLine === -1) {
+      insertChar = 0;
+    } else {
+      const toStartChar = this.getCharOffset(toHeadingLine);
+      // No-op when the target sits inside (or is) the moved section.
+      if (toStartChar >= startChar && toStartChar < endChar) return this.text;
+      insertChar = toStartChar;
+    }
+
+    if (insertChar <= startChar) {
+      return (
+        this.text.slice(0, insertChar) +
+        sectionText +
+        this.text.slice(insertChar, startChar) +
+        this.text.slice(endChar)
+      );
+    }
+    return (
+      this.text.slice(0, startChar) +
+      this.text.slice(endChar, insertChar) +
+      sectionText +
+      this.text.slice(insertChar)
+    );
+  }
 }
 
 export interface SearchMatch {

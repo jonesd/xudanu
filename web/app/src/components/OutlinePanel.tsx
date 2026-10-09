@@ -58,21 +58,20 @@ export function OutlinePanel({ buffer, onJumpTo, onMoveSection, onClose }: Outli
       }
 
       const fromEntry = outline[dragIdx];
-      let targetLine: number;
-
-      if (dropPosition === "before") {
-        targetLine = idx === 0 ? -1 : outline[idx - 1].line;
-      } else {
-        targetLine = outline[idx].line;
-      }
-
-      if (targetLine === fromEntry.line) {
+      if (outline[idx].line === fromEntry.line) {
         setDragIdx(null);
         setDropIdx(null);
         return;
       }
 
-      const newText = buffer.moveSection(fromEntry.line, targetLine);
+      // "after" inserts past the target section's end (moveSection);
+      // "before" inserts at the target heading's start (moveSectionBefore)
+      // — the two differ for nested outlines, where a section absorbs
+      // its children and after-the-parent swallows subsection targets.
+      const newText =
+        dropPosition === "before"
+          ? buffer.moveSectionBefore(fromEntry.line, outline[idx].line)
+          : buffer.moveSection(fromEntry.line, outline[idx].line);
       onMoveSection(newText);
       setDragIdx(null);
       setDropIdx(null);
