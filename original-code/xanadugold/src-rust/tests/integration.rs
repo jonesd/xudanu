@@ -16028,3 +16028,98 @@ async fn fr40_s6_end_set_attachment_over_websocket() {
         "after removal the C attachment no longer matches: {body}"
     );
 }
+
+// ── Span migration through delta edits ─────────────────────────────────────
+// Regression documentation for a found bug (2026-10-08): link spans do not
+// survive work_revise_delta correctly. Three shapes verified against the
+// live server via the classic client:
+//   1. insert with no leading retain  → span double-shifted (+2x insert len)
+//   2. insert after a leading retain  → span double-shifted (+2x insert len)
+//   3. canonical retain/delete/insert → replacement span end one short
+// The pure mapper (map_span_through_delta) traces correct for all three,
+// so the corruption is in the dispatch-arm layering (explicit
+// migrate_link_spans_for_delta plus whatever revise_work applies after).
+// Ignored until fixed; remove the attribute to reproduce.
+#[tokio::test]
+#[ignore = "known bug: link spans corrupted by work_revise_delta (documented shapes below)"]
+async fn delta_edits_migrate_link_spans_correctly() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let mut next_id = 900u16;
+
+    async fn span_words(
+        s: &mut SplitSender,
+        r: &mut SplitReceiver,
+        id: &mut u16,
+        work_id: u64,
+    ) -> (String, (u64, u64)) {
+        let ed = send_recv_json(
+            s,
+            r,
+            json_req({
+                *id += 1;
+                *id
+            }, "work_get_edition", Some(serde_json::json!({"work_id": work_id}))),
+        )
+        .await;
+        let text = ed["value"]["value"]["text"].as_str().unwrap().to_string();
+        let l = send_recv_json(
+            s,
+            r,
+            json_req({
+                *id += 1;
+                *id
+            }, "link_list_for_work", Some(serde_json::json!({"work_id": work_id}))),
+        )
+        .await;
+        let entries = l["value"]["value"]["entries"]
+            .as_array()
+            .or_else(|| l["value"]["value"].as_array())
+            .unwrap();
+        let our = entries
+            .iter()
+            .find(|e| e["origin_ref"]["excerpt"].as_str() == Some("MOVEME"))
+            .expect("link with MOVEME excerpt");
+        let st = our["origin_ref"]["start_position"].as_u64().unwrap();
+        let en = our["origin_ref"]["end_position"].as_u64().unwrap();
+        let chars: Vec<char> = text.chars().collect();
+        (chars[st as usize..en as usize].iter().collect(), (st, en))
+    }
+
+    // work with a linked span over "MOVEME" (chars 5..11)
+    let make = |text: &str| serde_json::json!({"text": text});
+    let link_ref = |work_id: u64| {
+        serde_json::json!({
+            "kind": "single", "work_context": work_id,
+            "original_context": null, "path_context": null,
+            "excerpt": "MOVEME", "start_position": 5, "end_position": 11
+        })
+    };
+
+    // Shape 1: insert first, no leading retain (the classic client's diff shape)
+    let w1 = send_recv_json(&mut s, &mut r, json_req({next_id+=1; next_id}, "work_create", Some(make("XXXX MOVEME YYYY")))).await["value"]["value"].as_u64().unwrap();
+    send_recv_json(&mut s, &mut r, json_req({next_id+=1; next_id}, "link_create", Some(serde_json::json!({"origin": w1, "destination": w1, "origin_ref": link_ref(w1), "link_types": [2]})))).await;
+    send_recv_json(&mut s, &mut r, json_req({next_id+=1; next_id}, "work_grab", Some(serde_json::json!({"work_id": w1})))).await;
+    send_recv_json(&mut s, &mut r, json_req({next_id+=1; next_id}, "work_revise_delta", Some(serde_json::json!({"work_id": w1, "base_revision": 0, "ops": [{"type":"insert","text":"ab "},{"type":"retain","count":15}]})))).await;
+    send_recv_json(&mut s, &mut r, json_req({next_id+=1; next_id}, "work_release", Some(serde_json::json!({"work_id": w1})))).await;
+    let (words, _span) = span_words(&mut s, &mut r, &mut next_id, w1).await;
+    assert_eq!(words, "MOVEME", "shape 1 (insert-first): span must still cover the excerpt");
+
+    // Shape 2: insert after a leading retain
+    let w2 = send_recv_json(&mut s, &mut r, json_req({next_id+=1; next_id}, "work_create", Some(make("XXXX MOVEME YYYY")))).await["value"]["value"].as_u64().unwrap();
+    send_recv_json(&mut s, &mut r, json_req({next_id+=1; next_id}, "link_create", Some(serde_json::json!({"origin": w2, "destination": w2, "origin_ref": link_ref(w2), "link_types": [2]})))).await;
+    send_recv_json(&mut s, &mut r, json_req({next_id+=1; next_id}, "work_grab", Some(serde_json::json!({"work_id": w2})))).await;
+    send_recv_json(&mut s, &mut r, json_req({next_id+=1; next_id}, "work_revise_delta", Some(serde_json::json!({"work_id": w2, "base_revision": 0, "ops": [{"type":"retain","count":4},{"type":"insert","text":"ab "},{"type":"retain","count":11}]})))).await;
+    send_recv_json(&mut s, &mut r, json_req({next_id+=1; next_id}, "work_release", Some(serde_json::json!({"work_id": w2})))).await;
+    let (words, _span) = span_words(&mut s, &mut r, &mut next_id, w2).await;
+    assert_eq!(words, "MOVEME", "shape 2 (retain-insert): span must still cover the excerpt");
+
+    // Shape 3: canonical replacement of the spanned text itself
+    let w3 = send_recv_json(&mut s, &mut r, json_req({next_id+=1; next_id}, "work_create", Some(make("XXXX MOVEME YYYY")))).await["value"]["value"].as_u64().unwrap();
+    send_recv_json(&mut s, &mut r, json_req({next_id+=1; next_id}, "link_create", Some(serde_json::json!({"origin": w3, "destination": w3, "origin_ref": link_ref(w3), "link_types": [2]})))).await;
+    send_recv_json(&mut s, &mut r, json_req({next_id+=1; next_id}, "work_grab", Some(serde_json::json!({"work_id": w3})))).await;
+    send_recv_json(&mut s, &mut r, json_req({next_id+=1; next_id}, "work_revise_delta", Some(serde_json::json!({"work_id": w3, "base_revision": 0, "ops": [{"type":"retain","count":5},{"type":"delete","count":6},{"type":"insert","text":"MOVED"},{"type":"retain","count":5}]})))).await;
+    send_recv_json(&mut s, &mut r, json_req({next_id+=1; next_id}, "work_release", Some(serde_json::json!({"work_id": w3})))).await;
+    let (words, _span) = span_words(&mut s, &mut r, &mut next_id, w3).await;
+    assert_eq!(words, "MOVED", "shape 3 (replacement): span must cover the replacement text");
+}
