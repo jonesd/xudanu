@@ -156,6 +156,22 @@ mark { color: inherit; border-radius: 2px; padding: 0 1px; }
 .chip:hover { color: var(--ink); border-color: var(--ink-dim); }
 .chip.more { border-style: dashed; }
 
+/* Transclusion identity — the Nelson box: same content, not a copy. */
+.tboxes { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.tbox {
+  position: absolute; border: 1px solid var(--accent); border-radius: 2px;
+  background: rgba(210, 153, 34, 0.05); pointer-events: none;
+}
+.tbox-tab {
+  position: absolute; top: -16px; left: -1px; font-size: 11px; line-height: 14px;
+  color: var(--accent); background: var(--paper-inset); border: 1px solid var(--accent);
+  border-bottom: none; border-radius: 2px 2px 0 0; padding: 0 5px;
+  pointer-events: auto; white-space: nowrap; max-width: 240px; overflow: hidden;
+  text-overflow: ellipsis; cursor: help;
+}
+body.paper .tbox { border-color: #1d1a15; background: rgba(29, 26, 21, 0.03); }
+body.paper .tbox-tab { color: #1d1a15; border-color: #1d1a15; background: #faf6ec; }
+
 /* Phase D: revise surface */
 .revise {
   display: block; flex: 1; width: 100%; background: transparent;

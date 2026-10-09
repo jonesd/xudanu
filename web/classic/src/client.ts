@@ -182,9 +182,23 @@ export class ClassicClient {
     await this.request("work_revise_delta", { work_id: workId, base_revision: 0, ops });
   }
 
+  /** Transclusion identity: the ranges of this work's text that are
+   *  live windows onto other works, with source titles. */
+  async resolveInline(workId: number): Promise<InlineTransclusions> {
+    const r = val<{
+      text?: string;
+      span_ranges?: TransclusionSpan[];
+      source_titles?: Record<string, string>;
+    }>(await this.request("resolve_inline_transclusions", { work_id: workId }));
+    return {
+      text: r?.text ?? "",
+      spanRanges: r?.span_ranges ?? [],
+      sourceTitles: r?.source_titles ?? {},
+    };
+  }
+
   /** Create a two-ended typed link (the LinkCreator wire shape). */
-  async createLink(args: {
-    origin: number;
+  async createLink(args: {    origin: number;
     destination: number;
     originRef?: { excerpt: string; start: number; end: number };
     destinationRef?: { excerpt: string; start: number; end: number };
@@ -226,6 +240,21 @@ export interface LinkEntryClassic {
   origin_title?: string;
   destination_title?: string;
   link_types?: number[];
+}
+
+export interface TransclusionSpan {
+  source_work_id: number;
+  char_start: number;
+  char_end: number;
+  flat_start?: number;
+  flat_end?: number;
+  resolved_content?: string;
+}
+
+export interface InlineTransclusions {
+  text: string;
+  spanRanges: TransclusionSpan[];
+  sourceTitles: Record<string, string>;
 }
 
 export const LINK_TYPE_NAMES: Record<number, { name: string; color: string }> = {

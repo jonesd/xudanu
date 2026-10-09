@@ -2,6 +2,7 @@ import {
   ClassicClient,
   LINK_TYPE_NAMES,
   WireError,
+  type InlineTransclusions,
   type LinkEntryClassic,
   type TrailEntry,
 } from "./client";
@@ -75,6 +76,20 @@ interface Pane {
   title: string;
   text: string;
   links: LinkEntryClassic[];
+  inline?: InlineTransclusions;
+}
+
+async function fetchPane(client: ClassicClient, workId: number): Promise<Pane> {
+  const [raw, links, inline] = await Promise.all([
+    client.readWork(workId),
+    client.linksFor(workId),
+    client.resolveInline(workId).catch((): InlineTransclusions => ({ text: "", spanRanges: [], sourceTitles: {} })),
+  ]);
+  // A transcluding work displays its RESOLVED text: the reader sees the
+  // live window's content inline (Nelson's window, not a placeholder),
+  // with identity boxes over the shared ranges.
+  const text = inline.spanRanges.length > 0 && inline.text ? inline.text : raw;
+  return { workId, title: firstLine(text, workId), text, links, inline };
 }
 
 let paneA: Pane | null = null;
@@ -146,9 +161,7 @@ async function openWork(workId: number, pane: "A" | "B", push = true): Promise<v
     editor = null;
     editing = null;
   }
-  const text = await client.readWork(workId);
-  const links = await client.linksFor(workId);
-  const p: Pane = { workId, title: firstLine(text, workId), text, links };
+  const p = await fetchPane(client, workId);
   if (pane === "A") {
     paneA = p;
     paneB = null;
@@ -195,6 +208,7 @@ function paneHtml(p: Pane, tag: string, closable: boolean, isEditing = false): s
   const focused = !isEditing && focusPane === tag ? " focused" : "";
   return `<section class="pane${focused}" id="pane-${tag}">
     <div class="pane-head"><h2>${esc(p.title)}</h2>${headBtns}</div>
+    <div class="tboxes" id="tboxes-${tag}"></div>
     <div class="pane-scroll pane-editing-${isEditing ? "on" : "off"}" id="scroll-${tag}">${body}</div>
     ${bar}
     ${isEditing ? "" : `<div class="pane-conns"><h3>connections</h3>${connectionsHtml(p)}</div>`}
@@ -418,8 +432,9 @@ render();
     wireConns();
     wireClose();
     drawBeams();
-    observeBeams();
-  }
+  observeBeams();
+  drawAllTBoxes();
+}
 }
 
 function wireLinkDraft(): void {
@@ -483,14 +498,10 @@ async function commitEditing(): Promise<void> {
     await winView.refreshCenter();
     winView.setEditing(null);
   } else if (pane === "b" && paneB) {
-    const text = await client.readWork(workId);
-    const links = await client.linksFor(workId);
-    paneB = { workId, title: firstLine(text, workId), text, links };
+    paneB = await fetchPane(client, workId);
     render();
   } else {
-    const text = await client.readWork(workId);
-    const links = await client.linksFor(workId);
-    paneA = { workId, title: firstLine(text, workId), text, links };
+    paneA = await fetchPane(client, workId);
     render();
   }
   setStatus("saved");
@@ -691,9 +702,7 @@ async function follow(linkId: number, from: "a" | "b" = "a"): Promise<void> {
   activeLink = l;
   const other = from === "a" ? paneB : paneA;
   if (!other || other.workId !== far) {
-    const text = await client.readWork(far);
-    const links = await client.linksFor(far);
-    const p: Pane = { workId: far, title: firstLine(text, far), text, links };
+    const p = await fetchPane(client, far);
     if (from === "a") paneB = p;
     else paneA = p;
   }
@@ -768,14 +777,73 @@ function drawBeams(): void {
 }
 
 let beamObserver: ResizeObserver | null = null;
+
+/** Transclusion identity boxes — the Nelson mark: a passage that is
+ *  the same content as a passage elsewhere gets a box (not an
+ *  underline: underlines are links; boxes are identity). Drawn as an
+ *  overlay so text segmentation never changes. */
+function drawTBoxes(tag: "a" | "b"): void {
+  const pane = tag === "a" ? paneA : paneB;
+  const layer = document.getElementById(`tboxes-${tag}`);
+  const scroll = document.getElementById(`scroll-${tag}`);
+  const pre = document.querySelector<HTMLElement>(`#scroll-${tag} pre`);
+  if (!layer || !scroll || !pre || !pane?.inline || pane.inline.spanRanges.length === 0) {
+    if (layer) layer.innerHTML = "";
+    return;
+  }
+  const layerR = layer.getBoundingClientRect();
+  const scrollR = scroll.getBoundingClientRect();
+  const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+  let html = "";
+  for (const sp of pane.inline.spanRanges) {
+    const start = Math.max(0, Math.min(sp.flat_start ?? sp.char_start, pane.text.length));
+    const end = Math.max(start, Math.min(sp.flat_end ?? sp.char_end, pane.text.length));
+    if (end === start) continue;
+    const range = document.createRange();
+    let pos = 0;
+    let anchored = false;
+    for (const node of nodes) {
+      if (!anchored && pos + node.length > start) {
+        range.setStart(node, start - pos);
+        anchored = true;
+      }
+      if (anchored && pos + node.length >= end) {
+        range.setEnd(node, end - pos);
+        break;
+      }
+      pos += node.length;
+    }
+    if (!range.collapsed) {
+      const title = pane.inline.sourceTitles[String(sp.source_work_id)] ?? `work ${sp.source_work_id.toString(16)}`;
+      for (const rect of range.getClientRects()) {
+        const x = rect.left - layerR.left;
+        const y = rect.top - layerR.top;
+        html += `<div class="tbox" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${rect.width.toFixed(1)}px;height:${rect.height.toFixed(1)}px" title="same content — live window onto: ${esc(title)}"><span class="tbox-tab">↩ ${esc(title.slice(0, 24))}</span></div>`;
+      }
+    }
+  }
+  void scrollR;
+  layer.innerHTML = html;
+}
+
+function drawAllTBoxes(): void {
+  drawTBoxes("a");
+  drawTBoxes("b");
+}
+
 function observeBeams(): void {
   beamObserver?.disconnect();
   const sa = document.getElementById("scroll-a");
   const sb = document.getElementById("scroll-b");
   if (!sa || !sb) return;
-  const redraw = () => drawBeams();
-  sa.addEventListener("scroll", redraw);
-  sb.addEventListener("scroll", redraw);
+  const redraw = () => {
+    drawBeams();
+    drawAllTBoxes();
+  };
+  sa.addEventListener("scroll", redraw, { passive: true });
+  sb.addEventListener("scroll", redraw, { passive: true });
   window.addEventListener("resize", redraw);
   beamObserver = new ResizeObserver(redraw);
   beamObserver.observe(sa);
