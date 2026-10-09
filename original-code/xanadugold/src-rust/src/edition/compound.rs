@@ -39,6 +39,7 @@ pub fn map_span_through_delta(
     let mut pos: i64 = 0;
     let mut displacement: i64 = 0;
     let mut parts: Vec<(i64, i64, i64)> = Vec::new();
+    let mut span_intersects_delete = false;
 
     for op in ops {
         match *op {
@@ -51,10 +52,25 @@ pub fn map_span_through_delta(
                 displacement += ins_len as i64;
             }
             DeltaOp::Delete(count) => {
-                pos += count as i64;
+                let del_start = pos;
+                let del_end = pos + count as i64;
+                // A span whose tail (or body) sits inside a deleted
+                // region followed by inserts is a replacement seam:
+                // algebraic mapping truncates it there, dropping the
+                // inserted continuation. The imperative path extends
+                // the end through the replacement — its semantics take
+                // precedence whenever the span actually touches a delete.
+                if (span_start as i64) < del_end && (span_end as i64) > del_start {
+                    span_intersects_delete = true;
+                }
                 displacement -= count as i64;
+                pos = del_end;
             }
         }
+    }
+
+    if span_intersects_delete {
+        return map_span_through_delta_imperative(span_start, span_end, ops);
     }
 
     // The tail after the last op keeps the final displacement.

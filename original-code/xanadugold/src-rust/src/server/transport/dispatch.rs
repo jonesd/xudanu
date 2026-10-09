@@ -1135,7 +1135,9 @@ fn dispatch_inner(
                     &ops,
                     author.as_ref(),
                 );
-                srv.migrate_link_spans_for_delta(work_id, &ops);
+                // Link-span migration happens INSIDE revise_work (it
+                // computes the text delta and migrates once). Calling it
+                // here too double-shifted every span an insert touched.
                 srv.migrate_inline_transclusions_for_delta(work_id, &ops);
                 let compound_subs = srv.compound_subscribers_for_source(work_id);
                 let rev = srv.work_revise(session_id, work_id, new_ed)?;

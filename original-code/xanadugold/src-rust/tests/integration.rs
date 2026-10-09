@@ -16041,7 +16041,6 @@ async fn fr40_s6_end_set_attachment_over_websocket() {
 // migrate_link_spans_for_delta plus whatever revise_work applies after).
 // Ignored until fixed; remove the attribute to reproduce.
 #[tokio::test]
-#[ignore = "known bug: link spans corrupted by work_revise_delta (documented shapes below)"]
 async fn delta_edits_migrate_link_spans_correctly() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
@@ -16095,7 +16094,7 @@ async fn delta_edits_migrate_link_spans_correctly() {
     }
 
     // work with a linked span over "MOVEME" (chars 5..11)
-    let make = |text: &str| serde_json::json!({"text": text});
+    let make = |text: &str| serde_json::json!({"edition": {"text": text}});
     let link_ref = |work_id: u64| {
         serde_json::json!({
             "kind": "single", "work_context": work_id,
