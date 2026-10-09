@@ -48,7 +48,12 @@ pub fn forensics(server: &Server) -> ForensicsReport {
     let orphan_chunks = orphan_scan(server);
     let anchor_status = anchor_verification(server);
 
-    let clean = chain.status == "ok" && generation_anomalies.is_empty() && orphan_chunks.is_empty();
+    // "empty" (nothing anchored yet, nothing to verify) is not an
+    // anomaly — only a populated-but-broken state, or flagged
+    // generation/orphan findings, fail the verdict.
+    let clean = (chain.status == "ok" || chain.status == "empty")
+        && generation_anomalies.is_empty()
+        && orphan_chunks.is_empty();
 
     ForensicsReport {
         verdict: if clean { "CLEAN" } else { "ANOMALIES FOUND" },
@@ -135,5 +140,74 @@ fn anchor_verification(server: &Server) -> AnchorStatus {
             .and_then(|h| h.as_u64()),
         receipt_present,
         receipt_parses,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::edition::edition::Edition;
+    use crate::server::SessionId;
+
+    fn server_with_session() -> (Server, SessionId) {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        (server, sid)
+    }
+
+    #[test]
+    fn fresh_server_reports_clean() {
+        let (server, _) = server_with_session();
+        let report = forensics(&server);
+        assert_eq!(report.verdict, "CLEAN");
+        assert_eq!(report.chain.status, "empty");
+        assert_eq!(report.chain.entries, 0);
+        assert!(report.chain.chain_head.is_none());
+        assert!(report.generation_anomalies.is_empty());
+        assert!(report.orphan_chunks.is_empty());
+        assert!(!report.anchor_status.anchoring_enabled);
+        assert!(!report.anchor_status.receipt_present);
+        assert!(!report.anchor_status.receipt_parses);
+    }
+
+    #[test]
+    fn high_revision_count_is_flagged_as_anomaly() {
+        let (mut server, sid) = server_with_session();
+        let wid = server
+            .create_work(sid, Edition::from_text("forensics target v0"))
+            .unwrap();
+        server.work_grab(sid, wid).unwrap();
+        for i in 1..=5u32 {
+            server
+                .work_revise(sid, wid, Edition::from_text(&format!("forensics target v{i}")))
+                .unwrap();
+        }
+        let report = forensics(&server);
+        assert_eq!(report.verdict, "ANOMALIES FOUND");
+        assert_eq!(report.generation_anomalies.len(), 1);
+        let a = &report.generation_anomalies[0];
+        assert_eq!(a.work_id, wid);
+        assert_eq!(a.revision_count, 5);
+        assert!(a.note.contains("high revision count (5)"));
+    }
+
+    #[test]
+    fn moderate_revision_counts_stay_clean() {
+        let (mut server, sid) = server_with_session();
+        let wid = server
+            .create_work(sid, Edition::from_text("calm work"))
+            .unwrap();
+        server.work_grab(sid, wid).unwrap();
+        for i in 1..=4u32 {
+            server
+                .work_revise(sid, wid, Edition::from_text(&format!("calm work v{i}")))
+                .unwrap();
+        }
+        let report = forensics(&server);
+        assert_eq!(report.verdict, "CLEAN");
+        assert!(report.generation_anomalies.is_empty());
+        // the chain probe now sees the work
+        assert_eq!(report.chain.entries, 1);
     }
 }
