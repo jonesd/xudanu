@@ -180,7 +180,11 @@ mod tests {
         server.work_grab(sid, wid).unwrap();
         for i in 1..=5u32 {
             server
-                .work_revise(sid, wid, Edition::from_text(&format!("forensics target v{i}")))
+                .work_revise(
+                    sid,
+                    wid,
+                    Edition::from_text(&format!("forensics target v{i}")),
+                )
                 .unwrap();
         }
         let report = forensics(&server);

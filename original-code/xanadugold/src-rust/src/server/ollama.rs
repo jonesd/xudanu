@@ -1057,7 +1057,10 @@ mod tests {
             digest_body: r#"{"models":[{"name":"llama3.1","digest":"sha256:abc"}]}"#.into(),
         })
         .await;
-        let (text, att) = client_at(&base).generate_with_attestation("hi").await.unwrap();
+        let (text, att) = client_at(&base)
+            .generate_with_attestation("hi")
+            .await
+            .unwrap();
         assert_eq!(text, "ok");
         assert_eq!(att.backend, "ollama");
         assert_eq!(att.model, "llama3.1");
