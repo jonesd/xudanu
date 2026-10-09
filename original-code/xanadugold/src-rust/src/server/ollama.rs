@@ -265,6 +265,13 @@ impl LlmClient {
         }
     }
 
+    /// Construct with an explicit backend. The enum is public; tests
+    /// (and embedders) use this to point the Ollama backend at a
+    /// local server instead of the default host.
+    pub fn with_backend(backend: LlmBackend) -> Self {
+        LlmClient { backend }
+    }
+
     /// FR-86: LLM as reader-critic. Given a work's text and the
     /// texts of its connected works, propose typed connections a
     /// critical reader would make. Returns structured proposals for
@@ -941,5 +948,137 @@ mod tests {
             50,
             "recent list should be capped at 50"
         );
+    }
+
+    // ── HTTP-backed paths: a local Ollama double ──────────────────────
+    use axum::http::StatusCode;
+    use axum::routing::{get, post};
+    use axum::Router;
+    use std::sync::Arc;
+
+    struct OllamaDouble {
+        status: u16,
+        body: String,
+        digest_body: String,
+    }
+
+    async fn spawn_double(d: OllamaDouble) -> String {
+        let d = Arc::new(d);
+        let gen = d.clone();
+        let tags = d.clone();
+        let app = Router::new()
+            .route(
+                "/api/generate",
+                post(move || {
+                    let d = gen.clone();
+                    async move {
+                        let code = StatusCode::from_u16(d.status).unwrap_or(StatusCode::OK);
+                        (code, d.body.clone())
+                    }
+                }),
+            )
+            .route(
+                "/api/tags",
+                get(move || {
+                    let d = tags.clone();
+                    async move { (StatusCode::OK, d.digest_body.clone()) }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        format!("http://{}", addr)
+    }
+
+    fn client_at(base: &str) -> LlmClient {
+        LlmClient::with_backend(LlmBackend::Ollama {
+            base_url: base.to_string(),
+            model: "llama3.1".to_string(),
+        })
+    }
+
+    #[tokio::test]
+    async fn generate_trims_the_response() {
+        let base = spawn_double(OllamaDouble {
+            status: 200,
+            body: r#"{"response":"  hello there \n","done":true}"#.into(),
+            digest_body: "{}".into(),
+        })
+        .await;
+        let out = client_at(&base).generate("hi").await.unwrap();
+        assert_eq!(out, "hello there");
+    }
+
+    #[tokio::test]
+    async fn generate_maps_http_error_to_api_error() {
+        let base = spawn_double(OllamaDouble {
+            status: 500,
+            body: "boom".into(),
+            digest_body: "{}".into(),
+        })
+        .await;
+        match client_at(&base).generate("hi").await {
+            Err(LlmError::Api(msg)) => assert!(msg.contains("500"), "msg: {msg}"),
+            other => panic!("expected Api error, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn generate_maps_bad_json_to_parse_error() {
+        let base = spawn_double(OllamaDouble {
+            status: 200,
+            body: "definitely not json".into(),
+            digest_body: "{}".into(),
+        })
+        .await;
+        match client_at(&base).generate("hi").await {
+            Err(LlmError::Parse(_)) => {}
+            other => panic!("expected Parse error, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn generate_maps_refused_connection() {
+        // Port 9 (discard) on loopback: nothing listens, fails fast.
+        let client = client_at("http://127.0.0.1:9");
+        match client.generate("hi").await {
+            Err(LlmError::Connection(_)) => {}
+            other => panic!("expected Connection error, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn attestation_carries_usage_and_model_digest() {
+        let base = spawn_double(OllamaDouble {
+            status: 200,
+            body: r#"{"response":"ok","done":true,"model":"llama3.1","created_at":"2026-10-08T00:00:00Z","eval_count":7,"prompt_eval_count":3}"#.into(),
+            digest_body: r#"{"models":[{"name":"llama3.1","digest":"sha256:abc"}]}"#.into(),
+        })
+        .await;
+        let (text, att) = client_at(&base).generate_with_attestation("hi").await.unwrap();
+        assert_eq!(text, "ok");
+        assert_eq!(att.backend, "ollama");
+        assert_eq!(att.model, "llama3.1");
+        assert_eq!(att.model_digest.as_deref(), Some("sha256:abc"));
+        assert_eq!(att.eval_count, Some(7));
+        assert_eq!(att.prompt_eval_count, Some(3));
+        assert!(att.created_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn backend_labels_name_each_variant() {
+        let gh = LlmClient::with_backend(LlmBackend::GitHub {
+            api_key: "k".into(),
+            model: "gpt".into(),
+        });
+        assert_eq!(gh.backend_label(), "github-models");
+        assert_eq!(gh.model_name(), "gpt");
+        let or_ = LlmClient::with_backend(LlmBackend::OpenRouter {
+            api_key: "k".into(),
+            model: "m".into(),
+        });
+        assert_eq!(or_.backend_label(), "openrouter");
     }
 }
