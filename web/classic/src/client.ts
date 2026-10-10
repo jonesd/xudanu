@@ -201,6 +201,14 @@ export class ClassicClient {
     await this.request("work_revise_delta", { work_id: workId, base_revision: 0, ops });
   }
 
+  /** All works — the docuverse listing (REST, same-origin). */
+  async listWorks(): Promise<Array<{ work_id: string; title: string; char_count?: number; revision?: number }>> {
+    const resp = await fetch("/api/public/works?limit=200");
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    return (data?.works ?? []) as Array<{ work_id: string; title: string; char_count?: number; revision?: number }>;
+  }
+
   /** Revision history: the page-stack wire ops. */
   async revisionCount(workId: number): Promise<number> {
     const r = val<{ revision_count?: number; count?: number } | number>(

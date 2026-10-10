@@ -549,8 +549,8 @@ function render(): void {
     : paneA
     ? `<div class="panes" id="panes" style="grid-template-columns:repeat(3,1fr)">
         ${paneHtml(paneA!, "a", false, !!editing && editing.workId === paneA!.workId)}
-        ${paneB ? paneHtml(paneB, "b", true, !!editing && editing.pane === "b" && editing.workId === paneB.workId) : `<section class="pane ghost" id="pane-b"><div class="pane-head"><h2 class="quiet">—</h2></div><div class="pane-scroll"><p class="quiet">Click an underline to open its far end here.</p></div></section>`}
-        ${paneC ? paneHtml(paneC, "c", true, !!editing && editing.pane === "c" && editing.workId === paneC.workId) : `<section class="pane ghost" id="pane-c"><div class="pane-head"><h2 class="quiet">—</h2></div><div class="pane-scroll"><p class="quiet">Follow another connection and a third page opens here — the parallel-pages posture.</p></div></section>`}
+        ${paneB ? paneHtml(paneB, "b", true, !!editing && editing.pane === "b" && editing.workId === paneB.workId) : `<section class="pane ghost" id="pane-b"><div class="pane-head"><h2 class="quiet">—</h2></div><div class="pane-scroll"><p class="quiet">Click an underline to open its far end — or search and click a result to place it here.</p></div></section>`}
+        ${paneC ? paneHtml(paneC, "c", true, !!editing && editing.pane === "c" && editing.workId === paneC.workId) : `<section class="pane ghost" id="pane-c"><div class="pane-head"><h2 class="quiet">—</h2></div><div class="pane-scroll"><p class="quiet">Follow another connection or search for a third page.</p></div></section>`}
         <svg id="beams"></svg>
         ${inspectLink !== null ? beamPanelHtml() : ""}
         ${draft && draft.stage === "origin" ? gatherPanelHtml() : ""}
@@ -582,12 +582,15 @@ function render(): void {
         <form id="search"><input id="q" placeholder="search the docuverse" autocomplete="off"></form>
         <div id="results"></div>
         <div id="trails"></div>
+        <div id="library"></div>
       </nav>
       <main>${main}</main>
     </div>`;
 
   ensureTrails();
+  ensureWorks();
   renderTrailsNav();
+  renderLibraryPanel();
   wireSearch();
   wireMainWorkLinks();
   wireHistoryButtons();
@@ -787,6 +790,72 @@ function wireRevise(): void {
 }
 
 let searchQuery = "";
+let worksList: Array<{ work_id: string; title: string; char_count?: number; revision?: number }> = [];
+let worksLoaded = false;
+
+async function ensureWorks(): Promise<void> {
+  if (worksLoaded || !client) return;
+  worksLoaded = true;
+  try {
+    worksList = await client.listWorks();
+    renderLibraryPanel();
+  } catch {
+    worksList = [];
+  }
+}
+
+/** Open a work beside the current reading — fills the first ghost
+ *  column (B, then C) before falling back to replacing A. This is
+ *  the "growing the row" gesture: a new page joins the parallel
+ *  layout rather than blowing it away. */
+async function openBeside(workId: number): Promise<void> {
+  if (mode !== "panes") {
+    await openWork(workId, "A");
+    return;
+  }
+  if (!paneA) {
+    await openWork(workId, "A");
+    return;
+  }
+  if (!paneB) {
+    paneB = await fetchPane(client!, workId);
+    render();
+    return;
+  }
+  if (!paneC) {
+    paneC = await fetchPane(client!, workId);
+    render();
+    return;
+  }
+  // all three full: replace B (the middle slot, least destructive)
+  paneB = await fetchPane(client!, workId);
+  render();
+}
+
+function renderLibraryPanel(): void {
+  const el = document.getElementById("library");
+  if (!el) return;
+  if (worksList.length === 0) {
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = `<h3>docuverse</h3>` +
+    worksList
+      .slice(0, 40)
+      .map((w) => `<a href="#" data-work="${parseInt(w.work_id, 16)}">${esc(w.title || `work ${w.work_id}`)}</a>`)
+      .join("");
+  el.querySelectorAll<HTMLAnchorElement>("a[data-work]").forEach((a) => {
+    a.onclick = (ev) => {
+      ev.preventDefault();
+      const wid = Number(a.dataset.work);
+      if (draft && draft.stage === "origin") {
+        chooseFarWork(wid, a.textContent?.trim() ?? `work ${wid}`);
+        return;
+      }
+      void openBeside(wid);
+    };
+  });
+}
 
 /** Connect (and reconnect): the socket can drop under us — a server
  *  restart, a laptop waking. Instead of every request timing out, we
@@ -856,7 +925,7 @@ function wireSearch(): void {
             chooseFarWork(wid, a.textContent?.trim() ?? `work ${wid}`);
             return;
           }
-          void openWork(wid, "A");
+          void openBeside(wid);
         };
       });
     } catch (e) {
@@ -936,7 +1005,7 @@ document.addEventListener("click", (ev) => {
       chooseFarWork(wid, a.textContent?.trim() ?? `work ${wid}`);
       return;
     }
-    void openWork(wid, "A");
+    void openBeside(wid);
   }
 });
 
@@ -949,7 +1018,7 @@ function wireMainWorkLinks(): void {
         chooseFarWork(wid, a.textContent?.trim() ?? `work ${wid}`);
         return;
       }
-      void openWork(wid, "A");
+      void openBeside(wid);
     };
   });
 }
