@@ -236,3 +236,15 @@ body.paper .win.sat { transform: rotate(var(--tilt, 0.8deg)); }
   border-radius: 2px; pointer-events: none;
 }
 body.paper .searchhl { background: rgba(180, 140, 40, 0.18); }
+
+/* The lens: hover marginalia — "who wrote this?" */
+.lens-note {
+  position: absolute; z-index: 6; pointer-events: auto;
+  background: var(--paper-inset); border: 1px solid var(--rule);
+  border-radius: 3px; padding: 2px 8px; font-size: 12px;
+  color: var(--ink-dim); white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  animation: lens-fade-in 0.15s ease-out;
+}
+@keyframes lens-fade-in { from { opacity: 0; } to { opacity: 1; } }
+body.paper .lens-note { background: #faf6ec; border-color: #b3a893; color: #6f6759; }

@@ -201,6 +201,14 @@ export class ClassicClient {
     await this.request("work_revise_delta", { work_id: workId, base_revision: 0, ops });
   }
 
+  /** Per-span authorship with cryptographic validity — the lens. */
+  async attribution(workId: number): Promise<AttributionSpan[]> {
+    const r = val<{ spans?: AttributionSpan[] } | AttributionSpan[]>(
+      await this.request("attribution_query", { work_id: workId }),
+    );
+    return Array.isArray(r) ? r : (r?.spans ?? []);
+  }
+
   /** Transclusion identity: the ranges of this work's text that are
    *  live windows onto other works, with source titles. */
   async resolveInline(workId: number): Promise<InlineTransclusions> {
@@ -289,6 +297,14 @@ export interface LinkEntryClassic {
   origin_title?: string;
   destination_title?: string;
   link_types?: number[];
+}
+
+export interface AttributionSpan {
+  start: number;
+  end: number;
+  author_display_name?: string | null;
+  signature_valid: boolean;
+  verification_state?: string | null;
 }
 
 export interface TransclusionSpan {

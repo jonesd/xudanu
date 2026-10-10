@@ -2,6 +2,7 @@ import {
   ClassicClient,
   LINK_TYPE_NAMES,
   WireError,
+  type AttributionSpan,
   type InlineTransclusions,
   type LinkEntryClassic,
   type TrailEntry,
@@ -77,19 +78,21 @@ interface Pane {
   text: string;
   links: LinkEntryClassic[];
   inline?: InlineTransclusions;
+  attribution?: AttributionSpan[];
 }
 
 async function fetchPane(client: ClassicClient, workId: number): Promise<Pane> {
-  const [raw, links, inline] = await Promise.all([
+  const [raw, links, inline, attribution] = await Promise.all([
     client.readWork(workId),
     client.linksFor(workId),
     client.resolveInline(workId).catch((): InlineTransclusions => ({ text: "", spanRanges: [], sourceTitles: {} })),
+    client.attribution(workId).catch((): AttributionSpan[] => []),
   ]);
   // A transcluding work displays its RESOLVED text: the reader sees the
   // live window's content inline (Nelson's window, not a placeholder),
   // with identity boxes over the shared ranges.
   const text = inline.spanRanges.length > 0 && inline.text ? inline.text : raw;
-  return { workId, title: firstLine(text, workId), text, links, inline };
+  return { workId, title: firstLine(text, workId), text, links, inline, attribution };
 }
 
 let paneA: Pane | null = null;
@@ -535,6 +538,7 @@ function render(): void {
     wireClose();
     drawBeams();
   wireBeams();
+  wireAllLenses();
   observeBeams();
   drawAllTBoxes();
   drawAllSearchHl();
@@ -1082,6 +1086,92 @@ function drawAllTBoxes(): void {
   drawTBoxes("a");
   drawTBoxes("b");
   drawTBoxes("c");
+}
+
+/** The lens: hover a passage and the margin answers "who wrote
+ *  this?" — author name and cryptographic validity, fading in as
+ *  marginalia. The resting page stays clean; disclosure on demand
+ *  is the idiom. */
+function wireLens(tag: Col): void {
+  const scroll = document.getElementById(`scroll-${tag}`);
+  const pane = paneAt(tag);
+  if (!scroll || !pane?.attribution || pane.attribution.length === 0) return;
+
+  let note: HTMLDivElement | null = null;
+  let hideTimer: number | null = null;
+
+  const removeNote = () => {
+    if (note) {
+      note.remove();
+      note = null;
+    }
+  };
+
+  scroll.addEventListener("mousemove", (ev: MouseEvent) => {
+    if (hideTimer !== null) window.clearTimeout(hideTimer);
+    hideTimer = window.setTimeout(removeNote, 1200);
+
+    // caret position from mouse — the char offset under the cursor
+    const caret = (document as Document & {
+      caretRangeFromPoint?: (x: number, y: number) => Range | null;
+      caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    });
+    let offset = -1;
+    if (caret.caretRangeFromPoint) {
+      const r = caret.caretRangeFromPoint(ev.clientX, ev.clientY);
+      if (r && r.startContainer.nodeType === Node.TEXT_NODE) {
+        const pre = scroll.querySelector("pre");
+        if (pre) {
+          const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+          let pos = 0;
+          while (walker.nextNode()) {
+            const node = walker.currentNode as Text;
+            if (node === r.startContainer) {
+              offset = pos + r.startOffset;
+              break;
+            }
+            pos += node.length;
+          }
+        }
+      }
+    }
+    if (offset < 0) return;
+
+    // the most specific span containing this offset (smallest)
+    let best: AttributionSpan | null = null;
+    for (const sp of pane.attribution ?? []) {
+      if (offset >= sp.start && offset < sp.end) {
+        if (!best || sp.end - sp.start < best.end - best.start) best = sp;
+      }
+    }
+    if (!best) {
+      removeNote();
+      return;
+    }
+
+    const author = best.author_display_name ?? "unknown";
+    const state = best.verification_state ?? (best.signature_valid ? "verified" : "unsigned");
+    const mark = state === "verified" ? "✓" : state === "author_maintained" ? "◐" : "?";
+
+    if (!note) {
+      note = document.createElement("div");
+      note.className = "lens-note";
+      scroll.appendChild(note);
+    }
+    note.textContent = `${mark} ${author}`;
+    note.title = `author: ${author}\nstate: ${state}`;
+    const scrollR = scroll.getBoundingClientRect();
+    note.style.left = `${scrollR.width - note.offsetWidth - 12}px`;
+    note.style.top = `${ev.clientY - scrollR.top + scroll.scrollTop - 24}px`;
+  });
+
+  scroll.addEventListener("mouseleave", removeNote);
+}
+
+function wireAllLenses(): void {
+  wireLens("a");
+  wireLens("b");
+  wireLens("c");
 }
 
 /** Find-the-term: translucent marker over every occurrence of the
