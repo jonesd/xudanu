@@ -47,11 +47,11 @@ header {
   padding: 14px 22px; border-bottom: 1px solid var(--rule);
 }
 .head-right { display: flex; align-items: center; gap: 14px; }
-.navbtns { display: inline-flex; gap: 4px; }
+.navbtns { display: inline-flex; gap: 4px; align-items: center; }
 .navbtns button {
   background: none; border: 1px solid var(--rule); color: var(--ink-dim);
-  width: 26px; height: 24px; border-radius: 3px; cursor: pointer;
-  font-size: 15px; line-height: 1; padding: 0;
+  min-width: 26px; height: 26px; border-radius: 3px; cursor: pointer;
+  font-size: 13px; line-height: 1; padding: 0 8px; white-space: nowrap;
 }
 .navbtns button:hover { color: var(--ink); border-color: var(--ink-dim); }
 .head-link {
