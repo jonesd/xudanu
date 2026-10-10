@@ -110,20 +110,53 @@ async function fetchPane(client: ClassicClient, workId: number): Promise<Pane> {
   return { workId, title: firstLine(text, workId), text, links, inline, attribution, revisionCount };
 }
 
-let paneA: Pane | null = null;
-let paneB: Pane | null = null;
-let paneC: Pane | null = null;
+let stackA: Pane[] = [];
+let stackB: Pane[] = [];
+let stackC: Pane[] = [];
 const COLS = ["a", "b", "c"] as const;
 type Col = (typeof COLS)[number];
 
+const STACK_CAP = 8;
+
+function stackAt(tag: Col): Pane[] {
+  return tag === "a" ? stackA : tag === "b" ? stackB : stackC;
+}
+
+/** The active work in a column: the one last interacted with (or
+ *  the most recently added). Receives beams, lens, boxes. */
 function paneAt(tag: Col): Pane | null {
-  return tag === "a" ? paneA : tag === "b" ? paneB : paneC;
+  const stack = stackAt(tag);
+  return stack.length > 0 ? stack[0] : null;
 }
+
+/** Replace the active work in a column. */
 function setPane(tag: Col, p: Pane | null): void {
-  if (tag === "a") paneA = p;
-  else if (tag === "b") paneB = p;
-  else paneC = p;
+  const stack = stackAt(tag);
+  if (p === null) {
+    stack.length = 0;
+  } else if (stack.length > 0) {
+    stack[0] = p;
+  } else {
+    stack.push(p);
+  }
 }
+
+/** Append a work to a column's stack — the reading stream gesture.
+ *  If the work is already in the stack, activate it instead. */
+function appendToStack(tag: Col, p: Pane): void {
+  const stack = stackAt(tag);
+  const existing = stack.findIndex((w) => w.workId === p.workId);
+  if (existing !== -1) {
+    // already in the stack: move it to the top (re-activate)
+    stack.splice(existing, 1);
+    stack.unshift(p);
+    return;
+  }
+  stack.unshift(p);
+  if (stack.length > STACK_CAP) stack.pop();
+}
+
+/** Activate a specific work within a stack (by index). */
 let activeLink: LinkEntryClassic | null = null;
 let inspectLink: number | null = null;
 
@@ -162,14 +195,14 @@ function allEndsOf(l: LinkEntryClassic): LinkEnd[] {
 
 function beamPanelHtml(): string {
   const id = inspectLink;
-  const l = [paneA, paneB, paneC].flatMap((p) => (p ? p.links : [])).find((x) => x.link_id === id);
+  const l = [paneAt('a'), paneAt('b'), paneAt('c')].flatMap((p) => (p ? p.links : [])).find((x) => x.link_id === id);
   if (!l) return "";
   const t = typeOf(l);
   const ends = allEndsOf(l);
 
   const rows = ends
     .map((e) => {
-      const open = [paneA, paneB, paneC].some((p) => p?.workId === e.workId);
+      const open = [paneAt('a'), paneAt('b'), paneAt('c')].some((p) => p?.workId === e.workId);
       return `<button class="bp-end" data-end-work="${e.workId}" ${open ? 'disabled' : ""} style="border-left:3px solid ${t.color}">
         <span class="bp-end-title">${esc(e.title.slice(0, 44))}</span>
         ${e.excerpt ? `<span class="bp-excerpt">“${esc(e.excerpt.slice(0, 60))}”</span>` : ""}
@@ -280,78 +313,76 @@ async function openWork(workId: number, pane: "A" | "B" | "C", push = true): Pro
   }
   const p = await fetchPane(client, workId);
   if (pane === "A") {
-    paneA = p;
-    paneB = null;
-    paneC = null;
-    activeLink = null;
-    stackRev = {};
+    appendToStack("a", p);
     if (push) history.pushState({ w: workId }, "", `#w${workId}`);
+  } else if (pane === "B") {
+    appendToStack("b", p);
   } else {
-    paneB = p;
+    appendToStack("c", p);
   }
   render();
 }
 
-function connectionsHtml(pane: Pane): string {
-  if (pane.links.length === 0) return `<p class="quiet small">no connections touch this work</p>`;
-  return pane.links
-    .map((l) => {
-      const t = typeOf(l);
-      return `<a href="#" class="conn" data-link="${l.link_id}" style="border-left:3px solid ${t.color};padding-left:8px">
-        <span class="quiet small">${esc(t.name)}</span><br>${esc(farTitle(l, pane.workId))}</a>`;
-    })
-    .join("");
-}
 
-function paneHtml(p: Pane, tag: Col, closable: boolean, isEditing = false): string {
-  const tools: string[] = [];
-  if (tag === "a" && !isEditing) {
-    tools.push(`<button class="close-pane" id="link-start" data-link-pane="a" title="connect this selection">⧉</button>`);
-    tools.push(`<button class="close-pane" data-revise-pane="a" title="revise this work">✎</button>`);
+function paneHtml(tag: Col): string {
+  const stack = stackAt(tag);
+  const isEditingHere = !!editing && editing.pane === tag;
+
+  // column-level tools (only on the column header)
+  const colTools: string[] = [];
+  if (tag === "a" && !isEditingHere) {
+    colTools.push(`<button class="close-pane" id="link-start" data-link-pane="a" title="connect this selection">⧉</button>`);
   }
-  if (tag !== "a" && !isEditing) {
-    tools.push(`<button class="close-pane" data-link-pane="${tag}" title="connect this selection">⧉</button>`);
+
+  // if the stack is empty, show a ghost column
+  if (stack.length === 0) {
+    const hint = tag === "a"
+      ? "Search or follow a trail to start reading."
+      : tag === "b"
+        ? "Click an underline, or search and click a result, to open a page here."
+        : "Follow another connection or search for a third page.";
+    return `<section class="pane ghost" id="pane-${tag}">
+      <div class="pane-head"><h2 class="quiet">—</h2></div>
+      <div class="pane-scroll"><p class="quiet">${hint}</p></div>
+    </section>`;
   }
-  if (tag !== "a" && !isEditing) {
-    if (draft && draft.stage === "origin") {
-      tools.push(`<button class="close-pane" id="link-far" title="use this selection (or the whole work) as the far end">⤳</button>`);
-    } else {
-      tools.push(`<button class="close-pane" data-revise-pane="b" title="revise this work">✎</button>`);
+
+  // render each work in the stack
+  const worksHtml = stack.map((wk, i) => {
+    const isActive = i === stack.length - 1;
+    const dimClass = isActive ? "" : " dimmed";
+    const wTools: string[] = [];
+    if (!isEditingHere) {
+      if (i > 0) wTools.push(`<button class="close-pane" data-reorder-pane="${tag}" data-reorder-idx="${i}" data-reorder-dir="up" title="move up">↑</button>`);
+      if (i < stack.length - 1) wTools.push(`<button class="close-pane" data-reorder-pane="${tag}" data-reorder-idx="${i}" data-reorder-dir="down" title="move down">↓</button>`);
+      wTools.push(`<button class="close-pane" data-link-pane="${tag}" data-work-idx="${i}" title="connect this selection">⧉</button>`);
+      wTools.push(`<button class="close-pane" data-revise-pane="${tag}" data-revise-idx="${i}" title="revise this work">✎</button>`);
+      wTools.push(`<button class="close-pane" data-close-pane="${tag}" data-close-idx="${i}" title="remove from stack">×</button>`);
     }
-  }
-  if (closable) tools.push(`<button class="close-pane" data-close-pane="${tag}">×</button>`);
-  const headBtns = tools.join("");
-  let body: string;
-  if (isEditing) {
-    body = `<textarea id="revise-text" class="revise" spellcheck="false">${esc(p.text)}</textarea>`;
-  } else if (stackRev[tag] !== undefined && stackRev[tag] !== null) {
-    // the stack: this page is showing a past revision — render it with
-    // diff marks against the current text
-    const oldText = p._stackOldText ?? p.text;
-    body = `<pre class="prose stack-view">${esc(oldText)}<span class="stack-now" data-stack-pane="${tag}">— return to present —</span></pre>`;
-  } else {
-    body = `<pre class="prose">${renderText(p)}</pre>`;
-  }
-  const bar = isEditing
-    ? `<div class="revise-bar"><button id="revise-save" class="revise-btn">save</button><button id="revise-cancel" class="revise-btn ghosted">cancel</button><span class="quiet small">editing — ⌘↵ saves · esc cancels · → at the edge jumps columns</span></div>`
+    const body = isEditingHere && isActive
+      ? `<textarea id="revise-text" class="revise" spellcheck="false">${esc(wk.text)}</textarea>`
+      : `<pre class="prose">${renderText(wk)}</pre>`;
+
+    return `<div class="stack-work${dimClass}" id="work-${tag}-${i}" data-work-id="${wk.workId}">
+      <div class="stack-work-head">
+        <h3 class="stack-work-title">${esc(wk.title)}</h3>
+        <span class="win-tools">${wTools.join("")}</span>
+      </div>
+      <div class="stack-work-body" id="scroll-${tag}-${i}">${body}</div>
+    </div>`;
+  }).join("");
+
+  const editBar = isEditingHere
+    ? `<div class="revise-bar"><button id="revise-save" class="revise-btn">save</button><button id="revise-cancel" class="revise-btn ghosted">cancel</button><span class="quiet small">editing — ⌘↵ saves · esc cancels</span></div>`
     : "";
-  const focused = !isEditing && focusPane === tag ? " focused" : "";
-  const revCount = p.revisionCount ?? 0;
-  const stackable = revCount > 1 && !isEditing;
-  const currentRev = stackRev[tag] ?? null;
-  const revLabel = currentRev !== null ? `r${currentRev}` : "now";
-  const stackHtml = stackable ? `<div class="stack" id="stack-${tag}" title="${revCount} revisions — click the stack to step back">
-      <div class="stack-ghosts" style="--depth:${Math.min(revCount - 1, 5)}"></div>
-      <button class="stack-handle" data-stack-pane="${tag}">${revLabel}</button>
-    </div>` : "";
+
+  const focused = !isEditingHere && focusPane === tag ? " focused" : "";
   return `<section class="pane${focused}" id="pane-${tag}">
-    ${stackHtml}
-    <div class="pane-head"><h2>${esc(p.title)}</h2>${headBtns}</div>
-    <div class="searchhl-layer" id="searchhl-${tag}"></div>
-    <div class="tboxes" id="tboxes-${tag}"></div>
-    <div class="pane-scroll pane-editing-${isEditing ? "on" : "off"}" id="scroll-${tag}">${body}</div>
-    ${bar}
-    ${isEditing ? "" : `<div class="pane-conns"><h3>connections</h3>${connectionsHtml(p)}</div>`}
+    <div class="stack-count" id="stack-count-${tag}">${stack.length > 1 ? `${stack.length} works` : ""}</div>
+    <div class="pane-scroll" id="scroll-${tag}">
+      ${worksHtml}
+    </div>
+    ${editBar}
   </section>`;
 }
 
@@ -378,7 +409,7 @@ interface GatherableEnd {
 /** Ends of existing links on the left work that this work's side
  *  can absorb another passage into (any end with members). */
 function gatherableEnds(): GatherableEnd[] {
-  const originPane = draft && draft.stage === "origin" ? paneAt(draft.from) : paneA;
+  const originPane = draft && draft.stage === "origin" ? paneAt(draft.from) : paneAt("a");
   if (!originPane) return [];
   const origin = originPane;
   const out: GatherableEnd[] = [];
@@ -472,16 +503,16 @@ function farFromPaneB(): void {
     }
   }
   if (!farPane || !s) return;
-  const paneB = farPane;
+  const farP = farPane;
   draft = {
     stage: "far",
     from: draft.from,
     start: draft.start,
     end: draft.end,
     excerpt: draft.excerpt,
-    farWork: paneB.workId,
-    farTitle: paneB.title,
-    farRef: s ? { start: s.start, end: s.end, excerpt: paneB.text.slice(s.start, s.end) } : undefined,
+    farWork: farP.workId,
+    farTitle: farP.title,
+    farRef: s ? { start: s.start, end: s.end, excerpt: farP.text.slice(s.start, s.end) } : undefined,
   };
   render();
   setStatus("choose the kind of connection");
@@ -514,8 +545,12 @@ async function commitDraft(type: number): Promise<void> {
     return;
   }
   setPane(d.from, { ...originPane, links: await client.linksFor(originPane.workId) });
-  if (d.farRef && paneB && paneB.workId === d.farWork) {
-    paneB = { ...paneB, links: await client.linksFor(d.farWork) };
+  const farStackP = stackAt("b").find((w) => w.workId === d.farWork) ?? stackAt("c").find((w) => w.workId === d.farWork);
+  if (d.farRef && farStackP) {
+    const updated = { ...farStackP, links: await client.linksFor(d.farWork) };
+    const sb = stackAt("b"); const bi = sb.findIndex((w) => w.workId === d.farWork);
+    if (bi !== -1) sb[bi] = updated;
+    else { const sc = stackAt("c"); const ci = sc.findIndex((w) => w.workId === d.farWork); if (ci !== -1) sc[ci] = updated; }
     render();
   } else {
     await openWork(d.farWork, "B");
@@ -543,14 +578,15 @@ function render(): void {
   }
 
   const openTrail = openTrailId !== null ? trailCache.find((t) => t.trail_id === openTrailId) : undefined;
-  const windowsMode = mode === "windows" && !!paneA;
+  const windowsMode = mode === "windows" && stackA.length > 0;
   const main = windowsMode
     ? `<div id="stage" class="stage"></div>`
-    : paneA
+    : stackA.length > 0
     ? `<div class="panes" id="panes" style="grid-template-columns:repeat(3,1fr)">
-        ${paneHtml(paneA!, "a", false, !!editing && editing.workId === paneA!.workId)}
-        ${paneB ? paneHtml(paneB, "b", true, !!editing && editing.pane === "b" && editing.workId === paneB.workId) : `<section class="pane ghost" id="pane-b"><div class="pane-head"><h2 class="quiet">—</h2></div><div class="pane-scroll"><p class="quiet">Click an underline to open its far end — or search and click a result to place it here.</p></div></section>`}
-        ${paneC ? paneHtml(paneC, "c", true, !!editing && editing.pane === "c" && editing.workId === paneC.workId) : `<section class="pane ghost" id="pane-c"><div class="pane-head"><h2 class="quiet">—</h2></div><div class="pane-scroll"><p class="quiet">Follow another connection or search for a third page.</p></div></section>`}
+        ${paneHtml("a")}
+        ${paneHtml("b")}
+        ${paneHtml("c")}${
+        "" /* close template cleanly */}
         <svg id="beams"></svg>
         ${inspectLink !== null ? beamPanelHtml() : ""}
         ${draft && draft.stage === "origin" ? gatherPanelHtml() : ""}
@@ -572,7 +608,7 @@ function render(): void {
           <button id="skin-toggle" title="switch skin — ink or the mockup paper look">${skin === "paper" ? "paper" : "ink"}</button>
           <button id="new-work" title="create a new work in the docuverse">+</button>
         </span>
-        ${paneA ? `<a class="head-link" href="/workspace?work=0x${paneA.workId.toString(16)}" title="open this work in the workspace">workspace ↗</a>` : ""}
+        ${paneAt("a") ? `<a class="head-link" href="/workspace?work=0x${paneAt("a")!.workId.toString(16)}" title="open this work in the workspace">workspace ↗</a>` : ""}
         <span id="head-status" class="quiet small"></span>
         <span class="quiet">${esc(client.serverName)} · v${esc(client.serverVersion || "?")} · api ${client.apiVersion}</span>
       </div>
@@ -620,7 +656,7 @@ function render(): void {
       (workId) => void openWork(workId, "A"),
       { start: () => void startEditing(), save: () => void commitEditing(), cancel: () => void cancelEditing() },
     );
-    void winView.setCenter(paneA!.workId);
+    void winView.setCenter(paneAt("a")!.workId);
   } else {
     winView?.destroy();
     winView = null;
@@ -629,6 +665,7 @@ function render(): void {
     wireClose();
     drawBeams();
   wireBeams();
+  wireReorder();
   wireStacks();
   wireAllLenses();
   observeBeams();
@@ -699,7 +736,7 @@ async function startEditing(pane: Col = "a"): Promise<void> {
   editor = ed;
   editing = { workId: target.workId, pane: mode === "windows" ? "a" : pane };
   if (mode === "windows" && winView) {
-    winView.setEditing(paneA!.text);
+    winView.setEditing(paneAt("a")!.text);
     setStatus("editing — ⌘↵ saves · esc cancels");
   } else {
     render();
@@ -728,7 +765,7 @@ async function commitEditing(): Promise<void> {
     setPane(pane, await fetchPane(client, workId));
     render();
   } else {
-    paneA = await fetchPane(client, workId);
+    setPane("a", await fetchPane(client, workId));
     render();
   }
   setStatus("saved");
@@ -764,7 +801,7 @@ function wireRevise(): void {
         e.key === "ArrowRight" && !e.shiftKey &&
         ta.selectionStart === ta.value.length && ta.selectionEnd === ta.value.length
       ) {
-        if (editing?.pane === "a" && paneB) {
+        if (editing?.pane === "a" && stackAt("b").length > 0) {
           e.preventDefault();
           void (async () => {
             await commitEditing();
@@ -813,22 +850,14 @@ async function openBeside(workId: number): Promise<void> {
     await openWork(workId, "A");
     return;
   }
-  if (!paneA) {
+  // The reading stream: search results stack in the focused column,
+  // pushing existing works down. The trail grows where you are.
+  const target = focusPane;
+  if (stackAt(target).length === 0 && target === "a") {
     await openWork(workId, "A");
     return;
   }
-  if (!paneB) {
-    paneB = await fetchPane(client!, workId);
-    render();
-    return;
-  }
-  if (!paneC) {
-    paneC = await fetchPane(client!, workId);
-    render();
-    return;
-  }
-  // all three full: replace B (the middle slot, least destructive)
-  paneB = await fetchPane(client!, workId);
+  appendToStack(target, await fetchPane(client!, workId));
   render();
 }
 
@@ -873,7 +902,7 @@ async function connect(): Promise<void> {
         await new Promise((r) => setTimeout(r, 1000 + attempt * 1000));
         try {
           await connect();
-          if (paneA) await openWork(paneA.workId, "A", false);
+          if (paneAt("a")) await openWork(paneAt("a")!.workId, "A", false);
           setStatus("reconnected");
           return;
         } catch {
@@ -953,7 +982,7 @@ function ensureTrails(): void {
     .then((ts) => {
       trailCache = ts;
       renderTrailsNav();
-      if (!paneA && openTrailId !== null) render();
+      if (stackA.length === 0 && openTrailId !== null) render();
     })
     .catch(() => {});
 }
@@ -993,8 +1022,8 @@ document.addEventListener("click", (ev) => {
     const tid = Number(trail);
     const opening = openTrailId !== tid;
     openTrailId = opening ? tid : null;
-    if (opening && !paneA) history.pushState({ t: tid }, "", `#t${tid}`);
-    if (paneA) renderTrailsNav();
+    if (opening && stackA.length === 0) history.pushState({ t: tid }, "", `#t${tid}`);
+    if (stackA.length > 0) renderTrailsNav();
     else render();
     return;
   }
@@ -1051,16 +1080,12 @@ async function follow(linkId: number, from: Col = "a"): Promise<void> {
   const far = farId(l, src.workId);
   if (far === null) return;
   activeLink = l;
-  const have = [paneA, paneB, paneC].some((q) => q?.workId === far);
-  if (!have) {
-    const p = await fetchPane(client, far);
-    // The '72 gesture: following a connection ADDS a page — the
-    // empty column fills before any column is replaced; at the cap
-    // the third gives way.
-    if (!paneB) paneB = p;
-    else if (!paneC && mode === "panes") paneC = p;
-    else paneB = p;
-  }
+  // The reading stream: following a connection appends to the next
+  // column's stack — nothing is replaced, the trail grows.
+  const p = await fetchPane(client, far);
+  if (from === "a") appendToStack("b", p);
+  else if (from === "b") appendToStack("c", p);
+  else appendToStack("a", p);
   render();
 }
 
@@ -1070,7 +1095,7 @@ function wireBeams(): void {
     const hit = (ev.target as SVGElement).closest?.("path[data-link]") as SVGPathElement | null;
     if (!hit) return;
     const id = Number(hit.dataset.link);
-    const l = [paneA, paneB, paneC].flatMap((p) => (p ? p.links : [])).find((x) => x.link_id === id) ?? null;
+    const l = [paneAt('a'), paneAt('b'), paneAt('c')].flatMap((p) => (p ? p.links : [])).find((x) => x.link_id === id) ?? null;
     inspectLink = l ? id : null;
     activeLink = l;
     render();
@@ -1082,7 +1107,7 @@ function wireBeams(): void {
   document.querySelectorAll<HTMLButtonElement>(".bp-end[data-note-link]").forEach((b) => {
     b.addEventListener("click", () => {
       const noteId = Number(b.dataset.noteLink);
-      const note = [paneA, paneB, paneC].flatMap((p) => (p ? p.links : [])).find((l) => l.link_id === noteId);
+      const note = [paneAt('a'), paneAt('b'), paneAt('c')].flatMap((p) => (p ? p.links : [])).find((l) => l.link_id === noteId);
       inspectLink = null;
       if (note) {
         void openWork(note.origin, "B");
@@ -1093,10 +1118,28 @@ function wireBeams(): void {
     b.addEventListener("click", () => {
       const workId = Number(b.dataset.endWork);
       inspectLink = null;
-      // open in the first free column; replace B at the cap
-      if (!paneB) void openWork(workId, "B");
-      else if (!paneC && mode === "panes") void openWork(workId, "C");
-      else void openWork(workId, "B");
+      void (async () => {
+        if (stackAt("b").length === 0) appendToStack("b", await fetchPane(client!, workId));
+        else if (stackAt("c").length === 0) appendToStack("c", await fetchPane(client!, workId));
+        else appendToStack("b", await fetchPane(client!, workId));
+        render();
+      })();
+    });
+  });
+}
+
+function wireReorder(): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-reorder-pane]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const tag = (b.dataset.reorderPane ?? "a") as Col;
+      const idx = Number(b.dataset.reorderIdx);
+      const dir = b.dataset.reorderDir === "up" ? -1 : 1;
+      const stack = stackAt(tag);
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= stack.length) return;
+      const work = stack.splice(idx, 1)[0];
+      stack.splice(newIdx, 0, work);
+      render();
     });
   });
 }
@@ -1127,9 +1170,9 @@ function onHashNav(): void {
       editing = null;
     }
     openTrailId = tm ? Number(tm[1]) : null;
-    paneA = null;
-    paneB = null;
-    paneC = null;
+    stackA = [];
+    stackB = [];
+    stackC = [];
     activeLink = null;
     render();
   }
@@ -1302,7 +1345,7 @@ async function stepStack(tag: Col): Promise<void> {
 /** Annotations of a link: other links whose ends carry
  *  kind="link_attachment" pointing at this link's id. */
 function annotationsOf(targetLinkId: number): LinkEntryClassic[] {
-  const all = [paneA, paneB, paneC].flatMap((p) => (p ? p.links : []));
+  const all = [paneAt('a'), paneAt('b'), paneAt('c')].flatMap((p) => (p ? p.links : []));
   return all.filter((l) => {
     const refs = [...(l.end_sets ?? []).flatMap(([, rs]) => rs)];
     return refs.some((r) => r.kind === "link_attachment" && r.link_attachment === targetLinkId);
@@ -1486,16 +1529,16 @@ window.addEventListener("keydown", (e) => {
     cancelDraft();
     return;
   }
-  if (inField || editing || draft || !client || !paneA || mode !== "panes") return;
+  if (inField || editing || draft || !client || stackA.length === 0 || mode !== "panes") return;
   const sel = window.getSelection();
   if (sel && !sel.isCollapsed) return;
   if (e.key === "ArrowRight") {
     // cycle focus through the open pages: a → b → c → c
-    if (focusPane === "a" && paneB) focusPane = "b";
-    else if (focusPane === "b" && paneC) focusPane = "c";
+    if (focusPane === "a" && stackAt("b").length > 0) focusPane = "b";
+    else if (focusPane === "b" && stackAt("c").length > 0) focusPane = "c";
     render();
   } else if (e.key === "ArrowLeft") {
-    if (focusPane === "c" && paneB) focusPane = "b";
+    if (focusPane === "c" && stackAt("b").length > 0) focusPane = "b";
     else focusPane = "a";
     render();
   } else if (e.key === "Enter") {

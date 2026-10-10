@@ -300,3 +300,26 @@ body.paper .stack-handle { background: #faf6ec; }
 .beam-bead { pointer-events: auto; cursor: pointer; }
 .beam-bead:hover { r: 7; }
 .bp-notes h4 { font-size: 12px; color: var(--ink-dim); text-transform: lowercase; letter-spacing: 1px; margin: 10px 0 6px; }
+
+/* Reading streams: stacked works in each column */
+.stack-work {
+  border-bottom: 1px solid var(--rule);
+  padding: 0 0 8px;
+  margin: 0 0 8px;
+}
+.stack-work:last-child { border-bottom: none; margin-bottom: 0; }
+.stack-work.dimmed { opacity: 0.55; }
+.stack-work.dimmed:hover { opacity: 0.8; }
+.stack-work-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 8px 12px 4px;
+}
+.stack-work-title {
+  font-size: 15px; font-weight: 400; margin: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.stack-work-body { padding: 4px 16px; }
+.stack-count {
+  position: absolute; top: 4px; right: 8px; font-size: 11px;
+  color: var(--ink-dim); z-index: 7;
+}
