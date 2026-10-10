@@ -20,8 +20,8 @@ let editing: { workId: number; pane: Col } | null = null;
 let statusTimer: number | null = null;
 
 type LinkDraft =
-  | { stage: "origin"; start: number; end: number; excerpt: string }
-  | { stage: "far"; start: number; end: number; excerpt: string; farWork: number; farTitle: string; farRef?: { start: number; end: number; excerpt: string } };
+  | { stage: "origin"; from: Col; start: number; end: number; excerpt: string }
+  | { stage: "far"; from: Col; start: number; end: number; excerpt: string; farWork: number; farTitle: string; farRef?: { start: number; end: number; excerpt: string } };
 let draft: LinkDraft | null = null;
 let lastSel: { pane: Col; start: number; end: number } | null = null;
 
@@ -232,8 +232,11 @@ function connectionsHtml(pane: Pane): string {
 function paneHtml(p: Pane, tag: string, closable: boolean, isEditing = false): string {
   const tools: string[] = [];
   if (tag === "a" && !isEditing) {
-    tools.push(`<button class="close-pane" id="link-start" title="connect this selection">⧉</button>`);
+    tools.push(`<button class="close-pane" id="link-start" data-link-pane="a" title="connect this selection">⧉</button>`);
     tools.push(`<button class="close-pane" data-revise-pane="a" title="revise this work">✎</button>`);
+  }
+  if (tag !== "a" && !isEditing) {
+    tools.push(`<button class="close-pane" data-link-pane="${tag}" title="connect this selection">⧉</button>`);
   }
   if (tag !== "a" && !isEditing) {
     if (draft && draft.stage === "origin") {
@@ -284,25 +287,27 @@ interface GatherableEnd {
 /** Ends of existing links on the left work that this work's side
  *  can absorb another passage into (any end with members). */
 function gatherableEnds(): GatherableEnd[] {
-  if (!paneA) return [];
+  const originPane = draft && draft.stage === "origin" ? paneAt(draft.from) : paneA;
+  if (!originPane) return [];
+  const origin = originPane;
   const out: GatherableEnd[] = [];
   const seen = new Set<string>();
-  for (const l of paneA.links) {
-    const localEnd = l.origin === paneA.workId ? "LeftEnd" : "RightEnd";
-    if (l.origin !== paneA.workId && l.destination !== paneA.workId) continue;
+  for (const l of origin.links) {
+    const localEnd = l.origin === origin.workId ? "LeftEnd" : "RightEnd";
+    if (l.origin !== origin.workId && l.destination !== origin.workId) continue;
     const key = `${l.link_id}:${localEnd}`;
     if (seen.has(key)) continue;
-    const members = (l.end_sets ?? []).find(([n]) => n === localEnd)?.[1]
-      ?? (l.origin === paneA.workId
+    const members = (l.end_sets ?? []).find(([n]: [string, unknown]) => n === localEnd)?.[1]
+      ?? (l.origin === origin.workId
         ? (l.origin_ref ? [l.origin_ref] : [])
         : (l.destination_ref ? [l.destination_ref] : []));
     if (!members || members.length === 0) continue;
     seen.add(key);
-    const mine = members.find((m) => m.work_context === paneA!.workId) ?? members[0];
+    const mine = members.find((m: { work_context?: number }) => m.work_context === origin.workId) ?? members[0];
     out.push({
       linkId: l.link_id,
       endName: localEnd,
-      label: (mine?.excerpt || farTitle(l, paneA.workId) || `link ${l.link_id}`).slice(0, 40),
+      label: (mine?.excerpt || farTitle(l, origin.workId) || `link ${l.link_id}`).slice(0, 40),
       count: members.length,
       color: typeOf(l).color,
     });
@@ -323,12 +328,14 @@ function gatherPanelHtml(): string {
 }
 
 async function gatherDraftSelection(linkId: number, endName: string): Promise<void> {
-  if (!client || !paneA || !draft || draft.stage !== "origin") return;
+  if (!client || !draft || draft.stage !== "origin") return;
   const d = draft;
+  const originPane = paneAt(d.from);
+  if (!originPane) return;
   draft = null;
   try {
     await client.gatherInto(linkId, endName, {
-      workContext: paneA.workId,
+      workContext: originPane.workId,
       excerpt: d.excerpt,
       start: d.start,
       end: d.end,
@@ -338,22 +345,23 @@ async function gatherDraftSelection(linkId: number, endName: string): Promise<vo
     render();
     return;
   }
-  paneA = { ...paneA, links: await client.linksFor(paneA.workId) };
+  setPane(d.from, { ...originPane, links: await client.linksFor(originPane.workId) });
   render();
   setStatus("gathered — the passage joined the end");
 }
 
-function beginLinkFromSelection(): void {
-  if (!paneA) return;
-  const live = selectionIn(paneA, "scroll-a");
-  const s = live ?? (lastSel?.pane === "a" ? { start: lastSel.start, end: lastSel.end } : null);
+function beginLinkFromSelection(from: Col = "a"): void {
+  const pane = paneAt(from);
+  if (!pane) return;
+  const live = selectionIn(pane, `scroll-${from}`);
+  const s = live ?? (lastSel?.pane === from ? { start: lastSel.start, end: lastSel.end } : null);
   if (!s) {
-    setStatus("select a passage in the left column first");
+    setStatus("select a passage in this column first");
     return;
   }
-  draft = { stage: "origin", start: s.start, end: s.end, excerpt: paneA.text.slice(s.start, s.end) };
+  draft = { stage: "origin", from, start: s.start, end: s.end, excerpt: pane.text.slice(s.start, s.end) };
   render();
-  setStatus(paneB ? "origin held — select in the right column and press ⤳, or click any work" : "origin held — click a work for the far end");
+  setStatus("origin held — select a passage in another column and press ⤳, or click any work");
 }
 
 function farFromPaneB(): void {
@@ -376,6 +384,7 @@ function farFromPaneB(): void {
   const paneB = farPane;
   draft = {
     stage: "far",
+    from: draft.from,
     start: draft.start,
     end: draft.end,
     excerpt: draft.excerpt,
@@ -389,18 +398,20 @@ function farFromPaneB(): void {
 
 function chooseFarWork(workId: number, title: string): void {
   if (!draft || draft.stage !== "origin") return;
-  draft = { stage: "far", start: draft.start, end: draft.end, excerpt: draft.excerpt, farWork: workId, farTitle: title };
+  draft = { stage: "far", from: draft.from, start: draft.start, end: draft.end, excerpt: draft.excerpt, farWork: workId, farTitle: title };
   render();
   setStatus("choose the kind of connection");
 }
 
 async function commitDraft(type: number): Promise<void> {
-  if (!client || !paneA || !draft || draft.stage !== "far") return;
+  if (!client || !draft || draft.stage !== "far") return;
   const d = draft;
+  const originPane = paneAt(d.from);
+  if (!originPane) return;
   draft = null;
   try {
     await client.createLink({
-      origin: paneA.workId,
+      origin: originPane.workId,
       destination: d.farWork,
       originRef: { excerpt: d.excerpt, start: d.start, end: d.end },
       destinationRef: d.farRef,
@@ -411,7 +422,7 @@ async function commitDraft(type: number): Promise<void> {
     render();
     return;
   }
-  paneA = { ...paneA, links: await client.linksFor(paneA.workId) };
+  setPane(d.from, { ...originPane, links: await client.linksFor(originPane.workId) });
   if (d.farRef && paneB && paneB.workId === d.farWork) {
     paneB = { ...paneB, links: await client.linksFor(d.farWork) };
     render();
@@ -531,7 +542,9 @@ function render(): void {
 }
 
 function wireLinkDraft(): void {
-  document.getElementById("link-start")?.addEventListener("click", beginLinkFromSelection);
+  document.querySelectorAll<HTMLButtonElement>("[data-link-pane]").forEach((b) => {
+    b.addEventListener("click", () => beginLinkFromSelection((b.dataset.linkPane ?? "a") as Col));
+  });
   document.getElementById("link-far")?.addEventListener("click", farFromPaneB);
   document.getElementById("link-cancel")?.addEventListener("click", cancelDraft);
   document.querySelectorAll<HTMLButtonElement>("button.type-pick").forEach((b) => {
