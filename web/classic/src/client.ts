@@ -297,10 +297,12 @@ export interface LinkRef {
 }
 
 export interface EndSetRef {
-  work_context: number;
+  work_context?: number;
   excerpt?: string | null;
   start_position?: number;
   end_position?: number;
+  kind?: string;
+  link_attachment?: number;
 }
 
 export interface LinkEntryClassic {

@@ -153,7 +153,7 @@ function allEndsOf(l: LinkEntryClassic): LinkEnd[] {
   // every attachment in end_sets (gathered members, extra ends)
   for (const [, refs] of l.end_sets ?? []) {
     for (const ref of refs) {
-      push(ref.work_context, undefined, ref.excerpt);
+      push(ref.work_context ?? null, undefined, ref.excerpt);
     }
   }
 
@@ -178,9 +178,21 @@ function beamPanelHtml(): string {
     .join("");
 
   const arity = ends.length > 2 ? ` · ${ends.length} ends` : "";
+  const notes = annotationsOf(l.link_id);
+  const notesHtml = notes.length > 0
+    ? `<div class="bp-notes"><h4>${notes.length} annotation${notes.length > 1 ? "s" : ""} on this connection</h4>${notes.map((n) => {
+        const nex = n.origin_ref?.excerpt?.trim() ?? n.destination_ref?.excerpt?.trim() ?? "";
+        const nWork = n.origin_title ?? n.destination_title ?? `work ${n.origin}`;
+        return `<button class="bp-end" data-note-link="${n.link_id}" style="border-left:3px solid ${typeOf(n).color}">
+          <span class="bp-end-title">${esc(nWork.slice(0, 40))}</span>
+          ${nex ? `<span class="bp-excerpt">“${esc(nex.slice(0, 60))}”</span>` : ""}
+        </button>`;
+      }).join("")}</div>`
+    : "";
   return `<div class="beam-panel" id="beam-panel">
     <div class="bp-type" style="color:${t.color}">${esc(t.name)}${arity} · link ${l.link_id}</div>
     <div class="bp-ends">${rows}</div>
+    ${notesHtml}
     <button id="beam-close" class="revise-btn ghosted" style="margin-top:8px">close</button>
   </div>`;
 }
@@ -998,6 +1010,16 @@ function wireBeams(): void {
     inspectLink = null;
     render();
   });
+  document.querySelectorAll<HTMLButtonElement>(".bp-end[data-note-link]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const noteId = Number(b.dataset.noteLink);
+      const note = [paneA, paneB, paneC].flatMap((p) => (p ? p.links : [])).find((l) => l.link_id === noteId);
+      inspectLink = null;
+      if (note) {
+        void openWork(note.origin, "B");
+      }
+    });
+  });
   document.querySelectorAll<HTMLButtonElement>(".bp-end[data-end-work]").forEach((b) => {
     b.addEventListener("click", () => {
       const workId = Number(b.dataset.endWork);
@@ -1112,6 +1134,14 @@ function drawBeams(): void {
       // Beam-as-object: an invisible wide twin makes the line itself
       // clickable (pointer-events: stroke on the hit path only).
       paths += `<path class="beam-hit" d="${d}" fill="none" stroke="#000" stroke-opacity="0" stroke-width="12" data-link="${l.link_id}"/>`;
+
+      // The bead: annotations mark the line itself
+      const notes = annotationsOf(l.link_id);
+      if (notes.length > 0) {
+        const mx = (x1 + x2) / 2;
+        const my = (y1 + y2) / 2;
+        paths += `<circle class="beam-bead" cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="5" fill="${stroke}" stroke="var(--paper)" stroke-width="2" data-link="${l.link_id}" title="${notes.length} annotation${notes.length > 1 ? "s" : ""} — click the line to read"/>`;
+      }
     }
   }
   svg.innerHTML = paths;
@@ -1198,6 +1228,16 @@ async function stepStack(tag: Col): Promise<void> {
     setPane(tag, fresh);
     render();
   }
+}
+
+/** Annotations of a link: other links whose ends carry
+ *  kind="link_attachment" pointing at this link's id. */
+function annotationsOf(targetLinkId: number): LinkEntryClassic[] {
+  const all = [paneA, paneB, paneC].flatMap((p) => (p ? p.links : []));
+  return all.filter((l) => {
+    const refs = [...(l.end_sets ?? []).flatMap(([, rs]) => rs)];
+    return refs.some((r) => r.kind === "link_attachment" && r.link_attachment === targetLinkId);
+  });
 }
 
 function wireStacks(): void {
