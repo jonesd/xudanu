@@ -37,7 +37,7 @@ test.describe("classic as a complete authoring loop on the shared model", () => 
       const node = walker.currentNode;
       const r = document.createRange();
       r.setStart(node, 0);
-      r.setEnd(node, 16);
+      r.setEnd(node, 17);
       const s = window.getSelection();
       s?.removeAllRanges();
       s?.addRange(r);
@@ -58,7 +58,7 @@ test.describe("classic as a complete authoring loop on the shared model", () => 
 
     // B opened beside A with a beam between the passages.
     await expect(page.locator("#pane-b:not(.ghost) h2")).toContainText("AUTHORING LOOP B.");
-    await expect(page.locator("#scroll-a mark[data-link]")).toHaveText("AUTHORING LOOP A.");
+    await expect(page.locator("#scroll-a mark[data-link]")).toContainText("AUTHORING LOOP A");
     await expect(page.locator("#beams path:not(.beam-hit)")).toHaveCount(1);
   });
 

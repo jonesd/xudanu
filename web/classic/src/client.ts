@@ -201,6 +201,22 @@ export class ClassicClient {
     await this.request("work_revise_delta", { work_id: workId, base_revision: 0, ops });
   }
 
+  /** Revision history: the page-stack wire ops. */
+  async revisionCount(workId: number): Promise<number> {
+    const r = val<{ revision_count?: number; count?: number } | number>(
+      await this.request("work_revision_count", { work_id: workId }),
+    );
+    if (typeof r === "number") return r;
+    return r?.revision_count ?? r?.count ?? 0;
+  }
+
+  async fetchRevision(workId: number, number: number): Promise<string> {
+    const e = val<{ text?: string }>(
+      await this.request("work_fetch_revision", { work_id: workId, number }),
+    );
+    return e?.text ?? "";
+  }
+
   /** Per-span authorship with cryptographic validity — the lens. */
   async attribution(workId: number): Promise<AttributionSpan[]> {
     const r = val<{ spans?: AttributionSpan[] } | AttributionSpan[]>(
@@ -297,6 +313,10 @@ export interface LinkEntryClassic {
   origin_title?: string;
   destination_title?: string;
   link_types?: number[];
+}
+
+export interface RevisionInfo {
+  revision_count: number;
 }
 
 export interface AttributionSpan {

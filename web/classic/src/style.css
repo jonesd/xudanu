@@ -260,3 +260,35 @@ body.paper .lens-note { background: #faf6ec; border-color: #b3a893; color: #6f67
 .bp-end:hover:not(:disabled) { border-color: var(--accent); background: rgba(210, 153, 34, 0.05); }
 .bp-end:disabled { opacity: 0.5; cursor: default; }
 .bp-end-title { font-size: 13.5px; }
+
+/* Page-stack: the page remembers its earlier selves */
+.stack {
+  position: absolute; top: -3px; left: -5px; right: -3px; bottom: -3px;
+  pointer-events: none; z-index: 0;
+}
+.stack-ghosts {
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(135deg, transparent 97%, var(--rule) 97%),
+    linear-gradient(135deg, transparent 94%, var(--rule) 94%),
+    linear-gradient(135deg, transparent 91%, var(--rule) 91%);
+  background-size: 100% 100%;
+  opacity: 0.35;
+  border-radius: 4px;
+}
+.stack-handle {
+  position: absolute; top: 50%; left: -14px; transform: translateY(-50%) rotate(-90deg);
+  background: var(--paper); border: 1px solid var(--rule); color: var(--ink-dim);
+  border-radius: 3px; padding: 1px 6px; font-size: 10px; cursor: pointer;
+  pointer-events: auto; white-space: nowrap; z-index: 8;
+}
+.stack-handle:hover { color: var(--accent); border-color: var(--accent); }
+.stack-now {
+  display: block; text-align: center; color: var(--accent); cursor: pointer;
+  font-size: 12px; padding: 12px 0 4px; border-top: 1px dashed var(--rule);
+  margin-top: 12px;
+}
+.stack-now:hover { text-decoration: underline; }
+.stack-view { opacity: 0.75; }
+body.paper .stack-ghosts { opacity: 0.15; }
+body.paper .stack-handle { background: #faf6ec; }

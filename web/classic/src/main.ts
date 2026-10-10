@@ -16,6 +16,18 @@ let mode: "panes" | "windows" = localStorage.getItem("xudanu_classic_mode") === 
 let skin: "ink" | "paper" = localStorage.getItem("xudanu_classic_skin") === "paper" ? "paper" : "ink";
 let winView: WindowsView | null = null;
 let focusPane: Col = "a";
+let stackRev: Partial<Record<Col, number | null>> = {};
+let stackTextCache = new Map<string, string>(); // "workId:rev" -> text
+
+/** Fetch a revision's text, cached. */
+async function stackText(workId: number, rev: number): Promise<string> {
+  const key = `${workId}:${rev}`;
+  const hit = stackTextCache.get(key);
+  if (hit !== undefined) return hit;
+  const text = await client?.fetchRevision(workId, rev) ?? "";
+  stackTextCache.set(key, text);
+  return text;
+}
 let editor: WorkEditor | null = null;
 let editing: { workId: number; pane: Col } | null = null;
 let statusTimer: number | null = null;
@@ -79,20 +91,23 @@ interface Pane {
   links: LinkEntryClassic[];
   inline?: InlineTransclusions;
   attribution?: AttributionSpan[];
+  revisionCount?: number;
+  _stackOldText?: string;
 }
 
 async function fetchPane(client: ClassicClient, workId: number): Promise<Pane> {
-  const [raw, links, inline, attribution] = await Promise.all([
+  const [raw, links, inline, attribution, revisionCount] = await Promise.all([
     client.readWork(workId),
     client.linksFor(workId),
     client.resolveInline(workId).catch((): InlineTransclusions => ({ text: "", spanRanges: [], sourceTitles: {} })),
     client.attribution(workId).catch((): AttributionSpan[] => []),
+    client.revisionCount(workId).catch(() => 0),
   ]);
   // A transcluding work displays its RESOLVED text: the reader sees the
   // live window's content inline (Nelson's window, not a placeholder),
   // with identity boxes over the shared ranges.
   const text = inline.spanRanges.length > 0 && inline.text ? inline.text : raw;
-  return { workId, title: firstLine(text, workId), text, links, inline, attribution };
+  return { workId, title: firstLine(text, workId), text, links, inline, attribution, revisionCount };
 }
 
 let paneA: Pane | null = null;
@@ -257,6 +272,7 @@ async function openWork(workId: number, pane: "A" | "B" | "C", push = true): Pro
     paneB = null;
     paneC = null;
     activeLink = null;
+    stackRev = {};
     if (push) history.pushState({ w: workId }, "", `#w${workId}`);
   } else {
     paneB = p;
@@ -275,7 +291,7 @@ function connectionsHtml(pane: Pane): string {
     .join("");
 }
 
-function paneHtml(p: Pane, tag: string, closable: boolean, isEditing = false): string {
+function paneHtml(p: Pane, tag: Col, closable: boolean, isEditing = false): string {
   const tools: string[] = [];
   if (tag === "a" && !isEditing) {
     tools.push(`<button class="close-pane" id="link-start" data-link-pane="a" title="connect this selection">⧉</button>`);
@@ -293,14 +309,31 @@ function paneHtml(p: Pane, tag: string, closable: boolean, isEditing = false): s
   }
   if (closable) tools.push(`<button class="close-pane" data-close-pane="${tag}">×</button>`);
   const headBtns = tools.join("");
-  const body = isEditing
-    ? `<textarea id="revise-text" class="revise" spellcheck="false">${esc(p.text)}</textarea>`
-    : `<pre class="prose">${renderText(p)}</pre>`;
+  let body: string;
+  if (isEditing) {
+    body = `<textarea id="revise-text" class="revise" spellcheck="false">${esc(p.text)}</textarea>`;
+  } else if (stackRev[tag] !== undefined && stackRev[tag] !== null) {
+    // the stack: this page is showing a past revision — render it with
+    // diff marks against the current text
+    const oldText = p._stackOldText ?? p.text;
+    body = `<pre class="prose stack-view">${esc(oldText)}<span class="stack-now" data-stack-pane="${tag}">— return to present —</span></pre>`;
+  } else {
+    body = `<pre class="prose">${renderText(p)}</pre>`;
+  }
   const bar = isEditing
     ? `<div class="revise-bar"><button id="revise-save" class="revise-btn">save</button><button id="revise-cancel" class="revise-btn ghosted">cancel</button><span class="quiet small">editing — ⌘↵ saves · esc cancels · → at the edge jumps columns</span></div>`
     : "";
   const focused = !isEditing && focusPane === tag ? " focused" : "";
+  const revCount = p.revisionCount ?? 0;
+  const stackable = revCount > 1 && !isEditing;
+  const currentRev = stackRev[tag] ?? null;
+  const revLabel = currentRev !== null ? `r${currentRev}` : "now";
+  const stackHtml = stackable ? `<div class="stack" id="stack-${tag}" title="${revCount} revisions — click the stack to step back">
+      <div class="stack-ghosts" style="--depth:${Math.min(revCount - 1, 5)}"></div>
+      <button class="stack-handle" data-stack-pane="${tag}">${revLabel}</button>
+    </div>` : "";
   return `<section class="pane${focused}" id="pane-${tag}">
+    ${stackHtml}
     <div class="pane-head"><h2>${esc(p.title)}</h2>${headBtns}</div>
     <div class="searchhl-layer" id="searchhl-${tag}"></div>
     <div class="tboxes" id="tboxes-${tag}"></div>
@@ -581,6 +614,7 @@ function render(): void {
     wireClose();
     drawBeams();
   wireBeams();
+  wireStacks();
   wireAllLenses();
   observeBeams();
   drawAllTBoxes();
@@ -1145,6 +1179,38 @@ function drawAllTBoxes(): void {
  *  this?" — author name and cryptographic validity, fading in as
  *  marginalia. The resting page stays clean; disclosure on demand
  *  is the idiom. */
+async function stepStack(tag: Col): Promise<void> {
+  const pane = paneAt(tag);
+  if (!client || !pane || !pane.revisionCount || pane.revisionCount < 2) return;
+
+  const current = stackRev[tag] ?? null;
+  if (current === null) {
+    // step back to the previous revision
+    const rev = Math.max(0, pane.revisionCount - 2); // previous revision
+    const text = await stackText(pane.workId, rev);
+    stackRev[tag] = rev;
+    setPane(tag, { ...pane, _stackOldText: text });
+    render();
+  } else {
+    // return to present
+    stackRev[tag] = null;
+    const fresh = await fetchPane(client, pane.workId);
+    setPane(tag, fresh);
+    render();
+  }
+}
+
+function wireStacks(): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-stack-pane]").forEach((b) => {
+    const action = b.dataset.stackPane;
+    if (b.classList.contains("stack-handle")) {
+      b.addEventListener("click", () => void stepStack((action ?? "a") as Col));
+    } else if (b.classList.contains("stack-now")) {
+      b.addEventListener("click", () => void stepStack((action ?? "a") as Col));
+    }
+  });
+}
+
 function wireLens(tag: Col): void {
   const scroll = document.getElementById(`scroll-${tag}`);
   const pane = paneAt(tag);
