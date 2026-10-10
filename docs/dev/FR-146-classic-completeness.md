@@ -14,20 +14,34 @@ a full client or a reading view with a hidden ceiling.
 
 ## The matrix
 
-| Model state | '72 idiom | Status |
-|---|---|---|
-| Documents & text | parallel pages | done |
-| Typed two-way links | colored underlines + beams | done |
-| Whole-work ends | beam to page head | done |
-| Gathered ends | same-color marks, i-of-N ordinals, gather picker | done |
-| Transclusion identity | boxes with source tabs, resolved text | done |
-| Trails | sidebar | done |
-| Editing (CRDT path) | in-place revision, column jumps | done |
-| Link origin from any column | per-column connect button | done (2026-10-10) |
-| **Multi-ends beyond visible columns** | no gestalt for "one connection, N ends" when ends live in unopened works | open |
-| **Versions / time** | *no native time dimension in the '72 drawings* | open |
-| **Per-span provenance** | author density would drown the page | open |
-| **Link-about-link** | inspector exists; no mark-on-line for annotations of connections | open |
+The classic client draws from **three decades of Nelson's visual
+vocabulary**, not just the 1972 figure. The era column below
+attributes each idiom honestly:
+
+- **'72** — *As We Will Think*: parallel pages, visible connections
+- **'80** — *Literary Machines*: transclusion, the boxed-passage diagram
+- **Ours** — cryptographic provenance, CRDT, the wire contract
+
+| Model state | Idiom | Era | Status |
+|---|---|---|---|
+| Documents & text | parallel pages | '72 | done |
+| Typed two-way links | colored underlines + beams | '72 | done |
+| Whole-work ends | beam to page head | '72 | done |
+| Trails | sidebar | '72 | done |
+| **Editing (CRDT path)** | in-place revision, column jumps | **ours** | done |
+| Link origin from any column | per-column connect button | **ours** | done |
+| Gathered ends | same-color marks, i-of-N ordinals | **'80** | done |
+| Transclusion identity | boxes with source tabs, resolved text | **'80** | done |
+| **Per-span provenance (the lens)** | hover marginalia: author + validity | **ours** | done |
+| Multi-ends beyond visible columns | inspector enumerates all ends | **'72** | done |
+| Versions / time (the page-stack) | ghost edges + step-back scrubber | **ours** | done (MVP) |
+| Link-about-link (the bead) | annotation marks on the beam line | **'80** | done |
+
+The '72 posture is the *frame* — parallel pages, visible connections,
+the reading stance. Within that frame, idioms from all three eras
+coexist: the '72 beams, the '80 identity boxes, and our own
+provenance lens. The frame is '72; the vocabulary spans the full
+Xanadu arc.
 
 ## Design directions for the open cells
 

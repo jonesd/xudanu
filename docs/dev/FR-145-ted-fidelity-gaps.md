@@ -7,8 +7,15 @@
 
 ## Motivation
 
-The classic client now matches the two-column era of Nelson's
-visualizations (the 1972 *As We Will Think* figure; Yee's Pyxi, 1999):
+The classic client draws from the full Xanadu arc — the '72 posture
+(parallel pages, visible connections), the '80 vocabulary
+(transclusion boxes, Literary Machines), and our own contributions
+(cryptographic provenance, CRDT). The posture is '72; the
+vocabulary spans three decades. See FR-146 for the era-attributed
+completeness matrix.
+
+The two-column reading surface matches the 1972 *As We Will Think*
+figure and Yee's Pyxi (1999):
 parallel pages, many visible connections drawn at once, span-to-span
 anchoring, paper/ink skins, in-view authoring. Three gaps remain
 between us and the canonical images:
