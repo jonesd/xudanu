@@ -65,6 +65,15 @@ Xanadu arc.
   inspection, gathers at scale, admin) — classic aims for *sufficiency
   in the reading posture*, not parity in every panel.
 
+- **Redesigning the posture for work-density.** The '72 figure and
+  Pyxi show a reading posture: a few pages, visible connections,
+  the eye moving between them. Limitations of that posture — too
+  few visible documents, column-chain navigation, no visited-state
+  — are properties of the reading posture itself, not defects to
+  design around. For actual work, the workspace exists; the
+  two-postures split is the design. Classic is the invitation;
+  the workspace is the desk.
+
 ## Acceptance sketch
 
 - Every state a work can hold is either visible in classic or
