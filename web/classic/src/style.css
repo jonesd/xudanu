@@ -54,6 +54,9 @@ header {
   font-size: 13px; line-height: 1; padding: 0 8px; white-space: nowrap;
 }
 .navbtns button:hover { color: var(--ink); border-color: var(--ink-dim); }
+/* the mode toggle's label changes length ("windows" vs "panes") —
+   a fixed floor stops the ‹ › arrows from jumping on toggle */
+.navbtns button#mode-toggle { min-width: 78px; text-align: center; }
 .head-link {
   color: var(--ink-dim); text-decoration: none; font-size: 13.5px;
   border: 1px solid var(--rule); border-radius: 3px; padding: 3px 10px;
