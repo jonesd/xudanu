@@ -248,3 +248,15 @@ body.paper .searchhl { background: rgba(180, 140, 40, 0.18); }
 }
 @keyframes lens-fade-in { from { opacity: 0; } to { opacity: 1; } }
 body.paper .lens-note { background: #faf6ec; border-color: #b3a893; color: #6f6759; }
+
+/* Arity: ends listed in the beam inspector */
+.bp-ends { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.bp-end {
+  display: flex; flex-direction: column; align-items: flex-start;
+  background: none; border: 1px solid var(--rule); border-radius: 3px;
+  padding: 6px 10px; cursor: pointer; font: inherit; text-align: left;
+  color: var(--ink); width: 100%;
+}
+.bp-end:hover:not(:disabled) { border-color: var(--accent); background: rgba(210, 153, 34, 0.05); }
+.bp-end:disabled { opacity: 0.5; cursor: default; }
+.bp-end-title { font-size: 13.5px; }

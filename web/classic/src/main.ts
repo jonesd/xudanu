@@ -112,17 +112,60 @@ function setPane(tag: Col, p: Pane | null): void {
 let activeLink: LinkEntryClassic | null = null;
 let inspectLink: number | null = null;
 
+interface LinkEnd {
+  workId: number;
+  title: string;
+  excerpt: string;
+}
+
+/** All ends of a link: origin, destination, and every attachment in
+ *  end_sets (gathered passages + multi-ended connections). */
+function allEndsOf(l: LinkEntryClassic): LinkEnd[] {
+  const ends: LinkEnd[] = [];
+  const seen = new Set<string>();
+  const push = (workId: number | null, title: string | undefined, excerpt: string | null | undefined) => {
+    if (workId === null || workId === 0) return;
+    const key = `${workId}:${excerpt ?? ""}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    ends.push({ workId, title: title ?? `work ${workId}`, excerpt: (excerpt ?? "").trim() });
+  };
+
+  // origin and destination with their primary refs
+  push(l.origin, l.origin_title, l.origin_ref?.excerpt);
+  push(l.destination, l.destination_title, l.destination_ref?.excerpt);
+
+  // every attachment in end_sets (gathered members, extra ends)
+  for (const [, refs] of l.end_sets ?? []) {
+    for (const ref of refs) {
+      push(ref.work_context, undefined, ref.excerpt);
+    }
+  }
+
+  return ends;
+}
+
 function beamPanelHtml(): string {
   const id = inspectLink;
   const l = [paneA, paneB, paneC].flatMap((p) => (p ? p.links : [])).find((x) => x.link_id === id);
   if (!l) return "";
   const t = typeOf(l);
-  const oex = l.origin_ref?.excerpt?.trim();
-  const dex = l.destination_ref?.excerpt?.trim();
+  const ends = allEndsOf(l);
+
+  const rows = ends
+    .map((e) => {
+      const open = [paneA, paneB, paneC].some((p) => p?.workId === e.workId);
+      return `<button class="bp-end" data-end-work="${e.workId}" ${open ? 'disabled' : ""} style="border-left:3px solid ${t.color}">
+        <span class="bp-end-title">${esc(e.title.slice(0, 44))}</span>
+        ${e.excerpt ? `<span class="bp-excerpt">“${esc(e.excerpt.slice(0, 60))}”</span>` : ""}
+      </button>`;
+    })
+    .join("");
+
+  const arity = ends.length > 2 ? ` · ${ends.length} ends` : "";
   return `<div class="beam-panel" id="beam-panel">
-    <div class="bp-type" style="color:${t.color}">${esc(t.name)} · link ${l.link_id}</div>
-    <div class="bp-row"><strong>${esc(l.origin_title ?? `work ${l.origin}`)}</strong>${oex ? `<div class="bp-excerpt">“${esc(oex.slice(0, 90))}”</div>` : ""}</div>
-    <div class="bp-row"><strong>${esc(l.destination_title ?? `work ${l.destination}`)}</strong>${dex ? `<div class="bp-excerpt">“${esc(dex.slice(0, 90))}”</div>` : ""}</div>
+    <div class="bp-type" style="color:${t.color}">${esc(t.name)}${arity} · link ${l.link_id}</div>
+    <div class="bp-ends">${rows}</div>
     <button id="beam-close" class="revise-btn ghosted" style="margin-top:8px">close</button>
   </div>`;
 }
@@ -201,7 +244,7 @@ function firstLine(text: string, workId: number): string {
   return l || `work ${workId}`;
 }
 
-async function openWork(workId: number, pane: "A" | "B", push = true): Promise<void> {
+async function openWork(workId: number, pane: "A" | "B" | "C", push = true): Promise<void> {
   if (!client) return;
   if (editing) {
     await editor?.cancel(editing.workId);
@@ -920,6 +963,16 @@ function wireBeams(): void {
   document.getElementById("beam-close")?.addEventListener("click", () => {
     inspectLink = null;
     render();
+  });
+  document.querySelectorAll<HTMLButtonElement>(".bp-end[data-end-work]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const workId = Number(b.dataset.endWork);
+      inspectLink = null;
+      // open in the first free column; replace B at the cap
+      if (!paneB) void openWork(workId, "B");
+      else if (!paneC && mode === "panes") void openWork(workId, "C");
+      else void openWork(workId, "B");
+    });
   });
 }
 
