@@ -355,6 +355,7 @@ function paneHtml(tag: Col): string {
     if (!isEditingHere) {
       if (i > 0) wTools.push(`<button class="close-pane" data-reorder-pane="${tag}" data-reorder-idx="${i}" data-reorder-dir="up" title="move up">↑</button>`);
       if (i < stack.length - 1) wTools.push(`<button class="close-pane" data-reorder-pane="${tag}" data-reorder-idx="${i}" data-reorder-dir="down" title="move down">↓</button>`);
+      wTools.push(`<button class="close-pane" data-similar-pane="${tag}" data-similar-idx="${i}" title="find more like this passage">⇄</button>`);
       wTools.push(`<button class="close-pane" data-link-pane="${tag}" data-work-idx="${i}" title="connect this selection">⧉</button>`);
       wTools.push(`<button class="close-pane" data-revise-pane="${tag}" data-revise-idx="${i}" title="revise this work">✎</button>`);
       wTools.push(`<button class="close-pane" data-close-pane="${tag}" data-close-idx="${i}" title="remove from stack">×</button>`);
@@ -588,6 +589,7 @@ function render(): void {
         ${paneHtml("c")}${
         "" /* close template cleanly */}
         <svg id="beams"></svg>
+        ${similarResults !== null ? similarPanelHtml() : ""}
         ${inspectLink !== null ? beamPanelHtml() : ""}
         ${draft && draft.stage === "origin" ? gatherPanelHtml() : ""}
         ${draft && draft.stage === "far" ? typePanelHtml() : ""}
@@ -665,6 +667,7 @@ function render(): void {
     wireClose();
     drawBeams();
   wireBeams();
+  wireSimilar();
   wireReorder();
   wireStacks();
   wireAllLenses();
@@ -827,6 +830,50 @@ function wireRevise(): void {
 }
 
 let searchQuery = "";
+let capturedSelection = "";
+
+// Find-similar: paragraph-level matches for a selected passage
+let similarResults: Array<{ work_id: number; title: string; snippet: string }> | null = null;
+let similarOrigin: { text: string; workId: number } | null = null;
+
+async function findSimilarFromSelection(from: Col): Promise<void> {
+  if (!client) return;
+  const pane = paneAt(from);
+  if (!pane) return;
+  // Use the captured selection (mouse-up) — the button click clears
+  // the live selection before the handler runs
+  let text = capturedSelection;
+  if (text.trim().length < 10) {
+    setStatus("select a passage first (at least 10 characters)");
+    return;
+  }
+  capturedSelection = "";
+  setStatus("searching for similar passages…");
+  try {
+    const results = await client.findSimilar(pane.workId, text);
+    similarResults = results;
+    similarOrigin = { text, workId: pane.workId };
+    render();
+    setStatus(`${results.length} similar passage${results.length === 1 ? "" : "s"} found`);
+  } catch (e) {
+    setStatus((e as Error).message);
+  }
+}
+
+function similarPanelHtml(): string {
+  if (!similarResults || !similarOrigin) return "";
+  const cards = similarResults
+    .map((r, i) => `<button class="similar-card" data-similar-work="${r.work_id}" data-similar-idx="${i}" title="${esc(r.title)}">
+      <span class="similar-title">${esc(r.title.slice(0, 36))}</span>
+      <span class="similar-snippet">${esc(r.snippet.slice(0, 100))}…</span>
+    </button>`)
+    .join("");
+  return `<div class="type-panel" id="similar-panel">
+    <h3>similar passages — click to open the source work</h3>
+    <div class="type-row similar-list">${cards}</div>
+    <button id="similar-close" class="revise-btn ghosted" style="margin-top:6px">close</button>
+  </div>`;
+}
 let worksList: Array<{ work_id: string; title: string; char_count?: number; revision?: number }> = [];
 let worksLoaded = false;
 
@@ -1125,6 +1172,28 @@ function wireBeams(): void {
         render();
       })();
     });
+  });
+}
+
+document.addEventListener("mouseup", () => {
+  const sel = window.getSelection();
+  capturedSelection = sel && !sel.isCollapsed ? sel.toString() : capturedSelection;
+});
+
+function wireSimilar(): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-similar-pane]").forEach((b) => {
+    b.addEventListener("click", () => void findSimilarFromSelection((b.dataset.similarPane ?? "a") as Col));
+  });
+  document.querySelectorAll<HTMLButtonElement>(".similar-card").forEach((b) => {
+    b.addEventListener("click", () => {
+      const workId = Number(b.dataset.similarWork);
+      similarResults = null;
+      void openBeside(workId);
+    });
+  });
+  document.getElementById("similar-close")?.addEventListener("click", () => {
+    similarResults = null;
+    render();
   });
 }
 

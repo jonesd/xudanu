@@ -225,6 +225,27 @@ export class ClassicClient {
     return e?.text ?? "";
   }
 
+  /** Find passages similar to a selected span — "more like this."
+   *  Uses the existing content search on the passage's most
+   *  distinctive word; returns matching works with snippets. */
+  async findSimilar(workId: number, text: string): Promise<
+    Array<{ work_id: number; title: string; snippet: string }>
+  > {
+    const stop = new Set(["the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "is", "are", "was", "were", "be", "been", "it", "this", "that", "with", "as", "by", "from", "not", "have", "has", "had", "will", "would"]);
+    const words = text.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3 && !stop.has(w));
+    if (words.length === 0) return [];
+    const query = [...new Set(words)].sort((a, b) => b.length - a.length)[0] ?? "";
+    if (!query) return [];
+    const entries = await this.search(query, 8);
+    return entries
+      .filter((e) => e.work_id !== workId)
+      .map((e) => ({
+        work_id: e.work_id,
+        title: e.title ?? "",
+        snippet: e.matches?.[0]?.context ?? "",
+      }));
+  }
+
   /** Per-span authorship with cryptographic validity — the lens. */
   async attribution(workId: number): Promise<AttributionSpan[]> {
     const r = val<{ spans?: AttributionSpan[] } | AttributionSpan[]>(
