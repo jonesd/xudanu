@@ -335,3 +335,45 @@ body.paper .stack-handle { background: #faf6ec; }
 .similar-card:hover { border-color: var(--accent); background: rgba(210,153,34,0.05); }
 .similar-title { font-size: 13.5px; font-weight: 400; margin-bottom: 2px; }
 .similar-snippet { font-size: 12.5px; color: var(--ink-dim); font-style: italic; }
+
+/* Work tools: absolutely positioned overlay — zero layout space;
+   float over the corner on hover */
+.stack-work-head {
+  position: relative;
+  padding-right: 0;
+}
+.stack-work-head .win-tools {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 1px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  background: var(--paper-inset);
+  border-radius: 3px;
+  padding: 1px 2px;
+  z-index: 3;
+}
+.stack-work-head:hover .win-tools {
+  opacity: 1;
+}
+.stack-work-head .win-tools .close-pane {
+  padding: 0 3px;
+  font-size: 11px;
+  line-height: 1.2;
+  min-width: 16px;
+  height: 16px;
+  border: none;
+  background: none;
+}
+.stack-work-head .win-tools .close-pane:hover {
+  color: var(--accent);
+}
+.stack-work-title {
+  padding-right: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

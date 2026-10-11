@@ -349,7 +349,7 @@ function paneHtml(tag: Col): string {
 
   // render each work in the stack
   const worksHtml = stack.map((wk, i) => {
-    const isActive = i === stack.length - 1;
+    const isActive = i === 0;
     const dimClass = isActive ? "" : " dimmed";
     const wTools: string[] = [];
     if (!isEditingHere) {
@@ -1216,7 +1216,12 @@ function wireReorder(): void {
 function wireClose(): void {
   document.querySelectorAll<HTMLButtonElement>("[data-close-pane]").forEach((b) => {
     b.addEventListener("click", () => {
-      setPane((b.dataset.closePane ?? "b") as Col, null);
+      const tag = (b.dataset.closePane ?? "b") as Col;
+      const idx = Number(b.dataset.closeIdx ?? "0");
+      const stack = stackAt(tag);
+      if (idx >= 0 && idx < stack.length) {
+        stack.splice(idx, 1);
+      }
       activeLink = null;
       render();
     });
