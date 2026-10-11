@@ -1299,8 +1299,8 @@ function drawBeams(): void {
       const markX = document.querySelector<HTMLElement>(`#scroll-${x} mark[data-link~="${l.link_id}"]`);
       const markY = document.querySelector<HTMLElement>(`#scroll-${y} mark[data-link~="${l.link_id}"]`);
       if (!markX && !markY) continue;
-      const headX = document.querySelector<HTMLElement>(`#pane-${x} .pane-head`);
-      const headY = document.querySelector<HTMLElement>(`#pane-${y} .pane-head`);
+      const headX = document.querySelector<HTMLElement>(`#pane-${x} .stack-work-head`);
+      const headY = document.querySelector<HTMLElement>(`#pane-${y} .stack-work-head`);
       if (!headX || !headY) continue;
       const rx = markX ? lastLine(markX) : headX.getBoundingClientRect();
       const ry = markY ? firstLine(markY) : headY.getBoundingClientRect();
