@@ -1209,6 +1209,13 @@ function wireReorder(): void {
       const work = stack.splice(idx, 1)[0];
       stack.splice(newIdx, 0, work);
       render();
+      // feedback: scroll to the moved work and flash it
+      const el = document.getElementById(`work-${tag}-${newIdx}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("flash");
+        setTimeout(() => el.classList.remove("flash"), 900);
+      }
     });
   });
 }
