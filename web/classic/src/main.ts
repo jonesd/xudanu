@@ -474,15 +474,61 @@ async function gatherDraftSelection(linkId: number, endName: string): Promise<vo
 }
 
 function beginLinkFromSelection(from: Col = "a"): void {
-  const pane = paneAt(from);
-  if (!pane) return;
-  const live = selectionIn(pane, `scroll-${from}`);
-  const s = live ?? (lastSel?.pane === from ? { start: lastSel.start, end: lastSel.end } : null);
-  if (!s) {
+  const stack = stackAt(from);
+  if (stack.length === 0) return;
+
+  // Find which work in the stack contains the selection
+  const sel = window.getSelection();
+  let targetIdx = -1; void targetIdx;
+  let targetPane: Pane | null = null;
+  let start = 0;
+  let end = 0;
+
+  if (sel && !sel.isCollapsed && sel.anchorNode) {
+    for (let i = 0; i < stack.length; i++) {
+      const bodyEl = document.getElementById(`scroll-${from}-${i}`);
+      if (bodyEl && bodyEl.contains(sel.anchorNode)) {
+        targetIdx = i;
+        targetPane = stack[i];
+        // compute offsets within this work's text
+        const pre = bodyEl.querySelector("pre");
+        if (pre) {
+          const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+          let pos = 0;
+          while (walker.nextNode()) {
+            const node = walker.currentNode as Text;
+            if (node === sel.anchorNode) {
+              start = pos + sel.anchorOffset;
+              break;
+            }
+            pos += node.length;
+          }
+          const endNode = sel.focusNode;
+          if (endNode && pre.contains(endNode) && endNode.nodeType === Node.TEXT_NODE) {
+            const walker2 = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+            pos = 0;
+            while (walker2.nextNode()) {
+              const node = walker2.currentNode as Text;
+              if (node === endNode) {
+                end = pos + sel.focusOffset;
+                break;
+              }
+              pos += node.length;
+            }
+          }
+          if (start > end) [start, end] = [end, start];
+        }
+        break;
+      }
+    }
+  }
+
+  if (!targetPane || end <= start || start < 0) {
     setStatus("select a passage in this column first");
     return;
   }
-  draft = { stage: "origin", from, start: s.start, end: s.end, excerpt: pane.text.slice(s.start, s.end) };
+
+  draft = { stage: "origin", from, start, end, excerpt: targetPane.text.slice(start, end) };
   render();
   setStatus("origin held — select a passage in another column and press ⤳, or click any work");
 }
